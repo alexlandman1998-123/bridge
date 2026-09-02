@@ -1,31 +1,713 @@
-import { ArrowLeft, ArrowRight, ChevronRight, MapPin, Minus, Plus, Search, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import {
+  ArrowLeft,
+  ArrowRight,
+  ChevronRight,
+  MapPin,
+  Minus,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useParams } from "react-router-dom";
+import { isSupabaseConfigured, supabase } from "../lib/supabaseClient";
 
-const STATUS = { available: ['Available', 'bg-[#e7f4eb] text-[#286647]', 'bg-[#38a467]'], reserved: ['Reserved', 'bg-[#faf0df] text-[#99621b]', 'bg-[#e5a13d]'], sold: ['Sold', 'bg-[#edf0f3] text-[#607080]', 'bg-[#8391a0]'], unreleased: ['Not released', 'bg-[#edf0f3] text-[#607080]', 'bg-[#8391a0]'] }
-const text = (value) => String(value || '').trim()
-const list = (value) => Array.isArray(value) ? value.map(text).filter(Boolean) : text(value).split(/\r?\n|,/).map(text).filter(Boolean)
-const keyFor = (status) => { const value = text(status).toLowerCase(); if (value.includes('reserve') || value.includes('offer')) return 'reserved'; if (value.includes('sold') || value.includes('complete')) return 'sold'; if (value.includes('unreleased') || value.includes('draft')) return 'unreleased'; return 'available' }
-const money = (value, compact = false) => { const amount = Number(value); if (!amount) return 'Price on request'; return compact ? `R${(amount / 1000000).toFixed(amount % 1000000 ? 2 : 0)}m` : new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 }).format(amount) }
-const beds = (type) => { const value = text(type); const match = value.match(/(\d+)/); return match ? `${match[1]} Bedroom${match[1] === '1' ? '' : 's'}` : value || 'Residence' }
-const Eyebrow = ({ children, className = '' }) => <p className={`text-[.65rem] font-bold uppercase tracking-[.18em] text-[#a58037] ${className}`}>{children}</p>
-function AgencyMark({ name, logo }) { return logo ? <img src={logo} alt={`${name} logo`} className="h-8 max-w-[145px] object-contain object-left" /> : <span className="font-semibold tracking-[.15em] text-white"><i className="mr-1 font-serif text-3xl font-normal text-[#c5a050]">R</i>{text(name).replace(/\s+site$/i, '').toUpperCase()}</span> }
-function DevelopmentMark() { return <span className="inline-flex items-center gap-2 text-white"><i className="grid h-8 w-6 place-items-center border border-white/70 text-[.63rem] font-medium tracking-[-.13em]">HH</i><span className="font-serif text-[.65rem] leading-[1.05] tracking-[.16em]">HARBOUR HEIGHTS<br /><small className="text-[.48rem] tracking-[.31em]">RESIDENCES</small></span></span> }
+const STATUS = {
+  available: ["Available", "bg-[#e7f4eb] text-[#286647]", "bg-[#38a467]"],
+  reserved: ["Reserved", "bg-[#faf0df] text-[#99621b]", "bg-[#e5a13d]"],
+  sold: ["Sold", "bg-[#edf0f3] text-[#607080]", "bg-[#8391a0]"],
+  unreleased: ["Not released", "bg-[#edf0f3] text-[#607080]", "bg-[#8391a0]"],
+};
+const text = (value) => String(value || "").trim();
+const list = (value) =>
+  Array.isArray(value)
+    ? value.map(text).filter(Boolean)
+    : text(value)
+        .split(/\r?\n|,/)
+        .map(text)
+        .filter(Boolean);
+const keyFor = (status) => {
+  const value = text(status).toLowerCase();
+  if (value.includes("reserve") || value.includes("offer")) return "reserved";
+  if (value.includes("sold") || value.includes("complete")) return "sold";
+  if (value.includes("unreleased") || value.includes("draft"))
+    return "unreleased";
+  return "available";
+};
+const money = (value, compact = false) => {
+  const amount = Number(value);
+  if (!amount) return "Price on request";
+  return compact
+    ? `R${(amount / 1000000).toFixed(amount % 1000000 ? 2 : 0)}m`
+    : new Intl.NumberFormat("en-ZA", {
+        style: "currency",
+        currency: "ZAR",
+        maximumFractionDigits: 0,
+      }).format(amount);
+};
+const beds = (type) => {
+  const value = text(type);
+  const match = value.match(/(\d+)/);
+  return match
+    ? `${match[1]} Bedroom${match[1] === "1" ? "" : "s"}`
+    : value || "Residence";
+};
+const Eyebrow = ({ children, className = "" }) => (
+  <p
+    className={`text-[.65rem] font-bold uppercase tracking-[.18em] text-[#a58037] ${className}`}
+  >
+    {children}
+  </p>
+);
+function AgencyMark({ name, logo }) {
+  const source =
+    logo ||
+    (text(name).toLowerCase().includes("revo")
+      ? "https://www.revo-property.co.za/logo.png"
+      : "");
+  return source ? (
+    <img
+      src={source}
+      alt={`${name} logo`}
+      className="h-9 max-w-[155px] object-contain object-left brightness-0 invert"
+    />
+  ) : (
+    <span className="font-semibold tracking-[.15em] text-white">
+      <i className="mr-1 font-serif text-3xl font-normal text-[#c5a050]">R</i>
+      {text(name)
+        .replace(/\s+site$/i, "")
+        .toUpperCase()}
+    </span>
+  );
+}
+function DevelopmentMark() {
+  return (
+    <span className="inline-flex items-center gap-2 text-white">
+      <i className="grid h-8 w-6 place-items-center border border-white/70 text-[.63rem] font-medium tracking-[-.13em]">
+        HH
+      </i>
+      <span className="font-serif text-[.65rem] leading-[1.05] tracking-[.16em]">
+        HARBOUR HEIGHTS
+        <br />
+        <small className="text-[.48rem] tracking-[.31em]">RESIDENCES</small>
+      </span>
+    </span>
+  );
+}
 
 function Masterplan({ inventory, media }) {
-  const [query, setQuery] = useState(''); const [type, setType] = useState('all'); const [available, setAvailable] = useState(false); const [selected, setSelected] = useState(null); const [zoom, setZoom] = useState(1)
-  const map = media.sitePlanMap || {}; const types = [...new Set(inventory.map((unit) => text(unit.unitType)).filter(Boolean))]
-  const units = inventory.filter((unit) => (!query || `${unit.unitNumber} ${unit.unitType} ${unit.block}`.toLowerCase().includes(query.toLowerCase())) && (type === 'all' || unit.unitType === type) && (!available || keyFor(unit.status) === 'available'))
-  const markers = Object.keys(map).length ? units.filter((unit) => map[unit.id]) : units
-  return <section id="availability" className="scroll-mt-16 bg-[#f5f2eb] py-12 md:py-16"><div className="mx-auto max-w-[1280px] px-5 md:px-8"><div className="mb-6 flex flex-wrap items-end justify-between gap-3"><div><Eyebrow>Live masterplan</Eyebrow><h2 className="mt-3 font-serif text-4xl text-[#14352c]">Find the right residence.</h2></div><p className="text-sm text-[#63766c]">Select a home to see its live availability.</p></div><div className="grid overflow-hidden border border-[#e4dfd3] bg-[#fffdf9] lg:grid-cols-[185px_minmax(0,1fr)_330px]"><aside className="border-b border-[#e6e1d7] p-5 lg:border-b-0 lg:border-r"><Eyebrow className="!text-[.58rem]">Browse by</Eyebrow><div className="mt-4 grid gap-2.5"><label className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-[#829087]" size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search units" className="w-full border border-[#e5e1d8] bg-white py-2 pl-8 pr-2 text-xs outline-none focus:border-[#b18b3e]" /></label><select value={type} onChange={(event) => setType(event.target.value)} className="border border-[#e5e1d8] bg-white p-2 text-xs"><option value="all">All unit types</option>{types.map((item) => <option key={item}>{item}</option>)}</select><label className="mt-1 flex gap-2 text-xs text-[#5a6e63]"><input type="checkbox" checked={available} onChange={(event) => setAvailable(event.target.checked)} /> Available only</label></div><div className="mt-7 border-t border-[#e7e2d7] pt-4"><Eyebrow className="!text-[.58rem]">Legend</Eyebrow><div className="mt-3 grid gap-2 text-xs text-[#60756a]">{Object.entries(STATUS).map(([status, [label,, dot]]) => <span key={status} className="flex items-center gap-2"><i className={`h-2.5 w-2.5 ${dot}`} />{label}</span>)}</div></div></aside><div className="relative min-h-[390px] overflow-hidden bg-[#e5e1d7] md:min-h-[530px]"><div className="absolute inset-0 origin-center transition-transform" style={{ transform: `scale(${zoom})`, backgroundImage: `url(${media.masterplanUrl || media.sitePlanUrl || ''})`, backgroundSize: 'cover', backgroundPosition: 'center' }} />{markers.map((unit) => { const [,, dot] = STATUS[keyFor(unit.status)]; const position = map[unit.id]; return <button key={unit.id} onClick={() => setSelected(unit)} style={{ left: `${position.x}%`, top: `${position.y}%` }} className={`absolute -translate-x-1/2 -translate-y-1/2 border border-white px-2 py-1 text-[.65rem] font-bold shadow-sm hover:scale-105 ${selected?.id === unit.id ? 'bg-[#153d33] text-white ring-2 ring-white' : 'bg-white text-[#234f41]'}`}><i className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${dot}`} />{unit.unitNumber}</button> })}<span className="absolute left-4 top-4 bg-white/90 px-3 py-1 text-[.6rem] font-bold uppercase tracking-[.15em] text-[#47675a]">Site plan</span><div className="absolute bottom-4 right-4 flex bg-white"><button onClick={() => setZoom((value) => Math.max(1, value - .15))} className="p-2.5"><Minus size={14} /></button><button onClick={() => setZoom((value) => Math.min(1.4, value + .15))} className="border-l border-[#e5e1d8] p-2.5"><Plus size={14} /></button></div>{selected ? <div className="absolute bottom-4 left-4 w-[215px] border border-white bg-white/95 p-3.5 shadow-lg"><button onClick={() => setSelected(null)} className="absolute right-2 top-2 text-[#809087]"><X size={14} /></button><Eyebrow className="!text-[.55rem]">Residence</Eyebrow><strong className="mt-1 block text-base text-[#153d33]">{selected.unitNumber}</strong><span className="mt-1 block text-xs text-[#62766b]">{selected.unitType}</span><div className="mt-3 flex items-center justify-between"><strong className="text-sm">{money(selected.price)}</strong><span className={`px-2 py-1 text-[.6rem] font-semibold ${STATUS[keyFor(selected.status)][1]}`}>{STATUS[keyFor(selected.status)][0]}</span></div></div> : null}</div><section className="flex min-h-0 flex-col border-t border-[#e6e1d7] lg:border-l lg:border-t-0"><div className="border-b border-[#e6e1d7] px-5 py-4"><Eyebrow className="!text-[.58rem]">Availability</Eyebrow><strong className="mt-1 block text-lg">{units.length} residences</strong></div><div className="max-h-[530px] overflow-y-auto">{units.map((unit) => { const [label, chip, dot] = STATUS[keyFor(unit.status)]; return <button key={unit.id} onClick={() => setSelected(unit)} className={`grid w-full grid-cols-[55px_minmax(0,1fr)_auto] items-center gap-2 border-b border-[#eee9e0] px-4 py-3 text-left hover:bg-[#faf8f2] ${selected?.id === unit.id ? 'bg-[#f0f7f2]' : ''}`}><strong className="text-sm">{unit.unitNumber}</strong><span className="min-w-0"><b className="block truncate text-xs text-[#455b50]">{unit.unitType || 'Residence'}</b><small className="text-[.67rem] text-[#859188]">{unit.sizeSqm ? `${unit.sizeSqm} m²` : unit.block}</small></span><span className="text-right"><b className="block text-xs">{money(unit.price, true)}</b><small className="inline-flex items-center gap-1 text-[.62rem] text-[#60756a]"><i className={`h-1.5 w-1.5 rounded-full ${dot}`} />{label}</small></span></button> })}</div></section></div></div></section>
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("all");
+  const [available, setAvailable] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const map = media.sitePlanMap || {};
+  const types = [
+    ...new Set(inventory.map((unit) => text(unit.unitType)).filter(Boolean)),
+  ];
+  const units = inventory.filter(
+    (unit) =>
+      (!query ||
+        `${unit.unitNumber} ${unit.unitType} ${unit.block}`
+          .toLowerCase()
+          .includes(query.toLowerCase())) &&
+      (type === "all" || unit.unitType === type) &&
+      (!available || keyFor(unit.status) === "available"),
+  );
+  const markers = Object.keys(map).length
+    ? units.filter((unit) => map[unit.id])
+    : units;
+  return (
+    <section
+      id="availability"
+      className="scroll-mt-16 bg-[#f5f2eb] py-8 md:py-10"
+    >
+      <div className="mx-auto max-w-none px-0">
+        <div className="mx-auto mb-5 flex max-w-[1440px] flex-wrap items-end justify-between gap-3 px-5 md:px-8">
+          <div>
+            <Eyebrow>Live masterplan</Eyebrow>
+            <h2 className="mt-2 font-serif text-4xl text-[#14352c]">
+              Find the right residence.
+            </h2>
+          </div>
+          <p className="text-sm text-[#63766c]">
+            Select a home to see its live availability.
+          </p>
+        </div>
+        <div className="grid min-h-[620px] overflow-hidden border-y border-[#e4dfd3] bg-[#fffdf9] lg:h-[calc(100vh-190px)] lg:grid-cols-[210px_minmax(0,1fr)_360px]">
+          <aside className="border-b border-[#e6e1d7] p-5 lg:border-b-0 lg:border-r">
+            <Eyebrow className="!text-[.58rem]">Browse by</Eyebrow>
+            <div className="mt-4 grid gap-2.5">
+              <label className="relative">
+                <Search
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-[#829087]"
+                  size={14}
+                />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search units"
+                  className="w-full border border-[#e5e1d8] bg-white py-2 pl-8 pr-2 text-xs outline-none focus:border-[#b18b3e]"
+                />
+              </label>
+              <select
+                value={type}
+                onChange={(event) => setType(event.target.value)}
+                className="border border-[#e5e1d8] bg-white p-2 text-xs"
+              >
+                <option value="all">All unit types</option>
+                {types.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+              <label className="mt-1 flex gap-2 text-xs text-[#5a6e63]">
+                <input
+                  type="checkbox"
+                  checked={available}
+                  onChange={(event) => setAvailable(event.target.checked)}
+                />{" "}
+                Available only
+              </label>
+            </div>
+            <div className="mt-7 border-t border-[#e7e2d7] pt-4">
+              <Eyebrow className="!text-[.58rem]">Legend</Eyebrow>
+              <div className="mt-3 grid gap-2 text-xs text-[#60756a]">
+                {Object.entries(STATUS).map(([status, [label, , dot]]) => (
+                  <span key={status} className="flex items-center gap-2">
+                    <i className={`h-2.5 w-2.5 ${dot}`} />
+                    {label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </aside>
+          <div className="relative min-h-[390px] overflow-hidden bg-[#e5e1d7] md:min-h-[620px]">
+            <div
+              className="absolute inset-0 origin-center transition-transform"
+              style={{
+                transform: `scale(${zoom})`,
+                backgroundImage: `url(${media.masterplanUrl || media.sitePlanUrl || ""})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }}
+            />
+            {markers.map((unit) => {
+              const [, , dot] = STATUS[keyFor(unit.status)];
+              const position = map[unit.id];
+              return (
+                <button
+                  key={unit.id}
+                  onClick={() => setSelected(unit)}
+                  style={{ left: `${position.x}%`, top: `${position.y}%` }}
+                  className={`absolute -translate-x-1/2 -translate-y-1/2 border border-white px-2 py-1 text-[.65rem] font-bold shadow-sm hover:scale-105 ${selected?.id === unit.id ? "bg-[#153d33] text-white ring-2 ring-white" : "bg-white text-[#234f41]"}`}
+                >
+                  <i
+                    className={`mr-1 inline-block h-1.5 w-1.5 rounded-full ${dot}`}
+                  />
+                  {unit.unitNumber}
+                </button>
+              );
+            })}
+            <span className="absolute left-4 top-4 bg-white/90 px-3 py-1 text-[.6rem] font-bold uppercase tracking-[.15em] text-[#47675a]">
+              Site plan
+            </span>
+            <div className="absolute bottom-4 right-4 flex bg-white">
+              <button
+                onClick={() => setZoom((value) => Math.max(1, value - 0.15))}
+                className="p-2.5"
+              >
+                <Minus size={14} />
+              </button>
+              <button
+                onClick={() => setZoom((value) => Math.min(1.4, value + 0.15))}
+                className="border-l border-[#e5e1d8] p-2.5"
+              >
+                <Plus size={14} />
+              </button>
+            </div>
+            {selected ? (
+              <div className="absolute bottom-4 left-4 w-[215px] border border-white bg-white/95 p-3.5 shadow-lg">
+                <button
+                  onClick={() => setSelected(null)}
+                  className="absolute right-2 top-2 text-[#809087]"
+                >
+                  <X size={14} />
+                </button>
+                <Eyebrow className="!text-[.55rem]">Residence</Eyebrow>
+                <strong className="mt-1 block text-base text-[#153d33]">
+                  {selected.unitNumber}
+                </strong>
+                <span className="mt-1 block text-xs text-[#62766b]">
+                  {selected.unitType}
+                </span>
+                <div className="mt-3 flex items-center justify-between">
+                  <strong className="text-sm">{money(selected.price)}</strong>
+                  <span
+                    className={`px-2 py-1 text-[.6rem] font-semibold ${STATUS[keyFor(selected.status)][1]}`}
+                  >
+                    {STATUS[keyFor(selected.status)][0]}
+                  </span>
+                </div>
+              </div>
+            ) : null}
+          </div>
+          <section className="flex min-h-0 flex-col border-t border-[#e6e1d7] lg:border-l lg:border-t-0">
+            <div className="border-b border-[#e6e1d7] px-5 py-4">
+              <Eyebrow className="!text-[.58rem]">Availability</Eyebrow>
+              <strong className="mt-1 block text-lg">
+                {units.length} residences
+              </strong>
+            </div>
+            <div className="max-h-[620px] overflow-y-auto lg:max-h-none">
+              {units.map((unit) => {
+                const [label, chip, dot] = STATUS[keyFor(unit.status)];
+                return (
+                  <button
+                    key={unit.id}
+                    onClick={() => setSelected(unit)}
+                    className={`grid w-full grid-cols-[55px_minmax(0,1fr)_auto] items-center gap-2 border-b border-[#eee9e0] px-4 py-3 text-left hover:bg-[#faf8f2] ${selected?.id === unit.id ? "bg-[#f0f7f2]" : ""}`}
+                  >
+                    <strong className="text-sm">{unit.unitNumber}</strong>
+                    <span className="min-w-0">
+                      <b className="block truncate text-xs text-[#455b50]">
+                        {unit.unitType || "Residence"}
+                      </b>
+                      <small className="text-[.67rem] text-[#859188]">
+                        {unit.sizeSqm ? `${unit.sizeSqm} m²` : unit.block}
+                      </small>
+                    </span>
+                    <span className="text-right">
+                      <b className="block text-xs">{money(unit.price, true)}</b>
+                      <small className="inline-flex items-center gap-1 text-[.62rem] text-[#60756a]">
+                        <i className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+                        {label}
+                      </small>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 export default function PublicDevelopmentLandingPage() {
-  const { slug = '' } = useParams(); const [state, setState] = useState({ loading: true, data: null, error: '' }); const [typeFilter, setTypeFilter] = useState('all'); const [availableOnly, setAvailableOnly] = useState(false); const gallery = useRef(null)
-  useEffect(() => { let active = true; if (!isSupabaseConfigured || !supabase) return () => {}; supabase.rpc('get_public_development_landing', { requested_slug: slug }).then(({ data, error }) => active && setState({ loading: false, data: data || null, error: error?.message || (data ? '' : 'This development page is not published.') })); return () => { active = false } }, [slug])
-  if (state.loading) return <main className="grid min-h-screen place-items-center bg-[#f5f2eb] text-[#153d33]">Loading development…</main>
-  if (!state.data) return <main className="grid min-h-screen place-items-center bg-[#f5f2eb] px-6 text-center text-[#153d33]"><div><h1 className="font-serif text-3xl">Development unavailable</h1><p className="mt-3 text-sm">{state.error}</p></div></main>
-  const data = state.data; const marketing = data.marketing || {}; const overview = marketing.listingOverview || {}; const media = marketing.mediaLibrary || {}; const inventory = Array.isArray(data.inventory) ? data.inventory : []; const available = inventory.filter((unit) => keyFor(unit.status) === 'available'); const prices = inventory.map((unit) => Number(unit.price)).filter(Boolean); const fromPrice = Math.min(...prices); const agency = text(data.developerCompany).replace(/\s+site$/i, '') || 'Revo Property'; const agencyLogo = media.agencyLogoUrl || media.logoLightUrl || media.logoUrl || ''; const hero = media.heroImageUrl || ''; const images = [...new Set([...list(media.galleryImageUrls), ...list(media.imageUrls), hero].filter(Boolean))]; const groups = Object.values(inventory.reduce((result, unit) => { const key = unit.unitType || 'Residence'; (result[key] ||= []).push(unit); return result }, {})); const types = groups.map((items) => items[0].unitType || 'Residence'); const live = inventory.filter((unit) => (typeFilter === 'all' || unit.unitType === typeFilter) && (!availableOnly || keyFor(unit.status) === 'available')); const enquiry = marketing.externalLinks?.whatsappEnquiryUrl || marketing.externalLinks?.bookingViewingUrl || '#enquire'; const location = overview.locationLabel || data.location || [data.suburb, data.city].filter(Boolean).join(', ')
-  return <main className="min-h-screen bg-[#f5f2eb] text-[#153d33]"><section id="overview" className="relative min-h-[86vh] overflow-hidden bg-[#14352c] text-white"><img src={hero} alt="" className="absolute inset-0 h-full w-full object-cover" /><div className="absolute inset-0 bg-gradient-to-r from-[#061c18]/82 via-[#0c2821]/34 to-transparent" /><header className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-[1420px] items-center justify-between px-6 py-6 md:px-10"><AgencyMark name={agency} logo={agencyLogo} /><nav className="hidden gap-6 text-xs lg:flex">{[['Overview','#overview'],['Residences','#residences'],['Availability','#availability'],['Location','#location'],['Gallery','#gallery'],['Enquire','#enquire']].map(([label, href]) => <a key={label} href={href} className="hover:text-[#d5b365]">{label}</a>)}</nav><div className="flex items-center gap-5"><DevelopmentMark /><a href={enquiry} className="hidden border border-white/60 px-4 py-2 text-xs font-semibold sm:block">Enquire now</a></div></header><div className="relative mx-auto flex min-h-[86vh] max-w-[1420px] items-end px-6 pb-16 pt-32 md:px-10 md:pb-20"><div className="max-w-xl"><Eyebrow className="text-[#d7b867]">Now selling · {data.suburb || 'Sea Point'}</Eyebrow><h1 className="mt-4 font-serif text-5xl leading-[.93] tracking-[-.05em] md:text-7xl">{data.name}</h1><p className="mt-6 max-w-sm text-base leading-6 text-white/90">{overview.shortDescription || 'Contemporary coastal living in the heart of Sea Point.'}</p><div className="mt-7 flex gap-6 border-l border-white/35 pl-5 text-xs text-white/85"><span>From<strong className="block text-xl text-white">{money(fromPrice, true)}</strong></span><span><strong className="block text-xl text-white">1–3</strong>Bedrooms</span><span><strong className="block text-xl text-white">{available.length}</strong>Available</span></div><div className="mt-8 flex gap-3"><a href="#residences" className="inline-flex items-center gap-2 bg-[#d0ab55] px-5 py-3 text-sm font-semibold text-[#14352c]">View residences <ArrowRight size={15} /></a><a href={enquiry} className="border border-white/70 px-5 py-3 text-sm font-semibold">Enquire now</a></div></div></div></section><Masterplan inventory={inventory} media={media} /><section className="mx-auto grid max-w-[1280px] gap-10 px-5 py-20 md:grid-cols-[.85fr_1.15fr] md:px-8 md:py-28"><div><Eyebrow>The development</Eyebrow><h2 className="mt-3 font-serif text-4xl leading-[1.02] md:text-5xl">A considered collection of contemporary homes.</h2><p className="mt-6 max-w-lg text-base leading-8 text-[#586c62]">{overview.listingDescription || 'A carefully composed collection of contemporary homes, designed around light, privacy and everyday ease.'}</p><a id="location" href={marketing.externalLinks?.googleMapsUrl || '#'} className="mt-7 inline-flex items-center gap-2 border-b border-[#b58b3c] pb-1 text-sm font-semibold">{location} <MapPin size={15} /> View location</a></div><div className="overflow-hidden rounded-[9px] bg-[#e6e0d5]">{images[0] ? <img src={images[0]} alt="Harbour Heights lifestyle" className="min-h-[310px] h-full w-full object-cover" /> : null}</div></section><section className="border-y border-[#e1dacd] bg-[#ece7dc]"><div className="mx-auto grid max-w-[1280px] grid-cols-2 divide-x divide-y divide-[#dcd3c3] px-5 md:grid-cols-4 md:divide-y-0 md:px-8">{[[inventory.length || data.totalUnitsExpected,'Residences'],[available.length,'Available'],['1–3','Bedrooms'],[money(fromPrice,true),'From']].map(([value,label]) => <div key={label} className="px-5 py-7 md:px-8"><strong className="font-serif text-3xl">{value}</strong><span className="mt-1 block text-xs uppercase tracking-[.13em] text-[#728178]">{label}</span></div>)}</div></section><section id="residences" className="mx-auto max-w-[1280px] px-5 py-20 md:px-8 md:py-28"><div className="flex items-end justify-between"><div><Eyebrow>Residences</Eyebrow><h2 className="mt-3 font-serif text-4xl md:text-5xl">Find your space.</h2></div><a href="#live-availability" className="hidden border border-[#cab999] px-4 py-2 text-xs font-semibold md:block">View all availability</a></div><div className="mt-9 grid gap-5 md:grid-cols-3">{groups.map((items, index) => { const first = items[0]; const itemPrices = items.map((item) => Number(item.price)).filter(Boolean); const sizes = items.map((item) => Number(item.sizeSqm)).filter(Boolean); return <article key={first.unitType || index} className="overflow-hidden border border-[#e2dbcf] bg-[#fcfaf5]"><img src={images[index % Math.max(images.length, 1)] || hero} alt="" className="h-48 w-full object-cover" /><div className="p-5"><h3 className="font-serif text-2xl">{beds(first.unitType)}</h3><p className="mt-3 text-sm leading-6 text-[#65776d]">From {money(Math.min(...itemPrices), true)}<br />{sizes.length ? `${Math.min(...sizes)}–${Math.max(...sizes)} m²` : 'Size on request'}</p><a href="#live-availability" className="mt-5 inline-flex items-center gap-2 text-sm font-semibold">Explore <ArrowRight size={14} /></a></div></article> })}</div></section><section id="gallery" className="py-8"><div className="mx-auto flex max-w-[1280px] items-end justify-between px-5 md:px-8"><div><Eyebrow>Gallery</Eyebrow><h2 className="mt-3 font-serif text-4xl md:text-5xl">A glimpse of life at Harbour Heights.</h2></div><div className="hidden gap-2 md:flex"><button onClick={() => gallery.current?.scrollBy({ left: -360, behavior: 'smooth' })} className="border border-[#cab999] p-2.5"><ArrowLeft size={16} /></button><button onClick={() => gallery.current?.scrollBy({ left: 360, behavior: 'smooth' })} className="border border-[#cab999] p-2.5"><ArrowRight size={16} /></button></div></div><div ref={gallery} className="mt-8 flex snap-x gap-4 overflow-x-auto px-5 pb-3 md:px-8">{images.concat(images.length < 4 ? [hero, media.sitePlanUrl].filter(Boolean) : []).map((url, index) => <img key={`${url}-${index}`} src={url} alt="Harbour Heights gallery" className="h-56 w-[280px] shrink-0 snap-start rounded-[8px] object-cover md:h-64 md:w-[360px]" />)}</div></section><section id="live-availability" className="mx-auto max-w-[1280px] px-5 py-20 md:px-8 md:py-28"><Eyebrow>Live availability</Eyebrow><h2 className="mt-3 font-serif text-4xl md:text-5xl">Choose your residence.</h2><div className="mt-7 flex flex-wrap gap-2">{['all', ...types].map((item) => <button key={item} onClick={() => setTypeFilter(item)} className={`rounded-full px-4 py-2 text-xs font-semibold ${typeFilter === item ? 'bg-[#143d33] text-white' : 'bg-[#e9e4da] text-[#55685e]'}`}>{item === 'all' ? 'All' : beds(item)}</button>)}<label className="ml-2 flex items-center gap-2 py-2 text-xs text-[#63766c]"><input type="checkbox" checked={availableOnly} onChange={(event) => setAvailableOnly(event.target.checked)} /> Available only</label></div><div className="mt-7 overflow-x-auto border-y border-[#e1d9cd]"><div className="min-w-[700px]">{live.map((unit) => { const [label, chip] = STATUS[keyFor(unit.status)]; return <a key={unit.id} href={enquiry} className="grid grid-cols-[.75fr_1.2fr_.65fr_.6fr_.85fr_.75fr_18px] items-center gap-3 border-b border-[#e9e2d7] px-3 py-4 text-sm last:border-0 hover:bg-[#faf8f3]"><strong>{unit.unitNumber}</strong><span>{unit.unitType || 'Residence'}</span><span>{unit.block || '—'}</span><span>{unit.sizeSqm ? `${unit.sizeSqm} m²` : '—'}</span><strong>{money(unit.price)}</strong><span className={`w-fit rounded-full px-2 py-1 text-[.64rem] font-semibold ${chip}`}>{label}</span><ChevronRight size={16} className="text-[#8b988f]" /></a> })}</div></div></section><section id="enquire" className="bg-[#063a31] text-[#f7f0e3]"><div className="mx-auto grid max-w-[1280px] gap-8 px-5 py-16 md:grid-cols-[1.2fr_.85fr_auto] md:items-end md:px-8 md:py-20"><div><Eyebrow className="text-[#d5b365]">Make Harbour Heights home</Eyebrow><h2 className="mt-3 font-serif text-4xl leading-[1.02] md:text-5xl">Let’s talk about your future home.</h2></div><p className="text-sm leading-6 text-[#d2ded6]">Register your interest or speak to the {agency} sales team for more information about {data.name}.</p><a href={enquiry === '#enquire' ? `mailto:?subject=${encodeURIComponent(data.name)}` : enquiry} className="inline-flex items-center justify-center gap-3 bg-[#d0ab55] px-6 py-3.5 text-sm font-semibold text-[#14352c]">Enquire now <ArrowRight size={16} /></a></div><footer className="border-t border-white/15"><div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-5 px-5 py-6 text-xs text-white/65 md:px-8"><AgencyMark name={agency} logo={agencyLogo} /><span>{location}</span><span>Privacy · Terms · Powered by Arch9</span></div></footer></section></main>
+  const { slug = "" } = useParams();
+  const [state, setState] = useState({ loading: true, data: null, error: "" });
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const gallery = useRef(null);
+  useEffect(() => {
+    let active = true;
+    if (!isSupabaseConfigured || !supabase) return () => {};
+    supabase
+      .rpc("get_public_development_landing", { requested_slug: slug })
+      .then(
+        ({ data, error }) =>
+          active &&
+          setState({
+            loading: false,
+            data: data || null,
+            error:
+              error?.message ||
+              (data ? "" : "This development page is not published."),
+          }),
+      );
+    return () => {
+      active = false;
+    };
+  }, [slug]);
+  if (state.loading)
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f5f2eb] text-[#153d33]">
+        Loading development…
+      </main>
+    );
+  if (!state.data)
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#f5f2eb] px-6 text-center text-[#153d33]">
+        <div>
+          <h1 className="font-serif text-3xl">Development unavailable</h1>
+          <p className="mt-3 text-sm">{state.error}</p>
+        </div>
+      </main>
+    );
+  const data = state.data;
+  const marketing = data.marketing || {};
+  const overview = marketing.listingOverview || {};
+  const media = marketing.mediaLibrary || {};
+  const inventory = Array.isArray(data.inventory) ? data.inventory : [];
+  const available = inventory.filter(
+    (unit) => keyFor(unit.status) === "available",
+  );
+  const prices = inventory.map((unit) => Number(unit.price)).filter(Boolean);
+  const fromPrice = Math.min(...prices);
+  const agency =
+    text(data.developerCompany).replace(/\s+site$/i, "") || "Revo Property";
+  const agencyLogo =
+    media.agencyLogoUrl || media.logoLightUrl || media.logoUrl || "";
+  const hero = media.heroImageUrl || "";
+  const images = [
+    ...new Set(
+      [...list(media.galleryImageUrls), ...list(media.imageUrls), hero].filter(
+        Boolean,
+      ),
+    ),
+  ];
+  const groups = Object.values(
+    inventory.reduce((result, unit) => {
+      const key = unit.unitType || "Residence";
+      (result[key] ||= []).push(unit);
+      return result;
+    }, {}),
+  );
+  const types = groups.map((items) => items[0].unitType || "Residence");
+  const live = inventory.filter(
+    (unit) =>
+      (typeFilter === "all" || unit.unitType === typeFilter) &&
+      (!availableOnly || keyFor(unit.status) === "available"),
+  );
+  const enquiry =
+    marketing.externalLinks?.whatsappEnquiryUrl ||
+    marketing.externalLinks?.bookingViewingUrl ||
+    "#enquire";
+  const location =
+    overview.locationLabel ||
+    data.location ||
+    [data.suburb, data.city].filter(Boolean).join(", ");
+  return (
+    <main className="min-h-screen bg-[#f5f2eb] text-[#153d33]">
+      <section
+        id="overview"
+        className="relative min-h-[86vh] overflow-hidden bg-[#14352c] text-white"
+      >
+        <img
+          src={hero}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+        <div className="absolute inset-0 bg-[#061c18]/48" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#061c18]/78 via-[#061c18]/42 to-[#061c18]/25" />
+        <header className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-[1420px] items-center justify-between px-6 py-6 md:px-10">
+          <AgencyMark name={agency} logo={agencyLogo} />
+          <nav className="hidden gap-6 text-xs text-white lg:flex">
+            {[
+              ["Overview", "#overview"],
+              ["Residences", "#residences"],
+              ["Availability", "#availability"],
+              ["Location", "#location"],
+              ["Gallery", "#gallery"],
+              ["Enquire", "#enquire"],
+            ].map(([label, href]) => (
+              <a
+                key={label}
+                href={href}
+                className="!text-white hover:!text-[#d5b365]"
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+          <div className="flex items-center gap-5">
+            <DevelopmentMark />
+            <a
+              href={enquiry}
+              className="hidden border border-white/60 px-4 py-2 text-xs font-semibold sm:block"
+            >
+              Enquire now
+            </a>
+          </div>
+        </header>
+        <div className="relative mx-auto flex min-h-[86vh] max-w-[1420px] items-end px-6 pb-16 pt-32 md:px-10 md:pb-20">
+          <div className="max-w-xl">
+            <Eyebrow className="text-[#d7b867]">
+              Now selling · {data.suburb || "Sea Point"}
+            </Eyebrow>
+            <h1 className="mt-4 font-serif text-5xl leading-[.93] tracking-[-.05em] !text-white md:text-7xl">
+              {data.name}
+            </h1>
+            <p className="mt-6 max-w-sm text-base leading-6 text-white/90">
+              {overview.shortDescription ||
+                "Contemporary coastal living in the heart of Sea Point."}
+            </p>
+            <div className="mt-7 flex gap-6 border-l border-white/35 pl-5 text-xs text-white/85">
+              <span>
+                From
+                <strong className="block text-xl text-white">
+                  {money(fromPrice, true)}
+                </strong>
+              </span>
+              <span>
+                <strong className="block text-xl text-white">1–3</strong>
+                Bedrooms
+              </span>
+              <span>
+                <strong className="block text-xl text-white">
+                  {available.length}
+                </strong>
+                Available
+              </span>
+            </div>
+            <div className="mt-8 flex gap-3">
+              <a
+                href="#residences"
+                className="inline-flex items-center gap-2 bg-[#d0ab55] px-5 py-3 text-sm font-semibold text-[#14352c]"
+              >
+                View residences <ArrowRight size={15} />
+              </a>
+              <a
+                href={enquiry}
+                className="border border-white/70 px-5 py-3 text-sm font-semibold"
+              >
+                Enquire now
+              </a>
+            </div>
+          </div>
+        </div>
+      </section>
+      <Masterplan inventory={inventory} media={media} />
+      <section className="mx-auto grid max-w-[1280px] gap-10 px-5 py-20 md:grid-cols-[.85fr_1.15fr] md:px-8 md:py-28">
+        <div>
+          <Eyebrow>The development</Eyebrow>
+          <h2 className="mt-3 font-serif text-4xl leading-[1.02] md:text-5xl">
+            A considered collection of contemporary homes.
+          </h2>
+          <p className="mt-6 max-w-lg text-base leading-8 text-[#586c62]">
+            {overview.listingDescription ||
+              "A carefully composed collection of contemporary homes, designed around light, privacy and everyday ease."}
+          </p>
+          <a
+            id="location"
+            href={marketing.externalLinks?.googleMapsUrl || "#"}
+            className="mt-7 inline-flex items-center gap-2 border-b border-[#b58b3c] pb-1 text-sm font-semibold"
+          >
+            {location} <MapPin size={15} /> View location
+          </a>
+        </div>
+        <div className="overflow-hidden rounded-[9px] bg-[#e6e0d5]">
+          {images[0] ? (
+            <img
+              src={images[0]}
+              alt="Harbour Heights lifestyle"
+              className="min-h-[310px] h-full w-full object-cover"
+            />
+          ) : null}
+        </div>
+      </section>
+      <section className="border-y border-[#e1dacd] bg-[#ece7dc]">
+        <div className="mx-auto grid max-w-[1280px] grid-cols-2 divide-x divide-y divide-[#dcd3c3] px-5 md:grid-cols-4 md:divide-y-0 md:px-8">
+          {[
+            [inventory.length || data.totalUnitsExpected, "Residences"],
+            [available.length, "Available"],
+            ["1–3", "Bedrooms"],
+            [money(fromPrice, true), "From"],
+          ].map(([value, label]) => (
+            <div key={label} className="px-5 py-7 md:px-8">
+              <strong className="font-serif text-3xl">{value}</strong>
+              <span className="mt-1 block text-xs uppercase tracking-[.13em] text-[#728178]">
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section
+        id="residences"
+        className="mx-auto max-w-[1280px] px-5 py-20 md:px-8 md:py-28"
+      >
+        <div className="flex items-end justify-between">
+          <div>
+            <Eyebrow>Residences</Eyebrow>
+            <h2 className="mt-3 font-serif text-4xl md:text-5xl">
+              Find your space.
+            </h2>
+          </div>
+          <a
+            href="#live-availability"
+            className="hidden border border-[#cab999] px-4 py-2 text-xs font-semibold md:block"
+          >
+            View all availability
+          </a>
+        </div>
+        <div className="mt-9 grid gap-5 md:grid-cols-3">
+          {groups.map((items, index) => {
+            const first = items[0];
+            const itemPrices = items
+              .map((item) => Number(item.price))
+              .filter(Boolean);
+            const sizes = items
+              .map((item) => Number(item.sizeSqm))
+              .filter(Boolean);
+            return (
+              <article
+                key={first.unitType || index}
+                className="overflow-hidden border border-[#e2dbcf] bg-[#fcfaf5]"
+              >
+                <img
+                  src={images[index % Math.max(images.length, 1)] || hero}
+                  alt=""
+                  className="h-48 w-full object-cover"
+                />
+                <div className="p-5">
+                  <h3 className="font-serif text-2xl">
+                    {beds(first.unitType)}
+                  </h3>
+                  <p className="mt-3 text-sm leading-6 text-[#65776d]">
+                    From {money(Math.min(...itemPrices), true)}
+                    <br />
+                    {sizes.length
+                      ? `${Math.min(...sizes)}–${Math.max(...sizes)} m²`
+                      : "Size on request"}
+                  </p>
+                  <a
+                    href="#live-availability"
+                    className="mt-5 inline-flex items-center gap-2 text-sm font-semibold"
+                  >
+                    Explore <ArrowRight size={14} />
+                  </a>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+      <section id="gallery" className="py-8">
+        <div className="mx-auto flex max-w-[1280px] items-end justify-between px-5 md:px-8">
+          <div>
+            <Eyebrow>Gallery</Eyebrow>
+            <h2 className="mt-3 font-serif text-4xl md:text-5xl">
+              A glimpse of life at Harbour Heights.
+            </h2>
+          </div>
+          <div className="hidden gap-2 md:flex">
+            <button
+              onClick={() =>
+                gallery.current?.scrollBy({ left: -360, behavior: "smooth" })
+              }
+              className="border border-[#cab999] p-2.5"
+            >
+              <ArrowLeft size={16} />
+            </button>
+            <button
+              onClick={() =>
+                gallery.current?.scrollBy({ left: 360, behavior: "smooth" })
+              }
+              className="border border-[#cab999] p-2.5"
+            >
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        </div>
+        <div
+          ref={gallery}
+          className="mt-8 flex snap-x gap-4 overflow-x-auto px-5 pb-3 md:px-8"
+        >
+          {images
+            .concat(
+              images.length < 4
+                ? [hero, media.sitePlanUrl].filter(Boolean)
+                : [],
+            )
+            .map((url, index) => (
+              <img
+                key={`${url}-${index}`}
+                src={url}
+                alt="Harbour Heights gallery"
+                className="h-56 w-[280px] shrink-0 snap-start rounded-[8px] object-cover md:h-64 md:w-[360px]"
+              />
+            ))}
+        </div>
+      </section>
+      <section
+        id="live-availability"
+        className="mx-auto max-w-[1280px] px-5 py-20 md:px-8 md:py-28"
+      >
+        <Eyebrow>Live availability</Eyebrow>
+        <h2 className="mt-3 font-serif text-4xl md:text-5xl">
+          Choose your residence.
+        </h2>
+        <div className="mt-7 flex flex-wrap gap-2">
+          {["all", ...types].map((item) => (
+            <button
+              key={item}
+              onClick={() => setTypeFilter(item)}
+              className={`rounded-full px-4 py-2 text-xs font-semibold ${typeFilter === item ? "bg-[#143d33] text-white" : "bg-[#e9e4da] text-[#55685e]"}`}
+            >
+              {item === "all" ? "All" : beds(item)}
+            </button>
+          ))}
+          <label className="ml-2 flex items-center gap-2 py-2 text-xs text-[#63766c]">
+            <input
+              type="checkbox"
+              checked={availableOnly}
+              onChange={(event) => setAvailableOnly(event.target.checked)}
+            />{" "}
+            Available only
+          </label>
+        </div>
+        <div className="mt-7 overflow-x-auto border-y border-[#e1d9cd]">
+          <div className="min-w-[700px]">
+            {live.map((unit) => {
+              const [label, chip] = STATUS[keyFor(unit.status)];
+              return (
+                <a
+                  key={unit.id}
+                  href={enquiry}
+                  className="grid grid-cols-[.75fr_1.2fr_.65fr_.6fr_.85fr_.75fr_18px] items-center gap-3 border-b border-[#e9e2d7] px-3 py-4 text-sm last:border-0 hover:bg-[#faf8f3]"
+                >
+                  <strong>{unit.unitNumber}</strong>
+                  <span>{unit.unitType || "Residence"}</span>
+                  <span>{unit.block || "—"}</span>
+                  <span>{unit.sizeSqm ? `${unit.sizeSqm} m²` : "—"}</span>
+                  <strong>{money(unit.price)}</strong>
+                  <span
+                    className={`w-fit rounded-full px-2 py-1 text-[.64rem] font-semibold ${chip}`}
+                  >
+                    {label}
+                  </span>
+                  <ChevronRight size={16} className="text-[#8b988f]" />
+                </a>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+      <section id="enquire" className="bg-[#063a31] text-[#f7f0e3]">
+        <div className="mx-auto grid max-w-[1280px] gap-8 px-5 py-16 md:grid-cols-[1.2fr_.85fr_auto] md:items-end md:px-8 md:py-20">
+          <div>
+            <Eyebrow className="text-[#d5b365]">
+              Make Harbour Heights home
+            </Eyebrow>
+            <h2 className="mt-3 font-serif text-4xl leading-[1.02] md:text-5xl">
+              Let’s talk about your future home.
+            </h2>
+          </div>
+          <p className="text-sm leading-6 text-[#d2ded6]">
+            Register your interest or speak to the {agency} sales team for more
+            information about {data.name}.
+          </p>
+          <a
+            href={
+              enquiry === "#enquire"
+                ? `mailto:?subject=${encodeURIComponent(data.name)}`
+                : enquiry
+            }
+            className="inline-flex items-center justify-center gap-3 bg-[#d0ab55] px-6 py-3.5 text-sm font-semibold text-[#14352c]"
+          >
+            Enquire now <ArrowRight size={16} />
+          </a>
+        </div>
+        <footer className="border-t border-white/15">
+          <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-5 px-5 py-6 text-xs text-white/65 md:px-8">
+            <AgencyMark name={agency} logo={agencyLogo} />
+            <span>{location}</span>
+            <span>Privacy · Terms · Powered by Arch9</span>
+          </div>
+        </footer>
+      </section>
+    </main>
+  );
 }
