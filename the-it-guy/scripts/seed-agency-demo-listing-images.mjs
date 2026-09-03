@@ -2,9 +2,9 @@
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import {
-  ensureHomeSeekersAgencyDemoWorkspace,
-  HOME_SEEKERS_DEMO_EMAIL,
-  HOME_SEEKERS_DEMO_PASSWORD,
+  ensureAgencyDemoWorkspace,
+  getAgencyDemoAccount,
+  getAgencyDemoConfig,
 } from './agencyDemoBootstrap.mjs'
 
 const args = new Set(process.argv.slice(2))
@@ -15,8 +15,10 @@ const argValue = (name, fallback = '') => {
 }
 
 const ENVIRONMENT = String(argValue('--environment', process.env.AGENCY_DEMO_ENVIRONMENT || 'staging')).trim()
-const TARGET_EMAIL = String(process.env.AGENCY_DEMO_EMAIL || HOME_SEEKERS_DEMO_EMAIL).trim().toLowerCase()
-const TARGET_PASSWORD = String(process.env.AGENCY_DEMO_PASSWORD || HOME_SEEKERS_DEMO_PASSWORD).trim()
+const ACCOUNT = getAgencyDemoAccount(argValue('--account', process.env.AGENCY_DEMO_ACCOUNT || 'home-seekers'))
+const ACCOUNT_CONFIG = getAgencyDemoConfig(ACCOUNT)
+const TARGET_EMAIL = String(process.env.AGENCY_DEMO_EMAIL || ACCOUNT_CONFIG.email).trim().toLowerCase()
+const TARGET_PASSWORD = String(process.env.AGENCY_DEMO_PASSWORD || ACCOUNT_CONFIG.password).trim()
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const CAPTION_PREFIX = 'Agency demo cover image'
 
@@ -114,10 +116,11 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 
 async function fetchDemoOrganisationId() {
   const definitions = await fetchDefinitions()
-  const context = await ensureHomeSeekersAgencyDemoWorkspace(supabase, {
+  const context = await ensureAgencyDemoWorkspace(supabase, {
     definitions,
     email: TARGET_EMAIL,
     password: TARGET_PASSWORD,
+    account: ACCOUNT,
   })
   return context.organisationId
 }

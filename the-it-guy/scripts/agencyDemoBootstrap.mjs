@@ -14,6 +14,32 @@ export const HOME_SEEKERS_DEMO_MEMBERSHIP_ID = stableUuid('home-seekers:membersh
 export const HOME_SEEKERS_DEMO_DEVELOPMENT_ID = stableUuid('home-seekers:development:demo')
 export const HOME_SEEKERS_DEMO_DEVELOPMENT_NAME = 'Home Seekers Demo Development'
 
+export function getAgencyDemoAccount(accountId = 'home-seekers') {
+  const account = DEMO_ACCOUNTS.find((candidate) => candidate.id === accountId)
+  if (!account) throw new Error(`Unknown agency demo account: ${accountId}.`)
+  return account
+}
+
+export function getAgencyDemoConfig(account = HOME_SEEKERS_DEMO_ACCOUNT) {
+  const accountId = normalizeText(account?.id || 'home-seekers') || 'home-seekers'
+  const isHomeSeekers = accountId === 'home-seekers'
+  const profile = account?.profile || {}
+  const name = normalizeText(account?.name || 'Home Seekers') || 'Home Seekers'
+  return {
+    accountId,
+    email: normalizeEmail(profile.email || HOME_SEEKERS_DEMO_EMAIL),
+    seedKey: normalizeText(account?.seedData?.seedKey || HOME_SEEKERS_DEMO_SEED_KEY),
+    password: isHomeSeekers ? HOME_SEEKERS_DEMO_PASSWORD : 'OripropDemo!2026',
+    organisationId: isHomeSeekers ? HOME_SEEKERS_DEMO_ORGANISATION_ID : stableUuid(`${accountId}:organisation`),
+    branchId: isHomeSeekers ? HOME_SEEKERS_DEMO_BRANCH_ID : stableUuid(`${accountId}:branch:head-office`),
+    membershipId: isHomeSeekers ? HOME_SEEKERS_DEMO_MEMBERSHIP_ID : stableUuid(`${accountId}:membership:principal`),
+    developmentId: isHomeSeekers ? HOME_SEEKERS_DEMO_DEVELOPMENT_ID : stableUuid(`${accountId}:development:demo`),
+    developmentName: isHomeSeekers ? HOME_SEEKERS_DEMO_DEVELOPMENT_NAME : `${name} Demo Development`,
+    listingPrefix: isHomeSeekers ? 'HS' : accountId.toUpperCase().slice(0, 6),
+    source: `${accountId.replace(/-/g, '_')}_demo_bootstrap`,
+  }
+}
+
 function normalizeText(value = '') {
   return String(value || '').trim()
 }
@@ -57,7 +83,8 @@ async function upsertRow(client, definitions, table, row, onConflict = 'id') {
 }
 
 async function ensureAuthUser(client, { email, password, account = HOME_SEEKERS_DEMO_ACCOUNT }) {
-  const normalizedEmail = normalizeEmail(email || HOME_SEEKERS_DEMO_EMAIL)
+  const config = getAgencyDemoConfig(account)
+  const normalizedEmail = normalizeEmail(email || config.email)
   const profileQuery = await client
     .from('profiles')
     .select('id, email, full_name, first_name, last_name')
@@ -66,9 +93,9 @@ async function ensureAuthUser(client, { email, password, account = HOME_SEEKERS_
   if (profileQuery.error) throw profileQuery.error
 
   const metadata = {
-    source: 'home_seekers_demo_bootstrap',
-    seedKey: HOME_SEEKERS_DEMO_SEED_KEY,
-    demoAccountId: account.id || 'home-seekers',
+    source: config.source,
+    seedKey: config.seedKey,
+    demoAccountId: config.accountId,
     full_name: account.profile?.fullName || 'Home Seekers Principal',
     first_name: account.profile?.firstName || 'Home',
     last_name: account.profile?.lastName || 'Seekers',
@@ -106,6 +133,7 @@ async function ensureAuthUser(client, { email, password, account = HOME_SEEKERS_
 }
 
 async function resolveExistingOrganisationId(client, { account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const config = getAgencyDemoConfig(account)
   const organisationName = normalizeText(account.name || 'Home Seekers') || 'Home Seekers'
   const byName = await client
     .from('organisations')
@@ -119,10 +147,11 @@ async function resolveExistingOrganisationId(client, { account = HOME_SEEKERS_DE
     .eq('display_name', organisationName)
     .maybeSingle()
   if (byDisplayName?.data?.id) return byDisplayName.data.id
-  return HOME_SEEKERS_DEMO_ORGANISATION_ID
+  return config.organisationId
 }
 
-async function resolveExistingBranchId(client, organisationId) {
+async function resolveExistingBranchId(client, organisationId, account) {
+  const config = getAgencyDemoConfig(account)
   const branchQuery = await client
     .from('organisation_branches')
     .select('id')
@@ -131,23 +160,24 @@ async function resolveExistingBranchId(client, organisationId) {
     .limit(1)
     .maybeSingle()
   if (branchQuery?.data?.id) return branchQuery.data.id
-  return HOME_SEEKERS_DEMO_BRANCH_ID
+  return config.branchId
 }
 
 function buildOrganisationPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const config = getAgencyDemoConfig(account)
   const organisationName = normalizeText(account.name || 'Home Seekers') || 'Home Seekers'
   return {
-    id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
+    id: config.organisationId,
     name: organisationName,
     display_name: organisationName,
     legal_name: `${organisationName} (Pty) Ltd`,
     type: 'agency',
     workspace_kind: 'agency',
     status: 'active',
-    company_email: HOME_SEEKERS_DEMO_EMAIL,
+    company_email: config.email,
     company_phone: null,
-    website: 'https://homeseekers.demo',
-    support_email: HOME_SEEKERS_DEMO_EMAIL,
+    website: `https://${config.accountId}.demo`,
+    support_email: config.email,
     support_phone: null,
     primary_contact_person: account.profile?.fullName || 'Home Seekers Principal',
     is_demo_data: true,
@@ -167,17 +197,18 @@ function buildOrganisationPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) 
       },
     },
     demo_metadata: {
-      seedKey: HOME_SEEKERS_DEMO_SEED_KEY,
-      accountId: account.id || 'home-seekers',
-      source: 'home_seekers_demo_bootstrap',
+      seedKey: config.seedKey,
+      accountId: config.accountId,
+      source: config.source,
     },
   }
 }
 
 function buildBranchPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const config = getAgencyDemoConfig(account)
   return {
-    id: HOME_SEEKERS_DEMO_BRANCH_ID,
-    organisation_id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
+    id: config.branchId,
+    organisation_id: config.organisationId,
     name: 'Cape Town CBD',
     location: 'Cape Town, Western Cape',
     manager_name: account.profile?.fullName || 'Home Seekers Principal',
@@ -185,17 +216,18 @@ function buildBranchPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
     is_head_office: true,
     is_active: true,
     metadata_json: {
-      seedKey: HOME_SEEKERS_DEMO_SEED_KEY,
-      accountId: account.id || 'home-seekers',
-      source: 'home_seekers_demo_bootstrap',
+      seedKey: config.seedKey,
+      accountId: config.accountId,
+      source: config.source,
     },
   }
 }
 
 function buildOrganisationSettingsPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const config = getAgencyDemoConfig(account)
   const organisationName = normalizeText(account.name || 'Home Seekers') || 'Home Seekers'
   return {
-    organisation_id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
+    organisation_id: config.organisationId,
     settings_json: {
       businessLines: ['sales', 'rentals'],
       business_lines: ['sales', 'rentals'],
@@ -211,18 +243,19 @@ function buildOrganisationSettingsPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT 
         },
       },
       demoSeed: {
-        seedKey: HOME_SEEKERS_DEMO_SEED_KEY,
-        accountId: account.id || 'home-seekers',
+        seedKey: config.seedKey,
+        accountId: config.accountId,
       },
     },
   }
 }
 
 function buildProfilePayload(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT, existingProfile = null } = {}) {
+  const config = getAgencyDemoConfig(account)
   const existing = existingProfile && typeof existingProfile === 'object' ? existingProfile : {}
   return {
     id: userId,
-    email: HOME_SEEKERS_DEMO_EMAIL,
+    email: config.email,
     full_name: existing.full_name || account.profile?.fullName || 'Home Seekers Principal',
     first_name: existing.first_name || account.profile?.firstName || 'Home',
     last_name: existing.last_name || account.profile?.lastName || 'Seekers',
@@ -239,15 +272,16 @@ function buildProfilePayload(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT, exis
 }
 
 function buildMembershipPayload(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const config = getAgencyDemoConfig(account)
   const now = new Date().toISOString()
   return {
-    id: HOME_SEEKERS_DEMO_MEMBERSHIP_ID,
-    organisation_id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
+    id: config.membershipId,
+    organisation_id: config.organisationId,
     user_id: userId,
-    branch_id: HOME_SEEKERS_DEMO_BRANCH_ID,
+    branch_id: config.branchId,
     first_name: account.profile?.firstName || 'Home',
     last_name: account.profile?.lastName || 'Seekers',
-    email: HOME_SEEKERS_DEMO_EMAIL,
+    email: config.email,
     role: 'principal',
     status: 'active',
     permissions_json: {
@@ -268,15 +302,16 @@ function buildMembershipPayload(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } 
     active_workspace_selected_at: now,
     is_demo_data: true,
     demo_metadata: {
-      seedKey: HOME_SEEKERS_DEMO_SEED_KEY,
-      accountId: account.id || 'home-seekers',
-      source: 'home_seekers_demo_bootstrap',
+      seedKey: config.seedKey,
+      accountId: config.accountId,
+      source: config.source,
     },
     updated_at: now,
   }
 }
 
 function buildListingPayloads(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const config = getAgencyDemoConfig(account)
   const now = new Date().toISOString()
   const listings = Array.isArray(account.seedData?.listings) && account.seedData.listings.length
     ? account.seedData.listings
@@ -335,12 +370,12 @@ function buildListingPayloads(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = 
     const province = normalizeText(listing.province || 'Western Cape')
     const postalCode = normalizeText(listing.postalCode || '')
     return {
-      id: stableUuid(`home-seekers:listing:${listing.id || title}`),
-      organisation_id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
-      branch_id: HOME_SEEKERS_DEMO_BRANCH_ID,
+      id: stableUuid(`${config.accountId}:listing:${listing.id || title}`),
+      organisation_id: config.organisationId,
+      branch_id: config.branchId,
       assigned_agent_id: userId,
-      assigned_agent_email: HOME_SEEKERS_DEMO_EMAIL,
-      listing_reference: `HS-${String(index + 1).padStart(3, '0')}`,
+      assigned_agent_email: config.email,
+      listing_reference: `${config.listingPrefix}-${String(index + 1).padStart(3, '0')}`,
       title,
       description: `Demo listing for ${title}.`,
       listing_category: 'sale',
@@ -349,7 +384,7 @@ function buildListingPayloads(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = 
       mandate_status: 'not_started',
       seller_onboarding_status: 'sent',
       is_active: false,
-      listing_source: 'home_seekers_demo_seed',
+      listing_source: `${config.accountId.replace(/-/g, '_')}_demo_seed`,
       property_type: listing.propertyType || 'House',
       property_category: 'residential',
       property_structure_type: 'freehold',
@@ -367,10 +402,10 @@ function buildListingPayloads(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = 
       floor_size_sqm: 140,
       is_demo_data: true,
       demo_metadata: {
-        seedKey: HOME_SEEKERS_DEMO_SEED_KEY,
-        accountId: account.id || 'home-seekers',
+        seedKey: config.seedKey,
+        accountId: config.accountId,
         listingId: listing.id || title,
-        source: 'home_seekers_demo_bootstrap',
+        source: config.source,
       },
       created_at: now,
       updated_at: now,
@@ -379,14 +414,15 @@ function buildListingPayloads(userId, { account = HOME_SEEKERS_DEMO_ACCOUNT } = 
 }
 
 function buildDevelopmentPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
+  const config = getAgencyDemoConfig(account)
   const now = new Date().toISOString()
   const organisationName = normalizeText(account.name || 'Home Seekers') || 'Home Seekers'
 
   return {
-    id: HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
-    organisation_id: HOME_SEEKERS_DEMO_ORGANISATION_ID,
-    name: HOME_SEEKERS_DEMO_DEVELOPMENT_NAME,
-    code: 'HS-DEMO',
+    id: config.developmentId,
+    organisation_id: config.organisationId,
+    name: config.developmentName,
+    code: `${config.listingPrefix}-DEMO`,
     planned_units: 6,
     total_units_expected: 6,
     location: 'Cape Town',
@@ -416,10 +452,11 @@ function buildDevelopmentPayload({ account = HOME_SEEKERS_DEMO_ACCOUNT } = {}) {
   }
 }
 
-function buildDevelopmentSettingsPayload() {
+function buildDevelopmentSettingsPayload(account = HOME_SEEKERS_DEMO_ACCOUNT) {
+  const config = getAgencyDemoConfig(account)
   const now = new Date().toISOString()
   return {
-    development_id: HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
+    development_id: config.developmentId,
     client_portal_enabled: true,
     snag_reporting_enabled: true,
     alteration_requests_enabled: false,
@@ -477,25 +514,28 @@ function buildDevelopmentSettingsPayload() {
   }
 }
 
-export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
+export async function ensureAgencyDemoWorkspace(client, {
   definitions = null,
-  email = HOME_SEEKERS_DEMO_EMAIL,
-  password = HOME_SEEKERS_DEMO_PASSWORD,
+  email = '',
+  password = '',
   account = HOME_SEEKERS_DEMO_ACCOUNT,
   createAuthUser = true,
 } = {}) {
-  const normalizedEmail = normalizeEmail(email)
-  if (normalizedEmail !== HOME_SEEKERS_DEMO_EMAIL) {
+  const config = getAgencyDemoConfig(account)
+  const resolvedEmail = email || config.email
+  const resolvedPassword = password || config.password
+  const normalizedEmail = normalizeEmail(resolvedEmail)
+  if (normalizedEmail !== config.email) {
     throw new Error(`Unexpected agency demo email ${normalizedEmail || '<empty>'}.`)
   }
 
   const organisationId = await resolveExistingOrganisationId(client, { account })
-  const branchId = await resolveExistingBranchId(client, organisationId)
+  const branchId = await resolveExistingBranchId(client, organisationId, account)
   let profileRecord = null
 
   let userId = ''
   if (createAuthUser) {
-    const authResult = await ensureAuthUser(client, { email: normalizedEmail, password, account })
+    const authResult = await ensureAuthUser(client, { email: normalizedEmail, password: resolvedPassword, account })
     userId = authResult.userId
     profileRecord = authResult.profile
   } else {
@@ -525,7 +565,7 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
     ...buildDevelopmentPayload({ account }),
     organisation_id: organisationId,
   }
-  const developmentSettingsPayload = buildDevelopmentSettingsPayload()
+  const developmentSettingsPayload = buildDevelopmentSettingsPayload(account)
   const listingRows = buildListingPayloads(userId, { account }).map((row) => ({
     ...row,
     organisation_id: organisationId,
@@ -585,8 +625,8 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
       name: normalizeText(account.name || 'Home Seekers') || 'Home Seekers',
     },
     development: {
-      id: HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
-      name: HOME_SEEKERS_DEMO_DEVELOPMENT_NAME,
+      id: config.developmentId,
+      name: config.developmentName,
     },
     organisationId,
     branchId,
@@ -595,3 +635,6 @@ export async function ensureHomeSeekersAgencyDemoWorkspace(client, {
     listings: listingsResult.data || listingRows,
   }
 }
+
+// Compatibility alias for existing Home Seekers seed and repair commands.
+export const ensureHomeSeekersAgencyDemoWorkspace = ensureAgencyDemoWorkspace

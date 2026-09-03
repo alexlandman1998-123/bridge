@@ -3,11 +3,9 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 import {
-  ensureHomeSeekersAgencyDemoWorkspace,
-  HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
-  HOME_SEEKERS_DEMO_EMAIL,
-  HOME_SEEKERS_DEMO_PASSWORD,
-  HOME_SEEKERS_DEMO_SEED_KEY,
+  ensureAgencyDemoWorkspace,
+  getAgencyDemoAccount,
+  getAgencyDemoConfig,
 } from './agencyDemoBootstrap.mjs'
 
 const args = new Set(process.argv.slice(2))
@@ -18,9 +16,11 @@ const argValue = (name, fallback = '') => {
 }
 
 const ENVIRONMENT = String(argValue('--environment', process.env.AGENCY_DEMO_ENVIRONMENT || 'staging')).trim()
-const TARGET_EMAIL = String(process.env.AGENCY_DEMO_EMAIL || HOME_SEEKERS_DEMO_EMAIL).trim().toLowerCase()
-const TARGET_PASSWORD = String(process.env.AGENCY_DEMO_PASSWORD || HOME_SEEKERS_DEMO_PASSWORD).trim()
-const SEED_KEY = HOME_SEEKERS_DEMO_SEED_KEY
+const ACCOUNT = getAgencyDemoAccount(argValue('--account', process.env.AGENCY_DEMO_ACCOUNT || 'home-seekers'))
+const ACCOUNT_CONFIG = getAgencyDemoConfig(ACCOUNT)
+const TARGET_EMAIL = String(process.env.AGENCY_DEMO_EMAIL || ACCOUNT_CONFIG.email).trim().toLowerCase()
+const TARGET_PASSWORD = String(process.env.AGENCY_DEMO_PASSWORD || ACCOUNT_CONFIG.password).trim()
+const SEED_KEY = ACCOUNT_CONFIG.seedKey
 const UUID_NAMESPACE = 'bridge9-agency-demo-transactions-v1'
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 
@@ -358,10 +358,11 @@ async function upsertRows(table, rows, definitions, options = {}) {
 }
 
 async function fetchTargetContext(definitions = null) {
-  return ensureHomeSeekersAgencyDemoWorkspace(supabase, {
+  return ensureAgencyDemoWorkspace(supabase, {
     definitions,
     email: TARGET_EMAIL,
     password: TARGET_PASSWORD,
+    account: ACCOUNT,
   })
 }
 
@@ -497,7 +498,7 @@ function buildRows(context) {
       buyer_id: buyerId,
       buyer_contact_id: buyerContactId,
       seller_contact_id: sellerContactId,
-      development_id: HOME_SEEKERS_DEMO_DEVELOPMENT_ID,
+      development_id: ACCOUNT_CONFIG.developmentId,
       listing_id: listing?.id || null,
       organisation_id: orgId,
       assigned_organisation_id: orgId,
@@ -514,6 +515,19 @@ function buildRows(context) {
       main_stage_key: null,
       current_sub_stage_summary: scenario.subStage,
       lifecycle_state: scenario.lifecycleState,
+      // Demo rows are fully materialized by this seed (participants, workflow,
+      // checklist and events), so they must satisfy the canonical creation
+      // lifecycle guard used by current environments.
+      creation_status: 'complete',
+      creation_steps: {
+        attorney_assignment: { status: 'complete', source: 'agency_demo_seed' },
+        onboarding_snapshot: { status: 'complete', source: 'agency_demo_seed' },
+        requirement_generation: { status: 'complete', source: 'agency_demo_seed' },
+        portal_setup: { status: 'complete', source: 'agency_demo_seed' },
+      },
+      creation_error: {},
+      creation_completed_at: nowIso,
+      creation_incomplete_at: null,
       operational_state: scenario.operationalState,
       waiting_on_role: scenario.waitingOnRole || null,
       risk_status: scenario.riskStatus,
@@ -730,6 +744,7 @@ async function main() {
     environment: ENVIRONMENT,
     projectRef,
     targetEmail: TARGET_EMAIL,
+    account: ACCOUNT.id,
     organisation: context.organisation.name,
     seedKey: SEED_KEY,
     counts,
