@@ -67,6 +67,7 @@ import { buildDevelopmentLaunchPacket, formatDevelopmentLaunchPacket } from '../
 import { buildDevelopmentLaunchAssurance } from '../core/developments/developmentLaunchAssurance'
 import { buildDevelopmentDemandIntelligence } from '../core/developments/developmentDemandIntelligence'
 import { isPdfSitePlanFile, renderSitePlanPdfFirstPage, validateSitePlanFile } from '../core/developments/developmentSitePlanPdfRenderer'
+import { buildDevelopmentSitePlanSyndicationPayload } from '../core/developments/developmentSitePlanSyndication'
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
@@ -3383,6 +3384,10 @@ function DevelopmentDetail() {
   )
   const featuredActiveRows = useMemo(() => selectActiveTransactions(rows).slice(0, 8), [rows])
   const marketingForm = useMemo(() => normalizeMarketingContentForm(detailsForm.marketing), [detailsForm.marketing])
+  const sitePlanSyndication = useMemo(
+    () => buildDevelopmentSitePlanSyndicationPayload({ mediaLibrary: marketingForm.mediaLibrary }),
+    [marketingForm.mediaLibrary],
+  )
   const marketingFloorplanPriceRange = useMemo(() => {
     const values = marketingForm.floorplans
       .flatMap((item) => [
@@ -10399,6 +10404,25 @@ function DevelopmentDetail() {
                 </article>
               ))}
             </div>
+
+            <section className="mt-5 rounded-[18px] border border-[#dce8e1] bg-[#f8fcfa] p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[#e4f5ea] px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.09em] text-[#1f7547]">Site-plan delivery</span>
+                    <span className="rounded-full border border-[#d9e6df] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#537066]">{sitePlanSyndication.mode === 'asset_only' ? 'Asset only' : 'Interactive map capable'}</span>
+                  </div>
+                  <h4 className="mt-3 text-base font-semibold text-[#173149]">{sitePlanSyndication.sitePlanAsset ? 'Site-plan asset ready for portals' : 'No site-plan asset ready for portals'}</h4>
+                  <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758d]">External portal exports receive the approved plan image only. Unit-marker coordinates stay within Arch9 unless a destination explicitly supports interactive maps.</p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {sitePlanSyndication.sitePlanAsset ? <>
+                    <a href={sitePlanSyndication.sitePlanAsset.url} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#cfe0d5] bg-white px-3 text-xs font-semibold text-[#315c4a] hover:bg-[#f1faf4]"><ArrowUpRight size={14} /> Open asset</a>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => void handleCopyMarketingValue(sitePlanSyndication.sitePlanAsset.url, 'Site-plan asset URL')}><Copy size={14} /> Copy asset URL</Button>
+                  </> : <Button type="button" size="sm" variant="secondary" onClick={() => openDevelopmentTab('availability')}><Upload size={14} /> Add site plan</Button>}
+                </div>
+              </div>
+            </section>
           </section>
 
           <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">

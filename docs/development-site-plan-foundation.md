@@ -26,3 +26,14 @@ The legacy `sitePlans` array remains a compatibility fallback only. New plan upl
 - External syndication is asset-only until a destination supports an interactive-map contract.
 
 Phase 1 may change discoverability and language, but must retain this contract.
+
+## Syndication boundary
+
+External development syndication is asset-only by default. The existing legacy
+`sitePlans` payload continues to expose the approved site-plan image to listing
+and portal integrations; it never includes `sitePlanMap` coordinates.
+
+`buildDevelopmentSitePlanSyndicationPayload` is the explicit integration
+contract for new connectors. It includes percentage unit coordinates only when
+the destination declares `supportsInteractiveSitePlan: true`. Arch9 public
+desktop and mobile pages remain the interactive-map consumers.

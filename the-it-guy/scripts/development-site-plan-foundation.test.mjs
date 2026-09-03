@@ -19,6 +19,8 @@ assert.match(detailPage, /handleAvailabilitySitePlanUpload\(event\)/)
 assert.match(detailPage, /renderSitePlanPdfFirstPage\(sourceFile\)/)
 assert.match(detailPage, /Original source PDF retained for this site plan/)
 assert.match(detailPage, /onOpenSitePlanPublicationControls=\{\(\) => openMarketingHubSection\('public-page'\)\}/)
+assert.match(detailPage, /buildDevelopmentSitePlanSyndicationPayload/)
+assert.match(detailPage, /External portal exports receive the approved plan image only/)
 assert.match(detailPage, /nextMediaLibrary\.sitePlanUrl = urls\[0\] \|\| nextMediaLibrary\.sitePlanUrl/)
 
 assert.match(availabilityWorkspace, /\[selectedUnit\.id\]: \{\n\s*x:/)
