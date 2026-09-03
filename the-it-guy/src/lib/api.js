@@ -2838,6 +2838,17 @@ function normalizeDevelopmentDocumentRow(row = {}) {
     fileUrl: normalizeTextValue(row.file_url ?? row.fileUrl),
     linkedUnitId: row.linked_unit_id || row.linkedUnitId || null,
     linkedUnitType: normalizeTextValue(row.linked_unit_type ?? row.linkedUnitType),
+    approvalStatus: normalizeTextValue(row.approval_status ?? row.approvalStatus) || 'approved',
+    visibility: normalizeTextValue(row.visibility) || 'internal',
+    version: Math.max(1, Number(row.version) || 1),
+    supersedesDocumentId: row.supersedes_document_id || row.supersedesDocumentId || null,
+    archivedAt: row.archived_at || row.archivedAt || null,
+    storageBucket: normalizeTextValue(row.storage_bucket ?? row.storageBucket),
+    storagePath: normalizeTextValue(row.storage_path ?? row.storagePath),
+    mimeType: normalizeTextValue(row.mime_type ?? row.mimeType),
+    fileSizeBytes: Number.isFinite(Number(row.file_size_bytes ?? row.fileSizeBytes))
+      ? Number(row.file_size_bytes ?? row.fileSizeBytes)
+      : null,
     uploadedAt: row.uploaded_at || row.uploadedAt || null,
     createdAt: row.created_at || row.createdAt || null,
   }
@@ -19979,7 +19990,7 @@ export async function fetchDevelopmentDocuments(developmentId) {
   const { data, error } = await client
     .from('development_documents')
     .select(
-      'id, development_id, document_type, title, description, file_url, linked_unit_id, linked_unit_type, uploaded_at, created_at',
+      'id, development_id, document_type, title, description, file_url, linked_unit_id, linked_unit_type, approval_status, visibility, version, supersedes_document_id, archived_at, storage_bucket, storage_path, mime_type, file_size_bytes, uploaded_at, created_at',
     )
     .eq('development_id', developmentId)
     .order('created_at', { ascending: false })
@@ -20003,6 +20014,15 @@ export async function saveDevelopmentDocument({
   fileUrl = '',
   linkedUnitId = null,
   linkedUnitType = '',
+  approvalStatus,
+  visibility,
+  version,
+  supersedesDocumentId,
+  archivedAt,
+  storageBucket,
+  storagePath,
+  mimeType,
+  fileSizeBytes,
 } = {}) {
   const client = requireClient()
 
@@ -20026,11 +20046,24 @@ export async function saveDevelopmentDocument({
     uploaded_at: new Date().toISOString(),
   }
 
+  if (approvalStatus !== undefined) payload.approval_status = normalizeTextValue(approvalStatus) || 'approved'
+  if (visibility !== undefined) payload.visibility = normalizeTextValue(visibility) || 'internal'
+  if (version !== undefined) payload.version = Math.max(1, Math.trunc(Number(version) || 1))
+  if (supersedesDocumentId !== undefined) payload.supersedes_document_id = supersedesDocumentId || null
+  if (archivedAt !== undefined) payload.archived_at = archivedAt || null
+  if (storageBucket !== undefined) payload.storage_bucket = normalizeNullableText(storageBucket)
+  if (storagePath !== undefined) payload.storage_path = normalizeNullableText(storagePath)
+  if (mimeType !== undefined) payload.mime_type = normalizeNullableText(mimeType)
+  if (fileSizeBytes !== undefined) {
+    const normalizedSize = Number(fileSizeBytes)
+    payload.file_size_bytes = Number.isFinite(normalizedSize) && normalizedSize >= 0 ? Math.trunc(normalizedSize) : null
+  }
+
   const { data, error } = await client
     .from('development_documents')
     .upsert(payload, { onConflict: 'id' })
     .select(
-      'id, development_id, document_type, title, description, file_url, linked_unit_id, linked_unit_type, uploaded_at, created_at',
+      'id, development_id, document_type, title, description, file_url, linked_unit_id, linked_unit_type, approval_status, visibility, version, supersedes_document_id, archived_at, storage_bucket, storage_path, mime_type, file_size_bytes, uploaded_at, created_at',
     )
     .single()
 
@@ -20101,6 +20134,10 @@ export async function uploadDevelopmentDocumentAsset({
     fileUrl,
     linkedUnitId,
     linkedUnitType,
+    storageBucket: uploadedBucket,
+    storagePath: filePath,
+    mimeType: selectedFile.type || 'application/octet-stream',
+    fileSizeBytes: selectedFile.size,
   })
 }
 
