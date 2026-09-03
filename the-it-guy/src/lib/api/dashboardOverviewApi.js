@@ -1266,7 +1266,10 @@ export async function fetchDashboardOverview({
     : allowedDevelopmentIds
       ? [...allowedDevelopmentIds]
       : [...new Set(units.map((unit) => unit?.development_id).filter(Boolean))]
-  const transactionRows = await fetchDashboardTransactionRows(client, units, dashboardDevelopmentIds)
+  // The unit hydration above already selects the current transaction for each
+  // unit. Use that canonical view for dashboard headline metrics instead of
+  // counting historical/replaced transaction rows from backfill attempts.
+  const transactionRows = rows.filter((row) => row?.transaction?.id)
   const metrics = buildDashboardMetrics(rows, developmentSummaries.length)
 
   return {
