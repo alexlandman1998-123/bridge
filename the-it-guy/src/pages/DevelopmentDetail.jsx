@@ -6836,15 +6836,15 @@ function DevelopmentDetail() {
       </section>
 
       <section className="relative z-20 -mt-12 px-0 sm:px-4">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5 xl:gap-5">
           {summaryItems.map((item) => {
             const Icon = item.icon
             return (
               <article
                 key={item.label}
-                className="rounded-[20px] border border-[#dde4ee] bg-white px-5 py-5 shadow-[0_18px_42px_rgba(15,23,42,0.12)]"
+                className="flex min-h-[252px] flex-col rounded-[20px] border border-[#dde4ee] bg-white px-6 py-6 shadow-[0_18px_42px_rgba(15,23,42,0.12)]"
               >
-                <div className="mb-3 flex items-start justify-between gap-3">
+                <div className="flex items-start justify-between gap-3">
                   {Icon ? (
                     <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#d7efdf] bg-[#eaf7ef] text-[#159447]">
                       <Icon size={18} aria-hidden="true" />
@@ -6852,19 +6852,19 @@ function DevelopmentDetail() {
                   ) : null}
                   <span className="sr-only">{item.label}</span>
                 </div>
-                <span className="block text-sm font-medium tracking-[-0.01em] text-[#61738a]">{item.label}</span>
-                <strong className="block text-[1.7rem] font-semibold leading-none tracking-[-0.035em] text-[#142132]">
+                <span className="mt-6 block text-sm font-medium tracking-[-0.01em] text-[#61738a]">{item.label}</span>
+                <strong className="mt-1 block text-[1.7rem] font-semibold leading-none tracking-[-0.035em] text-[#142132]">
                   {item.value}
                 </strong>
-                <span className="mt-3 block text-sm font-medium text-[#6b7d93]">{item.meta}</span>
+                <span className="mt-auto pt-5 text-sm font-medium leading-6 text-[#6b7d93]">{item.meta}</span>
               </article>
             )
           })}
         </div>
       </section>
 
-      <section className="mt-4 rounded-[24px] border border-[#dde4ee] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-        <div className="grid gap-2 md:grid-cols-3 xl:grid-cols-8" role="tablist" aria-label="Development workspace tabs">
+      <section className="mt-6 rounded-[24px] border border-[#dde4ee] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+        <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-8" role="tablist" aria-label="Development workspace tabs">
           {DEVELOPMENT_PRIMARY_TABS.map((tab) => {
             const isActive = activeTab === tab.id
             return (
