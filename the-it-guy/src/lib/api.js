@@ -666,9 +666,11 @@ const DEFAULT_DEVELOPMENT_SETTINGS = {
       defaultTransferAttorneyRelationshipId: '',
       defaultTransferAttorneyPreferredPartnerId: '',
       defaultTransferAttorneyName: '',
+      defaultTransferAttorneyEmail: '',
       defaultBondOriginatorRelationshipId: '',
       defaultBondOriginatorPreferredPartnerId: '',
       defaultBondOriginatorName: '',
+      defaultBondOriginatorEmail: '',
       buyerAppointedBondOriginatorAllowed: true,
       buyerAppointedBondOriginatorRequiresApproval: true,
       autoInviteSelectedBondOriginator: false,
@@ -4482,6 +4484,9 @@ function normalizeDevelopmentRolePlayerDefaults(value = {}) {
     defaultTransferAttorneyName: normalizeTextValue(
       source.defaultTransferAttorneyName || source.default_transfer_attorney_name,
     ),
+    defaultTransferAttorneyEmail: normalizeEmailAddress(
+      source.defaultTransferAttorneyEmail || source.default_transfer_attorney_email,
+    ),
     defaultBondOriginatorRelationshipId: normalizeTextValue(
       source.defaultBondOriginatorRelationshipId || source.default_bond_originator_relationship_id,
     ),
@@ -4490,6 +4495,9 @@ function normalizeDevelopmentRolePlayerDefaults(value = {}) {
     ),
     defaultBondOriginatorName: normalizeTextValue(
       source.defaultBondOriginatorName || source.default_bond_originator_name,
+    ),
+    defaultBondOriginatorEmail: normalizeEmailAddress(
+      source.defaultBondOriginatorEmail || source.default_bond_originator_email,
     ),
     buyerAppointedBondOriginatorAllowed: Boolean(buyerAppointedBondOriginatorAllowed),
     buyerAppointedBondOriginatorRequiresApproval:
@@ -29920,6 +29928,43 @@ function getDevelopmentUnitStatusTransactionProfile(unitStatus = '') {
   return DEVELOPMENT_UNIT_STATUS_TRANSACTION_PROFILE[key] || { stage: 'Reserved', lifecycleStage: null }
 }
 
+function resolveConfiguredDevelopmentRolePlayers(settings = {}, { includeBondOriginator = false } = {}) {
+  const teams = settings?.stakeholderTeams || settings?.stakeholder_teams || {}
+  const defaults = normalizeDevelopmentRolePlayerDefaults(
+    settings?.rolePlayerDefaults || settings?.role_player_defaults || teams?.rolePlayerDefaults || teams?.role_player_defaults,
+  )
+  const selections = []
+
+  if (defaults.defaultTransferAttorneySource !== 'none' && defaults.defaultTransferAttorneyName) {
+    selections.push({
+      roleType: 'transfer_attorney',
+      selectionSource: 'development_default',
+      partnerName: defaults.defaultTransferAttorneyName,
+      contactPerson: defaults.defaultTransferAttorneyName,
+      email: defaults.defaultTransferAttorneyEmail || null,
+      firmFirstAllocation: true,
+      snapshot: { source: 'development_configuration_default' },
+    })
+  }
+
+  if (
+    includeBondOriginator &&
+    defaults.defaultBondOriginatorSource !== 'none' &&
+    defaults.defaultBondOriginatorName
+  ) {
+    selections.push({
+      roleType: 'bond_originator',
+      selectionSource: 'development_default',
+      partnerName: defaults.defaultBondOriginatorName,
+      contactPerson: defaults.defaultBondOriginatorName,
+      email: defaults.defaultBondOriginatorEmail || null,
+      snapshot: { source: 'development_configuration_default' },
+    })
+  }
+
+  return selections
+}
+
 // Creates the missing canonical record for legacy/bulk unit status updates.
 // Buyer, funding and partner information remain intentionally incomplete, but
 // the unit is immediately connected to the correct transaction journey.
@@ -29988,6 +30033,84 @@ export async function createDevelopmentTransactionFromUnitStatus({
     stage: profile.stage,
     lifecycleStage: profile.lifecycleStage,
   }
+}
+
+// Applies a development's configured firms to historical unit-status transactions.
+// Existing manual assignments always win; this only fills currently unassigned lanes.
+export async function applyDevelopmentConfigurationDefaults(developmentId, settings = {}) {
+  if (!developmentId) return { updated: 0, skipped: 0, failed: 0 }
+
+  const client = requireClient()
+  const actorProfile = await resolveActiveProfileContext(client)
+  const configured = resolveConfiguredDevelopmentRolePlayers(settings, { includeBondOriginator: true })
+  if (!configured.length) return { updated: 0, skipped: 0, failed: 0 }
+
+  const transactionsResult = await client
+    .from('transactions')
+    .select('id, finance_type, attorney, bond_originator, buyer_id, finance_managed_by')
+    .eq('development_id', developmentId)
+
+  if (transactionsResult.error) throw transactionsResult.error
+
+  let updated = 0
+  let skipped = 0
+  let failed = 0
+  for (const transaction of transactionsResult.data || []) {
+    try {
+      const existingRolePlayers = await fetchTransactionRolePlayersIfPossible(client, transaction.id)
+      const selections = configured.filter((selection) => {
+        if (existingRolePlayers.some((item) => item.roleType === selection.roleType)) return false
+        if (selection.roleType === 'transfer_attorney') return !normalizeTextValue(transaction.attorney)
+        return isBondFinanceType(transaction.finance_type) && !normalizeTextValue(transaction.bond_originator)
+      })
+      if (!selections.length) {
+        skipped += 1
+        continue
+      }
+
+      await persistTransactionRolePlayersIfPossible(client, {
+        transactionId: transaction.id,
+        rolePlayers: selections.map(prepareFirmFirstTransferRoleplayer),
+        actorProfile,
+      })
+      const attorney = selections.find((item) => item.roleType === 'transfer_attorney')
+      const bondOriginator = selections.find((item) => item.roleType === 'bond_originator')
+      await updateRecordByIdWithMissingColumnFallback(
+        client,
+        'transactions',
+        transaction.id,
+        {
+          attorney: attorney?.partnerName || transaction.attorney || null,
+          assigned_attorney_email: attorney?.email || null,
+          bond_originator: bondOriginator?.partnerName || transaction.bond_originator || null,
+          assigned_bond_originator_email: bondOriginator?.email || null,
+          updated_at: new Date().toISOString(),
+        },
+        'id',
+      )
+      await propagateTransactionRoleplayersIfPossible(client, {
+        transactionId: transaction.id,
+        transaction: {
+          ...transaction,
+          attorney: attorney?.partnerName || transaction.attorney || null,
+          assigned_attorney_email: attorney?.email || null,
+          bond_originator: bondOriginator?.partnerName || transaction.bond_originator || null,
+          assigned_bond_originator_email: bondOriginator?.email || null,
+        },
+        rolePlayers: selections.map(prepareFirmFirstTransferRoleplayer),
+        actorProfile,
+        actorRole: actorProfile.role,
+        buyerId: transaction.buyer_id || null,
+        financeType: transaction.finance_type || 'cash',
+      })
+      updated += 1
+    } catch (error) {
+      console.warn('[applyDevelopmentConfigurationDefaults] transaction skipped', transaction.id, error)
+      failed += 1
+    }
+  }
+
+  return { updated, skipped, failed }
 }
 
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
@@ -30146,9 +30269,18 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     initialPortalReadinessStatus === 'awaiting_client_onboarding' ? null : new Date().toISOString()
 
   const deferFinanceType = Boolean(options?.deferFinanceType)
-  const rolePlayerSelections = normalizeTransactionRolePlayerInputs(options?.rolePlayers || [], {
+  const configuredDevelopmentRolePlayers =
+    transactionType === 'developer_sale'
+      ? resolveConfiguredDevelopmentRolePlayers(developmentSettings, {
+          includeBondOriginator: isBondFinanceType(setup.financeType),
+        })
+      : []
+  const rolePlayerSelections = normalizeTransactionRolePlayerInputs(
+    [...configuredDevelopmentRolePlayers, ...(options?.rolePlayers || [])],
+    {
     transactionType,
-  })
+    },
+  )
   const shouldAutoResolveRolePlayers = options?.disableAutoPartnerRouting !== true
   const autoRoutingRoleTypes = shouldAutoResolveRolePlayers
     ? Array.isArray(options?.partnerRoleTypes) && options.partnerRoleTypes.length
@@ -30336,8 +30468,14 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     current_main_stage: resolvedMainStage,
     stage_date: status.stageDate || null,
     risk_status: status.riskStatus || 'On Track',
-    attorney: finance.attorney || null,
-    bond_originator: finance.bondOriginator || null,
+    attorney:
+      finance.attorney ||
+      mergedRolePlayerSelections.find((selection) => selection.roleType === 'transfer_attorney')?.partnerName ||
+      null,
+    bond_originator:
+      finance.bondOriginator ||
+      mergedRolePlayerSelections.find((selection) => selection.roleType === 'bond_originator')?.partnerName ||
+      null,
     bank: finance.bank || null,
     next_action: resolvedNextAction,
     comment: resolvedNextAction,
@@ -30352,8 +30490,14 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     assigned_agent: resolvedAssignedAgent || null,
     assigned_agent_email: resolvedAssignedAgentEmail || null,
     expected_transfer_date: finance.expectedTransferDate || null,
-    assigned_attorney_email: normalizeNullableText(finance.attorneyEmail)?.toLowerCase() || null,
-    assigned_bond_originator_email: normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() || null,
+    assigned_attorney_email:
+      normalizeNullableText(finance.attorneyEmail)?.toLowerCase() ||
+      mergedRolePlayerSelections.find((selection) => selection.roleType === 'transfer_attorney')?.email ||
+      null,
+    assigned_bond_originator_email:
+      normalizeNullableText(finance.bondOriginatorEmail)?.toLowerCase() ||
+      mergedRolePlayerSelections.find((selection) => selection.roleType === 'bond_originator')?.email ||
+      null,
     originating_partner_organisation_id: primaryPartnerSelection?.partnerOrganisationId || null,
     referral_source_organisation_id: normalizeNullableText(options?.referralSourceOrganisationId) || null,
     relationship_owner_user_id: actorUserId,

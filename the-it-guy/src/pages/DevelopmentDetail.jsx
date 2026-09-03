@@ -68,6 +68,7 @@ import { buildDevelopmentDemandIntelligence } from '../core/developments/develop
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
+  applyDevelopmentConfigurationDefaults,
   createDevelopmentTransactionFromUnitStatus,
   fetchDevelopmentDetail,
   fetchDevelopmentDocumentRequirements,
@@ -530,7 +531,11 @@ const DEFAULT_RESERVATION_SETTINGS_FORM = {
   payableTo: 'developer',
   alterationChargeTreatment: 'included_in_purchase_price',
   defaultTransferAttorneySource: 'first_conveyancer',
+  defaultTransferAttorneyName: '',
+  defaultTransferAttorneyEmail: '',
   defaultBondOriginatorSource: 'first_bond_originator',
+  defaultBondOriginatorName: '',
+  defaultBondOriginatorEmail: '',
   buyerAppointedBondOriginatorAllowed: true,
   buyerAppointedBondOriginatorRequiresApproval: true,
   autoInviteSelectedBondOriginator: false,
@@ -2113,10 +2118,26 @@ function buildReservationSettingsForm(settings = {}) {
       rolePlayerDefaults?.defaultTransferAttorneySource ||
       rolePlayerDefaults?.default_transfer_attorney_source ||
       DEFAULT_RESERVATION_SETTINGS_FORM.defaultTransferAttorneySource,
+    defaultTransferAttorneyName:
+      rolePlayerDefaults?.defaultTransferAttorneyName ||
+      rolePlayerDefaults?.default_transfer_attorney_name ||
+      '',
+    defaultTransferAttorneyEmail:
+      rolePlayerDefaults?.defaultTransferAttorneyEmail ||
+      rolePlayerDefaults?.default_transfer_attorney_email ||
+      '',
     defaultBondOriginatorSource:
       rolePlayerDefaults?.defaultBondOriginatorSource ||
       rolePlayerDefaults?.default_bond_originator_source ||
       DEFAULT_RESERVATION_SETTINGS_FORM.defaultBondOriginatorSource,
+    defaultBondOriginatorName:
+      rolePlayerDefaults?.defaultBondOriginatorName ||
+      rolePlayerDefaults?.default_bond_originator_name ||
+      '',
+    defaultBondOriginatorEmail:
+      rolePlayerDefaults?.defaultBondOriginatorEmail ||
+      rolePlayerDefaults?.default_bond_originator_email ||
+      '',
     buyerAppointedBondOriginatorAllowed,
     buyerAppointedBondOriginatorRequiresApproval:
       buyerAppointedBondOriginatorAllowed &&
@@ -4987,6 +5008,10 @@ function DevelopmentDetail() {
       const rolePlayerDefaults = {
         defaultTransferAttorneySource: reservationSettingsForm.defaultTransferAttorneySource,
         defaultBondOriginatorSource: reservationSettingsForm.defaultBondOriginatorSource,
+        defaultTransferAttorneyName: reservationSettingsForm.defaultTransferAttorneyName.trim(),
+        defaultTransferAttorneyEmail: reservationSettingsForm.defaultTransferAttorneyEmail.trim(),
+        defaultBondOriginatorName: reservationSettingsForm.defaultBondOriginatorName.trim(),
+        defaultBondOriginatorEmail: reservationSettingsForm.defaultBondOriginatorEmail.trim(),
         buyerAppointedBondOriginatorAllowed: Boolean(
           reservationSettingsForm.buyerAppointedBondOriginatorAllowed,
         ),
@@ -4998,7 +5023,7 @@ function DevelopmentDetail() {
         ),
       }
 
-      await updateDevelopmentSettings(data.development.id, {
+      const savedSettings = await updateDevelopmentSettings(data.development.id, {
         ...currentSettings,
         reservation_deposit_enabled_by_default: Boolean(
           reservationSettingsForm.enabledByDefault,
@@ -5034,7 +5059,16 @@ function DevelopmentDetail() {
         },
       })
 
-      setFeedback('Reservation & deposit settings updated.')
+      const backfillResult = await applyDevelopmentConfigurationDefaults(
+        data.development.id,
+        savedSettings,
+      )
+
+      setFeedback(
+        backfillResult.updated
+          ? `Configuration saved. Default firms were added to ${backfillResult.updated} existing transaction${backfillResult.updated === 1 ? '' : 's'}.`
+          : 'Configuration saved. Existing manual transaction assignments were left unchanged.',
+      )
       setIsEditingReservationSettings(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
@@ -7437,7 +7471,7 @@ function DevelopmentDetail() {
                     <section className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
                       <h4 className="text-sm font-semibold text-[#142132]">Transaction Defaults</h4>
                       <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Defaults proposed when a new development transaction starts.</p>
-                      <div className="mt-4 grid gap-4 md:grid-cols-3">
+                      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                         <DetailField label="Alteration Cost Treatment">
                           <Field as="select" value={reservationSettingsForm.alterationChargeTreatment} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, alterationChargeTreatment: event.target.value }))}>
                             <option value="included_in_purchase_price">Include in purchase price</option>
@@ -7451,13 +7485,26 @@ function DevelopmentDetail() {
                             <option value="none">Do not auto-assign</option>
                           </Field>
                         </DetailField>
+                        <DetailField label="Transfer Attorney Firm">
+                          <Field value={reservationSettingsForm.defaultTransferAttorneyName} disabled={!isEditingReservationSettings || reservationSettingsSaving || reservationSettingsForm.defaultTransferAttorneySource === 'none'} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneyName: event.target.value }))} placeholder="Tuckers Attorneys" />
+                        </DetailField>
+                        <DetailField label="Transfer Attorney Routing Email">
+                          <Field type="email" value={reservationSettingsForm.defaultTransferAttorneyEmail} disabled={!isEditingReservationSettings || reservationSettingsSaving || reservationSettingsForm.defaultTransferAttorneySource === 'none'} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneyEmail: event.target.value }))} placeholder="instructions@tuckers.co.za" />
+                        </DetailField>
                         <DetailField label="Default Bond Originator">
                           <Field as="select" value={reservationSettingsForm.defaultBondOriginatorSource} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorSource: event.target.value }))}>
                             <option value="first_bond_originator">Use first bond originator in team</option>
                             <option value="none">Do not auto-assign</option>
                           </Field>
                         </DetailField>
+                        <DetailField label="Bond Originator Firm">
+                          <Field value={reservationSettingsForm.defaultBondOriginatorName} disabled={!isEditingReservationSettings || reservationSettingsSaving || reservationSettingsForm.defaultBondOriginatorSource === 'none'} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorName: event.target.value }))} placeholder="Bond originator firm" />
+                        </DetailField>
+                        <DetailField label="Bond Originator Routing Email">
+                          <Field type="email" value={reservationSettingsForm.defaultBondOriginatorEmail} disabled={!isEditingReservationSettings || reservationSettingsSaving || reservationSettingsForm.defaultBondOriginatorSource === 'none'} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorEmail: event.target.value }))} placeholder="submissions@originator.co.za" />
+                        </DetailField>
                       </div>
+                      <p className="mt-3 text-xs leading-5 text-[#6b7d93]">The firm is added to every new unit-created transaction. When you save, unassigned historical transactions are filled too; a routing email is needed for the firm to receive its workspace instruction.</p>
                       <h5 className="mt-5 text-sm font-semibold text-[#142132]">Role Player Assignment Defaults</h5>
                       <div className="mt-3 grid gap-3 lg:grid-cols-3">
                         <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-[#fbfcfe] p-4 text-sm">
