@@ -178,10 +178,13 @@ export default function DevelopmentAvailabilityWorkspace({
   reservationDepositSummary = "",
   sitePlanUrl = "",
   sitePlanMap = {},
+  sitePlanSuggestions = {},
   sitePlanSaving = false,
   sitePlanPubliclyVisible = false,
   onSaveSitePlanMap,
   onUploadSitePlan,
+  onApplySitePlanSuggestions,
+  onDiscardSitePlanSuggestions,
   onPreviewPublicSitePlan,
   onOpenSitePlanPublicationControls,
   onEditUnit,
@@ -353,6 +356,11 @@ export default function DevelopmentAvailabilityWorkspace({
         ),
     [inventory, sitePlanMap],
   );
+  const suggestionUnits = useMemo(
+    () => visibleUnits.filter((unit) => hasSavedMapPosition(sitePlanSuggestions, unit.id) && !hasSavedMapPosition(sitePlanMap, unit.id)),
+    [sitePlanMap, sitePlanSuggestions, visibleUnits],
+  );
+  const suggestionCount = suggestionUnits.length;
   const placedUnitCount = useMemo(
     () =>
       inventory.filter((unit) => hasSavedMapPosition(sitePlanMap, unit.id)).length,
@@ -706,6 +714,7 @@ export default function DevelopmentAvailabilityWorkspace({
                 <Button type="button" size="sm" variant="primary" disabled={!sitePlanUrl || !unplacedUnits.length || sitePlanSaving} onClick={beginNextSitePlanPlacement}><Crosshair size={13} />{unplacedUnits.length ? `Place next (${unplacedUnits[0].displayNumber})` : "All units placed"}</Button>
                 <Button type="button" size="sm" variant="secondary" disabled={!sitePlanUrl || !selectedUnit || sitePlanSaving} onClick={beginSitePlanPlacement}><PencilLine size={13} />{placingUnit ? "Click plan to place" : "Adjust selected"}</Button>
               </div>
+              {suggestionCount ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">{suggestionCount} PDF label suggestion{suggestionCount === 1 ? "" : "s"} ready for review</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">Dashed markers are a draft only. Apply them, then check or adjust each location.</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" disabled={sitePlanSaving} onClick={() => onApplySitePlanSuggestions?.(sitePlanSuggestions)}>Apply suggestions</Button><Button type="button" size="sm" variant="ghost" disabled={sitePlanSaving} onClick={() => onDiscardSitePlanSuggestions?.()}>Discard</Button></div></div> : null}
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Review & publish</span>
@@ -777,6 +786,26 @@ export default function DevelopmentAvailabilityWorkspace({
                     setMapSelectionActive(true);
                   }}
                   className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-[5px] border px-2 py-1 text-[0.68rem] font-bold shadow-[0_3px_8px_rgba(15,23,42,0.14)] transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#173f38] ${selected ? "border-[#163f36] bg-[#163f36] text-white ring-2 ring-white/80" : `${meta.tone} border-white/90`}`}
+                  style={{ left: `${position.x}%`, top: `${position.y}%` }}
+                >
+                  {unit.displayNumber}
+                </button>
+              );
+            })}
+            {suggestionUnits.map((unit) => {
+              const position = sitePlanSuggestions[unit.id];
+              const selected = unit.id === selectedUnit?.id;
+              return (
+                <button
+                  key={`suggestion-${unit.id}`}
+                  type="button"
+                  aria-label={`Review suggested placement for unit ${unit.displayNumber}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSelectedUnitId(unit.id);
+                    setMapSelectionActive(true);
+                  }}
+                  className={`absolute z-10 -translate-x-1/2 -translate-y-1/2 rounded-[5px] border-2 border-dashed border-[#b87908] bg-[#fffaf0] px-2 py-1 text-[0.68rem] font-bold text-[#8b5d0b] shadow-[0_3px_8px_rgba(15,23,42,0.14)] transition hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#b87908] ${selected ? "ring-2 ring-[#fff1cb]" : ""}`}
                   style={{ left: `${position.x}%`, top: `${position.y}%` }}
                 >
                   {unit.displayNumber}

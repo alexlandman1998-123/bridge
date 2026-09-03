@@ -69,3 +69,38 @@ export async function renderSitePlanPdfFirstPage(file) {
     await loadingTask.destroy()
   }
 }
+
+export async function extractSitePlanPdfTextAnchors(file) {
+  validateSitePlanFile(file)
+  if (!isPdfSitePlanFile(file)) return []
+
+  const pdfjsLib = await import('pdfjs-dist')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  const loadingTask = pdfjsLib.getDocument({ data: bytes })
+
+  try {
+    const document = await loadingTask.promise
+    const page = await document.getPage(1)
+    const viewport = page.getViewport({ scale: 1 })
+    const textContent = await page.getTextContent()
+    const anchors = (textContent.items || []).flatMap((item) => {
+      const label = String(item?.str || '').trim()
+      const x = Number(item?.transform?.[4])
+      const y = Number(item?.transform?.[5])
+      if (!label || !Number.isFinite(x) || !Number.isFinite(y) || !viewport.width || !viewport.height) return []
+      return [{
+        label,
+        x: Math.max(3, Math.min(97, (x / viewport.width) * 100)),
+        y: Math.max(3, Math.min(97, 100 - ((y / viewport.height) * 100))),
+      }]
+    })
+    page.cleanup()
+    document.destroy()
+    return anchors
+  } catch (error) {
+    throw new Error(error?.message || 'Could not read unit labels from this PDF site plan.')
+  } finally {
+    await loadingTask.destroy()
+  }
+}

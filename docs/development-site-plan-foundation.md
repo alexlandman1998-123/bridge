@@ -37,3 +37,11 @@ and portal integrations; it never includes `sitePlanMap` coordinates.
 contract for new connectors. It includes percentage unit coordinates only when
 the destination declares `supportsInteractiveSitePlan: true`. Arch9 public
 desktop and mobile pages remain the interactive-map consumers.
+
+## Assisted PDF placement
+
+For digitally generated PDFs, Arch9 can read the first page's embedded text
+positions and suggest markers whose labels exactly match development units.
+These suggestions are held only in the current editor session: they do not
+write to `sitePlanMap` until a manager applies them. Scanned PDFs and images do
+not claim automatic recognition and use the manual placement flow.

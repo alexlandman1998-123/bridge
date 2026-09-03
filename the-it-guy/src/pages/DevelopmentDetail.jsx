@@ -66,8 +66,9 @@ import { buildDevelopmentLaunchReadiness } from '../core/developments/developmen
 import { buildDevelopmentLaunchPacket, formatDevelopmentLaunchPacket } from '../core/developments/developmentLaunchPacket'
 import { buildDevelopmentLaunchAssurance } from '../core/developments/developmentLaunchAssurance'
 import { buildDevelopmentDemandIntelligence } from '../core/developments/developmentDemandIntelligence'
-import { isPdfSitePlanFile, renderSitePlanPdfFirstPage, validateSitePlanFile } from '../core/developments/developmentSitePlanPdfRenderer'
+import { extractSitePlanPdfTextAnchors, isPdfSitePlanFile, renderSitePlanPdfFirstPage, validateSitePlanFile } from '../core/developments/developmentSitePlanPdfRenderer'
 import { buildDevelopmentSitePlanSyndicationPayload } from '../core/developments/developmentSitePlanSyndication'
+import { buildPdfSitePlanUnitSuggestions } from '../core/developments/developmentSitePlanSuggestions'
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
@@ -2465,6 +2466,7 @@ function DevelopmentDetail() {
   const [documentSaving, setDocumentSaving] = useState(false)
   const [documentDownloadingId, setDocumentDownloadingId] = useState('')
   const [marketingAssetUploading, setMarketingAssetUploading] = useState('')
+  const [sitePlanSuggestions, setSitePlanSuggestions] = useState({})
   const [marketingAccessDraft, setMarketingAccessDraft] = useState({ email: '', organisationId: '', accessRole: 'viewer' })
   const [marketingAccessSaving, setMarketingAccessSaving] = useState(false)
   const [marketingAccessResendingId, setMarketingAccessResendingId] = useState('')
@@ -5088,6 +5090,20 @@ function DevelopmentDetail() {
 
       const sourceIsPdf = isPdfSitePlanFile(sourceFile)
       const mapImageFile = await renderSitePlanPdfFirstPage(sourceFile)
+      let nextSuggestions = {}
+      if (sourceIsPdf) {
+        try {
+          const textAnchors = await extractSitePlanPdfTextAnchors(sourceFile)
+          nextSuggestions = buildPdfSitePlanUnitSuggestions({
+            units: unitRows,
+            textAnchors,
+            sitePlanMap: normalizeMarketingContentForm(detailsForm.marketing).mediaLibrary.sitePlanMap,
+          })
+        } catch {
+          // A scanned PDF has no reliable text layer. It still remains usable
+          // as a map image and follows the normal manual placement flow.
+        }
+      }
       if (sourceIsPdf) {
         await uploadDevelopmentDocumentAsset({
           developmentId: data.development.id,
@@ -5121,8 +5137,14 @@ function DevelopmentDetail() {
       }
 
       setDetailsForm(nextDetailsForm)
+      setSitePlanSuggestions(nextSuggestions)
       await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
-      setFeedback(sourceIsPdf ? 'PDF source retained and page 1 is ready for unit mapping.' : 'Site plan uploaded and ready for mapping.')
+      const suggestionCount = Object.keys(nextSuggestions).length
+      setFeedback(sourceIsPdf
+        ? suggestionCount
+          ? `PDF source retained. ${suggestionCount} unit-label suggestion${suggestionCount === 1 ? '' : 's'} are ready for review.`
+          : 'PDF source retained and page 1 is ready for manual unit mapping.'
+        : 'Site plan uploaded and ready for mapping.')
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (uploadError) {
@@ -5131,6 +5153,24 @@ function DevelopmentDetail() {
       setMarketingAssetUploading('')
       event.target.value = ''
     }
+  }
+
+  async function handleApplySitePlanSuggestions(suggestions) {
+    if (!canManageDevelopment) return
+    const currentMap = marketingForm.mediaLibrary.sitePlanMap || {}
+    const nextMap = { ...currentMap }
+    Object.entries(suggestions || {}).forEach(([unitId, position]) => {
+      const existing = currentMap[unitId]
+      const existingIsValid = Number.isFinite(Number(existing?.x)) && Number.isFinite(Number(existing?.y))
+      if (!existingIsValid && Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y))) {
+        nextMap[unitId] = { x: position.x, y: position.y }
+      }
+    })
+    const appliedCount = Object.keys(nextMap).length - Object.keys(currentMap).length
+    if (!appliedCount) return
+    await handleAvailabilitySitePlanMapSave(nextMap)
+    setSitePlanSuggestions({})
+    setFeedback(`${appliedCount} PDF label suggestion${appliedCount === 1 ? '' : 's'} applied. Review each marker before publishing.`)
   }
 
   function getCurrentDetailsBaseline() {
@@ -10579,10 +10619,13 @@ function DevelopmentDetail() {
           reservationDepositSummary={reservationDepositSummary}
           sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
           sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
+          sitePlanSuggestions={sitePlanSuggestions}
           sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
           sitePlanPubliclyVisible={marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live'}
           onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
           onUploadSitePlan={(event) => void handleAvailabilitySitePlanUpload(event)}
+          onApplySitePlanSuggestions={(suggestions) => void handleApplySitePlanSuggestions(suggestions)}
+          onDiscardSitePlanSuggestions={() => setSitePlanSuggestions({})}
           onPreviewPublicSitePlan={handlePreviewPublicListing}
           onOpenSitePlanPublicationControls={() => openMarketingHubSection('public-page')}
           onEditUnit={(unit) => openUnitModal(unit)}

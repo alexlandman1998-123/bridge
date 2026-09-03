@@ -21,6 +21,8 @@ assert.match(detailPage, /Original source PDF retained for this site plan/)
 assert.match(detailPage, /onOpenSitePlanPublicationControls=\{\(\) => openMarketingHubSection\('public-page'\)\}/)
 assert.match(detailPage, /buildDevelopmentSitePlanSyndicationPayload/)
 assert.match(detailPage, /External portal exports receive the approved plan image only/)
+assert.match(detailPage, /extractSitePlanPdfTextAnchors\(sourceFile\)/)
+assert.match(detailPage, /buildPdfSitePlanUnitSuggestions/)
 assert.match(detailPage, /nextMediaLibrary\.sitePlanUrl = urls\[0\] \|\| nextMediaLibrary\.sitePlanUrl/)
 
 assert.match(availabilityWorkspace, /\[selectedUnit\.id\]: \{\n\s*x:/)
@@ -31,6 +33,8 @@ assert.match(availabilityWorkspace, /Place next \(\$\{unplacedUnits\[0\]\.displa
 assert.match(availabilityWorkspace, /sitePlanUrl \? visibleUnits\.filter\(\(unit\) => hasSavedMapPosition\(sitePlanMap, unit\.id\)\) : visibleUnits/)
 assert.match(availabilityWorkspace, /Map review/)
 assert.match(availabilityWorkspace, /Publishing controls/)
+assert.match(availabilityWorkspace, /PDF label suggestion/)
+assert.match(availabilityWorkspace, /Apply suggestions/)
 
 assert.match(desktopPublicPage, /const map = media\.sitePlanMap \|\| \{\}/)
 assert.match(desktopPublicPage, /media\.masterplanUrl \|\| media\.sitePlanUrl/)
