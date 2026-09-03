@@ -38,6 +38,68 @@ function scopeQueryToUnitIds(query, unitIds = []) {
   return query.in('unit_id', unitIds)
 }
 
+function firstDashboardDevelopmentImage(profile = {}) {
+  const imageLinks = Array.isArray(profile?.image_links)
+    ? profile.image_links
+    : typeof profile?.image_links === 'string'
+      ? profile.image_links.split(/[\n,]+/)
+      : []
+  const mediaLibrary = profile?.marketing_content?.mediaLibrary || profile?.marketing_content?.media_library || {}
+  const galleryImageUrls = Array.isArray(mediaLibrary?.galleryImageUrls)
+    ? mediaLibrary.galleryImageUrls
+    : Array.isArray(mediaLibrary?.gallery_image_urls)
+      ? mediaLibrary.gallery_image_urls
+      : typeof mediaLibrary?.galleryImageUrls === 'string'
+        ? mediaLibrary.galleryImageUrls.split(/[\n,]+/)
+        : typeof mediaLibrary?.gallery_image_urls === 'string'
+          ? mediaLibrary.gallery_image_urls.split(/[\n,]+/)
+          : []
+  const candidates = [
+    mediaLibrary?.heroImageUrl,
+    mediaLibrary?.hero_image_url,
+    mediaLibrary?.coverImageUrl,
+    mediaLibrary?.cover_image_url,
+    ...galleryImageUrls,
+    ...imageLinks,
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+    if (candidate && typeof candidate === 'object' && typeof candidate.url === 'string' && candidate.url.trim()) {
+      return candidate.url.trim()
+    }
+  }
+
+  return ''
+}
+
+async function fetchDashboardDevelopmentProfiles(client, developmentIds = []) {
+  if (!developmentIds.length) return new Map()
+
+  let query = await client
+    .from('development_profiles')
+    .select('development_id, image_links, location, status, marketing_content')
+    .in('development_id', developmentIds)
+
+  // Keep the dashboard operational in older environments that pre-date the
+  // marketing-content column; those profiles can still provide image_links.
+  if (query.error && isMissingColumnError(query.error, 'marketing_content')) {
+    query = await client
+      .from('development_profiles')
+      .select('development_id, image_links, location, status')
+      .in('development_id', developmentIds)
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'development_profiles') || isPermissionDeniedError(query.error)) {
+      return new Map()
+    }
+    throw query.error
+  }
+
+  return new Map((query.data || []).map((profile) => [String(profile.development_id), profile]))
+}
+
 export function requireClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_KEY to .env.')
@@ -1266,11 +1328,21 @@ export async function fetchDashboardOverview({
     : allowedDevelopmentIds
       ? [...allowedDevelopmentIds]
       : [...new Set(units.map((unit) => unit?.development_id).filter(Boolean))]
+  const developmentProfilesById = await fetchDashboardDevelopmentProfiles(client, dashboardDevelopmentIds)
+  const hydratedDevelopmentSummaries = developmentSummaries.map((summary) => {
+    const profile = developmentProfilesById.get(String(summary.id)) || {}
+    return {
+      ...summary,
+      coverImageUrl: firstDashboardDevelopmentImage(profile),
+      location: profile.location || summary.location || null,
+      phase: profile.status || summary.phase || null,
+    }
+  })
   // The unit hydration above already selects the current transaction for each
   // unit. Use that canonical view for dashboard headline metrics instead of
   // counting historical/replaced transaction rows from backfill attempts.
   const transactionRows = rows.filter((row) => row?.transaction?.id)
-  const metrics = buildDashboardMetrics(rows, developmentSummaries.length)
+  const metrics = buildDashboardMetrics(rows, hydratedDevelopmentSummaries.length)
 
   return {
     rows,
@@ -1283,7 +1355,7 @@ export async function fetchDashboardOverview({
         return row?.transaction?.is_active !== false && !['AVAIL', 'REG'].includes(mainStage)
       }).length,
     },
-    developmentSummaries,
+    developmentSummaries: hydratedDevelopmentSummaries,
     alerts: buildAlerts(rows),
   }
 }

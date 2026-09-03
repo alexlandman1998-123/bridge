@@ -92,6 +92,19 @@ const datasets = {
     },
   ],
   buyers: [{ id: 'buyer-1', name: 'Buyer One', email: 'buyer@example.test' }],
+  development_profiles: [
+    {
+      development_id: 'dev-1',
+      location: 'Cape Town CBD',
+      status: 'Active',
+      image_links: [],
+      marketing_content: {
+        mediaLibrary: {
+          heroImageUrl: 'https://example.test/fast-development-hero.jpg',
+        },
+      },
+    },
+  ],
 }
 
 const client = {
@@ -124,6 +137,11 @@ try {
   assert.equal(overview.rows[0].buyer.name, 'Buyer One')
   assert.equal(overview.rows[0].unit.id, 'unit-1')
   assert.equal(overview.rows[0].development.id, 'dev-1')
+  assert.equal(
+    overview.developmentSummaries[0].coverImageUrl,
+    'https://example.test/fast-development-hero.jpg',
+    'dashboard development cards should use the configured marketing hero when image_links is empty',
+  )
 
   const unitsCall = calls.find((call) => call.table === 'units')
   assert.deepEqual(
