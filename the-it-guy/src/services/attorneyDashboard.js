@@ -1342,6 +1342,65 @@ function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } 
   }
 }
 
+function buildDashboardSnapshotFromMatterListSnapshot(snapshot = {}, firm = null) {
+  const rows = Array.isArray(snapshot.rows) ? snapshot.rows : []
+  const sourceKpis = snapshot.kpis || {}
+  const matters = rows.map((row) => {
+    const matterType = toLower(row.matterType)
+    const role = matterType.includes('bond') ? 'bond_attorney' : matterType.includes('cancellation') ? 'cancellation_attorney' : 'transfer_attorney'
+    return {
+      id: row.transactionId,
+      matter_number: row.matterNumber,
+      transaction_reference: row.matterNumber,
+      roles: [role],
+      stage: row.stage,
+      current_sub_stage_summary: row.stage,
+      next_action: row.nextAction,
+      next_action_due_at: row.nextActionDueAt,
+      target_registration_date: row.targetRegistrationDate,
+      buyer_name: row.buyerName,
+      property_address_line_1: row.propertyLabel,
+      property_description: row.propertyLabel,
+      purchase_price: row.value,
+      sales_price: row.value,
+      risk_status: row.riskStatus,
+      updated_at: row.updatedAt,
+      created_at: row.updatedAt,
+    }
+  }).filter((matter) => matter.id)
+
+  return {
+    firm,
+    canViewFirmDashboard: snapshot.access?.activeMembership !== false,
+    departments: [],
+    members: [],
+    matters,
+    appointments: [],
+    kpis: {
+      active_matters: Number(sourceKpis.activeMatters || 0),
+      awaiting_fica: Number(sourceKpis.awaitingClient || 0),
+      awaiting_signatures: Number(sourceKpis.awaitingClient || 0),
+      lodgements_pending: Number(sourceKpis.lodgementToday || 0),
+      registrations_this_week: Number(sourceKpis.registrationThisWeek || 0),
+      delayed_matters: Number(sourceKpis.delayedMatters || 0),
+      revenue_pipeline_value: rows.reduce((total, row) => total + Number(row.value || 0), 0),
+    },
+  }
+}
+
+async function getMatterListCompatibilitySnapshot(client, firmId) {
+  const result = await client.rpc('bridge_attorney_matter_list_snapshot', {
+    p_attorney_firm_id: firmId,
+    p_view: 'all',
+    p_page: 1,
+    p_page_size: 50,
+    p_search: '',
+    p_filters: {},
+  })
+  if (result.error || !result.data || !Array.isArray(result.data.rows) || !result.data.rows.length) return null
+  return result.data
+}
+
 async function loadAttorneyManagementDashboardData(firmId = null, { roleView = 'all', client: scopedClient = null, authUser: scopedAuthUser = null, resolvedFirm: scopedFirm = null, userId = null, timer: scopedTimer = null } = {}) {
   const client = scopedClient || requireClient()
   const timer = scopedTimer || createPerfTimer('attorney.service.dashboard.load', {
@@ -1445,6 +1504,25 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
       members: snapshotResult.data?.members?.length || 0,
     })
     return buildAttorneyDashboardFromSnapshot(snapshotResult.data || {}, { roleView })
+  }
+  if (!snapshotResult.error) {
+    const matterListSnapshot = await getMatterListCompatibilitySnapshot(client, resolvedFirm.id)
+    if (matterListSnapshot) {
+      void trackCompatibilityFallbackState({
+        fallbackId: COMPATIBILITY_FALLBACK_IDS.attorneyDashboardSnapshot,
+        usedFallback: true,
+        sourceComponent: 'attorney_dashboard',
+        reasonCode: 'dashboard_snapshot_empty_using_matter_list_snapshot',
+        userId: currentUserId,
+        workspaceId: resolvedFirm.id,
+        route: '/attorney/dashboard',
+      })
+      timer.mark('snapshot:matter-list-compatibility', { rows: matterListSnapshot.rows.length })
+      return buildAttorneyDashboardFromSnapshot(
+        buildDashboardSnapshotFromMatterListSnapshot(matterListSnapshot, resolvedFirm),
+        { roleView },
+      )
+    }
   }
   if (snapshotResult.error && !isMissingDashboardSnapshotRpc(snapshotResult.error)) {
     throw snapshotResult.error
