@@ -30074,15 +30074,35 @@ export async function createDevelopmentTransactionFromUnitStatus({
   }
 }
 
+function isRecoverableDevelopmentDefaultRoleplayer(existing = {}, selection = {}) {
+  const source = normalizeTextValue(existing.selectionSource || existing.snapshot?.source).toLowerCase()
+  const isDevelopmentDefault = [
+    'development_default',
+    'connected_partner',
+    'preferred_partner',
+    'invited_partner',
+    'development_configuration_default',
+  ].includes(source)
+  if (!isDevelopmentDefault) return false
+
+  const sameId = (left, right) => left && right && String(left) === String(right)
+  if (sameId(existing.partnerRelationshipId, selection.partnerRelationshipId)) return true
+  if (sameId(existing.organisationId, selection.partnerOrganisationId)) return true
+  if (existing.emailAddress && selection.email && String(existing.emailAddress).toLowerCase() === String(selection.email).toLowerCase()) return true
+  return Boolean(existing.partnerName && selection.partnerName && String(existing.partnerName).trim().toLowerCase() === String(selection.partnerName).trim().toLowerCase())
+}
+
 // Applies a development's configured firms to historical unit-status transactions.
-// Existing manual assignments always win; this only fills currently unassigned lanes.
+// Manual assignments always win. A prior default assignment can be safely retried
+// so an interrupted earlier run still creates the attorney's canonical matter.
 export async function applyDevelopmentConfigurationDefaults(developmentId, settings = {}) {
-  if (!developmentId) return { updated: 0, skipped: 0, failed: 0, attorneysUpdated: 0, bondOriginatorsUpdated: 0 }
+  const emptyResult = { updated: 0, skipped: 0, failed: 0, attorneysUpdated: 0, bondOriginatorsUpdated: 0, attorneyMattersUpdated: 0, lastError: '' }
+  if (!developmentId) return emptyResult
 
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
   const configured = resolveConfiguredDevelopmentRolePlayers(settings, { includeBondOriginator: true })
-  if (!configured.length) return { updated: 0, skipped: 0, failed: 0, attorneysUpdated: 0, bondOriginatorsUpdated: 0 }
+  if (!configured.length) return emptyResult
 
   const transactionsResult = await client
     .from('transactions')
@@ -30096,18 +30116,25 @@ export async function applyDevelopmentConfigurationDefaults(developmentId, setti
   let failed = 0
   let attorneysUpdated = 0
   let bondOriginatorsUpdated = 0
+  let attorneyMattersUpdated = 0
+  let lastError = ''
   for (const transaction of transactionsResult.data || []) {
     try {
       const existingRolePlayers = await fetchTransactionRolePlayersIfPossible(client, transaction.id)
       const selections = configured.filter((selection) => {
-        if (existingRolePlayers.some((item) => item.roleType === selection.roleType)) return false
-        if (selection.roleType === 'transfer_attorney') return !normalizeTextValue(transaction.attorney)
+        const existingRolePlayer = existingRolePlayers.find((item) => item.roleType === selection.roleType)
+        const retryIncompleteDefault = existingRolePlayer && isRecoverableDevelopmentDefaultRoleplayer(existingRolePlayer, selection)
+        // Do not replace a manually-selected attorney/originator. A matching
+        // development default is different: it may have been stored before
+        // the canonical attorney matter was created, so retry its propagation.
+        if (existingRolePlayer && !retryIncompleteDefault) return false
+        if (selection.roleType === 'transfer_attorney') return !normalizeTextValue(transaction.attorney) || retryIncompleteDefault
         // Historical unit-status transactions often predate finance capture.
         // Route those unknown finance records to the configured originator so
         // they can be worked; explicit cash deals remain excluded.
         const financeType = normalizeTextValue(transaction.finance_type).toLowerCase()
         const financeIsUnknown = !financeType || ['unknown', 'pending', 'tbc'].includes(financeType)
-        return (financeIsUnknown || isBondFinanceType(financeType)) && !normalizeTextValue(transaction.bond_originator)
+        return (financeIsUnknown || isBondFinanceType(financeType)) && (!normalizeTextValue(transaction.bond_originator) || retryIncompleteDefault)
       })
       if (!selections.length) {
         skipped += 1
@@ -30134,7 +30161,7 @@ export async function applyDevelopmentConfigurationDefaults(developmentId, setti
         },
         'id',
       )
-      await propagateTransactionRoleplayersIfPossible(client, {
+      const propagationResult = await propagateTransactionRoleplayersIfPossible(client, {
         transactionId: transaction.id,
         transaction: {
           ...transaction,
@@ -30152,13 +30179,15 @@ export async function applyDevelopmentConfigurationDefaults(developmentId, setti
       updated += 1
       if (attorney) attorneysUpdated += 1
       if (bondOriginator) bondOriginatorsUpdated += 1
+      attorneyMattersUpdated += propagationResult?.attorneyAssignments?.length || 0
     } catch (error) {
       console.warn('[applyDevelopmentConfigurationDefaults] transaction skipped', transaction.id, error)
       failed += 1
+      lastError = error?.message || 'An assignment could not be propagated to its partner workspace.'
     }
   }
 
-  return { updated, skipped, failed, attorneysUpdated, bondOriginatorsUpdated }
+  return { updated, skipped, failed, attorneysUpdated, bondOriginatorsUpdated, attorneyMattersUpdated, lastError }
 }
 
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {

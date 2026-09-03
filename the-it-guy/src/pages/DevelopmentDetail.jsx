@@ -5183,8 +5183,10 @@ function DevelopmentDetail() {
 
       setFeedback(
         backfillResult.updated
-          ? `Configuration saved. Attorney assigned to ${backfillResult.attorneysUpdated || 0}; bond originator assigned to ${backfillResult.bondOriginatorsUpdated || 0} existing transaction${backfillResult.updated === 1 ? '' : 's'}.`
-          : 'Configuration saved. Existing manual assignments were left unchanged.',
+          ? `Configuration saved. Attorney assigned to ${backfillResult.attorneysUpdated || 0}; ${backfillResult.attorneyMattersUpdated || 0} attorney matter${backfillResult.attorneyMattersUpdated === 1 ? '' : 's'} created or repaired; bond originator assigned to ${backfillResult.bondOriginatorsUpdated || 0} existing transaction${backfillResult.updated === 1 ? '' : 's'}.${backfillResult.failed ? ` ${backfillResult.failed} item${backfillResult.failed === 1 ? '' : 's'} could not be routed: ${backfillResult.lastError || 'check the attorney workspace connection.'}` : ''}`
+          : backfillResult.failed
+            ? `Configuration saved, but ${backfillResult.failed} item${backfillResult.failed === 1 ? '' : 's'} could not be routed: ${backfillResult.lastError || 'check the attorney workspace connection.'}`
+            : 'Configuration saved. Existing manual assignments were left unchanged.',
       )
       setIsEditingReservationSettings(false)
       setIsEditingRoutingDefaults(false)
