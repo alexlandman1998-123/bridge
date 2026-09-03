@@ -2422,9 +2422,11 @@ function DevelopmentDetail() {
   const [generalDetailsExpanded, setGeneralDetailsExpanded] = useState(false)
   const [sellerDetailsExpanded, setSellerDetailsExpanded] = useState(false)
   const [reservationSettingsExpanded, setReservationSettingsExpanded] = useState(true)
+  const [routingDefaultsExpanded, setRoutingDefaultsExpanded] = useState(true)
   const [isEditingGeneralDetails, setIsEditingGeneralDetails] = useState(false)
   const [isEditingSellerDetails, setIsEditingSellerDetails] = useState(false)
   const [isEditingReservationSettings, setIsEditingReservationSettings] = useState(false)
+  const [isEditingRoutingDefaults, setIsEditingRoutingDefaults] = useState(false)
   const [externalAgentModalOpen, setExternalAgentModalOpen] = useState(false)
 
   const canManageDevelopment = can(PERMISSIONS.editDevelopments) || role === 'internal_admin'
@@ -4981,7 +4983,7 @@ function DevelopmentDetail() {
 
   async function handleReservationSettingsSave(event) {
     event.preventDefault()
-    if (!canManageDevelopment || !isEditingReservationSettings) {
+    if (!canManageDevelopment || (!isEditingReservationSettings && !isEditingRoutingDefaults)) {
       return
     }
 
@@ -5066,10 +5068,11 @@ function DevelopmentDetail() {
 
       setFeedback(
         backfillResult.updated
-          ? `Configuration saved. Default firms were added to ${backfillResult.updated} existing transaction${backfillResult.updated === 1 ? '' : 's'}.`
-          : 'Configuration saved. Existing manual transaction assignments were left unchanged.',
+          ? `Configuration saved. Attorney assigned to ${backfillResult.attorneysUpdated || 0}; bond originator assigned to ${backfillResult.bondOriginatorsUpdated || 0} existing transaction${backfillResult.updated === 1 ? '' : 's'}.`
+          : 'Configuration saved. Existing manual assignments were left unchanged.',
       )
       setIsEditingReservationSettings(false)
+      setIsEditingRoutingDefaults(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (saveError) {
@@ -5098,6 +5101,13 @@ function DevelopmentDetail() {
       setReservationSettingsForm(buildReservationSettingsForm(data.settings))
     }
     setIsEditingReservationSettings(false)
+  }
+
+  function handleCancelRoutingDefaultsEdit() {
+    if (data) {
+      setReservationSettingsForm(buildReservationSettingsForm(data.settings))
+    }
+    setIsEditingRoutingDefaults(false)
   }
 
   function handleReservationDepositRequiredChange(event) {
@@ -7469,9 +7479,9 @@ function DevelopmentDetail() {
                     )}
 
                     <section className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
-                      <h4 className="text-sm font-semibold text-[#142132]">Transaction Defaults</h4>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Defaults proposed when a new development transaction starts.</p>
-                      <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                      <h4 className="text-sm font-semibold text-[#142132]">Unit Defaults</h4>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Default commercial treatment for new unit transactions.</p>
+                      <div className="mt-4 grid gap-4 md:grid-cols-2">
                         <DetailField label="Alteration Cost Treatment">
                           <Field as="select" value={reservationSettingsForm.alterationChargeTreatment} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, alterationChargeTreatment: event.target.value }))}>
                             <option value="included_in_purchase_price">Include in purchase price</option>
@@ -7479,32 +7489,7 @@ function DevelopmentDetail() {
                             <option value="no_charge">No charge by default</option>
                           </Field>
                         </DetailField>
-                        <DetailField label="Default Transfer Attorney">
-                          <Field as="select" value={reservationSettingsForm.defaultTransferAttorneySource} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneySource: event.target.value }))}>
-                            <option value="first_conveyancer">Use first conveyancer in team</option>
-                            <option value="none">Do not auto-assign</option>
-                          </Field>
-                        </DetailField>
-                        <DetailField label="Transfer Attorney Firm">
-                          <Field value={reservationSettingsForm.defaultTransferAttorneyName} disabled={!isEditingReservationSettings || reservationSettingsSaving || reservationSettingsForm.defaultTransferAttorneySource === 'none'} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneyName: event.target.value }))} placeholder="Tuckers Attorneys" />
-                        </DetailField>
-                        <DetailField label="Transfer Attorney Routing Email">
-                          <Field type="email" value={reservationSettingsForm.defaultTransferAttorneyEmail} disabled={!isEditingReservationSettings || reservationSettingsSaving || reservationSettingsForm.defaultTransferAttorneySource === 'none'} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneyEmail: event.target.value }))} placeholder="instructions@tuckers.co.za" />
-                        </DetailField>
-                        <DetailField label="Default Bond Originator">
-                          <Field as="select" value={reservationSettingsForm.defaultBondOriginatorSource} disabled={!isEditingReservationSettings || reservationSettingsSaving} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorSource: event.target.value }))}>
-                            <option value="first_bond_originator">Use first bond originator in team</option>
-                            <option value="none">Do not auto-assign</option>
-                          </Field>
-                        </DetailField>
-                        <DetailField label="Bond Originator Firm">
-                          <Field value={reservationSettingsForm.defaultBondOriginatorName} disabled={!isEditingReservationSettings || reservationSettingsSaving || reservationSettingsForm.defaultBondOriginatorSource === 'none'} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorName: event.target.value }))} placeholder="Bond originator firm" />
-                        </DetailField>
-                        <DetailField label="Bond Originator Routing Email">
-                          <Field type="email" value={reservationSettingsForm.defaultBondOriginatorEmail} disabled={!isEditingReservationSettings || reservationSettingsSaving || reservationSettingsForm.defaultBondOriginatorSource === 'none'} className={!isEditingReservationSettings ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorEmail: event.target.value }))} placeholder="submissions@originator.co.za" />
-                        </DetailField>
                       </div>
-                      <p className="mt-3 text-xs leading-5 text-[#6b7d93]">The firm is added to every new unit-created transaction. When you save, unassigned historical transactions are filled too; a routing email is needed for the firm to receive its workspace instruction.</p>
                       <h5 className="mt-5 text-sm font-semibold text-[#142132]">Role Player Assignment Defaults</h5>
                       <div className="mt-3 grid gap-3 lg:grid-cols-3">
                         <label className="flex cursor-pointer items-start justify-between gap-4 rounded-[14px] border border-[#dbe4ef] bg-[#fbfcfe] p-4 text-sm">
@@ -7567,14 +7552,75 @@ function DevelopmentDetail() {
                       </div>
                     </section>
 
-                    <div className="sticky bottom-0 z-20 -mx-1 flex flex-col gap-3 border-t border-[#e6edf5] bg-white/95 px-1 py-4 backdrop-blur sm:flex-row sm:items-center sm:justify-between">
-                      <span className="text-xs font-medium text-[#7b8ca2]">{isEditingReservationSettings ? 'Save updates only reservation and transaction defaults.' : 'Viewing mode. Use Edit to change this section.'}</span>
+                    <div className="flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs font-medium text-[#7b8ca2]">{isEditingReservationSettings ? 'Save updates only reservation and unit defaults.' : 'Viewing mode. Use Edit to change this section.'}</span>
                       {isEditingReservationSettings ? (
                         <div className="flex items-center gap-2">
                           <Button type="button" variant="ghost" size="sm" onClick={handleCancelReservationSettingsEdit}>Cancel</Button>
                           <Button type="submit" size="sm" disabled={!canManageDevelopment || reservationSettingsSaving}>{reservationSettingsSaving ? 'Saving...' : 'Save Changes'}</Button>
                         </div>
                       ) : null}
+                    </div>
+                  </form>
+                </ConfigurationCard>
+
+                <ConfigurationCard
+                  icon={ShieldCheck}
+                  title="Transaction Routing"
+                  description="Set the firms that receive transfer and finance work for this development."
+                  expanded={routingDefaultsExpanded}
+                  editing={isEditingRoutingDefaults}
+                  canEdit={canManageDevelopment}
+                  onToggle={() => setRoutingDefaultsExpanded((previous) => !previous)}
+                  onEdit={() => {
+                    setRoutingDefaultsExpanded(true)
+                    setIsEditingRoutingDefaults(true)
+                  }}
+                  summary={(
+                    <div className="grid gap-1">
+                      <strong className="truncate font-semibold text-[#142132]">{reservationSettingsForm.defaultTransferAttorneyName || 'Attorney not set'}</strong>
+                      <span>{reservationSettingsForm.defaultBondOriginatorName || 'Bond originator not set'}</span>
+                    </div>
+                  )}
+                  badge={<ConfigStatusPill tone={reservationSettingsForm.defaultTransferAttorneyName || reservationSettingsForm.defaultBondOriginatorName ? 'success' : 'warning'}>{reservationSettingsForm.defaultTransferAttorneyName || reservationSettingsForm.defaultBondOriginatorName ? 'Routing configured' : 'Setup required'}</ConfigStatusPill>}
+                >
+                  <form className="grid gap-5" onSubmit={handleReservationSettingsSave}>
+                    <div className="rounded-[18px] border border-[#d7e9df] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#426455]">
+                      These defaults are applied to new unit-created transactions. Saving also backfills every unassigned historic transaction: the attorney receives all transfers, and the bond originator receives bond-funded or finance-not-yet-captured transactions. Existing manual assignments are never replaced.
+                    </div>
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <section className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
+                        <h4 className="text-sm font-semibold text-[#142132]">Default Transfer Attorney</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Used for every development transaction unless its attorney has been set manually.</p>
+                        <div className="mt-4 grid gap-4">
+                          <DetailField label="Assignment">
+                            <Field as="select" value={reservationSettingsForm.defaultTransferAttorneySource} disabled={!isEditingRoutingDefaults || reservationSettingsSaving} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneySource: event.target.value }))}>
+                              <option value="first_conveyancer">Assign this firm by default</option>
+                              <option value="none">Do not auto-assign</option>
+                            </Field>
+                          </DetailField>
+                          <DetailField label="Attorney Firm"><Field value={reservationSettingsForm.defaultTransferAttorneyName} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || reservationSettingsForm.defaultTransferAttorneySource === 'none'} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneyName: event.target.value }))} placeholder="Tuckers Attorneys" /></DetailField>
+                          <DetailField label="Routing Email"><Field type="email" value={reservationSettingsForm.defaultTransferAttorneyEmail} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || reservationSettingsForm.defaultTransferAttorneySource === 'none'} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneyEmail: event.target.value }))} placeholder="instructions@tuckers.co.za" /></DetailField>
+                        </div>
+                      </section>
+                      <section className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
+                        <h4 className="text-sm font-semibold text-[#142132]">Default Bond Originator</h4>
+                        <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Used for bond-funded transactions and historic transactions awaiting finance capture.</p>
+                        <div className="mt-4 grid gap-4">
+                          <DetailField label="Assignment">
+                            <Field as="select" value={reservationSettingsForm.defaultBondOriginatorSource} disabled={!isEditingRoutingDefaults || reservationSettingsSaving} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorSource: event.target.value }))}>
+                              <option value="first_bond_originator">Assign this firm by default</option>
+                              <option value="none">Do not auto-assign</option>
+                            </Field>
+                          </DetailField>
+                          <DetailField label="Bond Originator Firm"><Field value={reservationSettingsForm.defaultBondOriginatorName} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || reservationSettingsForm.defaultBondOriginatorSource === 'none'} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorName: event.target.value }))} placeholder="Bond originator firm" /></DetailField>
+                          <DetailField label="Routing Email"><Field type="email" value={reservationSettingsForm.defaultBondOriginatorEmail} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || reservationSettingsForm.defaultBondOriginatorSource === 'none'} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorEmail: event.target.value }))} placeholder="submissions@originator.co.za" /></DetailField>
+                        </div>
+                      </section>
+                    </div>
+                    <div className="flex flex-col gap-3 border-t border-[#e6edf5] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="text-xs font-medium text-[#7b8ca2]">{isEditingRoutingDefaults ? 'Save to assign defaults and backfill only empty transaction assignments.' : 'Use Edit to update routing and run a safe backfill.'}</span>
+                      {isEditingRoutingDefaults ? <div className="flex items-center gap-2"><Button type="button" variant="ghost" size="sm" onClick={handleCancelRoutingDefaultsEdit}>Cancel</Button><Button type="submit" size="sm" disabled={!canManageDevelopment || reservationSettingsSaving}>{reservationSettingsSaving ? 'Saving...' : 'Save & Backfill'}</Button></div> : null}
                     </div>
                   </form>
                 </ConfigurationCard>

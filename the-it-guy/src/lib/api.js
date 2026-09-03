@@ -30038,12 +30038,12 @@ export async function createDevelopmentTransactionFromUnitStatus({
 // Applies a development's configured firms to historical unit-status transactions.
 // Existing manual assignments always win; this only fills currently unassigned lanes.
 export async function applyDevelopmentConfigurationDefaults(developmentId, settings = {}) {
-  if (!developmentId) return { updated: 0, skipped: 0, failed: 0 }
+  if (!developmentId) return { updated: 0, skipped: 0, failed: 0, attorneysUpdated: 0, bondOriginatorsUpdated: 0 }
 
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
   const configured = resolveConfiguredDevelopmentRolePlayers(settings, { includeBondOriginator: true })
-  if (!configured.length) return { updated: 0, skipped: 0, failed: 0 }
+  if (!configured.length) return { updated: 0, skipped: 0, failed: 0, attorneysUpdated: 0, bondOriginatorsUpdated: 0 }
 
   const transactionsResult = await client
     .from('transactions')
@@ -30055,13 +30055,20 @@ export async function applyDevelopmentConfigurationDefaults(developmentId, setti
   let updated = 0
   let skipped = 0
   let failed = 0
+  let attorneysUpdated = 0
+  let bondOriginatorsUpdated = 0
   for (const transaction of transactionsResult.data || []) {
     try {
       const existingRolePlayers = await fetchTransactionRolePlayersIfPossible(client, transaction.id)
       const selections = configured.filter((selection) => {
         if (existingRolePlayers.some((item) => item.roleType === selection.roleType)) return false
         if (selection.roleType === 'transfer_attorney') return !normalizeTextValue(transaction.attorney)
-        return isBondFinanceType(transaction.finance_type) && !normalizeTextValue(transaction.bond_originator)
+        // Historical unit-status transactions often predate finance capture.
+        // Route those unknown finance records to the configured originator so
+        // they can be worked; explicit cash deals remain excluded.
+        const financeType = normalizeTextValue(transaction.finance_type).toLowerCase()
+        const financeIsUnknown = !financeType || ['unknown', 'pending', 'tbc'].includes(financeType)
+        return (financeIsUnknown || isBondFinanceType(financeType)) && !normalizeTextValue(transaction.bond_originator)
       })
       if (!selections.length) {
         skipped += 1
@@ -30104,13 +30111,15 @@ export async function applyDevelopmentConfigurationDefaults(developmentId, setti
         financeType: transaction.finance_type || 'cash',
       })
       updated += 1
+      if (attorney) attorneysUpdated += 1
+      if (bondOriginator) bondOriginatorsUpdated += 1
     } catch (error) {
       console.warn('[applyDevelopmentConfigurationDefaults] transaction skipped', transaction.id, error)
       failed += 1
     }
   }
 
-  return { updated, skipped, failed }
+  return { updated, skipped, failed, attorneysUpdated, bondOriginatorsUpdated }
 }
 
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
@@ -30272,7 +30281,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const configuredDevelopmentRolePlayers =
     transactionType === 'developer_sale'
       ? resolveConfiguredDevelopmentRolePlayers(developmentSettings, {
-          includeBondOriginator: isBondFinanceType(setup.financeType),
+          // A status-created transaction can be captured before its finance
+          // type. Keep its configured routing attached so the bond lane is
+          // ready when finance is completed.
+          includeBondOriginator: true,
         })
       : []
   const rolePlayerSelections = normalizeTransactionRolePlayerInputs(
