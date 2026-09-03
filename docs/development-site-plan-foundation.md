@@ -45,3 +45,12 @@ positions and suggest markers whose labels exactly match development units.
 These suggestions are held only in the current editor session: they do not
 write to `sitePlanMap` until a manager applies them. Scanned PDFs and images do
 not claim automatic recognition and use the manual placement flow.
+
+## Map review quality checks
+
+Before a team relies on the public map, Arch9 evaluates the canonical saved
+coordinates without modifying them. The review identifies units without a
+coordinate, coordinates outside the safe 3–97% map area, and markers closer
+than 2.5 percentage points to each other. Each issue links back to the relevant
+unit in the existing manual placement flow; it does not block publishing or
+silently move a marker.

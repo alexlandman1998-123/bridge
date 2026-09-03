@@ -11,6 +11,7 @@
     "test:development-site-plan-foundation": "node scripts/development-site-plan-foundation.test.mjs",
     "test:development-site-plan-syndication": "node src/core/developments/__tests__/developmentSitePlanSyndication.test.js",
     "test:development-site-plan-suggestions": "node src/core/developments/__tests__/developmentSitePlanSuggestions.test.js",
+    "test:development-site-plan-quality": "node src/core/developments/__tests__/developmentSitePlanQuality.test.js",
     "test:development-availability-workspace": "node ../scripts/development-availability-workspace.test.mjs",
     "test:development-listing-link-contract": "node ../scripts/development-listing-link-contract.test.mjs",
     "test:development-structure-model": "node src/core/developments/__tests__/developmentStructureModel.test.js",

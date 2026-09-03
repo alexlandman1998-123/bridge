@@ -178,6 +178,7 @@ export default function DevelopmentAvailabilityWorkspace({
   reservationDepositSummary = "",
   sitePlanUrl = "",
   sitePlanMap = {},
+  sitePlanQuality = null,
   sitePlanSuggestions = {},
   sitePlanSaving = false,
   sitePlanPubliclyVisible = false,
@@ -366,10 +367,14 @@ export default function DevelopmentAvailabilityWorkspace({
       inventory.filter((unit) => hasSavedMapPosition(sitePlanMap, unit.id)).length,
     [inventory, sitePlanMap],
   );
+  const sitePlanIssueCount = sitePlanQuality?.issueCount || 0;
+  const hasSitePlanIssues = Boolean(sitePlanUrl && sitePlanIssueCount > 0);
   const sitePlanStatus = !sitePlanUrl
     ? "Plan needed"
     : placedUnitCount === 0
       ? "Ready to place units"
+      : hasSitePlanIssues
+        ? `${sitePlanIssueCount} map check${sitePlanIssueCount === 1 ? "" : "s"}`
       : placedUnitCount >= inventory.length && inventory.length > 0
         ? "Ready to publish"
         : `${placedUnitCount} of ${inventory.length} units placed`;
@@ -694,7 +699,7 @@ export default function DevelopmentAvailabilityWorkspace({
               remain in sync.
             </p>
           </div>
-          <span className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${sitePlanUrl ? "bg-[#eaf7ef] text-[#167044]" : "bg-[#fff4e5] text-[#a65c12]"}`}>
+          <span className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${hasSitePlanIssues ? "bg-[#fff4e5] text-[#a65c12]" : sitePlanUrl ? "bg-[#eaf7ef] text-[#167044]" : "bg-[#fff4e5] text-[#a65c12]"}`}>
             <MapPinned size={14} /> {sitePlanStatus}
           </span>
         </div>
@@ -718,7 +723,7 @@ export default function DevelopmentAvailabilityWorkspace({
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Review & publish</span>
-              <strong className="mt-1 block text-sm text-[#173149]">{unplacedUnits.length ? `${unplacedUnits.length} unit${unplacedUnits.length === 1 ? "" : "s"} still need placement` : "All units are ready to review"}</strong>
+              <strong className="mt-1 block text-sm text-[#173149]">{hasSitePlanIssues ? `${sitePlanIssueCount} placement check${sitePlanIssueCount === 1 ? "" : "s"} need review` : unplacedUnits.length ? `${unplacedUnits.length} unit${unplacedUnits.length === 1 ? "" : "s"} still need placement` : "All units are ready to review"}</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Review exactly what the public map will show. Publishing remains under Marketing.</p>
               <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl} onClick={reviewSitePlanPlacement}><MapPinned size={13} /> Review map</Button>
             </div>
@@ -849,7 +854,7 @@ export default function DevelopmentAvailabilityWorkspace({
             </span>
           ) : null}
           {sitePlanReviewOpen && !placingUnit ? (
-            <aside className="absolute bottom-4 left-4 z-20 w-[min(300px,calc(100%-2rem))] rounded-[14px] border border-white/90 bg-white/95 p-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.18)] backdrop-blur">
+            <aside className="absolute bottom-4 left-4 z-20 max-h-[calc(100%-2rem)] w-[min(300px,calc(100%-2rem))] overflow-y-auto rounded-[14px] border border-white/90 bg-white/95 p-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.18)] backdrop-blur">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <span className="text-[0.63rem] font-bold uppercase tracking-[0.1em] text-[#6b7d93]">Map review</span>
@@ -858,6 +863,7 @@ export default function DevelopmentAvailabilityWorkspace({
                 <button type="button" aria-label="Close map review" className="-mr-1 -mt-1 rounded-md p-1 text-[#718398] hover:bg-[#eef3f4]" onClick={() => setSitePlanReviewOpen(false)}><X size={14} /></button>
               </div>
               <p className="mt-2 text-xs leading-5 text-[#60758d]">{unplacedUnits.length ? "Only the saved markers are visible publicly. Finish or review the remaining units below." : "Every unit has a saved coordinate and is ready for public-map review."}</p>
+              {hasSitePlanIssues ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">Map checks need attention</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">These checks do not change saved coordinates. Review each item before relying on the public map.</p><div className="mt-2 grid gap-1.5">{sitePlanQuality.issues.slice(0, 4).map((issue) => <button key={`${issue.type}-${issue.unitIds.join('-')}`} type="button" className="rounded-md border border-[#efd7a3] bg-white px-2 py-1.5 text-left text-[0.68rem] font-semibold text-[#76531a] hover:bg-[#fffdf8]" onClick={() => { setSelectedUnitId(issue.unitIds[0]); setMapSelectionActive(true); setSitePlanReviewOpen(false); }}>{issue.type === "missing" ? `Place Unit ${issue.label}` : issue.type === "invalid" ? `Reposition Unit ${issue.label}` : `Separate Units ${issue.label}${issue.distance ? ` (${issue.distance}% apart)` : ""}`}</button>)}{sitePlanQuality.issues.length > 4 ? <span className="px-1 text-[0.68rem] font-semibold text-[#8b6c2c]">+{sitePlanQuality.issues.length - 4} more checks</span> : null}</div></div> : null}
               {unplacedUnits.length ? <div className="mt-3 flex flex-wrap gap-1.5">{unplacedUnits.slice(0, 4).map((unit) => <button key={unit.id} type="button" className="rounded-md border border-[#d9e5df] bg-white px-2 py-1 text-[0.68rem] font-semibold text-[#315c4a] hover:bg-[#eef8f1]" onClick={() => { setSelectedUnitId(unit.id); setMapSelectionActive(true); setSitePlanReviewOpen(false); }}>{unit.displayNumber}</button>)}{unplacedUnits.length > 4 ? <span className="px-1 py-1 text-[0.68rem] font-semibold text-[#718398]">+{unplacedUnits.length - 4} more</span> : null}</div> : null}
               <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e4ece6] pt-3">
                 {onPreviewPublicSitePlan ? <Button type="button" size="sm" variant="secondary" onClick={onPreviewPublicSitePlan}><ArrowUpRight size={13} /> Preview {sitePlanPubliclyVisible ? "live map" : "page"}</Button> : null}

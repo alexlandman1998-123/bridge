@@ -69,6 +69,7 @@ import { buildDevelopmentDemandIntelligence } from '../core/developments/develop
 import { extractSitePlanPdfTextAnchors, isPdfSitePlanFile, renderSitePlanPdfFirstPage, validateSitePlanFile } from '../core/developments/developmentSitePlanPdfRenderer'
 import { buildDevelopmentSitePlanSyndicationPayload } from '../core/developments/developmentSitePlanSyndication'
 import { buildPdfSitePlanUnitSuggestions } from '../core/developments/developmentSitePlanSuggestions'
+import { evaluateDevelopmentSitePlanQuality } from '../core/developments/developmentSitePlanQuality'
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
@@ -3386,6 +3387,13 @@ function DevelopmentDetail() {
   )
   const featuredActiveRows = useMemo(() => selectActiveTransactions(rows).slice(0, 8), [rows])
   const marketingForm = useMemo(() => normalizeMarketingContentForm(detailsForm.marketing), [detailsForm.marketing])
+  const sitePlanQuality = useMemo(
+    () => evaluateDevelopmentSitePlanQuality({
+      units: unitRows,
+      sitePlanMap: marketingForm.mediaLibrary.sitePlanMap,
+    }),
+    [marketingForm.mediaLibrary.sitePlanMap, unitRows],
+  )
   const sitePlanSyndication = useMemo(
     () => buildDevelopmentSitePlanSyndicationPayload({ mediaLibrary: marketingForm.mediaLibrary }),
     [marketingForm.mediaLibrary],
@@ -10619,6 +10627,7 @@ function DevelopmentDetail() {
           reservationDepositSummary={reservationDepositSummary}
           sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
           sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
+          sitePlanQuality={sitePlanQuality}
           sitePlanSuggestions={sitePlanSuggestions}
           sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
           sitePlanPubliclyVisible={marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live'}
