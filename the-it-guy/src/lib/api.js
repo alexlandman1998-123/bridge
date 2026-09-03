@@ -19625,7 +19625,12 @@ export async function fetchDevelopmentDetail(developmentId) {
   })
   const profile = await fetchDevelopmentProfile(client, developmentId)
   const financials = await fetchDevelopmentFinancials(developmentId)
-  const documents = await fetchDevelopmentDocuments(developmentId)
+  const [documents, marketingAccess, marketingActivity, marketingEvents] = await Promise.all([
+    fetchDevelopmentDocuments(developmentId),
+    fetchDevelopmentMarketingAccess(developmentId),
+    fetchDevelopmentMarketingActivity(developmentId),
+    fetchDevelopmentMarketingEvents(developmentId, development.organisation_id),
+  ])
   const productCatalogue = await fetchDevelopmentProductCatalogue(client, developmentId)
   const structureNodes = await fetchDevelopmentStructureNodes(client, developmentId)
   const attorneyConfig = await fetchDevelopmentAttorneyConfig(developmentId)
@@ -19735,6 +19740,9 @@ export async function fetchDevelopmentDetail(developmentId) {
     profile,
     financials,
     documents,
+    marketingAccess,
+    marketingActivity,
+    marketingEvents,
     productCatalogue,
     structureNodes,
     attorneyConfig,
@@ -20003,6 +20011,210 @@ export async function fetchDevelopmentDocuments(developmentId) {
   }
 
   return (data || []).map((row) => normalizeDevelopmentDocumentRow(row))
+}
+
+function normalizeDevelopmentMarketingAccessRow(row = {}) {
+  return {
+    id: row.id || null,
+    developmentId: row.development_id || row.developmentId || null,
+    organisationId: row.organisation_id || row.organisationId || null,
+    userId: row.user_id || row.userId || null,
+    inviteeEmail: normalizeTextValue(row.invitee_email ?? row.inviteeEmail).toLowerCase(),
+    accessRole: normalizeTextValue(row.access_role ?? row.accessRole) || 'viewer',
+    status: normalizeTextValue(row.status) || 'pending',
+    invitedBy: row.invited_by || row.invitedBy || null,
+    invitedAt: row.invited_at || row.invitedAt || null,
+    acceptedAt: row.accepted_at || row.acceptedAt || null,
+    expiresAt: row.expires_at || row.expiresAt || null,
+    revokedAt: row.revoked_at || row.revokedAt || null,
+    createdAt: row.created_at || row.createdAt || null,
+    updatedAt: row.updated_at || row.updatedAt || null,
+  }
+}
+
+function normalizeDevelopmentMarketingActivityRow(row = {}) {
+  const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+  return {
+    id: row.id || null,
+    developmentId: row.development_id || row.developmentId || null,
+    documentId: row.development_document_id || row.developmentDocumentId || null,
+    marketingAccessId: row.marketing_access_id || row.marketingAccessId || null,
+    actorUserId: row.actor_user_id || row.actorUserId || null,
+    actionType: normalizeTextValue(row.action_type ?? row.actionType),
+    metadata,
+    occurredAt: row.occurred_at || row.occurredAt || row.created_at || null,
+  }
+}
+
+export async function fetchDevelopmentMarketingAccess(developmentId) {
+  const client = requireClient()
+  if (!developmentId) return []
+
+  const { data, error } = await client
+    .from('development_marketing_access')
+    .select('id, development_id, organisation_id, user_id, invitee_email, access_role, status, invited_by, invited_at, accepted_at, expires_at, revoked_at, created_at, updated_at')
+    .eq('development_id', developmentId)
+    .order('invited_at', { ascending: false })
+
+  if (error) {
+    if (isMissingTableError(error, 'development_marketing_access') || isPermissionDeniedError(error)) return []
+    throw error
+  }
+
+  return (data || []).map(normalizeDevelopmentMarketingAccessRow)
+}
+
+export async function createDevelopmentMarketingAccess({
+  developmentId,
+  inviteeEmail = '',
+  organisationId = null,
+  userId = null,
+  accessRole = 'viewer',
+  expiresAt = null,
+} = {}) {
+  const client = requireClient()
+  if (!developmentId) throw new Error('Development is required.')
+
+  const recipientCount = [organisationId, userId, normalizeTextValue(inviteeEmail)].filter(Boolean).length
+  if (recipientCount !== 1) throw new Error('Choose exactly one marketing access recipient.')
+  if (!['viewer', 'contributor', 'approver'].includes(accessRole)) {
+    throw new Error('Choose a valid marketing access role.')
+  }
+
+  const { data: authData, error: authError } = await client.auth.getUser()
+  if (authError) throw authError
+  if (!authData?.user?.id) throw new Error('Sign in before inviting a marketing partner.')
+
+  const { data, error } = await client
+    .from('development_marketing_access')
+    .insert({
+      development_id: developmentId,
+      organisation_id: organisationId || null,
+      user_id: userId || null,
+      invitee_email: normalizeTextValue(inviteeEmail).toLowerCase() || null,
+      access_role: accessRole,
+      status: organisationId || userId ? 'active' : 'pending',
+      invited_by: authData.user.id,
+      expires_at: expiresAt || null,
+    })
+    .select('id, development_id, organisation_id, user_id, invitee_email, access_role, status, invited_by, invited_at, accepted_at, expires_at, revoked_at, created_at, updated_at')
+    .single()
+
+  if (error) {
+    if (isMissingTableError(error, 'development_marketing_access')) {
+      throw new Error('Marketing collaboration is not available until the Phase 2 database migration is applied.')
+    }
+    throw error
+  }
+
+  return normalizeDevelopmentMarketingAccessRow(data)
+}
+
+export async function fetchDevelopmentMarketingActivity(developmentId, { limit = 12 } = {}) {
+  const client = requireClient()
+  if (!developmentId) return []
+  const { data, error } = await client
+    .from('development_marketing_activity')
+    .select('id, development_id, development_document_id, marketing_access_id, actor_user_id, action_type, metadata, occurred_at')
+    .eq('development_id', developmentId)
+    .order('occurred_at', { ascending: false })
+    .limit(Math.max(1, Math.min(Number(limit) || 12, 50)))
+
+  if (error) {
+    if (isMissingTableError(error, 'development_marketing_activity') || isPermissionDeniedError(error)) return []
+    throw error
+  }
+  return (data || []).map(normalizeDevelopmentMarketingActivityRow)
+}
+
+function normalizeDevelopmentMarketingEventRow(row = {}) {
+  return {
+    id: row.id || null,
+    title: normalizeTextValue(row.title) || 'Marketing event',
+    eventType: normalizeTextValue(row.event_type ?? row.eventType) || 'show_day',
+    status: normalizeTextValue(row.status) || 'draft',
+    startsAt: row.starts_at || row.startsAt || null,
+    endsAt: row.ends_at || row.endsAt || null,
+    location: normalizeTextValue(row.location || row.address),
+    description: normalizeTextValue(row.description),
+    imageUrl: normalizeTextValue(row.image_url ?? row.imageUrl),
+    createdAt: row.created_at || row.createdAt || null,
+  }
+}
+
+export async function fetchDevelopmentMarketingEvents(developmentId, organisationId = '') {
+  const client = requireClient()
+  if (!developmentId || !organisationId) return []
+  const { data, error } = await client
+    .from('marketing_events')
+    .select('id, title, event_type, status, starts_at, ends_at, location, address, description, image_url, created_at')
+    .eq('organisation_id', organisationId)
+    .eq('subject_type', 'development')
+    .eq('subject_id', developmentId)
+    .order('starts_at', { ascending: true })
+
+  if (error) {
+    if (isMissingTableError(error, 'marketing_events') || isPermissionDeniedError(error)) return []
+    throw error
+  }
+  return (data || []).map(normalizeDevelopmentMarketingEventRow)
+}
+
+export async function createDevelopmentMarketingEvent({
+  developmentId,
+  organisationId,
+  developmentName = '',
+  title,
+  eventType = 'show_day',
+  status = 'upcoming',
+  startsAt,
+  location = '',
+  description = '',
+} = {}) {
+  const client = requireClient()
+  if (!developmentId || !organisationId) throw new Error('Development and organisation are required.')
+  if (!normalizeTextValue(title)) throw new Error('Event title is required.')
+  if (!['show_day', 'launch'].includes(eventType)) throw new Error('Choose a valid event type.')
+  const { data: authData, error: authError } = await client.auth.getUser()
+  if (authError) throw authError
+  if (!authData?.user?.id) throw new Error('Sign in before creating an event.')
+
+  const { data, error } = await client
+    .from('marketing_events')
+    .insert({
+      organisation_id: organisationId,
+      event_type: eventType,
+      status: normalizeTextValue(status) || 'upcoming',
+      title: normalizeTextValue(title),
+      subject_type: 'development',
+      subject_id: developmentId,
+      subject_label: normalizeTextValue(developmentName) || normalizeTextValue(title),
+      starts_at: startsAt || null,
+      location: normalizeNullableText(location),
+      address: normalizeNullableText(location),
+      description: normalizeNullableText(description),
+      created_by: authData.user.id,
+    })
+    .select('id, title, event_type, status, starts_at, ends_at, location, address, description, image_url, created_at')
+    .single()
+
+  if (error) throw error
+  const activityResult = await client
+    .from('development_marketing_activity')
+    .insert({
+      development_id: developmentId,
+      actor_user_id: authData.user.id,
+      action_type: 'event_created',
+      metadata: { title: normalizeTextValue(title), event_type: eventType },
+    })
+  if (
+    activityResult.error &&
+    !isMissingTableError(activityResult.error, 'development_marketing_activity') &&
+    !isPermissionDeniedError(activityResult.error)
+  ) {
+    throw activityResult.error
+  }
+  return normalizeDevelopmentMarketingEventRow(data)
 }
 
 export async function saveDevelopmentDocument({

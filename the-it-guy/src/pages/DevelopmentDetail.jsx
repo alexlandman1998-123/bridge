@@ -71,6 +71,8 @@ import {
   deleteDevelopmentDocument,
   applyDevelopmentConfigurationDefaults,
   createDevelopmentTransactionFromUnitStatus,
+  createDevelopmentMarketingAccess,
+  createDevelopmentMarketingEvent,
   fetchDevelopmentDetail,
   fetchDevelopmentDocumentRequirements,
   saveDevelopmentDetails,
@@ -2459,6 +2461,11 @@ function DevelopmentDetail() {
   const [documentSaving, setDocumentSaving] = useState(false)
   const [documentDownloadingId, setDocumentDownloadingId] = useState('')
   const [marketingAssetUploading, setMarketingAssetUploading] = useState('')
+  const [marketingAccessDraft, setMarketingAccessDraft] = useState({ email: '', accessRole: 'viewer' })
+  const [marketingAccessSaving, setMarketingAccessSaving] = useState(false)
+  const [marketingEventDraft, setMarketingEventDraft] = useState({ title: '', eventType: 'show_day', startsAt: '', location: '', description: '' })
+  const [marketingEventSaving, setMarketingEventSaving] = useState(false)
+  const [marketingDocumentSavingId, setMarketingDocumentSavingId] = useState('')
   const [emailComposeOpen, setEmailComposeOpen] = useState(false)
   const [emailSending, setEmailSending] = useState(false)
   const [selectedDocumentForEmail, setSelectedDocumentForEmail] = useState(null)
@@ -3448,6 +3455,16 @@ function DevelopmentDetail() {
           description: item.description || '',
           fileUrl: item.fileUrl || '',
           linkedUnitType: item.linkedUnitType || item.linked_unit_type || '',
+          linkedUnitId: item.linkedUnitId || item.linked_unit_id || null,
+          approvalStatus: item.approvalStatus || item.approval_status || 'approved',
+          visibility: item.visibility || 'internal',
+          version: item.version || 1,
+          supersedesDocumentId: item.supersedesDocumentId || item.supersedes_document_id || null,
+          archivedAt: item.archivedAt || item.archived_at || null,
+          storageBucket: item.storageBucket || item.storage_bucket || '',
+          storagePath: item.storagePath || item.storage_path || '',
+          mimeType: item.mimeType || item.mime_type || '',
+          fileSizeBytes: item.fileSizeBytes ?? item.file_size_bytes ?? null,
           uploadedAt: item.uploadedAt || item.uploaded_at || item.createdAt || item.created_at || null,
           createdAt: item.createdAt || item.created_at || null,
         }))
@@ -3557,7 +3574,7 @@ function DevelopmentDetail() {
       {
         key: 'gallery',
         title: 'Gallery & Branding',
-        items: marketingAssetDocuments.filter((item) => ['marketing', 'logo'].includes(item.type)),
+        items: marketingAssetDocuments.filter((item) => ['marketing', 'logo', 'video', 'virtual_tour'].includes(item.type)),
       },
       {
         key: 'plans',
@@ -3588,6 +3605,9 @@ function DevelopmentDetail() {
       listingStatus: marketingForm.listingOverview.listingStatus || 'draft',
     }
   }, [marketingAssetDocuments.length, marketingForm])
+  const marketingAccessRecords = Array.isArray(data?.marketingAccess) ? data.marketingAccess : []
+  const marketingActivityRecords = Array.isArray(data?.marketingActivity) ? data.marketingActivity : []
+  const marketingEventRecords = Array.isArray(data?.marketingEvents) ? data.marketingEvents : []
   const marketingHubOverview = useMemo(() => {
     const galleryAssets = marketingAssetGroups.find((group) => group.key === 'gallery')?.items || []
     const planAssets = marketingAssetGroups.find((group) => group.key === 'plans')?.items || []
@@ -3608,7 +3628,16 @@ function DevelopmentDetail() {
     ]
     const completeCount = readinessItems.filter((item) => item.complete).length
     const readinessPercent = Math.round((completeCount / readinessItems.length) * 100)
-    const recentActivity = [
+    const recordedActivity = marketingActivityRecords.map((activity) => ({
+      id: `activity-${activity.id}`,
+      type: activity.actionType,
+      title: activity.metadata?.title || toTitleLabel(activity.actionType || 'marketing activity'),
+      detail: activity.metadata?.document_type
+        ? `${getDocTypeLabel(activity.metadata.document_type)} · ${toTitleLabel(activity.actionType)}`
+        : toTitleLabel(activity.actionType || 'Marketing activity'),
+      occurredAt: activity.occurredAt,
+    }))
+    const recentActivity = (recordedActivity.length ? recordedActivity : [
       ...marketingAssetDocuments.map((asset) => ({
         id: `asset-${asset.id}`,
         type: 'upload',
@@ -3623,15 +3652,21 @@ function DevelopmentDetail() {
         detail: `Listing status: ${toTitleLabel(listing.status || 'draft')}`,
         occurredAt: listing.updatedAt,
       })),
-    ]
+    ])
       .filter((item) => item.occurredAt)
       .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
       .slice(0, 4)
 
+    const today = new Date().setHours(0, 0, 0, 0)
+    const savedEvents = marketingEventRecords
+      .filter((event) => event.startsAt && new Date(event.startsAt).getTime() >= today)
+      .map((event) => ({ id: event.id, title: event.title, date: event.startsAt, detail: event.location || data?.development?.name || 'Development' }))
     const launchDate = detailsForm.launchDate ? new Date(detailsForm.launchDate) : null
-    const upcomingEvents = launchDate && !Number.isNaN(launchDate.getTime()) && launchDate.getTime() >= new Date().setHours(0, 0, 0, 0)
-      ? [{ id: 'development-launch', title: 'Development launch', date: detailsForm.launchDate, detail: data?.development?.name || 'Development' }]
-      : []
+    const upcomingEvents = savedEvents.length
+      ? savedEvents
+      : launchDate && !Number.isNaN(launchDate.getTime()) && launchDate.getTime() >= today
+        ? [{ id: 'development-launch', title: 'Development launch', date: detailsForm.launchDate, detail: data?.development?.name || 'Development' }]
+        : []
 
     return {
       readinessItems,
@@ -3642,7 +3677,7 @@ function DevelopmentDetail() {
       recentActivity,
       upcomingEvents,
     }
-  }, [data?.development?.name, detailsForm.launchDate, linkedListingRows, marketingAssetDocuments, marketingAssetGroups, marketingForm.floorplans.length, marketingForm.listingOverview.listingDescription])
+  }, [data?.development?.name, detailsForm.launchDate, linkedListingRows, marketingActivityRecords, marketingAssetDocuments, marketingAssetGroups, marketingEventRecords, marketingForm.floorplans.length, marketingForm.listingOverview.listingDescription])
   const marketingSellingPointEntries = useMemo(
     () => parseSellingPointEntries(marketingForm.sellingPoints.items),
     [marketingForm.sellingPoints.items],
@@ -5511,6 +5546,92 @@ function DevelopmentDetail() {
     }
   }
 
+  async function handleMarketingDocumentVisibilitySave(document, updates) {
+    if (!canManageDevelopment || !document?.id) return
+    try {
+      setMarketingDocumentSavingId(document.id)
+      setError('')
+      setFeedback('')
+      await saveDevelopmentDocument({
+        developmentId: data.development.id,
+        documentId: document.id,
+        documentType: document.type,
+        title: document.title,
+        description: document.description,
+        fileUrl: document.fileUrl,
+        linkedUnitId: document.linkedUnitId,
+        linkedUnitType: document.linkedUnitType,
+        approvalStatus: updates.approvalStatus ?? document.approvalStatus,
+        visibility: updates.visibility ?? document.visibility,
+        version: document.version,
+        supersedesDocumentId: document.supersedesDocumentId,
+        archivedAt: document.archivedAt,
+        storageBucket: document.storageBucket,
+        storagePath: document.storagePath,
+        mimeType: document.mimeType,
+        fileSizeBytes: document.fileSizeBytes,
+      })
+      setFeedback('Marketing document settings updated.')
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setMarketingDocumentSavingId('')
+    }
+  }
+
+  async function handleMarketingAccessCreate(event) {
+    event.preventDefault()
+    if (!canManageDevelopment) return
+    try {
+      setMarketingAccessSaving(true)
+      setError('')
+      setFeedback('')
+      await createDevelopmentMarketingAccess({
+        developmentId: data.development.id,
+        inviteeEmail: marketingAccessDraft.email,
+        accessRole: marketingAccessDraft.accessRole,
+      })
+      setMarketingAccessDraft({ email: '', accessRole: 'viewer' })
+      setFeedback('Marketing access invitation created. It does not grant operational development access.')
+      await loadData()
+    } catch (inviteError) {
+      setError(inviteError.message)
+    } finally {
+      setMarketingAccessSaving(false)
+    }
+  }
+
+  async function handleMarketingEventCreate(event) {
+    event.preventDefault()
+    if (!canManageDevelopment) return
+    try {
+      setMarketingEventSaving(true)
+      setError('')
+      setFeedback('')
+      const startsAt = marketingEventDraft.startsAt
+        ? new Date(marketingEventDraft.startsAt).toISOString()
+        : null
+      await createDevelopmentMarketingEvent({
+        developmentId: data.development.id,
+        organisationId: data.development.organisationId || data.development.organisation_id,
+        developmentName: data.development.name,
+        title: marketingEventDraft.title,
+        eventType: marketingEventDraft.eventType,
+        startsAt,
+        location: marketingEventDraft.location,
+        description: marketingEventDraft.description,
+      })
+      setMarketingEventDraft({ title: '', eventType: 'show_day', startsAt: '', location: '', description: '' })
+      setFeedback('Marketing event created.')
+      await loadData()
+    } catch (eventError) {
+      setError(eventError.message)
+    } finally {
+      setMarketingEventSaving(false)
+    }
+  }
+
   async function handleDownloadDocument(item) {
     if (!item?.fileUrl) {
       setError('This document does not have a file URL to download.')
@@ -6481,6 +6602,122 @@ function DevelopmentDetail() {
         </section>
       </section>
     )
+  }
+
+  function renderMarketingAssetSection({ title, description, items, documentType, emptyMessage }) {
+    return (
+      <section className="grid gap-5">
+        <section className={`${CARD_SHELL} flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between`}>
+          <div>
+            <h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">{title}</h4>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-[#6b7d93]">{description}</p>
+          </div>
+          {canManageDevelopment ? (
+            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#167a4b] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#12683f]">
+              <Upload size={16} /> {marketingAssetUploading === documentType ? 'Uploading…' : 'Upload'}
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                disabled={Boolean(marketingAssetUploading)}
+                onChange={(event) => void handleMarketingAssetFileUpload(event, documentType, {
+                  uploadKey: documentType,
+                  successMessage: `${title} uploaded to the marketing library.`,
+                })}
+              />
+            </label>
+          ) : null}
+        </section>
+        {items.length ? (
+          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {items.map((item) => (
+              <article key={item.id} className="overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.04)]">
+                <div className="relative flex h-36 items-center justify-center bg-[#eef4f8]">
+                  {isLikelyImageUrl(item.fileUrl) ? <img src={item.fileUrl} alt="" className="h-full w-full object-cover" /> : <FileText size={30} className="text-[#66809b]" />}
+                  <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-[#365069]">{item.typeLabel}</span>
+                </div>
+                <div className="p-4">
+                  <strong className="block truncate text-sm text-[#142132]">{item.title}</strong>
+                  <p className="mt-1 min-h-10 text-xs leading-5 text-[#718299]">{item.description || `Version ${item.version}`}</p>
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#edf1f5] pt-3">
+                    <span className="text-xs text-[#718299]">{formatDate(item.uploadedAt)}</span>
+                    <a href={item.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[#2171c7] hover:text-[#14569f]">Open <ArrowUpRight size={13} /></a>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </section>
+        ) : (
+          <section className={`${CARD_SHELL} border-dashed text-center text-sm text-[#6b7d93]`}>{emptyMessage}</section>
+        )}
+      </section>
+    )
+  }
+
+  function renderMarketingDocumentsSection() {
+    return (
+      <section className="grid gap-5">
+        <section className={CARD_SHELL}>
+          <h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Documents</h4>
+          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Control marketing approval and visibility without changing the public-page publishing flow.</p>
+        </section>
+        {marketingAssetDocuments.length ? marketingAssetDocuments.map((document) => (
+          <article key={document.id} className={`${CARD_SHELL} flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between`}>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <strong className="truncate text-sm text-[#142132]">{document.title}</strong>
+                <span className="rounded-full bg-[#edf4ff] px-2 py-0.5 text-[11px] font-semibold text-[#3b69a4]">v{document.version}</span>
+              </div>
+              <p className="mt-1 text-xs text-[#718299]">{document.typeLabel} · {formatDate(document.uploadedAt)}</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {canManageDevelopment ? <>
+                <Field as="select" value={document.approvalStatus} disabled={marketingDocumentSavingId === document.id} onChange={(event) => void handleMarketingDocumentVisibilitySave(document, { approvalStatus: event.target.value })} className="min-w-[150px] text-sm">
+                  <option value="draft">Draft</option><option value="pending_approval">Pending approval</option><option value="approved">Approved</option><option value="rejected">Rejected</option>
+                </Field>
+                <Field as="select" value={document.visibility} disabled={marketingDocumentSavingId === document.id} onChange={(event) => void handleMarketingDocumentVisibilitySave(document, { visibility: event.target.value })} className="min-w-[130px] text-sm">
+                  <option value="internal">Internal</option><option value="partner">Partners</option><option value="public">Public</option>
+                </Field>
+              </> : <span className="rounded-full bg-[#eef3f7] px-3 py-1.5 text-xs font-semibold text-[#61778f]">{toTitleLabel(document.approvalStatus)} · {toTitleLabel(document.visibility)}</span>}
+              <a href={document.fileUrl} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-1 rounded-xl border border-[#dbe5ef] px-3 text-sm font-semibold text-[#31516d] hover:bg-[#f8fafc]"><Download size={15} /> Open</a>
+            </div>
+          </article>
+        )) : <section className={`${CARD_SHELL} border-dashed text-center text-sm text-[#6b7d93]`}>No marketing documents have been added yet.</section>}
+      </section>
+    )
+  }
+
+  function renderMarketingEventsSection() {
+    return (
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className={`${CARD_SHELL} order-2 xl:order-1`}>
+          <div className="flex items-start justify-between gap-4"><div><h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Events</h4><p className="mt-1 text-sm leading-6 text-[#6b7d93]">Launches and show days linked directly to this development.</p></div><CalendarDays size={21} className="text-[#2f6fec]" /></div>
+          <div className="mt-5 grid gap-3">
+            {marketingEventRecords.length ? marketingEventRecords.map((item) => <article key={item.id} className="flex items-center gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5"><span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4ff] text-[#2f6fec]"><CalendarDays size={18} /></span><div className="min-w-0"><strong className="block truncate text-sm text-[#142132]">{item.title}</strong><span className="mt-1 block text-xs text-[#6b7d93]">{formatDate(item.startsAt)} · {item.location || 'Location to be confirmed'} · {toTitleLabel(item.status)}</span></div></article>) : <p className="rounded-[15px] border border-dashed border-[#d8e3ef] px-4 py-8 text-center text-sm text-[#6b7d93]">No development marketing events yet.</p>}
+          </div>
+        </section>
+        {canManageDevelopment ? <form onSubmit={handleMarketingEventCreate} className={`${CARD_SHELL} order-1 xl:order-2`}><h4 className="text-base font-semibold text-[#142132]">Schedule event</h4><div className="mt-4 grid gap-3"><Field value={marketingEventDraft.title} onChange={(event) => setMarketingEventDraft((current) => ({ ...current, title: event.target.value }))} placeholder="Event title" required /><Field as="select" value={marketingEventDraft.eventType} onChange={(event) => setMarketingEventDraft((current) => ({ ...current, eventType: event.target.value }))}><option value="show_day">Show day</option><option value="launch">Launch</option></Field><Field type="datetime-local" value={marketingEventDraft.startsAt} onChange={(event) => setMarketingEventDraft((current) => ({ ...current, startsAt: event.target.value }))} /><Field value={marketingEventDraft.location} onChange={(event) => setMarketingEventDraft((current) => ({ ...current, location: event.target.value }))} placeholder="Location" /><Field as="textarea" value={marketingEventDraft.description} onChange={(event) => setMarketingEventDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Optional event notes" rows={3} /><Button type="submit" disabled={marketingEventSaving}>{marketingEventSaving ? 'Saving…' : 'Create event'}</Button></div></form> : null}
+      </section>
+    )
+  }
+
+  function renderMarketingPartnersSection() {
+    return (
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className={`${CARD_SHELL} order-2 xl:order-1`}><h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Partners & Access</h4><p className="mt-1 text-sm leading-6 text-[#6b7d93]">Marketing collaboration is intentionally separate from operational developer access.</p><div className="mt-5 grid gap-3">{marketingAccessRecords.length ? marketingAccessRecords.map((access) => <article key={access.id} className="flex items-center justify-between gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5"><div className="min-w-0"><strong className="block truncate text-sm text-[#142132]">{access.inviteeEmail || 'Organisation partner'}</strong><span className="mt-1 block text-xs text-[#6b7d93]">{toTitleLabel(access.accessRole)} · {toTitleLabel(access.status)}</span></div><Users size={18} className="shrink-0 text-[#3b69a4]" /></article>) : <p className="rounded-[15px] border border-dashed border-[#d8e3ef] px-4 py-8 text-center text-sm text-[#6b7d93]">No marketing access invitations yet.</p>}</div></section>
+        {canManageDevelopment ? <form onSubmit={handleMarketingAccessCreate} className={`${CARD_SHELL} order-1 xl:order-2`}><h4 className="text-base font-semibold text-[#142132]">Invite to marketing hub</h4><p className="mt-1 text-xs leading-5 text-[#718299]">This only creates marketing-library access; it never grants unit, transaction or finance permissions.</p><div className="mt-4 grid gap-3"><Field type="email" value={marketingAccessDraft.email} onChange={(event) => setMarketingAccessDraft((current) => ({ ...current, email: event.target.value }))} placeholder="partner@agency.co.za" required /><Field as="select" value={marketingAccessDraft.accessRole} onChange={(event) => setMarketingAccessDraft((current) => ({ ...current, accessRole: event.target.value }))}><option value="viewer">Viewer</option><option value="contributor">Contributor</option><option value="approver">Approver</option></Field><Button type="submit" disabled={marketingAccessSaving}><UserPlus size={16} /> {marketingAccessSaving ? 'Adding…' : 'Add invitation'}</Button></div></form> : null}
+      </section>
+    )
+  }
+
+  function renderMarketingHubSection() {
+    if (marketingHubSection === 'overview') return renderMarketingHubOverview()
+    if (marketingHubSection === 'media') return renderMarketingAssetSection({ title: 'Media Library', description: 'Images, renders and development branding from the existing document library.', items: marketingAssetGroups.find((group) => group.key === 'gallery')?.items || [], documentType: 'marketing', emptyMessage: 'Upload imagery or branding to begin building the media library.' })
+    if (marketingHubSection === 'floor-plans') return renderMarketingAssetSection({ title: 'Floor Plans', description: 'Floor plans and site plans already attached to this development.', items: marketingAssetGroups.find((group) => group.key === 'plans')?.items || [], documentType: 'floorplan', emptyMessage: 'Upload a floor plan or site plan to make it available here.' })
+    if (marketingHubSection === 'documents') return renderMarketingDocumentsSection()
+    if (marketingHubSection === 'events') return renderMarketingEventsSection()
+    if (marketingHubSection === 'partners') return renderMarketingPartnersSection()
+    return renderEditableMarketingContent()
   }
 
   function renderEditableMarketingContent() {
@@ -9924,24 +10161,7 @@ function DevelopmentDetail() {
             </>
           )}
             </>
-          ) : marketingHubSection === 'overview' ? (
-            renderMarketingHubOverview()
-          ) : (
-            <section className={`${CARD_SHELL} text-center`}>
-              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1f7a45]">
-                {MARKETING_HUB_SECTIONS.find((section) => section.id === marketingHubSection)?.label || 'Marketing Hub'}
-              </p>
-              <h4 className="mt-2 text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">
-                This section is being introduced incrementally
-              </h4>
-              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#6b7d93]">
-                Existing marketing workflows remain unchanged while this hub is rolled out section by section. Development Content is available now.
-              </p>
-              <Button type="button" className="mt-5" onClick={() => openMarketingHubSection('content')}>
-                Open Development Content
-              </Button>
-            </section>
-          )}
+          ) : renderMarketingHubSection()}
         </section>
       ) : null}
 
