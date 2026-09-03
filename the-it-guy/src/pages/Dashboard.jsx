@@ -2404,11 +2404,22 @@ function Dashboard() {
       } else {
         agentPrivateListingLoadRef.current += 1
         setAgentPrivateListingRows([])
-        const data = await fetchDashboardOverview({
+        let data = await fetchDashboardOverview({
           developmentId: workspace.id === 'all' ? null : workspace.id,
           organisationId: role === 'developer' ? developerDashboardOrganisationId : null,
           includeSecondaryData: false,
         })
+        // Older developments can be visible to the signed-in developer while
+        // lacking the newer organisation relationship (or carrying a legacy
+        // organisation id). Do not leave the developer dashboard empty in
+        // that case: RLS still limits this fallback to developments they may
+        // actually read.
+        if (role === 'developer' && !(data?.rows || []).length) {
+          data = await fetchDashboardOverview({
+            developmentId: workspace.id === 'all' ? null : workspace.id,
+            includeSecondaryData: false,
+          })
+        }
         setOverview(data)
         dashboardHasLoadedRef.current = true
         dashboardLoadKeyRef.current = dashboardLoadKey
