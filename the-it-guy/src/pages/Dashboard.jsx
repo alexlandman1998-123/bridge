@@ -1769,6 +1769,7 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
       { key: 'available', label: 'Units Available', value: formatKpiCount(portfolio.unitsAvailable), detail: 'sellable stock', trend: null, icon: Home, tone: 'blue' },
     ],
     attentionItems,
+    activeTransactions: activeTransactions.slice(0, 12),
     developments,
     snapshots: {
       sales: [
@@ -1796,9 +1797,10 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
       ],
     },
     performance: [
-      { key: 'transactions', label: 'Transactions', value: formatKpiCount(transactionRecordRows.filter((row) => isToday(getRowUpdatedAt(row)) || IS_DATE_IN_CURRENT_MONTH(getRowUpdatedAt(row))).length || transactionRecordRows.length), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(transactionRecordRows.length), tone: 'blue' },
-      { key: 'revenue', label: 'Revenue Secured', value: formatKpiCurrency(portfolio.totalSalesValue), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(portfolio.totalSalesValue || portfolio.pipelineValue || 1), tone: 'green' },
-      { key: 'registrations', label: 'Registrations', value: formatKpiCount(portfolio.unitsRegistered), trendLabel: 'this month', trend: null, points: buildDeveloperSparkline(portfolio.unitsRegistered || 1), tone: 'purple' },
+      { key: 'transactions', label: 'Transactions this month', value: formatKpiCount(transactionRecordRows.filter((row) => isToday(getRowUpdatedAt(row)) || IS_DATE_IN_CURRENT_MONTH(getRowUpdatedAt(row))).length || transactionRecordRows.length), detail: `${formatKpiCount(activeTransactions.length)} currently in progress`, tone: 'blue' },
+      { key: 'pipeline', label: 'Pipeline value', value: formatKpiCurrency(portfolio.pipelineValue), detail: 'Value still progressing to registration', tone: 'purple' },
+      { key: 'revenue', label: 'Revenue secured', value: formatKpiCurrency(portfolio.totalSalesValue), detail: `${formatKpiCount(portfolio.unitsRegistered)} registered unit${portfolio.unitsRegistered === 1 ? '' : 's'}`, tone: 'green' },
+      { key: 'sell-through', label: 'Sell-through', value: formatPercent(portfolio.totalUnits ? (portfolio.unitsSold / portfolio.totalUnits) * 100 : 0), detail: `${formatKpiCount(portfolio.unitsSold)} of ${formatKpiCount(portfolio.totalUnits)} units sold`, tone: 'orange' },
     ],
   }
 }
@@ -1859,89 +1861,86 @@ function DeveloperLandingCommandCenter({ model, onNavigate = () => {} }) {
         })}
       </div>
 
-      <div className="developer-command-primary-grid">
-        <article className="developer-command-card developer-command-attention-card">
-          <header className="developer-command-card-header">
-            <div>
-              <h2>Needs Attention</h2>
-              <span>{formatKpiCount(model.attentionItems.filter((item) => item.priority !== 'info').length)} priority items</span>
-            </div>
-            <button type="button" onClick={() => onNavigate('/transactions')}>View all</button>
-          </header>
-          {model.attentionItems.length ? (
-            <div className="developer-command-attention-list">
-              {model.attentionItems.slice(0, 5).map((item) => (
-                <article key={item.id} className={`developer-command-attention-item is-${item.priority}`}>
-                  <span className="developer-command-attention-icon">
-                    {item.priority === 'critical' ? <AlertTriangle size={20} /> : item.priority === 'warning' ? <FileCheck2 size={20} /> : <ShieldCheck size={20} />}
-                  </span>
-                  <div>
-                    <h3>{item.title}</h3>
-                    <p>{item.subtitle}</p>
-                    <small>{item.meta}</small>
-                  </div>
-                  <button type="button" onClick={() => onNavigate(item.transactionId ? `/transactions/${item.transactionId}` : item.unitId ? `/units/${item.unitId}` : '/transactions')}>
-                    Open <ArrowRight size={15} />
-                  </button>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="developer-command-empty">No priority work is flagged right now.</div>
-          )}
-        </article>
+      <article className="developer-command-card developer-command-transactions-card">
+        <header className="developer-command-card-header">
+          <div>
+            <h2>Active Transactions</h2>
+            <span>{formatKpiCount(model.activeTransactions.length)} deals currently moving through the journey</span>
+          </div>
+          <button type="button" onClick={() => onNavigate('/transactions')}>View all</button>
+        </header>
+        {model.activeTransactions.length ? (
+          <div className="developer-command-transaction-strip">
+            {model.activeTransactions.map((transaction) => (
+              <button
+                key={transaction.id}
+                type="button"
+                className="developer-command-transaction-card"
+                onClick={() => onNavigate(transaction.transactionId ? `/transactions/${transaction.transactionId}` : '/transactions')}
+              >
+                <div className="developer-command-transaction-card-top">
+                  <span className={`developer-command-stage is-${String(transaction.stageKey || '').toLowerCase()}`}>{transaction.stageLabel}</span>
+                  <span>{transaction.progressPercent}%</span>
+                </div>
+                <strong>{transaction.developmentName}</strong>
+                <p>Unit {transaction.unitNumber} · {transaction.buyerName}</p>
+                <div className="developer-command-progress"><span style={{ width: `${transaction.progressPercent}%` }} /></div>
+                <small>{transaction.nextAction}</small>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="developer-command-empty">Active transactions will appear here as soon as units enter the sales journey.</div>
+        )}
+      </article>
 
-        <article className="developer-command-card developer-command-developments-card">
-          <header className="developer-command-card-header">
-            <div>
-              <h2>My Developments</h2>
-              <span>{formatKpiCount(model.developments.length)} tracked projects</span>
-            </div>
-            <button type="button" onClick={() => onNavigate('/developments')}>View all</button>
-          </header>
-          {model.developments.length ? (
-            <div className="developer-command-development-strip">
-              {model.developments.map((development) => (
-                <article key={development.id || development.name} className="developer-command-development-card">
-                  <div className="developer-command-development-image">
-                    {development.imageUrl ? <img src={development.imageUrl} alt="" /> : <span>{String(development.name || 'D').slice(0, 1)}</span>}
-                  </div>
-                  <h3>{development.name}</h3>
-                  <div className="developer-command-development-metrics">
-                    <div><strong>{formatKpiCount(development.totalUnits)}</strong><span>Units</span></div>
-                    <div><strong>{formatPercent(development.sellThroughPercent || 0)}</strong><span>Sold</span></div>
-                    <div><strong>{formatKpiCount(development.unitsInProgress || 0)}</strong><span>Active</span></div>
-                  </div>
-                  <button type="button" onClick={() => onNavigate(development.href)}>
-                    View Development <ArrowRight size={14} />
-                  </button>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <div className="developer-command-empty">Development performance appears once developments have linked units.</div>
-          )}
-        </article>
-      </div>
+      <article className="developer-command-card developer-command-developments-card">
+        <header className="developer-command-card-header">
+          <div>
+            <h2>My Developments</h2>
+            <span>{formatKpiCount(model.developments.length)} tracked projects</span>
+          </div>
+          <button type="button" onClick={() => onNavigate('/developments')}>View all</button>
+        </header>
+        {model.developments.length ? (
+          <div className="developer-command-development-strip">
+            {model.developments.map((development) => (
+              <article key={development.id || development.name} className="developer-command-development-card">
+                <div className="developer-command-development-image">
+                  {development.imageUrl ? <img src={development.imageUrl} alt="" /> : <span>{String(development.name || 'D').slice(0, 1)}</span>}
+                </div>
+                <h3>{development.name}</h3>
+                <div className="developer-command-development-metrics">
+                  <div><strong>{formatKpiCount(development.totalUnits)}</strong><span>Units</span></div>
+                  <div><strong>{formatPercent(development.sellThroughPercent || 0)}</strong><span>Sold</span></div>
+                  <div><strong>{formatKpiCount(development.unitsInProgress || 0)}</strong><span>Active</span></div>
+                </div>
+                <button type="button" onClick={() => onNavigate(development.href)}>
+                  View Development <ArrowRight size={14} />
+                </button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="developer-command-empty">Development performance appears once developments have linked units.</div>
+        )}
+      </article>
 
       <article className="developer-command-card developer-command-performance-card">
         <header className="developer-command-card-header">
           <div>
             <h2>Performance Overview</h2>
-            <span>This month</span>
+            <span>A clear view of current portfolio performance</span>
           </div>
           <button type="button" onClick={() => onNavigate('/reports')}>View full report</button>
         </header>
         <div className="developer-command-performance-grid">
           {model.performance.map((item) => (
             <article key={item.key}>
-              <div>
-                <p>{item.label}</p>
-                <span>{item.trendLabel}</span>
-              </div>
+              <div className={`developer-command-performance-icon is-${item.tone}`} />
+              <p>{item.label}</p>
               <strong>{item.value}</strong>
-              <DeveloperTrendPill value={item.trend} />
-              <DeveloperSparkline points={item.points} tone={item.tone} />
+              <span>{item.detail}</span>
             </article>
           ))}
         </div>
