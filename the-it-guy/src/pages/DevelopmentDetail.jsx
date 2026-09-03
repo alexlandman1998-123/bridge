@@ -132,6 +132,7 @@ const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter((tab) => tab.id !== 'pe
 const MARKETING_HUB_SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'content', label: 'Development Content' },
+  { id: 'public-page', label: 'Public Page' },
   { id: 'media', label: 'Media Library' },
   { id: 'floor-plans', label: 'Floor Plans' },
   { id: 'documents', label: 'Documents' },
@@ -4835,6 +4836,53 @@ function DevelopmentDetail() {
     }
   }
 
+  async function handleSavePublicPageSettings(event) {
+    event?.preventDefault?.()
+    if (!canManageDevelopment) return
+    try {
+      setDetailsSaving(true)
+      setFeedback('')
+      setError('')
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(detailsForm))
+      setFeedback('Public page settings saved. Publishing remains a separate action.')
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDetailsSaving(false)
+    }
+  }
+
+  async function handleUnpublishDevelopmentMarketing() {
+    if (!canManageDevelopment) return
+    const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+    const nextDetailsForm = {
+      ...detailsForm,
+      marketing: {
+        ...normalizedMarketing,
+        listingConfiguration: {
+          ...normalizedMarketing.listingConfiguration,
+          publicVisibility: false,
+          marketingStatus: 'draft',
+        },
+      },
+    }
+    try {
+      setDetailsSaving(true)
+      setFeedback('')
+      setError('')
+      setDetailsForm(nextDetailsForm)
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      setFeedback('Public development page unpublished. Hub content remains private and unchanged.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDetailsSaving(false)
+    }
+  }
+
   function setMarketingSellingPointEntries(updater) {
     const current = parseSellingPointEntries(marketingForm.sellingPoints.items)
     const nextEntries = typeof updater === 'function' ? updater(current) : Array.isArray(updater) ? updater : current
@@ -6654,6 +6702,54 @@ function DevelopmentDetail() {
     )
   }
 
+  function renderMarketingPublicPageSection() {
+    const configuration = marketingForm.listingConfiguration
+    const listingSlug = configuration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)
+    const publicUrl = buildPublicDevelopmentUrl(listingSlug)
+    const isPublished = configuration.publicVisibility && String(configuration.marketingStatus || '').toLowerCase() === 'live'
+
+    return (
+      <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <form onSubmit={handleSavePublicPageSettings} className={`${CARD_SHELL} order-2 xl:order-1`}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Public Page</h4>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-[#6b7d93]">Configure the published landing page separately from the private Marketing Hub. Saving these settings never publishes material by itself.</p>
+            </div>
+            <span className={`inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${isPublished ? 'bg-[#e8f7ee] text-[#167a4b]' : 'bg-[#f1f4f7] text-[#61778f]'}`}>{isPublished ? 'Live' : 'Not published'}</span>
+          </div>
+          <fieldset disabled={!canManageDevelopment} className="mt-6 grid gap-4 md:grid-cols-2 disabled:cursor-not-allowed disabled:opacity-70">
+            <DetailField label="Public URL slug">
+              <Field value={configuration.listingSlug} onChange={(event) => setMarketingField('listingConfiguration', 'listingSlug', event.target.value)} placeholder={listingSlug} />
+            </DetailField>
+            <DetailField label="SEO title">
+              <Field value={marketingForm.listingOverview.seoTitle} onChange={(event) => setMarketingField('listingOverview', 'seoTitle', event.target.value)} placeholder={`${data.development.name} | New homes`} />
+            </DetailField>
+            <DetailField label="SEO meta description">
+              <Field value={marketingForm.listingOverview.seoMetaDescription} onChange={(event) => setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)} placeholder="Short description shown in search results." />
+            </DetailField>
+            <DetailField label="Public call-to-action URL">
+              <Field value={configuration.ctaUrl} onChange={(event) => setMarketingField('listingConfiguration', 'ctaUrl', event.target.value)} placeholder="https://…" />
+            </DetailField>
+          </fieldset>
+          {canManageDevelopment ? <div className="mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-[#e6edf5] pt-4"><Button type="submit" variant="secondary" disabled={detailsSaving}>{detailsSaving ? 'Saving…' : 'Save public page settings'}</Button></div> : null}
+        </form>
+
+        <aside className={`${CARD_SHELL} order-1 xl:order-2`}>
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#edf4ff] text-[#2f6fec]"><ArrowUpRight size={19} /></span>
+          <h4 className="mt-4 text-base font-semibold text-[#142132]">Publication controls</h4>
+          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">The public page reads only the approved, explicitly live development record.</p>
+          <div className="mt-4 rounded-[13px] border border-[#e3ebf4] bg-[#fbfcfe] p-3"><span className="block break-all text-xs leading-5 text-[#61778f]">{publicUrl}</span></div>
+          <div className="mt-4 grid gap-2">
+            <Button type="button" variant="secondary" onClick={() => void handleCopyMarketingValue(publicUrl, 'Public page link')}><Copy size={15} /> Copy link</Button>
+            <Button type="button" variant="secondary" onClick={handlePreviewPublicListing}><ArrowUpRight size={15} /> Preview page</Button>
+            {canManageDevelopment ? (isPublished ? <Button type="button" variant="secondary" disabled={detailsSaving} onClick={() => void handleUnpublishDevelopmentMarketing()}><EyeOff size={15} /> Unpublish page</Button> : <Button type="button" disabled={detailsSaving} onClick={() => void handlePublishDevelopmentMarketing()}><ArrowUpRight size={15} /> Publish page</Button>) : null}
+          </div>
+        </aside>
+      </section>
+    )
+  }
+
   function renderMarketingDocumentsSection() {
     return (
       <section className="grid gap-5">
@@ -6712,6 +6808,7 @@ function DevelopmentDetail() {
 
   function renderMarketingHubSection() {
     if (marketingHubSection === 'overview') return renderMarketingHubOverview()
+    if (marketingHubSection === 'public-page') return renderMarketingPublicPageSection()
     if (marketingHubSection === 'media') return renderMarketingAssetSection({ title: 'Media Library', description: 'Images, renders and development branding from the existing document library.', items: marketingAssetGroups.find((group) => group.key === 'gallery')?.items || [], documentType: 'marketing', emptyMessage: 'Upload imagery or branding to begin building the media library.' })
     if (marketingHubSection === 'floor-plans') return renderMarketingAssetSection({ title: 'Floor Plans', description: 'Floor plans and site plans already attached to this development.', items: marketingAssetGroups.find((group) => group.key === 'plans')?.items || [], documentType: 'floorplan', emptyMessage: 'Upload a floor plan or site plan to make it available here.' })
     if (marketingHubSection === 'documents') return renderMarketingDocumentsSection()
@@ -6776,11 +6873,11 @@ function DevelopmentDetail() {
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="secondary" onClick={handlePreviewPublicListing}>
               <ArrowUpRight size={15} />
-              Preview Public Listing
+              Preview Public Page
             </Button>
-            <Button type="button" onClick={() => void handlePublishDevelopmentMarketing()} disabled={detailsSaving}>
+            <Button type="button" onClick={() => openMarketingHubSection('public-page')}>
               <ArrowUpRight size={15} />
-              Publish Development
+              Manage Public Page
             </Button>
             <Button type="button" variant="secondary" onClick={() => setMarketingUnitTab('global')}>
               <ShieldCheck size={15} />
@@ -10097,58 +10194,6 @@ function DevelopmentDetail() {
                   No selling points added yet.
                 </p>
               ) : null}
-            </section>
-
-            <section className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-              <div className="mb-4">
-                <h4 className="text-sm font-semibold text-[#142132]">Publishing</h4>
-                <p className="mt-1 text-xs leading-5 text-[#6b7d93]">
-                  Keep the listing visibility and search copy close to the marketing content.
-                </p>
-              </div>
-              <div className="grid gap-4 md:grid-cols-2">
-                <DetailField label="Marketing Status">
-                  <Field
-                    as="select"
-                    value={marketingForm.listingConfiguration.marketingStatus}
-                    onChange={(event) => setMarketingField('listingConfiguration', 'marketingStatus', event.target.value)}
-                  >
-                    {MARKETING_PUBLISH_STATUS_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </Field>
-                </DetailField>
-                <DetailField label="Public Visibility">
-                  <Field
-                    as="select"
-                    value={marketingForm.listingConfiguration.publicVisibility ? 'visible' : 'hidden'}
-                    onChange={(event) =>
-                      setMarketingField('listingConfiguration', 'publicVisibility', event.target.value === 'visible')
-                    }
-                  >
-                    <option value="visible">Visible</option>
-                    <option value="hidden">Hidden</option>
-                  </Field>
-                </DetailField>
-                <DetailField label="SEO Title">
-                  <Field
-                    value={marketingForm.listingOverview.seoTitle}
-                    onChange={(event) => setMarketingField('listingOverview', 'seoTitle', event.target.value)}
-                    placeholder="Amari Residence | Apartments in Pomona"
-                  />
-                </DetailField>
-                <DetailField label="SEO Meta Description">
-                  <Field
-                    value={marketingForm.listingOverview.seoMetaDescription}
-                    onChange={(event) =>
-                      setMarketingField('listingOverview', 'seoMetaDescription', event.target.value)
-                    }
-                    placeholder="Short search description for the public listing page."
-                  />
-                </DetailField>
-              </div>
             </section>
 
             <div className="flex items-center justify-end border-t border-[#e6edf5] pt-4">
