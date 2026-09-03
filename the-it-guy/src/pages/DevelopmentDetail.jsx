@@ -35,7 +35,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentAvailabilityWorkspace from '../components/developments/DevelopmentAvailabilityWorkspace'
 import DevelopmentLaunchReadinessPanel from '../components/developments/DevelopmentLaunchReadinessPanel'
 import DevelopmentLaunchAssurancePanel from '../components/developments/DevelopmentLaunchAssurancePanel'
@@ -125,6 +125,18 @@ const DEVELOPMENT_TABS = [
 ]
 
 const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter((tab) => tab.id !== 'performance')
+
+const MARKETING_HUB_SECTIONS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'content', label: 'Development Content' },
+  { id: 'media', label: 'Media Library' },
+  { id: 'floor-plans', label: 'Floor Plans' },
+  { id: 'documents', label: 'Documents' },
+  { id: 'events', label: 'Events' },
+  { id: 'partners', label: 'Partners & Access' },
+]
+
+const MARKETING_HUB_SECTION_IDS = new Set(MARKETING_HUB_SECTIONS.map((section) => section.id))
 
 const DOCUMENT_TYPE_OPTIONS = [
   { value: 'logo', label: 'Development Logo' },
@@ -2388,12 +2400,14 @@ function ResponsibleAgencyBadge({ agency }) {
 
 function DevelopmentDetail() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { developmentId } = useParams()
   const { role, can, profile, currentWorkspace } = useWorkspace()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
+  const [marketingHubSection, setMarketingHubSection] = useState('overview')
   const [marketingEditorSection, setMarketingEditorSection] = useState('overview')
   const [marketingUnitTab, setMarketingUnitTab] = useState('overview')
   const [marketingFeatureDraft, setMarketingFeatureDraft] = useState('')
@@ -2473,6 +2487,48 @@ function DevelopmentDetail() {
   const canEditMarketing = canManageDevelopment || role === 'agent'
   const developerOrganisationId =
     data?.development?.organisation_id || data?.development?.organisationId || currentWorkspace?.id || ''
+
+  const openMarketingHubSection = useCallback((sectionId) => {
+    const nextSection = MARKETING_HUB_SECTION_IDS.has(sectionId) ? sectionId : 'overview'
+    const params = new URLSearchParams(location.search)
+    params.set('marketingSection', nextSection)
+    setActiveTab('marketing')
+    setMarketingHubSection(nextSection)
+    navigate({ pathname: location.pathname, search: `?${params.toString()}` })
+  }, [location.pathname, location.search, navigate])
+
+  const openDevelopmentTab = useCallback((tabId) => {
+    if (tabId === 'marketing') {
+      openMarketingHubSection(marketingHubSection)
+      return
+    }
+
+    const params = new URLSearchParams(location.search)
+    params.delete('marketingSection')
+    setActiveTab(tabId)
+    navigate({
+      pathname: location.pathname,
+      search: params.toString() ? `?${params.toString()}` : '',
+    })
+  }, [location.pathname, location.search, marketingHubSection, navigate, openMarketingHubSection])
+
+  useEffect(() => {
+    const requestedSection = new URLSearchParams(location.search).get('marketingSection')
+    if (!requestedSection) return
+
+    const nextSection = MARKETING_HUB_SECTION_IDS.has(requestedSection)
+      ? requestedSection
+      : 'overview'
+
+    if (requestedSection !== nextSection) {
+      const params = new URLSearchParams(location.search)
+      params.set('marketingSection', nextSection)
+      navigate({ pathname: location.pathname, search: `?${params.toString()}` }, { replace: true })
+    }
+
+    setActiveTab('marketing')
+    setMarketingHubSection(nextSection)
+  }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
     let active = true
@@ -6802,7 +6858,7 @@ function DevelopmentDetail() {
                 ) : null}
                 <Button
                   variant="secondary"
-                  onClick={() => setActiveTab('marketing')}
+                  onClick={() => openMarketingHubSection('content')}
                   className="border-white/85 bg-white text-[#142132] shadow-[0_14px_30px_rgba(0,0,0,0.18)] hover:bg-[#f8fafc]"
                 >
                   <Upload size={15} />
@@ -6873,7 +6929,7 @@ function DevelopmentDetail() {
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => openDevelopmentTab(tab.id)}
                 className={[
                   'inline-flex min-h-[48px] items-center justify-center rounded-[16px] border px-4 py-3 text-sm font-semibold transition duration-150 ease-out',
                   isActive
@@ -7335,7 +7391,7 @@ function DevelopmentDetail() {
                 <p className="mt-2 text-[0.96rem] leading-7 text-[#6b7d93]">Jump into the main development work surfaces.</p>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Button variant="ghost" onClick={() => setActiveTab('marketing')}>
+                <Button variant="ghost" onClick={() => openMarketingHubSection('content')}>
                   <TrendingUp size={15} />
                   Marketing
                 </Button>
@@ -7347,7 +7403,7 @@ function DevelopmentDetail() {
                   <Workflow size={15} />
                   Live Transactions
                 </Button>
-                <Button variant="ghost" onClick={() => setActiveTab('marketing')}>
+                <Button variant="ghost" onClick={() => openMarketingHubSection('content')}>
                   <FolderKanban size={15} />
                   Floorplans & Assets
                 </Button>
@@ -8367,6 +8423,43 @@ function DevelopmentDetail() {
 
       {activeTab === 'marketing' ? (
         <section className="mt-4">
+          <section className={`${CARD_SHELL} mb-4`}>
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1f7a45]">Marketing Hub</p>
+                <h3 className="mt-2 text-[1.3rem] font-semibold tracking-[-0.03em] text-[#142132]">Development marketing</h3>
+                <p className="mt-1.5 max-w-2xl text-sm leading-6 text-[#6b7d93]">
+                  A single place for approved development content and future marketing collaboration.
+                </p>
+              </div>
+              <span className="inline-flex w-fit items-center rounded-full border border-[#d8e3ef] bg-[#f7fafd] px-3 py-1 text-[0.76rem] font-semibold text-[#5b7288]">
+                Foundation release
+              </span>
+            </div>
+            <nav className="mt-5 flex gap-2 overflow-x-auto pb-1" aria-label="Marketing Hub sections">
+              {MARKETING_HUB_SECTIONS.map((section) => {
+                const isActive = marketingHubSection === section.id
+                return (
+                  <button
+                    key={section.id}
+                    type="button"
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => openMarketingHubSection(section.id)}
+                    className={`shrink-0 rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
+                      isActive
+                        ? 'border-[#cfe1f7] bg-[#35546c] text-white'
+                        : 'border-[#dbe5ef] bg-white text-[#5c7289] hover:border-[#c6d5e5] hover:bg-[#f8fbff]'
+                    }`}
+                  >
+                    {section.label}
+                  </button>
+                )
+              })}
+            </nav>
+          </section>
+
+          {marketingHubSection === 'content' ? (
+            <>
           {!canEditMarketing ? (
             <section className={`${CARD_SHELL} space-y-5`}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -9586,6 +9679,23 @@ function DevelopmentDetail() {
               ) : null}
             </>
           )}
+            </>
+          ) : (
+            <section className={`${CARD_SHELL} text-center`}>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1f7a45]">
+                {MARKETING_HUB_SECTIONS.find((section) => section.id === marketingHubSection)?.label || 'Marketing Hub'}
+              </p>
+              <h4 className="mt-2 text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">
+                {marketingHubSection === 'overview' ? 'Marketing Hub overview is next' : 'This section is being introduced incrementally'}
+              </h4>
+              <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#6b7d93]">
+                Existing marketing workflows remain unchanged while this hub is rolled out section by section. Development Content is available now.
+              </p>
+              <Button type="button" className="mt-5" onClick={() => openMarketingHubSection('content')}>
+                Open Development Content
+              </Button>
+            </section>
+          )}
         </section>
       ) : null}
 
@@ -9609,7 +9719,7 @@ function DevelopmentDetail() {
                   <FolderKanban size={15} />
                   Open Listings Workspace
                 </Button>
-                <Button type="button" variant="secondary" onClick={() => setActiveTab('marketing')}>
+                <Button type="button" variant="secondary" onClick={() => openMarketingHubSection('content')}>
                   <Download size={15} />
                   Marketing Collateral
                 </Button>
@@ -9763,7 +9873,7 @@ function DevelopmentDetail() {
                     </div>
                   ))}
                 </div>
-                <Button type="button" variant="secondary" className="mt-4 w-full" onClick={() => setActiveTab('marketing')}>
+                <Button type="button" variant="secondary" className="mt-4 w-full" onClick={() => openMarketingHubSection('content')}>
                   Open Marketing
                 </Button>
               </section>
