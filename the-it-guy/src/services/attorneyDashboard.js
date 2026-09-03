@@ -1426,7 +1426,11 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     // without serialising a large matter catalogue into the first view.
     p_detail_limit: 50,
   })
-  if (!snapshotResult.error) {
+  const snapshotHasOperationalData =
+    Number(snapshotResult.data?.kpis?.active_matters || 0) > 0 ||
+    (Array.isArray(snapshotResult.data?.matters) && snapshotResult.data.matters.length > 0)
+
+  if (!snapshotResult.error && snapshotHasOperationalData) {
     void trackCompatibilityFallbackState({
       fallbackId: COMPATIBILITY_FALLBACK_IDS.attorneyDashboardSnapshot,
       usedFallback: false,
@@ -1442,20 +1446,20 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     })
     return buildAttorneyDashboardFromSnapshot(snapshotResult.data || {}, { roleView })
   }
-  if (!isMissingDashboardSnapshotRpc(snapshotResult.error)) {
+  if (snapshotResult.error && !isMissingDashboardSnapshotRpc(snapshotResult.error)) {
     throw snapshotResult.error
   }
   void trackCompatibilityFallbackState({
     fallbackId: COMPATIBILITY_FALLBACK_IDS.attorneyDashboardSnapshot,
     usedFallback: true,
     sourceComponent: 'attorney_dashboard',
-    reasonCode: 'snapshot_rpc_unavailable',
+    reasonCode: snapshotResult.error ? 'snapshot_rpc_unavailable' : 'snapshot_rpc_returned_empty',
     userId: currentUserId,
     workspaceId: resolvedFirm.id,
     route: '/attorney/dashboard',
   })
-  console.warn('[Attorney Dashboard] snapshot RPC is unavailable; using legacy dashboard loader until the migration is applied.', snapshotResult.error)
-  timer.mark('snapshot:unavailable')
+  console.warn('[Attorney Dashboard] snapshot RPC is unavailable or returned no operational matters; using the canonical assignment loader until the migration is applied.', snapshotResult.error)
+  timer.mark('snapshot:compatibility-fallback', { reason: snapshotResult.error ? 'unavailable' : 'empty' })
 
   const [departmentsRaw, membersRaw, invitesRaw, transactionsRaw, assignmentRows] = await Promise.all([
     readDashboardDependency('departments', getAttorneyFirmDepartments(resolvedFirm.id), []),

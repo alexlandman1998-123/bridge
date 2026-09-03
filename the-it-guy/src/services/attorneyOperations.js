@@ -387,13 +387,17 @@ async function fetchDevelopmentsById(client, ids = []) {
 
   let query = await client
     .from('developments')
-    .select('id, name, development_name, code, hero_image_url, cover_image_url, image_url')
+    .select('id, name, development_name, code, formatted_address, address, street_address, address_line_1, location, hero_image_url, cover_image_url, image_url')
     .in('id', developmentIds)
 
   if (
     query.error &&
     (isMissingColumnError(query.error, 'development_name') ||
       isMissingColumnError(query.error, 'code') ||
+      isMissingColumnError(query.error, 'formatted_address') ||
+      isMissingColumnError(query.error, 'street_address') ||
+      isMissingColumnError(query.error, 'address_line_1') ||
+      isMissingColumnError(query.error, 'location') ||
       isMissingColumnError(query.error, 'hero_image_url') ||
       isMissingColumnError(query.error, 'cover_image_url') ||
       isMissingColumnError(query.error, 'image_url'))

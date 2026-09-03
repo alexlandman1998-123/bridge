@@ -169,6 +169,8 @@ export function resolvePortalBuyerName(row = {}, { fallback = 'Buyer pending' } 
 
 export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pending' } = {}) {
   const transaction = isPlainObject(row.transaction) ? row.transaction : {}
+  const unit = isPlainObject(row.unit) ? row.unit : {}
+  const development = isPlainObject(row.development) ? row.development : {}
   const payload = isPlainObject(row.workDeliveryPayload)
     ? row.workDeliveryPayload
     : isPlainObject(row.work_delivery_payload)
@@ -177,7 +179,7 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
   const canonicalAddress = resolvePortalCanonicalText('property_address', [row, transaction, payload], { packetType: 'otp' })
   const canonicalSuburb = resolvePortalCanonicalText('property_suburb', [row, transaction, payload], { packetType: 'otp' })
   const canonicalCity = resolvePortalCanonicalText('property_city', [row, transaction, payload], { packetType: 'otp' })
-  return firstText(
+  const directProperty = firstText(
     row?.property?.display_address,
     row?.property?.displayAddress,
     row?.property?.address,
@@ -197,5 +199,28 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
     payload.property_label,
     canonicalAddress,
     [canonicalSuburb, canonicalCity].filter(Boolean).join(', '),
-  ) || fallback
+  )
+  if (directProperty) return directProperty
+
+  // Unit-created transactions inherit their address from the development.
+  // Never reduce an otherwise identifiable development matter to a generic
+  // “Property pending” label.
+  const developmentAddress = firstText(
+    development.formatted_address,
+    development.formattedAddress,
+    development.address,
+    development.street_address,
+    development.streetAddress,
+    development.address_line_1,
+    development.addressLine1,
+    development.location,
+  )
+  const unitLabel = firstText(unit.unit_label, unit.unitLabel, unit.unit_number, unit.unitNumber)
+  const developmentName = firstText(development.development_name, development.developmentName, development.name)
+  if (developmentAddress && unitLabel) return `${developmentAddress} · Unit ${unitLabel}`
+  if (developmentAddress) return developmentAddress
+  if (developmentName && unitLabel) return `${developmentName} · Unit ${unitLabel}`
+  if (unitLabel) return `Unit ${unitLabel}`
+  if (developmentName) return developmentName
+  return fallback
 }

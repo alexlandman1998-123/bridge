@@ -1713,7 +1713,15 @@ function AttorneyMattersPage() {
             search: snapshotSearchTerm,
             filters,
           })
-          if (snapshot) {
+          const snapshotHasOnlyUnresolvedProperties =
+            Array.isArray(snapshot?.rows) &&
+            snapshot.rows.length > 0 &&
+            snapshot.rows.every((row) => normalize(row?.propertyLabel) === 'property pending')
+
+          // The paged RPC is being rolled out incrementally. When it omits the
+          // linked property for every returned matter, use the established
+          // assignment workspace which joins transactions to units/developments.
+          if (snapshot && !snapshotHasOnlyUnresolvedProperties) {
             if (!active) return
             setMatterSnapshot(snapshot)
             setSource(null)
