@@ -10,6 +10,7 @@ const METHODS = [
   'fetchDevelopmentDocumentRequirements', 'saveDevelopmentDetails', 'saveDevelopmentDocument',
   'saveDevelopmentFinancials', 'saveDevelopmentProductCatalogue', 'saveDevelopmentStructureNodes', 'saveDevelopmentUnit', 'uploadDevelopmentDocumentAsset',
   'applyDevelopmentConfigurationDefaults', 'createDevelopmentTransactionFromUnitStatus', 'updateDevelopmentTransactionSalesPrice', 'updateTransactionLifecycleStage', 'updateDevelopmentSettings',
+  'fetchDeveloperPartnersWorkspace', 'createDeveloperPartnerInvite',
   'upsertTransactionHandover',
 ]
 const operations = Object.fromEntries(METHODS.map((method) => [method, (...args) => call(method, ...args)]))
@@ -18,5 +19,6 @@ export const {
   fetchDevelopmentDocumentRequirements, saveDevelopmentDetails, saveDevelopmentDocument,
   saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset,
   applyDevelopmentConfigurationDefaults, createDevelopmentTransactionFromUnitStatus, updateDevelopmentTransactionSalesPrice, updateTransactionLifecycleStage, updateDevelopmentSettings,
+  fetchDeveloperPartnersWorkspace, createDeveloperPartnerInvite,
   upsertTransactionHandover,
 } = operations

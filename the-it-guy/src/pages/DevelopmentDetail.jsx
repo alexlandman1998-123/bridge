@@ -83,6 +83,8 @@ import {
   updateTransactionLifecycleStage,
   updateDevelopmentSettings,
   upsertTransactionHandover,
+  fetchDeveloperPartnersWorkspace,
+  createDeveloperPartnerInvite,
 } from '../lib/developmentDetailApi'
 import { fetchOrganisationSettings, listOrganisationUsers, normalizeOrganisationDeveloperProfile } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
@@ -533,9 +535,15 @@ const DEFAULT_RESERVATION_SETTINGS_FORM = {
   defaultTransferAttorneySource: 'first_conveyancer',
   defaultTransferAttorneyName: '',
   defaultTransferAttorneyEmail: '',
+  defaultTransferAttorneyRelationshipId: '',
+  defaultTransferAttorneyPreferredPartnerId: '',
+  defaultTransferAttorneyOrganisationId: '',
   defaultBondOriginatorSource: 'first_bond_originator',
   defaultBondOriginatorName: '',
   defaultBondOriginatorEmail: '',
+  defaultBondOriginatorRelationshipId: '',
+  defaultBondOriginatorPreferredPartnerId: '',
+  defaultBondOriginatorOrganisationId: '',
   buyerAppointedBondOriginatorAllowed: true,
   buyerAppointedBondOriginatorRequiresApproval: true,
   autoInviteSelectedBondOriginator: false,
@@ -2126,6 +2134,18 @@ function buildReservationSettingsForm(settings = {}) {
       rolePlayerDefaults?.defaultTransferAttorneyEmail ||
       rolePlayerDefaults?.default_transfer_attorney_email ||
       '',
+    defaultTransferAttorneyRelationshipId:
+      rolePlayerDefaults?.defaultTransferAttorneyRelationshipId ||
+      rolePlayerDefaults?.default_transfer_attorney_relationship_id ||
+      '',
+    defaultTransferAttorneyPreferredPartnerId:
+      rolePlayerDefaults?.defaultTransferAttorneyPreferredPartnerId ||
+      rolePlayerDefaults?.default_transfer_attorney_preferred_partner_id ||
+      '',
+    defaultTransferAttorneyOrganisationId:
+      rolePlayerDefaults?.defaultTransferAttorneyOrganisationId ||
+      rolePlayerDefaults?.default_transfer_attorney_organisation_id ||
+      '',
     defaultBondOriginatorSource:
       rolePlayerDefaults?.defaultBondOriginatorSource ||
       rolePlayerDefaults?.default_bond_originator_source ||
@@ -2137,6 +2157,18 @@ function buildReservationSettingsForm(settings = {}) {
     defaultBondOriginatorEmail:
       rolePlayerDefaults?.defaultBondOriginatorEmail ||
       rolePlayerDefaults?.default_bond_originator_email ||
+      '',
+    defaultBondOriginatorRelationshipId:
+      rolePlayerDefaults?.defaultBondOriginatorRelationshipId ||
+      rolePlayerDefaults?.default_bond_originator_relationship_id ||
+      '',
+    defaultBondOriginatorPreferredPartnerId:
+      rolePlayerDefaults?.defaultBondOriginatorPreferredPartnerId ||
+      rolePlayerDefaults?.default_bond_originator_preferred_partner_id ||
+      '',
+    defaultBondOriginatorOrganisationId:
+      rolePlayerDefaults?.defaultBondOriginatorOrganisationId ||
+      rolePlayerDefaults?.default_bond_originator_organisation_id ||
       '',
     buyerAppointedBondOriginatorAllowed,
     buyerAppointedBondOriginatorRequiresApproval:
@@ -2427,11 +2459,44 @@ function DevelopmentDetail() {
   const [isEditingSellerDetails, setIsEditingSellerDetails] = useState(false)
   const [isEditingReservationSettings, setIsEditingReservationSettings] = useState(false)
   const [isEditingRoutingDefaults, setIsEditingRoutingDefaults] = useState(false)
+  const [partnerWorkspace, setPartnerWorkspace] = useState({ relationships: [], defaults: [] })
+  const [partnerWorkspaceLoading, setPartnerWorkspaceLoading] = useState(false)
+  const [routingInviteDrafts, setRoutingInviteDrafts] = useState({
+    transfer_attorney: { name: '', email: '' },
+    bond_originator: { name: '', email: '' },
+  })
+  const [routingInviteSaving, setRoutingInviteSaving] = useState('')
   const [externalAgentModalOpen, setExternalAgentModalOpen] = useState(false)
 
   const canManageDevelopment = can(PERMISSIONS.editDevelopments) || role === 'internal_admin'
   const canCreateTransactions = can(PERMISSIONS.manageDeveloperTransactions) || role === 'attorney'
   const canEditMarketing = canManageDevelopment || role === 'agent'
+  const developerOrganisationId =
+    data?.development?.organisation_id || data?.development?.organisationId || currentWorkspace?.id || ''
+
+  useEffect(() => {
+    let active = true
+    if (!developerOrganisationId) {
+      setPartnerWorkspace({ relationships: [], defaults: [] })
+      return () => { active = false }
+    }
+
+    async function loadPartnerWorkspace() {
+      try {
+        setPartnerWorkspaceLoading(true)
+        const workspace = await fetchDeveloperPartnersWorkspace({ organisationId: developerOrganisationId })
+        if (active) setPartnerWorkspace(workspace || { relationships: [], defaults: [] })
+      } catch (workspaceError) {
+        if (active) setPartnerWorkspace({ relationships: [], defaults: [] })
+        console.warn('[DevelopmentDetail] Partner routing options could not be loaded', workspaceError)
+      } finally {
+        if (active) setPartnerWorkspaceLoading(false)
+      }
+    }
+
+    void loadPartnerWorkspace()
+    return () => { active = false }
+  }, [developerOrganisationId])
   const openDevelopmentTransactionWorkspace = useCallback(
     (record = {}) => {
       const transactionId = getDevelopmentRecordTransactionId(record)
@@ -2615,6 +2680,50 @@ function DevelopmentDetail() {
   }, [data])
 
   const rows = useMemo(() => data?.rows || [], [data?.rows])
+  const routingPartnerOptions = useMemo(() => {
+    const developmentScopeId = data?.development?.id || ''
+    const isInScope = (item = {}) => {
+      const scopedIds = item?.scopeJson?.developmentIds || item?.scope_json?.developmentIds || []
+      return !scopedIds.length || scopedIds.includes(developmentScopeId)
+    }
+    const optionsByRole = { transfer_attorney: [], bond_originator: [] }
+    const addOption = (roleType, option) => {
+      if (!optionsByRole[roleType] || !option?.name) return
+      const duplicate = optionsByRole[roleType].some((item) =>
+        (option.relationshipId && item.relationshipId === option.relationshipId) ||
+        (!option.relationshipId && option.organisationId && item.organisationId === option.organisationId) ||
+        (!option.relationshipId && !option.organisationId && option.email && item.email === option.email),
+      )
+      if (!duplicate) optionsByRole[roleType].push(option)
+    }
+
+    ;(partnerWorkspace?.relationships || []).forEach((relationship) => {
+      const roleType = relationship?.partnerType
+      if (!optionsByRole[roleType] || ['archived', 'suspended'].includes(relationship?.status) || !isInScope(relationship)) return
+      addOption(roleType, {
+        key: `relationship:${relationship.id}`,
+        relationshipId: relationship.id || '',
+        organisationId: relationship.partnerOrganisationId || '',
+        name: relationship.partnerName || '',
+        email: relationship.partnerInvitationEmail || '',
+        status: relationship.status === 'invited' ? 'Invite pending' : 'Connected',
+      })
+    })
+    ;(partnerWorkspace?.defaults || []).forEach((partner) => {
+      const roleType = partner?.partnerType
+      if (!optionsByRole[roleType] || partner?.isActive === false || !isInScope(partner)) return
+      addOption(roleType, {
+        key: `preferred:${partner.id}`,
+        preferredPartnerId: partner.id || '',
+        relationshipId: partner.relationshipId || '',
+        organisationId: partner.partnerOrganisationId || '',
+        name: partner.companyName || '',
+        email: partner.email || '',
+        status: partner.isPreferredDefault ? 'Preferred partner' : 'Connected',
+      })
+    })
+    return optionsByRole
+  }, [data?.development?.id, partnerWorkspace])
   const allDevelopmentTransactionRows = useMemo(
     () => {
       // An empty transaction query is meaningful: units can still carry a
@@ -5012,8 +5121,14 @@ function DevelopmentDetail() {
         defaultBondOriginatorSource: reservationSettingsForm.defaultBondOriginatorSource,
         defaultTransferAttorneyName: reservationSettingsForm.defaultTransferAttorneyName.trim(),
         defaultTransferAttorneyEmail: reservationSettingsForm.defaultTransferAttorneyEmail.trim(),
+        defaultTransferAttorneyRelationshipId: reservationSettingsForm.defaultTransferAttorneyRelationshipId || '',
+        defaultTransferAttorneyPreferredPartnerId: reservationSettingsForm.defaultTransferAttorneyPreferredPartnerId || '',
+        defaultTransferAttorneyOrganisationId: reservationSettingsForm.defaultTransferAttorneyOrganisationId || '',
         defaultBondOriginatorName: reservationSettingsForm.defaultBondOriginatorName.trim(),
         defaultBondOriginatorEmail: reservationSettingsForm.defaultBondOriginatorEmail.trim(),
+        defaultBondOriginatorRelationshipId: reservationSettingsForm.defaultBondOriginatorRelationshipId || '',
+        defaultBondOriginatorPreferredPartnerId: reservationSettingsForm.defaultBondOriginatorPreferredPartnerId || '',
+        defaultBondOriginatorOrganisationId: reservationSettingsForm.defaultBondOriginatorOrganisationId || '',
         buyerAppointedBondOriginatorAllowed: Boolean(
           reservationSettingsForm.buyerAppointedBondOriginatorAllowed,
         ),
@@ -5079,6 +5194,70 @@ function DevelopmentDetail() {
       setError(saveError.message)
     } finally {
       setReservationSettingsSaving(false)
+    }
+  }
+
+  function selectRoutingPartner(roleType, selectedKey) {
+    const option = (routingPartnerOptions[roleType] || []).find((item) => item.key === selectedKey)
+    const prefix = roleType === 'transfer_attorney' ? 'defaultTransferAttorney' : 'defaultBondOriginator'
+    setReservationSettingsForm((previous) => ({
+      ...previous,
+      [`${prefix}Source`]: option ? 'developer_partner_default' : 'none',
+      [`${prefix}Name`]: option?.name || '',
+      [`${prefix}Email`]: option?.email || '',
+      [`${prefix}RelationshipId`]: option?.relationshipId || '',
+      [`${prefix}PreferredPartnerId`]: option?.preferredPartnerId || '',
+      [`${prefix}OrganisationId`]: option?.organisationId || '',
+    }))
+  }
+
+  async function handleRoutingPartnerInvite(roleType) {
+    const draft = routingInviteDrafts[roleType] || {}
+    const name = String(draft.name || '').trim()
+    const email = String(draft.email || '').trim()
+    if (!name || !email) {
+      setError('Enter the firm name and email before sending an invite.')
+      return
+    }
+    if (!developerOrganisationId || !data?.development?.id) {
+      setError('The development owner could not be identified for this invite.')
+      return
+    }
+
+    try {
+      setRoutingInviteSaving(roleType)
+      setError('')
+      const relationship = await createDeveloperPartnerInvite({
+        developerOrganisationId,
+        partnerType: roleType,
+        partnerDisplayName: name,
+        partnerInvitationEmail: email,
+        scopeType: 'specific_developments',
+        scopeJson: { developmentIds: [data.development.id] },
+        sendEmail: true,
+      })
+      const prefix = roleType === 'transfer_attorney' ? 'defaultTransferAttorney' : 'defaultBondOriginator'
+      setReservationSettingsForm((previous) => ({
+        ...previous,
+        [`${prefix}Source`]: 'developer_partner_default',
+        [`${prefix}Name`]: relationship.partnerName || name,
+        [`${prefix}Email`]: relationship.partnerInvitationEmail || email,
+        [`${prefix}RelationshipId`]: relationship.id || '',
+        [`${prefix}PreferredPartnerId`]: '',
+        [`${prefix}OrganisationId`]: relationship.partnerOrganisationId || '',
+      }))
+      setRoutingInviteDrafts((previous) => ({ ...previous, [roleType]: { name: '', email: '' } }))
+      const workspace = await fetchDeveloperPartnersWorkspace({ organisationId: developerOrganisationId })
+      setPartnerWorkspace(workspace || { relationships: [], defaults: [] })
+      setFeedback(
+        relationship?.invitationDelivery?.emailResult?.sent === false
+          ? `Invite created for ${name}. Save & Backfill to route the development transactions; share the invite from Partner Management if email delivery needs attention.`
+          : `Invite sent to ${name}. Save & Backfill to route the development transactions now.`,
+      )
+    } catch (inviteError) {
+      setError(inviteError?.message || 'The partner invite could not be sent.')
+    } finally {
+      setRoutingInviteSaving('')
     }
   }
 
@@ -7593,28 +7772,28 @@ function DevelopmentDetail() {
                         <h4 className="text-sm font-semibold text-[#142132]">Default Transfer Attorney</h4>
                         <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Used for every development transaction unless its attorney has been set manually.</p>
                         <div className="mt-4 grid gap-4">
-                          <DetailField label="Assignment">
-                            <Field as="select" value={reservationSettingsForm.defaultTransferAttorneySource} disabled={!isEditingRoutingDefaults || reservationSettingsSaving} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneySource: event.target.value }))}>
-                              <option value="first_conveyancer">Assign this firm by default</option>
-                              <option value="none">Do not auto-assign</option>
+                          <DetailField label="Connected attorney">
+                            <Field as="select" value={reservationSettingsForm.defaultTransferAttorneyRelationshipId ? `relationship:${reservationSettingsForm.defaultTransferAttorneyRelationshipId}` : reservationSettingsForm.defaultTransferAttorneyPreferredPartnerId ? `preferred:${reservationSettingsForm.defaultTransferAttorneyPreferredPartnerId}` : ''} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || partnerWorkspaceLoading} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => selectRoutingPartner('transfer_attorney', event.target.value)}>
+                              <option value="">{partnerWorkspaceLoading ? 'Loading connected partners…' : 'Choose a connected attorney'}</option>
+                              {(routingPartnerOptions.transfer_attorney || []).map((partner) => <option key={partner.key} value={partner.key}>{partner.name}{partner.email ? ` · ${partner.email}` : ''} · {partner.status}</option>)}
                             </Field>
                           </DetailField>
-                          <DetailField label="Attorney Firm"><Field value={reservationSettingsForm.defaultTransferAttorneyName} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || reservationSettingsForm.defaultTransferAttorneySource === 'none'} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneyName: event.target.value }))} placeholder="Tuckers Attorneys" /></DetailField>
-                          <DetailField label="Routing Email"><Field type="email" value={reservationSettingsForm.defaultTransferAttorneyEmail} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || reservationSettingsForm.defaultTransferAttorneySource === 'none'} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultTransferAttorneyEmail: event.target.value }))} placeholder="instructions@tuckers.co.za" /></DetailField>
+                          {reservationSettingsForm.defaultTransferAttorneyName ? <div className="rounded-xl border border-[#dbe7f1] bg-[#f8fbff] px-3 py-2 text-xs leading-5 text-[#526a82]"><strong className="font-semibold text-[#243b53]">Selected: </strong>{reservationSettingsForm.defaultTransferAttorneyName}{reservationSettingsForm.defaultTransferAttorneyEmail ? ` · ${reservationSettingsForm.defaultTransferAttorneyEmail}` : ''}</div> : null}
+                          {isEditingRoutingDefaults ? <div className="rounded-xl border border-dashed border-[#c9d8e7] bg-[#fbfcfe] p-3"><p className="text-xs font-semibold text-[#354b63]">Not in your partners yet?</p><p className="mt-1 text-xs leading-5 text-[#71839a]">Invite them to Arch9 for this development. They can see the routed historical transactions when they join.</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><Field value={routingInviteDrafts.transfer_attorney.name} disabled={Boolean(routingInviteSaving)} onChange={(event) => setRoutingInviteDrafts((previous) => ({ ...previous, transfer_attorney: { ...previous.transfer_attorney, name: event.target.value } }))} placeholder="Attorney firm name" /><Field type="email" value={routingInviteDrafts.transfer_attorney.email} disabled={Boolean(routingInviteSaving)} onChange={(event) => setRoutingInviteDrafts((previous) => ({ ...previous, transfer_attorney: { ...previous.transfer_attorney, email: event.target.value } }))} placeholder="Email address" /></div><Button type="button" variant="secondary" size="sm" className="mt-3" disabled={Boolean(routingInviteSaving)} onClick={() => handleRoutingPartnerInvite('transfer_attorney')}>{routingInviteSaving === 'transfer_attorney' ? 'Sending invite…' : 'Invite attorney to Arch9'}</Button></div> : null}
                         </div>
                       </section>
                       <section className="rounded-[18px] border border-[#dde4ee] bg-white p-4">
                         <h4 className="text-sm font-semibold text-[#142132]">Default Bond Originator</h4>
                         <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Used for bond-funded transactions and historic transactions awaiting finance capture.</p>
                         <div className="mt-4 grid gap-4">
-                          <DetailField label="Assignment">
-                            <Field as="select" value={reservationSettingsForm.defaultBondOriginatorSource} disabled={!isEditingRoutingDefaults || reservationSettingsSaving} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorSource: event.target.value }))}>
-                              <option value="first_bond_originator">Assign this firm by default</option>
-                              <option value="none">Do not auto-assign</option>
+                          <DetailField label="Connected bond originator">
+                            <Field as="select" value={reservationSettingsForm.defaultBondOriginatorRelationshipId ? `relationship:${reservationSettingsForm.defaultBondOriginatorRelationshipId}` : reservationSettingsForm.defaultBondOriginatorPreferredPartnerId ? `preferred:${reservationSettingsForm.defaultBondOriginatorPreferredPartnerId}` : ''} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || partnerWorkspaceLoading} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => selectRoutingPartner('bond_originator', event.target.value)}>
+                              <option value="">{partnerWorkspaceLoading ? 'Loading connected partners…' : 'Choose a connected bond originator'}</option>
+                              {(routingPartnerOptions.bond_originator || []).map((partner) => <option key={partner.key} value={partner.key}>{partner.name}{partner.email ? ` · ${partner.email}` : ''} · {partner.status}</option>)}
                             </Field>
                           </DetailField>
-                          <DetailField label="Bond Originator Firm"><Field value={reservationSettingsForm.defaultBondOriginatorName} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || reservationSettingsForm.defaultBondOriginatorSource === 'none'} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorName: event.target.value }))} placeholder="Bond originator firm" /></DetailField>
-                          <DetailField label="Routing Email"><Field type="email" value={reservationSettingsForm.defaultBondOriginatorEmail} disabled={!isEditingRoutingDefaults || reservationSettingsSaving || reservationSettingsForm.defaultBondOriginatorSource === 'none'} className={!isEditingRoutingDefaults ? READ_ONLY_FIELD_CLASS : ''} onChange={(event) => setReservationSettingsForm((previous) => ({ ...previous, defaultBondOriginatorEmail: event.target.value }))} placeholder="submissions@originator.co.za" /></DetailField>
+                          {reservationSettingsForm.defaultBondOriginatorName ? <div className="rounded-xl border border-[#dbe7f1] bg-[#f8fbff] px-3 py-2 text-xs leading-5 text-[#526a82]"><strong className="font-semibold text-[#243b53]">Selected: </strong>{reservationSettingsForm.defaultBondOriginatorName}{reservationSettingsForm.defaultBondOriginatorEmail ? ` · ${reservationSettingsForm.defaultBondOriginatorEmail}` : ''}</div> : null}
+                          {isEditingRoutingDefaults ? <div className="rounded-xl border border-dashed border-[#c9d8e7] bg-[#fbfcfe] p-3"><p className="text-xs font-semibold text-[#354b63]">Not in your partners yet?</p><p className="mt-1 text-xs leading-5 text-[#71839a]">Invite them to Arch9 for this development. They can see the routed historical transactions when they join.</p><div className="mt-3 grid gap-2 sm:grid-cols-2"><Field value={routingInviteDrafts.bond_originator.name} disabled={Boolean(routingInviteSaving)} onChange={(event) => setRoutingInviteDrafts((previous) => ({ ...previous, bond_originator: { ...previous.bond_originator, name: event.target.value } }))} placeholder="Bond originator firm name" /><Field type="email" value={routingInviteDrafts.bond_originator.email} disabled={Boolean(routingInviteSaving)} onChange={(event) => setRoutingInviteDrafts((previous) => ({ ...previous, bond_originator: { ...previous.bond_originator, email: event.target.value } }))} placeholder="Email address" /></div><Button type="button" variant="secondary" size="sm" className="mt-3" disabled={Boolean(routingInviteSaving)} onClick={() => handleRoutingPartnerInvite('bond_originator')}>{routingInviteSaving === 'bond_originator' ? 'Sending invite…' : 'Invite bond originator to Arch9'}</Button></div> : null}
                         </div>
                       </section>
                     </div>

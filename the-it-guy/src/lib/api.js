@@ -4481,6 +4481,9 @@ function normalizeDevelopmentRolePlayerDefaults(value = {}) {
     defaultTransferAttorneyPreferredPartnerId: normalizeTextValue(
       source.defaultTransferAttorneyPreferredPartnerId || source.default_transfer_attorney_preferred_partner_id,
     ),
+    defaultTransferAttorneyOrganisationId: normalizeNullableUuid(
+      source.defaultTransferAttorneyOrganisationId || source.default_transfer_attorney_organisation_id,
+    ),
     defaultTransferAttorneyName: normalizeTextValue(
       source.defaultTransferAttorneyName || source.default_transfer_attorney_name,
     ),
@@ -4492,6 +4495,9 @@ function normalizeDevelopmentRolePlayerDefaults(value = {}) {
     ),
     defaultBondOriginatorPreferredPartnerId: normalizeTextValue(
       source.defaultBondOriginatorPreferredPartnerId || source.default_bond_originator_preferred_partner_id,
+    ),
+    defaultBondOriginatorOrganisationId: normalizeNullableUuid(
+      source.defaultBondOriginatorOrganisationId || source.default_bond_originator_organisation_id,
     ),
     defaultBondOriginatorName: normalizeTextValue(
       source.defaultBondOriginatorName || source.default_bond_originator_name,
@@ -29942,6 +29948,9 @@ function resolveConfiguredDevelopmentRolePlayers(settings = {}, { includeBondOri
       partnerName: defaults.defaultTransferAttorneyName,
       contactPerson: defaults.defaultTransferAttorneyName,
       email: defaults.defaultTransferAttorneyEmail || null,
+      partnerRelationshipId: defaults.defaultTransferAttorneyRelationshipId || null,
+      preferredPartnerId: defaults.defaultTransferAttorneyPreferredPartnerId || null,
+      partnerOrganisationId: defaults.defaultTransferAttorneyOrganisationId || null,
       firmFirstAllocation: true,
       snapshot: { source: 'development_configuration_default' },
     })
@@ -29958,6 +29967,9 @@ function resolveConfiguredDevelopmentRolePlayers(settings = {}, { includeBondOri
       partnerName: defaults.defaultBondOriginatorName,
       contactPerson: defaults.defaultBondOriginatorName,
       email: defaults.defaultBondOriginatorEmail || null,
+      partnerRelationshipId: defaults.defaultBondOriginatorRelationshipId || null,
+      preferredPartnerId: defaults.defaultBondOriginatorPreferredPartnerId || null,
+      partnerOrganisationId: defaults.defaultBondOriginatorOrganisationId || null,
       snapshot: { source: 'development_configuration_default' },
     })
   }
