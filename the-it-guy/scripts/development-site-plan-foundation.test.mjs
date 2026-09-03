@@ -23,10 +23,15 @@ assert.match(detailPage, /nextMediaLibrary\.sitePlanUrl = urls\[0\] \|\| nextMed
 assert.match(availabilityWorkspace, /\[selectedUnit\.id\]: \{\n\s*x:/)
 assert.match(availabilityWorkspace, /onSaveSitePlanMap\?\.\(/)
 assert.match(availabilityWorkspace, /backgroundImage: sitePlanUrl/)
+assert.match(availabilityWorkspace, /beginNextSitePlanPlacement/)
+assert.match(availabilityWorkspace, /Place next \(\$\{unplacedUnits\[0\]\.displayNumber\}\)/)
+assert.match(availabilityWorkspace, /sitePlanUrl \? visibleUnits\.filter\(\(unit\) => hasSavedMapPosition\(sitePlanMap, unit\.id\)\) : visibleUnits/)
 
 assert.match(desktopPublicPage, /const map = media\.sitePlanMap \|\| \{\}/)
 assert.match(desktopPublicPage, /media\.masterplanUrl \|\| media\.sitePlanUrl/)
+assert.match(desktopPublicPage, /Number\.isFinite\(Number\(map\[unit\.id\]\?\.x\)\)/)
 assert.match(mobilePublicPage, /const map = media\.sitePlanMap \|\| \{\}/)
 assert.match(mobilePublicPage, /media\.masterplanUrl \|\| media\.sitePlanUrl/)
+assert.match(mobilePublicPage, /Number\.isFinite\(Number\(map\[unit\.id\]\?\.x\)\)/)
 
 console.log('development site-plan foundation contract checks passed')

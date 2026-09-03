@@ -127,6 +127,10 @@ function defaultMapPosition(index, total) {
     y: 16 + row * (68 / Math.max(rows - 1, 1)),
   };
 }
+function hasSavedMapPosition(sitePlanMap, unitId) {
+  const position = sitePlanMap?.[unitId];
+  return Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y));
+}
 function StatusPill({ status }) {
   const meta = STATUS_META[status] || STATUS_META.available;
   return (
@@ -329,21 +333,25 @@ export default function DevelopmentAvailabilityWorkspace({
     visibleUnits.find((unit) => unit.id === selectedUnitId) ||
     visibleUnits[0] ||
     null;
-  const mapUnits = useMemo(() => {
-    const mappedUnitIds = Object.keys(sitePlanMap || {});
-    return mappedUnitIds.length
-      ? visibleUnits.filter((unit) => mappedUnitIds.includes(unit.id))
-      : visibleUnits;
-  }, [sitePlanMap, visibleUnits]);
+  const mapUnits = useMemo(
+    () => (sitePlanUrl ? visibleUnits.filter((unit) => hasSavedMapPosition(sitePlanMap, unit.id)) : visibleUnits),
+    [sitePlanMap, sitePlanUrl, visibleUnits],
+  );
+  const unplacedUnits = useMemo(
+    () =>
+      inventory
+        .filter((unit) => !hasSavedMapPosition(sitePlanMap, unit.id))
+        .sort((left, right) =>
+          left.displayNumber.localeCompare(right.displayNumber, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          }),
+        ),
+    [inventory, sitePlanMap],
+  );
   const placedUnitCount = useMemo(
     () =>
-      inventory.filter((unit) => {
-        const position = sitePlanMap?.[unit.id];
-        return (
-          Number.isFinite(Number(position?.x)) &&
-          Number.isFinite(Number(position?.y))
-        );
-      }).length,
+      inventory.filter((unit) => hasSavedMapPosition(sitePlanMap, unit.id)).length,
     [inventory, sitePlanMap],
   );
   const sitePlanStatus = !sitePlanUrl
@@ -391,6 +399,13 @@ export default function DevelopmentAvailabilityWorkspace({
   }
   function beginSitePlanPlacement() {
     if (!sitePlanUrl || !selectedUnit || !canManageInventory) return;
+    setMapSelectionActive(false);
+    setPlacingUnit(true);
+  }
+  function beginNextSitePlanPlacement() {
+    const nextUnit = unplacedUnits[0];
+    if (!sitePlanUrl || !nextUnit || !canManageInventory) return;
+    setSelectedUnitId(nextUnit.id);
     setMapSelectionActive(false);
     setPlacingUnit(true);
   }
@@ -679,12 +694,15 @@ export default function DevelopmentAvailabilityWorkspace({
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">2. Place units</span>
               <strong className="mt-1 block text-sm text-[#173149]">{placedUnitCount} of {inventory.length} coordinates saved</strong>
-              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Select a unit, then place or adjust its marker on the plan.</p>
-              <Button type="button" size="sm" className="mt-3" variant={placingUnit ? "primary" : "secondary"} disabled={!sitePlanUrl || !selectedUnit || sitePlanSaving} onClick={beginSitePlanPlacement}><Crosshair size={13} />{placingUnit ? "Click plan to place" : "Place selected unit"}</Button>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Work through the remaining units or select one to adjust its saved marker.</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="primary" disabled={!sitePlanUrl || !unplacedUnits.length || sitePlanSaving} onClick={beginNextSitePlanPlacement}><Crosshair size={13} />{unplacedUnits.length ? `Place next (${unplacedUnits[0].displayNumber})` : "All units placed"}</Button>
+                <Button type="button" size="sm" variant="secondary" disabled={!sitePlanUrl || !selectedUnit || sitePlanSaving} onClick={beginSitePlanPlacement}><PencilLine size={13} />{placingUnit ? "Click plan to place" : "Adjust selected"}</Button>
+              </div>
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Review & publish</span>
-              <strong className="mt-1 block text-sm text-[#173149]">Review the live map before public release</strong>
+              <strong className="mt-1 block text-sm text-[#173149]">{unplacedUnits.length ? `${unplacedUnits.length} unit${unplacedUnits.length === 1 ? "" : "s"} still need placement` : "All units are ready to review"}</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Public-page publishing remains under Marketing. This step lets you review the same saved markers.</p>
               <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl} onClick={reviewSitePlanPlacement}><MapPinned size={13} /> Review placement</Button>
             </div>
@@ -715,11 +733,6 @@ export default function DevelopmentAvailabilityWorkspace({
           <div
           className="relative h-[470px] overflow-hidden rounded-[18px] border border-[#dce6ef] bg-[linear-gradient(135deg,#eaf0e7,#f7f4e9)] xl:h-[540px]"
           onClick={placeSelectedUnit}
-          role={placingUnit ? "button" : undefined}
-          tabIndex={placingUnit ? 0 : undefined}
-          onKeyDown={(event) => {
-            if (event.key === "Escape") setPlacingUnit(false);
-          }}
         >
           <div
             className="absolute inset-0 origin-center transition-transform duration-200"
@@ -796,7 +809,7 @@ export default function DevelopmentAvailabilityWorkspace({
           </div>
           {placingUnit ? (
             <span className="absolute bottom-4 left-4 rounded-[10px] bg-[#163f36] px-3 py-2 text-xs font-semibold text-white shadow-lg">
-              Click the plan to position Unit {selectedUnit?.displayNumber}
+              Click the plan to save Unit {selectedUnit?.displayNumber}. {unplacedUnits.length > 1 ? `${unplacedUnits.length - (hasSavedMapPosition(sitePlanMap, selectedUnit?.id) ? 0 : 1)} remain after this.` : "This is the final unit."}
             </span>
           ) : null}
           {selectedUnit && mapSelectionActive && !placingUnit ? (
