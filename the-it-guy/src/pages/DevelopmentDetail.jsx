@@ -10556,8 +10556,11 @@ function DevelopmentDetail() {
           sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
           sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
           sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
+          sitePlanPubliclyVisible={marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live'}
           onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
           onUploadSitePlan={(event) => void handleAvailabilitySitePlanUpload(event)}
+          onPreviewPublicSitePlan={handlePreviewPublicListing}
+          onOpenSitePlanPublicationControls={() => openMarketingHubSection('public-page')}
           onEditUnit={(unit) => openUnitModal(unit)}
           onChangeUnitStatus={(unit, status) => void handleUnitStatusQuickChange(unit, status)}
           onSetReleaseState={(unit, status) => handleUnitStatusQuickChange(unit, status)}
