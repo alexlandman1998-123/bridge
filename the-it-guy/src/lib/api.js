@@ -30106,7 +30106,7 @@ export async function applyDevelopmentConfigurationDefaults(developmentId, setti
 
   const transactionsResult = await client
     .from('transactions')
-    .select('id, finance_type, attorney, bond_originator, buyer_id, finance_managed_by')
+    .select('id, transaction_reference, matter_number, finance_type, attorney, bond_originator, buyer_id, finance_managed_by')
     .eq('development_id', developmentId)
 
   if (transactionsResult.error) throw transactionsResult.error
@@ -30148,6 +30148,9 @@ export async function applyDevelopmentConfigurationDefaults(developmentId, setti
       })
       const attorney = selections.find((item) => item.roleType === 'transfer_attorney')
       const bondOriginator = selections.find((item) => item.roleType === 'bond_originator')
+      const matterNumber = normalizeTextValue(transaction.matter_number) ||
+        normalizeTextValue(transaction.transaction_reference) ||
+        `MAT-${String(transaction.id).replaceAll('-', '').slice(0, 10).toUpperCase()}`
       await updateRecordByIdWithMissingColumnFallback(
         client,
         'transactions',
@@ -30155,6 +30158,7 @@ export async function applyDevelopmentConfigurationDefaults(developmentId, setti
         {
           attorney: attorney?.partnerName || transaction.attorney || null,
           assigned_attorney_email: attorney?.email || null,
+          matter_number: matterNumber,
           bond_originator: bondOriginator?.partnerName || transaction.bond_originator || null,
           assigned_bond_originator_email: bondOriginator?.email || null,
           updated_at: new Date().toISOString(),
