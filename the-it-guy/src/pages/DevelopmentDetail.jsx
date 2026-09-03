@@ -66,6 +66,7 @@ import { buildDevelopmentLaunchReadiness } from '../core/developments/developmen
 import { buildDevelopmentLaunchPacket, formatDevelopmentLaunchPacket } from '../core/developments/developmentLaunchPacket'
 import { buildDevelopmentLaunchAssurance } from '../core/developments/developmentLaunchAssurance'
 import { buildDevelopmentDemandIntelligence } from '../core/developments/developmentDemandIntelligence'
+import { isPdfSitePlanFile, renderSitePlanPdfFirstPage, validateSitePlanFile } from '../core/developments/developmentSitePlanPdfRenderer'
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
@@ -5060,6 +5061,63 @@ function DevelopmentDetail() {
       setDetailsForm(nextDetailsForm)
       await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
       setFeedback(options.successMessage || 'Marketing assets uploaded.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
+    } catch (uploadError) {
+      setError(uploadError.message)
+    } finally {
+      setMarketingAssetUploading('')
+      event.target.value = ''
+    }
+  }
+
+  async function handleAvailabilitySitePlanUpload(event) {
+    const [sourceFile] = Array.from(event.target.files || [])
+    if (!sourceFile) return
+
+    try {
+      setMarketingAssetUploading('availability-site-plan')
+      setError('')
+      setFeedback('')
+      validateSitePlanFile(sourceFile)
+
+      const sourceIsPdf = isPdfSitePlanFile(sourceFile)
+      const mapImageFile = await renderSitePlanPdfFirstPage(sourceFile)
+      if (sourceIsPdf) {
+        await uploadDevelopmentDocumentAsset({
+          developmentId: data.development.id,
+          file: sourceFile,
+          documentType: 'site_plan',
+          title: sourceFile.name,
+          description: 'Original source PDF retained for this site plan.',
+        })
+      }
+
+      const mapImage = await uploadDevelopmentDocumentAsset({
+        developmentId: data.development.id,
+        file: mapImageFile,
+        documentType: 'site_plan',
+        title: sourceIsPdf ? `${sourceFile.name} – map image` : sourceFile.name,
+        description: sourceIsPdf ? 'Map-ready image rendered from page 1 of the source PDF.' : '',
+      })
+      const uploadedDetailsForm = buildDetailsFormWithUploadedMarketingAssets([mapImage], 'site_plan')
+      const uploadedMarketing = normalizeMarketingContentForm(uploadedDetailsForm.marketing)
+      const listingSlug = uploadedMarketing.listingConfiguration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)
+      const nextDetailsForm = {
+        ...uploadedDetailsForm,
+        marketing: {
+          ...uploadedMarketing,
+          listingConfiguration: { ...uploadedMarketing.listingConfiguration, listingSlug },
+          externalLinks: {
+            ...uploadedMarketing.externalLinks,
+            developmentLandingPageUrl: uploadedMarketing.externalLinks.developmentLandingPageUrl || buildPublicDevelopmentUrl(listingSlug),
+          },
+        },
+      }
+
+      setDetailsForm(nextDetailsForm)
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      setFeedback(sourceIsPdf ? 'PDF source retained and page 1 is ready for unit mapping.' : 'Site plan uploaded and ready for mapping.')
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (uploadError) {
@@ -10497,14 +10555,9 @@ function DevelopmentDetail() {
           reservationDepositSummary={reservationDepositSummary}
           sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
           sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
-          sitePlanSaving={detailsSaving}
+          sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
           onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
-          onUploadSitePlan={(event) =>
-            void handleMarketingAssetFileUpload(event, 'site_plan', {
-              uploadKey: 'availability-site-plan',
-              successMessage: 'Site plan uploaded and ready for mapping.',
-            })
-          }
+          onUploadSitePlan={(event) => void handleAvailabilitySitePlanUpload(event)}
           onEditUnit={(unit) => openUnitModal(unit)}
           onChangeUnitStatus={(unit, status) => void handleUnitStatusQuickChange(unit, status)}
           onSetReleaseState={(unit, status) => handleUnitStatusQuickChange(unit, status)}

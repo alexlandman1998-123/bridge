@@ -672,9 +672,9 @@ export default function DevelopmentAvailabilityWorkspace({
           <section className="mb-4 grid gap-3 rounded-[18px] border border-[#dbe8e1] bg-[#f8fcfa] p-3 sm:grid-cols-3 sm:p-4">
             <div className="min-w-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">1. Upload plan</span>
-              <strong className="mt-1 block text-sm text-[#173149]">{sitePlanUrl ? "Plan image connected" : "Add a site-plan image"}</strong>
-              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">This becomes the shared background for Arch9 availability pages.</p>
-              {onUploadSitePlan ? <label className="mt-3 inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-[#173f38] px-3 text-xs font-semibold text-white hover:bg-[#12322d]"><Upload size={14} />{sitePlanUrl ? "Replace site plan" : "Upload site plan"}<input type="file" accept="image/*" className="hidden" onChange={onUploadSitePlan} /></label> : null}
+              <strong className="mt-1 block text-sm text-[#173149]">{sitePlanUrl ? "Plan image connected" : "Add a site-plan image or PDF"}</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">This becomes the shared background for Arch9 availability pages. PDFs use their first page for the map.</p>
+              {onUploadSitePlan ? <label className={`mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#173f38] px-3 text-xs font-semibold text-white ${sitePlanSaving ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-[#12322d]"}`}><Upload size={14} />{sitePlanSaving ? "Preparing plan…" : sitePlanUrl ? "Replace site plan" : "Upload site plan"}<input type="file" accept="image/*,application/pdf,.pdf" className="hidden" disabled={sitePlanSaving} onChange={onUploadSitePlan} /></label> : null}
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">2. Place units</span>

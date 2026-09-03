@@ -15,7 +15,9 @@ const [detailPage, availabilityWorkspace, desktopPublicPage, mobilePublicPage] =
 assert.match(detailPage, /sitePlanUrl=\{marketingForm\.mediaLibrary\.sitePlanUrl \|\| marketingForm\.mediaLibrary\.masterplanUrl\}/)
 assert.match(detailPage, /sitePlanMap=\{marketingForm\.mediaLibrary\.sitePlanMap\}/)
 assert.match(detailPage, /sitePlanMap,\n\s*},/)
-assert.match(detailPage, /handleMarketingAssetFileUpload\(event, 'site_plan'/)
+assert.match(detailPage, /handleAvailabilitySitePlanUpload\(event\)/)
+assert.match(detailPage, /renderSitePlanPdfFirstPage\(sourceFile\)/)
+assert.match(detailPage, /Original source PDF retained for this site plan/)
 assert.match(detailPage, /nextMediaLibrary\.sitePlanUrl = urls\[0\] \|\| nextMediaLibrary\.sitePlanUrl/)
 
 assert.match(availabilityWorkspace, /\[selectedUnit\.id\]: \{\n\s*x:/)
