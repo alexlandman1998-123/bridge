@@ -335,6 +335,24 @@ export default function DevelopmentAvailabilityWorkspace({
       ? visibleUnits.filter((unit) => mappedUnitIds.includes(unit.id))
       : visibleUnits;
   }, [sitePlanMap, visibleUnits]);
+  const placedUnitCount = useMemo(
+    () =>
+      inventory.filter((unit) => {
+        const position = sitePlanMap?.[unit.id];
+        return (
+          Number.isFinite(Number(position?.x)) &&
+          Number.isFinite(Number(position?.y))
+        );
+      }).length,
+    [inventory, sitePlanMap],
+  );
+  const sitePlanStatus = !sitePlanUrl
+    ? "Plan needed"
+    : placedUnitCount === 0
+      ? "Ready to place units"
+      : placedUnitCount >= inventory.length && inventory.length > 0
+        ? "Ready to publish"
+        : `${placedUnitCount} of ${inventory.length} units placed`;
   const isAgency = role === "agent";
   const comparisonUnits = inventory.filter((unit) =>
     comparisonUnitIds.includes(unit.id),
@@ -370,6 +388,16 @@ export default function DevelopmentAvailabilityWorkspace({
       },
     });
     setPlacingUnit(false);
+  }
+  function beginSitePlanPlacement() {
+    if (!sitePlanUrl || !selectedUnit || !canManageInventory) return;
+    setMapSelectionActive(false);
+    setPlacingUnit(true);
+  }
+  function reviewSitePlanPlacement() {
+    setPlacingUnit(false);
+    setZoom(1);
+    if (selectedUnit) setMapSelectionActive(true);
   }
   function toggleComparison(unit) {
     setComparisonUnitIds((previous) =>
@@ -636,7 +664,32 @@ export default function DevelopmentAvailabilityWorkspace({
               remain in sync.
             </p>
           </div>
+          <span className={`inline-flex w-fit items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${sitePlanUrl ? "bg-[#eaf7ef] text-[#167044]" : "bg-[#fff4e5] text-[#a65c12]"}`}>
+            <MapPinned size={14} /> {sitePlanStatus}
+          </span>
         </div>
+        {canManageInventory ? (
+          <section className="mb-4 grid gap-3 rounded-[18px] border border-[#dbe8e1] bg-[#f8fcfa] p-3 sm:grid-cols-3 sm:p-4">
+            <div className="min-w-0">
+              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">1. Upload plan</span>
+              <strong className="mt-1 block text-sm text-[#173149]">{sitePlanUrl ? "Plan image connected" : "Add a site-plan image"}</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">This becomes the shared background for Arch9 availability pages.</p>
+              {onUploadSitePlan ? <label className="mt-3 inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg bg-[#173f38] px-3 text-xs font-semibold text-white hover:bg-[#12322d]"><Upload size={14} />{sitePlanUrl ? "Replace site plan" : "Upload site plan"}<input type="file" accept="image/*" className="hidden" onChange={onUploadSitePlan} /></label> : null}
+            </div>
+            <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">2. Place units</span>
+              <strong className="mt-1 block text-sm text-[#173149]">{placedUnitCount} of {inventory.length} coordinates saved</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Select a unit, then place or adjust its marker on the plan.</p>
+              <Button type="button" size="sm" className="mt-3" variant={placingUnit ? "primary" : "secondary"} disabled={!sitePlanUrl || !selectedUnit || sitePlanSaving} onClick={beginSitePlanPlacement}><Crosshair size={13} />{placingUnit ? "Click plan to place" : "Place selected unit"}</Button>
+            </div>
+            <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Review & publish</span>
+              <strong className="mt-1 block text-sm text-[#173149]">Review the live map before public release</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Public-page publishing remains under Marketing. This step lets you review the same saved markers.</p>
+              <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl} onClick={reviewSitePlanPlacement}><MapPinned size={13} /> Review placement</Button>
+            </div>
+          </section>
+        ) : null}
         <div className="grid gap-4 xl:grid-cols-[195px_minmax(0,1fr)_minmax(340px,0.85fr)]">
           <aside className="flex h-[470px] flex-col rounded-[18px] border border-[#e0e8e4] bg-[#fbfdfb] p-3.5 xl:h-[540px]">
             <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">
@@ -657,7 +710,7 @@ export default function DevelopmentAvailabilityWorkspace({
               <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">Legend</span>
               <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-2 text-xs font-medium text-[#63778b]">{Object.entries(STATUS_META).map(([status, meta]) => <span key={status} className="inline-flex items-center gap-1.5"><i className={`h-2.5 w-2.5 shrink-0 rounded-sm ${meta.dot}`} />{meta.label}</span>)}</div>
             </div>
-            {canManageInventory ? <details className="mt-auto border-t border-[#e4ece6] pt-3 text-xs text-[#60758d]"><summary className="cursor-pointer font-semibold text-[#40586e]">Plan tools</summary><div className="mt-3 grid gap-2">{onUploadSitePlan ? <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-[#dbe6f2] bg-white px-2.5 font-semibold hover:bg-[#f8fbff]"><Upload size={12} /> Upload plan<input type="file" accept="image/*" className="hidden" onChange={onUploadSitePlan} /></label> : null}<Button type="button" size="sm" variant={placingUnit ? "primary" : "secondary"} disabled={!selectedUnit || sitePlanSaving} onClick={() => setPlacingUnit((value) => !value)}><Crosshair size={13} />{placingUnit ? "Click plan to place" : "Position selected unit"}</Button></div></details> : null}
+            {canManageInventory ? <p className="mt-auto border-t border-[#e4ece6] pt-3 text-xs leading-5 text-[#60758d]">Use Site Plan Setup above to upload a plan and place unit markers.</p> : null}
           </aside>
           <div
           className="relative h-[470px] overflow-hidden rounded-[18px] border border-[#dce6ef] bg-[linear-gradient(135deg,#eaf0e7,#f7f4e9)] xl:h-[540px]"
