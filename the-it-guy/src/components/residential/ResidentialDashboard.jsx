@@ -651,6 +651,7 @@ export function ResidentialCommandCenterGrid({
   canManageAppointments = false,
   appointmentRefreshKey = '',
   commissionTracker = null,
+  afterActiveTransactions = null,
   onViewTransactions,
   onOpenTransaction,
   onViewCalendar,
@@ -695,6 +696,8 @@ export function ResidentialCommandCenterGrid({
         onViewAll={onViewTransactions}
         onOpenRecord={onOpenTransaction}
       />
+
+      {afterActiveTransactions}
 
       <div className="grid items-stretch gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
         <ResidentialTransactionHealth data={model.transactionHealth} scope={scope} mode={mode} />

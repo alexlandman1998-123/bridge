@@ -1756,6 +1756,7 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
       activeTransactions: activeTransactions.length,
       attentionCount,
     },
+    portfolio,
     focus: [
       { key: 'buyer_onboarding', value: buyerOnboardingCount, label: 'Buyer onboardings outstanding', tone: 'amber', icon: Users },
       { key: 'transfer_guarantees', value: transfersWaitingCount, label: 'Transfers waiting for guarantees', tone: 'orange', icon: FileCheck2 },
@@ -1836,6 +1837,36 @@ function DeveloperSparkline({ points = [], tone = 'blue' }) {
         return <circle key={`${index}-${value}`} cx={x} cy={y} r="2.4" fill="white" stroke="currentColor" strokeWidth="2" />
       })}
     </svg>
+  )
+}
+
+function DeveloperMyDevelopments({ developments = [], onNavigate = () => {} }) {
+  return (
+    <section className="rounded-[20px] border border-[#dfe7f0] bg-white p-4 shadow-[0_18px_44px_rgba(15,23,42,0.06)] sm:p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-[1rem] font-semibold text-[#101828]">My Developments</h3>
+          <p className="mt-1 text-sm text-[#667085]">Track sales progress and active deals across your projects.</p>
+        </div>
+        <button type="button" className="shrink-0 text-sm font-semibold text-[#1769d1]" onClick={() => onNavigate('/developments')}>View all <ArrowRight className="ml-1 inline" size={15} /></button>
+      </div>
+      {developments.length ? (
+        <div className="mt-4 grid grid-flow-col auto-cols-[minmax(250px,320px)] gap-3 overflow-x-auto pb-2">
+          {developments.map((development) => (
+            <button key={development.id || development.name} type="button" onClick={() => onNavigate(development.href)} className="grid min-h-[166px] grid-rows-[auto_1fr_auto] rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-left transition hover:border-[#bcd2e7] hover:bg-white">
+              <div className="flex items-start justify-between gap-3">
+                <span className="grid h-10 w-10 place-items-center overflow-hidden rounded-[13px] bg-[#edf5ff] text-sm font-semibold text-[#1769d1]">
+                  {development.imageUrl ? <img className="h-full w-full object-cover" src={development.imageUrl} alt="" /> : String(development.name || 'D').slice(0, 1)}
+                </span>
+                <span className="rounded-full bg-[#ecfdf3] px-2.5 py-1 text-xs font-semibold text-[#16894f]">{formatPercent(development.sellThroughPercent || 0)} sold</span>
+              </div>
+              <div className="mt-4 min-w-0"><strong className="block truncate text-[0.98rem] text-[#101828]">{development.name}</strong><span className="mt-1 block text-xs text-[#667085]">{formatKpiCount(development.totalUnits)} units · {formatKpiCount(development.unitsInProgress || 0)} active transactions</span></div>
+              <div className="mt-4 flex items-center justify-between border-t border-[#e8eef5] pt-3 text-xs font-semibold text-[#1769d1]"><span>{formatKpiCurrency(development.pipelineValue || 0)} pipeline</span><ArrowRight size={15} /></div>
+            </button>
+          ))}
+        </div>
+      ) : <div className="mt-4 rounded-[16px] border border-dashed border-[#d3ddea] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#667085]">Developments will appear here once units are linked.</div>}
+    </section>
   )
 }
 
@@ -2784,6 +2815,53 @@ function Dashboard() {
       : null),
     [isDeveloperRole, organisation, overview, profile, rows],
   )
+  const developerResidentialModel = useMemo(() => {
+    if (!isDeveloperRole || !developerCommandCenterModel) return null
+    const portfolio = developerCommandCenterModel.portfolio || {}
+    const activeRows = developerCommandCenterModel.activeTransactions || []
+    const model = deriveResidentialDashboardMetrics({
+      scope: 'agent',
+      mode: 'sales',
+      dateRange: 'last_30_days',
+      source: {
+        kpis: {
+          activeTransactions: activeRows.length,
+          activeListings: portfolio.totalDevelopments || 0,
+          pipelineValue: portfolio.pipelineValue || 0,
+          expectedCommission: portfolio.totalSalesValue || 0,
+          newLeads: portfolio.unitsAvailable || 0,
+          trends: {},
+        },
+        activeTransactions: activeRows.map((item) => ({
+          ...item,
+          title: `${item.developmentName} · Unit ${item.unitNumber}`,
+          area: item.developmentName,
+          value: item.dealValue,
+          status: item.stageLabel,
+          clientName: item.buyerName,
+          daysInStage: '',
+        })),
+        health: {
+          total: activeRows.length,
+          movingNormally: activeRows.filter((item) => !item.readinessBlockersCount).length,
+          attentionRequired: activeRows.filter((item) => item.readinessWarningsCount > 0).length,
+          criticalDelays: activeRows.filter((item) => item.readinessBlockersCount > 0).length,
+        },
+        transactionFlow: [
+          { key: 'buyer_onboarding', label: 'Buyer Onboarding', count: (portfolio.stageCounts?.DEP || 0) + (portfolio.stageCounts?.OTP || 0), value: portfolio.pipelineValue || 0 },
+          { key: 'finance', label: 'Finance', count: portfolio.stageCounts?.FIN || 0, value: portfolio.pipelineValue || 0 },
+          { key: 'transfer', label: 'Transfer', count: (portfolio.stageCounts?.ATTY || 0) + (portfolio.stageCounts?.XFER || 0), value: portfolio.pipelineValue || 0 },
+          { key: 'registration', label: 'Registration', count: portfolio.unitsRegistered || 0, value: portfolio.totalSalesValue || 0 },
+        ],
+        performance: [],
+        forecastValues: [],
+      },
+    })
+    const labels = ['Active Transactions', 'Active Developments', 'Pipeline Value', 'Revenue Secured', 'Units Available']
+    model.kpis = model.kpis.map((item, index) => ({ ...item, label: labels[index] || item.label }))
+    model.activeTransactions.title = 'Active Transactions'
+    return model
+  }, [developerCommandCenterModel, isDeveloperRole])
   const AGENT_SUMMARY = useMemo(() => selectAgentSummary(roleScopedRows), [roleScopedRows])
   const bondSummary = useMemo(() => selectBondSummary(roleScopedRows), [roleScopedRows])
   const bondApplicationCards = useMemo(
@@ -5214,10 +5292,21 @@ function renderActiveTransactionsBlock({
       {!loading && isSupabaseConfigured ? (
         <>
           {isDeveloperRole ? (
-            <DeveloperLandingCommandCenter
-              model={developerCommandCenterModel}
-              onNavigate={(target) => navigateWithTrace(target, `developer-command-to-${String(target || '').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`)}
-            />
+            <section className="mt-6">
+              <Suspense fallback={<DashboardWidgetFallback lines={8} />}>
+                <ResidentialCommandCenterGrid
+                  model={developerResidentialModel}
+                  scope="agent"
+                  mode="sales"
+                  kpiIcons={[ArrowRightLeft, Building2, Banknote, CircleDollarSign, Home]}
+                  onViewTransactions={() => navigate('/transactions')}
+                  onOpenTransaction={(record) => {
+                    if (record?.transactionId || record?.id) navigate(`/transactions/${record.transactionId || record.id}`)
+                  }}
+                  afterActiveTransactions={<DeveloperMyDevelopments developments={developerCommandCenterModel?.developments || []} onNavigate={(target) => navigate(target)} />}
+                />
+              </Suspense>
+            </section>
           ) : null}
 
           {!isRoleScopedDashboard && !isDeveloperRole ? (
