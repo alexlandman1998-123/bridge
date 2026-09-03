@@ -2384,6 +2384,7 @@ function DevelopmentDetail() {
   const [unitStatusSavingId, setUnitStatusSavingId] = useState('')
   const [unitQuickSavingKey, setUnitQuickSavingKey] = useState('')
   const [unitTransactionBackfillSaving, setUnitTransactionBackfillSaving] = useState(false)
+  const [unitTransactionBackfillProgress, setUnitTransactionBackfillProgress] = useState({ completed: 0, total: 0 })
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
   const [structureSetupSaving, setStructureSetupSaving] = useState(false)
   const [productCatalogueSaving, setProductCatalogueSaving] = useState(false)
@@ -5474,6 +5475,7 @@ function DevelopmentDetail() {
 
     try {
       setUnitTransactionBackfillSaving(true)
+      setUnitTransactionBackfillProgress({ completed: 0, total: unlinkedProgressedUnits.length })
       setFeedback('')
       setError('')
 
@@ -5486,6 +5488,7 @@ function DevelopmentDetail() {
         } catch (backfillError) {
           failures.push({ unit, message: backfillError?.message || 'Could not create transaction.' })
         }
+        setUnitTransactionBackfillProgress({ completed: createdCount + failures.length, total: unlinkedProgressedUnits.length })
       }
 
       if (createdCount) {
@@ -5507,6 +5510,7 @@ function DevelopmentDetail() {
       setError(backfillError?.message || 'Could not backfill the historical transactions.')
     } finally {
       setUnitTransactionBackfillSaving(false)
+      setUnitTransactionBackfillProgress({ completed: 0, total: 0 })
     }
   }
 
@@ -9952,7 +9956,7 @@ function DevelopmentDetail() {
                 >
                   <Plus size={15} />
                   {unitTransactionBackfillSaving
-                    ? 'Backfilling…'
+                    ? `Backfilling ${unitTransactionBackfillProgress.completed} of ${unitTransactionBackfillProgress.total}…`
                     : `Backfill ${unlinkedProgressedUnits.length} transaction${unlinkedProgressedUnits.length === 1 ? '' : 's'}`}
                 </Button>
               </div>

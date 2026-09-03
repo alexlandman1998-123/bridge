@@ -29957,6 +29957,10 @@ export async function createDevelopmentTransactionFromUnitStatus({
     options: {
       allowIncomplete: true,
       deferFinanceType: true,
+      // A historical unit-status record deliberately has no buyer yet. Creating
+      // its buyer portal at this point makes the otherwise valid transaction
+      // lifecycle fail before it can be linked to the unit.
+      skipClientPortalSetup: true,
       creationOrigin: 'development_unit_status',
       sourceContext: {
         originLabel: 'Development unit status update',
@@ -29995,6 +29999,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   }
   const actorRole = normalizeRoleType(actorProfile.role || 'agent')
   const allowIncomplete = Boolean(options?.allowIncomplete)
+  const skipClientPortalSetup = Boolean(options?.skipClientPortalSetup)
 
   const sourceContext = options?.sourceContext && typeof options.sourceContext === 'object' ? options.sourceContext : {}
   const saleProfile = resolveTransactionSaleProfile({
@@ -30267,7 +30272,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     attorneyAssignmentRequired: expectedAttorneyAssignments > 0,
     bondOriginatorAssignmentRequired: expectedBondOriginatorAssignments > 0,
     sellerHandoffRequired: transactionType === 'private_property',
-    portalSetupRequired: ['developer_sale', 'private_property'].includes(transactionType),
+    portalSetupRequired: !skipClientPortalSetup && ['developer_sale', 'private_property'].includes(transactionType),
   })
   const initialCreationLifecyclePatch = buildTransactionCreationPersistencePatch({
     lifecycle: creationLifecycle,
