@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Building2,
+  CalendarDays,
   ChevronDown,
   ChevronUp,
   CheckCircle2,
@@ -3447,6 +3448,8 @@ function DevelopmentDetail() {
           description: item.description || '',
           fileUrl: item.fileUrl || '',
           linkedUnitType: item.linkedUnitType || item.linked_unit_type || '',
+          uploadedAt: item.uploadedAt || item.uploaded_at || item.createdAt || item.created_at || null,
+          createdAt: item.createdAt || item.created_at || null,
         }))
         .filter((item) => item.fileUrl),
     [documents],
@@ -3585,6 +3588,61 @@ function DevelopmentDetail() {
       listingStatus: marketingForm.listingOverview.listingStatus || 'draft',
     }
   }, [marketingAssetDocuments.length, marketingForm])
+  const marketingHubOverview = useMemo(() => {
+    const galleryAssets = marketingAssetGroups.find((group) => group.key === 'gallery')?.items || []
+    const planAssets = marketingAssetGroups.find((group) => group.key === 'plans')?.items || []
+    const documentAssets = marketingAssetGroups.find((group) => group.key === 'documents')?.items || []
+    const readinessItems = [
+      {
+        id: 'content',
+        label: 'Development overview',
+        complete: Boolean(String(marketingForm.listingOverview.listingDescription || '').trim()),
+      },
+      { id: 'media', label: 'Images & renders', complete: galleryAssets.length > 0 },
+      {
+        id: 'floor-plans',
+        label: 'Floor plans',
+        complete: planAssets.length > 0 || marketingForm.floorplans.length > 0,
+      },
+      { id: 'documents', label: 'Brochure & documents', complete: documentAssets.length > 0 },
+    ]
+    const completeCount = readinessItems.filter((item) => item.complete).length
+    const readinessPercent = Math.round((completeCount / readinessItems.length) * 100)
+    const recentActivity = [
+      ...marketingAssetDocuments.map((asset) => ({
+        id: `asset-${asset.id}`,
+        type: 'upload',
+        title: asset.title,
+        detail: `${asset.typeLabel} added to the development library`,
+        occurredAt: asset.uploadedAt || asset.createdAt,
+      })),
+      ...linkedListingRows.map((listing) => ({
+        id: `listing-${listing.id}`,
+        type: 'listing',
+        title: listing.title,
+        detail: `Listing status: ${toTitleLabel(listing.status || 'draft')}`,
+        occurredAt: listing.updatedAt,
+      })),
+    ]
+      .filter((item) => item.occurredAt)
+      .sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime())
+      .slice(0, 4)
+
+    const launchDate = detailsForm.launchDate ? new Date(detailsForm.launchDate) : null
+    const upcomingEvents = launchDate && !Number.isNaN(launchDate.getTime()) && launchDate.getTime() >= new Date().setHours(0, 0, 0, 0)
+      ? [{ id: 'development-launch', title: 'Development launch', date: detailsForm.launchDate, detail: data?.development?.name || 'Development' }]
+      : []
+
+    return {
+      readinessItems,
+      readinessPercent,
+      galleryAssets,
+      planAssets,
+      documentAssets,
+      recentActivity,
+      upcomingEvents,
+    }
+  }, [data?.development?.name, detailsForm.launchDate, linkedListingRows, marketingAssetDocuments, marketingAssetGroups, marketingForm.floorplans.length, marketingForm.listingOverview.listingDescription])
   const marketingSellingPointEntries = useMemo(
     () => parseSellingPointEntries(marketingForm.sellingPoints.items),
     [marketingForm.sellingPoints.items],
@@ -6237,6 +6295,192 @@ function DevelopmentDetail() {
       setDeleteSaving(false)
       setDeleteConfirmOpen(false)
     }
+  }
+
+  function renderMarketingHubOverview() {
+    const categoryCards = [
+      {
+        id: 'media',
+        title: 'Images & Renders',
+        count: marketingHubOverview.galleryAssets.length,
+        label: 'assets',
+        icon: ImagePlus,
+        asset: marketingHubOverview.galleryAssets.find((item) => isLikelyImageUrl(item.fileUrl)),
+      },
+      {
+        id: 'floor-plans',
+        title: 'Floor Plans',
+        count: marketingHubOverview.planAssets.length || marketingForm.floorplans.length,
+        label: marketingHubOverview.planAssets.length ? 'files' : 'unit types',
+        icon: LandPlot,
+        asset: marketingHubOverview.planAssets.find((item) => isLikelyImageUrl(item.fileUrl)),
+      },
+      {
+        id: 'documents',
+        title: 'Brochures & Documents',
+        count: marketingHubOverview.documentAssets.length,
+        label: 'files',
+        icon: FileText,
+        asset: marketingHubOverview.documentAssets.find((item) => isLikelyImageUrl(item.fileUrl)),
+      },
+      {
+        id: 'content',
+        title: 'Approved Copy',
+        count: marketingHubOverview.readinessItems.find((item) => item.id === 'content')?.complete ? 1 : 0,
+        label: 'content set',
+        icon: Copy,
+        asset: null,
+      },
+    ]
+
+    return (
+      <section className="grid gap-5">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <article className="rounded-[20px] border border-[#e3ebf4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:col-span-2">
+            <div className="flex items-center gap-4">
+              <div
+                className="grid h-16 w-16 shrink-0 place-items-center rounded-full"
+                style={{ background: `conic-gradient(#168a57 ${marketingHubOverview.readinessPercent * 3.6}deg, #e8eef3 0deg)` }}
+                aria-label={`${marketingHubOverview.readinessPercent}% marketing readiness`}
+              >
+                <span className="grid h-11 w-11 place-items-center rounded-full bg-white text-sm font-semibold text-[#18344b]">
+                  {marketingHubOverview.readinessPercent}%
+                </span>
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#142132]">Marketing readiness</p>
+                <p className="mt-1 text-sm leading-5 text-[#6b7d93]">
+                  {marketingHubOverview.readinessPercent === 100
+                    ? 'Core marketing content is in place.'
+                    : 'Complete the remaining essentials to reach 100%.'}
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <article className="rounded-[20px] border border-[#e3ebf4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#eaf7ef] text-[#168a57]"><FolderKanban size={19} /></span>
+            <p className="mt-4 text-sm font-semibold text-[#52667d]">Shared assets</p>
+            <strong className="mt-1 block text-[1.8rem] leading-none tracking-[-0.04em] text-[#142132]">{marketingAssetDocuments.length}</strong>
+            <p className="mt-2 text-xs leading-5 text-[#718299]">Available in the development library</p>
+          </article>
+
+          <article className="rounded-[20px] border border-[#e3ebf4] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#edf4ff] text-[#2f6fec]"><Users size={19} /></span>
+            <p className="mt-4 text-sm font-semibold text-[#52667d]">Marketing partners</p>
+            <strong className="mt-1 block text-[1.8rem] leading-none tracking-[-0.04em] text-[#142132]">{marketingAgencyEntries.length}</strong>
+            <p className="mt-2 text-xs leading-5 text-[#718299]">Current agencies on the development</p>
+          </article>
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+          <article className={`${CARD_SHELL}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Marketing Library</h4>
+                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Browse the existing approved development material by category.</p>
+              </div>
+              <button type="button" onClick={() => openMarketingHubSection('media')} className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-[#2171c7] hover:text-[#14569f]">
+                View library <ArrowUpRight size={15} />
+              </button>
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {categoryCards.map((card) => {
+                const Icon = card.icon
+                return (
+                  <button
+                    key={card.id}
+                    type="button"
+                    onClick={() => openMarketingHubSection(card.id)}
+                    className="group overflow-hidden rounded-[16px] border border-[#e3ebf4] bg-white text-left transition hover:-translate-y-0.5 hover:border-[#c8d9ea] hover:shadow-[0_10px_22px_rgba(15,23,42,0.08)]"
+                  >
+                    <div className="relative flex h-28 items-center justify-center overflow-hidden bg-[#eef4f8]">
+                      {card.asset ? (
+                        <img src={card.asset.fileUrl} alt="" className="h-full w-full object-cover" />
+                      ) : (
+                        <Icon size={28} className="text-[#64819c]" aria-hidden="true" />
+                      )}
+                      <span className="absolute inset-0 bg-[#142132]/[0.08]" aria-hidden="true" />
+                    </div>
+                    <div className="p-3.5">
+                      <strong className="block text-sm font-semibold text-[#142132]">{card.title}</strong>
+                      <span className="mt-1 block text-xs text-[#6b7d93]">{card.count} {card.label}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </article>
+
+          <aside className={`${CARD_SHELL}`}>
+            <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Marketing Readiness</h4>
+            <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Core items sourced from the current development configuration.</p>
+            <div className="mt-4 grid gap-3">
+              {marketingHubOverview.readinessItems.map((item) => (
+                <button key={item.id} type="button" onClick={() => openMarketingHubSection(item.id)} className="flex items-center justify-between gap-3 rounded-[12px] border border-[#e6edf5] bg-[#fbfcfe] px-3 py-2.5 text-left hover:border-[#c8d9ea]">
+                  <span className="inline-flex items-center gap-2 text-sm font-medium text-[#30485f]">
+                    <CheckCircle2 size={16} className={item.complete ? 'text-[#168a57]' : 'text-[#a8b7c6]'} />
+                    {item.label}
+                  </span>
+                  <span className={`text-xs font-semibold ${item.complete ? 'text-[#168a57]' : 'text-[#77899d]'}`}>
+                    {item.complete ? 'Complete' : 'Incomplete'}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </aside>
+        </section>
+
+        <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+          <article className={CARD_SHELL}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Upcoming Events</h4>
+                <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Development launch dates currently configured in this workspace.</p>
+              </div>
+              <button type="button" onClick={() => openMarketingHubSection('events')} className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold text-[#2171c7] hover:text-[#14569f]">
+                View events <ArrowUpRight size={15} />
+              </button>
+            </div>
+            {marketingHubOverview.upcomingEvents.length ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {marketingHubOverview.upcomingEvents.map((event) => (
+                  <article key={event.id} className="flex items-center gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5">
+                    <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-[#edf4ff] text-[#2f6fec]"><CalendarDays size={18} /></span>
+                    <div>
+                      <strong className="block text-sm text-[#142132]">{event.title}</strong>
+                      <span className="mt-1 block text-xs text-[#6b7d93]">{formatDate(event.date)} · {event.detail}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 rounded-[15px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-4 py-6 text-sm text-[#6b7d93]">
+                No upcoming development events are configured yet.
+              </p>
+            )}
+          </article>
+
+          <aside className={CARD_SHELL}>
+            <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Recent Activity</h4>
+            <div className="mt-4 grid gap-3">
+              {marketingHubOverview.recentActivity.length ? marketingHubOverview.recentActivity.map((activity) => (
+                <article key={activity.id} className="flex gap-3 rounded-[12px] border border-[#e6edf5] bg-[#fbfcfe] p-3">
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-[#eaf7ef] text-[#168a57]"><Upload size={15} /></span>
+                  <div className="min-w-0">
+                    <strong className="block truncate text-sm text-[#20364c]">{activity.title}</strong>
+                    <p className="mt-0.5 text-xs leading-5 text-[#6b7d93]">{activity.detail}</p>
+                    <span className="mt-1 block text-xs text-[#8a9aad]">{formatDate(activity.occurredAt)}</span>
+                  </div>
+                </article>
+              )) : (
+                <p className="rounded-[12px] border border-dashed border-[#d8e3ef] bg-[#fbfdff] px-3 py-5 text-sm text-[#6b7d93]">Recent marketing activity will appear once assets or listings are updated.</p>
+              )}
+            </div>
+          </aside>
+        </section>
+      </section>
+    )
   }
 
   function renderEditableMarketingContent() {
@@ -9680,13 +9924,15 @@ function DevelopmentDetail() {
             </>
           )}
             </>
+          ) : marketingHubSection === 'overview' ? (
+            renderMarketingHubOverview()
           ) : (
             <section className={`${CARD_SHELL} text-center`}>
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#1f7a45]">
                 {MARKETING_HUB_SECTIONS.find((section) => section.id === marketingHubSection)?.label || 'Marketing Hub'}
               </p>
               <h4 className="mt-2 text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">
-                {marketingHubSection === 'overview' ? 'Marketing Hub overview is next' : 'This section is being introduced incrementally'}
+                This section is being introduced incrementally
               </h4>
               <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#6b7d93]">
                 Existing marketing workflows remain unchanged while this hub is rolled out section by section. Development Content is available now.
