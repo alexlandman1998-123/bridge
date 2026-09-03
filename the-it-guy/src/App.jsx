@@ -1159,6 +1159,41 @@ function AuthGate({ onRetryBootstrap = null, onLogout = null }) {
     )
   }
 
+  const lockedWorkspace = (authState.memberships || [])
+    .map((membership) => membership?.workspace)
+    .find((workspace) => ['suspended', 'locked'].includes(String(workspace?.status || '').trim().toLowerCase()))
+  const shouldShowWorkspaceLock =
+    baseRole !== 'platform_admin' &&
+    authState.activeMemberships.length === 0 &&
+    Boolean(lockedWorkspace)
+
+  if (shouldShowWorkspaceLock) {
+    return (
+      <section className="auth-loading-screen">
+        <div className="auth-loading-card">
+          <h2>We’ll keep the light on</h2>
+          <p>
+            Your {lockedWorkspace?.name || 'organisation'} workspace is temporarily unavailable, but nothing has gone anywhere. Your information is safe and waiting for you.
+          </p>
+          <p className="mt-3">Please contact your administrator to restore access.</p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+            <button
+              type="button"
+              className="auth-secondary-cta"
+              onClick={() => {
+                void Promise.resolve(onLogout?.()).finally(() => {
+                  window.location.assign('/auth')
+                })
+              }}
+            >
+              Sign out
+            </button>
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   const onAnyOnboardingRoute = isOnboardingRoute(location.pathname)
   if (baseRole !== 'client' && (onAnyOnboardingRoute || !onboardingCompleted)) {
     console.debug('[ONBOARDING] gate:setup-state', {
