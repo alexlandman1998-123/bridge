@@ -2383,6 +2383,7 @@ function DevelopmentDetail() {
   const [unitSaving, setUnitSaving] = useState(false)
   const [unitStatusSavingId, setUnitStatusSavingId] = useState('')
   const [unitQuickSavingKey, setUnitQuickSavingKey] = useState('')
+  const [unitTransactionBackfillSaving, setUnitTransactionBackfillSaving] = useState(false)
   const [bulkUnitSaving, setBulkUnitSaving] = useState(false)
   const [structureSetupSaving, setStructureSetupSaving] = useState(false)
   const [productCatalogueSaving, setProductCatalogueSaving] = useState(false)
@@ -3039,6 +3040,10 @@ function DevelopmentDetail() {
           null,
       })),
     [floorplanTitleByDocumentId, floorplanTitlesByUnitType, rows],
+  )
+  const unlinkedProgressedUnits = useMemo(
+    () => unitRows.filter((unit) => !unit.currentTransactionId && requiresDevelopmentTransaction(unit.status)),
+    [unitRows],
   )
   const productUnitTypes = data?.productCatalogue?.unitTypes || []
   const catalogueFloorplans = data?.productCatalogue?.floorplans || []
@@ -5446,7 +5451,7 @@ function DevelopmentDetail() {
     }
   }
 
-  async function createTransactionForUnitStatus(unit, unitStatus = unit?.status) {
+  async function createTransactionForUnitStatus(unit, unitStatus = unit?.status, { notify = true } = {}) {
     const result = await createDevelopmentTransactionFromUnitStatus({
       developmentId: data?.development?.id || developmentId,
       unitId: unit?.id,
@@ -5454,9 +5459,55 @@ function DevelopmentDetail() {
       unitStatus,
       salesPrice: unit?.salesPrice ?? unit?.currentPrice ?? unit?.price ?? unit?.listPrice ?? null,
     })
-    window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
-    window.dispatchEvent(new Event('itg:developments-changed'))
+    if (notify) {
+      window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
+      window.dispatchEvent(new Event('itg:developments-changed'))
+    }
     return result
+  }
+
+  async function handleUnitTransactionBackfill() {
+    if (!unlinkedProgressedUnits.length) return
+
+    const failures = []
+    let createdCount = 0
+
+    try {
+      setUnitTransactionBackfillSaving(true)
+      setFeedback('')
+      setError('')
+
+      // Process one at a time: this avoids a large bulk update creating competing
+      // client/transaction records and makes partial failures easy to retry safely.
+      for (const unit of unlinkedProgressedUnits) {
+        try {
+          await createTransactionForUnitStatus(unit, unit.status, { notify: false })
+          createdCount += 1
+        } catch (backfillError) {
+          failures.push({ unit, message: backfillError?.message || 'Could not create transaction.' })
+        }
+      }
+
+      if (createdCount) {
+        window.dispatchEvent(new Event('itg:developments-changed'))
+        window.dispatchEvent(new Event('itg:transaction-created'))
+        await loadData()
+      }
+
+      if (failures.length) {
+        const failedUnits = failures.map(({ unit }) => unit.unitNumber || unit.unit_number || 'unknown').join(', ')
+        setError(`${failures.length} unit transaction${failures.length === 1 ? '' : 's'} could not be created (${failedUnits}). You can retry the backfill; completed units will not be duplicated.`)
+      }
+      setFeedback(
+        createdCount
+          ? `${createdCount} historical transaction${createdCount === 1 ? '' : 's'} created. Complete buyer, finance and partner details from each transaction.`
+          : 'No historical transactions were created.',
+      )
+    } catch (backfillError) {
+      setError(backfillError?.message || 'Could not backfill the historical transactions.')
+    } finally {
+      setUnitTransactionBackfillSaving(false)
+    }
   }
 
   async function handleUnitTransactionRecovery(unit) {
@@ -9864,7 +9915,7 @@ function DevelopmentDetail() {
             <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h3 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Transactions In This Development</h3>
-                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Create and manage the deal pipeline for this development here. Available units start new sales; units previously marked sold, finance, transfer or registered can be recovered into a transaction from the Units tab.</p>
+                <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Create and manage the deal pipeline for this development here. Available units start new sales; progressed units without a transaction can be backfilled below.</p>
               </div>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <Field type="search" className="min-w-[260px]" value={transactionSearch} onChange={(event) => setTransactionSearch(event.target.value)} placeholder="Search buyer, unit, or email" />
@@ -9883,6 +9934,29 @@ function DevelopmentDetail() {
                 </Button>
               </div>
             </div>
+
+            {unlinkedProgressedUnits.length ? (
+              <div className="mb-5 flex flex-col gap-3 rounded-[16px] border border-[#f0d4a5] bg-[#fffbf2] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-[#6b4917]">
+                    {unlinkedProgressedUnits.length} progressed unit{unlinkedProgressedUnits.length === 1 ? '' : 's'} {unlinkedProgressedUnits.length === 1 ? 'has' : 'have'} no transaction yet.
+                  </p>
+                  <p className="mt-1 text-sm leading-5 text-[#806132]">
+                    Backfill creates one incomplete transaction per unit at its current status. Buyer, finance and attorney details remain ready for capture; no placeholder information is created.
+                  </p>
+                </div>
+                <Button
+                  className="shrink-0 whitespace-nowrap"
+                  onClick={() => void handleUnitTransactionBackfill()}
+                  disabled={unitTransactionBackfillSaving}
+                >
+                  <Plus size={15} />
+                  {unitTransactionBackfillSaving
+                    ? 'Backfilling…'
+                    : `Backfill ${unlinkedProgressedUnits.length} transaction${unlinkedProgressedUnits.length === 1 ? '' : 's'}`}
+                </Button>
+              </div>
+            ) : null}
 
             {transactionRows.length ? (
               <div className="overflow-hidden rounded-[18px] border border-[#e3ebf4] bg-white">

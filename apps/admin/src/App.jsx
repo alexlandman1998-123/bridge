@@ -97,6 +97,51 @@ const PROSPECT_DEMO_SELECT = [
   'updated_at',
 ].join(', ')
 
+const PROSPECT_DEMO_DRAFT_STORAGE_KEY = 'arch9-admin-prospect-demo-draft-v1'
+
+const DEFAULT_PROSPECT_DEMO_FORM = {
+  agencyName: '',
+  slug: '',
+  primaryColour: '#274C69',
+  secondaryColour: '#10273A',
+  accentColour: '#F7CF22',
+  logoUrl: '',
+  logoLightUrl: '',
+  logoDarkUrl: '',
+  samplePropertyImageUrl: '',
+  samplePropertyAddress: '',
+}
+
+function restoreProspectDemoDraft() {
+  if (typeof window === 'undefined') return null
+
+  try {
+    const rawDraft = window.localStorage.getItem(PROSPECT_DEMO_DRAFT_STORAGE_KEY)
+    if (!rawDraft) return null
+    const draft = JSON.parse(rawDraft)
+    if (!draft || typeof draft !== 'object') return null
+
+    const form = Object.fromEntries(
+      Object.keys(DEFAULT_PROSPECT_DEMO_FORM).map((key) => [
+        key,
+        typeof draft.form?.[key] === 'string' ? draft.form[key] : DEFAULT_PROSPECT_DEMO_FORM[key],
+      ]),
+    )
+    return {
+      form: {
+        ...DEFAULT_PROSPECT_DEMO_FORM,
+        ...form,
+      },
+      savedConfig: draft.savedConfig && typeof draft.savedConfig === 'object'
+        ? mapProspectDemoConfig(draft.savedConfig)
+        : null,
+      slugTouched: Boolean(draft.slugTouched),
+    }
+  } catch {
+    return null
+  }
+}
+
 function normalizeDemoSlug(value = '') {
   return String(value || '')
     .trim()
@@ -3489,18 +3534,7 @@ function ProspectGeneratedDemoCard({ config, copiedKey, onCopy, onEdit }) {
 }
 
 function ProspectDemoGeneratorView() {
-  const [form, setForm] = useState({
-    agencyName: '',
-    slug: '',
-    primaryColour: '#274C69',
-    secondaryColour: '#10273A',
-    accentColour: '#F7CF22',
-    logoUrl: '',
-    logoLightUrl: '',
-    logoDarkUrl: '',
-    samplePropertyImageUrl: '',
-    samplePropertyAddress: '',
-  })
+  const [form, setForm] = useState(DEFAULT_PROSPECT_DEMO_FORM)
   const [activeTab, setActiveTab] = useState('create')
   const [generatedDemos, setGeneratedDemos] = useState([])
   const [isLoadingDemos, setIsLoadingDemos] = useState(false)
@@ -3510,6 +3544,9 @@ function ProspectDemoGeneratorView() {
   const [savedConfig, setSavedConfig] = useState(null)
   const [slugTouched, setSlugTouched] = useState(false)
   const [copiedKey, setCopiedKey] = useState('')
+  const [hasRestoredDraft, setHasRestoredDraft] = useState(false)
+  const [isDraftReady, setIsDraftReady] = useState(false)
+  const [draftStorageError, setDraftStorageError] = useState('')
 
   const activeSlug = normalizeDemoSlug(form.slug || form.agencyName || savedConfig?.slug)
   const buyerOnboardingLink = buildDemoLink(activeSlug, 'onboarding')
@@ -3532,6 +3569,48 @@ function ProspectDemoGeneratorView() {
     if (!supabase) return
     void loadGeneratedDemos()
   }, [])
+
+  useEffect(() => {
+    const draft = restoreProspectDemoDraft()
+    if (draft) {
+      setForm(draft.form)
+      setSavedConfig(draft.savedConfig)
+      setSlugTouched(draft.slugTouched)
+      setHasRestoredDraft(true)
+    }
+    setIsDraftReady(true)
+  }, [])
+
+  useEffect(() => {
+    if (!isDraftReady) return
+
+    const persistDraft = () => {
+      if (typeof window === 'undefined') return
+      try {
+        window.localStorage.setItem(PROSPECT_DEMO_DRAFT_STORAGE_KEY, JSON.stringify({
+          form,
+          savedConfig,
+          slugTouched,
+        }))
+        setDraftStorageError('')
+      } catch {
+        setDraftStorageError('Your browser could not save this draft. Try using smaller image files or generate the demo before leaving.')
+      }
+    }
+
+    persistDraft()
+    const handlePageVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') persistDraft()
+    }
+    window.addEventListener('pagehide', persistDraft)
+    document.addEventListener('visibilitychange', handlePageVisibilityChange)
+
+    return () => {
+      window.removeEventListener('pagehide', persistDraft)
+      document.removeEventListener('visibilitychange', handlePageVisibilityChange)
+      persistDraft()
+    }
+  }, [form, isDraftReady, savedConfig, slugTouched])
 
   async function loadGeneratedDemos() {
     if (!supabase) return
@@ -3656,6 +3735,16 @@ function ProspectDemoGeneratorView() {
     setActiveTab('create')
   }
 
+  function clearDraft() {
+    if (typeof window !== 'undefined') window.localStorage.removeItem(PROSPECT_DEMO_DRAFT_STORAGE_KEY)
+    setForm(DEFAULT_PROSPECT_DEMO_FORM)
+    setSavedConfig(null)
+    setSlugTouched(false)
+    setHasRestoredDraft(false)
+    setError('')
+    setSuccess('')
+  }
+
   return (
     <div className="prospect-demo-page">
       <section className="prospect-demo-panel">
@@ -3700,6 +3789,8 @@ function ProspectDemoGeneratorView() {
           <form className="prospect-demo-form" onSubmit={handleSubmit}>
             {error ? <Notice tone="danger" text={error} /> : null}
             {success ? <Notice tone="success" text={success} /> : null}
+            {hasRestoredDraft ? <Notice tone="info" text="Your prospect demo draft was restored automatically." /> : null}
+            {draftStorageError ? <Notice tone="warning" text={draftStorageError} /> : null}
             {!isSupabaseConfigured ? <Notice tone="warning" text={getSupabaseConfigStatus().message} /> : null}
 
             <div className="prospect-form-section">
@@ -3807,6 +3898,10 @@ function ProspectDemoGeneratorView() {
               <button className="primary-button" disabled={isSaving} type="submit">
                 {isSaving ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
                 <span>Generate Demo</span>
+              </button>
+              <button className="secondary-button compact" onClick={clearDraft} type="button">
+                <X size={16} />
+                <span>Clear draft</span>
               </button>
               <p>No buyers, transactions, notifications or workflow actions are created.</p>
             </div>
