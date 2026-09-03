@@ -29,10 +29,10 @@ import { normaliseFinanceType, resolveFinanceWorkflowKey } from './financeWorkfl
 import { buildTransactionJourneySnapshot } from './transactionJourneySnapshot.js'
 
 const TRANSACTION_SELECT =
-  'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, sale_route, sale_channel, lead_owner, ownership_model, source_agency_org_id, seller_has_existing_bond, existing_bond, cancellation_required, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
+  'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, next_action, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, sale_route, sale_channel, lead_owner, ownership_model, source_agency_org_id, seller_has_existing_bond, existing_bond, cancellation_required, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
 
 const TRANSACTION_SELECT_FALLBACK =
-  'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
+  'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, next_action, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
 
 const DOCUMENT_SELECT =
   'id, transaction_id, name, document_name, category, document_type, stage_key, is_client_visible, status, created_at, updated_at'
@@ -84,6 +84,7 @@ function normalizeTransactionRecord(row = {}, fallback = {}) {
     seller_onboarding_status: row.seller_onboarding_status || fallback.seller_onboarding_status || null,
     current_main_stage: row.current_main_stage || fallback.current_main_stage || fallback.currentMainStage || null,
     stage: row.stage || fallback.stage || null,
+    next_action: row.next_action || fallback.next_action || fallback.nextAction || null,
     lifecycle_state: row.lifecycle_state || fallback.lifecycle_state || fallback.lifecycleState || null,
     updated_at: row.updated_at || fallback.updated_at || fallback.updatedAt || null,
     created_at: row.created_at || fallback.created_at || fallback.createdAt || null,

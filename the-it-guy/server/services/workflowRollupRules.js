@@ -97,6 +97,15 @@ export function hasCancelledWorkflow(workflows = {}) {
   return Object.values(workflows || {}).some((workflow) => String(workflow?.status || '').trim().toLowerCase() === 'cancelled')
 }
 
+// A unit-status backfill represents a sale that was already in progress before
+// its canonical transaction existed. Its recorded unit status is the journey
+// position; an empty workflow must not reset it to the first OTP step.
+function isUnitStatusBackfill(transaction = {}) {
+  return String(transaction?.next_action || transaction?.nextAction || '')
+    .trim()
+    .startsWith('Complete buyer, finance and partner capture for Unit')
+}
+
 export function hasNormalizedWorkflowData(workflows = {}) {
   return Object.values(workflows || {}).some((workflow) => workflow && typeof workflow === 'object' && (Array.isArray(workflow.requiredSteps) || workflow.status || workflow.workflowKey))
 }
@@ -157,6 +166,10 @@ export function deriveParentStage({ transaction = {}, workflows = {} } = {}) {
   }
   if (hasCancelledWorkflow(workflows)) {
     return PARENT_STAGE_ENUM.CANCELLED
+  }
+
+  if (isUnitStatusBackfill(transaction)) {
+    return mapLegacyStageToCanonical(transaction)
   }
 
   if (!hasNormalizedWorkflowData(workflows)) {
