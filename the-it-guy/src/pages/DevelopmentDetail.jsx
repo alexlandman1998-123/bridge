@@ -68,6 +68,7 @@ import { buildDevelopmentDemandIntelligence } from '../core/developments/develop
 import {
   deleteDevelopment,
   deleteDevelopmentDocument,
+  createDevelopmentTransactionFromUnitStatus,
   fetchDevelopmentDetail,
   fetchDevelopmentDocumentRequirements,
   saveDevelopmentDetails,
@@ -570,6 +571,7 @@ const DEVELOPMENT_UNIT_STATUS_OPTIONS = [
   { value: 'Transfer in Progress', label: 'Transfer', mainStage: 'XFER', lifecycleStage: 'transfer' },
   { value: 'Sold', label: 'Sold', mainStage: 'OTP', lifecycleStage: 'otp' },
   { value: 'Registered', label: 'Registered', mainStage: 'REG', lifecycleStage: 'registration', completed: true },
+  { value: 'Complete', label: 'Complete', mainStage: 'REG', lifecycleStage: 'registration', completed: true },
   { value: 'Blocked', label: 'Blocked', mainStage: 'BLOCKED', lifecycleStage: null },
 ]
 
@@ -1718,8 +1720,9 @@ function getDevelopmentUnitStatusOption(status) {
   return DEVELOPMENT_UNIT_STATUS_LOOKUP.get(normalized) || {
     value: String(status || 'Available').trim() || 'Available',
     label: toTitleLabel(status || 'Available'),
-    mainStage: normalized === 'sold' ? 'OTP' : 'AVAIL',
-    lifecycleStage: null,
+    mainStage: normalized === 'sold' ? 'OTP' : ['complete', 'completed'].includes(normalized) ? 'REG' : 'AVAIL',
+    lifecycleStage: ['complete', 'completed'].includes(normalized) ? 'registration' : null,
+    completed: ['complete', 'completed'].includes(normalized),
   }
 }
 
@@ -1755,6 +1758,8 @@ function requiresDevelopmentTransaction(status) {
     'Transfer in Progress',
     'Sold',
     'Registered',
+    'Complete',
+    'Completed',
   ].includes(value)
 }
 
@@ -5099,18 +5104,22 @@ function DevelopmentDetail() {
         catalogueFloorplanId: unitForm.catalogueFloorplanId || null,
       })
       const needsTransaction = requiresDevelopmentTransaction(unitForm.status) && !selectedUnitRow?.currentTransactionId
+      if (needsTransaction) {
+        await createTransactionForUnitStatus({
+          ...savedUnit,
+          unitNumber: savedUnit.unitNumber || unitForm.unitNumber,
+          salesPrice: savedUnit.currentPrice ?? savedUnit.price ?? unitForm.currentPrice ?? unitForm.listPrice,
+        }, unitForm.status)
+      }
       setFeedback(
         needsTransaction
-          ? `Unit saved. Complete the transaction capture for Unit ${unitForm.unitNumber} to record purchaser, finance and documents.`
+          ? `Transaction created for Unit ${unitForm.unitNumber}. Complete buyer, finance and partner details in its workspace.`
           : unitForm.id ? 'Unit updated.' : 'Unit added to development.',
       )
       setUnitForm(DEFAULT_UNIT_FORM)
       setUnitModalOpen(false)
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
-      if (needsTransaction) {
-        openDevelopmentTransactionWizard({ unitId: savedUnit.id })
-      }
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -5437,14 +5446,65 @@ function DevelopmentDetail() {
     }
   }
 
+  async function createTransactionForUnitStatus(unit, unitStatus = unit?.status) {
+    const result = await createDevelopmentTransactionFromUnitStatus({
+      developmentId: data?.development?.id || developmentId,
+      unitId: unit?.id,
+      unitNumber: unit?.unitNumber || unit?.unit_number || '',
+      unitStatus,
+      salesPrice: unit?.salesPrice ?? unit?.currentPrice ?? unit?.price ?? unit?.listPrice ?? null,
+    })
+    window.dispatchEvent(new CustomEvent('itg:transaction-created', { detail: result }))
+    window.dispatchEvent(new Event('itg:developments-changed'))
+    return result
+  }
+
+  async function handleUnitTransactionRecovery(unit) {
+    try {
+      setUnitSaving(true)
+      setUnitQuickSavingKey(`${unit.id}:transaction`)
+      setFeedback('')
+      setError('')
+      const created = await createTransactionForUnitStatus(unit, unit.status)
+      applyUnitQuickUpdate(unit.id, {
+        unitPatch: { currentTransactionId: created.transactionId },
+        transactionPatch: { id: created.transactionId, stage: created.stage },
+      })
+      await loadData()
+      setFeedback(`Transaction created for Unit ${unit.unitNumber} at ${created.stage}.`)
+    } catch (createError) {
+      setError(createError.message)
+    } finally {
+      setUnitSaving(false)
+      setUnitQuickSavingKey('')
+    }
+  }
+
   async function handleUnitStatusQuickChange(unit, nextStatus) {
     const statusOption = getDevelopmentUnitStatusOption(nextStatus)
     const nextStatusValue = statusOption.value || 'Available'
 
     if (!unit.currentTransactionId && requiresDevelopmentTransaction(nextStatusValue)) {
-      setFeedback(`Complete the transaction capture for Unit ${unit.unitNumber} before marking it ${nextStatusValue}.`)
-      setError('')
-      openDevelopmentTransactionWizard({ unitId: unit.id })
+      try {
+        setUnitSaving(true)
+        setUnitStatusSavingId(unit.id)
+        setUnitQuickSavingKey(`${unit.id}:status`)
+        setFeedback('')
+        setError('')
+        const created = await createTransactionForUnitStatus(unit, nextStatusValue)
+        applyUnitQuickUpdate(unit.id, {
+          unitPatch: { status: nextStatusValue, currentTransactionId: created.transactionId },
+          transactionPatch: { id: created.transactionId, stage: created.stage },
+        })
+        await loadData()
+        setFeedback(`Transaction created for Unit ${unit.unitNumber} at ${created.stage}.`)
+      } catch (saveError) {
+        setError(saveError.message)
+      } finally {
+        setUnitSaving(false)
+        setUnitStatusSavingId('')
+        setUnitQuickSavingKey('')
+      }
       return
     }
 
@@ -9557,7 +9617,7 @@ function DevelopmentDetail() {
                                   <button
                                     type="button"
                                     className="text-xs font-semibold text-[#1f7a43] hover:text-[#0f5f32]"
-                                    onClick={() => openDevelopmentTransactionWizard({ unitId: unit.id })}
+                                    onClick={() => void handleUnitTransactionRecovery(unit)}
                                   >
                                     Capture transaction
                                   </button>
@@ -9856,7 +9916,7 @@ function DevelopmentDetail() {
                             className={`h-[64px] align-middle ${canOpenTransaction ? 'cursor-pointer hover:bg-[#f8fbff]' : ''}`}
                             onClick={() => {
                               if (needsTransactionCapture) {
-                                openDevelopmentTransactionWizard({ unitId: row.unit.id })
+                                void handleUnitTransactionRecovery(row.unit)
                               } else if (canOpenTransaction) {
                                 openDevelopmentTransactionWorkspace(row)
                               }
@@ -9889,7 +9949,7 @@ function DevelopmentDetail() {
                                   title="Capture buyer and transaction details"
                                   onClick={(event) => {
                                     event.stopPropagation()
-                                    openDevelopmentTransactionWizard({ unitId: row.unit.id })
+                                    void handleUnitTransactionRecovery(row.unit)
                                   }}
                                 >
                                   Capture transaction
@@ -10298,7 +10358,7 @@ function DevelopmentDetail() {
                       variant="secondary"
                       onClick={() => {
                         setUnitModalOpen(false)
-                        openDevelopmentTransactionWizard({ unitId: selectedUnitRow.id })
+                        void handleUnitTransactionRecovery(selectedUnitRow)
                       }}
                     >
                       Capture transaction

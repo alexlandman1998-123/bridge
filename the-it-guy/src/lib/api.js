@@ -29899,6 +29899,93 @@ async function persistInitialBuyerPartiesOnboardingData(
   return nextFormData
 }
 
+const DEVELOPMENT_UNIT_STATUS_TRANSACTION_PROFILE = {
+  reserved: { stage: 'Reserved', lifecycleStage: null },
+  otp_signed: { stage: 'OTP Signed', lifecycleStage: 'otp' },
+  finance_pending: { stage: 'Finance Pending', lifecycleStage: 'finance' },
+  proceed_to_attorneys: { stage: 'Proceed to Attorneys', lifecycleStage: 'transfer' },
+  transfer_in_progress: { stage: 'Transfer in Progress', lifecycleStage: 'transfer' },
+  sold: { stage: 'OTP Signed', lifecycleStage: 'otp' },
+  registered: { stage: 'Registered', lifecycleStage: 'registration', completed: true },
+  complete: { stage: 'Registered', lifecycleStage: 'registration', completed: true },
+  completed: { stage: 'Registered', lifecycleStage: 'registration', completed: true },
+}
+
+function getDevelopmentUnitStatusTransactionProfile(unitStatus = '') {
+  const key = String(unitStatus || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '')
+  return DEVELOPMENT_UNIT_STATUS_TRANSACTION_PROFILE[key] || { stage: 'Reserved', lifecycleStage: null }
+}
+
+// Creates the missing canonical record for legacy/bulk unit status updates.
+// Buyer, funding and partner information remain intentionally incomplete, but
+// the unit is immediately connected to the correct transaction journey.
+export async function createDevelopmentTransactionFromUnitStatus({
+  developmentId,
+  unitId,
+  unitNumber = '',
+  unitStatus = 'Reserved',
+  salesPrice = null,
+} = {}) {
+  if (!developmentId || !unitId) {
+    throw new Error('A development and unit are required to create the transaction.')
+  }
+
+  const client = requireClient()
+  const profile = getDevelopmentUnitStatusTransactionProfile(unitStatus)
+  const result = await createTransactionFromWizard({
+    setup: {
+      transactionType: 'developer_sale',
+      developmentId,
+      unitId,
+      salesPrice: salesPrice === null || salesPrice === undefined ? '' : String(salesPrice),
+      financeType: '',
+      financeManagedBy: 'client',
+      purchaserType: 'individual',
+    },
+    finance: {},
+    status: {
+      stage: profile.stage,
+      stageDate: new Date().toISOString().slice(0, 10),
+      riskStatus: 'On Track',
+      nextAction: `Complete buyer, finance and partner capture for Unit ${unitNumber || ''}.`.trim(),
+      notes: `Transaction created from unit status: ${unitStatus}.`,
+    },
+    options: {
+      allowIncomplete: true,
+      deferFinanceType: true,
+      creationOrigin: 'development_unit_status',
+      sourceContext: {
+        originLabel: 'Development unit status update',
+      },
+    },
+  })
+
+  if (profile.lifecycleStage && result?.transactionId) {
+    await updateTransactionLifecycleStage(result.transactionId, profile.lifecycleStage, {
+      completed: Boolean(profile.completed),
+      status: profile.completed ? 'completed' : 'active',
+      source: 'development_unit_status_auto_create',
+      note: `Created from Unit ${unitNumber || ''} marked ${unitStatus}.`.trim(),
+    })
+  }
+
+  // `createTransactionFromWizard` writes its canonical stage back to units.
+  // Preserve the operator's stock label (for example Sold) while the linked
+  // transaction stores its precise workflow stage (OTP Signed).
+  const unitResult = await client.from('units').update({ status: unitStatus }).eq('id', unitId)
+  if (unitResult.error) throw unitResult.error
+
+  return {
+    ...result,
+    stage: profile.stage,
+    lifecycleStage: profile.lifecycleStage,
+  }
+}
+
 export async function createTransactionFromWizard({ setup = {}, finance = {}, status = {}, options = {} }) {
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
