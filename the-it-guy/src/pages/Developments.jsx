@@ -102,7 +102,7 @@ function summarizeAttention({ bottleneckCount, missingDocsCount, missingAttorney
   }
 }
 
-function getPrimaryAttorney(rows = []) {
+function getPrimaryAttorney(rows = [], configuredDefaultAttorney = '') {
   const counts = rows.reduce((accumulator, row) => {
     const name = String(row?.transaction?.attorney || '').trim()
     if (!name) return accumulator
@@ -110,10 +110,9 @@ function getPrimaryAttorney(rows = []) {
     return accumulator
   }, {})
 
-  return (
-    Object.entries(counts)
-      .sort((left, right) => right[1] - left[1])[0]?.[0] || 'No attorney assigned'
-  )
+  const transactionAttorney = Object.entries(counts)
+    .sort((left, right) => right[1] - left[1])[0]?.[0]
+  return transactionAttorney || String(configuredDefaultAttorney || '').trim() || 'No attorney assigned'
 }
 
 function clampCount(value) {
@@ -253,7 +252,10 @@ function Developments() {
           const missing = Number(row?.documentSummary?.missingCount || 0)
           return missing > 0 && mainStage !== 'registered'
         }).length
-        const assignedAttorneyName = getPrimaryAttorney(scopedRows)
+        const assignedAttorneyName = getPrimaryAttorney(
+          scopedRows,
+          profile.defaultAttorneyName || item.defaultAttorneyName,
+        )
         const lifecycleStatus = toLifecycleStatus(profile.phase || profile.status || item.phase || item.status, {
           activeTransactionsCount,
           registeredTransactionsCount,

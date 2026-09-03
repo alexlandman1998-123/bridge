@@ -19492,6 +19492,7 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
 
   const developmentIds = mergedSummaries.map((item) => item.id).filter(Boolean)
   let profileByDevelopmentId = {}
+  let defaultAttorneyByDevelopmentId = {}
 
   if (developmentIds.length) {
     const profileQuery = await client
@@ -19506,6 +19507,33 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
       }, {})
     } else if (!isMissingTableError(profileQuery.error, 'development_profiles')) {
       throw profileQuery.error
+    }
+
+    const settingsQuery = await client
+      .from('development_settings')
+      .select('development_id, stakeholder_teams')
+      .in('development_id', developmentIds)
+
+    if (!settingsQuery.error) {
+      defaultAttorneyByDevelopmentId = (settingsQuery.data || []).reduce((accumulator, row) => {
+        const teams = row?.stakeholder_teams && typeof row.stakeholder_teams === 'object'
+          ? row.stakeholder_teams
+          : {}
+        const defaults = normalizeDevelopmentRolePlayerDefaults(
+          teams.rolePlayerDefaults || teams.role_player_defaults,
+        )
+        const name = defaults.defaultTransferAttorneySource !== 'none'
+          ? defaults.defaultTransferAttorneyName
+          : ''
+        accumulator[row.development_id] = name || ''
+        return accumulator
+      }, {})
+    } else if (
+      !isMissingTableError(settingsQuery.error, 'development_settings') &&
+      !isMissingColumnError(settingsQuery.error, 'stakeholder_teams') &&
+      !isPermissionDeniedError(settingsQuery.error)
+    ) {
+      throw settingsQuery.error
     }
   }
 
@@ -19523,6 +19551,7 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
         location: profile?.location || item.location || null,
         phase: profile?.status || item.phase || null,
         developerCompany: profile?.developerCompany || item.developerCompany || null,
+        defaultAttorneyName: defaultAttorneyByDevelopmentId[item.id] || '',
       }
     }),
   }
