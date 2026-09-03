@@ -20032,6 +20032,13 @@ function normalizeDevelopmentMarketingAccessRow(row = {}) {
   }
 }
 
+function buildDevelopmentMarketingInviteUrl(token = '') {
+  const safeToken = normalizeTextValue(token)
+  if (!safeToken) return ''
+  const origin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : ''
+  return `${origin}/marketing/invite/${encodeURIComponent(safeToken)}`
+}
+
 function normalizeDevelopmentMarketingActivityRow(row = {}) {
   const metadata = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
   return {
@@ -20107,7 +20114,66 @@ export async function createDevelopmentMarketingAccess({
     throw error
   }
 
-  return normalizeDevelopmentMarketingAccessRow(data)
+  const access = normalizeDevelopmentMarketingAccessRow(data)
+  let invitationDelivery = null
+  if (access.inviteeEmail) {
+    try {
+      invitationDelivery = await sendDevelopmentMarketingAccessInvite(access.id)
+    } catch (deliveryError) {
+      invitationDelivery = { ok: false, error: deliveryError?.message || 'Invitation created, but email delivery failed.' }
+    }
+  }
+  return { ...access, invitationDelivery }
+}
+
+export async function sendDevelopmentMarketingAccessInvite(marketingAccessId) {
+  const client = requireClient()
+  if (!marketingAccessId) throw new Error('Marketing access invitation is required.')
+  const { data: invitation, error: invitationError } = await client.rpc(
+    'bridge_prepare_development_marketing_invite',
+    { target_marketing_access_id: marketingAccessId },
+  )
+  if (invitationError) throw invitationError
+  const inviteLink = buildDevelopmentMarketingInviteUrl(invitation?.token)
+  if (!inviteLink || !normalizeTextValue(invitation?.inviteeEmail)) {
+    throw new Error('Could not prepare the marketing invitation link.')
+  }
+  const { data, error } = await invokeEdgeFunction('send-email', {
+    body: {
+      type: 'development_marketing_invite',
+      to: invitation.inviteeEmail,
+      inviteLink,
+      developmentName: invitation.developmentName,
+      accessRole: invitation.accessRole,
+      expiresAt: invitation.expiresAt,
+      supportEmail: 'support@arch9.co.za',
+    },
+  })
+  if (error) {
+    return {
+      ok: false,
+      inviteLink,
+      expiresAt: invitation.expiresAt || null,
+      emailResult: data || null,
+      error: error?.message || 'Invitation link created, but email delivery failed.',
+    }
+  }
+  return { ok: Boolean(data?.ok ?? true), inviteLink, expiresAt: invitation.expiresAt || null, emailResult: data || null }
+}
+
+export async function fetchDevelopmentMarketingInvite(token) {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_get_development_marketing_invite', { target_invite_token: normalizeTextValue(token) })
+  if (error) throw error
+  if (!data) throw new Error('Marketing invitation not found.')
+  return data
+}
+
+export async function acceptDevelopmentMarketingInvite(token) {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_accept_development_marketing_invite', { target_invite_token: normalizeTextValue(token) })
+  if (error) throw error
+  return data || {}
 }
 
 export async function fetchDevelopmentMarketingActivity(developmentId, { limit = 12 } = {}) {

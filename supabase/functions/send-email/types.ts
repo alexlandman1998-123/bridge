@@ -522,6 +522,31 @@ export type SendWorkspaceInvitePayload = {
   support_email?: string;
 };
 
+export type SendDevelopmentMarketingInvitePayload = {
+  type: "development_marketing_invite";
+  to: string;
+  inviteLink?: string;
+  invite_link?: string;
+  inviteeName?: string;
+  invitee_name?: string;
+  inviterName?: string;
+  inviter_name?: string;
+  developmentName?: string;
+  development_name?: string;
+  accessRole?: string;
+  access_role?: string;
+  expiresAt?: string;
+  expires_at?: string;
+  organisationId?: string;
+  organisation_id?: string;
+  organisationName?: string;
+  organisation_name?: string;
+  organisationLogoUrl?: string;
+  organisation_logo_url?: string;
+  supportEmail?: string;
+  support_email?: string;
+};
+
 export type SendNotificationReminderDispatchPayload = {
   type:
     | "notification_reminder_dispatch"

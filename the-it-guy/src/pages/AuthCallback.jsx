@@ -31,6 +31,7 @@ function isPublicInviteReturnPath(path = '') {
     safePath.startsWith('/partners/invite/') ||
     safePath.startsWith('/developer/access-invite/') ||
     safePath.startsWith('/developer/partner-invite/') ||
+    safePath.startsWith('/marketing/invite/') ||
     safePath.startsWith('/transaction-invite/') ||
     safePath.startsWith('/referrals/invite/') ||
     safePath.startsWith('/partner-portal/') ||

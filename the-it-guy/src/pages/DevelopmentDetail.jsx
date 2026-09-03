@@ -73,6 +73,7 @@ import {
   createDevelopmentTransactionFromUnitStatus,
   createDevelopmentMarketingAccess,
   createDevelopmentMarketingEvent,
+  sendDevelopmentMarketingAccessInvite,
   fetchDevelopmentDetail,
   fetchDevelopmentDocumentRequirements,
   saveDevelopmentDetails,
@@ -2462,8 +2463,10 @@ function DevelopmentDetail() {
   const [documentSaving, setDocumentSaving] = useState(false)
   const [documentDownloadingId, setDocumentDownloadingId] = useState('')
   const [marketingAssetUploading, setMarketingAssetUploading] = useState('')
-  const [marketingAccessDraft, setMarketingAccessDraft] = useState({ email: '', accessRole: 'viewer' })
+  const [marketingAccessDraft, setMarketingAccessDraft] = useState({ email: '', organisationId: '', accessRole: 'viewer' })
   const [marketingAccessSaving, setMarketingAccessSaving] = useState(false)
+  const [marketingAccessResendingId, setMarketingAccessResendingId] = useState('')
+  const [marketingInviteLinks, setMarketingInviteLinks] = useState({})
   const [marketingEventDraft, setMarketingEventDraft] = useState({ title: '', eventType: 'show_day', startsAt: '', location: '', description: '' })
   const [marketingEventSaving, setMarketingEventSaving] = useState(false)
   const [marketingDocumentSavingId, setMarketingDocumentSavingId] = useState('')
@@ -3607,6 +3610,26 @@ function DevelopmentDetail() {
     }
   }, [marketingAssetDocuments.length, marketingForm])
   const marketingAccessRecords = Array.isArray(data?.marketingAccess) ? data.marketingAccess : []
+  const marketingPartnerOptions = useMemo(() => {
+    const seen = new Set()
+    const connectedOrganisationIds = new Set(
+      marketingAccessRecords
+        .filter((access) => access?.organisationId && ['pending', 'active'].includes(access.status))
+        .map((access) => access.organisationId),
+    )
+    return (partnerWorkspace?.relationships || [])
+      .filter((relationship) => relationship?.partnerOrganisationId && !connectedOrganisationIds.has(relationship.partnerOrganisationId) && !['archived', 'suspended'].includes(relationship?.status))
+      .map((relationship) => ({
+        organisationId: relationship.partnerOrganisationId,
+        name: relationship.partnerName || 'Connected partner',
+        partnerType: relationship.partnerType || '',
+      }))
+      .filter((partner) => {
+        if (seen.has(partner.organisationId)) return false
+        seen.add(partner.organisationId)
+        return true
+      })
+  }, [marketingAccessRecords, partnerWorkspace])
   const marketingActivityRecords = Array.isArray(data?.marketingActivity) ? data.marketingActivity : []
   const marketingEventRecords = Array.isArray(data?.marketingEvents) ? data.marketingEvents : []
   const marketingHubOverview = useMemo(() => {
@@ -5635,18 +5658,49 @@ function DevelopmentDetail() {
       setMarketingAccessSaving(true)
       setError('')
       setFeedback('')
-      await createDevelopmentMarketingAccess({
+      const isExistingPartner = Boolean(marketingAccessDraft.organisationId)
+      const createdAccess = await createDevelopmentMarketingAccess({
         developmentId: data.development.id,
-        inviteeEmail: marketingAccessDraft.email,
+        inviteeEmail: isExistingPartner ? '' : marketingAccessDraft.email,
+        organisationId: isExistingPartner ? marketingAccessDraft.organisationId : null,
         accessRole: marketingAccessDraft.accessRole,
       })
-      setMarketingAccessDraft({ email: '', accessRole: 'viewer' })
-      setFeedback('Marketing access invitation created. It does not grant operational development access.')
+      if (createdAccess?.invitationDelivery?.inviteLink) {
+        setMarketingInviteLinks((current) => ({ ...current, [createdAccess.id]: createdAccess.invitationDelivery.inviteLink }))
+      }
+      setMarketingAccessDraft({ email: '', organisationId: '', accessRole: 'viewer' })
+      if (isExistingPartner) {
+        setFeedback('Existing partner connected to the Marketing Hub. This does not grant operational development access.')
+      } else if (createdAccess?.invitationDelivery?.ok) {
+        setFeedback('Marketing invitation sent. It only grants scoped marketing-library access.')
+      } else {
+        setFeedback('Marketing invitation created, but email delivery needs attention. Copy the invitation link and send it manually.')
+      }
       await loadData()
     } catch (inviteError) {
       setError(inviteError.message)
     } finally {
       setMarketingAccessSaving(false)
+    }
+  }
+
+  async function handleMarketingAccessResend(access) {
+    if (!canManageDevelopment || !access?.id || !access?.inviteeEmail) return
+    try {
+      setMarketingAccessResendingId(access.id)
+      setError('')
+      setFeedback('')
+      const delivery = await sendDevelopmentMarketingAccessInvite(access.id)
+      if (delivery?.inviteLink) {
+        setMarketingInviteLinks((current) => ({ ...current, [access.id]: delivery.inviteLink }))
+      }
+      setFeedback(delivery?.ok
+        ? 'Marketing invitation resent. It remains separate from operational development access.'
+        : 'A fresh marketing invitation link was created, but email delivery needs attention. Copy the link and send it manually.')
+    } catch (inviteError) {
+      setError(inviteError.message)
+    } finally {
+      setMarketingAccessResendingId('')
     }
   }
 
@@ -6800,8 +6854,44 @@ function DevelopmentDetail() {
   function renderMarketingPartnersSection() {
     return (
       <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className={`${CARD_SHELL} order-2 xl:order-1`}><h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Partners & Access</h4><p className="mt-1 text-sm leading-6 text-[#6b7d93]">Marketing collaboration is intentionally separate from operational developer access.</p><div className="mt-5 grid gap-3">{marketingAccessRecords.length ? marketingAccessRecords.map((access) => <article key={access.id} className="flex items-center justify-between gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5"><div className="min-w-0"><strong className="block truncate text-sm text-[#142132]">{access.inviteeEmail || 'Organisation partner'}</strong><span className="mt-1 block text-xs text-[#6b7d93]">{toTitleLabel(access.accessRole)} · {toTitleLabel(access.status)}</span></div><Users size={18} className="shrink-0 text-[#3b69a4]" /></article>) : <p className="rounded-[15px] border border-dashed border-[#d8e3ef] px-4 py-8 text-center text-sm text-[#6b7d93]">No marketing access invitations yet.</p>}</div></section>
-        {canManageDevelopment ? <form onSubmit={handleMarketingAccessCreate} className={`${CARD_SHELL} order-1 xl:order-2`}><h4 className="text-base font-semibold text-[#142132]">Invite to marketing hub</h4><p className="mt-1 text-xs leading-5 text-[#718299]">This only creates marketing-library access; it never grants unit, transaction or finance permissions.</p><div className="mt-4 grid gap-3"><Field type="email" value={marketingAccessDraft.email} onChange={(event) => setMarketingAccessDraft((current) => ({ ...current, email: event.target.value }))} placeholder="partner@agency.co.za" required /><Field as="select" value={marketingAccessDraft.accessRole} onChange={(event) => setMarketingAccessDraft((current) => ({ ...current, accessRole: event.target.value }))}><option value="viewer">Viewer</option><option value="contributor">Contributor</option><option value="approver">Approver</option></Field><Button type="submit" disabled={marketingAccessSaving}><UserPlus size={16} /> {marketingAccessSaving ? 'Adding…' : 'Add invitation'}</Button></div></form> : null}
+        <section className={`${CARD_SHELL} order-2 xl:order-1`}>
+          <h4 className="text-[1.15rem] font-semibold tracking-[-0.025em] text-[#142132]">Partners & Access</h4>
+          <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Marketing collaboration is intentionally separate from operational developer access.</p>
+          <div className="mt-5 grid gap-3">
+            {marketingAccessRecords.length ? marketingAccessRecords.map((access) => {
+              const pendingEmailInvite = Boolean(access.inviteeEmail && access.status === 'pending')
+              const inviteLink = marketingInviteLinks[access.id]
+              return (
+                <article key={access.id} className="flex flex-wrap items-center justify-between gap-3 rounded-[15px] border border-[#e3ebf4] bg-[#fbfcfe] p-3.5">
+                  <div className="min-w-0">
+                    <strong className="block truncate text-sm text-[#142132]">{access.inviteeEmail || 'Connected organisation partner'}</strong>
+                    <span className="mt-1 block text-xs text-[#6b7d93]">{toTitleLabel(access.accessRole)} · {toTitleLabel(access.status)}</span>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {pendingEmailInvite && canManageDevelopment ? <Button type="button" variant="secondary" className="!px-3 !py-2 text-xs" onClick={() => void handleMarketingAccessResend(access)} disabled={marketingAccessResendingId === access.id}>{marketingAccessResendingId === access.id ? 'Sending…' : 'Resend invite'}</Button> : null}
+                    {inviteLink && canManageDevelopment ? <Button type="button" variant="secondary" className="!px-3 !py-2 text-xs" onClick={() => void handleCopyMarketingValue(inviteLink, 'Marketing invitation link')}><Copy size={14} /> Copy link</Button> : null}
+                    <Users size={18} className="shrink-0 text-[#3b69a4]" />
+                  </div>
+                </article>
+              )
+            }) : <p className="rounded-[15px] border border-dashed border-[#d8e3ef] px-4 py-8 text-center text-sm text-[#6b7d93]">No marketing access invitations yet.</p>}
+          </div>
+        </section>
+        {canManageDevelopment ? <form onSubmit={handleMarketingAccessCreate} className={`${CARD_SHELL} order-1 xl:order-2`}>
+          <h4 className="text-base font-semibold text-[#142132]">Connect or invite</h4>
+          <p className="mt-1 text-xs leading-5 text-[#718299]">Connect a current partner, or invite someone new to Arch9. Neither option grants unit, transaction, finance, or operational development permissions.</p>
+          <div className="mt-4 grid gap-3">
+            <Field as="select" value={marketingAccessDraft.organisationId} onChange={(event) => setMarketingAccessDraft((current) => ({ ...current, organisationId: event.target.value, email: '' }))}>
+              <option value="">Invite someone new to Arch9</option>
+              {marketingPartnerOptions.map((partner) => <option key={partner.organisationId} value={partner.organisationId}>{partner.name}{partner.partnerType ? ` · ${toTitleLabel(partner.partnerType)}` : ''}</option>)}
+            </Field>
+            {!marketingAccessDraft.organisationId ? <Field type="email" value={marketingAccessDraft.email} onChange={(event) => setMarketingAccessDraft((current) => ({ ...current, email: event.target.value }))} placeholder="partner@agency.co.za" required /> : null}
+            <Field as="select" value={marketingAccessDraft.accessRole} onChange={(event) => setMarketingAccessDraft((current) => ({ ...current, accessRole: event.target.value }))}>
+              <option value="viewer">Viewer</option><option value="contributor">Contributor</option><option value="approver">Approver</option>
+            </Field>
+            <Button type="submit" disabled={marketingAccessSaving}><UserPlus size={16} /> {marketingAccessSaving ? 'Saving…' : marketingAccessDraft.organisationId ? 'Connect partner' : 'Invite to Arch9'}</Button>
+          </div>
+        </form> : null}
       </section>
     )
   }

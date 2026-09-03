@@ -400,6 +400,7 @@ const DeveloperIntelligenceOpportunityEnginePage = lazy(() => import('./pages/de
 const DeveloperIntelligencePortfolioPerformancePage = lazy(() => import('./pages/developer-intelligence/PortfolioPerformancePage'))
 const DeveloperIntelligencePricingSimulatorPage = lazy(() => import('./pages/developer-intelligence/PricingSimulatorPage'))
 const DevelopmentDetail = lazy(() => import('./pages/DevelopmentDetail'))
+const DevelopmentMarketingInvitePage = lazy(() => import('./pages/DevelopmentMarketingInvitePage'))
 const DeveloperPartnerInvitePage = lazy(() => import('./pages/DeveloperPartnerInvitePage'))
 const DeveloperAccessInvitePage = lazy(() => import('./pages/DeveloperAccessInvitePage'))
 const DeveloperDocumentPortalPage = lazy(() => import('./pages/DeveloperDocumentPortalPage'))
@@ -3854,6 +3855,7 @@ function AppRoutes() {
           <Route path="/partners/invite/:invitationId" element={<AppErrorBoundary scope="partner-invite-route" title="Partner invite failed to load"><PartnerInvitationAcceptPage /></AppErrorBoundary>} />
           <Route path="/developer/access-invite/:token" element={<AppErrorBoundary scope="developer-access-invite-route" title="Developer access invite failed to load"><DeveloperAccessInvitePage /></AppErrorBoundary>} />
           <Route path="/developer/partner-invite/:token" element={<TokenRouteGate><AppErrorBoundary scope="developer-partner-invite-route" title="Developer partner invite failed to load"><DeveloperPartnerInvitePage /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/marketing/invite/:token" element={<AppErrorBoundary scope="development-marketing-invite-route" title="Marketing invitation failed to load"><DevelopmentMarketingInvitePage /></AppErrorBoundary>} />
           <Route path="/developer/document-portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="developer-document-portal-route" title="Developer document portal failed to load"><DeveloperDocumentPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/commercial/portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-portal-route" title="Commercial portal failed to load"><CommercialExternalPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/commercial/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-onboarding-route" title="Commercial onboarding failed to load"><CommercialOnboardingPortalPage /></AppErrorBoundary></TokenRouteGate>} />

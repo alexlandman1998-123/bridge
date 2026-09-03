@@ -7,6 +7,7 @@ import { handleSellerOnboardingEmail } from "./handlers/sellerOnboarding.ts";
 import { handleSellerOnboardingSubmittedEmail } from "./handlers/sellerOnboardingSubmitted.ts";
 import { handleAppointmentEmail } from "./handlers/appointment.ts";
 import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
+import { handleDevelopmentMarketingInviteEmail } from "./handlers/developmentMarketingInvite.ts";
 import { handleBuyerOfferLinkEmail } from "./handlers/buyerOfferLink.ts";
 import { handleBuyerOfferSubmittedAgentEmail } from "./handlers/buyerOfferSubmittedAgent.ts";
 import { handleLeadPropertyShareEmail } from "./handlers/leadPropertyShare.ts";
@@ -66,6 +67,7 @@ import type {
   SendCommercialAccessNotificationPayload,
   SendCommercialEnterpriseNotificationPayload,
   SendCommercialLandlordOnboardingPayload,
+  SendDevelopmentMarketingInvitePayload,
   SendKingstonsValuationDownloadPayload,
   SendLeadAcknowledgementPayload,
   SendLeadOperationsNotificationPayload,
@@ -307,6 +309,19 @@ Deno.serve(async (req: Request) => {
           type: "onboarding_submitted",
           transactionId,
         },
+      );
+    }
+
+    if (
+      type === "development_marketing_invite" &&
+      (payload as SendDevelopmentMarketingInvitePayload).to
+    ) {
+      console.log("[send-email] routing template", {
+        route: "development_marketing_invite",
+        recipient: recipient || null,
+      });
+      return await handleDevelopmentMarketingInviteEmail(
+        payload as SendDevelopmentMarketingInvitePayload,
       );
     }
 
@@ -1141,6 +1156,7 @@ Deno.serve(async (req: Request) => {
           "transaction_roleplayer_intro",
           "transaction_roleplayer_handoff",
           "workspace_invite",
+          "development_marketing_invite",
           "branch_invite",
           "agent_invite",
           "developer_access_invite",
