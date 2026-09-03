@@ -2841,18 +2841,18 @@ function Dashboard() {
           clientName: item.buyerName,
           daysInStage: '',
         })),
-        health: {
+        transactionHealth: {
           total: activeRows.length,
           movingNormally: activeRows.filter((item) => !item.readinessBlockersCount).length,
-          attentionRequired: activeRows.filter((item) => item.readinessWarningsCount > 0).length,
-          criticalDelays: activeRows.filter((item) => item.readinessBlockersCount > 0).length,
+          attentionRequired: activeRows.filter((item) => item.readinessWarningsCount > 0 || item.readinessBlockersCount > 0).length,
+          criticalDelays: 0,
+          flow: [
+            { key: 'otp', label: 'OTP', count: activeRows.filter((item) => item.stageKey === 'OTP').length },
+            { key: 'finance', label: 'Finance', count: activeRows.filter((item) => item.stageKey === 'FIN').length },
+            { key: 'transfer', label: 'Transfer', count: activeRows.filter((item) => ['ATTY', 'XFER'].includes(item.stageKey)).length },
+            { key: 'registration', label: 'Registration', count: activeRows.filter((item) => item.stageKey === 'REG').length },
+          ],
         },
-        transactionFlow: [
-          { key: 'buyer_onboarding', label: 'Buyer Onboarding', count: (portfolio.stageCounts?.DEP || 0) + (portfolio.stageCounts?.OTP || 0), value: portfolio.pipelineValue || 0 },
-          { key: 'finance', label: 'Finance', count: portfolio.stageCounts?.FIN || 0, value: portfolio.pipelineValue || 0 },
-          { key: 'transfer', label: 'Transfer', count: (portfolio.stageCounts?.ATTY || 0) + (portfolio.stageCounts?.XFER || 0), value: portfolio.pipelineValue || 0 },
-          { key: 'registration', label: 'Registration', count: portfolio.unitsRegistered || 0, value: portfolio.totalSalesValue || 0 },
-        ],
         performance: [],
         forecastValues: [],
       },
