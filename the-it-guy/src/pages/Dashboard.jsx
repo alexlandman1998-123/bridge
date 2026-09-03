@@ -1962,6 +1962,10 @@ function Dashboard() {
   const currentOrganisationId = String(organisation?.id || '').trim()
   const isDevAuthBypassWorkspace = String(currentMembership?.source || '').trim() === 'dev_auth_bypass'
   const developerDashboardOrganisationId = role === 'developer' && isDevAuthBypassWorkspace ? null : currentOrganisationId
+  // `workspace.id` is an organisation workspace ID, not a development ID.
+  // Passing it as `developmentId` makes the developer dashboard query an
+  // unrelated UUID and leaves every portfolio metric at zero.
+  const dashboardDevelopmentId = role === 'developer' || workspace.id === 'all' ? null : workspace.id
   const [overview, setOverview] = useState({
     metrics: {
       totalDevelopments: 0,
@@ -2405,7 +2409,7 @@ function Dashboard() {
         agentPrivateListingLoadRef.current += 1
         setAgentPrivateListingRows([])
         let data = await fetchDashboardOverview({
-          developmentId: workspace.id === 'all' ? null : workspace.id,
+          developmentId: dashboardDevelopmentId,
           organisationId: role === 'developer' ? developerDashboardOrganisationId : null,
           includeSecondaryData: false,
         })
@@ -2416,7 +2420,7 @@ function Dashboard() {
         // actually read.
         if (role === 'developer' && !(data?.rows || []).length) {
           data = await fetchDashboardOverview({
-            developmentId: workspace.id === 'all' ? null : workspace.id,
+            developmentId: dashboardDevelopmentId,
             includeSecondaryData: false,
           })
         }
@@ -2451,7 +2455,7 @@ function Dashboard() {
       markRouteMilestone('core_ready', location.pathname)
       markRouteMilestone('interactive_ready', location.pathname)
     }
-  }, [currentMembership?.id, currentMembership?.userId, currentOrganisationId, developerDashboardOrganisationId, isPrincipalAgentView, loadDashboardSecondaryData, location.pathname, organisationLoading, profile?.email, profile?.fullName, profile?.full_name, profile?.id, profile?.name, profile?.userId, role, workspace.id])
+  }, [currentMembership?.id, currentMembership?.userId, currentOrganisationId, dashboardDevelopmentId, developerDashboardOrganisationId, isPrincipalAgentView, loadDashboardSecondaryData, location.pathname, organisationLoading, profile?.email, profile?.fullName, profile?.full_name, profile?.id, profile?.name, profile?.userId, role, workspace.id])
 
   useEffect(() => {
     void loadDashboard()

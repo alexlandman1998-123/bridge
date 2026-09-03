@@ -30457,6 +30457,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     reservation_status: reservationStatus,
     reservation_payment_details: reservationRequired ? reservationPaymentDetails : {},
     alteration_charge_treatment: transactionType === 'developer_sale' ? alterationChargeTreatment : null,
+    is_active: true,
     reservation_paid_date:
       reservationRequired && ['paid', 'verified'].includes(reservationStatus)
         ? new Date().toISOString().slice(0, 10)

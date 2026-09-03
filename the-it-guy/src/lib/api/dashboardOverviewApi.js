@@ -543,15 +543,19 @@ async function fetchActiveTransactionsForUnitIds(client, unitIds) {
   const baseQuery = scopeQueryToUnitIds(
     client.from('transactions').select(
       selectWithoutKnownMissingColumns(
-        'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, updated_at, created_at',
+        'id, unit_id, buyer_id, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, risk_status, sales_price, purchase_price, cash_amount, bond_amount, deposit_amount, bank, attorney, bond_originator, next_action, comment, owner_user_id, access_level, lifecycle_state, attorney_stage, operational_state, waiting_on_role, registration_date, title_deed_number, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, final_report_generated_at, is_active, updated_at, created_at',
       ),
     ),
     unitIds,
   ).order('updated_at', { ascending: false })
 
-  const withActiveFlag = await baseQuery.eq('is_active', true)
+  const withActiveFlag = await baseQuery
   if (!withActiveFlag.error) {
-    return (withActiveFlag.data || []).filter((item) => normalizeStage(item?.stage, null) !== 'Available')
+    // Older and unit-backfilled transactions may predate `is_active` and
+    // therefore carry NULL. Treat only an explicit false as inactive.
+    return (withActiveFlag.data || [])
+      .filter((item) => item?.is_active !== false)
+      .filter((item) => normalizeStage(item?.stage, null) !== 'Available')
   }
 
   if (
