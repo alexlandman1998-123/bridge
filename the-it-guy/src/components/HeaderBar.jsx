@@ -22,6 +22,10 @@ function getPageTitle(pathname, stateTitle, role) {
     if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
   }
 
+  // Developer workspace pages carry their context in the page content (for
+  // example, the development hero), not in the shared app header.
+  if (pathname.startsWith('/developer/')) return ''
+
   if (pathname.startsWith('/units/')) {
     if (role === 'developer') return 'Units'
     if (role === 'bond_originator') return 'Applications'
