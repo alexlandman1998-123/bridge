@@ -27,7 +27,6 @@ set
     nullif(d.formatted_address, ''),
     nullif(d.address, ''),
     nullif(d.street_address, ''),
-    nullif(d.address_line_1, ''),
     nullif(d.location, '')
   ),
   updated_at = now()
@@ -40,7 +39,6 @@ where t.unit_id = u.id
     nullif(d.formatted_address, ''),
     nullif(d.address, ''),
     nullif(d.street_address, ''),
-    nullif(d.address_line_1, ''),
     nullif(d.location, '')
   ) is not null;
 
