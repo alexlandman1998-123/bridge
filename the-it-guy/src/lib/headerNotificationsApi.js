@@ -2,6 +2,7 @@ import { supabase } from './supabaseClient'
 
 const SELECT = 'id, transaction_id, user_id, role_type, notification_type, title, message, is_read, read_at, dedupe_key, event_type, event_data, created_at, updated_at'
 const CACHE_TTL_MS = 15_000
+const HEADER_NOTIFICATION_FETCH_LIMIT = 100
 let cachedResult = null
 let cachedAt = 0
 let inFlight = null
@@ -66,6 +67,40 @@ function isPlaceholderDocumentNotification(row = {}) {
   return !title || /^unit\s*-?\s*$/i.test(title) || /^notification$/i.test(title)
 }
 
+function notificationData(row = {}) {
+  return row?.event_data && typeof row.event_data === 'object' ? row.event_data : {}
+}
+
+function isLeadArrivalNotification(row = {}) {
+  const data = notificationData(row)
+  const haystack = [
+    row?.notification_type,
+    row?.event_type,
+    row?.title,
+    row?.message,
+    row?.dedupe_key,
+    data.automationKey,
+    data.automation_key,
+    data.source,
+    data.trigger,
+    data.type,
+  ].join(' ').toLowerCase()
+  const hasLeadReference = Boolean(data.leadId || data.lead_id) || haystack.includes('lead')
+  if (!hasLeadReference) return false
+  return /\b(new|created|incoming|received)\b/.test(haystack) && !/\b(assign|reassign|reminder|follow.?up|sla)\b/.test(haystack)
+}
+
+function isDocumentSubmissionNotification(row = {}) {
+  const data = notificationData(row)
+  const type = String(row?.notification_type || '').trim().toLowerCase()
+  const source = String(data.source || data.trigger || data.type || '').trim().toLowerCase()
+  return type === 'document_uploaded' || /document.*(?:upload|submit)|(?:upload|submit).*document/.test(source)
+}
+
+function isHeaderNotification(row = {}) {
+  return isLeadArrivalNotification(row) || isDocumentSubmissionNotification(row)
+}
+
 async function currentUserId() {
   const result = await supabase.auth.getUser()
   if (result.error) throw result.error
@@ -76,9 +111,18 @@ export async function fetchMyNotifications({ limit = 25, unreadOnly = false, use
   if (!unreadOnly && cachedResult && Date.now() - cachedAt < CACHE_TTL_MS) return cachedResult
   if (!unreadOnly && inFlight) return inFlight
   const loader = async () => {
+    const displayLimit = Math.max(1, Number(limit) || 25)
     const userId = String(suppliedUserId || '').trim() || await currentUserId()
     if (!userId) return { notifications: [], unreadCount: 0 }
-    let list = supabase.from('transaction_notifications').select(SELECT).eq('user_id', userId).order('created_at', { ascending: false }).limit(Math.max(1, Number(limit) || 25))
+    let list = supabase
+      .from('transaction_notifications')
+      .select(SELECT)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      // Header eligibility is derived from JSON metadata, so gather a bounded
+      // candidate window before filtering rather than dropping relevant alerts
+      // behind unrelated recent activity.
+      .limit(Math.max(HEADER_NOTIFICATION_FETCH_LIMIT, displayLimit))
     if (unreadOnly) list = list.eq('is_read', false)
     const listResult = await list
     if (listResult.error) {
@@ -87,7 +131,9 @@ export async function fetchMyNotifications({ limit = 25, unreadOnly = false, use
     }
     const notifications = (listResult.data || [])
       .filter((row) => !isPlaceholderDocumentNotification(row))
+      .filter(isHeaderNotification)
       .map(normalize)
+      .slice(0, displayLimit)
     const transactionIds = [...new Set(notifications.map((item) => item.transactionId).filter(Boolean))]
     let unitIds = {}
     if (transactionIds.length) {

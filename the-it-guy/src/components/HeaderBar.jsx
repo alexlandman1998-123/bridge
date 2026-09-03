@@ -394,6 +394,20 @@ function getNotificationMessage(notification = {}) {
   const source = toNotificationText(data.source || data.trigger || data.type).toLowerCase()
   const message = toNotificationText(notification.message)
 
+  const leadSource = findFirstNotificationText(
+    data.leadSource,
+    data.lead_source,
+    data.leadSourceLabel,
+    data.lead_source_label,
+    data.sourceChannel,
+    data.source_channel,
+    data.origin,
+  )
+  const leadHaystack = `${type} ${source} ${notification.title || ''} ${notification.message || ''} ${data.automationKey || data.automation_key || ''}`.toLowerCase()
+  if ((data.leadId || data.lead_id || leadHaystack.includes('lead')) && /\b(new|created|incoming|received)\b/.test(leadHaystack)) {
+    return leadSource ? `New lead from ${titleCaseNotificationText(leadSource)}` : 'New lead received'
+  }
+
   if (source === 'client_onboarding_submitted') {
     const buyerName = toNotificationText(data.buyerName || data.buyer_name)
     return buyerName ? `${buyerName} completed onboarding` : 'Client onboarding has been completed'
@@ -405,7 +419,7 @@ function getNotificationMessage(notification = {}) {
   }
 
   if (source === 'document_request_upload_linked' || type === 'document_uploaded') {
-    return message || 'A document was uploaded and is waiting for review'
+    return 'Documents have been submitted'
   }
 
   if (source === 'signed_otp_received' || type === 'lane_handoff') {
@@ -1387,7 +1401,7 @@ function HeaderBar({ onLogout, user }) {
               <div className="rounded-[18px] border border-dashed border-[#d8e0ea] bg-white px-4 py-8 text-center">
                 <p className="text-sm font-semibold text-[#101828]">No notifications yet</p>
                 <p className="mt-1 text-sm text-[#667085]">
-                  {activeNotificationFilter === 'all' ? 'Important workflow updates, document activity, and transaction alerts will appear here.' : 'No notifications match this filter.'}
+                  {activeNotificationFilter === 'all' ? 'New leads and submitted documents will appear here.' : 'No notifications match this filter.'}
                 </p>
               </div>
             ) : null}
