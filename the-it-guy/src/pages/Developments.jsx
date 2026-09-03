@@ -525,13 +525,13 @@ function Developments() {
                           <Building2 className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-white/82" size={34} />
                         </div>
                       )}
-                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,18,28,0.08)_0%,rgba(5,18,28,0.52)_100%)]" aria-hidden="true" />
+                      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,18,28,0.42)_0%,rgba(5,18,28,0.72)_100%)]" aria-hidden="true" />
                       <div className="absolute left-4 top-4 flex items-center gap-2">
                         <span className={`inline-flex items-center rounded-[9px] border px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.08em] shadow-[0_8px_18px_rgba(0,0,0,0.12)] ${developmentTagTone[item.lifecycleStatus] || developmentTagTone.active}`}>
                           {toStatusBadgeLabel(item.lifecycleStatus)}
                         </span>
                       </div>
-                      <span className="absolute right-4 top-4 rounded-[9px] bg-white/92 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-[#30465b] shadow-[0_8px_18px_rgba(0,0,0,0.12)]">
+                      <span className="absolute right-4 top-4 rounded-[9px] border border-white/25 bg-black/20 px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
                         {item.totalUnits} units
                       </span>
                     </div>

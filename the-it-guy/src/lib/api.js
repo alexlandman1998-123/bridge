@@ -18780,11 +18780,38 @@ export async function fetchDashboardOverview({
   const rows = await hydrateRowsWithCommissionSnapshots(client, baseRows)
 
   const developmentSummaries = buildDevelopmentSummaries(rows)
+  // Keep the dashboard's cover imagery consistent with the Developments
+  // portfolio without duplicating an image URL onto every unit row.
+  const summaryDevelopmentIds = developmentSummaries.map((item) => item.id).filter(Boolean)
+  let profileByDevelopmentId = {}
+  if (summaryDevelopmentIds.length) {
+    const profilesResult = await client
+      .from('development_profiles')
+      .select('development_id, image_links, location, status')
+      .in('development_id', summaryDevelopmentIds)
+    if (!profilesResult.error) {
+      profileByDevelopmentId = (profilesResult.data || []).reduce((accumulator, profile) => {
+        accumulator[profile.development_id] = normalizeDevelopmentProfile(profile)
+        return accumulator
+      }, {})
+    } else if (!isMissingTableError(profilesResult.error) && !isPermissionDeniedError(profilesResult.error)) {
+      throw profilesResult.error
+    }
+  }
+  const hydratedDevelopmentSummaries = developmentSummaries.map((summary) => {
+    const profile = profileByDevelopmentId[summary.id] || {}
+    return {
+      ...summary,
+      coverImageUrl: profile.imageLinks?.[0] || null,
+      location: profile.location || null,
+      phase: profile.status || null,
+    }
+  })
 
   return {
     rows,
-    metrics: buildDashboardMetrics(rows, developmentSummaries.length),
-    developmentSummaries,
+    metrics: buildDashboardMetrics(rows, hydratedDevelopmentSummaries.length),
+    developmentSummaries: hydratedDevelopmentSummaries,
     alerts: buildAlerts(rows),
   }
 }

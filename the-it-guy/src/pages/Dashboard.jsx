@@ -16,6 +16,7 @@ import {
   LandPlot,
   Layers3,
   Link2,
+  MapPin,
   MessageCircle,
   PieChart,
   QrCode,
@@ -1536,9 +1537,17 @@ function getRowValue(row = {}) {
 
 function getDevelopmentImage(row = {}) {
   const candidates = [
+    row?.coverImageUrl,
+    row?.cover_image_url,
+    row?.heroImageUrl,
+    row?.hero_image_url,
     row?.development?.cover_image_url,
     row?.development?.image_url,
+    row?.development?.coverImageUrl,
+    row?.development?.heroImageUrl,
     row?.development?.hero_image_url,
+    row?.development?.marketing?.mediaLibrary?.heroImageUrl,
+    row?.marketing?.mediaLibrary?.heroImageUrl,
     row?.unit?.cover_image_url,
     row?.unit?.image_url,
     row?.unit?.primary_image_url,
@@ -1686,6 +1695,7 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
       sellThroughPercent: 0,
       unitsInProgressPercent: 0,
       imageUrl: '',
+      location: '',
       href: developmentId ? `/developments/${developmentId}` : '/developments',
       lastActivity: null,
     }
@@ -1699,7 +1709,8 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
     current.revenueSecured = Math.max(current.revenueSecured || 0, Number(development.revenueSecured ?? development.revenue_secured ?? 0) || 0)
     current.pipelineValue = Math.max(current.pipelineValue || 0, Number(development.pipelineValue ?? development.pipeline_value ?? 0) || 0)
     current.sellThroughPercent = Math.max(current.sellThroughPercent || 0, Number(development.sellThroughPercent ?? development.sell_through_percent ?? 0) || 0)
-    current.imageUrl = current.imageUrl || getDevelopmentImage(sourceRow)
+    current.imageUrl = current.imageUrl || getDevelopmentImage(development) || getDevelopmentImage(sourceRow)
+    current.location = current.location || development.location || sourceRow?.development?.location || ''
     current.href = developmentId ? `/developments/${developmentId}` : current.href
     current.lastActivity = development.lastActivity || development.last_activity || current.lastActivity
 
@@ -1719,7 +1730,7 @@ function buildDeveloperCommandCenterModel({ rows = [], overview = {}, profile = 
     .map((development) => ({
       ...development,
       href: development.id ? `/developments/${development.id}` : '/developments',
-      imageUrl: development.imageUrl || getDevelopmentImage(rowsByDevelopmentId.get(development.id) || {}),
+      imageUrl: development.imageUrl || getDevelopmentImage(development) || getDevelopmentImage(rowsByDevelopmentId.get(development.id) || {}),
     }))
 
   const recentActivitySource = transactionRecordRows.length ? transactionRecordRows : safeRows
@@ -1851,17 +1862,20 @@ function DeveloperMyDevelopments({ developments = [], onNavigate = () => {} }) {
         <button type="button" className="shrink-0 text-sm font-semibold text-[#1769d1]" onClick={() => onNavigate('/developments')}>View all <ArrowRight className="ml-1 inline" size={15} /></button>
       </div>
       {developments.length ? (
-        <div className="mt-4 grid grid-flow-col auto-cols-[minmax(250px,320px)] gap-3 overflow-x-auto pb-2">
+        <div className="mt-4 grid grid-flow-col auto-cols-[minmax(290px,360px)] gap-4 overflow-x-auto pb-2">
           {developments.map((development) => (
-            <button key={development.id || development.name} type="button" onClick={() => onNavigate(development.href)} className="grid min-h-[166px] grid-rows-[auto_1fr_auto] rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-left transition hover:border-[#bcd2e7] hover:bg-white">
-              <div className="flex items-start justify-between gap-3">
-                <span className="grid h-10 w-10 place-items-center overflow-hidden rounded-[13px] bg-[#edf5ff] text-sm font-semibold text-[#1769d1]">
-                  {development.imageUrl ? <img className="h-full w-full object-cover" src={development.imageUrl} alt="" /> : String(development.name || 'D').slice(0, 1)}
-                </span>
-                <span className="rounded-full bg-[#ecfdf3] px-2.5 py-1 text-xs font-semibold text-[#16894f]">{formatPercent(development.sellThroughPercent || 0)} sold</span>
+            <button key={development.id || development.name} type="button" onClick={() => onNavigate(development.href)} className="group overflow-hidden rounded-[22px] border border-[#dce5ef] bg-white text-left shadow-[0_12px_28px_rgba(15,23,42,0.07)] transition hover:-translate-y-0.5 hover:shadow-[0_20px_38px_rgba(15,23,42,0.12)]">
+              <div className="relative h-[132px] overflow-hidden bg-[#142f40]">
+                {development.imageUrl ? <img className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]" src={development.imageUrl} alt="" /> : <span className="grid h-full w-full place-items-center text-4xl font-semibold text-white/80">{String(development.name || 'D').slice(0, 1)}</span>}
+                <span className="absolute inset-0 bg-[linear-gradient(180deg,rgba(5,15,24,0.46),rgba(5,15,24,0.68))]" aria-hidden="true" />
+                <span className="absolute left-4 top-4 rounded-[10px] bg-[#118a64] px-3 py-1.5 text-[0.68rem] font-bold uppercase tracking-[0.09em] text-white shadow-[0_8px_18px_rgba(0,0,0,0.2)]">Active</span>
+                <span className="absolute right-4 top-4 text-[0.72rem] font-bold uppercase tracking-[0.1em] text-white">{formatKpiCount(development.totalUnits)} units</span>
               </div>
-              <div className="mt-4 min-w-0"><strong className="block truncate text-[0.98rem] text-[#101828]">{development.name}</strong><span className="mt-1 block text-xs text-[#667085]">{formatKpiCount(development.totalUnits)} units · {formatKpiCount(development.unitsInProgress || 0)} active transactions</span></div>
-              <div className="mt-4 flex items-center justify-between border-t border-[#e8eef5] pt-3 text-xs font-semibold text-[#1769d1]"><span>{formatKpiCurrency(development.pipelineValue || 0)} pipeline</span><ArrowRight size={15} /></div>
+              <div className="p-4">
+                <div className="flex items-start justify-between gap-3"><div className="min-w-0"><strong className="block truncate text-[1.1rem] font-semibold tracking-[-0.03em] text-[#142132]">{development.name}</strong><span className="mt-1.5 flex items-center gap-1.5 truncate text-sm text-[#60758d]"><MapPin size={14} className="shrink-0" />{development.location || 'Location pending'}</span></div><span className="shrink-0 rounded-full bg-[#ecfdf3] px-2.5 py-1 text-xs font-semibold text-[#16894f]">{formatPercent(development.sellThroughPercent || 0)} sold</span></div>
+                <div className="mt-4 flex items-center justify-between text-sm font-semibold text-[#61758d]"><span>{formatKpiCount(development.unitsInProgress || 0)} live deals</span><span>{formatKpiCurrency(development.pipelineValue || 0)} pipeline</span></div>
+                <div className="mt-4 flex items-center justify-between border-t border-[#e8eef5] pt-3 text-xs font-semibold uppercase tracking-[0.08em] text-[#16724f]"><span>{formatKpiCount(development.unitsRegistered || 0)} registered</span><span className="inline-flex items-center gap-1">Open workspace <ArrowRight size={14} /></span></div>
+              </div>
             </button>
           ))}
         </div>
