@@ -989,6 +989,7 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
       galleryImageUrls: '',
       developmentLogoUrl: '',
       sitePlanUrl: '',
+      sitePlanViewport: {},
       masterplanUrl: '',
       floorplanUrls: '',
       videoUrl: '',
@@ -2651,6 +2652,10 @@ function normalizeMarketingContent(value) {
       sitePlanUrl: normalizeTextValue(
         mediaLibrarySource.sitePlanUrl ?? mediaLibrarySource.site_plan_url ?? defaults.mediaLibrary.sitePlanUrl,
       ),
+      sitePlanViewport:
+        mediaLibrarySource.sitePlanViewport && typeof mediaLibrarySource.sitePlanViewport === 'object' && !Array.isArray(mediaLibrarySource.sitePlanViewport)
+          ? mediaLibrarySource.sitePlanViewport
+          : defaults.mediaLibrary.sitePlanViewport,
       masterplanUrl: normalizeTextValue(
         mediaLibrarySource.masterplanUrl ?? mediaLibrarySource.masterplan_url ?? defaults.mediaLibrary.masterplanUrl,
       ),

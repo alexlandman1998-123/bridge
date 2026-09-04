@@ -30,6 +30,11 @@ import Button from "../ui/Button";
 import Field from "../ui/Field";
 import { buildDevelopmentStructurePathMap } from "../../core/developments/developmentStructureModel";
 import { buildCataloguePriceByUnitType } from "../../core/developments/developmentProductCatalogueModel";
+import {
+  isFullSitePlanViewport,
+  normaliseSitePlanViewport,
+  remapSitePlanCoordinates,
+} from "../../core/developments/developmentSitePlanViewport";
 
 const currency = new Intl.NumberFormat("en-ZA", {
   style: "currency",
@@ -131,6 +136,19 @@ function hasSavedMapPosition(sitePlanMap, unitId) {
   const position = sitePlanMap?.[unitId];
   return Number.isFinite(Number(position?.x)) && Number.isFinite(Number(position?.y));
 }
+
+function sitePlanBackgroundStyle(sitePlanUrl, viewport, zoom = 1) {
+  const crop = normaliseSitePlanViewport(viewport)
+  const horizontalPosition = crop.width === 100 ? 50 : (crop.x / (100 - crop.width)) * 100
+  const verticalPosition = crop.height === 100 ? 50 : (crop.y / (100 - crop.height)) * 100
+  return {
+    transform: `scale(${zoom})`,
+    backgroundImage: `linear-gradient(rgba(11,31,28,0.06),rgba(11,31,28,0.12)), url(${sitePlanUrl})`,
+    backgroundPosition: `${horizontalPosition}% ${verticalPosition}%`,
+    backgroundRepeat: "no-repeat",
+    backgroundSize: `${10000 / crop.width}% ${10000 / crop.height}%`,
+  }
+}
 function StatusPill({ status }) {
   const meta = STATUS_META[status] || STATUS_META.available;
   return (
@@ -178,11 +196,13 @@ export default function DevelopmentAvailabilityWorkspace({
   reservationDepositSummary = "",
   sitePlanUrl = "",
   sitePlanMap = {},
+  sitePlanViewport = {},
   sitePlanQuality = null,
   sitePlanSuggestions = {},
   sitePlanSaving = false,
   sitePlanPubliclyVisible = false,
   onSaveSitePlanMap,
+  onSaveSitePlanViewport,
   onUploadSitePlan,
   onApplySitePlanSuggestions,
   onDiscardSitePlanSuggestions,
@@ -206,6 +226,8 @@ export default function DevelopmentAvailabilityWorkspace({
   const [mapSelectionActive, setMapSelectionActive] = useState(false);
   const [placingUnit, setPlacingUnit] = useState(false);
   const [sitePlanReviewOpen, setSitePlanReviewOpen] = useState(false);
+  const [cropEditorOpen, setCropEditorOpen] = useState(false);
+  const [cropDraft, setCropDraft] = useState(() => normaliseSitePlanViewport(sitePlanViewport));
   const [zoom, setZoom] = useState(1);
   const [comparisonUnitIds, setComparisonUnitIds] = useState([]);
   const [selectedLeadId, setSelectedLeadId] = useState("");
@@ -434,6 +456,23 @@ export default function DevelopmentAvailabilityWorkspace({
     setMapSelectionActive(false);
     setSitePlanReviewOpen(true);
   }
+  function openCropEditor() {
+    setCropDraft(normaliseSitePlanViewport(sitePlanViewport));
+    setCropEditorOpen(true);
+  }
+  function updateCropDraft(field, rawValue) {
+    const current = normaliseSitePlanViewport(cropDraft);
+    const next = normaliseSitePlanViewport({ ...current, [field]: Number(rawValue) });
+    setCropDraft(next);
+  }
+  function saveCrop() {
+    const nextViewport = normaliseSitePlanViewport(cropDraft);
+    const nextMap = remapSitePlanCoordinates(sitePlanMap, sitePlanViewport, nextViewport);
+    onSaveSitePlanViewport?.(nextViewport, nextMap);
+    setCropEditorOpen(false);
+    setPlacingUnit(false);
+    setSitePlanReviewOpen(false);
+  }
   function toggleComparison(unit) {
     setComparisonUnitIds((previous) =>
       previous.includes(unit.id)
@@ -639,6 +678,7 @@ export default function DevelopmentAvailabilityWorkspace({
   }
 
   return (
+    <>
     <section className="mt-4 grid gap-5">
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <MetricCard label="Total units" value={metrics.total} />
@@ -712,7 +752,13 @@ export default function DevelopmentAvailabilityWorkspace({
               {onUploadSitePlan ? <label className={`mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#173f38] px-3 text-xs font-semibold text-white ${sitePlanSaving ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-[#12322d]"}`}><Upload size={14} />{sitePlanSaving ? "Preparing plan…" : sitePlanUrl ? "Replace site plan" : "Upload site plan"}<input type="file" accept="image/*,application/pdf,.pdf" className="hidden" disabled={sitePlanSaving} onChange={onUploadSitePlan} /></label> : null}
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">2. Place units</span>
+              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">2. Crop & orient</span>
+              <strong className="mt-1 block text-sm text-[#173149]">{isFullSitePlanViewport(sitePlanViewport) ? "Use only the plotted plan area" : "Plan crop ready"}</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Remove schedules, legends, margins and drawing notes before placing units.</p>
+              <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl || sitePlanSaving} onClick={openCropEditor}><PencilLine size={13} /> Crop plan</Button>
+            </div>
+            <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Place units</span>
               <strong className="mt-1 block text-sm text-[#173149]">{placedUnitCount} of {inventory.length} coordinates saved</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Work through the remaining units or select one to adjust its saved marker.</p>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -722,7 +768,7 @@ export default function DevelopmentAvailabilityWorkspace({
               {suggestionCount ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">{suggestionCount} PDF label suggestion{suggestionCount === 1 ? "" : "s"} ready for review</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">Dashed markers are a draft only. Apply them, then check or adjust each location.</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" disabled={sitePlanSaving} onClick={() => onApplySitePlanSuggestions?.(sitePlanSuggestions)}>Apply suggestions</Button><Button type="button" size="sm" variant="ghost" disabled={sitePlanSaving} onClick={() => onDiscardSitePlanSuggestions?.()}>Discard</Button></div></div> : null}
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Review & publish</span>
+              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">4. Review & publish</span>
               <strong className="mt-1 block text-sm text-[#173149]">{hasSitePlanIssues ? `${sitePlanIssueCount} placement check${sitePlanIssueCount === 1 ? "" : "s"} need review` : unplacedUnits.length ? `${unplacedUnits.length} unit${unplacedUnits.length === 1 ? "" : "s"} still need placement` : "All units are ready to review"}</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Review exactly what the public map will show. Publishing remains under Marketing.</p>
               <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl} onClick={reviewSitePlanPlacement}><MapPinned size={13} /> Review map</Button>
@@ -757,15 +803,7 @@ export default function DevelopmentAvailabilityWorkspace({
         >
           <div
             className="absolute inset-0 origin-center transition-transform duration-200"
-            style={{
-              transform: `scale(${zoom})`,
-              backgroundImage: sitePlanUrl
-                ? `linear-gradient(rgba(11,31,28,0.06),rgba(11,31,28,0.12)), url(${sitePlanUrl})`
-                : undefined,
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-              backgroundSize: "cover",
-            }}
+            style={sitePlanUrl ? sitePlanBackgroundStyle(sitePlanUrl, sitePlanViewport, zoom) : { transform: `scale(${zoom})` }}
           >
             {!sitePlanUrl ? (
               <div
@@ -1372,5 +1410,27 @@ export default function DevelopmentAvailabilityWorkspace({
         </aside>
       </section>
     </section>
+    {cropEditorOpen ? (
+      <div className="fixed inset-0 z-[80] grid place-items-center bg-[#081c20]/55 p-4" role="dialog" aria-modal="true" aria-label="Crop site plan">
+        <section className="w-full max-w-4xl overflow-hidden rounded-[22px] bg-white shadow-2xl">
+          <header className="flex items-start justify-between border-b border-[#e5ece9] px-5 py-4 sm:px-6">
+            <div><span className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[#4d7965]">Site plan setup</span><h3 className="mt-1 text-xl font-semibold tracking-[-0.035em] text-[#173149]">Crop the buyer-facing map</h3><p className="mt-1 text-sm text-[#6b7d93]">The original upload stays intact. Saved unit markers move with the crop; anything outside it returns to “needs placement”.</p></div>
+            <button type="button" aria-label="Close crop editor" onClick={() => setCropEditorOpen(false)} className="rounded-lg p-2 text-[#61768a] hover:bg-[#eff5f2]"><X size={18} /></button>
+          </header>
+          <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_250px]">
+            <div className="relative min-h-[340px] overflow-hidden rounded-[16px] border border-[#d9e5df] bg-[#eff2eb]">
+              <div className="absolute inset-0" style={sitePlanBackgroundStyle(sitePlanUrl, cropDraft)} />
+              <div className="absolute inset-x-4 bottom-4 rounded-[10px] bg-[#173f38]/90 px-3 py-2 text-xs font-semibold text-white">Preview: only this area will be used for availability maps.</div>
+            </div>
+            <div className="space-y-4"><p className="text-xs leading-5 text-[#60758d]">Start by reducing width and height, then move the crop frame to the plotted units. Keep road labels if they help buyers orient themselves.</p>
+              {[['width', 'Crop width'], ['height', 'Crop height'], ['x', 'Move left / right'], ['y', 'Move up / down']].map(([field, label]) => <label key={field} className="block"><span className="mb-1.5 flex justify-between text-xs font-semibold text-[#304b40]"><span>{label}</span><span>{Math.round(cropDraft[field])}%</span></span><input type="range" min={field === 'width' || field === 'height' ? 35 : 0} max={field === 'width' || field === 'height' ? 100 : field === 'x' ? 65 : 65} value={cropDraft[field]} onChange={(event) => updateCropDraft(field, event.target.value)} className="w-full accent-[#1c7c57]" /></label>)}
+              <button type="button" className="text-xs font-semibold text-[#236c4e] underline" onClick={() => setCropDraft(normaliseSitePlanViewport({}))}>Use full original plan</button>
+            </div>
+          </div>
+          <footer className="flex flex-wrap justify-end gap-2 border-t border-[#e5ece9] px-5 py-4 sm:px-6"><Button type="button" variant="secondary" onClick={() => setCropEditorOpen(false)}>Cancel</Button><Button type="button" onClick={saveCrop}>Save crop</Button></footer>
+        </section>
+      </div>
+    ) : null}
+    </>
   );
 }

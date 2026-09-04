@@ -245,6 +245,7 @@ const DEFAULT_DETAILS_FORM = {
       developmentLogoUrl: '',
       sitePlanUrl: '',
       sitePlanMap: {},
+      sitePlanViewport: {},
       masterplanUrl: '',
       floorplanUrls: '',
       videoUrl: '',
@@ -1430,6 +1431,9 @@ function normalizeMarketingContentForm(input = null) {
       sitePlanMap: mediaLibrarySource.sitePlanMap && typeof mediaLibrarySource.sitePlanMap === 'object' && !Array.isArray(mediaLibrarySource.sitePlanMap)
         ? mediaLibrarySource.sitePlanMap
         : defaults.mediaLibrary.sitePlanMap,
+      sitePlanViewport: mediaLibrarySource.sitePlanViewport && typeof mediaLibrarySource.sitePlanViewport === 'object' && !Array.isArray(mediaLibrarySource.sitePlanViewport)
+        ? mediaLibrarySource.sitePlanViewport
+        : defaults.mediaLibrary.sitePlanViewport,
       masterplanUrl: text(mediaLibrarySource.masterplanUrl, mediaLibrarySource.masterplan_url || defaults.mediaLibrary.masterplanUrl),
       floorplanUrls: text(mediaLibrarySource.floorplanUrls, mediaLibrarySource.floorplan_urls || defaults.mediaLibrary.floorplanUrls),
       videoUrl: text(mediaLibrarySource.videoUrl, mediaLibrarySource.video_url || defaults.mediaLibrary.videoUrl),
@@ -4830,6 +4834,37 @@ function DevelopmentDetail() {
       setDetailsForm(nextDetailsForm)
       await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
       setFeedback('Site-plan unit positions saved.')
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDetailsSaving(false)
+    }
+  }
+
+  async function handleAvailabilitySitePlanViewportSave(sitePlanViewport, sitePlanMap) {
+    if (!canManageDevelopment) return
+
+    const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+    const nextDetailsForm = {
+      ...detailsForm,
+      marketing: {
+        ...normalizedMarketing,
+        mediaLibrary: {
+          ...normalizedMarketing.mediaLibrary,
+          sitePlanViewport,
+          sitePlanMap,
+        },
+      },
+    }
+
+    try {
+      setDetailsSaving(true)
+      setError('')
+      setDetailsForm(nextDetailsForm)
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      setFeedback('Site-plan crop saved. Unit markers were kept in their matching plan locations.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
+      await loadData()
     } catch (saveError) {
       setError(saveError.message)
     } finally {
@@ -10652,11 +10687,13 @@ function DevelopmentDetail() {
           reservationDepositSummary={reservationDepositSummary}
           sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
           sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
+          sitePlanViewport={marketingForm.mediaLibrary.sitePlanViewport}
           sitePlanQuality={sitePlanQuality}
           sitePlanSuggestions={sitePlanSuggestions}
           sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
           sitePlanPubliclyVisible={marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live'}
           onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
+          onSaveSitePlanViewport={(viewport, map) => void handleAvailabilitySitePlanViewportSave(viewport, map)}
           onUploadSitePlan={(event) => void handleAvailabilitySitePlanUpload(event)}
           onApplySitePlanSuggestions={(suggestions) => void handleApplySitePlanSuggestions(suggestions)}
           onDiscardSitePlanSuggestions={() => setSitePlanSuggestions({})}
