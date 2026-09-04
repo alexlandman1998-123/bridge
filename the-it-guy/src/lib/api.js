@@ -20059,13 +20059,26 @@ export async function fetchDevelopmentDocuments(developmentId) {
     return []
   }
 
-  const { data, error } = await client
+  let { data, error } = await client
     .from('development_documents')
     .select(
       'id, development_id, document_type, title, description, file_url, linked_unit_id, linked_unit_type, approval_status, visibility, version, supersedes_document_id, archived_at, storage_bucket, storage_path, mime_type, file_size_bytes, uploaded_at, created_at',
     )
     .eq('development_id', developmentId)
     .order('created_at', { ascending: false })
+
+  // Marketing-document governance fields were added after the original
+  // development document table. Keep older production schemas readable while
+  // their migration is pending.
+  if (error && isMissingColumnError(error, 'approval_status')) {
+    const fallback = await client
+      .from('development_documents')
+      .select('id, development_id, document_type, title, description, file_url, linked_unit_id, linked_unit_type, uploaded_at, created_at')
+      .eq('development_id', developmentId)
+      .order('created_at', { ascending: false })
+    data = fallback.data
+    error = fallback.error
+  }
 
   if (error) {
     if (isMissingTableError(error, 'development_documents') || isPermissionDeniedError(error)) {
