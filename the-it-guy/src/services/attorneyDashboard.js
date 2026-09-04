@@ -27,6 +27,7 @@ import {
 } from '../constants/attorneyWorkflowStages.js'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { hydratePropertyLabelsFromListings } from './attorneyMatterListSnapshotService'
+import { getAttorneyMatterWorkspace } from './attorneyMatterWorkspace'
 import {
   COMPATIBILITY_FALLBACK_IDS,
   trackCompatibilityFallbackState,
@@ -1402,6 +1403,54 @@ async function getMatterListCompatibilitySnapshot(client, firmId) {
   return hydratePropertyLabelsFromListings(client, result.data)
 }
 
+function workspaceKpiValue(workspace = {}, key = '') {
+  return Number((workspace.kpis || []).find((item) => item.key === key)?.value || 0)
+}
+
+async function getOperationalWorkspaceCompatibilitySnapshot(firmId, userId) {
+  try {
+    const workspace = await getAttorneyMatterWorkspace({
+      firmId,
+      userId,
+      view: 'all',
+      pageSize: 100,
+    })
+    const activeRows = (workspace.allRows || []).filter((row) => ['Active', 'Attention', 'Delayed'].includes(row.status))
+    if (!activeRows.length) return null
+
+    // This is the same operational read model that the Matters route uses if
+    // its rollout snapshot is incomplete. It keeps both surfaces consistent
+    // while the dashboard RPC has no data for an otherwise active firm.
+    return {
+      rows: activeRows.map((row) => ({
+        transactionId: row.transactionId || row.matterId,
+        matterNumber: row.reference || row.matterReference,
+        matterType: row.matterType,
+        stage: row.stage?.label || row.stage?.key || '',
+        nextAction: row.nextAction?.label || row.nextAction || '',
+        nextActionDueAt: row.expectedDue || null,
+        targetRegistrationDate: row.expectedRegistration || null,
+        riskStatus: row.status === 'Delayed' ? 'at_risk' : '',
+        waitingOnRole: row.waitingOn || '',
+        buyerName: row.buyer || '',
+        propertyLabel: row.propertyAddress || row.property || '',
+        value: row.matterValue || 0,
+        updatedAt: row.lastActivity || null,
+      })),
+      kpis: {
+        activeMatters: workspaceKpiValue(workspace, 'active_matters'),
+        awaitingClient: workspaceKpiValue(workspace, 'awaiting_client'),
+        lodgementToday: workspaceKpiValue(workspace, 'lodgement_today'),
+        registrationThisWeek: workspaceKpiValue(workspace, 'registration_this_week'),
+        delayedMatters: workspaceKpiValue(workspace, 'delayed'),
+      },
+      access: { activeMembership: Boolean(workspace.firm?.id) },
+    }
+  } catch {
+    return null
+  }
+}
+
 async function loadAttorneyManagementDashboardData(firmId = null, { roleView = 'all', client: scopedClient = null, authUser: scopedAuthUser = null, resolvedFirm: scopedFirm = null, userId = null, timer: scopedTimer = null } = {}) {
   const client = scopedClient || requireClient()
   const timer = scopedTimer || createPerfTimer('attorney.service.dashboard.load', {
@@ -1530,6 +1579,25 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     })
     return buildAttorneyDashboardFromSnapshot(
       buildDashboardSnapshotFromMatterListSnapshot(matterListSnapshot, resolvedFirm),
+      { roleView },
+    )
+  }
+  const operationalWorkspaceSnapshot = await getOperationalWorkspaceCompatibilitySnapshot(resolvedFirm.id, currentUserId)
+  if (operationalWorkspaceSnapshot) {
+    void trackCompatibilityFallbackState({
+      fallbackId: COMPATIBILITY_FALLBACK_IDS.attorneyDashboardSnapshot,
+      usedFallback: true,
+      sourceComponent: 'attorney_dashboard',
+      reasonCode: 'dashboard_snapshot_using_operational_matter_workspace',
+      userId: currentUserId,
+      workspaceId: resolvedFirm.id,
+      route: '/attorney/dashboard',
+    })
+    timer.mark('snapshot:operational-workspace-compatibility', {
+      rows: operationalWorkspaceSnapshot.rows.length,
+    })
+    return buildAttorneyDashboardFromSnapshot(
+      buildDashboardSnapshotFromMatterListSnapshot(operationalWorkspaceSnapshot, resolvedFirm),
       { roleView },
     )
   }

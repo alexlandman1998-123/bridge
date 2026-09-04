@@ -1118,7 +1118,7 @@ function MatterPropertyCell({ row, preview }) {
   // An address is not mandatory when a matter is first created. Do not present
   // an internal data fallback as if it were the matter's title.
   const address = firstText(
-    row.propertyAddress,
+    row.propertyAddress === 'Property pending' || row.propertyAddress === 'Property details pending' ? '' : row.propertyAddress,
     row.property === 'Property pending' ? '' : row.property,
     `${row.matterType || 'Property'} matter`,
   )
