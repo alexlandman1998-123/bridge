@@ -729,7 +729,7 @@ export default function DevelopmentAvailabilityWorkspace({
             </div>
           </section>
         ) : null}
-        <div className="grid gap-4 xl:grid-cols-[195px_minmax(0,1fr)_minmax(340px,0.85fr)]">
+        <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_minmax(340px,0.85fr)]">
           <aside className="flex h-[470px] flex-col rounded-[18px] border border-[#e0e8e4] bg-[#fbfdfb] p-3.5 xl:h-[540px]">
             <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">
               Browse by
