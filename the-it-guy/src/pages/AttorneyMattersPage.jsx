@@ -1115,7 +1115,13 @@ function MatterFilters({ workspace, searchTerm, filters, onSearchChange, onFilte
 }
 
 function MatterPropertyCell({ row, preview }) {
-  const address = firstText(row.propertyAddress, row.property === 'Property pending' ? '' : row.property, 'Property details pending')
+  // An address is not mandatory when a matter is first created. Do not present
+  // an internal data fallback as if it were the matter's title.
+  const address = firstText(
+    row.propertyAddress,
+    row.property === 'Property pending' ? '' : row.property,
+    `${row.matterType || 'Property'} matter`,
+  )
   const location = firstText(row.propertyArea, [row.development, row.unit ? `Unit ${row.unit}` : '', row.phase].filter(Boolean).join(' / '))
 
   return (

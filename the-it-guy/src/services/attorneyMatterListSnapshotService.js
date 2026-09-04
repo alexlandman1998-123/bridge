@@ -18,6 +18,64 @@ function emptySnapshot(view = 'all', page = 1, pageSize = 20) {
   }
 }
 
+function listingLabel(listing = {}) {
+  return [
+    listing.formatted_address,
+    listing.street_address,
+    listing.address_line_1,
+    listing.title,
+    [listing.suburb, listing.city].filter(Boolean).join(', '),
+  ]
+    .map((value) => normalizeText(value))
+    .find(Boolean) || ''
+}
+
+function needsPropertyLabel(value) {
+  const normalized = normalizeText(value).toLowerCase()
+  return !normalized || normalized === 'property pending' || normalized === 'property details pending'
+}
+
+export async function hydratePropertyLabelsFromListings(client, snapshot) {
+  const rows = Array.isArray(snapshot?.rows) ? snapshot.rows : []
+  const transactionIds = rows
+    .filter((row) => needsPropertyLabel(row.propertyLabel) && normalizeText(row.transactionId))
+    .map((row) => row.transactionId)
+  if (!transactionIds.length) return snapshot
+
+  // The attorney snapshot is intentionally assignment-first. Some historical
+  // matters have their address only on the linked listing, so resolve it here
+  // rather than exposing a generic "Property pending" title.
+  const transactionResult = await client
+    .from('transactions')
+    .select('id, listing_id')
+    .in('id', transactionIds)
+  if (transactionResult.error || !Array.isArray(transactionResult.data)) return snapshot
+
+  const listingIdsByTransactionId = new Map(
+    transactionResult.data
+      .filter((transaction) => transaction?.id && transaction?.listing_id)
+      .map((transaction) => [transaction.id, transaction.listing_id]),
+  )
+  const listingIds = [...new Set(listingIdsByTransactionId.values())]
+  if (!listingIds.length) return snapshot
+
+  const listingResult = await client
+    .from('private_listings')
+    .select('id, title, formatted_address, street_address, address_line_1, suburb, city')
+    .in('id', listingIds)
+  if (listingResult.error || !Array.isArray(listingResult.data)) return snapshot
+
+  const labelsByListingId = new Map(listingResult.data.map((listing) => [listing.id, listingLabel(listing)]))
+  return {
+    ...snapshot,
+    rows: rows.map((row) => {
+      if (!needsPropertyLabel(row.propertyLabel)) return row
+      const listingLabelValue = labelsByListingId.get(listingIdsByTransactionId.get(row.transactionId))
+      return listingLabelValue ? { ...row, propertyLabel: listingLabelValue } : row
+    }),
+  }
+}
+
 export async function getAttorneyMatterListSnapshot({
   firmId = '',
   view = 'all',
@@ -49,7 +107,8 @@ export async function getAttorneyMatterListSnapshot({
     throw result.error
   }
 
-  return result.data && typeof result.data === 'object'
+  const snapshot = result.data && typeof result.data === 'object'
     ? result.data
     : emptySnapshot(normalizedView, normalizedPage, normalizedPageSize)
+  return hydratePropertyLabelsFromListings(client, snapshot)
 }

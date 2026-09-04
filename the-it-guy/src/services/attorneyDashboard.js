@@ -26,6 +26,7 @@ import {
   normalizeAttorneyStageKey,
 } from '../constants/attorneyWorkflowStages.js'
 import { createPerfTimer } from '../lib/performanceTrace'
+import { hydratePropertyLabelsFromListings } from './attorneyMatterListSnapshotService'
 import {
   COMPATIBILITY_FALLBACK_IDS,
   trackCompatibilityFallbackState,
@@ -1398,7 +1399,7 @@ async function getMatterListCompatibilitySnapshot(client, firmId) {
     p_filters: {},
   })
   if (result.error || !result.data || !Array.isArray(result.data.rows) || !result.data.rows.length) return null
-  return result.data
+  return hydratePropertyLabelsFromListings(client, result.data)
 }
 
 async function loadAttorneyManagementDashboardData(firmId = null, { roleView = 'all', client: scopedClient = null, authUser: scopedAuthUser = null, resolvedFirm: scopedFirm = null, userId = null, timer: scopedTimer = null } = {}) {
@@ -1505,24 +1506,32 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     })
     return buildAttorneyDashboardFromSnapshot(snapshotResult.data || {}, { roleView })
   }
-  if (!snapshotResult.error) {
-    const matterListSnapshot = await getMatterListCompatibilitySnapshot(client, resolvedFirm.id)
-    if (matterListSnapshot) {
-      void trackCompatibilityFallbackState({
-        fallbackId: COMPATIBILITY_FALLBACK_IDS.attorneyDashboardSnapshot,
-        usedFallback: true,
-        sourceComponent: 'attorney_dashboard',
-        reasonCode: 'dashboard_snapshot_empty_using_matter_list_snapshot',
-        userId: currentUserId,
-        workspaceId: resolvedFirm.id,
-        route: '/attorney/dashboard',
-      })
-      timer.mark('snapshot:matter-list-compatibility', { rows: matterListSnapshot.rows.length })
-      return buildAttorneyDashboardFromSnapshot(
-        buildDashboardSnapshotFromMatterListSnapshot(matterListSnapshot, resolvedFirm),
-        { roleView },
-      )
-    }
+  // The matter-list snapshot is the canonical, assignment-first source used by
+  // the Matters workspace. Prefer it whenever the dashboard snapshot is empty
+  // *or unavailable*, so the two attorney surfaces cannot report different
+  // firm workloads during a staggered RPC rollout.
+  const matterListSnapshot = await getMatterListCompatibilitySnapshot(client, resolvedFirm.id)
+  if (matterListSnapshot) {
+    const reasonCode = snapshotResult.error
+      ? 'dashboard_snapshot_unavailable_using_matter_list_snapshot'
+      : 'dashboard_snapshot_empty_using_matter_list_snapshot'
+    void trackCompatibilityFallbackState({
+      fallbackId: COMPATIBILITY_FALLBACK_IDS.attorneyDashboardSnapshot,
+      usedFallback: true,
+      sourceComponent: 'attorney_dashboard',
+      reasonCode,
+      userId: currentUserId,
+      workspaceId: resolvedFirm.id,
+      route: '/attorney/dashboard',
+    })
+    timer.mark('snapshot:matter-list-compatibility', {
+      rows: matterListSnapshot.rows.length,
+      dashboardSnapshotAvailable: !snapshotResult.error,
+    })
+    return buildAttorneyDashboardFromSnapshot(
+      buildDashboardSnapshotFromMatterListSnapshot(matterListSnapshot, resolvedFirm),
+      { roleView },
+    )
   }
   if (snapshotResult.error && !isMissingDashboardSnapshotRpc(snapshotResult.error)) {
     throw snapshotResult.error

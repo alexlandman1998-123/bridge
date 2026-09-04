@@ -158,7 +158,10 @@ function KpiCards({ stats = {}, performance = {} }) {
       <div className="flex min-w-max divide-x divide-slate-200/90 px-3 py-4 sm:px-4 lg:grid lg:min-w-0 lg:grid-cols-5 lg:px-5 lg:py-6">
         {cards.map((card) => {
         const Icon = card.icon
-        const href = card.key === 'active' ? '/attorney/matters/active' : card.key === 'client' ? '/attorney/matters/delayed' : card.key === 'registration' ? '/attorney/matters/registered' : '/attorney/matters'
+        // “Incoming Matters” is a separate pre-instruction queue. Active
+        // Matters must lead to the same all-matters workspace that supplies
+        // this KPI, not that incoming queue.
+        const href = card.key === 'active' ? '/attorney/matters/all' : card.key === 'client' ? '/attorney/matters/delayed' : card.key === 'registration' ? '/attorney/matters/registered' : '/attorney/matters'
         return (
           <Link key={card.key} to={href} className="group min-w-[166px] px-4 py-2 first:pl-2 last:pr-2 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 lg:min-w-0 lg:px-5">
             <span className="flex items-center gap-3">
@@ -343,7 +346,7 @@ function ActiveMatterStrip({ lanes = {} }) {
     <section className={`${surfaceClass} overflow-hidden`} aria-labelledby="active-matters-heading">
       <header className="flex h-14 items-center justify-between gap-4 border-b border-slate-100 px-5">
         <h2 id="active-matters-heading" className="text-[15px] font-semibold tracking-[-0.01em] text-slate-950">Active Matters</h2>
-        <Link to="/attorney/matters/active" className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-slate-600 transition hover:text-slate-950">
+        <Link to="/attorney/matters/all" className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-slate-600 transition hover:text-slate-950">
           View all matters <ArrowRight size={14} />
         </Link>
       </header>
