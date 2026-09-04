@@ -19637,14 +19637,30 @@ export async function fetchDevelopmentDetail(developmentId) {
       .maybeSingle()
   }
 
-  const { data: development, error: developmentError } = developmentQuery
+  let { data: development, error: developmentError } = developmentQuery
 
   if (developmentError) {
     throw developmentError
   }
 
   if (!development) {
-    return null
+    // Some role combinations can read a development through the portfolio
+    // summary but are not granted a direct row select. Use that already
+    // authorised summary as a narrow fallback rather than presenting a false
+    // "not found" result for an accessible workspace.
+    const overview = await fetchDashboardOverview({ includeSecondaryData: false })
+    const summary = (overview.developmentSummaries || []).find((item) => String(item?.id || '') === String(developmentId || ''))
+    if (!summary) return null
+    development = {
+      id: summary.id,
+      organisation_id: null,
+      name: summary.name || 'Untitled development',
+      planned_units: summary.totalUnits || 0,
+      total_units_expected: summary.totalUnits || 0,
+      location: summary.location || null,
+      status: summary.phase || null,
+      developer_company: summary.developerCompany || null,
+    }
   }
 
   // The detail page used to wait for each independent resource in turn. On a
