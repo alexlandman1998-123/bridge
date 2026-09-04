@@ -197,8 +197,14 @@ assert.match(
 
 assert.match(
   authBootSource,
-  /export function buildCachedBridgeAuthState[\s\S]*?workspaceDegradedReason: 'workspace_boot_refreshing'/,
-  'a verified cached workspace should be marked as refreshing until live validation completes',
+  /export function buildCachedBridgeAuthState[\s\S]*?workspaceAccessDegraded: false[\s\S]*?workspaceDegradedMessage: ''/,
+  'a verified cached workspace should start without a degraded-access warning while live validation completes',
+)
+
+assert.match(
+  authBootSource,
+  /export function buildDegradedBridgeAuthState[\s\S]*?workspaceAccessDegraded: true[\s\S]*?workspaceDegradedReason: 'workspace_boot_timeout'/,
+  'a failed live bootstrap should still mark cached access as degraded',
 )
 
 console.log('auth bridge bootstrap timeout contract ok')

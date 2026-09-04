@@ -197,9 +197,13 @@ export function buildCachedBridgeAuthState({ session = null, selectedWorkspaceId
       diagnostics,
     },
     workspaceDiagnostics: diagnostics,
-    workspaceAccessDegraded: true,
-    workspaceDegradedReason: 'workspace_boot_refreshing',
-    workspaceDegradedMessage: 'Workspace data is refreshing from the last successful session while Arch9 reconnects to the backend.',
+    // A last-good workspace is deliberately restored while the live bootstrap
+    // completes. That is a normal, fast-start path—not a backend failure—so it
+    // must not raise the degraded-access warning before the live request has
+    // had a chance to succeed.
+    workspaceAccessDegraded: false,
+    workspaceDegradedReason: '',
+    workspaceDegradedMessage: '',
     onboardingComplete: snapshot.onboardingComplete !== false,
     onboardingRequiredReason: normalizeText(snapshot.onboardingRequiredReason),
     bootError: '',
@@ -223,7 +227,9 @@ export function buildDegradedBridgeAuthState({ session = null, selectedWorkspace
       originalError: error?.message || '',
       warnings: ['workspace_boot_degraded_from_last_good_snapshot'],
     },
+    workspaceAccessDegraded: true,
     workspaceDegradedReason: 'workspace_boot_timeout',
+    workspaceDegradedMessage: 'Workspace data is refreshing from the last successful session while Arch9 reconnects to the backend.',
   }
 }
 
