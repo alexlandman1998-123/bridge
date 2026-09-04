@@ -32,4 +32,12 @@ const ready = evaluateDevelopmentSitePlanQuality({
 assert.equal(ready.ready, true);
 assert.equal(ready.issueCount, 0);
 
+const readyWithOffPlanUnit = evaluateDevelopmentSitePlanQuality({
+  units: units.slice(0, 3),
+  sitePlanMap: { a: { x: 10, y: 10 }, b: { x: 80, y: 80 } },
+  excludedUnitIds: ["c"],
+});
+assert.equal(readyWithOffPlanUnit.ready, true);
+assert.equal(readyWithOffPlanUnit.totalCount, 3);
+
 console.log("development site-plan quality checks passed");

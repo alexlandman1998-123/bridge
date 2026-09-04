@@ -246,6 +246,7 @@ const DEFAULT_DETAILS_FORM = {
       sitePlanUrl: '',
       sitePlanMap: {},
       sitePlanViewport: {},
+      sitePlanNotShownUnitIds: [],
       masterplanUrl: '',
       floorplanUrls: '',
       videoUrl: '',
@@ -1434,6 +1435,9 @@ function normalizeMarketingContentForm(input = null) {
       sitePlanViewport: mediaLibrarySource.sitePlanViewport && typeof mediaLibrarySource.sitePlanViewport === 'object' && !Array.isArray(mediaLibrarySource.sitePlanViewport)
         ? mediaLibrarySource.sitePlanViewport
         : defaults.mediaLibrary.sitePlanViewport,
+      sitePlanNotShownUnitIds: Array.isArray(mediaLibrarySource.sitePlanNotShownUnitIds)
+        ? mediaLibrarySource.sitePlanNotShownUnitIds.map((id) => String(id || '').trim()).filter(Boolean)
+        : defaults.mediaLibrary.sitePlanNotShownUnitIds,
       masterplanUrl: text(mediaLibrarySource.masterplanUrl, mediaLibrarySource.masterplan_url || defaults.mediaLibrary.masterplanUrl),
       floorplanUrls: text(mediaLibrarySource.floorplanUrls, mediaLibrarySource.floorplan_urls || defaults.mediaLibrary.floorplanUrls),
       videoUrl: text(mediaLibrarySource.videoUrl, mediaLibrarySource.video_url || defaults.mediaLibrary.videoUrl),
@@ -3404,8 +3408,9 @@ function DevelopmentDetail() {
     () => evaluateDevelopmentSitePlanQuality({
       units: unitRows,
       sitePlanMap: marketingForm.mediaLibrary.sitePlanMap,
+      excludedUnitIds: marketingForm.mediaLibrary.sitePlanNotShownUnitIds,
     }),
-    [marketingForm.mediaLibrary.sitePlanMap, unitRows],
+    [marketingForm.mediaLibrary.sitePlanMap, marketingForm.mediaLibrary.sitePlanNotShownUnitIds, unitRows],
   )
   const sitePlanSyndication = useMemo(
     () => buildDevelopmentSitePlanSyndicationPayload({ mediaLibrary: marketingForm.mediaLibrary }),
@@ -4872,8 +4877,39 @@ function DevelopmentDetail() {
     }
   }
 
+  async function handleAvailabilitySitePlanNotShownUnitsSave(unitIds) {
+    if (!canManageDevelopment) return
+    const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+    const sitePlanNotShownUnitIds = [...new Set((Array.isArray(unitIds) ? unitIds : []).map((id) => String(id || '').trim()).filter(Boolean))]
+    const nextDetailsForm = {
+      ...detailsForm,
+      marketing: {
+        ...normalizedMarketing,
+        mediaLibrary: { ...normalizedMarketing.mediaLibrary, sitePlanNotShownUnitIds },
+      },
+    }
+    try {
+      setDetailsSaving(true)
+      setError('')
+      setDetailsForm(nextDetailsForm)
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      setFeedback('Site-plan visibility exceptions saved.')
+      await loadData()
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setDetailsSaving(false)
+    }
+  }
+
   async function handlePublishDevelopmentMarketing() {
     const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+    const sitePlanUrl = normalizedMarketing.mediaLibrary.sitePlanUrl || normalizedMarketing.mediaLibrary.masterplanUrl
+    if (sitePlanUrl && !sitePlanQuality.ready) {
+      setMarketingHubSection('public-page')
+      setError(`Finish the site-plan review before publishing: ${sitePlanQuality.issueCount} placement check${sitePlanQuality.issueCount === 1 ? '' : 's'} remain.`)
+      return
+    }
     const listingSlug = normalizedMarketing.listingConfiguration.listingSlug || buildPublicDevelopmentSlug(data.development.name, data.development.id)
     const publicLandingUrl = buildPublicDevelopmentUrl(listingSlug)
     const nextDetailsForm = {
@@ -10688,12 +10724,14 @@ function DevelopmentDetail() {
           sitePlanUrl={marketingForm.mediaLibrary.sitePlanUrl || marketingForm.mediaLibrary.masterplanUrl}
           sitePlanMap={marketingForm.mediaLibrary.sitePlanMap}
           sitePlanViewport={marketingForm.mediaLibrary.sitePlanViewport}
+          sitePlanNotShownUnitIds={marketingForm.mediaLibrary.sitePlanNotShownUnitIds}
           sitePlanQuality={sitePlanQuality}
           sitePlanSuggestions={sitePlanSuggestions}
           sitePlanSaving={detailsSaving || marketingAssetUploading === 'availability-site-plan'}
           sitePlanPubliclyVisible={marketingForm.listingConfiguration.publicVisibility && String(marketingForm.listingConfiguration.marketingStatus || '').toLowerCase() === 'live'}
           onSaveSitePlanMap={handleAvailabilitySitePlanMapSave}
           onSaveSitePlanViewport={(viewport, map) => void handleAvailabilitySitePlanViewportSave(viewport, map)}
+          onSaveSitePlanNotShownUnits={(unitIds) => void handleAvailabilitySitePlanNotShownUnitsSave(unitIds)}
           onUploadSitePlan={(event) => void handleAvailabilitySitePlanUpload(event)}
           onApplySitePlanSuggestions={(suggestions) => void handleApplySitePlanSuggestions(suggestions)}
           onDiscardSitePlanSuggestions={(unitIds = []) => setSitePlanSuggestions((current) => {

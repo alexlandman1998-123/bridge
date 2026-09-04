@@ -197,12 +197,14 @@ export default function DevelopmentAvailabilityWorkspace({
   sitePlanUrl = "",
   sitePlanMap = {},
   sitePlanViewport = {},
+  sitePlanNotShownUnitIds = [],
   sitePlanQuality = null,
   sitePlanSuggestions = {},
   sitePlanSaving = false,
   sitePlanPubliclyVisible = false,
   onSaveSitePlanMap,
   onSaveSitePlanViewport,
+  onSaveSitePlanNotShownUnits,
   onUploadSitePlan,
   onApplySitePlanSuggestions,
   onDiscardSitePlanSuggestions,
@@ -365,21 +367,29 @@ export default function DevelopmentAvailabilityWorkspace({
     visibleUnits.find((unit) => unit.id === selectedUnitId) ||
     visibleUnits[0] ||
     null;
+  const notShownIds = useMemo(
+    () => new Set((Array.isArray(sitePlanNotShownUnitIds) ? sitePlanNotShownUnitIds : []).map((id) => String(id || "").trim())),
+    [sitePlanNotShownUnitIds],
+  );
   const mapUnits = useMemo(
-    () => (sitePlanUrl ? visibleUnits.filter((unit) => hasSavedMapPosition(sitePlanMap, unit.id)) : visibleUnits),
-    [sitePlanMap, sitePlanUrl, visibleUnits],
+    () => (sitePlanUrl ? visibleUnits.filter((unit) => hasSavedMapPosition(sitePlanMap, unit.id) && !notShownIds.has(unit.id)) : visibleUnits),
+    [notShownIds, sitePlanMap, sitePlanUrl, visibleUnits],
   );
   const unplacedUnits = useMemo(
     () =>
       inventory
-        .filter((unit) => !hasSavedMapPosition(sitePlanMap, unit.id))
+        .filter((unit) => !hasSavedMapPosition(sitePlanMap, unit.id) && !notShownIds.has(unit.id))
         .sort((left, right) =>
           left.displayNumber.localeCompare(right.displayNumber, undefined, {
             numeric: true,
             sensitivity: "base",
           }),
         ),
-    [inventory, sitePlanMap],
+    [inventory, notShownIds, sitePlanMap],
+  );
+  const notShownUnits = useMemo(
+    () => inventory.filter((unit) => notShownIds.has(unit.id)),
+    [inventory, notShownIds],
   );
   const visibleSitePlanSuggestions = useMemo(() => {
     const remapped = remapSitePlanCoordinates(sitePlanSuggestions, {}, sitePlanViewport)
@@ -395,8 +405,12 @@ export default function DevelopmentAvailabilityWorkspace({
   const suggestionCount = suggestionUnits.length;
   const placedUnitCount = useMemo(
     () =>
-      inventory.filter((unit) => hasSavedMapPosition(sitePlanMap, unit.id)).length,
-    [inventory, sitePlanMap],
+      inventory.filter(
+        (unit) =>
+          !notShownIds.has(unit.id) &&
+          hasSavedMapPosition(sitePlanMap, unit.id),
+      ).length,
+    [inventory, notShownIds, sitePlanMap],
   );
   const sitePlanIssueCount = sitePlanQuality?.issueCount || 0;
   const hasSitePlanIssues = Boolean(sitePlanUrl && sitePlanIssueCount > 0);
@@ -406,7 +420,7 @@ export default function DevelopmentAvailabilityWorkspace({
       ? "Ready to place units"
       : hasSitePlanIssues
         ? `${sitePlanIssueCount} map check${sitePlanIssueCount === 1 ? "" : "s"}`
-      : placedUnitCount >= inventory.length && inventory.length > 0
+      : sitePlanQuality?.ready
         ? "Ready to publish"
         : `${placedUnitCount} of ${inventory.length} units placed`;
   const isAgency = role === "agent";
@@ -464,6 +478,14 @@ export default function DevelopmentAvailabilityWorkspace({
     setZoom(1);
     setMapSelectionActive(false);
     setSitePlanReviewOpen(true);
+  }
+  function setUnitPlanVisibility(unit, visible) {
+    if (!unit?.id || !canManageInventory) return
+    const nextIds = visible
+      ? [...notShownIds].filter((id) => id !== unit.id)
+      : [...new Set([...notShownIds, unit.id])]
+    onSaveSitePlanNotShownUnits?.(nextIds)
+    if (!visible) setMapSelectionActive(false)
   }
   function acceptSuggestedMatch(unit) {
     const suggestion = visibleSitePlanSuggestions?.[unit.id]
@@ -787,8 +809,8 @@ export default function DevelopmentAvailabilityWorkspace({
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">4. Review & publish</span>
-              <strong className="mt-1 block text-sm text-[#173149]">{hasSitePlanIssues ? `${sitePlanIssueCount} placement check${sitePlanIssueCount === 1 ? "" : "s"} need review` : unplacedUnits.length ? `${unplacedUnits.length} unit${unplacedUnits.length === 1 ? "" : "s"} still need placement` : "All units are ready to review"}</strong>
-              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Review exactly what the public map will show. Publishing remains under Marketing.</p>
+              <strong className="mt-1 block text-sm text-[#173149]">{hasSitePlanIssues ? `${sitePlanIssueCount} placement check${sitePlanIssueCount === 1 ? "" : "s"} need review` : "Map ready for publication"}</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{notShownUnits.length ? `${notShownUnits.length} unit${notShownUnits.length === 1 ? '' : 's'} intentionally hidden from this plan. ` : ''}Publishing remains under Marketing.</p>
               <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl} onClick={reviewSitePlanPlacement}><MapPinned size={13} /> Review map</Button>
             </div>
           </section>
@@ -914,13 +936,14 @@ export default function DevelopmentAvailabilityWorkspace({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <span className="text-[0.63rem] font-bold uppercase tracking-[0.1em] text-[#6b7d93]">Map review</span>
-                  <strong className="mt-0.5 block text-sm text-[#173149]">{placedUnitCount} of {inventory.length} saved markers</strong>
+                  <strong className="mt-0.5 block text-sm text-[#173149]">{placedUnitCount} placed · {notShownUnits.length} not shown</strong>
                 </div>
                 <button type="button" aria-label="Close map review" className="-mr-1 -mt-1 rounded-md p-1 text-[#718398] hover:bg-[#eef3f4]" onClick={() => setSitePlanReviewOpen(false)}><X size={14} /></button>
               </div>
-              <p className="mt-2 text-xs leading-5 text-[#60758d]">{unplacedUnits.length ? "Only the saved markers are visible publicly. Finish or review the remaining units below." : "Every unit has a saved coordinate and is ready for public-map review."}</p>
+              <p className="mt-2 text-xs leading-5 text-[#60758d]">{hasSitePlanIssues ? "Resolve each check, or explicitly mark a unit as not shown on this plan. Only then can the public map be published." : "Every unit is placed or intentionally not shown. The map is ready for public review."}</p>
               {hasSitePlanIssues ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">Map checks need attention</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">These checks do not change saved coordinates. Review each item before relying on the public map.</p><div className="mt-2 grid gap-1.5">{sitePlanQuality.issues.slice(0, 4).map((issue) => <button key={`${issue.type}-${issue.unitIds.join('-')}`} type="button" className="rounded-md border border-[#efd7a3] bg-white px-2 py-1.5 text-left text-[0.68rem] font-semibold text-[#76531a] hover:bg-[#fffdf8]" onClick={() => { setSelectedUnitId(issue.unitIds[0]); setMapSelectionActive(true); setSitePlanReviewOpen(false); }}>{issue.type === "missing" ? `Place Unit ${issue.label}` : issue.type === "invalid" ? `Reposition Unit ${issue.label}` : `Separate Units ${issue.label}${issue.distance ? ` (${issue.distance}% apart)` : ""}`}</button>)}{sitePlanQuality.issues.length > 4 ? <span className="px-1 text-[0.68rem] font-semibold text-[#8b6c2c]">+{sitePlanQuality.issues.length - 4} more checks</span> : null}</div></div> : null}
               {unplacedUnits.length ? <div className="mt-3 flex flex-wrap gap-1.5">{unplacedUnits.slice(0, 4).map((unit) => <button key={unit.id} type="button" className="rounded-md border border-[#d9e5df] bg-white px-2 py-1 text-[0.68rem] font-semibold text-[#315c4a] hover:bg-[#eef8f1]" onClick={() => { setSelectedUnitId(unit.id); setMapSelectionActive(true); setSitePlanReviewOpen(false); }}>{unit.displayNumber}</button>)}{unplacedUnits.length > 4 ? <span className="px-1 py-1 text-[0.68rem] font-semibold text-[#718398]">+{unplacedUnits.length - 4} more</span> : null}</div> : null}
+              {notShownUnits.length ? <p className="mt-3 rounded-[9px] bg-[#f3f6f8] px-2.5 py-2 text-[0.7rem] leading-4 text-[#60758d]">Not on this plan: {notShownUnits.slice(0, 4).map((unit) => unit.displayNumber).join(', ')}{notShownUnits.length > 4 ? ` +${notShownUnits.length - 4}` : ''}</p> : null}
               <div className="mt-3 flex flex-wrap gap-2 border-t border-[#e4ece6] pt-3">
                 {onPreviewPublicSitePlan ? <Button type="button" size="sm" variant="secondary" onClick={onPreviewPublicSitePlan}><ArrowUpRight size={13} /> Preview {sitePlanPubliclyVisible ? "live map" : "page"}</Button> : null}
                 {onOpenSitePlanPublicationControls ? <Button type="button" size="sm" variant="secondary" onClick={onOpenSitePlanPublicationControls}>Publishing controls</Button> : null}
@@ -938,6 +961,7 @@ export default function DevelopmentAvailabilityWorkspace({
               </div>
               <span className="mt-2 block truncate text-xs text-[#60758d]">{selectedUnit.displayType}</span>
               <div className="mt-1.5 flex items-center justify-between gap-2"><strong className="text-sm text-[#21394f]">{selectedUnit.displayPrice ? currency.format(selectedUnit.displayPrice) : "Price on request"}</strong><StatusPill status={selectedUnit.inventoryStatus} /></div>
+              {canManageInventory ? <button type="button" className="mt-3 text-xs font-semibold text-[#2d7552] underline" onClick={() => setUnitPlanVisibility(selectedUnit, notShownIds.has(selectedUnit.id))}>{notShownIds.has(selectedUnit.id) ? 'Show on this plan' : 'Mark not shown on this plan'}</button> : null}
             </div>
           ) : null}
           </div>

@@ -35,6 +35,7 @@ function distanceBetween(left, right) {
 export function evaluateDevelopmentSitePlanQuality({
   units = [],
   sitePlanMap = {},
+  excludedUnitIds = [],
   collisionDistance = DEFAULT_COLLISION_DISTANCE,
 } = {}) {
   const missing = [];
@@ -45,9 +46,11 @@ export function evaluateDevelopmentSitePlanQuality({
   const collisions = [];
   const collisionKeys = new Set();
 
+  const excludedIds = new Set((Array.isArray(excludedUnitIds) ? excludedUnitIds : []).map((id) => String(id || "").trim()));
   for (const unit of units) {
     const unitId = String(unit?.id || "").trim();
     if (!unitId) continue;
+    if (excludedIds.has(unitId)) continue;
 
     const position = sitePlanMap?.[unitId];
     const item = { unitId, label: labelForUnit(unit), position };

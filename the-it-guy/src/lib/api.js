@@ -990,6 +990,7 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
       developmentLogoUrl: '',
       sitePlanUrl: '',
       sitePlanViewport: {},
+      sitePlanNotShownUnitIds: [],
       masterplanUrl: '',
       floorplanUrls: '',
       videoUrl: '',
@@ -2656,6 +2657,9 @@ function normalizeMarketingContent(value) {
         mediaLibrarySource.sitePlanViewport && typeof mediaLibrarySource.sitePlanViewport === 'object' && !Array.isArray(mediaLibrarySource.sitePlanViewport)
           ? mediaLibrarySource.sitePlanViewport
           : defaults.mediaLibrary.sitePlanViewport,
+      sitePlanNotShownUnitIds: Array.isArray(mediaLibrarySource.sitePlanNotShownUnitIds)
+        ? mediaLibrarySource.sitePlanNotShownUnitIds.map((id) => String(id || '').trim()).filter(Boolean)
+        : defaults.mediaLibrary.sitePlanNotShownUnitIds,
       masterplanUrl: normalizeTextValue(
         mediaLibrarySource.masterplanUrl ?? mediaLibrarySource.masterplan_url ?? defaults.mediaLibrary.masterplanUrl,
       ),
