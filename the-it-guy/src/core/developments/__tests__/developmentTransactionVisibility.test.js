@@ -58,7 +58,7 @@ const [apiSource, pageSource] = await Promise.all([
 
 assert.match(
   apiSource,
-  /const currentTransactionRows = selectCurrentDevelopmentTransactionRows\(await fetchTransactionsListSummary\(\{[\s\S]*?developmentId,[\s\S]*?activeTransactionsOnly: true,/,
+  /fetchTransactionsListSummary\(\{ developmentId, activeTransactionsOnly: true \}\)\s*\.then\(selectCurrentDevelopmentTransactionRows\)/,
   'development detail must request only active transaction rows',
 )
 assert.match(

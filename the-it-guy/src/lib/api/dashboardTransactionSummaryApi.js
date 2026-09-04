@@ -82,12 +82,12 @@ const DEVELOPMENT_TEAM_ROLE_MAP = {
 }
 
 const TRANSACTION_SUMMARY_SELECT_CLAUSE =
-  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, alteration_charge_treatment, onboarding_status, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
+  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, property_image_url, listing_image_url, primary_image_url, cover_image_url, hero_image_url, image_url, thumbnail_url, sales_price, purchase_price, finance_type, purchaser_type, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, alteration_charge_treatment, onboarding_status, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, bond_workspace_id, bond_region_id, bond_workspace_unit_id, primary_bond_consultant_user_id, assigned_bond_processor_user_id, assigned_bond_manager_user_id, assigned_bond_compliance_user_id, bond_assignment_status, bond_assignment_source, finance_status, compliance_status, compliance_review_required, application_prepared, submitted_to_banks, documents_complete, finance_documents_complete, documents_missing, required_documents_missing, finance_documents_missing, missing_documents_count, uploaded_documents_count, total_required_documents, bank_feedback_pending, bank_feedback_status, next_action_due_at, finance_due_at, attorney_stage, risk_status, operational_state, processor_name, assigned_bond_processor_name, compliance_name, gross_commission_percentage, gross_commission_amount, agent_split_percentage_snapshot, agency_split_percentage_snapshot, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, deleted_at, last_meaningful_activity_at, updated_at, created_at, is_active'
 const TRANSACTION_SUMMARY_FALLBACK_SELECT_CLAUSE =
   'id, organisation_id, bond_workspace_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, cash_amount, bond_amount, deposit_amount, reservation_required, reservation_amount, reservation_amount_type, reservation_treatment, reservation_payable_to, alteration_charge_treatment, onboarding_status, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
 const DASHBOARD_CORE_TRANSACTION_SELECT_CLAUSE =
-  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, finance_status, attorney_stage, risk_status, operational_state, missing_documents_count, uploaded_documents_count, total_required_documents, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, updated_at, created_at, is_active'
+  'id, organisation_id, assigned_branch_id, lifecycle_state, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, property_address_line_2, suburb, city, province, property_description, property_image_url, listing_image_url, primary_image_url, cover_image_url, hero_image_url, image_url, thumbnail_url, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, comment, expected_transfer_date, finance_status, attorney_stage, risk_status, operational_state, missing_documents_count, uploaded_documents_count, total_required_documents, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, completed_at, archived_at, cancelled_at, last_meaningful_activity_at, updated_at, created_at, is_active'
 const DASHBOARD_CORE_TRANSACTION_FALLBACK_SELECT_CLAUSE =
   'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
@@ -164,9 +164,79 @@ const TRANSACTION_SUMMARY_OPTIONAL_COLUMNS = [
   'onboarding_status',
   'bank',
   'is_active',
+  'property_image_url',
+  'listing_image_url',
+  'primary_image_url',
+  'cover_image_url',
+  'hero_image_url',
+  'image_url',
+  'thumbnail_url',
 ]
 
 const BOND_HQ_WORKSPACE_ROLES = new Set(['owner', 'director', 'hq_manager'])
+
+function firstImageUrl(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value.trim()
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const imageUrl = firstImageUrl(item)
+      if (imageUrl) return imageUrl
+    }
+    return ''
+  }
+  if (typeof value === 'object') {
+    return firstImageUrl(value.url || value.src || value.imageUrl || value.image_url || value.coverImageUrl || value.cover_image_url || value.heroImageUrl || value.hero_image_url)
+  }
+  return ''
+}
+
+function getDevelopmentProfileImage(profile = {}) {
+  const mediaLibrary = profile?.marketing_content?.mediaLibrary || profile?.marketing_content?.media_library || {}
+  return firstImageUrl([
+    mediaLibrary.heroImageUrl,
+    mediaLibrary.hero_image_url,
+    mediaLibrary.coverImageUrl,
+    mediaLibrary.cover_image_url,
+    mediaLibrary.galleryImageUrls,
+    mediaLibrary.gallery_image_urls,
+    profile?.image_links,
+  ])
+}
+
+async function fetchDashboardDevelopmentProfileImages(client, developmentIds = []) {
+  const ids = [...new Set((developmentIds || []).filter(Boolean))]
+  if (!ids.length) return new Map()
+
+  let query = await client.from('development_profiles').select('development_id, image_links, marketing_content').in('development_id', ids)
+  if (query.error && isMissingColumnError(query.error, 'marketing_content')) {
+    query = await client.from('development_profiles').select('development_id, image_links').in('development_id', ids)
+  }
+  if (query.error) {
+    if (isMissingTableError(query.error, 'development_profiles') || isPermissionDeniedError(query.error)) return new Map()
+    throw query.error
+  }
+
+  return new Map(
+    (query.data || [])
+      .map((profile) => [String(profile?.development_id || '').trim(), getDevelopmentProfileImage(profile)])
+      .filter(([developmentId, imageUrl]) => developmentId && imageUrl),
+  )
+}
+
+async function fetchTransactionSummaryUnits(client, unitIds = []) {
+  const ids = [...new Set((unitIds || []).filter(Boolean))]
+  if (!ids.length) return { data: [], error: null }
+
+  let query = await client
+    .from('units')
+    .select('id, development_id, unit_number, phase, price, status, image_url, thumbnail_url, cover_image_url, primary_image_url, gallery_images')
+    .in('id', ids)
+  if (query.error && isMissingColumnError(query.error)) {
+    query = await client.from('units').select('id, development_id, unit_number, phase, price, status').in('id', ids)
+  }
+  return query
+}
 
 function normalizeEmailAddress(value) {
   const normalized = String(value || '')
@@ -1895,7 +1965,7 @@ async function fetchTransactionSummaryRowsByIds(
   const developmentIds = [...new Set(transactionRows.map((item) => item?.development_id).filter(Boolean))]
   const [buyersQuery, unitsQuery] = await Promise.all([
     buyerIds.length ? client.from('buyers').select('id, name, email').in('id', buyerIds) : Promise.resolve({ data: [], error: null }),
-    unitIds.length ? client.from('units').select('id, development_id, unit_number, phase, price, status').in('id', unitIds) : Promise.resolve({ data: [], error: null }),
+    fetchTransactionSummaryUnits(client, unitIds),
   ])
   if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) throw buyersQuery.error
   if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error)) throw unitsQuery.error
@@ -1913,6 +1983,8 @@ async function fetchTransactionSummaryRowsByIds(
     if (unit?.development_id) linkedDevelopmentIds.add(unit.development_id)
   }
 
+  const developmentProfileImagesById = await fetchDashboardDevelopmentProfileImages(client, [...linkedDevelopmentIds])
+
   let developmentsById = {}
   const allDevelopmentIds = [...linkedDevelopmentIds]
   if (allDevelopmentIds.length) {
@@ -1928,7 +2000,11 @@ async function fetchTransactionSummaryRowsByIds(
     .map((transaction) => {
       const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
       const developmentId = transaction?.development_id || unit?.development_id || null
-      const development = developmentId ? developmentsById[developmentId] || null : null
+      const developmentBase = developmentId ? developmentsById[developmentId] || null : null
+      const developmentImageUrl = developmentProfileImagesById.get(String(developmentId || '')) || ''
+      const development = developmentBase && developmentImageUrl
+        ? { ...developmentBase, cover_image_url: developmentImageUrl }
+        : developmentBase
       const buyer = transaction?.buyer_id ? buyersById[transaction.buyer_id] || null : null
       const stage = normalizeStage(transaction?.stage, unit?.status || 'Available')
       const mainStage = normalizeMainStage(transaction?.current_main_stage, stage)
@@ -2155,7 +2231,7 @@ export async function fetchTransactionsListSummary({
   const developmentIds = [...new Set(transactionRows.map((item) => item?.development_id).filter(Boolean))]
   const [buyersQuery, unitsQuery] = await Promise.all([
     buyerIds.length ? client.from('buyers').select('id, name, phone, email').in('id', buyerIds) : Promise.resolve({ data: [], error: null }),
-    unitIds.length ? client.from('units').select('id, development_id, unit_number, phase, price, status').in('id', unitIds) : Promise.resolve({ data: [], error: null }),
+    fetchTransactionSummaryUnits(client, unitIds),
   ])
   if (buyersQuery.error && !isMissingSchemaError(buyersQuery.error)) throw buyersQuery.error
   if (unitsQuery.error && !isMissingSchemaError(unitsQuery.error)) throw unitsQuery.error
@@ -2164,6 +2240,7 @@ export async function fetchTransactionsListSummary({
   for (const unit of unitsQuery.data || []) {
     if (unit?.development_id) linkedDevelopmentIds.add(unit.development_id)
   }
+  const developmentProfileImagesById = await fetchDashboardDevelopmentProfileImages(client, [...linkedDevelopmentIds])
   const allDevelopmentIds = [...linkedDevelopmentIds]
   const developmentsQuery = allDevelopmentIds.length
     ? await client.from('developments').select('id, name, location').in('id', allDevelopmentIds)
@@ -2186,7 +2263,11 @@ export async function fetchTransactionsListSummary({
   let rows = transactionRows.map((transaction) => {
     const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
     const developmentIdFromRow = transaction?.development_id || unit?.development_id || null
-    const development = developmentIdFromRow ? developmentsById[developmentIdFromRow] || null : null
+    const developmentBase = developmentIdFromRow ? developmentsById[developmentIdFromRow] || null : null
+    const developmentImageUrl = developmentProfileImagesById.get(String(developmentIdFromRow || '')) || ''
+    const development = developmentBase && developmentImageUrl
+      ? { ...developmentBase, cover_image_url: developmentImageUrl }
+      : developmentBase
     const buyer = transaction?.buyer_id ? buyersById[transaction.buyer_id] || null : null
     const resolvedStage = normalizeStage(transaction?.stage, unit?.status || 'Available')
     return {

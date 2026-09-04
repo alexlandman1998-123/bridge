@@ -4810,14 +4810,23 @@ function renderActiveTransactionsBlock({
 
     const resolveResidentialImage = (row = {}) =>
       extractImageUrl(
-        row?.unit?.image_url ||
+        row?.transaction?.property_image_url ||
+        row?.transaction?.listing_image_url ||
+        row?.transaction?.primary_image_url ||
+        row?.transaction?.cover_image_url ||
+        row?.transaction?.hero_image_url ||
+        row?.transaction?.image_url ||
+        row?.transaction?.thumbnail_url ||
         row?.unit?.cover_image_url ||
         row?.unit?.primary_image_url ||
+        row?.unit?.image_url ||
+        row?.unit?.thumbnail_url ||
         row?.unit?.gallery_images ||
-        row?.development?.image_url ||
         row?.development?.cover_image_url ||
-        row?.transaction?.property_image_url ||
-        row?.transaction?.listing_image_url,
+        row?.development?.hero_image_url ||
+        row?.development?.image_url ||
+        row?.development?.marketing?.mediaLibrary?.heroImageUrl ||
+        row?.development?.marketing?.mediaLibrary?.galleryImageUrls,
       )
 
     const resolveResidentialStageKey = (row = {}, item = {}) => {

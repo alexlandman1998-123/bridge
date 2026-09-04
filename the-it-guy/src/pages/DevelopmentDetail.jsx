@@ -35,7 +35,7 @@ import {
   Workflow,
   XCircle,
 } from 'lucide-react'
-import { lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentAvailabilityWorkspace from '../components/developments/DevelopmentAvailabilityWorkspace'
 import DevelopmentLaunchReadinessPanel from '../components/developments/DevelopmentLaunchReadinessPanel'
@@ -2414,6 +2414,7 @@ function DevelopmentDetail() {
   const { role, can, profile, currentWorkspace } = useWorkspace()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
+  const loadedDevelopmentIdRef = useRef('')
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
   const [marketingHubSection, setMarketingHubSection] = useState('overview')
@@ -2499,7 +2500,7 @@ function DevelopmentDetail() {
   const [routingInviteSaving, setRoutingInviteSaving] = useState('')
   const [externalAgentModalOpen, setExternalAgentModalOpen] = useState(false)
 
-  const canManageDevelopment = can(PERMISSIONS.editDevelopments) || role === 'internal_admin'
+  const canManageDevelopment = can(PERMISSIONS.editDevelopments) || role === 'developer' || role === 'internal_admin'
   const canCreateTransactions = can(PERMISSIONS.manageDeveloperTransactions) || role === 'attorney'
   const canEditMarketing = canManageDevelopment || role === 'agent'
   const developerOrganisationId =
@@ -2604,13 +2605,16 @@ function DevelopmentDetail() {
 
     try {
       setError('')
-      setLoading(true)
+      // Preserve the complete workspace during a background refresh instead
+      // of replacing it with a full-page loading state.
+      if (loadedDevelopmentIdRef.current !== developmentId) setLoading(true)
       const [response, requirements] = await Promise.all([
         fetchDevelopmentDetail(developmentId),
         fetchDevelopmentDocumentRequirements(developmentId),
       ])
       setData(response)
       setDevelopmentRequirements(requirements)
+      loadedDevelopmentIdRef.current = response?.development?.id || ''
       markRouteMilestone('core_ready')
       markRouteMilestone('interactive_ready')
     } catch (loadError) {

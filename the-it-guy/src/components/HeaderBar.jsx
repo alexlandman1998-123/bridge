@@ -22,8 +22,12 @@ function getPageTitle(pathname, stateTitle, role) {
     if (pathname === '/settings' || pathname.startsWith('/settings')) return ''
   }
 
-  // Developer workspace pages carry their context in the page content (for
-  // example, the development hero), not in the shared app header.
+  // Development detail carries its context in the hero. Rendering it in the
+  // shared header duplicates the title above the hero.
+  if (pathname.startsWith('/developer/developments/')) return ''
+
+  // Other developer workspace pages also carry their context in the page
+  // content rather than in the shared app header.
   if (pathname.startsWith('/developer/')) return ''
 
   if (pathname.startsWith('/units/')) {

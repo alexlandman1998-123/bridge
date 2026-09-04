@@ -19504,6 +19504,7 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
   const developmentIds = mergedSummaries.map((item) => item.id).filter(Boolean)
   let profileByDevelopmentId = {}
   let defaultAttorneyByDevelopmentId = {}
+  let configuredAttorneyByDevelopmentId = {}
 
   if (developmentIds.length) {
     const profileQuery = await client
@@ -19546,6 +19547,39 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
     ) {
       throw settingsQuery.error
     }
+
+    // An active development-attorney configuration is the canonical setup
+    // signal. The stakeholder-team default is retained for legacy records,
+    // but must not make a configured attorney look missing when that older
+    // settings read is unavailable to the current user.
+    let attorneyConfigsQuery = await client
+      .from('development_attorney_configs')
+      .select('development_id, attorney_firm_name, primary_contact_name, is_active')
+      .in('development_id', developmentIds)
+      .eq('is_active', true)
+
+    if (attorneyConfigsQuery.error && isMissingColumnError(attorneyConfigsQuery.error, 'is_active')) {
+      attorneyConfigsQuery = await client
+        .from('development_attorney_configs')
+        .select('development_id, attorney_firm_name, primary_contact_name')
+        .in('development_id', developmentIds)
+    }
+
+    if (!attorneyConfigsQuery.error) {
+      configuredAttorneyByDevelopmentId = (attorneyConfigsQuery.data || []).reduce((accumulator, row) => {
+        const developmentId = String(row?.development_id || '').trim()
+        const attorneyName = String(row?.attorney_firm_name || row?.primary_contact_name || '').trim()
+        if (developmentId && attorneyName && !accumulator[developmentId]) {
+          accumulator[developmentId] = attorneyName
+        }
+        return accumulator
+      }, {})
+    } else if (
+      !isMissingTableError(attorneyConfigsQuery.error, 'development_attorney_configs') &&
+      !isPermissionDeniedError(attorneyConfigsQuery.error)
+    ) {
+      throw attorneyConfigsQuery.error
+    }
   }
 
   return {
@@ -19562,7 +19596,7 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
         location: profile?.location || item.location || null,
         phase: profile?.status || item.phase || null,
         developerCompany: profile?.developerCompany || item.developerCompany || null,
-        defaultAttorneyName: defaultAttorneyByDevelopmentId[item.id] || '',
+        defaultAttorneyName: configuredAttorneyByDevelopmentId[item.id] || defaultAttorneyByDevelopmentId[item.id] || '',
       }
     }),
   }
@@ -19613,32 +19647,46 @@ export async function fetchDevelopmentDetail(developmentId) {
     return null
   }
 
-  const units = await fetchUnitsBase(client, developmentId)
-  const rows = await hydrateUnitRows(client, units)
-  const currentTransactionRows = selectCurrentDevelopmentTransactionRows(await fetchTransactionsListSummary({
-    developmentId,
-    activeTransactionsOnly: true,
-  }))
-  const requirements = await fetchDocumentRequirements(client, developmentId)
-  const settings = await ensureDevelopmentSettings(client, developmentId, {
-    createIfMissing: false,
-  })
-  const profile = await fetchDevelopmentProfile(client, developmentId)
-  const financials = await fetchDevelopmentFinancials(developmentId)
-  const [documents, marketingAccess, marketingActivity, marketingEvents] = await Promise.all([
+  // The detail page used to wait for each independent resource in turn. On a
+  // production connection that created a visibly long blank loading state.
+  // Start the independent reads together; only row hydration and linked
+  // listings need to wait for the unit list itself.
+  const [
+    units,
+    currentTransactionRows,
+    requirements,
+    settings,
+    profile,
+    financials,
+    documents,
+    marketingAccess,
+    marketingActivity,
+    marketingEvents,
+    productCatalogue,
+    structureNodes,
+    attorneyConfig,
+    bondConfig,
+  ] = await Promise.all([
+    fetchUnitsBase(client, developmentId),
+    fetchTransactionsListSummary({ developmentId, activeTransactionsOnly: true })
+      .then(selectCurrentDevelopmentTransactionRows),
+    fetchDocumentRequirements(client, developmentId),
+    ensureDevelopmentSettings(client, developmentId, { createIfMissing: false }),
+    fetchDevelopmentProfile(client, developmentId),
+    fetchDevelopmentFinancials(developmentId),
     fetchDevelopmentDocuments(developmentId),
     fetchDevelopmentMarketingAccess(developmentId),
     fetchDevelopmentMarketingActivity(developmentId),
     fetchDevelopmentMarketingEvents(developmentId, development.organisation_id),
+    fetchDevelopmentProductCatalogue(client, developmentId),
+    fetchDevelopmentStructureNodes(client, developmentId),
+    fetchDevelopmentAttorneyConfig(developmentId),
+    fetchDevelopmentBondConfig(developmentId),
   ])
-  const productCatalogue = await fetchDevelopmentProductCatalogue(client, developmentId)
-  const structureNodes = await fetchDevelopmentStructureNodes(client, developmentId)
-  const attorneyConfig = await fetchDevelopmentAttorneyConfig(developmentId)
-  const bondConfig = await fetchDevelopmentBondConfig(developmentId)
-  const linkedListings = await fetchDevelopmentLinkedListings(client, {
-    development,
-    units,
-  })
+  const [rows, linkedListings] = await Promise.all([
+    hydrateUnitRows(client, units),
+    fetchDevelopmentLinkedListings(client, { development, units }),
+  ])
   let alterations = []
 
   let alterationsQuery = await client
