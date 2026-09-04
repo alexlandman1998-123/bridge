@@ -362,6 +362,9 @@ function ActiveMatterStrip({ lanes = {} }) {
               const progressTone = getMatterProgressTone(matter.riskTone)
               const roleLabel = (matter.roleLabels || []).join(' / ') || matter.matterType || 'Matter'
               const statusLabel = matter.statusLabel || 'In Progress'
+              const propertyLabel = ['property pending', 'property address pending', 'property details pending'].includes(normalizeText(matter.propertyAddress).toLowerCase())
+                ? `${matter.matterType || 'Property'} matter`
+                : matter.propertyAddress || `${matter.matterType || 'Property'} matter`
 
               return (
                 <Link
@@ -381,7 +384,7 @@ function ActiveMatterStrip({ lanes = {} }) {
                   </header>
 
                   <section className="mt-4 min-w-0">
-                    <p className="line-clamp-2 min-h-[40px] text-sm font-semibold leading-5 text-slate-900">{matter.propertyAddress || 'Property address pending'}</p>
+                    <p className="line-clamp-2 min-h-[40px] text-sm font-semibold leading-5 text-slate-900">{propertyLabel}</p>
                     <p className="mt-1.5 truncate text-xs font-medium text-slate-500">{matter.contextLabel || matter.buyerSellerName || matter.buyerName || 'Workflow progressing'}</p>
                   </section>
 

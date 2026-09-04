@@ -1380,7 +1380,9 @@ function buildDashboardSnapshotFromMatterListSnapshot(snapshot = {}, firm = null
     appointments: [],
     kpis: {
       active_matters: Number(sourceKpis.activeMatters || 0),
-      awaiting_fica: Number(sourceKpis.awaitingClient || 0),
+      // The list snapshot exposes one combined client-action count. Map it to
+      // a single dashboard bucket so the summary card does not double it.
+      awaiting_fica: 0,
       awaiting_signatures: Number(sourceKpis.awaitingClient || 0),
       lodgements_pending: Number(sourceKpis.lodgementToday || 0),
       registrations_this_week: Number(sourceKpis.registrationThisWeek || 0),
