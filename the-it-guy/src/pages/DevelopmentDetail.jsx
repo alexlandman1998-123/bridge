@@ -10740,7 +10740,7 @@ function DevelopmentDetail() {
                       <tr>
                         {[
                           'Block',
-                          'Unit Number',
+                          'Unit',
                           'Purchaser',
                           'Status',
                           'Sales Price',
@@ -10775,22 +10775,16 @@ function DevelopmentDetail() {
                             />
                           </td>
                           <td className="px-5 py-4 align-middle">
-                            <input
-                              className={`${UNIT_QUICK_FIELD_CLASS} max-w-[150px]`}
-                              defaultValue={unit.unitNumber || ''}
-                              placeholder="Unit number"
-                              disabled={unitQuickSavingKey === `${unit.id}:unitNumber`}
-                              aria-label={`Update unit number for ${unit.unitNumber || 'unit'}`}
-                              onClick={(event) => event.stopPropagation()}
-                              onBlur={(event) => {
-                                const nextUnitNumber = event.target.value.trim()
-                                if (nextUnitNumber === String(unit.unitNumber || '').trim()) return
-                                void handleUnitQuickSave(unit, { unitNumber: nextUnitNumber, unitLabel: nextUnitNumber }, {
-                                  field: 'unitNumber',
-                                  feedbackLabel: `Unit ${unit.unitNumber} number updated.`,
-                                })
-                              }}
-                            />
+                            <button
+                              type="button"
+                              className="group inline-flex min-w-[118px] items-center gap-2 rounded-[10px] px-2.5 py-2 text-left text-sm font-semibold text-[#173149] transition hover:bg-[#eef8f2] hover:text-[#167044] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2e8b67]"
+                              onClick={() => openUnitModal(unit)}
+                              aria-label={`Open Unit ${unit.unitNumber || 'details'} for editing`}
+                            >
+                              <span>{unit.unitNumber || 'Unnamed unit'}</span>
+                              <PencilLine size={14} className="text-[#7d8fa3] transition group-hover:text-[#167044]" />
+                            </button>
+                            <span className="mt-1 block pl-2.5 text-[0.68rem] font-medium text-[#8292a4]">Open details</span>
                           </td>
                           <td className="px-5 py-4 text-sm text-[#44576d]">
                             {unit.currentTransactionId ? (
