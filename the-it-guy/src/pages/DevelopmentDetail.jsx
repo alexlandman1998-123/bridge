@@ -2608,10 +2608,15 @@ function DevelopmentDetail() {
       // Preserve the complete workspace during a background refresh instead
       // of replacing it with a full-page loading state.
       if (loadedDevelopmentIdRef.current !== developmentId) setLoading(true)
-      const [response, requirements] = await Promise.all([
-        fetchDevelopmentDetail(developmentId),
-        fetchDevelopmentDocumentRequirements(developmentId),
-      ])
+      const response = await fetchDevelopmentDetail(developmentId)
+      // Document requirements enrich the workspace but must not make an
+      // otherwise accessible development look missing when that optional
+      // source is temporarily unavailable.
+      const requirements = await fetchDevelopmentDocumentRequirements(developmentId)
+        .catch((requirementsError) => {
+          console.warn('Could not load development document requirements:', requirementsError)
+          return []
+        })
       setData(response)
       setDevelopmentRequirements(requirements)
       loadedDevelopmentIdRef.current = response?.development?.id || ''
@@ -7578,8 +7583,19 @@ function DevelopmentDetail() {
     return <p className="rounded-[16px] border border-[#dde4ee] bg-white px-5 py-4 text-sm text-[#6b7d93]">Loading development...</p>
   }
 
+  if (!data && error) {
+    return <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{error}</p>
+  }
+
   if (!data) {
-    return <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">Development not found.</p>
+    const developmentName = String(location.state?.headerTitle || '').trim()
+    const message = error
+      ? `Unable to load${developmentName ? ` ${developmentName}` : ' this development'}. ${error}`
+      : developmentName
+        ? `${developmentName} is in your portfolio, but its workspace could not be opened. Your development access may need to be restored.`
+        : 'This development could not be loaded. It may have been removed or your development access may need to be restored.'
+
+    return <p className="rounded-[16px] border border-[#f3d2cc] bg-[#fef3f2] px-5 py-4 text-sm text-[#b42318]">{message}</p>
   }
 
   return (
