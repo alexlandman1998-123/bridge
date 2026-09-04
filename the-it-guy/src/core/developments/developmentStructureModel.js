@@ -9,12 +9,31 @@ export const DEVELOPMENT_STRUCTURE_NODE_TYPES = Object.freeze({
 })
 
 export const DEVELOPMENT_STRUCTURE_TEMPLATES = Object.freeze([
-  { id: 'estate', label: 'Estate / townhouse', nodeTypes: ['precinct'] },
-  { id: 'apartment_blocks', label: 'Apartment blocks', nodeTypes: ['block', 'floor'] },
-  { id: 'tower', label: 'Single tower', nodeTypes: ['building', 'floor'] },
-  { id: 'hotel', label: 'Hotel / serviced apartments', nodeTypes: ['building', 'level', 'wing'] },
-  { id: 'mixed_use', label: 'Mixed-use development', nodeTypes: ['building', 'zone', 'floor'] },
-  { id: 'custom', label: 'Custom structure', nodeTypes: [] },
+  {
+    id: 'estate',
+    label: 'Simple estate',
+    description: 'One development with a direct list of units.',
+    nodeTypes: [],
+    hierarchy: [],
+  },
+  {
+    id: 'apartment_blocks',
+    label: 'Apartment building',
+    description: 'Organise units by building and floor.',
+    nodeTypes: ['building', 'floor'],
+    hierarchy: ['building', 'floor'],
+  },
+  {
+    id: 'mixed_use',
+    label: 'Mixed site',
+    description: 'Organise units by precinct, block, and floor.',
+    nodeTypes: ['precinct', 'block', 'floor'],
+    hierarchy: ['precinct', 'block', 'floor'],
+  },
+  // Existing templates remain supported for previously prepared imports.
+  { id: 'tower', label: 'Single tower', description: 'Legacy template.', nodeTypes: ['building', 'floor'], hierarchy: ['building', 'floor'] },
+  { id: 'hotel', label: 'Hotel / serviced apartments', description: 'Legacy template.', nodeTypes: ['building', 'level', 'wing'], hierarchy: ['building', 'level', 'wing'] },
+  { id: 'custom', label: 'Custom structure', description: 'Use the columns supplied in your sheet.', nodeTypes: [], hierarchy: [] },
 ])
 
 const NODE_TYPE_SET = new Set(Object.values(DEVELOPMENT_STRUCTURE_NODE_TYPES))
@@ -138,8 +157,11 @@ export function buildDevelopmentStructureImportPreview({ templateId = 'custom', 
 
   units.forEach((unit, index) => {
     const unitNumber = String(unit.unitnumber || unit.unit_number || '').trim()
-    const hierarchy = ['building', 'block', 'precinct', 'zone', 'floor', 'level', 'wing']
-      .filter((nodeType) => template.id === 'custom' || template.nodeTypes.includes(nodeType) || String(unit[nodeType] || '').trim())
+    const hierarchyOrder = template.id === 'custom'
+      ? ['precinct', 'building', 'block', 'zone', 'floor', 'level', 'wing']
+      : (template.hierarchy || template.nodeTypes || [])
+    const hierarchy = hierarchyOrder
+      .filter((nodeType) => template.id === 'custom' || template.nodeTypes.includes(nodeType))
       .map((nodeType) => ({ nodeType, label: String(unit[nodeType] || '').trim() }))
       .filter((node) => node.label)
     let parentId = ''
@@ -154,6 +176,8 @@ export function buildDevelopmentStructureImportPreview({ templateId = 'custom', 
       parentId = existing.id
     })
     unit.unitNumber = unitNumber
+    unit.phase = String(unit.phase || '').trim()
+    unit.block = String(unit.block || '').trim()
     unit.structureNodeId = parentId || null
     unit.rowNumber = index + (hasHeader ? 2 : 1)
   })
