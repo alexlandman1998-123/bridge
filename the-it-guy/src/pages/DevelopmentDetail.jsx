@@ -10696,7 +10696,10 @@ function DevelopmentDetail() {
           onSaveSitePlanViewport={(viewport, map) => void handleAvailabilitySitePlanViewportSave(viewport, map)}
           onUploadSitePlan={(event) => void handleAvailabilitySitePlanUpload(event)}
           onApplySitePlanSuggestions={(suggestions) => void handleApplySitePlanSuggestions(suggestions)}
-          onDiscardSitePlanSuggestions={() => setSitePlanSuggestions({})}
+          onDiscardSitePlanSuggestions={(unitIds = []) => setSitePlanSuggestions((current) => {
+            if (!Array.isArray(unitIds) || !unitIds.length) return {}
+            return Object.fromEntries(Object.entries(current || {}).filter(([unitId]) => !unitIds.includes(unitId)))
+          })}
           onPreviewPublicSitePlan={handlePreviewPublicListing}
           onOpenSitePlanPublicationControls={() => openMarketingHubSection('public-page')}
           onEditUnit={(unit) => openUnitModal(unit)}

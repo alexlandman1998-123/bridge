@@ -227,6 +227,8 @@ export default function DevelopmentAvailabilityWorkspace({
   const [placingUnit, setPlacingUnit] = useState(false);
   const [sitePlanReviewOpen, setSitePlanReviewOpen] = useState(false);
   const [cropEditorOpen, setCropEditorOpen] = useState(false);
+  const [matchReviewOpen, setMatchReviewOpen] = useState(false);
+  const [matchSaving, setMatchSaving] = useState(false);
   const [cropDraft, setCropDraft] = useState(() => normaliseSitePlanViewport(sitePlanViewport));
   const [zoom, setZoom] = useState(1);
   const [comparisonUnitIds, setComparisonUnitIds] = useState([]);
@@ -379,9 +381,16 @@ export default function DevelopmentAvailabilityWorkspace({
         ),
     [inventory, sitePlanMap],
   );
+  const visibleSitePlanSuggestions = useMemo(() => {
+    const remapped = remapSitePlanCoordinates(sitePlanSuggestions, {}, sitePlanViewport)
+    return Object.fromEntries(Object.entries(remapped).map(([unitId, position]) => [
+      unitId,
+      { ...position, sourceLabel: sitePlanSuggestions?.[unitId]?.sourceLabel || '' },
+    ]))
+  }, [sitePlanSuggestions, sitePlanViewport]);
   const suggestionUnits = useMemo(
-    () => visibleUnits.filter((unit) => hasSavedMapPosition(sitePlanSuggestions, unit.id) && !hasSavedMapPosition(sitePlanMap, unit.id)),
-    [sitePlanMap, sitePlanSuggestions, visibleUnits],
+    () => visibleUnits.filter((unit) => hasSavedMapPosition(visibleSitePlanSuggestions, unit.id) && !hasSavedMapPosition(sitePlanMap, unit.id)),
+    [sitePlanMap, visibleSitePlanSuggestions, visibleUnits],
   );
   const suggestionCount = suggestionUnits.length;
   const placedUnitCount = useMemo(
@@ -455,6 +464,14 @@ export default function DevelopmentAvailabilityWorkspace({
     setZoom(1);
     setMapSelectionActive(false);
     setSitePlanReviewOpen(true);
+  }
+  function acceptSuggestedMatch(unit) {
+    const suggestion = visibleSitePlanSuggestions?.[unit.id]
+    if (!suggestion || matchSaving) return
+    setMatchSaving(true)
+    Promise.resolve(onSaveSitePlanMap?.({ ...(sitePlanMap || {}), [unit.id]: { x: suggestion.x, y: suggestion.y } }))
+      .then(() => onDiscardSitePlanSuggestions?.([unit.id]))
+      .finally(() => setMatchSaving(false))
   }
   function openCropEditor() {
     setCropDraft(normaliseSitePlanViewport(sitePlanViewport));
@@ -758,14 +775,15 @@ export default function DevelopmentAvailabilityWorkspace({
               <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl || sitePlanSaving} onClick={openCropEditor}><PencilLine size={13} /> Crop plan</Button>
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Place units</span>
-              <strong className="mt-1 block text-sm text-[#173149]">{placedUnitCount} of {inventory.length} coordinates saved</strong>
-              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Work through the remaining units or select one to adjust its saved marker.</p>
+              <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Match units</span>
+              <strong className="mt-1 block text-sm text-[#173149]">{suggestionCount ? `${suggestionCount} detected match${suggestionCount === 1 ? '' : 'es'} ready` : `${placedUnitCount} of ${inventory.length} coordinates saved`}</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Confirm detected PDF labels first, then use the short placement queue for any remaining units.</p>
               <div className="mt-3 flex flex-wrap gap-2">
+                {suggestionCount ? <Button type="button" size="sm" variant="secondary" disabled={sitePlanSaving} onClick={() => setMatchReviewOpen(true)}><Sparkles size={13} /> Review matches</Button> : null}
                 <Button type="button" size="sm" variant="primary" disabled={!sitePlanUrl || !unplacedUnits.length || sitePlanSaving} onClick={beginNextSitePlanPlacement}><Crosshair size={13} />{unplacedUnits.length ? `Place next (${unplacedUnits[0].displayNumber})` : "All units placed"}</Button>
                 <Button type="button" size="sm" variant="secondary" disabled={!sitePlanUrl || !selectedUnit || sitePlanSaving} onClick={beginSitePlanPlacement}><PencilLine size={13} />{placingUnit ? "Click plan to place" : "Adjust selected"}</Button>
               </div>
-              {suggestionCount ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">{suggestionCount} PDF label suggestion{suggestionCount === 1 ? "" : "s"} ready for review</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">Dashed markers are a draft only. Apply them, then check or adjust each location.</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" disabled={sitePlanSaving} onClick={() => onApplySitePlanSuggestions?.(sitePlanSuggestions)}>Apply suggestions</Button><Button type="button" size="sm" variant="ghost" disabled={sitePlanSaving} onClick={() => onDiscardSitePlanSuggestions?.()}>Discard</Button></div></div> : null}
+              {suggestionCount ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">Detected labels are drafts until confirmed</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">Review one by one, or accept all and fine-tune any marker afterwards.</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" disabled={sitePlanSaving} onClick={() => onApplySitePlanSuggestions?.(visibleSitePlanSuggestions)}>Accept all matches</Button><Button type="button" size="sm" variant="ghost" disabled={sitePlanSaving} onClick={() => onDiscardSitePlanSuggestions?.()}>Discard all</Button></div></div> : null}
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">4. Review & publish</span>
@@ -836,7 +854,7 @@ export default function DevelopmentAvailabilityWorkspace({
               );
             })}
             {suggestionUnits.map((unit) => {
-              const position = sitePlanSuggestions[unit.id];
+              const position = visibleSitePlanSuggestions[unit.id];
               const selected = unit.id === selectedUnit?.id;
               return (
                 <button
@@ -1428,6 +1446,15 @@ export default function DevelopmentAvailabilityWorkspace({
             </div>
           </div>
           <footer className="flex flex-wrap justify-end gap-2 border-t border-[#e5ece9] px-5 py-4 sm:px-6"><Button type="button" variant="secondary" onClick={() => setCropEditorOpen(false)}>Cancel</Button><Button type="button" onClick={saveCrop}>Save crop</Button></footer>
+        </section>
+      </div>
+    ) : null}
+    {matchReviewOpen ? (
+      <div className="fixed inset-0 z-[80] grid place-items-center bg-[#081c20]/55 p-4" role="dialog" aria-modal="true" aria-label="Review unit matches">
+        <section className="w-full max-w-2xl overflow-hidden rounded-[22px] bg-white shadow-2xl">
+          <header className="flex items-start justify-between border-b border-[#e5ece9] px-5 py-4 sm:px-6"><div><span className="text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[#4d7965]">Match units</span><h3 className="mt-1 text-xl font-semibold tracking-[-0.035em] text-[#173149]">Review plan-label matches</h3><p className="mt-1 text-sm text-[#6b7d93]">Accept only labels that match the unit you expect. A skipped item stays in the manual placement queue.</p></div><button type="button" aria-label="Close match review" onClick={() => setMatchReviewOpen(false)} className="rounded-lg p-2 text-[#61768a] hover:bg-[#eff5f2]"><X size={18} /></button></header>
+          <div className="max-h-[55vh] divide-y divide-[#edf1ef] overflow-y-auto">{suggestionUnits.map((unit) => { const suggestion = visibleSitePlanSuggestions[unit.id]; return <article key={unit.id} className="flex flex-wrap items-center gap-3 px-5 py-4 sm:px-6"><div className="min-w-[150px] flex-1"><strong className="block text-sm text-[#173149]">Unit {unit.displayNumber}</strong><span className="mt-0.5 block text-xs text-[#6b7d93]">Detected as “{suggestion?.sourceLabel || unit.displayNumber}”</span></div><span className="rounded-full bg-[#f2f7f4] px-2.5 py-1 text-[0.68rem] font-semibold text-[#286448]">Plan label</span><div className="flex gap-2"><Button type="button" size="sm" variant="secondary" disabled={matchSaving} onClick={() => onDiscardSitePlanSuggestions?.([unit.id])}>Skip</Button><Button type="button" size="sm" disabled={matchSaving} onClick={() => acceptSuggestedMatch(unit)}>{matchSaving ? 'Saving…' : 'Use match'}</Button></div></article> })}</div>
+          <footer className="flex flex-wrap justify-end gap-2 border-t border-[#e5ece9] px-5 py-4 sm:px-6"><Button type="button" variant="secondary" onClick={() => setMatchReviewOpen(false)}>Done</Button><Button type="button" disabled={!suggestionCount} onClick={() => { onApplySitePlanSuggestions?.(visibleSitePlanSuggestions); setMatchReviewOpen(false) }}>Accept all matches</Button></footer>
         </section>
       </div>
     ) : null}
