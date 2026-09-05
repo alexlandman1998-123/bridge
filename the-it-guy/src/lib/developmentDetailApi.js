@@ -8,6 +8,7 @@ const call = async (method, ...args) => {
 const METHODS = [
   'deleteDevelopment', 'deleteDevelopmentDocument', 'fetchDevelopmentDetail',
   'fetchDevelopmentMarketingAccess', 'createDevelopmentMarketingAccess', 'sendDevelopmentMarketingAccessInvite', 'fetchDevelopmentMarketingInvite', 'acceptDevelopmentMarketingInvite', 'fetchDevelopmentMarketingActivity', 'fetchDevelopmentMarketingEvents', 'createDevelopmentMarketingEvent',
+  'fetchDevelopmentVisualAnalytics',
   'fetchDevelopmentDocumentRequirements', 'saveDevelopmentDetails', 'saveDevelopmentDocument',
   'saveDevelopmentFinancials', 'saveDevelopmentProductCatalogue', 'saveDevelopmentStructureNodes', 'saveDevelopmentUnit', 'uploadDevelopmentDocumentAsset',
   'applyDevelopmentConfigurationDefaults', 'createDevelopmentTransactionFromUnitStatus', 'updateDevelopmentTransactionSalesPrice', 'updateTransactionLifecycleStage', 'updateDevelopmentSettings',
@@ -18,6 +19,7 @@ const operations = Object.fromEntries(METHODS.map((method) => [method, (...args)
 export const {
   deleteDevelopment, deleteDevelopmentDocument, fetchDevelopmentDetail,
   fetchDevelopmentMarketingAccess, createDevelopmentMarketingAccess, sendDevelopmentMarketingAccessInvite, fetchDevelopmentMarketingInvite, acceptDevelopmentMarketingInvite, fetchDevelopmentMarketingActivity, fetchDevelopmentMarketingEvents, createDevelopmentMarketingEvent,
+  fetchDevelopmentVisualAnalytics,
   fetchDevelopmentDocumentRequirements, saveDevelopmentDetails, saveDevelopmentDocument,
   saveDevelopmentFinancials, saveDevelopmentProductCatalogue, saveDevelopmentStructureNodes, saveDevelopmentUnit, uploadDevelopmentDocumentAsset,
   applyDevelopmentConfigurationDefaults, createDevelopmentTransactionFromUnitStatus, updateDevelopmentTransactionSalesPrice, updateTransactionLifecycleStage, updateDevelopmentSettings,

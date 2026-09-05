@@ -5,7 +5,6 @@ import {
   CalendarClock,
   CircleDollarSign,
   Copy,
-  Crosshair,
   Filter,
   Home,
   LockKeyhole,
@@ -28,6 +27,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 import Button from "../ui/Button";
 import Field from "../ui/Field";
+import DevelopmentVisualMappingStudio from "./DevelopmentVisualMappingStudio";
 import { buildDevelopmentStructurePathMap } from "../../core/developments/developmentStructureModel";
 import { buildCataloguePriceByUnitType } from "../../core/developments/developmentProductCatalogueModel";
 import {
@@ -202,10 +202,13 @@ export default function DevelopmentAvailabilityWorkspace({
   sitePlanSuggestions = {},
   sitePlanSaving = false,
   sitePlanPubliclyVisible = false,
+  visualMap = null,
   onSaveSitePlanMap,
+  onSaveVisualMap,
   onSaveSitePlanViewport,
   onSaveSitePlanNotShownUnits,
   onUploadSitePlan,
+  onUploadVisualAssets,
   onApplySitePlanSuggestions,
   onDiscardSitePlanSuggestions,
   onPreviewPublicSitePlan,
@@ -226,7 +229,7 @@ export default function DevelopmentAvailabilityWorkspace({
   const [structureFilter, setStructureFilter] = useState("all");
   const [selectedUnitId, setSelectedUnitId] = useState("");
   const [mapSelectionActive, setMapSelectionActive] = useState(false);
-  const [placingUnit, setPlacingUnit] = useState(false);
+  const [mappingStudioOpen, setMappingStudioOpen] = useState(false);
   const [sitePlanReviewOpen, setSitePlanReviewOpen] = useState(false);
   const [cropEditorOpen, setCropEditorOpen] = useState(false);
   const [matchReviewOpen, setMatchReviewOpen] = useState(false);
@@ -439,42 +442,7 @@ export default function DevelopmentAvailabilityWorkspace({
       selectedUnit?.displayPrice ? String(selectedUnit.displayPrice) : "",
     );
   }, [selectedUnit?.id, selectedUnit?.displayPrice]);
-  function placeSelectedUnit(event) {
-    if (!placingUnit || !selectedUnit || !canManageInventory) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const x = Math.max(
-      3,
-      Math.min(97, ((event.clientX - rect.left) / rect.width) * 100),
-    );
-    const y = Math.max(
-      3,
-      Math.min(97, ((event.clientY - rect.top) / rect.height) * 100),
-    );
-    onSaveSitePlanMap?.({
-      ...(sitePlanMap || {}),
-      [selectedUnit.id]: {
-        x: Math.round(x * 10) / 10,
-        y: Math.round(y * 10) / 10,
-      },
-    });
-    setPlacingUnit(false);
-  }
-  function beginSitePlanPlacement() {
-    if (!sitePlanUrl || !selectedUnit || !canManageInventory) return;
-    setMapSelectionActive(false);
-    setSitePlanReviewOpen(false);
-    setPlacingUnit(true);
-  }
-  function beginNextSitePlanPlacement() {
-    const nextUnit = unplacedUnits[0];
-    if (!sitePlanUrl || !nextUnit || !canManageInventory) return;
-    setSelectedUnitId(nextUnit.id);
-    setMapSelectionActive(false);
-    setSitePlanReviewOpen(false);
-    setPlacingUnit(true);
-  }
   function reviewSitePlanPlacement() {
-    setPlacingUnit(false);
     setZoom(1);
     setMapSelectionActive(false);
     setSitePlanReviewOpen(true);
@@ -509,7 +477,6 @@ export default function DevelopmentAvailabilityWorkspace({
     const nextMap = remapSitePlanCoordinates(sitePlanMap, sitePlanViewport, nextViewport);
     onSaveSitePlanViewport?.(nextViewport, nextMap);
     setCropEditorOpen(false);
-    setPlacingUnit(false);
     setSitePlanReviewOpen(false);
   }
   function toggleComparison(unit) {
@@ -798,12 +765,11 @@ export default function DevelopmentAvailabilityWorkspace({
             </div>
             <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Match units</span>
-              <strong className="mt-1 block text-sm text-[#173149]">{suggestionCount ? `${suggestionCount} detected match${suggestionCount === 1 ? '' : 'es'} ready` : `${placedUnitCount} of ${inventory.length} coordinates saved`}</strong>
-              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Confirm detected PDF labels first, then use the short placement queue for any remaining units.</p>
+              <strong className="mt-1 block text-sm text-[#173149]">{suggestionCount ? `${suggestionCount} detected match${suggestionCount === 1 ? '' : 'es'} ready` : `${placedUnitCount} of ${inventory.length} units mapped`}</strong>
+              <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Open the Mapping Studio to trace unit footprints. Existing markers remain available there for conversion.</p>
               <div className="mt-3 flex flex-wrap gap-2">
                 {suggestionCount ? <Button type="button" size="sm" variant="secondary" disabled={sitePlanSaving} onClick={() => setMatchReviewOpen(true)}><Sparkles size={13} /> Review matches</Button> : null}
-                <Button type="button" size="sm" variant="primary" disabled={!sitePlanUrl || !unplacedUnits.length || sitePlanSaving} onClick={beginNextSitePlanPlacement}><Crosshair size={13} />{unplacedUnits.length ? `Place next (${unplacedUnits[0].displayNumber})` : "All units placed"}</Button>
-                <Button type="button" size="sm" variant="secondary" disabled={!sitePlanUrl || !selectedUnit || sitePlanSaving} onClick={beginSitePlanPlacement}><PencilLine size={13} />{placingUnit ? "Click plan to place" : "Adjust selected"}</Button>
+                <Button type="button" size="sm" variant="primary" disabled={!sitePlanUrl || sitePlanSaving} onClick={() => setMappingStudioOpen(true)}><PencilLine size={13} /> Open Mapping Studio</Button>
               </div>
               {suggestionCount ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">Detected labels are drafts until confirmed</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">Review one by one, or accept all and fine-tune any marker afterwards.</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" disabled={sitePlanSaving} onClick={() => onApplySitePlanSuggestions?.(visibleSitePlanSuggestions)}>Accept all matches</Button><Button type="button" size="sm" variant="ghost" disabled={sitePlanSaving} onClick={() => onDiscardSitePlanSuggestions?.()}>Discard all</Button></div></div> : null}
             </div>
@@ -835,11 +801,10 @@ export default function DevelopmentAvailabilityWorkspace({
               <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">Legend</span>
               <div className="mt-2 grid grid-cols-2 gap-x-2 gap-y-2 text-xs font-medium text-[#63778b]">{Object.entries(STATUS_META).map(([status, meta]) => <span key={status} className="inline-flex items-center gap-1.5"><i className={`h-2.5 w-2.5 shrink-0 rounded-sm ${meta.dot}`} />{meta.label}</span>)}</div>
             </div>
-            {canManageInventory ? <p className="mt-auto border-t border-[#e4ece6] pt-3 text-xs leading-5 text-[#60758d]">Use Site Plan Setup above to upload a plan and place unit markers.</p> : null}
+            {canManageInventory ? <p className="mt-auto border-t border-[#e4ece6] pt-3 text-xs leading-5 text-[#60758d]">Use Mapping Studio to trace and review unit footprints.</p> : null}
           </aside>
           <div
           className="relative h-[470px] overflow-hidden rounded-[18px] border border-[#dce6ef] bg-[linear-gradient(135deg,#eaf0e7,#f7f4e9)] xl:h-[540px]"
-          onClick={placeSelectedUnit}
         >
           <div
             className="absolute inset-0 origin-center transition-transform duration-200"
@@ -926,12 +891,7 @@ export default function DevelopmentAvailabilityWorkspace({
               <Plus size={15} />
             </button>
           </div>
-          {placingUnit ? (
-            <span className="absolute bottom-4 left-4 rounded-[10px] bg-[#163f36] px-3 py-2 text-xs font-semibold text-white shadow-lg">
-              Click the plan to save Unit {selectedUnit?.displayNumber}. {unplacedUnits.length > 1 ? `${unplacedUnits.length - (hasSavedMapPosition(sitePlanMap, selectedUnit?.id) ? 0 : 1)} remain after this.` : "This is the final unit."}
-            </span>
-          ) : null}
-          {sitePlanReviewOpen && !placingUnit ? (
+          {sitePlanReviewOpen ? (
             <aside className="absolute bottom-4 left-4 z-20 max-h-[calc(100%-2rem)] w-[min(300px,calc(100%-2rem))] overflow-y-auto rounded-[14px] border border-white/90 bg-white/95 p-3.5 shadow-[0_10px_24px_rgba(15,23,42,0.18)] backdrop-blur">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -950,7 +910,7 @@ export default function DevelopmentAvailabilityWorkspace({
               </div>
             </aside>
           ) : null}
-          {selectedUnit && mapSelectionActive && !placingUnit ? (
+          {selectedUnit && mapSelectionActive ? (
             <div className="absolute bottom-4 left-4 max-w-[220px] rounded-[14px] border border-white/90 bg-white/95 px-3.5 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.18)] backdrop-blur">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -1482,6 +1442,16 @@ export default function DevelopmentAvailabilityWorkspace({
         </section>
       </div>
     ) : null}
+    <DevelopmentVisualMappingStudio
+      open={mappingStudioOpen}
+      visualMap={visualMap}
+      inventory={inventory}
+      structureNodes={structureNodes}
+      saving={sitePlanSaving}
+      onUploadAssets={onUploadVisualAssets}
+      onClose={() => setMappingStudioOpen(false)}
+      onSave={(nextVisualMap) => Promise.resolve(onSaveVisualMap?.(nextVisualMap)).then(() => setMappingStudioOpen(false))}
+    />
     </>
   );
 }

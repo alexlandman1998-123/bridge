@@ -23,6 +23,10 @@ import {
 import { selectReportStageSummary } from '../core/transactions/selectors'
 import { selectCurrentDevelopmentTransactionRows } from '../core/developments/developmentTransactionVisibility.js'
 import {
+  hydrateVisualMapMediaLibrary,
+  retireLegacyVisualMapFields,
+} from '../core/developments/developmentVisualMap.js'
+import {
   deriveOnboardingConfiguration,
   getOnboardingStepDefinitions,
   getPersonaFormConfig,
@@ -1366,7 +1370,7 @@ function isMissingSchemaError(error) {
     return false
   }
 
-  return ['42P01', 'PGRST205', '42703', 'PGRST204'].includes(error.code)
+  return ['42P01', 'PGRST205', '42703', 'PGRST204', 'PGRST202'].includes(error.code)
 }
 
 function isMissingRelationshipError(error) {
@@ -2649,7 +2653,7 @@ function normalizeMarketingContent(value) {
           defaults.keySellingPoints.whyThisDevelopment,
       ),
     },
-    mediaLibrary: {
+    mediaLibrary: hydrateVisualMapMediaLibrary({
       heroImageUrl: normalizeTextValue(
         mediaLibrarySource.heroImageUrl ?? mediaLibrarySource.hero_image_url ?? defaults.mediaLibrary.heroImageUrl,
       ),
@@ -2666,6 +2670,10 @@ function normalizeMarketingContent(value) {
       sitePlanUrl: normalizeTextValue(
         mediaLibrarySource.sitePlanUrl ?? mediaLibrarySource.site_plan_url ?? defaults.mediaLibrary.sitePlanUrl,
       ),
+      sitePlanMap:
+        mediaLibrarySource.sitePlanMap && typeof mediaLibrarySource.sitePlanMap === 'object' && !Array.isArray(mediaLibrarySource.sitePlanMap)
+          ? mediaLibrarySource.sitePlanMap
+          : defaults.mediaLibrary.sitePlanMap || {},
       sitePlanViewport:
         mediaLibrarySource.sitePlanViewport && typeof mediaLibrarySource.sitePlanViewport === 'object' && !Array.isArray(mediaLibrarySource.sitePlanViewport)
           ? mediaLibrarySource.sitePlanViewport
@@ -2673,6 +2681,7 @@ function normalizeMarketingContent(value) {
       sitePlanNotShownUnitIds: Array.isArray(mediaLibrarySource.sitePlanNotShownUnitIds)
         ? mediaLibrarySource.sitePlanNotShownUnitIds.map((id) => String(id || '').trim()).filter(Boolean)
         : defaults.mediaLibrary.sitePlanNotShownUnitIds,
+      visualMap: mediaLibrarySource.visualMap || mediaLibrarySource.visual_map || null,
       masterplanUrl: normalizeTextValue(
         mediaLibrarySource.masterplanUrl ?? mediaLibrarySource.masterplan_url ?? defaults.mediaLibrary.masterplanUrl,
       ),
@@ -2685,7 +2694,7 @@ function normalizeMarketingContent(value) {
           mediaLibrarySource.virtual_tour_url ??
           defaults.mediaLibrary.virtualTourUrl,
       ),
-    },
+    }),
     downloads: {
       brochureUrl: normalizeTextValue(downloadsSource.brochureUrl ?? defaults.downloads.brochureUrl),
       pricingSheetUrl: normalizeTextValue(downloadsSource.pricingSheetUrl ?? defaults.downloads.pricingSheetUrl),
@@ -19700,6 +19709,7 @@ export async function fetchDevelopmentDetail(developmentId) {
     marketingAccess,
     marketingActivity,
     marketingEvents,
+    visualAnalytics,
     productCatalogue,
     structureNodes,
     attorneyConfig,
@@ -19716,6 +19726,7 @@ export async function fetchDevelopmentDetail(developmentId) {
     fetchDevelopmentMarketingAccess(developmentId),
     fetchDevelopmentMarketingActivity(developmentId),
     fetchDevelopmentMarketingEvents(developmentId, development.organisation_id),
+    fetchDevelopmentVisualAnalytics(developmentId),
     fetchDevelopmentProductCatalogue(client, developmentId),
     fetchDevelopmentStructureNodes(client, developmentId),
     fetchDevelopmentAttorneyConfig(developmentId),
@@ -19829,6 +19840,7 @@ export async function fetchDevelopmentDetail(developmentId) {
     marketingAccess,
     marketingActivity,
     marketingEvents,
+    visualAnalytics,
     productCatalogue,
     structureNodes,
     attorneyConfig,
@@ -20325,6 +20337,39 @@ export async function fetchDevelopmentMarketingEvents(developmentId, organisatio
   return (data || []).map(normalizeDevelopmentMarketingEventRow)
 }
 
+export async function recordPublicDevelopmentVisualEvents({
+  slug,
+  sessionId,
+  events = [],
+} = {}) {
+  const client = requireClient()
+  if (!normalizeTextValue(slug) || !sessionId || !events.length) return 0
+  const { data, error } = await client.rpc('record_public_development_visual_events', {
+    requested_slug: normalizeTextValue(slug),
+    requested_session_id: sessionId,
+    requested_events: events.slice(0, 25),
+  })
+  if (error) {
+    if (isMissingSchemaError(error)) return 0
+    throw error
+  }
+  return Number(data) || 0
+}
+
+export async function fetchDevelopmentVisualAnalytics(developmentId, { days = 30 } = {}) {
+  const client = requireClient()
+  if (!developmentId) return null
+  const { data, error } = await client.rpc('get_development_visual_analytics', {
+    requested_development_id: developmentId,
+    requested_days: Math.max(1, Math.min(Number(days) || 30, 365)),
+  })
+  if (error) {
+    if (isMissingSchemaError(error) || isPermissionDeniedError(error)) return null
+    throw error
+  }
+  return data || null
+}
+
 export async function createDevelopmentMarketingEvent({
   developmentId,
   organisationId,
@@ -20625,7 +20670,11 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
   }
 
   if (input.marketingContent !== undefined) {
-    profilePayload.marketing_content = normalizeMarketingContent(input.marketingContent)
+    const marketingContent = normalizeMarketingContent(input.marketingContent)
+    profilePayload.marketing_content = {
+      ...marketingContent,
+      mediaLibrary: retireLegacyVisualMapFields(marketingContent.mediaLibrary),
+    }
   }
 
   let profileResult = await upsertByDevelopmentIdWithFallback(client, {
@@ -52222,7 +52271,13 @@ export async function createDevelopment({ name, plannedUnits, profile = {} }) {
         image_links: normalizedProfile.imageLinks,
         supporting_documents: normalizedProfile.supportingDocuments,
         seller_details: normalizeDevelopmentSellerDetails(profile.sellerDetails || profile.seller_details),
-        marketing_content: normalizeMarketingContent(profile.marketingContent),
+        marketing_content: (() => {
+          const marketingContent = normalizeMarketingContent(profile.marketingContent)
+          return {
+            ...marketingContent,
+            mediaLibrary: retireLegacyVisualMapFields(marketingContent.mediaLibrary),
+          }
+        })(),
       },
       { onConflict: 'development_id' },
     )
