@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { createPersistedRentalApplication } from '../rentalApplicationRepository.js'
+import { createPersistedRentalApplication, listPersistedRentalApplicationsForLead } from '../rentalApplicationRepository.js'
 
 const calls = []
 const fakeClient = {
@@ -26,5 +26,21 @@ const application = await createPersistedRentalApplication({ organisationId: 'or
 assert.equal(calls[0].table, 'rental_applications')
 assert.equal(calls[1].payload.lead_id, 'lead-1')
 assert.equal(application.leadId, 'lead-1')
+
+const listCalls = []
+const listClient = {
+  from(table) {
+    listCalls.push({ table })
+    const query = {
+      select() { return query },
+      eq(column, value) { listCalls.push({ column, value }); return query },
+      order() { return query },
+      limit() { return Promise.resolve({ data: [], error: null }) },
+    }
+    return query
+  },
+}
+await listPersistedRentalApplicationsForLead('org-1', 'lead-1', { client: listClient })
+assert.deepEqual(listCalls.slice(1, 3), [{ column: 'organisation_id', value: 'org-1' }, { column: 'lead_id', value: 'lead-1' }])
 
 console.log('Rental application repository linkage checks passed.')
