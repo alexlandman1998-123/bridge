@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Home, ImagePlus, Loader2, Save, Trash2 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { createRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
 import {
@@ -12,6 +12,8 @@ import {
   validateRentalListingDraftForm,
 } from '../../services/rentals/rentalListingDraftModel'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
+import { listRentalLeads } from '../../services/rentals/rentalLeadService'
+import { linkRentalLandlordLeadToListing } from '../../services/rentals/rentalLandlordListingHandoffService'
 
 const PROPERTY_TYPE_OPTIONS = Object.freeze([
   { value: 'Apartment', label: 'Apartment' },
@@ -176,6 +178,7 @@ function ToggleChipGroup({ label, hint = '', options, values, onToggle }) {
 
 export default function RentalListingCreatePage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const workspaceContext = useWorkspace()
   const rentalScope = useMemo(() => resolveRentalWorkspaceScope(workspaceContext), [workspaceContext])
   const organisationId = rentalScope.organisationId
@@ -185,6 +188,7 @@ export default function RentalListingCreatePage() {
   const galleryImagesRef = useRef(form.galleryImages)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
 
   const validationErrors = useMemo(
     () => validateRentalListingDraftForm(form, { organisationId }),
@@ -195,6 +199,17 @@ export default function RentalListingCreatePage() {
   useEffect(() => {
     galleryImagesRef.current = form.galleryImages
   }, [form.galleryImages])
+
+  useEffect(() => {
+    const leadId = searchParams.get('leadId')
+    if (!leadId || !organisationId) { setLinkedLandlordLead(null); return }
+    const options = { assignedAgentId, branchId, scopeLevel: rentalScope.scopeLevel, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' }
+    void listRentalLeads(organisationId, options).then((leads) => {
+      const lead = leads.find((item) => item.id === leadId && item.role === 'landlord' && item.stage === 'listing_ready') || null
+      setLinkedLandlordLead(lead)
+      if (!lead) setError('The requested landlord lead is not available at Listing ready in your current scope.')
+    }).catch((loadError) => setError(loadError?.message || 'Unable to validate linked landlord lead.'))
+  }, [assignedAgentId, branchId, organisationId, rentalScope.scopeLevel, searchParams])
 
   useEffect(() => () => {
     for (const image of galleryImagesRef.current) {
@@ -283,6 +298,14 @@ export default function RentalListingCreatePage() {
       })
       const listingId = result?.listing?.id
       if (listingId) {
+        if (linkedLandlordLead) {
+          try {
+            await linkRentalLandlordLeadToListing(linkedLandlordLead, listingId, { organisationId, actor: { id: assignedAgentId, userId: assignedAgentId } })
+          } catch (linkError) {
+            setError(`Listing ${listingId} was created, but it was not linked to the landlord lead: ${linkError?.message || 'unknown link failure'}`)
+            return
+          }
+        }
         navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}`, {
           state: { rentalListingCreatedTitle: buildRentalListingTitle(form) },
         })
@@ -331,6 +354,7 @@ export default function RentalListingCreatePage() {
         ) : null}
 
         <div className="grid gap-6">
+          {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
           <FormSection
             eyebrow="Step 1"
             title="Property"

@@ -17,6 +17,7 @@ import {
   buildRentalListingQueryOptions,
   resolveRentalWorkspaceScope,
 } from '../../services/rentals/rentalWorkspaceScope'
+import { advanceRentalLead, listRentalLeads } from '../../services/rentals/rentalLeadService'
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -110,6 +111,8 @@ export default function RentalApplicationsPage() {
   const [form, setForm] = useState(() => ({ ...RENTAL_APPLICATION_INITIAL_FORM }))
   const [listings, setListings] = useState([])
   const [applications, setApplications] = useState([])
+  const [tenantLeads, setTenantLeads] = useState([])
+  const [linkedLeadId, setLinkedLeadId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -143,12 +146,15 @@ export default function RentalApplicationsPage() {
       setLoading(true)
       setError('')
       const options = buildRentalListingQueryOptions(rentalScope)
-      const [rentalListings, rentalApplications] = await Promise.all([
+      const leadOptions = { assignedAgentId, branchId: rentalScope.branchId, scopeLevel: rentalScope.scopeLevel, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' }
+      const [rentalListings, rentalApplications, rentalLeads] = await Promise.all([
         listRentalListingsForAgent(assignedAgentId, options),
         listRentalApplicationsForAgent(assignedAgentId, options),
+        listRentalLeads(organisationId, leadOptions),
       ])
       setListings(rentalListings)
       setApplications(rentalApplications)
+      setTenantLeads(rentalLeads.filter((lead) => lead.role === 'tenant' && lead.stage === 'application_pending'))
       setForm((current) => current.listingId || !rentalListings[0]?.id
         ? current
         : { ...current, listingId: rentalListings[0].id })
@@ -179,8 +185,20 @@ export default function RentalApplicationsPage() {
         assignedAgentId,
         performedBy: assignedAgentId,
       })
-      setSuccess(`${created.application.tenantName || 'Tenant'} application captured.`)
+      const linkedLead = tenantLeads.find((lead) => normalizeText(lead.id) === normalizeText(linkedLeadId))
+      let leadAdvanceError = ''
+      if (linkedLead) {
+        const actor = { id: assignedAgentId, userId: assignedAgentId, email: workspaceContext?.profile?.email || workspaceContext?.user?.email || '', name: workspaceContext?.profile?.fullName || workspaceContext?.profile?.name || '' }
+        try {
+          await advanceRentalLead(linkedLead, { organisationId, actor, toStage: 'application_submitted', evidence: { applicationReference: created.application.reference } })
+        } catch (advanceError) {
+          leadAdvanceError = advanceError?.message || 'The lead stage could not be updated.'
+        }
+      }
+      setSuccess(`${created.application.tenantName || 'Tenant'} application captured.${linkedLead && !leadAdvanceError ? ' Linked rental lead moved to Application submitted.' : ''}`)
+      if (leadAdvanceError) setError(`Application was captured, but the linked rental lead was not advanced: ${leadAdvanceError}`)
       setForm((current) => ({ ...RENTAL_APPLICATION_INITIAL_FORM, listingId: current.listingId }))
+      setLinkedLeadId('')
       setApplications((current) => [created.application, ...current])
       void loadData()
     } catch (saveError) {
@@ -235,6 +253,14 @@ export default function RentalApplicationsPage() {
                     </option>
                   )) : <option value="">Create a rental listing first</option>}
                 </select>
+              </label>
+              <label className="form-field md:col-span-2">
+                <span>Linked tenant lead (optional)</span>
+                <select value={linkedLeadId} onChange={(event) => setLinkedLeadId(event.target.value)}>
+                  <option value="">Capture without a CRM lead link</option>
+                  {tenantLeads.map((lead) => <option key={lead.id} value={lead.id}>{lead.name} · {lead.focus || lead.desiredArea || 'Rental requirement'}</option>)}
+                </select>
+                <small className="text-[#607891]">Only application-pending tenant leads appear here. Saving advances a linked lead to Application submitted.</small>
               </label>
               <label className="form-field">
                 <span>Occupation date</span>
