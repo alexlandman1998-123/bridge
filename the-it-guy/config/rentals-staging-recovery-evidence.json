@@ -5,6 +5,8 @@
     "recordedAt": "",
     "projectRef": "",
     "artifactSha256": "",
+    "readOnly": false,
+    "artifactKind": "",
     "containsSecrets": false,
     "containsCustomerRecords": false
   },
@@ -14,6 +16,8 @@
     "recordedAt": "",
     "projectRef": "",
     "artifactSha256": "",
+    "readOnly": false,
+    "objectGroups": [],
     "containsSecrets": false,
     "containsCustomerRecords": false
   },
