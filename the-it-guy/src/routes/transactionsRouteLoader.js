@@ -3,7 +3,15 @@ let transactionsListApiPromise = null
 let agentTransactionsTableModulePromise = null
 
 export function loadTransactionsRouteModule() {
-  transactionsRouteModulePromise ||= import('../pages/Units')
+  // The Transactions route renders AgentTransactionsTable immediately after its
+  // first data response. Loading the page without its table creates a second
+  // Suspense handoff on cold navigation, which visibly replaces the route
+  // shell just before the workspace appears. Keep both chunks in the same
+  // route-load boundary so the shell is shown once, consistently.
+  transactionsRouteModulePromise ||= Promise.all([
+    import('../pages/Units'),
+    loadAgentTransactionsTableModule(),
+  ]).then(([routeModule]) => routeModule)
   return transactionsRouteModulePromise
 }
 

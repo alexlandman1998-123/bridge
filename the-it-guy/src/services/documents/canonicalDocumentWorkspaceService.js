@@ -16,6 +16,7 @@ import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMap
 
 export const CANONICAL_DOCUMENT_WORKSPACE_FLAG = 'VITE_CANONICAL_DOCUMENT_WORKSPACE_ENABLED'
 export const CANONICAL_READINESS_UI_FLAG = 'VITE_CANONICAL_READINESS_UI_ENABLED'
+export const CANONICAL_DOCUMENT_ROLE_PROJECTION_VERSION = 'phase3'
 
 export const WORKFLOW_GATE_LABELS = Object.freeze({
   listing_ready: 'Listing Ready',
@@ -137,6 +138,60 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value.filter(Boolean) : []
 }
 
+function normalizeRole(value = '') {
+  const role = normalizeKey(value)
+  if (role === 'purchaser') return 'buyer'
+  if (['selling_client', 'vendor'].includes(role)) return 'seller'
+  if (['attorney', 'transferring_attorney'].includes(role)) return 'transfer_attorney'
+  return role
+}
+
+function roleMatches(candidate, role) {
+  return normalizeRole(candidate) === normalizeRole(role)
+}
+
+function isClientRole(role) {
+  return ['buyer', 'seller'].includes(normalizeRole(role))
+}
+
+function roleIsExplicitlyAllowed(roles = [], role = '') {
+  return normalizeArray(roles).some((candidate) => roleMatches(candidate, role))
+}
+
+function genericClientScopeMatchesOwner({ role, requestedFromRole, documentOwnerRole }) {
+  if (!isClientRole(role)) return false
+  const owner = normalizeRole(requestedFromRole || documentOwnerRole)
+  return Boolean(owner) && owner === normalizeRole(role)
+}
+
+export function getCanonicalRoleProjectionPolicy({
+  role = '',
+  visibleToRoles = [],
+  uploadableByRoles = [],
+  requestedFromRole = '',
+  documentOwnerRole = '',
+} = {}) {
+  const normalizedRole = normalizeRole(role)
+  const clientScoped = genericClientScopeMatchesOwner({
+    role: normalizedRole,
+    requestedFromRole,
+    documentOwnerRole,
+  })
+  const visible = roleIsExplicitlyAllowed(visibleToRoles, normalizedRole) || (
+    normalizeArray(visibleToRoles).some((candidate) => normalizeKey(candidate) === 'client') && clientScoped
+  )
+  const uploadable = roleIsExplicitlyAllowed(uploadableByRoles, normalizedRole) || (
+    normalizeArray(uploadableByRoles).some((candidate) => normalizeKey(candidate) === 'client') && clientScoped
+  )
+
+  return {
+    version: CANONICAL_DOCUMENT_ROLE_PROJECTION_VERSION,
+    role: normalizedRole,
+    visible,
+    uploadable,
+  }
+}
+
 function isTruthyFlag(value, fallback = true) {
   const text = normalizeText(value).toLowerCase()
   if (!text) return fallback
@@ -186,80 +241,40 @@ function getPackMeta(packKey = '', pack = {}) {
   }
 }
 
-function getDocumentLookupKeys(document = {}) {
-  return [
-    document.id,
-    document.document_id,
-    document.file_path,
-    document.storage_path,
-    document.url,
-    document.file_url,
-    document.canonicalRequirementInstanceId,
-    document.canonical_requirement_instance_id,
-    document.requirementInstanceId,
+function isExactCanonicalDocumentLink(document = {}, requirement = {}) {
+  const requirementId = normalizeText(requirement.id)
+  const linkedRequirementId = normalizeText(
+    document.canonicalRequirementInstanceId ||
+    document.canonical_requirement_instance_id ||
+    document.requirementInstanceId ||
     document.requirement_instance_id,
-    document.requirementId,
-    document.requirement_id,
-    document.requirementKey,
-    document.requirement_key,
-    document.document_type,
-    document.documentType,
-    document.category,
-  ].map((value) => normalizeText(value)).filter(Boolean)
-}
+  )
+  if (requirementId && linkedRequirementId === requirementId) return true
 
-function documentLooksLikeDefinition(document = {}, definitionKey = '') {
-  const target = normalizeKey(definitionKey)
-  if (!target) return false
-  return getDocumentLookupKeys(document).some((key) => normalizeKey(key) === target)
+  const satisfiedArtifactIds = new Set([
+    requirement.satisfied_by_document_id,
+    requirement.satisfiedByDocumentId,
+    requirement.satisfied_by_packet_id,
+    requirement.satisfiedByPacketId,
+    requirement.satisfied_by_packet_version_id,
+    requirement.satisfiedByPacketVersionId,
+  ].map((value) => normalizeText(value)).filter(Boolean))
+  const documentId = normalizeText(document.id || document.document_id)
+  return Boolean(documentId && satisfiedArtifactIds.has(documentId))
 }
 
 function getGeneratedDocumentForRequirement(requirement = {}, documentCenter = {}) {
-  const definitionKey = requirement.documentDefinitionKey || requirement.document_definition_key
   const allGenerated = [
     ...normalizeArray(documentCenter.signedDocuments),
     ...normalizeArray(documentCenter.generatedDocuments),
     ...normalizeArray(documentCenter.uploadedDocuments).filter((document) => /signed|signature|generated|packet|mandate|otp|addendum/i.test(`${document.document_type || ''} ${document.category || ''} ${document.name || ''}`)),
   ]
-  const direct = allGenerated.find((document) => {
-    const requirementId = normalizeText(document.canonicalRequirementInstanceId || document.canonical_requirement_instance_id || document.requirementInstanceId || document.requirement_instance_id)
-    return requirementId && requirementId === normalizeText(requirement.id)
-  })
-  if (direct) return direct
-
-  if (definitionKey === 'signed_mandate' || definitionKey === 'generated_mandate') {
-    return allGenerated.find((document) => /mandate/i.test(`${document.document_type || ''} ${document.category || ''} ${document.name || ''}`)) || null
-  }
-  if (definitionKey === 'signed_otp' || definitionKey === 'generated_otp') {
-    return allGenerated.find((document) => /otp|offer to purchase|sale agreement/i.test(`${document.document_type || ''} ${document.category || ''} ${document.name || ''}`)) || null
-  }
-  if (definitionKey === 'signed_addendum') {
-    return allGenerated.find((document) => /addendum/i.test(`${document.document_type || ''} ${document.category || ''} ${document.name || ''}`)) || null
-  }
-  if (definitionKey === 'signed_transfer_documents' || definitionKey === 'transfer_documents') {
-    return allGenerated.find((document) => /transfer/i.test(`${document.document_type || ''} ${document.category || ''} ${document.name || ''}`)) || null
-  }
-  return allGenerated.find((document) => documentLooksLikeDefinition(document, definitionKey)) || null
+  return allGenerated.find((document) => isExactCanonicalDocumentLink(document, requirement)) || null
 }
 
 function getUploadedDocumentForRequirement(requirement = {}, documentCenter = {}) {
   const uploaded = normalizeArray(documentCenter.uploadedDocuments)
-  const direct = uploaded.find((document) => {
-    const requirementId = normalizeText(document.canonicalRequirementInstanceId || document.canonical_requirement_instance_id || document.requirementInstanceId || document.requirement_instance_id)
-    return requirementId && requirementId === normalizeText(requirement.id)
-  })
-  if (direct) return direct
-
-  const satisfiedId = normalizeText(requirement.satisfied_by_document_id || requirement.satisfiedByDocumentId)
-  if (satisfiedId) {
-    const linked = uploaded.find((document) => getDocumentLookupKeys(document).includes(satisfiedId))
-    if (linked) return linked
-  }
-
-  return uploaded.find((document) => {
-    const requirementKey = normalizeKey(requirement.legacyRequirementKey || requirement.documentDefinitionKey || requirement.document_definition_key)
-    return getDocumentLookupKeys(document).some((key) => normalizeKey(key) === requirementKey)
-  }) || null
+  return uploaded.find((document) => isExactCanonicalDocumentLink(document, requirement)) || null
 }
 
 export function normalizeCanonicalRequirement(instance = {}, { documentCenter = {}, role = 'seller' } = {}) {
@@ -284,15 +299,18 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
   const stageGates = normalizeArray(instance.stage_gates)
   const visibleToRoles = normalizeArray(instance.visible_to_roles || definition.default_visibility)
   const uploadableByRoles = normalizeArray(instance.uploadable_by_roles || definition.default_upload_roles)
-  const visible = !visibleToRoles.length ||
-    visibleToRoles.includes(role) ||
-    visibleToRoles.includes('client') ||
-    (role === 'seller' && visibleToRoles.includes('seller')) ||
-    (role === 'buyer' && visibleToRoles.includes('buyer'))
-  const uploadable = uploadableByRoles.includes(role) ||
-    uploadableByRoles.includes('client') ||
-    (role === 'seller' && uploadableByRoles.includes('seller')) ||
-    (role === 'buyer' && uploadableByRoles.includes('buyer'))
+  const requestedFromRole = normalizeText(instance.requested_from_role || instance.requestedFromRole)
+  const projection = getCanonicalRoleProjectionPolicy({
+    role,
+    visibleToRoles,
+    uploadableByRoles,
+    requestedFromRole,
+    documentOwnerRole: documentReference.documentOwnerRole,
+  })
+  const documentVisibilityScope = normalizeKey(linkedDocument?.visibility_scope || linkedDocument?.visibilityScope)
+  const clientVisible = linkedDocument?.is_client_visible ?? linkedDocument?.isClientVisible
+  const canOpenDocument = Boolean(linkedDocument) && projection.visible &&
+    !(isClientRole(projection.role) && (clientVisible === false || ['internal', 'private'].includes(documentVisibilityScope)))
 
   return {
     ...instance,
@@ -321,7 +339,7 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
     stage_gates: stageGates,
     visibleToRoles,
     uploadableByRoles,
-    requestedFromRole: normalizeText(instance.requested_from_role || instance.requestedFromRole),
+    requestedFromRole,
     reviewerRole: normalizeText(instance.reviewer_role || instance.reviewerRole),
     rejectionReason: normalizeText(instance.rejection_reason || instance.rejectionReason),
     waiverReason: normalizeText(instance.waiver_reason || instance.waiverReason),
@@ -330,7 +348,9 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
     generatedDocument,
     uploadedDocument,
     hasLinkedDocument,
-    canUpload: uploadable && !['approved', 'completed', 'waived', 'not_applicable'].includes(derivedStatus),
+    projection,
+    canOpenDocument,
+    canUpload: projection.uploadable && !['approved', 'completed', 'waived', 'not_applicable'].includes(derivedStatus),
     uploadSpec: {
       type: 'canonical_requirement',
       requirementInstanceId: normalizeText(instance.id),
@@ -340,7 +360,7 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
       documentType: definitionKey,
       category: packKey,
     },
-    visible,
+    visible: projection.visible,
     satisfied: SATISFIED_STATUSES.has(derivedStatus) || isRequirementSatisfied({ ...instance, status: derivedStatus }),
     provisionallySatisfied: PROVISIONAL_STATUSES.has(derivedStatus) || isRequirementProvisionallySatisfied({ ...instance, status: derivedStatus }),
     missing: MISSING_STATUSES.has(derivedStatus),
@@ -492,26 +512,62 @@ export async function getCanonicalRequirementsForTransaction({ transactionId, cl
   })
 }
 
+export async function getCanonicalBuyerPortalDocumentProjection({ client = supabase } = {}) {
+  const db = client || supabase
+  if (!isSupabaseConfigured || !db) {
+    return {
+      projectionVersion: CANONICAL_DOCUMENT_ROLE_PROJECTION_VERSION,
+      role: 'buyer',
+      transactionId: '',
+      requirements: [],
+      documents: [],
+    }
+  }
+  const result = await db.rpc('bridge_client_portal_canonical_document_projection')
+  if (result.error) throw result.error
+  return {
+    projectionVersion: normalizeText(result.data?.projectionVersion) || CANONICAL_DOCUMENT_ROLE_PROJECTION_VERSION,
+    role: normalizeRole(result.data?.role || 'buyer'),
+    transactionId: normalizeText(result.data?.transactionId),
+    requirements: normalizeArray(result.data?.requirements),
+    documents: normalizeArray(result.data?.documents),
+  }
+}
+
 export function useCanonicalRequirements({ contextType, contextId, documentCenter = {}, role = 'seller', enabled = true } = {}) {
   const [state, setState] = useState({
     loading: Boolean(enabled && contextType && contextId),
     error: null,
     requirements: [],
+    projectionDocumentCenter: null,
   })
 
   const load = useCallback(async () => {
     if (!enabled || !contextType || !contextId || !isCanonicalDocumentWorkspaceEnabled()) {
-      setState({ loading: false, error: null, requirements: [] })
+      setState({ loading: false, error: null, requirements: [], projectionDocumentCenter: null })
       return
     }
     setState((previous) => ({ ...previous, loading: true, error: null }))
     try {
+      if (normalizeRole(role) === 'buyer' && contextType === 'transaction') {
+        const projection = await getCanonicalBuyerPortalDocumentProjection()
+        if (projection.transactionId && projection.transactionId !== contextId) {
+          throw new Error('The buyer portal document projection does not match this transaction.')
+        }
+        setState({
+          loading: false,
+          error: null,
+          requirements: projection.requirements,
+          projectionDocumentCenter: { uploadedDocuments: projection.documents },
+        })
+        return
+      }
       const requirements = await getCanonicalRequirementsForContext({ contextType, contextId })
-      setState({ loading: false, error: null, requirements })
+      setState({ loading: false, error: null, requirements, projectionDocumentCenter: null })
     } catch (error) {
-      setState({ loading: false, error, requirements: [] })
+      setState({ loading: false, error, requirements: [], projectionDocumentCenter: null })
     }
-  }, [contextType, contextId, enabled])
+  }, [contextType, contextId, enabled, role])
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -520,8 +576,12 @@ export function useCanonicalRequirements({ contextType, contextId, documentCente
   }, [load])
 
   const model = useMemo(
-    () => buildCanonicalDocumentWorkspaceModel({ requirements: state.requirements, documentCenter, role }),
-    [documentCenter, role, state.requirements],
+    () => buildCanonicalDocumentWorkspaceModel({
+      requirements: state.requirements,
+      documentCenter: state.projectionDocumentCenter || documentCenter,
+      role,
+    }),
+    [documentCenter, role, state.projectionDocumentCenter, state.requirements],
   )
 
   return {

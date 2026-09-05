@@ -25557,6 +25557,30 @@ export async function fetchClientPortalMatterFinancialAccounts({ token, workspac
   }
 }
 
+export async function fetchClientPortalCanonicalDocumentProjection(token) {
+  const normalizedToken = normalizeNullableText(token)
+  if (!normalizedToken) throw new Error('Client portal token is required.')
+
+  const client = requireClientPortalTokenClient(normalizedToken)
+  const rpc = await client.rpc('bridge_client_portal_canonical_document_projection')
+  if (rpc.error) throw rpc.error
+
+  const projection = rpc.data && typeof rpc.data === 'object' ? rpc.data : {}
+  if (String(projection.role || '').trim().toLowerCase() !== 'buyer') {
+    throw new Error('The canonical document projection did not resolve a buyer workspace.')
+  }
+  if (!String(projection.transactionId || '').trim()) {
+    throw new Error('The canonical document projection did not resolve a transaction.')
+  }
+  return {
+    projectionVersion: String(projection.projectionVersion || '').trim(),
+    role: 'buyer',
+    transactionId: String(projection.transactionId).trim(),
+    requirements: Array.isArray(projection.requirements) ? projection.requirements : [],
+    documents: Array.isArray(projection.documents) ? projection.documents : [],
+  }
+}
+
 export async function uploadClientPortalMatterFinancialProof({
   token,
   workspace = 'buyer',
