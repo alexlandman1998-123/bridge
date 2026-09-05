@@ -25,8 +25,10 @@ const settingsApi = await read('../src/lib/settingsApi.js')
 const signupIntentLib = await read('../src/lib/signupIntent.js')
 const permissionRegistry = await read('../src/auth/permissions/permissionRegistry.js')
 const commercialApi = await read('../src/modules/commercial/services/commercialApi.js')
+const commercialRoleResolver = await read('../src/modules/commercial/utils/resolveCommercialRole.js')
 const principalClaimMigration = await read('../../supabase/migrations/202606170003_principal_claim_completion.sql')
 const workspaceInviteEmail = await read('../../supabase/functions/send-email/handlers/workspaceInvite.ts')
+const bridgeEmailLayout = await read('../../supabase/functions/send-email/content/bridgeEmailLayout.ts')
 const sendEmailTypes = await read('../../supabase/functions/send-email/types.ts')
 const packageJson = JSON.parse(await read('../package.json'))
 
@@ -128,13 +130,13 @@ for (const marker of [
 }
 for (const marker of [
   'Workspace invitation',
-  'Powered by Arch9',
-  'linear-gradient',
   'Accept invite',
   'organisationLogoUrl',
-  'getInitials',
 ]) {
   includes(workspaceInviteEmail, marker, `Workspace invite email should render the premium branded invite UI: ${marker}`)
+}
+for (const marker of ['Powered by Arch9', 'linear-gradient', 'getInitials']) {
+  includes(bridgeEmailLayout, marker, `Shared email layout should retain the premium branded invite UI: ${marker}`)
 }
 
 for (const marker of [
@@ -191,8 +193,13 @@ matches(
 )
 matches(
   agencyBranchesPage,
-  /inviteIntent:\s*'residential_principal_manager'[\s\S]*inviteRole:\s*'principal'[\s\S]*inviteSource:\s*'residential_branches_principal_manager_invite'/i,
-  'Residential branches principal/manager CTA should open the invite form with the correct principal intent.',
+  /createPrincipalClaimInvite\(\{[\s\S]*source:\s*'residential_branches_principal_manager_invite'/i,
+  'Residential branches principal/manager CTA should create a principal claim through the canonical invite service.',
+)
+includes(
+  agencyBranchesPage,
+  'Send a principal claim link without leaving the branches workspace.',
+  'Residential branches should keep the principal claim flow inline instead of navigating to a second invite form.',
 )
 
 for (const marker of [
@@ -207,15 +214,15 @@ for (const marker of [
   'isCommercialInvite',
   'rememberPendingInviteAutoAccept(safeToken)',
   'buildSignupIntent({',
-  'claimExistingWorkspace',
+  'SIGNUP_WORKSPACE_ACTIONS.acceptInvite',
   'storeSignupIntentTemporarily(seededIntent)',
   'moduleContext: getInviteModuleContext(invite)',
   'role: getInviteRole(invite)',
   'window.location.assign(getRedirectTarget(result))',
   'window.location.replace(getInviteTarget(invite))',
   "'Accept invite'",
-  'Claim principal access for ${workspaceName}',
-  'Principal organisation claim',
+  'Principal access for ${workspaceName}',
+  'Principal workspace access',
 ]) {
   includes(inviteResolver, marker, `Invite resolver should preserve Phase 3/4 auth handoff behavior: ${marker}`)
 }
@@ -232,7 +239,7 @@ for (const marker of [
 for (const marker of [
   'canClaimExistingWorkspace',
   "'Claim your agency workspace'",
-  'Confirm the profile details for the principal who is claiming an existing agency workspace.',
+  'Confirm the existing agency workspace details to activate your principal access.',
   'workspace_action === SIGNUP_WORKSPACE_ACTIONS.claimExistingWorkspace',
 ]) {
   includes(postDashboardSetup, marker, `Post dashboard setup should understand the principal claim workspace action: ${marker}`)
@@ -279,17 +286,27 @@ for (const marker of [
 
 matches(
   permissionRegistry,
-  /\[ORG_ROLES\.owner\]: mergeGrants\(allGeneral, grant\(ACCESS_SCOPES\.allWorkspace, AGENCY_PERMISSIONS\)\)[\s\S]*\[ORG_ROLES\.principal\]: mergeGrants\(allGeneral, grant\(ACCESS_SCOPES\.allWorkspace, AGENCY_PERMISSIONS\)\)/,
+  /\[ORG_ROLES\.owner\]: mergeGrants\(allGeneral, grant\(ACCESS_SCOPES\.allWorkspace, \[\.\.\.AGENCY_PERMISSIONS, \.\.\.AGENCY_DEVELOPMENT_PERMISSIONS, \.\.\.COMMISSION_PERMISSIONS\]\)\)[\s\S]*\[ORG_ROLES\.principal\]: mergeGrants\(allGeneral, grant\(ACCESS_SCOPES\.allWorkspace, \[\.\.\.AGENCY_PERMISSIONS, \.\.\.AGENCY_DEVELOPMENT_PERMISSIONS, \.\.\.COMMISSION_PERMISSIONS\]\)\)/,
   'Agency principals should keep the same all-workspace agency permission scope as organisation owners.',
 )
 matches(
   commercialApi,
-  /const COMMERCIAL_HQ_ROLES = new Set\(\[[^\]]*'owner'[^\]]*'principal'[\s\S]*resolveScopeLevel\(role\)[\s\S]*return 'organisation'/,
-  'Commercial principals should resolve to organisation-level commercial scope once the commercial access marker is present.',
+  /const COMMERCIAL_HQ_ROLES = COMMERCIAL_ORGANISATION_SCOPE_ROLES[\s\S]*resolveScopeLevel\(role\)[\s\S]*return 'organisation'/,
+  'Commercial scope resolution should consume the shared organisation-scope role registry.',
+)
+matches(
+  commercialRoleResolver,
+  /COMMERCIAL_ORGANISATION_SCOPE_ROLES = new Set\(\[[\s\S]*COMMERCIAL_ROLES\.principal[\s\S]*\]\)/,
+  'Commercial principals should remain in the organisation-level commercial scope registry.',
 )
 matches(
   commercialApi,
-  /function isCommercialMembershipRow[\s\S]*COMMERCIAL_MODULE_MARKERS\.has\(moduleValue\)[\s\S]*return true/,
+  /export function isCommercialMembershipRow\(member = \{\}\) \{[\s\S]*return hasCommercialAccessMarker\(member\)/,
+  'Commercial membership checks should delegate to the shared marker resolver.',
+)
+matches(
+  commercialRoleResolver,
+  /export function hasCommercialAccessMarker[\s\S]*COMMERCIAL_MODULE_MARKERS\.has\(moduleValue\)[\s\S]*return true/,
   'Commercial access should continue to be driven by the membership module marker inherited during principal claim completion.',
 )
 
@@ -304,7 +321,7 @@ for (const marker of [
   'This invite is locked to {invitedEmail}.',
   'Arch9 will take you straight into the invited workspace.',
   'This invite is for ${invitedEmail}. Sign in or create an account with that email address to continue.',
-  'resolvePendingInvitePath(location) || (currentIntent ? resolveSignupIntentRoute(currentIntent) : \'/setup\')',
+  'resolveSignupContinuationPath({ redirectTo, currentIntent, inviteDrivenSignup, inviteVerificationRedirectTo })',
   'if (inviteTokenFromUrl && inviteTokenFromUrl !== storedInviteToken) return \'\'',
 ]) {
   includes(authPage, marker, `Auth page should keep invite-email lock and redirect behavior: ${marker}`)

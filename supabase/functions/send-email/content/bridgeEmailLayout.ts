@@ -233,7 +233,7 @@ export function renderBridgeEmailLayout({
     </div>
     <div style="margin: 0; padding: 24px 12px; background: #eef3f8;">
       <div style="max-width: 660px; margin: 0 auto; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #142132;">
-        <div style="background: ${primaryColor}; border-radius: 16px 16px 0 0; padding: 24px; border-bottom: 4px solid ${secondaryColor};">
+        <div style="background: linear-gradient(135deg, ${primaryColor} 0%, #102b46 100%); border-radius: 16px 16px 0 0; padding: 24px; border-bottom: 4px solid ${secondaryColor};">
           <div style="margin: 0 0 18px;">${headerBrandHtml}</div>
           <h1 style="margin: 10px 0 0; font-size: 28px; line-height: 1.2; color: #ffffff;">${
     escapeHtml(title)

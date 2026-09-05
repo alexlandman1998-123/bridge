@@ -80,7 +80,7 @@ try {
   assert.match(sidebarSource, /ui-sidebar-brand-logo-placeholder[\s\S]*ui-sidebar-brand-logo-pending/)
   assert.match(sidebarSource, /onLoad=\{\(\) => setLogoLoadState\(\{ url: branding\.logoUrl, status: 'loaded' \}\)\}/)
   assert.match(sidebarSource, /onError=\{handleLogoLoadFailure\}/)
-  assert.match(stylesheetSource, /\.ui-sidebar-brand-logo-pending\s*\{\s*opacity:\s*0;/)
+  assert.match(stylesheetSource, /\.ui-sidebar-brand-logo-pending\s*\{[\s\S]*opacity:\s*1;/)
   assert.match(stylesheetSource, /\.ui-sidebar-brand-logo-loaded\s*\{\s*opacity:\s*1;/)
 
   console.log('workspace branding hydration tests passed')

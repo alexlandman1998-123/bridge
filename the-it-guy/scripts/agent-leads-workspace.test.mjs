@@ -233,6 +233,11 @@ try {
     assert.match(privateListingServiceSource, /private_listing_documents/, 'seller portal uploads should persist into private listing documents')
     assert.match(privateListingServiceSource, /status: 'uploaded'/, 'seller portal uploads should mark documents uploaded')
     assert.match(privateListingServiceSource, /updatePrivateListingRequirementStatus\(matchedRequirement\.id, 'uploaded'\)/, 'seller portal uploads should mark matched requirements uploaded')
+    assert.match(
+      sharedWorkspaceSource,
+      /if \(id === 'generate_mandate'\)[\s\S]*handleLeadWorkspaceTabSelection\('documents'\)[\s\S]*handleCreateListingFromSellerLead/,
+      'Generating a mandate from a seller lead must create the linked listing draft first when one does not exist.',
+    )
   } else {
   assert.ok(workspaceSource.includes("function isArchivedLead"), 'lead list should detect archived leads as lifecycle state')
   assert.ok(workspaceSource.includes("{ key: 'archived', label: 'Archived'"), 'lead category tabs should expose an Archived view')

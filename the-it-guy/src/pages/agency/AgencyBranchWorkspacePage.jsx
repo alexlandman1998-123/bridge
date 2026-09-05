@@ -447,7 +447,6 @@ function BranchAgentInviteModal({
   onSent,
 }) {
   const defaultCommissionStructure = commissionStructures.find((structure) => structure?.isDefault) || null
-  const hasCommissionStructures = commissionStructures.length > 0
   const branchAgentRoleOptions = useMemo(() => getBranchAgentRoleOptions(), [])
   const [form, setForm] = useState({
     firstName: '',
@@ -485,17 +484,9 @@ function BranchAgentInviteModal({
       setError('First name, surname, email, and mobile number are required.')
       return
     }
-    if (!hasCommissionStructures) {
-      setError('Create a commission structure before inviting agents.')
-      return
-    }
     const selectedCommissionStructure =
       commissionStructures.find((structure) => structure.id === form.commissionStructureId) ||
       defaultCommissionStructure
-    if (!selectedCommissionStructure?.id) {
-      setError('Select a commission structure before inviting this agent.')
-      return
-    }
 
     try {
       setSubmitting(true)
@@ -513,8 +504,8 @@ function BranchAgentInviteModal({
         mobile: form.mobile,
         firstName: form.firstName,
         lastName: form.surname,
-        commissionStructureId: selectedCommissionStructure.id,
-        commissionStructureName: selectedCommissionStructure.name,
+        commissionStructureId: selectedCommissionStructure?.id || '',
+        commissionStructureName: selectedCommissionStructure?.name || '',
         notes: form.notes,
         invitedByName: profile?.fullName || profile?.name || profile?.email || '',
         source: 'branch_workspace_agent_invite',
@@ -589,9 +580,9 @@ function BranchAgentInviteModal({
               </Field>
             </label>
             <label className="grid gap-1.5">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Structure</span>
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Structure (Optional)</span>
               <Field as="select" value={form.commissionStructureId} onChange={(event) => updateField('commissionStructureId', event.target.value)}>
-                <option value="">{hasCommissionStructures ? 'Select commission structure' : 'No commission structures available'}</option>
+                <option value="">{defaultCommissionStructure ? `Use agency default: ${defaultCommissionStructure.name}` : 'Assign later'}</option>
                 {commissionStructures.map((structure) => (
                   <option key={structure.id} value={structure.id}>
                     {structure.name} ({formatPercent(structure.agentSplitPercentage)} agent / {formatPercent(structure.agencySplitPercentage)} agency)
@@ -600,9 +591,9 @@ function BranchAgentInviteModal({
               </Field>
             </label>
           </div>
-          {!hasCommissionStructures ? (
-            <div className="mt-3 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-3 py-2 text-sm text-[#8a5b13]">
-              Create a commission structure in Settings before inviting branch agents.
+          {!commissionStructures.length ? (
+            <div className="mt-3 rounded-[12px] border border-[#d8e4f0] bg-[#f5f9fd] px-3 py-2 text-sm text-[#48627f]">
+              No commission structure is configured yet. You can invite this agent now and assign one later before creating a commissionable transaction.
             </div>
           ) : null}
         </section>

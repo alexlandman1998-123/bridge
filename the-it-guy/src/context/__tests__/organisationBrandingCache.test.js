@@ -40,6 +40,29 @@ test('last-good branding is available only to the exact user and workspace', () 
   assert.equal(readLastGoodOrganisationBranding(createAuthState({ workspaceId: 'workspace-2' }), storage, capturedAt + 1_000), null)
 })
 
+test('last-good branding retains independent entries when a user switches workspaces', () => {
+  const storage = createStorage()
+  const capturedAt = 1_800_000_000_000
+  const firstWorkspace = createAuthState({ workspaceId: 'workspace-1' })
+  const secondWorkspace = createAuthState({ workspaceId: 'workspace-2' })
+
+  assert.equal(writeLastGoodOrganisationBranding(firstWorkspace, {
+    logoUrl: 'https://cdn.example.test/first.svg',
+  }, storage, capturedAt), true)
+  assert.equal(writeLastGoodOrganisationBranding(secondWorkspace, {
+    logoUrl: 'https://cdn.example.test/second.svg',
+  }, storage, capturedAt + 1_000), true)
+
+  assert.equal(
+    readLastGoodOrganisationBranding(firstWorkspace, storage, capturedAt + 2_000)?.logoUrl,
+    'https://cdn.example.test/first.svg',
+  )
+  assert.equal(
+    readLastGoodOrganisationBranding(secondWorkspace, storage, capturedAt + 2_000)?.logoUrl,
+    'https://cdn.example.test/second.svg',
+  )
+})
+
 test('expired, blob and oversized branding URLs are not restored', () => {
   const storage = createStorage()
   const authState = createAuthState()

@@ -2,10 +2,10 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import process from 'node:process'
 import { createClient } from '@supabase/supabase-js'
-import { runRuntimeReadiness } from './agency-runtime-readiness.test.mjs'
+import { APPROVED_RUNTIME_PROJECTS, runRuntimeReadiness } from './agency-runtime-readiness.test.mjs'
 
 const appRoot = new URL('../', import.meta.url)
-const STAGING_PROJECT_REF = 'isdowlnollckzvltkasn'
+const STAGING_PROJECT_REF = APPROVED_RUNTIME_PROJECTS.staging
 const FIXTURE_NAMESPACE = 'agency_runtime_phase8'
 const DEFAULT_UNRELATED_EMAIL_PREFIX = 'qa.agency.runtime.unrelated'
 const DEFAULT_UNRELATED_EMAIL_DOMAIN = 'example.test'
@@ -21,12 +21,15 @@ function normalizeEmail(value = '') {
 function parseArgs(argv) {
   const options = {
     dryRun: false,
+    ephemeralFixture: false,
     sampleLimit: 1,
   }
 
   for (const arg of argv) {
     if (arg === '--dry-run') {
       options.dryRun = true
+    } else if (arg === '--ephemeral-fixture') {
+      options.ephemeralFixture = true
     } else if (arg.startsWith('--sample-limit=')) {
       const value = Number.parseInt(arg.slice('--sample-limit='.length), 10)
       if (!Number.isInteger(value) || value < 0 || value > 25) {
@@ -103,6 +106,7 @@ function createReport(options) {
       created: false,
       updated: false,
       ephemeral: false,
+      deleted: false,
       passwordGenerated: false,
       membershipRows: null,
     },
@@ -139,16 +143,16 @@ function finalizeReport(report) {
   return report
 }
 
-function requireConfig(env, report) {
+function requireConfig(env, report, options) {
   const configuredEmail = normalizeEmail(env.AGENCY_RUNTIME_UNRELATED_EMAIL || env.AGENCY_RUNTIME_ISOLATION_EMAIL)
   const generatedEmail = `${DEFAULT_UNRELATED_EMAIL_PREFIX}+${createRunToken()}@${DEFAULT_UNRELATED_EMAIL_DOMAIN}`
   const config = {
     supabaseUrl: normalizeText(env.SUPABASE_URL || env.VITE_SUPABASE_URL),
     serviceRoleKey: normalizeText(env.SUPABASE_SERVICE_ROLE_KEY),
     anonKey: normalizeText(env.VITE_SUPABASE_ANON_KEY || env.VITE_SUPABASE_KEY || env.SUPABASE_ANON_KEY),
-    email: configuredEmail || generatedEmail,
-    generatedEmail: !configuredEmail,
-    password: normalizeText(env.AGENCY_RUNTIME_UNRELATED_PASSWORD || env.AGENCY_RUNTIME_ISOLATION_PASSWORD),
+    email: options.ephemeralFixture ? generatedEmail : configuredEmail || generatedEmail,
+    generatedEmail: options.ephemeralFixture || !configuredEmail,
+    password: options.ephemeralFixture ? '' : normalizeText(env.AGENCY_RUNTIME_UNRELATED_PASSWORD || env.AGENCY_RUNTIME_ISOLATION_PASSWORD),
   }
   config.projectRef = projectRefFromUrl(config.supabaseUrl)
 
@@ -254,10 +258,21 @@ async function assertNoOrganisationMembership(service, user, report) {
   return true
 }
 
+async function deleteEphemeralFixtureUser(service, user, report) {
+  if (!user?.id) return
+  const { error } = await service.auth.admin.deleteUser(user.id)
+  if (error) {
+    addFinding(report, 'Fixture', 'BLOCKED', 'Could not remove the ephemeral unrelated auth fixture user.', error.message)
+    return
+  }
+  report.fixture.deleted = true
+  addFinding(report, 'Fixture', 'PASS', 'Ephemeral unrelated auth fixture user removed.')
+}
+
 async function runPhase8(options = parseArgs(process.argv.slice(2))) {
   const report = createReport(options)
   const env = loadEnv()
-  const { config, missing } = requireConfig(env, report)
+  const { config, missing } = requireConfig(env, report, options)
 
   if (missing.length || !config.projectRef || config.projectRef !== STAGING_PROJECT_REF) {
     return finalizeReport(report)
@@ -286,30 +301,37 @@ async function runPhase8(options = parseArgs(process.argv.slice(2))) {
     return finalizeReport(report)
   }
 
-  const isolated = await assertNoOrganisationMembership(service, fixture.user, report)
-  if (!isolated || report.summary.criticalCount > 0 || report.summary.blockedCount > 0) {
-    return finalizeReport(report)
-  }
+  try {
+    const isolated = await assertNoOrganisationMembership(service, fixture.user, report)
+    if (!isolated || report.summary.criticalCount > 0 || report.summary.blockedCount > 0) {
+      return finalizeReport(report)
+    }
 
-  process.env.AGENCY_RUNTIME_UNRELATED_EMAIL = config.email
-  process.env.AGENCY_RUNTIME_UNRELATED_PASSWORD = fixture.password
+    process.env.AGENCY_RUNTIME_UNRELATED_EMAIL = config.email
+    process.env.AGENCY_RUNTIME_UNRELATED_PASSWORD = fixture.password
 
-  const runtimeReport = await runRuntimeReadiness({
-    failOnBlocked: true,
-    skipNetwork: false,
-    sampleLimit: options.sampleLimit,
-  })
+    const runtimeReport = await runRuntimeReadiness({
+      environment: 'staging',
+      failOnBlocked: true,
+      skipNetwork: false,
+      sampleLimit: options.sampleLimit,
+    })
 
-  report.runtimeSummary = runtimeReport.summary
-  report.runtimeFindings = runtimeReport.findings
-  report.externalIsolationProbes = runtimeReport.runtime?.externalIsolationProbes || []
+    report.runtimeSummary = runtimeReport.summary
+    report.runtimeFindings = runtimeReport.findings
+    report.externalIsolationProbes = runtimeReport.runtime?.externalIsolationProbes || []
 
-  if (runtimeReport.summary.criticalCount > 0) {
-    addFinding(report, 'External Isolation', 'CRITICAL', 'Runtime external isolation probe failed.', runtimeReport.summary.recommendation)
-  } else if (runtimeReport.summary.blockedCount > 0) {
-    addFinding(report, 'External Isolation', 'BLOCKED', 'Runtime external isolation probe is blocked.', runtimeReport.summary.recommendation)
-  } else {
-    addFinding(report, 'External Isolation', 'PASS', 'Runtime external isolation probe passed.')
+    if (runtimeReport.summary.criticalCount > 0) {
+      addFinding(report, 'External Isolation', 'CRITICAL', 'Runtime external isolation probe failed.', runtimeReport.summary.recommendation)
+    } else if (runtimeReport.summary.blockedCount > 0) {
+      addFinding(report, 'External Isolation', 'BLOCKED', 'Runtime external isolation probe is blocked.', runtimeReport.summary.recommendation)
+    } else {
+      addFinding(report, 'External Isolation', 'PASS', 'Runtime external isolation probe passed.')
+    }
+  } finally {
+    if (options.ephemeralFixture) {
+      await deleteEphemeralFixtureUser(service, fixture?.user, report)
+    }
   }
 
   return finalizeReport(report)

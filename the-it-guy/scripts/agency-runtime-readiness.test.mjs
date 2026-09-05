@@ -4,7 +4,10 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url))
-const STAGING_PROJECT_REF = 'isdowlnollckzvltkasn'
+export const APPROVED_RUNTIME_PROJECTS = Object.freeze({
+  staging: 'vaszuxjeoajeuhlcnzzf',
+  production: 'isdowlnollckzvltkasn',
+})
 
 const REQUIRED_TABLES = [
   { table: 'leads', select: 'lead_id,organisation_id' },
@@ -39,13 +42,23 @@ function normalizeEmail(value = '') {
 
 function parseArgs(argv) {
   const options = {
+    environment: 'staging',
+    allowProductionReadOnly: false,
     failOnBlocked: false,
     skipNetwork: false,
     sampleLimit: 1,
   }
 
   for (const arg of argv) {
-    if (arg === '--fail-on-blocked') {
+    if (arg.startsWith('--environment=')) {
+      const environment = normalizeText(arg.slice('--environment='.length)).toLowerCase()
+      if (!Object.hasOwn(APPROVED_RUNTIME_PROJECTS, environment)) {
+        throw new Error(`--environment must be one of: ${Object.keys(APPROVED_RUNTIME_PROJECTS).join(', ')}`)
+      }
+      options.environment = environment
+    } else if (arg === '--allow-production-read-only') {
+      options.allowProductionReadOnly = true
+    } else if (arg === '--fail-on-blocked') {
       options.failOnBlocked = true
     } else if (arg === '--skip-network') {
       options.skipNetwork = true
@@ -79,11 +92,15 @@ function parseEnvFile(filePath) {
   )
 }
 
-function loadEnv() {
+function loadEnv(environment = 'staging') {
   const localEnv = parseEnvFile(`${appRoot}/.env`)
-  const stagingEnv = parseEnvFile(`${appRoot}/.env.staging.local`)
+  const environmentEnv = parseEnvFile(
+    environment === 'production'
+      ? `${appRoot}/.env.production.local`
+      : `${appRoot}/.env.staging.local`,
+  )
   const processOverrides = Object.fromEntries(Object.entries(process.env).filter(([, value]) => normalizeText(value)))
-  const merged = { ...localEnv, ...stagingEnv, ...processOverrides }
+  const merged = { ...localEnv, ...environmentEnv, ...processOverrides }
 
   if (!merged.VITE_SUPABASE_URL && merged.SUPABASE_URL) merged.VITE_SUPABASE_URL = merged.SUPABASE_URL
   if (!merged.SUPABASE_URL && merged.VITE_SUPABASE_URL) merged.SUPABASE_URL = merged.VITE_SUPABASE_URL
@@ -103,7 +120,8 @@ function createReport(options) {
     scope: 'agency-runtime-readiness',
     generatedAt: new Date().toISOString(),
     mode: options.skipNetwork ? 'static-readiness' : 'read-only-runtime',
-    targetProjectRef: STAGING_PROJECT_REF,
+    environment: options.environment,
+    targetProjectRef: APPROVED_RUNTIME_PROJECTS[options.environment],
     summary: {
       status: 'BLOCKED',
       recommendation: 'NO-GO until blocked live probes are completed',
@@ -151,7 +169,7 @@ function finalizeReport(report) {
   return report
 }
 
-function requireConfig(env, report) {
+function requireConfig(env, report, options) {
   const config = {
     supabaseUrl: normalizeText(env.SUPABASE_URL || env.VITE_SUPABASE_URL),
     serviceRoleKey: normalizeText(env.SUPABASE_SERVICE_ROLE_KEY),
@@ -181,16 +199,26 @@ function requireConfig(env, report) {
 
   if (!config.projectRef) {
     addFinding(report, 'Environment', 'BLOCKED', 'Could not resolve Supabase project ref from URL.')
-  } else if (config.projectRef !== STAGING_PROJECT_REF) {
+  } else if (config.projectRef !== APPROVED_RUNTIME_PROJECTS[options.environment]) {
     addFinding(
       report,
       'Environment',
       'CRITICAL',
       'Runtime readiness is pointed at the wrong Supabase project.',
-      `Expected ${STAGING_PROJECT_REF}; resolved ${config.projectRef}.`,
+      `Expected ${APPROVED_RUNTIME_PROJECTS[options.environment]} for ${options.environment}; resolved ${config.projectRef}.`,
     )
   } else {
-    addFinding(report, 'Environment', 'PASS', 'Runtime readiness is pointed at the approved staging Supabase project.')
+    addFinding(report, 'Environment', 'PASS', `Runtime readiness is pointed at the approved ${options.environment} Supabase project.`)
+  }
+
+  if (options.environment === 'production' && !options.allowProductionReadOnly) {
+    addFinding(
+      report,
+      'Environment',
+      'BLOCKED',
+      'Production runtime checks require an explicit read-only acknowledgement.',
+      'Re-run with --allow-production-read-only after confirming the probe accounts and scope.',
+    )
   }
 
   if (!config.externalEmail || !config.externalPassword) {
@@ -340,15 +368,20 @@ async function runExternalIsolationProbes(report, client, sampleLimit) {
 
 async function runRuntimeReadiness(options = parseArgs(process.argv.slice(2))) {
   const report = createReport(options)
-  const env = loadEnv()
-  const { config, missing } = requireConfig(env, report)
+  const env = loadEnv(options.environment)
+  const { config, missing } = requireConfig(env, report, options)
 
   if (options.skipNetwork) {
     addFinding(report, 'Network', 'BLOCKED', 'Network probes skipped by --skip-network.')
     return finalizeReport(report)
   }
 
-  if (missing.length || !config.projectRef || config.projectRef !== STAGING_PROJECT_REF) {
+  if (
+    missing.length ||
+    !config.projectRef ||
+    config.projectRef !== APPROVED_RUNTIME_PROJECTS[options.environment] ||
+    (options.environment === 'production' && !options.allowProductionReadOnly)
+  ) {
     return finalizeReport(report)
   }
 

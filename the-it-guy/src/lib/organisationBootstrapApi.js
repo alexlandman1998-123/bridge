@@ -878,11 +878,13 @@ function resolveBrandingAssetSource({ bucket = '', path = '', fallbackUrl = '' }
   let safeBucket = normalizeText(bucket)
   let safePath = normalizeText(path)
   const safeFallback = normalizeText(fallbackUrl)
+  let preferSignedUrl = false
   if ((!safeBucket || !safePath) && safeFallback) {
-    const storageMatch = safeFallback.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+?)(?:\?|$)/i)
+    const storageMatch = safeFallback.match(/\/storage\/v1\/object\/(public|sign)\/([^/]+)\/(.+?)(?:\?|$)/i)
     if (storageMatch?.[1] && storageMatch?.[2]) {
-      safeBucket = decodeURIComponent(storageMatch[1])
-      safePath = decodeURIComponent(storageMatch[2])
+      preferSignedUrl = storageMatch[1].toLowerCase() === 'sign'
+      safeBucket = decodeURIComponent(storageMatch[2])
+      safePath = decodeURIComponent(storageMatch[3])
     }
   }
 
@@ -890,10 +892,11 @@ function resolveBrandingAssetSource({ bucket = '', path = '', fallbackUrl = '' }
     bucket: safeBucket,
     path: safePath,
     fallbackUrl: safeFallback,
+    preferSignedUrl,
   }
 }
 
-async function resolveBrandingStorageAssetUrl(client, { bucket = '', path = '' } = {}) {
+async function resolveBrandingStorageAssetUrl(client, { bucket = '', path = '', preferSignedUrl = false } = {}) {
   const safeBucket = normalizeText(bucket)
   const safePath = normalizeText(path)
   if (!safeBucket || !safePath) {
@@ -901,10 +904,12 @@ async function resolveBrandingStorageAssetUrl(client, { bucket = '', path = '' }
   }
 
   const storage = client.storage.from(safeBucket)
-  const { data: publicUrlData } = storage.getPublicUrl(safePath)
-  const publicUrl = normalizeText(publicUrlData?.publicUrl)
-  if (publicUrl) {
-    return publicUrl
+  if (!preferSignedUrl) {
+    const { data: publicUrlData } = storage.getPublicUrl(safePath)
+    const publicUrl = normalizeText(publicUrlData?.publicUrl)
+    if (publicUrl) {
+      return publicUrl
+    }
   }
 
   const signedResult = await storage.createSignedUrl(safePath, 60 * 60 * 24 * 30)

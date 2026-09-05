@@ -27,9 +27,16 @@ const phases = [
     key: 'browser',
     label: 'Browser action smoke',
     script: 'test:agency-browser-smoke',
-    coverage: 'critical buttons, modals, filters, copy actions, editable fields, auth bounce checks',
+    coverage: 'lead/listing actions, organisation branding surface, editable fields, auth bounce checks',
     getArgs: () => [],
     skippable: true,
+  },
+  {
+    key: 'invite_guard',
+    label: 'Optional commission invite guard',
+    script: 'test:agent-invite-commission-readiness',
+    coverage: 'organisation and branch invite actions remain available when commission assignment is deferred',
+    getArgs: () => [],
   },
   {
     key: 'runtime',

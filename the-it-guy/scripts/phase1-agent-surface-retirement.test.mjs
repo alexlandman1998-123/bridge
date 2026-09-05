@@ -21,6 +21,8 @@ assert.doesNotMatch(header, /runHeaderNotificationMaintenance/, 'Opening the not
 assert.doesNotMatch(headerApi, /runHeaderNotificationMaintenance/, 'The retired header-triggered reminder adapter must remain removed.')
 assert.match(headerApi, /isPlaceholderDocumentNotification/, 'Placeholder document reminders must be filtered from the desktop drawer.')
 assert.match(headerApi, /\^unit\\s\*-\?\\s\*\$\/i/, 'The Unit - placeholder title must remain suppressed.')
+assert.match(headerApi, /function isHeaderNotification\(row = \{\}\) \{\s*\/\/[\s\S]*?return isLeadArrivalNotification\(row\)\s*\}/, 'The desktop bell must only surface newly arrived leads.')
+assert.doesNotMatch(headerApi, /isDocumentSubmissionNotification/, 'Document uploads and reminders must not be eligible for the desktop bell.')
 assert.match(header, /itg:agents-search/, 'The functional Agent directory filter must remain available.')
 assert.match(header, /itg:attorney-matters-search/, 'The functional attorney matter filter must remain available.')
 

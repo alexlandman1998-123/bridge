@@ -16,7 +16,10 @@ const server = await createServer({
 
 try {
   const { __organisationBootstrapApiTestUtils } = await server.ssrLoadModule('/src/lib/organisationBootstrapApi.js')
-  const { hydrateAgencyOnboardingBrandingUrls } = __organisationBootstrapApiTestUtils
+  const {
+    hydrateAgencyOnboardingBrandingUrls,
+    resolveBrandingAssetSource,
+  } = __organisationBootstrapApiTestUtils
 
   const signingCalls = []
   const publicUrlCalls = []
@@ -79,39 +82,77 @@ try {
     signingCalls.sort(),
     [
       'brand-assets/fallback.svg',
-      'brand-assets/shared.svg',
-      'brand-assets/tile.svg',
-      'icons/icon.svg',
     ],
-    'duplicate storage-backed branding assets should share one signing request',
+    'only assets without a public URL should be signed',
   )
   assert.equal(
     maxConcurrentSigningCalls,
-    4,
-    'independent branding assets must begin signing concurrently rather than serially',
+    1,
+    'a single non-public asset should have one in-flight signing request',
   )
   assert.deepEqual(
     publicUrlCalls,
-    ['brand-assets/fallback.svg'],
-    'a signing failure must retain the existing public/fallback resolution path',
+    [
+      'brand-assets/shared.svg',
+      'icons/icon.svg',
+      'brand-assets/fallback.svg',
+      'brand-assets/tile.svg',
+    ],
+    'every storage-backed asset should prefer its public URL before falling back to signing',
   )
   assert.deepEqual(hydrated.branding, {
     logoLightBucket: 'brand-assets',
     logoLightPath: 'shared.svg',
-    logoLight: 'https://signed.example.test/brand-assets/shared.svg',
-    logoIcon: 'https://signed.example.test/icons/icon.svg',
+    logoLight: 'https://public.example.test/brand-assets/shared.svg',
+    logoIcon: 'https://public.example.test/icons/icon.svg',
     logoDarkBucket: 'brand-assets',
     logoDarkPath: 'shared.svg',
-    logoDark: 'https://signed.example.test/brand-assets/shared.svg',
+    logoDark: 'https://public.example.test/brand-assets/shared.svg',
     faviconBucket: 'brand-assets',
     faviconPath: 'fallback.svg',
     favicon: 'https://fallback.example.test/favicon.svg',
-    portalIcon: 'https://signed.example.test/icons/icon.svg',
+    portalIcon: 'https://public.example.test/icons/icon.svg',
     mobileIcon: 'https://fallback.example.test/mobile.png',
     browserTileBucket: 'brand-assets',
     browserTilePath: 'tile.svg',
-    browserTile: 'https://signed.example.test/brand-assets/tile.svg',
+    browserTile: 'https://public.example.test/brand-assets/tile.svg',
   })
+
+  const signedSource = resolveBrandingAssetSource({
+    fallbackUrl: 'https://project.example.test/storage/v1/object/sign/private-brand/logo.svg?token=old-token',
+  })
+  assert.deepEqual(signedSource, {
+    bucket: 'private-brand',
+    path: 'logo.svg',
+    fallbackUrl: 'https://project.example.test/storage/v1/object/sign/private-brand/logo.svg?token=old-token',
+    preferSignedUrl: true,
+  })
+
+  const signedPublicUrlCalls = []
+  const signedUrlCalls = []
+  const signedHydrated = await hydrateAgencyOnboardingBrandingUrls({
+    storage: {
+      from(bucket) {
+        return {
+          getPublicUrl(path) {
+            signedPublicUrlCalls.push(`${bucket}/${path}`)
+            return { data: { publicUrl: `https://public.example.test/${bucket}/${path}` } }
+          },
+          async createSignedUrl(path) {
+            signedUrlCalls.push(`${bucket}/${path}`)
+            return { data: { signedUrl: `https://signed.example.test/${bucket}/${path}` }, error: null }
+          },
+        }
+      },
+    },
+  }, {
+    branding: {
+      logoLight: 'https://project.example.test/storage/v1/object/sign/private-brand/logo.svg?token=old-token',
+    },
+  })
+  assert.deepEqual(signedPublicUrlCalls, [], 'a previously signed private URL must not be downgraded to a public URL')
+  assert.deepEqual(signedUrlCalls, ['private-brand/logo.svg'])
+  assert.equal(signedHydrated.branding.logoLight, 'https://signed.example.test/private-brand/logo.svg')
 
   assert.match(
     bootstrapSource,

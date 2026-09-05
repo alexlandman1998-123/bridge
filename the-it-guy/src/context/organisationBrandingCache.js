@@ -1,5 +1,5 @@
 const CACHE_KEY = 'arch9:organisation-branding:last-good:v1'
-const CACHE_VERSION = 1
+const CACHE_VERSION = 2
 const CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
 const MAX_LOGO_URL_LENGTH = 12_000
 
@@ -29,6 +29,12 @@ function getScope(authState = {}) {
   }
 }
 
+function getScopeKey(scope = {}) {
+  const userId = normalizeText(scope.userId)
+  const workspaceId = normalizeText(scope.workspaceId)
+  return userId && workspaceId ? `${userId}\u0000${workspaceId}` : ''
+}
+
 function normalizeLogoUrl(value) {
   const logoUrl = normalizeText(value)
   if (!logoUrl || logoUrl.length > MAX_LOGO_URL_LENGTH || logoUrl.startsWith('blob:')) return ''
@@ -54,22 +60,22 @@ function normalizeBranding(branding = {}) {
 export function readLastGoodOrganisationBranding(authState = {}, storage = null, now = Date.now()) {
   const scopedStorage = resolveStorage(storage)
   const scope = getScope(authState)
-  if (!scopedStorage || !scope.userId || !scope.workspaceId) return null
+  const scopeKey = getScopeKey(scope)
+  if (!scopedStorage || !scopeKey) return null
 
   try {
     const parsed = JSON.parse(scopedStorage.getItem(CACHE_KEY) || 'null')
-    const capturedAt = Number(parsed?.capturedAt || 0)
+    const entry = parsed?.version === CACHE_VERSION ? parsed?.entries?.[scopeKey] : null
+    const capturedAt = Number(entry?.capturedAt || 0)
     if (
-      parsed?.version !== CACHE_VERSION ||
-      normalizeText(parsed?.userId) !== scope.userId ||
-      normalizeText(parsed?.workspaceId) !== scope.workspaceId ||
+      !entry ||
       !capturedAt ||
       now - capturedAt > CACHE_MAX_AGE_MS
     ) {
       return null
     }
 
-    const branding = normalizeBranding(parsed.branding)
+    const branding = normalizeBranding(entry.branding)
     return branding.logoUrl ? branding : null
   } catch {
     return null
@@ -79,16 +85,24 @@ export function readLastGoodOrganisationBranding(authState = {}, storage = null,
 export function writeLastGoodOrganisationBranding(authState = {}, branding = {}, storage = null, now = Date.now()) {
   const scopedStorage = resolveStorage(storage)
   const scope = getScope(authState)
+  const scopeKey = getScopeKey(scope)
   const normalizedBranding = normalizeBranding(branding)
-  if (!scopedStorage || !scope.userId || !scope.workspaceId || !normalizedBranding.logoUrl) return false
+  if (!scopedStorage || !scopeKey || !normalizedBranding.logoUrl) return false
 
   try {
+    const parsed = JSON.parse(scopedStorage.getItem(CACHE_KEY) || 'null')
+    const entries = parsed?.version === CACHE_VERSION && parsed?.entries && typeof parsed.entries === 'object'
+      ? parsed.entries
+      : {}
     scopedStorage.setItem(CACHE_KEY, JSON.stringify({
       version: CACHE_VERSION,
-      userId: scope.userId,
-      workspaceId: scope.workspaceId,
-      capturedAt: now,
-      branding: normalizedBranding,
+      entries: {
+        ...entries,
+        [scopeKey]: {
+          capturedAt: now,
+          branding: normalizedBranding,
+        },
+      },
     }))
     return true
   } catch {
@@ -127,5 +141,6 @@ export const __organisationBrandingCacheTestUtils = Object.freeze({
   CACHE_KEY,
   CACHE_MAX_AGE_MS,
   getScope,
+  getScopeKey,
   normalizeBranding,
 })

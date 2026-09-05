@@ -936,11 +936,13 @@ export function getSellerJourneyActions({ lead = {}, contact = {}, listing = nul
     { id: 'contact_seller', label: 'Contact Seller', enabled: canContact },
     { id: 'send_onboarding', label: 'Send Seller Onboarding', enabled: !onboardingSignals.sent },
     { id: 'open_documents', label: 'Open Documents', enabled: onboardingSubmittedForProgress || mandateStatus !== 'not_started' },
+    { id: 'generate_mandate', label: 'Generate Mandate', enabled: onboardingSubmittedForProgress && mandateStatus === 'not_started' },
     { id: 'record_hard_copy_mandate', label: 'Upload Signed Mandate', enabled: onboardingSubmittedForProgress && !mandateSigned && !live },
     { id: 'create_listing', label: mandateSigned ? 'Create Listing' : 'Create Listing Draft', enabled: !listingShellExists },
     { id: 'open_listing', label: mandateSigned ? 'Open Listing' : 'Open Listing Draft', enabled: listingShellExists },
     { id: 'activate_listing', label: 'Activate Listing', enabled: listingCreated && !live && mandateSigned },
     { id: 'monitor_performance', label: 'Monitor Performance', enabled: live },
+    { id: 'track_seller_onboarding', label: 'Track Seller Onboarding', enabled: onboardingSignals.sent && !onboardingSubmittedForProgress },
     { id: 'follow_up_with_seller', label: 'Send Follow-Up', enabled: Boolean(sellerPortalToken) },
   ].map((action) => ({
     ...action,
@@ -1019,9 +1021,9 @@ export function buildSellerJourney({ lead = {}, contact = {}, listing = null, ma
     stage.key === 'listing_live'
       ? actions.find((action) => action.id === 'monitor_performance' && action.enabled)
       : stage.key === 'seller_onboarding_sent'
-      ? actions.find((action) => action.id === 'follow_up_with_seller' && action.enabled)
+      ? actions.find((action) => action.id === 'track_seller_onboarding' && action.enabled)
       : null
-  ) || actions.find((action) => action.enabled && !['contact_seller', 'follow_up_with_seller'].includes(action.id)) ||
+  ) || actions.find((action) => action.enabled && !['contact_seller', 'follow_up_with_seller', 'track_seller_onboarding'].includes(action.id)) ||
     actions.find((action) => action.enabled) ||
     null
   const currentStageStartedAt = resolveSellerStageStartedAt({

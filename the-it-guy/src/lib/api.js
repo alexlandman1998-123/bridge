@@ -1363,6 +1363,13 @@ function isMissingSchemaError(error) {
   return ['42P01', 'PGRST205', '42703', 'PGRST204'].includes(error.code)
 }
 
+function isMissingRelationshipError(error) {
+  if (!error) return false
+  const code = String(error.code || '').toUpperCase()
+  const message = `${error.message || ''} ${error.details || ''} ${error.hint || ''}`.toLowerCase()
+  return code === 'PGRST200' || message.includes('could not find a relationship') || message.includes('schema cache')
+}
+
 function isRecoverableTransactionSetupError(error) {
   return (
     isMissingSchemaError(error) ||
@@ -32219,20 +32226,31 @@ async function fetchDirectParticipantRowsByIdentity(
   }
 
   const normalizedOrganisationId = normalizeTextValue(organisationId)
-  const runQuery = async ({ includeStatus = true } = {}) => {
+  const runQuery = async ({ includeStatus = true, includeOrganisationRelation = Boolean(normalizedOrganisationId) } = {}) => {
     const selectFields = [
       'transaction_id',
       'role_type',
       ...(includeStatus ? ['status', 'removed_at'] : []),
+      ...(includeOrganisationRelation ? ['transaction:transactions!inner(organisation_id)'] : []),
     ].join(', ')
-    return client
+    let query = client
       .from('transaction_participants')
       .select(selectFields)
       .eq(identityColumn, identityValue)
+    if (includeOrganisationRelation) {
+      query = query.eq('transaction.organisation_id', normalizedOrganisationId)
+    }
+    return query
   }
 
   const runWithSchemaFallback = async () => {
     let query = await runQuery()
+    if (query.error && normalizedOrganisationId && isMissingRelationshipError(query.error)) {
+      // Some projects can lag PostgREST's relationship cache. Keep the
+      // organisation boundary by falling back to a compact participant read
+      // and validating every returned transaction id below.
+      query = await runQuery({ includeOrganisationRelation: false })
+    }
     if (query.error && isMissingColumnError(query.error, 'user_id') && identityColumn === 'user_id') {
       return { data: [], error: null }
     }
@@ -32240,7 +32258,13 @@ async function fetchDirectParticipantRowsByIdentity(
       query.error &&
       (isMissingColumnError(query.error, 'status') || isMissingColumnError(query.error, 'removed_at'))
     ) {
-      query = await runQuery({ includeStatus: false })
+      query = await runQuery({
+        includeStatus: false,
+        includeOrganisationRelation: Boolean(normalizedOrganisationId) && !isMissingRelationshipError(query.error),
+      })
+      if (query.error && normalizedOrganisationId && isMissingRelationshipError(query.error)) {
+        query = await runQuery({ includeStatus: false, includeOrganisationRelation: false })
+      }
     }
     return query
   }

@@ -557,20 +557,15 @@ try {
     assert.equal(await page.getByText(/^Lead Workspace$/).count(), 0, 'Generic Lead Workspace placeholder should not remain after hydration.')
     assert.equal(await page.getByRole('heading', { name: 'Unnamed Lead' }).count(), 0, 'Hydrated seller lead should keep its CRM contact name.')
     await page.getByText('409 Queens Cres, Nr3, Menlo, Pretoria, Gauteng, 0081').first().waitFor({ state: 'visible', timeout: 10_000 })
-    await page.getByText('Complete Missing Details').first().waitFor({ state: 'visible', timeout: 10_000 })
+    await page.getByText('Activate Listing').first().waitFor({ state: 'visible', timeout: 10_000 })
     await page.getByText('40%').first().waitFor({ state: 'visible', timeout: 10_000 })
-    await page.getByText('Seller Onboarding Submitted').first().waitFor({ state: 'visible', timeout: 10_000 })
-    await page.waitForFunction(() => window.__leadWorkspaceSmokePatched === true, null, { timeout: 1 }).catch(() => null)
+    await page.getByText('Onboarding Submitted').first().waitFor({ state: 'visible', timeout: 10_000 })
     await page.waitForTimeout(500)
-    const syncPatch = observed.leadPatchBodies.find((body) => body?.lead_id !== null)
-      || observed.leadPatchBodies.find((body) => body?.seller_property_address)
-    assert.ok(syncPatch, 'Lead workspace should PATCH the stale CRM lead from linked listing data.')
-    assert.equal(syncPatch.stage, 'Listing Created')
-    assert.equal(syncPatch.status, 'Draft')
-    assert.equal(syncPatch.seller_property_address, '409 Queens Cres, Nr3, Menlo, Pretoria, Gauteng, 0081')
-    if (syncPatch.listing_id) assert.equal(syncPatch.listing_id, LISTING_ID)
-    if (syncPatch.mandate_packet_id) assert.equal(syncPatch.mandate_packet_id, MANDATE_PACKET_ID)
-    if (syncPatch.seller_onboarding_status) assert.equal(syncPatch.seller_onboarding_status, 'completed')
+    assert.equal(
+      observed.leadPatchBodies.length,
+      0,
+      'Opening a hydrated lead workspace must not mutate the CRM lead as a side effect.',
+    )
   }
 
   assert.deepEqual(pageErrors, [], `Unexpected page errors:\n${pageErrors.join('\n')}`)

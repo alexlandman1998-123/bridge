@@ -2,25 +2,26 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const leadWorkspaceSource = await readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
+const organisationContextSource = await readFile(new URL('../src/context/OrganisationContext.jsx', import.meta.url), 'utf8')
 const membershipStatusSource = await readFile(new URL('../src/constants/membershipStatuses.js', import.meta.url), 'utf8')
 const acceptedStatusMigration = await readFile(new URL('../../supabase/migrations/202607130004_membership_helper_accepted_status.sql', import.meta.url), 'utf8')
 
 assert.match(
   leadWorkspaceSource,
-  /function getMembershipOrganisationId\(membership = null\)/,
-  'Lead workspace should resolve an organisation id from membership context.',
+  /export function getLeadWorkspaceOrganisationId\(workspace = \{\}\)/,
+  'Lead workspace should resolve an organisation id from its route workspace payload.',
 )
 
 assert.match(
   leadWorkspaceSource,
-  /const currentMembershipOrganisationId = getMembershipOrganisationId\(workspaceContext\.currentMembership\)[\s\S]+if \(currentMembershipOrganisationId\) return currentMembershipOrganisationId/,
-  'Lead workspace should prefer the active current membership over a stale currentWorkspace id.',
+  /const organisationId = getLeadWorkspaceOrganisationId\(location\.state\?\.leadWorkspace\) \|\|[\s\S]*workspaceContext\?\.organisationId \|\|[\s\S]*organisationContext\?\.currentOrganisation\?\.id/,
+  'Lead workspace should prefer its route payload, then the active workspace and canonical organisation context.',
 )
 
 assert.match(
-  leadWorkspaceSource,
-  /workspaceContext\.activeMemberships[\s\S]+workspaceContext\.memberships[\s\S]+workspaceContext\.currentWorkspace\?\.id/,
-  'Lead workspace should fall back through active memberships before currentWorkspace.',
+  organisationContextSource,
+  /const workspace = authState\.currentWorkspace \|\| \{\}[\s\S]*id: workspace\.id \|\| membership\.workspaceId \|\| ''/,
+  'The canonical organisation context should resolve the active workspace before hydrating its organisation snapshot.',
 )
 
 assert.match(

@@ -86,16 +86,16 @@ export async function handleWorkspaceInviteEmail(
         { label: "Workspace", value: branding.organisationName },
         { label: "Access Level", value: workspaceRole },
       ],
-      "Invitation Summary",
+      "Workspace invitation",
     ),
-    renderBridgeCta("Accept Invite", inviteLink, {
+    renderBridgeCta("Accept invite", inviteLink, {
       primaryColor: branding.primaryColor,
     }),
   ].join("");
   const html = renderBridgeEmailLayout({
     preheader:
       `${inviterName} invited you to join ${branding.organisationName} on Arch9.`,
-    title: `Join ${branding.organisationName}`,
+    title: `Workspace invitation: join ${branding.organisationName}`,
     greeting: `Hi ${inviteeName},`,
     contentHtml,
     securityTitle: "Secure Workspace Invitation",

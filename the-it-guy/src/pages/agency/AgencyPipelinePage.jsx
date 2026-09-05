@@ -17178,9 +17178,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ['draft', 'sent'].includes(normalizeKey(selectedSellerJourney.mandateStatus)),
     )
     const fallbackWantsHardCopyMandate = normalizeKey(fallbackAction.id) === 'record_hard_copy_mandate'
+    const mandatePacketReadyForSignature = ['draft', 'sent'].includes(normalizeKey(selectedSellerJourney.mandateStatus))
     const mandateStillRequired = Boolean(
       !selectedSellerJourney.listingLive &&
         !selectedSellerComplianceAgentStatus.signedMandate &&
+        mandatePacketReadyForSignature &&
         (onboardingSubmittedOrLater || fallbackWantsHardCopyMandate || complianceBlocker?.key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE),
     )
 
@@ -17211,6 +17213,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         actionId: fallbackAction.id || 'open_journey',
         label: fallbackAction.label || 'Open Journey',
         disabled: Boolean(fallbackAction.disabled),
+      }
+    }
+
+    if (normalizeKey(fallbackAction.id) === 'track_seller_onboarding') {
+      return {
+        title: 'Track seller onboarding',
+        copy: 'Review the seller journey and check whether onboarding has been submitted before sending a reminder.',
+        actionId: 'track_seller_onboarding',
+        label: 'Track Seller Onboarding',
+        disabled: false,
       }
     }
 
@@ -17278,8 +17290,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedKingstonsProcessAction = useMemo(() => {
     const action = getKingstonsPipelineActionMeta(selectedSellerProcessPanelModel || {})
     if (
-      ['open_seller_portal', 'follow_up_with_seller'].includes(normalizeKey(action.actionId)) ||
-      normalizeKey(action.label).includes('track seller onboarding')
+      ['open_seller_portal', 'follow_up_with_seller'].includes(normalizeKey(action.actionId))
     ) {
       return {
         ...action,
@@ -26125,6 +26136,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function handleSellerJourneyAction(actionId) {
     const id = normalizeText(actionId)
+    if (id === 'track_seller_onboarding') {
+      handleLeadWorkspaceTabSelection('overview')
+      if (typeof document !== 'undefined') {
+        window.setTimeout(() => {
+          document.querySelector('[data-testid="seller-journey-rail"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+        }, 50)
+      }
+      return
+    }
     if (id === 'follow_up_with_seller') {
       void handleSellerClientFollowUp()
       return
@@ -26256,7 +26276,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }))
       return
     }
-    if (['generate_mandate', 'send_mandate', 'view_signing_status', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(id)) {
+    if (id === 'generate_mandate') {
+      handleLeadWorkspaceTabSelection('documents')
+      if (!normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId || selectedLead?.listing_id)) {
+        void handleCreateListingFromSellerLead({
+          successMessage: 'Listing draft created. Generate the mandate from the Documents tab.',
+        }).catch((draftError) => {
+          setError(draftError?.message || 'Unable to create a listing draft for mandate generation.')
+        })
+      }
+      return
+    }
+    if (['send_mandate', 'view_signing_status', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(id)) {
       handleLeadWorkspaceTabSelection('documents')
       return
     }
@@ -35296,7 +35327,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
                             <div className="grid min-w-0 gap-5 lg:grid-cols-2 lg:items-stretch">
                               <section className="relative z-20 flex min-w-0 flex-col overflow-visible rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-property-enquiry">
-                                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property Enquiry</p>
+                                <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property enquiry</p>
                                 <div className={`mt-3 grid min-w-0 gap-4 ${selectedLeadEnquiryPropertyContext.imageUrl ? 'sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.7fr)]' : ''}`}>
                                   <div className="min-w-0">
                                     <h3 className="text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
@@ -35346,7 +35377,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         listings={appointmentListingOptions}
                                         value={selectedLeadEnquiryPropertyContext.linkedListingId}
                                         onChange={handleLinkBuyerEnquiryListing}
-                                        label="Linked property"
+                                        label="Link to listing"
                                       />
                                     </div>
                                     {selectedLeadEnquiryPropertyContext.hasLinkedListing ? (

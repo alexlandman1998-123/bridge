@@ -376,7 +376,7 @@ function AgentInviteModal({
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Commercial Details</p>
-              <p className="mt-1 text-sm text-[#61748d]">Set the sales commission structure before this agent starts generating pipeline or transaction data.</p>
+              <p className="mt-1 text-sm text-[#61748d]">Optionally set a sales commission structure now. You can assign or change it later, before any commissionable transaction is created.</p>
             </div>
             {!hasCommissionStructures ? (
               <Button type="button" variant="ghost" onClick={onManageCommissionStructures}>
@@ -401,8 +401,8 @@ function AgentInviteModal({
               </Field>
             </label>
           ) : (
-            <div className="mt-3 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-3 py-2 text-sm text-[#8a5b13]">
-              Create at least one sales commission structure before inviting agents so new transactions do not fall back to generic splits.
+            <div className="mt-3 rounded-[12px] border border-[#d8e4f0] bg-[#f5f9fd] px-3 py-2 text-sm text-[#48627f]">
+              No sales commission structure is configured yet. You can invite this agent now and assign one later before creating a commissionable transaction.
             </div>
           )}
         </section>
@@ -6647,15 +6647,6 @@ export function AgentsPage() {
       setInviteError('First name, surname, email, and mobile number are required.')
       return
     }
-    if (!activeCommissionStructureOptions.length) {
-      setInviteError('Create a sales commission structure before inviting agents.')
-      return
-    }
-    if (!inviteForm.commissionStructureId && !defaultCommissionStructure) {
-      setInviteError('Select a sales commission structure or set an agency default before inviting this agent.')
-      return
-    }
-
     try {
       setInviteSubmitting(true)
       setInviteError('')

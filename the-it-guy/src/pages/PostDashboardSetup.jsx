@@ -43,8 +43,8 @@ import { fetchAgencyOnboardingSettings } from '../lib/organisationBootstrapApi'
 import {
   createWorkspaceFromIntent,
   joinWorkspaceFromInvite,
-  requestWorkspaceAccess,
 } from '../services/workspaceService'
+import { requestOrganizationMembership, searchOrganizations } from '../services/organizationService'
 
 const AGENCY_SETUP_STEPS = [
   { key: 'organisation', label: 'Organisation' },
@@ -657,6 +657,9 @@ export default function PostDashboardSetup() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [request, setRequest] = useState(null)
+  const [workspaceMatches, setWorkspaceMatches] = useState([])
+  const [selectedWorkspace, setSelectedWorkspace] = useState(null)
+  const [searchingWorkspaces, setSearchingWorkspaces] = useState(false)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
   const [claimWorkspaceSettings, setClaimWorkspaceSettings] = useState(null)
   const [claimWorkspaceLoading, setClaimWorkspaceLoading] = useState(false)
@@ -1285,8 +1288,8 @@ export default function PostDashboardSetup() {
       setError('Signup intent is missing. Confirm your business type and position first.')
       return
     }
-    if (!normalizeText(form.workspaceNameForRequest)) {
-      setError('Enter the workspace or business name you need access to.')
+    if (!selectedWorkspace?.id) {
+      setError(`Search for and select the ${workspaceNoun} you want to join before sending your request.`)
       return
     }
 
@@ -1294,17 +1297,39 @@ export default function PostDashboardSetup() {
       setSaving(true)
       setError('')
       setMessage('')
-      const createdRequest = await requestWorkspaceAccess(intent, authState.user, {
-        workspaceName: form.workspaceNameForRequest,
+      const membership = await requestOrganizationMembership({
+        organizationId: selectedWorkspace.id,
         message: form.requestMessage,
       })
-      setRequest(createdRequest)
+      setRequest({ membership, workspace: selectedWorkspace })
       refreshAuthState?.()
-      setMessage('Access request sent. You will remain pending until an owner or admin approves it.')
+      setMessage(`Access request sent to ${selectedWorkspace.name}. Its owner or admin can review it from the Members queue.`)
     } catch (requestError) {
       setError(requestError?.message || 'Access request failed.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleWorkspaceSearch() {
+    const query = normalizeText(form.workspaceNameForRequest)
+    if (query.length < 2) {
+      setError(`Enter at least two characters of the ${workspaceNoun} name to search.`)
+      return
+    }
+
+    try {
+      setSearchingWorkspaces(true)
+      setError('')
+      setWorkspaceMatches(await searchOrganizations({
+        query,
+        organizationType: intent?.workspace_type || '',
+      }))
+    } catch (searchError) {
+      setWorkspaceMatches([])
+      setError(searchError?.message || `Unable to search for ${workspaceNoun}s right now.`)
+    } finally {
+      setSearchingWorkspaces(false)
     }
   }
 
@@ -2182,6 +2207,11 @@ export default function PostDashboardSetup() {
                 Your workspace access is pending. You cannot open protected dashboards until an owner, principal, partner,
                 or manager approves your membership.
               </p>
+              {request?.workspace?.name ? (
+                <p className="mt-2">
+                  Your request is with {request.workspace.name}. Their owner or admin can review it from the Members queue.
+                </p>
+              ) : null}
             </SetupStatusCard>
           ) : null}
 
@@ -2303,7 +2333,7 @@ export default function PostDashboardSetup() {
             <div className="grid gap-4">
               <form className="grid gap-4 rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4" onSubmit={handleAcceptInvite}>
                 <SetupStatusCard title="Have an invite code?">
-                  <p>Paste it here. Operational users can only enter a workspace through a valid invite or approval.</p>
+                  <p>Paste it here to join immediately. An invite is the fastest way into an existing workspace.</p>
                 </SetupStatusCard>
                 <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
                   Invite token
@@ -2318,18 +2348,62 @@ export default function PostDashboardSetup() {
 
               <form className="grid gap-4 rounded-[16px] border border-[#dde4ee] bg-white px-4 py-4" onSubmit={handleRequestAccess}>
                 <SetupStatusCard title="Request access" tone="warning">
-                  <p>This creates a pending backend request. It does not create a workspace or unlock dashboards.</p>
+                  <p>Search for your agency, select it, then send your request. It appears in that agency&apos;s Members queue for an owner or admin to approve.</p>
                 </SetupStatusCard>
                 <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
-                  Workspace or business name
-                  <input className="auth-input" value={form.workspaceNameForRequest} onChange={(event) => updateField('workspaceNameForRequest', event.target.value)} />
+                  {workspaceNoun[0].toUpperCase() + workspaceNoun.slice(1)} name
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      className="auth-input min-w-[12rem] flex-1"
+                      value={form.workspaceNameForRequest}
+                      onChange={(event) => {
+                        updateField('workspaceNameForRequest', event.target.value)
+                        setSelectedWorkspace(null)
+                        setWorkspaceMatches([])
+                      }}
+                      placeholder={`Search for your ${workspaceNoun}`}
+                    />
+                    <button type="button" className="header-secondary-cta" onClick={() => void handleWorkspaceSearch()} disabled={searchingWorkspaces || saving}>
+                      {searchingWorkspaces ? 'Searching...' : 'Search'}
+                    </button>
+                  </div>
                 </label>
+                {workspaceMatches.length ? (
+                  <div className="grid gap-2" aria-label={`${workspaceNoun} search results`}>
+                    {workspaceMatches.map((workspace) => {
+                      const selected = selectedWorkspace?.id === workspace.id
+                      return (
+                        <button
+                          key={workspace.id}
+                          type="button"
+                          aria-pressed={selected}
+                          className={`rounded-[12px] border px-3 py-3 text-left text-sm transition ${selected ? 'border-[#1e5f91] bg-[#eef7ff] text-[#163b5b]' : 'border-[#dbe4ee] bg-white text-[#31485e] hover:border-[#9bbcd6]'}`}
+                          onClick={() => {
+                            setSelectedWorkspace(workspace)
+                            updateField('workspaceNameForRequest', workspace.name)
+                          }}
+                        >
+                          <span className="block font-semibold">{workspace.name}</span>
+                          <span className="mt-1 block text-xs opacity-80">{workspace.typeLabel || workspaceNoun}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : null}
+                {normalizeText(form.workspaceNameForRequest).length >= 2 && !searchingWorkspaces && workspaceMatches.length === 0 && !selectedWorkspace ? (
+                  <p className="text-xs leading-5 text-[#60758d]">Search to find the agency before sending your request.</p>
+                ) : null}
+                {selectedWorkspace?.name ? (
+                  <p className="rounded-[12px] border border-[#cfe8d8] bg-[#effaf3] px-3 py-2 text-sm text-[#236340]">
+                    Requesting access to <strong>{selectedWorkspace.name}</strong>. This does not grant dashboard access until approved.
+                  </p>
+                ) : null}
                 <label className="grid gap-1.5 text-sm font-semibold text-[#31485e]">
                   Message
                   <textarea className="auth-input min-h-[96px]" value={form.requestMessage} onChange={(event) => updateField('requestMessage', event.target.value)} />
                 </label>
                 <div className="flex flex-wrap justify-end gap-2">
-                  <button type="submit" className="header-primary-cta" disabled={saving}>
+                  <button type="submit" className="header-primary-cta" disabled={saving || !selectedWorkspace?.id}>
                     {saving ? 'Sending request...' : 'Request access'}
                   </button>
                 </div>

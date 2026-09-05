@@ -130,7 +130,7 @@ const onboardingSentJourney = buildSellerJourney({
 })
 
 assert.equal(onboardingSentJourney.stage.key, 'seller_onboarding_sent')
-assert.equal(onboardingSentJourney.nextRecommendedAction?.id, 'follow_up_with_seller')
-assert.equal(onboardingSentJourney.nextRecommendedAction?.label, 'Send Follow-Up')
+assert.equal(onboardingSentJourney.nextRecommendedAction?.id, 'track_seller_onboarding')
+assert.equal(onboardingSentJourney.nextRecommendedAction?.label, 'Track Seller Onboarding')
 
 console.log('sellerJourneyService tests passed')

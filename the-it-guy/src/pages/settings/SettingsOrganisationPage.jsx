@@ -478,10 +478,6 @@ function getBrandAssetHistory(branding = {}, targetKey = '') {
   return Array.isArray(history) ? history.filter((entry) => normalizeText(entry?.url)).slice(0, 3) : []
 }
 
-function getConfiguredBrandAssetCount(branding = {}) {
-  return Object.keys(BRAND_ASSET_TARGETS).filter((targetKey) => normalizeText(branding?.[targetKey])).length
-}
-
 function getBrandHealthScore({ branding = {}, brandColours = {}, publicBranding = {}, showPublicIntake = false, publicIntakeDraft = null } = {}) {
   const checks = getBrandHealthChecks({ branding, brandColours, publicBranding, showPublicIntake, publicIntakeDraft }).map((item) => item.complete)
   const completed = checks.filter(Boolean).length
@@ -647,58 +643,6 @@ function BrandImage({ src, alt = '', className = '', fallback = null }) {
   )
 }
 
-function BrandingTabLink({ icon, label, to, active = false, onClick }) {
-  const TabIcon = icon
-  const content = (
-    <>
-      <TabIcon className="h-4 w-4 shrink-0" strokeWidth={2} />
-      <span className="whitespace-nowrap">{label}</span>
-    </>
-  )
-  const className = [
-    'relative inline-flex min-h-12 items-center gap-2 border-b-2 px-2 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#9dd9bd]',
-    active
-      ? 'border-[#0f7f4f] text-[#0f7f4f]'
-      : 'border-transparent text-[#24364b] hover:border-[#cfe8dc] hover:text-[#0f7f4f]',
-  ].join(' ')
-
-  if (to.startsWith('#')) {
-    return <a href={to} className={className} onClick={onClick}>{content}</a>
-  }
-
-  return <Link to={to} className={className} onClick={onClick}>{content}</Link>
-}
-
-function BrandingSubNav({ activeKey = 'overview', onSelect }) {
-  const tabs = [
-    { key: 'overview', label: 'Overview', to: '#brand-overview', icon: Palette },
-    { key: 'identity', label: 'Identity', to: '#identity', icon: Camera },
-    { key: 'colours-typography', label: 'Colours & Typography', to: '#colours-typography', icon: Type },
-    { key: 'client-experience', label: 'Client Experience', to: '#client-experience', icon: Monitor },
-    { key: 'documents', label: 'Documents', to: '#documents', icon: FileText },
-    { key: 'permissions', label: 'Permissions', to: '/settings/users', icon: ShieldCheck },
-    { key: 'billing', label: 'Billing', to: '/settings/billing', icon: CreditCard },
-    { key: 'activity', label: 'Activity', to: '/settings/activity', icon: RotateCcw },
-  ]
-
-  return (
-    <nav className="-mx-4 overflow-x-auto border-b border-[#dfe8f1] px-4 sm:mx-0 sm:px-0" aria-label="Branding sections">
-      <div className="flex min-w-max items-center gap-7">
-        {tabs.map((tab) => (
-          <BrandingTabLink
-            key={tab.key}
-            icon={tab.icon}
-            label={tab.label}
-            to={tab.to}
-            active={activeKey === tab.key}
-            onClick={() => onSelect?.(tab.key)}
-          />
-        ))}
-      </div>
-    </nav>
-  )
-}
-
 function OrganisationSwitch({ checked = false, disabled = false, label, onChange }) {
   return (
     <button
@@ -751,7 +695,6 @@ function BrandHero({
   healthChecks = [],
   canEdit,
   uploading = false,
-  onPreview,
   onUpload,
   onHistory,
 }) {
@@ -760,8 +703,8 @@ function BrandHero({
 
   return (
     <section id="brand-overview" className="scroll-mt-24 overflow-hidden rounded-[24px] border border-[#dfe8f1] bg-white shadow-[0_18px_46px_rgba(15,23,42,0.06)]">
-      <div className="grid gap-7 p-5 sm:p-7 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-stretch">
-        <div className="flex min-w-0 flex-col gap-6">
+      <div className="grid xl:grid-cols-[minmax(0,1fr)_430px]">
+        <div className="min-w-0 p-5 sm:p-7">
           <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
             <LogoMark logoUrl={primaryLogo} name={organisationName} />
             <div className="min-w-0 flex-1">
@@ -795,7 +738,7 @@ function BrandHero({
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3">
+          <div className="mt-7 flex flex-wrap gap-3">
             {canEdit ? (
               <label className="inline-flex h-12 cursor-pointer items-center justify-center gap-2 rounded-[12px] border border-[#0f7f4f] bg-[#0f7f4f] px-5 text-sm font-semibold text-white shadow-[0_10px_18px_rgba(15,127,79,0.18)] transition hover:bg-[#0d6f45]">
                 <UploadCloud className="h-4 w-4" strokeWidth={2} />
@@ -816,14 +759,6 @@ function BrandHero({
               <button
                 type="button"
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-5 text-sm font-semibold text-[#24364b] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
-                onClick={onPreview}
-              >
-                <Eye className="h-4 w-4" strokeWidth={2} />
-                Preview Brand
-              </button>
-              <button
-                type="button"
-                className="inline-flex h-12 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-5 text-sm font-semibold text-[#24364b] shadow-[0_6px_16px_rgba(15,23,42,0.04)] transition hover:bg-[#f7fafc]"
                 onClick={onHistory}
               >
                 <RotateCcw className="h-4 w-4" strokeWidth={2} />
@@ -832,9 +767,9 @@ function BrandHero({
           </div>
         </div>
 
-        <div className="border-[#e5edf4] xl:border-l xl:pl-7">
+        <div className="border-t border-[#e5edf4] bg-[#fbfdff] p-5 sm:p-7 xl:border-l xl:border-t-0">
           <div className="flex gap-5">
-            <div className="relative h-32 w-32 shrink-0">
+            <div className="relative h-28 w-28 shrink-0">
               <svg viewBox="0 0 108 108" className="h-full w-full -rotate-90" aria-hidden="true">
                 <circle cx="54" cy="54" r="46" fill="none" stroke="#dce8f1" strokeWidth="8" />
                 <circle
@@ -854,7 +789,7 @@ function BrandHero({
             <div className="min-w-0 flex-1">
               <h3 className="text-base font-semibold text-[#17233a]">Brand Health</h3>
               <p className="mt-1 text-sm leading-6 text-[#60758d]">{brandHealth >= 85 ? 'Your brand is looking great.' : 'A few brand surfaces still need attention.'}</p>
-              <div className="mt-4 grid gap-2">
+              <div className="mt-3 grid gap-1.5">
                 {healthChecks.map((item) => (
                   <div key={item.key} className="grid grid-cols-[18px_minmax(0,1fr)_auto] items-center gap-3 text-sm">
                     {item.complete ? (
@@ -1935,8 +1870,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploadingLogoTarget, setUploadingLogoTarget] = useState('')
-  const [brandPreviewTab, setBrandPreviewTab] = useState('portal')
-  const [activeBrandTab, setActiveBrandTab] = useState('overview')
   const [onboardingPreviewType, setOnboardingPreviewType] = useState('buyer')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
@@ -2004,7 +1937,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const showBrandingOnly = section === 'branding'
   const showBusinessLinesOnly = section === 'business-lines'
   const hasUnsavedChanges = state && initialState ? JSON.stringify(state) !== JSON.stringify(initialState) : false
-  const showPublicIntakeControls = copyKey === 'agency' || role === 'agent' || role === 'developer'
+  const showPublicIntakeControls = section !== 'branding' && (copyKey === 'agency' || role === 'agent' || role === 'developer')
   const publicIntakeOrganisationName = useMemo(() => getOrganisationDisplayName(form || {}, onboarding || {}), [form, onboarding])
   const publicIntakeHost = useMemo(() => getCurrentPublicHost(), [])
   const publicIntakeUrls = useMemo(
@@ -2019,16 +1952,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
     })
     return () => window.cancelAnimationFrame(frame)
   }, [loading, location.hash, publicIntakeLoading, section, showPublicIntakeControls])
-
-  useEffect(() => {
-    if (section !== 'branding') return
-    const nextTab = normalizeText(location.hash).replace('#', '') || 'overview'
-    if (['brand-overview', 'overview'].includes(nextTab)) setActiveBrandTab('overview')
-    if (nextTab === 'identity') setActiveBrandTab('identity')
-    if (nextTab === 'colours-typography') setActiveBrandTab('colours-typography')
-    if (nextTab === 'client-experience') setActiveBrandTab('client-experience')
-    if (nextTab === 'documents') setActiveBrandTab('documents')
-  }, [location.hash, section])
 
   useEffect(() => {
     let active = true
@@ -2359,45 +2282,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
         },
       },
     }))
-  }
-
-  function updatePublicBrandField(key, value) {
-    setMessage('')
-    setState((previous) => {
-      const nextState = {
-        ...previous,
-        onboarding: {
-          ...previous.onboarding,
-          branding: {
-            ...(previous.onboarding?.branding || {}),
-            publicIdentity: {
-              ...(previous.onboarding?.branding?.publicIdentity || {}),
-              [key]: value,
-            },
-          },
-        },
-      }
-
-      if (key === 'website') {
-        nextState.organisation = {
-          ...previous.organisation,
-          website: value,
-        }
-        nextState.onboarding.agencyInformation = {
-          ...(previous.onboarding?.agencyInformation || {}),
-          website: value,
-        }
-      }
-
-      if (key === 'supportEmail') {
-        nextState.organisation = {
-          ...(nextState.organisation || previous.organisation),
-          supportEmail: value,
-        }
-      }
-
-      return nextState
-    })
   }
 
   function clearBrandAsset(targetKey) {
@@ -2792,7 +2676,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const onboardingLandingColours = getOnboardingLandingColours(brandColours)
   const typography = getBrandTypography(branding)
   const publicBranding = getPublicBranding(form, agencyInfo, branding)
-  const configuredBrandAssetCount = getConfiguredBrandAssetCount(branding)
   const brandHealthChecks = getBrandHealthChecks({ branding, brandColours, publicBranding, showPublicIntake: showPublicIntakeControls, publicIntakeDraft })
   const brandHealth = getBrandHealthScore({ branding, brandColours, publicBranding, showPublicIntake: showPublicIntakeControls, publicIntakeDraft })
   const isSaveSuccessMessage = message === ORGANISATION_SUCCESS_MESSAGE || message === BRANDING_SUCCESS_MESSAGE
@@ -2816,38 +2699,9 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       previewUrl: iconAssetUrl,
     },
   ]
-  const appIconAssets = [
-    {
-      targetKey: 'favicon',
-      description: 'Browser tab icon generated from or uploaded separately from your icon logo.',
-      previewUrl: branding.favicon || iconAssetUrl,
-      icon: Globe2,
-    },
-    {
-      targetKey: 'portalIcon',
-      description: 'Compact portal mark for client workspace headers.',
-      previewUrl: branding.portalIcon || iconAssetUrl,
-      icon: Monitor,
-    },
-    {
-      targetKey: 'mobileIcon',
-      description: 'Mobile shortcut icon for app-like portal experiences.',
-      previewUrl: branding.mobileIcon || iconAssetUrl,
-      icon: Smartphone,
-    },
-    {
-      targetKey: 'browserTile',
-      description: 'Pinned browser tile for supported browser surfaces.',
-      previewUrl: branding.browserTile || iconAssetUrl,
-      icon: Palette,
-    },
-  ]
-
   if (showBrandingOnly) {
     return (
       <div className={settingsPageClass}>
-        <BrandingSubNav activeKey={activeBrandTab} onSelect={setActiveBrandTab} />
-
         {!canEdit ? <SettingsBanner tone="warning">{copy.readOnly}</SettingsBanner> : null}
         {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
         <SettingsToast message={message} />
@@ -2863,18 +2717,13 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
             healthChecks={brandHealthChecks}
             canEdit={canEdit}
             uploading={uploadingLogoTarget === 'logoLight'}
-            onPreview={() => {
-              setBrandPreviewTab('portal')
-              document.getElementById('live-preview')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-            }}
             onUpload={(file) => handleLogoUpload(file, 'logoLight')}
             onHistory={() => document.getElementById('identity')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
           />
 
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px] xl:items-start">
-            <div className="space-y-6">
-              <OrganisationCard title="Identity" description="Manage your logos and brand assets.">
-                <div id="identity" className="scroll-mt-24 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          <div className="space-y-6">
+            <OrganisationCard title="Identity" description="Manage your logos and brand assets.">
+              <div id="identity" className="scroll-mt-24 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
                   {mainBrandAssets.map((asset) => {
                     const config = BRAND_ASSET_TARGETS[asset.targetKey]
                     return (
@@ -2897,11 +2746,11 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                       />
                     )
                   })}
-                </div>
-              </OrganisationCard>
+              </div>
+            </OrganisationCard>
 
-              <OrganisationCard title="Colours & Typography" description="Set the palette and type rules that drive portals, emails and document previews.">
-                <div id="colours-typography" className="scroll-mt-24 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <OrganisationCard title="Colours & Typography" description="Set the palette and type rules used across your workspace.">
+              <div id="colours-typography" className="scroll-mt-24 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                   {BRAND_COLOUR_CONTROLS.map((control) => (
                     <BrandColourField
                       key={control.key}
@@ -2913,8 +2762,8 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                       onCopy={() => copyBrandHex(brandColours[control.key] || control.fallback)}
                     />
                   ))}
-                </div>
-                <div className="mt-5 grid gap-4 md:grid-cols-2">
+              </div>
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
                   <TypographyPreviewCard title="Heading Font" fontName={typography.primaryFont}>
                     <Field as="select" id="branding-primary-font" className={INPUT_CLASS} value={typography.primaryFont} disabled={!canEdit} onChange={(event) => updateBrandingNestedField('typography', 'primaryFont', event.target.value)}>
                       <option value="Inter">Inter</option>
@@ -2941,123 +2790,8 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                       </Field>
                     </div>
                   </TypographyPreviewCard>
-                </div>
-              </OrganisationCard>
-
-              <section id="client-experience" className="scroll-mt-24 space-y-6">
-                <OnboardingLandingBrandingCard
-                  organisationName={organisationName}
-                  logoUrl={primaryAssetUrl}
-                  darkLogoUrl={branding.logoDark}
-                  iconUrl={iconAssetUrl}
-                  colours={onboardingLandingColours}
-                  activePortalType={onboardingPreviewType}
-                  setActivePortalType={setOnboardingPreviewType}
-                  canEdit={canEdit}
-                  uploadingLogoTarget={uploadingLogoTarget}
-                  onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
-                  onColourChange={(key, value) => updateBrandColour(key, value)}
-                  onCopyColour={(value) => copyBrandHex(value)}
-                />
-
-                {showPublicIntakeControls ? (
-                  <section id="public-intake" className="scroll-mt-24 space-y-6">
-                    <PublicIntakeLinkCard
-                      canEdit={canEdit}
-                      draft={publicIntakeDraft}
-                      loading={publicIntakeLoading}
-                      schemaReady={publicIntakeSchemaReady}
-                      saving={publicIntakeSaving}
-                      urls={publicIntakeUrls}
-                      onChange={updatePublicIntakeField}
-                      onCopy={copyPublicIntakeUrl}
-                      onDisable={disablePublicIntakeLink}
-                      onOpen={openPublicIntakeUrl}
-                      onSave={savePublicIntakeLink}
-                      onToggleIntent={togglePublicIntakeIntent}
-                    />
-                    <PublicIntakePerformanceCard
-                      loading={publicIntakePerformanceLoading}
-                      schemaReady={publicIntakePerformanceSchemaReady}
-                      performance={publicIntakePerformance}
-                      onRefresh={refreshPublicIntakePerformance}
-                    />
-                  </section>
-                ) : null}
-              </section>
-
-              <BrandPreviewWorkspace
-                activeTab={brandPreviewTab}
-                setActiveTab={setBrandPreviewTab}
-                organisationName={organisationName}
-                logoUrl={primaryAssetUrl}
-                iconUrl={iconAssetUrl}
-                colours={brandColourValues}
-                typography={typography}
-              />
-
-              <OrganisationCard title="Documents & App Icons" description="Manage compact assets for favicons, portals, mobile shortcuts and document-adjacent brand surfaces.">
-                <div id="documents" className="scroll-mt-24" />
-                <div className="grid gap-4 md:grid-cols-2">
-                  {appIconAssets.map((asset) => {
-                    const config = BRAND_ASSET_TARGETS[asset.targetKey]
-                    const Icon = asset.icon
-                    return (
-                      <BrandAssetTile
-                        key={asset.targetKey}
-                        title={config.title}
-                        description={asset.description}
-                        previewUrl={asset.previewUrl}
-                        fileName={branding[`${asset.targetKey}Name`]}
-                        formats={config.formats}
-                        dimensions={config.dimensions}
-                        canEdit={canEdit}
-                        uploading={uploadingLogoTarget === asset.targetKey}
-                        fallback={<span className="inline-flex items-center gap-2"><Icon className="h-4 w-4" strokeWidth={2} /> {config.title} not uploaded</span>}
-                        history={getBrandAssetHistory(branding, asset.targetKey)}
-                        generatedFrom={!branding[asset.targetKey] && iconAssetUrl ? 'Generated from Icon Logo' : branding[`${asset.targetKey}GeneratedFrom`]}
-                        onFile={(file) => handleLogoUpload(file, asset.targetKey)}
-                        onDelete={() => clearBrandAsset(asset.targetKey)}
-                        onRollback={(entry) => rollbackBrandAsset(asset.targetKey, entry)}
-                      />
-                    )
-                  })}
-                </div>
-              </OrganisationCard>
-
-              <OrganisationCard title="Public Branding" description="External identity details used in client portals, email footers and branded communication surfaces.">
-                <div className="grid gap-4 md:grid-cols-2">
-                  <OrganisationField label="Website" id="branding-public-website">
-                    <Field id="branding-public-website" className={INPUT_CLASS} value={publicBranding.website} disabled={!canEdit} onChange={(event) => updatePublicBrandField('website', event.target.value)} />
-                  </OrganisationField>
-                  <OrganisationField label="Support Email" id="branding-public-support-email">
-                    <Field id="branding-public-support-email" className={INPUT_CLASS} value={publicBranding.supportEmail} disabled={!canEdit} onChange={(event) => updatePublicBrandField('supportEmail', event.target.value)} />
-                  </OrganisationField>
-                  <OrganisationField label="Facebook" id="branding-public-facebook">
-                    <Field id="branding-public-facebook" className={INPUT_CLASS} value={publicBranding.facebook} disabled={!canEdit} onChange={(event) => updatePublicBrandField('facebook', event.target.value)} />
-                  </OrganisationField>
-                  <OrganisationField label="LinkedIn" id="branding-public-linkedin">
-                    <Field id="branding-public-linkedin" className={INPUT_CLASS} value={publicBranding.linkedIn} disabled={!canEdit} onChange={(event) => updatePublicBrandField('linkedIn', event.target.value)} />
-                  </OrganisationField>
-                  <OrganisationField label="Instagram" id="branding-public-instagram" className="md:col-span-2">
-                    <Field id="branding-public-instagram" className={INPUT_CLASS} value={publicBranding.instagram} disabled={!canEdit} onChange={(event) => updatePublicBrandField('instagram', event.target.value)} />
-                  </OrganisationField>
-                </div>
-              </OrganisationCard>
-            </div>
-
-            <BrandPreviewPanel
-              organisationName={organisationName}
-              logoUrl={primaryAssetUrl}
-              iconUrl={iconAssetUrl}
-              colours={brandColourValues}
-              typography={typography}
-              brandHealth={brandHealth}
-              configuredAssetCount={configuredBrandAssetCount}
-              onOpenFullPreview={() => {
-                if (typeof window !== 'undefined') window.open(publicProfileTarget, '_blank', 'noopener,noreferrer')
-              }}
-            />
+              </div>
+            </OrganisationCard>
           </div>
         </form>
 

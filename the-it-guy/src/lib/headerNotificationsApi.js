@@ -90,15 +90,11 @@ function isLeadArrivalNotification(row = {}) {
   return /\b(new|created|incoming|received)\b/.test(haystack) && !/\b(assign|reassign|reminder|follow.?up|sla)\b/.test(haystack)
 }
 
-function isDocumentSubmissionNotification(row = {}) {
-  const data = notificationData(row)
-  const type = String(row?.notification_type || '').trim().toLowerCase()
-  const source = String(data.source || data.trigger || data.type || '').trim().toLowerCase()
-  return type === 'document_uploaded' || /document.*(?:upload|submit)|(?:upload|submit).*document/.test(source)
-}
-
 function isHeaderNotification(row = {}) {
-  return isLeadArrivalNotification(row) || isDocumentSubmissionNotification(row)
+  // The global bell is deliberately a lead-intake inbox. Transaction and
+  // document workflow alerts have their own workspaces and must not affect
+  // either this drawer or its unread badge.
+  return isLeadArrivalNotification(row)
 }
 
 async function currentUserId() {
