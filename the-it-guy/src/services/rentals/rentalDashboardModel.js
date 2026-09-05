@@ -6,7 +6,7 @@ export function buildRentalDashboardSnapshot({ listings = [], leads = [], applic
   const activeListings = listings.filter((listing) => ['active', 'published', 'marketing'].includes(text(listing.status).toLowerCase())).length
   const tenantLeads = leads.filter((lead) => lead.role === 'tenant')
   const landlordLeads = leads.filter((lead) => lead.role === 'landlord')
-  const openApplications = applications.filter((application) => !['approved', 'declined', 'withdrawn'].includes(text(application.applicationStatus).toLowerCase())).length
+  const openApplications = applications.filter((application) => !['approved', 'declined', 'withdrawn'].includes(text(application.status || application.applicationStatus).toLowerCase())).length
   const activeTenancies = leases.filter((lease) => ['active', 'fully_signed'].includes(text(lease.leaseStatus).toLowerCase())).length
   const openManagement = managementEvents.filter((event) => !['completed', 'cancelled'].includes(text(event.status).toLowerCase()))
   return {

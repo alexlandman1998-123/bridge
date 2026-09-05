@@ -69,7 +69,6 @@ export { RentalPartySelector } from './shared/parties/RentalPartySelector.jsx'
 export { RentalLandlordMandatePanel } from './shared/landlords/RentalLandlordMandatePanel.jsx'
 
 export {
-  RentalApplicationsPage,
   RentalViewingsPage,
   RentalCalendarPage,
   RentalListingCreatePage,

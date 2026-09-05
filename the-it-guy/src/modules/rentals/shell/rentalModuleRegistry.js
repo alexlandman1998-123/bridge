@@ -14,7 +14,7 @@ const routes = Object.freeze({
   [RENTAL_MODULE_ROUTE_IDS.dashboard]: '/agent/rentals/dashboard',
   [RENTAL_MODULE_ROUTE_IDS.tenancies]: '/agent/rentals/tenancies',
   [RENTAL_MODULE_ROUTE_IDS.leads]: '/agent/rentals/pipeline/leads',
-  [RENTAL_MODULE_ROUTE_IDS.applications]: '/agent/rentals/pipeline/applications',
+  [RENTAL_MODULE_ROUTE_IDS.applications]: '/agent/rentals/applications',
   [RENTAL_MODULE_ROUTE_IDS.calendar]: '/agent/rentals/pipeline/calendar',
   [RENTAL_MODULE_ROUTE_IDS.listingCreate]: '/agent/rentals/listings/new',
   [RENTAL_MODULE_ROUTE_IDS.listingDetail]: '/agent/rentals/listings/:listingId/:detailTab?',

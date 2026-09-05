@@ -34,7 +34,6 @@ import {
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
 import { RentalModuleBoundary } from './modules/rentals/shell/RentalModuleBoundary'
 import {
-  RentalApplicationsPage,
   RentalTenantPortalPage,
   RentalLandlordPortalPage,
   RentalCalendarPage,

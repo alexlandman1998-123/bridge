@@ -3,7 +3,7 @@ import { Building2, ClipboardList, FileSignature, Loader2, RefreshCw, TriangleAl
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { buildRentalDashboardSnapshot } from '../../services/rentals/rentalDashboardModel'
-import { listRentalApplicationsForAgent } from '../../services/rentals/rentalApplicationDraftService'
+import { listPersistedRentalApplications } from '../../services/rentals/rentalApplicationRepository.js'
 import { listRentalLeads } from '../../services/rentals/rentalLeadService'
 import { listRentalListingsForAgent } from '../../services/rentals/rentalListingDraftService'
 import { listRentalLeaseWorkflowsForAgent } from '../../services/rentals/rentalLeaseWorkflowService'
@@ -27,7 +27,7 @@ export default function RentalDashboardPage() {
       const [listings, leads, applications, leases, management] = await Promise.all([
         listRentalListingsForAgent(scope.assignedAgentId, options),
         listRentalLeads(scope.organisationId, { assignedAgentId: scope.assignedAgentId, branchId: scope.branchId, scopeLevel: scope.scopeLevel, includeAllOrganisationLeads: scope.scopeLevel === 'organisation' }),
-        listRentalApplicationsForAgent(scope.assignedAgentId, options),
+        listPersistedRentalApplications(scope.organisationId),
         listRentalLeaseWorkflowsForAgent(scope.assignedAgentId, options),
         listRentalManagementWorkspace(scope.assignedAgentId, options),
       ])

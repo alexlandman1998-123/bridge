@@ -5,7 +5,6 @@ export const RentalApplicantJourneyPage = lazy(() => import('../../../pages/rent
 export const RentalTenantPortalPage = lazy(() => import('../../../pages/rentals/RentalTenantPortalPage'))
 export const RentalLandlordPortalPage = lazy(() => import('../../../pages/rentals/RentalLandlordPortalPage'))
 export const RentalApplicationWorkspacePage = lazy(() => import('../../../pages/rentals/RentalApplicationWorkspacePage'))
-export const RentalApplicationsPage = lazy(() => import('../../../pages/rentals/RentalApplicationsPage'))
 export const RentalCalendarPage = lazy(() => import('../../../pages/rentals/RentalCalendarPage'))
 export const ShortTermRentalCalendarPage = lazy(() => import('../../../pages/rentals/ShortTermRentalCalendarPage'))
 export const ShortTermRentalDashboardPage = lazy(() => import('../../../pages/rentals/ShortTermRentalDashboardPage'))
