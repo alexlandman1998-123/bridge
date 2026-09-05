@@ -2,12 +2,12 @@ import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient.js'
 import { createRentalApplicantAccess } from './rentalApplicantAccessModel.js'
 
 const text = (value) => String(value ?? '').trim()
-const fields = 'id, organisation_id, vacancy_id, unit_id, applicant_party_id, status, version, application_data, created_at, updated_at'
-const client = (value = supabase) => { if (!isSupabaseConfigured || !value) throw new Error('Rental applications require Supabase configuration.'); return value }
-const map = (row = {}) => ({ id: text(row.id), organisationId: text(row.organisation_id), vacancyId: text(row.vacancy_id), unitId: text(row.unit_id), applicantPartyId: text(row.applicant_party_id), status: text(row.status), version: Number(row.version || 1), data: row.application_data || {}, updatedAt: row.updated_at || null })
+const fields = 'id, organisation_id, lead_id, vacancy_id, unit_id, applicant_party_id, status, version, application_data, created_at, updated_at'
+const client = (value = supabase) => { if (!value || (!isSupabaseConfigured && value === supabase)) throw new Error('Rental applications require Supabase configuration.'); return value }
+const map = (row = {}) => ({ id: text(row.id), organisationId: text(row.organisation_id), leadId: text(row.lead_id), vacancyId: text(row.vacancy_id), unitId: text(row.unit_id), applicantPartyId: text(row.applicant_party_id), status: text(row.status), version: Number(row.version || 1), data: row.application_data || {}, updatedAt: row.updated_at || null })
 
 export async function createPersistedRentalApplication(values = {}, { client: db = supabase } = {}) {
-  const payload = { organisation_id: text(values.organisationId), vacancy_id: text(values.vacancyId), unit_id: text(values.unitId), applicant_party_id: text(values.applicantPartyId) || null, application_data: values.data && typeof values.data === 'object' ? values.data : {}, created_by: text(values.createdBy) || null }
+  const payload = { organisation_id: text(values.organisationId), lead_id: text(values.leadId) || null, vacancy_id: text(values.vacancyId), unit_id: text(values.unitId), applicant_party_id: text(values.applicantPartyId) || null, application_data: values.data && typeof values.data === 'object' ? values.data : {}, created_by: text(values.createdBy) || null }
   if (!payload.organisation_id || !payload.vacancy_id || !payload.unit_id) throw new Error('Organisation, vacancy and unit are required.')
   const result = await client(db).from('rental_applications').insert(payload).select(fields).single(); if (result.error) throw result.error; return map(result.data)
 }

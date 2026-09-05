@@ -646,6 +646,7 @@
     "report:rentals-staging-foundation": "node scripts/rentals-staging-foundation-readiness.mjs --project-ref vaszuxjeoajeuhlcnzzf --report-only",
     "verify:rentals-staging-foundation": "node scripts/rentals-staging-foundation-readiness.mjs --project-ref vaszuxjeoajeuhlcnzzf",
     "test:rentals-phase1": "node src/services/rentals/__tests__/rentalDomainContract.test.js",
+    "test:rentals-lead-application-linkage": "node src/services/rentals/__tests__/rentalApplicationRepository.test.js",
     "test:rentals-phase2": "node src/modules/rentals/__tests__/rentalModuleBoundary.test.js && node scripts/rentals-phase2-module-boundary.test.mjs",
     "test:rentals-phase3": "vite-node src/modules/rentals/shared/permissions/__tests__/rentalCapabilities.test.js",
     "test:rentals-phase4": "vite-node src/modules/rentals/shared/events/__tests__/rentalEventOutbox.test.js",
