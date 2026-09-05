@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, CalendarDays, FileText, Loader2, Wrench } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
-import { listRentalLeaseWorkflowsForAgent } from '../../services/rentals/rentalLeaseWorkflowService'
-import { buildRentalListingQueryOptions, resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
+import { getPersistedRentalTenancy } from '../../services/rentals/rentalApplicationRepository.js'
+import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
 
 /* JSX component aliases are intentionally supplied through the icon prop. */
 /* eslint-disable no-unused-vars */
@@ -15,7 +15,7 @@ function ActionLink({ to, icon: Icon, children }) { return <Link to={to} classNa
 
 export default function RentalTenancyDetailPage() {
   const { tenancyId } = useParams(); const workspace = useWorkspace(); const scope = useMemo(() => resolveRentalWorkspaceScope(workspace), [workspace]); const [lease, setLease] = useState(null); const [loading, setLoading] = useState(true); const [tab, setTab] = useState('Overview')
-  const load = useCallback(async () => { if (!scope.assignedAgentId) { setLoading(false); return } try { setLoading(true); const rows = await listRentalLeaseWorkflowsForAgent(scope.assignedAgentId, buildRentalListingQueryOptions(scope)); setLease(rows.find((row) => text(row.id) === text(tenancyId)) || null) } finally { setLoading(false) } }, [scope, tenancyId])
+  const load = useCallback(async () => { if (!scope.organisationId) { setLoading(false); return } try { setLoading(true); const tenancy = await getPersistedRentalTenancy(scope.organisationId, tenancyId); const identity = tenancy?.tenant?.identity || {}; const terms = tenancy?.lease?.terms_json || {}; setLease(tenancy ? { id: tenancy.id, listingTitle: `Property ${tenancy.propertyId}`, listingId: tenancy.propertyId, tenantName: [identity.firstName, identity.lastName].filter(Boolean).join(' ') || identity.name || 'Tenant pending', tenantEmail: identity.email || '', tenantPhone: identity.phone || '', reference: tenancy.id.slice(0, 8), leaseStatus: tenancy.status, occupationDate: tenancy.intendedOccupationDate, monthlyRent: terms.monthly_rent, depositAmount: terms.deposit_amount, leaseStartDate: terms.start_date, leaseEndDate: terms.end_date, signatureStatus: tenancy.lease?.status || 'draft', depositStatus: terms.deposit_status || 'pending' } : null) } finally { setLoading(false) } }, [scope.organisationId, tenancyId])
   useEffect(() => { void load() }, [load])
   if (loading) return <main className="mx-auto grid min-h-56 max-w-[1600px] place-items-center px-5 text-sm text-[#60758b]"><span className="inline-flex items-center gap-2"><Loader2 size={16} className="animate-spin" />Loading tenancy…</span></main>
   if (!lease) return <main className="mx-auto max-w-[1600px] px-5 py-6"><Link to="/agent/rentals/tenancies" className="inline-flex items-center gap-1 text-sm font-semibold text-[#1769d1]"><ArrowLeft size={15} />Back to tenancies</Link><p className="mt-6 rounded-xl border border-dashed p-8 text-sm text-[#60758b]">This tenancy is unavailable in your current workspace.</p></main>
