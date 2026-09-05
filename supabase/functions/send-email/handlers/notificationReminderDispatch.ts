@@ -31,6 +31,7 @@ const REMINDER_AUTOMATION_KEYS = [
   "lead_follow_up_missed_escalation",
   "lead_dormant_reactivation",
   "lead_no_response_nurture",
+  "bond_application_portal_completion_reminder",
 ] as const;
 
 const REMINDER_EVENT_SELECT = [
@@ -210,6 +211,19 @@ function resolveActionLink(event: ReminderEventRow, req: Request) {
     }/selling/documents`;
   }
 
+  const bondApplicationAccessToken = coalesceText(
+    payload.accessToken,
+    payload.access_token,
+  );
+  if (
+    bondApplicationAccessToken &&
+    automationKey === "bond_application_portal_completion_reminder"
+  ) {
+    return `${appBaseUrl}/bond-application/${
+      encodeURIComponent(bondApplicationAccessToken)
+    }`;
+  }
+
   const inviteToken = coalesceText(
     payload.inviteToken,
     payload.invite_token,
@@ -246,6 +260,9 @@ function reminderDisplayName(automationKey: string) {
 
   if (automationKey === "seller_document_request_reminder") {
     return "seller document request";
+  }
+  if (automationKey === "bond_application_portal_completion_reminder") {
+    return "bond application";
   }
   if (automationKey === "attorney_invite_reminder") {
     return "attorney invite";
@@ -605,6 +622,25 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
         "If the secure button is not available, contact your agent and ask them to resend your seller portal link.",
       security:
         "For bank details or other sensitive documents, use the secure seller portal rather than replying with an attachment.",
+    };
+  }
+
+  if (automationKey === "bond_application_portal_completion_reminder") {
+    return {
+      title: "Complete your bond application",
+      ctaLabel: "Continue application",
+      greeting,
+      organisationName,
+      intro: [
+        "Your bond application is ready to complete securely.",
+        "Use the secure link below to continue. You do not need to sign in to the buyer portal.",
+      ],
+      summaryTitle: "Bond application",
+      summaryFields: [
+        { label: "Next step", value: "Complete the outstanding application details and documents." },
+      ],
+      fallback: "If the secure button is not available, contact your bond originator for a new link.",
+      security: "This secure link is personal to your application and may expire or be replaced when a new reminder is sent.",
     };
   }
 
@@ -1191,6 +1227,30 @@ export async function handleNotificationReminderDispatchEmail(
       sellerDocumentReleaseHeartbeat: heartbeatUnavailable
         ? null
         : sellerDocumentReleaseHeartbeat.data,
+    };
+
+    const bondApplicationReminders = await supabase.rpc(
+      "bridge_queue_bond_application_portal_reminders_phase5",
+      {
+        p_limit: queueLimit,
+        p_now: normalizeText(payload.now) || new Date().toISOString(),
+        p_dry_run: dryRun,
+      },
+    );
+    if (bondApplicationReminders.error && !isMissingRpc(
+      bondApplicationReminders.error,
+      "bridge_queue_bond_application_portal_reminders_phase5",
+    )) {
+      return jsonResponse(500, {
+        error: "Bond application reminders could not be prepared.",
+        details: bondApplicationReminders.error,
+      });
+    }
+    queueResult = {
+      ...asRecord(queueResult),
+      bondApplicationPortalReminders: bondApplicationReminders.error
+        ? null
+        : bondApplicationReminders.data,
     };
   }
 

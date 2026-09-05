@@ -1074,6 +1074,12 @@ function requireClientPortalTokenClient(token) {
   })
 }
 
+function requireBondApplicationPortalTokenClient(token) {
+  return requireScopedClient({
+    'x-bridge-bond-application-token': String(token || '').trim(),
+  })
+}
+
 function requireOnboardingTokenClient(token) {
   return requireScopedClient({
     'x-bridge-onboarding-token': String(token || '').trim(),
@@ -54598,6 +54604,145 @@ export async function fetchClientPortalNormalizedBondApplication({ token } = {})
       viewerRole: BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant,
     }),
   }
+}
+
+export async function fetchBondApplicationPortalProjection({ accessToken } = {}) {
+  const token = String(accessToken || '').trim()
+  if (!token) throw new Error('Bond application access token is required.')
+  const client = requireBondApplicationPortalTokenClient(token)
+  const result = await client.rpc('bridge_bond_application_portal_projection')
+  if (result.error) throw result.error
+  return result.data || null
+}
+
+export async function fetchBondApplicationPortalDraft({ accessToken } = {}) {
+  const client = requireBondApplicationPortalTokenClient(accessToken)
+  const result = await client.rpc('bridge_bond_application_portal_draft')
+  if (result.error) throw result.error
+  return result.data || null
+}
+
+export async function saveBondApplicationPortalDraft({ accessToken, draft, expectedRevision } = {}) {
+  const client = requireBondApplicationPortalTokenClient(accessToken)
+  const result = await client.rpc('bridge_save_bond_application_portal_draft', {
+    p_draft: draft || {},
+    p_expected_revision: expectedRevision,
+  })
+  if (result.error) throw result.error
+  return result.data || null
+}
+
+export async function fetchBondApplicationPortalDocumentContinuity({ accessToken } = {}) {
+  const client = requireBondApplicationPortalTokenClient(accessToken)
+  const result = await client.rpc('bridge_bond_application_portal_document_continuity')
+  if (result.error) throw result.error
+  return result.data || { version: 'bond_application_portal_phase6', summary: {}, requirements: [] }
+}
+
+export async function fetchBondApplicationOriginatorActionCentre() {
+  const client = requireClient()
+  const result = await client.rpc('bridge_bond_application_portal_originator_action_centre_view')
+  if (result.error) throw result.error
+  return result.data || { version: 'bond_application_portal_phase4', items: [] }
+}
+
+export async function issueBondApplicationPortalAccessLinkForOriginator({ exportPackageId, expiresAt } = {}) {
+  const packageId = String(exportPackageId || '').trim()
+  if (!packageId) throw new Error('An originator intake package is required.')
+  const client = requireClient()
+  const result = await client.rpc('bridge_issue_bond_application_portal_access_link_for_originator', {
+    p_export_package_id: packageId,
+    p_expires_at: expiresAt || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+  })
+  if (result.error) throw result.error
+  return result.data || null
+}
+
+export async function revokeBondApplicationPortalAccessLinkForOriginator({ accessLinkId } = {}) {
+  const linkId = String(accessLinkId || '').trim()
+  if (!linkId) throw new Error('An application access link is required.')
+  const client = requireClient()
+  const result = await client.rpc('bridge_revoke_bond_application_portal_access_link_for_originator', {
+    p_access_link_id: linkId,
+  })
+  if (result.error) throw result.error
+  return result.data || null
+}
+
+export async function createBondOriginatorWorkspaceDocumentRequest({
+  exportPackageId,
+  title,
+  buyerInstruction,
+  canonicalDocumentType,
+  dueAt = null,
+  priority = 'normal',
+} = {}) {
+  const packageId = String(exportPackageId || '').trim()
+  if (!packageId || !String(title || '').trim() || !String(buyerInstruction || '').trim()) {
+    throw new Error('A package, document title, and buyer instruction are required.')
+  }
+  const client = requireClient()
+  const result = await client.rpc('bridge_create_bond_originator_workspace_document_request', {
+    p_export_package_id: packageId,
+    p_request_type: 'supplemental_document',
+    p_target_scope: 'application_documents',
+    p_title: String(title).trim(),
+    p_buyer_instruction: String(buyerInstruction).trim(),
+    p_canonical_document_type: String(canonicalDocumentType || '').trim() || null,
+    p_due_at: dueAt || null,
+    p_request_priority: priority === 'urgent' ? 'urgent' : 'normal',
+  })
+  if (result.error) throw result.error
+  return result.data || null
+}
+
+export async function fetchBondApplicationPortalDeliveryActionCentre() {
+  const client = requireClient()
+  const result = await client.rpc('bridge_bond_application_portal_delivery_action_centre_view')
+  if (result.error) throw result.error
+  return result.data || { version: 'bond_application_portal_phase5', items: [] }
+}
+
+export async function fetchBondApplicationPortalOriginatorDocumentContinuity() {
+  const client = requireClient()
+  const result = await client.rpc('bridge_bond_application_portal_originator_document_continuity_view')
+  if (result.error) throw result.error
+  return result.data || { version: 'bond_application_portal_phase6', items: [] }
+}
+
+export async function fetchBondApplicationSubmissionReadiness() {
+  const result = await requireClient().rpc('bridge_bond_application_submission_readiness_view_phase7')
+  if (result.error) throw result.error
+  return result.data || { version: 'bond_application_portal_phase7', items: [] }
+}
+
+export async function assessBondApplicationSubmissionReadiness({ exportPackageId } = {}) {
+  const result = await requireClient().rpc('bridge_assess_bond_application_submission_readiness_phase7', { p_export_package_id: String(exportPackageId || '').trim() })
+  if (result.error) throw result.error
+  return result.data || null
+}
+
+export async function recordBondApplicationExternalSubmission({ exportPackageId, lenderNames = [], externalReference = '', notes = '' } = {}) {
+  const result = await requireClient().rpc('bridge_record_bond_application_external_submission_phase8', { p_export_package_id: String(exportPackageId || '').trim(), p_lender_names: lenderNames, p_external_reference: externalReference || null, p_notes: notes || null })
+  if (result.error) throw result.error
+  return result.data || null
+}
+
+export async function fetchBondApplicationExternalSubmissions() {
+  const result = await requireClient().rpc('bridge_bond_application_external_submission_view_phase8')
+  if (result.error) throw result.error
+  return result.data || { version: 'bond_application_portal_phase8', items: [] }
+}
+
+export async function sendBondApplicationPortalDeliveryForOriginator({ exportPackageId } = {}) {
+  const packageId = String(exportPackageId || '').trim()
+  if (!packageId) throw new Error('An originator intake package is required.')
+  const client = requireClient()
+  const result = await client.rpc('bridge_send_bond_application_portal_delivery_for_originator', {
+    p_export_package_id: packageId,
+  })
+  if (result.error) throw result.error
+  return result.data || null
 }
 
 async function resolveBondApplicationParticipantInviteContext(client, token) {

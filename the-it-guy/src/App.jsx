@@ -312,6 +312,7 @@ const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflow
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
 const ClientPortal = lazy(() => import('./pages/ClientPortal'))
+const BondApplicationPortal = lazy(() => import('./pages/BondApplicationPortal'))
 const ProspectBuyerDemo = lazy(() => import('./pages/ProspectBuyerDemo'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
 const Clients = lazy(() => import('./pages/Clients'))
@@ -331,6 +332,7 @@ const PublicDevelopmentLandingPage = lazy(() => import('./pages/PublicDevelopmen
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
 const BondTransactionsPage = lazy(() => import('./pages/bond/BondTransactionsPage'))
+const BondApplicationActionCentrePage = lazy(() => import('./pages/bond/BondApplicationActionCentrePage'))
 const BondModuleHubPage = lazy(() => import('./pages/bond/BondModuleHubPage'))
 const BondReportsAnalyticsPage = lazy(() => import('./pages/bond/BondReportsAnalyticsPage'))
 const BondOrganisationPage = lazy(() => import('./pages/bond/BondOrganisationPage'))
@@ -2527,6 +2529,14 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/bond/application-actions"
+                element={
+                  <RoleRoute allowedRoles={['bond_originator']}>
+                    <BondApplicationActionCentrePage />
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/transactions/:transactionId/legal/:packetType"
                 element={
                   <SalesWorkspaceGuard>
@@ -3878,7 +3888,8 @@ function AppRoutes() {
           <Route path="/client/:token/appointments" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/onboarding" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/details" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/client/:token/bond-application" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/client/:token/bond-application" element={<TokenRouteGate><AppErrorBoundary scope="bond-application-portal-route" title="Bond application failed to load"><BondApplicationPortal /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/bond-application/:accessToken" element={<TokenRouteGate paramKey="accessToken" title="Invalid bond application access link"><AppErrorBoundary scope="bond-application-access-route" title="Bond application failed to load"><BondApplicationPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
           <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/mobile/buyer-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-buyer-onboarding" title="Mobile buyer onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="buyer" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />

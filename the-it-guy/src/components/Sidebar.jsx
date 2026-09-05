@@ -175,6 +175,7 @@ const ICON_BY_KEY = {
   bond_applications: ClipboardList,
   bond_applications_active: FileCheck2,
   bond_applications_incoming: ClipboardList,
+  bond_application_actions: Workflow,
   bond_applications_completed: FileCheck2,
   bond_developments_current: Building2,
   bond_developments_developers: Users,

@@ -284,6 +284,7 @@ export const APP_NAV_BY_ROLE = {
       children: [
         { key: 'bond_applications_active', label: 'Active Applications', to: '/bond/applications?view=active' },
         { key: 'bond_applications_incoming', label: 'Incoming Applications', to: '/bond/applications?view=incoming' },
+        { key: 'bond_application_actions', label: 'Buyer Actions', to: '/bond/application-actions' },
         { key: 'bond_applications_completed', label: 'Completed', to: '/bond/applications?view=registered' },
       ],
     },
