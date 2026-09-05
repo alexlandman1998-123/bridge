@@ -21,7 +21,7 @@
 | Environment | Status | Required next action |
 | --- | --- | --- |
 | Local Supabase | Not running (`127.0.0.1:54322` refused connection) | Start the local stack, then run `supabase migration list --local` and apply/test the release candidate. |
-| Staging | Not verified | Authenticate/link the staging project; capture `supabase migration list --linked` before applying any pending batch. |
+| Staging | Verified 5 September against `vaszuxjeoajeuhlcnzzf` (Arch9 Staging) | Blocked: its ledger has remote-only versions absent locally and it has no Rental foundation tables. Reconcile the full history before any Rental migration apply. |
 | Production | Not verified | Capture the production migration ledger separately; do not infer it from git or deployment timestamps. |
 
 ## Apply order
@@ -31,3 +31,9 @@
 3. Verify the four Rental portal tables, indexes, RLS state, and update triggers.
 4. Run tenant and landlord portal smoke tests using non-production access tokens.
 5. Repeat the ledger comparison against production before scheduling promotion.
+
+## Phase 4 staging evidence
+
+- `supabase db push --dry-run --project-ref vaszuxjeoajeuhlcnzzf` refused to plan an apply because the staging history includes remote migration versions missing from this checkout.
+- A read-only probe confirmed that `rental_properties`, `rental_tenancies`, `rental_set_updated_at()`, and all four Rental portal tables are absent from Arch9 Staging.
+- The portal migration cannot be applied in isolation because its foreign keys require those Rental foundations. Do **not** repair migration history or apply the unmanaged `the-it-guy/sql/20260829_rental_*.sql` files directly to staging; first create an approved managed-foundation reconciliation plan.
