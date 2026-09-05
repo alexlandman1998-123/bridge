@@ -1,0 +1,22 @@
+{
+  "productionLedger": {
+    "confirmed": false,
+    "reference": "",
+    "recordedAt": ""
+  },
+  "productionCatalog": {
+    "confirmed": false,
+    "reference": "",
+    "recordedAt": ""
+  },
+  "stagingRecovery": {
+    "confirmed": false,
+    "reference": "",
+    "recordedAt": ""
+  },
+  "stagingFreeze": {
+    "confirmed": false,
+    "reference": "",
+    "recordedAt": ""
+  }
+}
