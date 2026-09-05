@@ -3092,7 +3092,7 @@ function AppRoutes() {
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>
                       <RentalModuleGate moduleId={RENTAL_MODULES.applications}>
-                        <RentalApplicationsPage />
+                        <Navigate to="/agent/rentals/applications" replace />
                       </RentalModuleGate>
                     </RentalWorkspaceGuard>
                   </RoleRoute>
