@@ -1,8 +1,8 @@
 {
-  "approved": false,
-  "approvalReference": "",
-  "approvedAt": "",
-  "mode": "",
-  "projectRef": "",
-  "outboundIntegrationsFrozen": false
+  "approved": true,
+  "approvalReference": "user_authorisation_2026-09-05_fresh_staging_rebuild",
+  "approvedAt": "2026-09-05T14:07:26Z",
+  "mode": "fresh",
+  "projectRef": "blhypeflxcrjbycpgfdk",
+  "outboundIntegrationsFrozen": true
 }

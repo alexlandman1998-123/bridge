@@ -1,6 +1,6 @@
 export const RENTAL_RECOVERY_ENVIRONMENTS = Object.freeze({
   production: 'isdowlnollckzvltkasn',
-  staging: 'vaszuxjeoajeuhlcnzzf',
+  staging: 'blhypeflxcrjbycpgfdk',
 })
 
 const SHA256 = /^sha256:[a-f0-9]{64}$/i

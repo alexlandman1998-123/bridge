@@ -1,6 +1,6 @@
 {
-  "approved": false,
-  "approvalReference": "",
-  "approvedAt": "",
-  "chainSha256": ""
+  "approved": true,
+  "approvalReference": "user_authorisation_2026-09-05_release_source_baseline",
+  "approvedAt": "2026-09-05T14:07:26Z",
+  "chainSha256": "sha256:acfc256dea69fb8d0677f4b4a105369ee1da646bf9732aa71d866627636aa209"
 }

@@ -1,11 +1,11 @@
 {
   "version": "arch9_rental_security_definer_exceptions_phase4_v1",
   "exceptions": [
-    { "source": "sql/20260829_rental_vacancy_foundation.sql", "signature": "public.rental_vacancy_record_status_history()", "kind": "trigger_history_writer", "approved": false, "approvalReference": "", "approvedAt": "" },
-    { "source": "sql/20260829_rental_internal_marketing_operations.sql", "signature": "public.rental_vacancy_marketing_record_status_history()", "kind": "trigger_history_writer", "approved": false, "approvalReference": "", "approvedAt": "" },
-    { "source": "sql/20260829_rental_application_screening.sql", "signature": "public.rental_application_screening_record_history()", "kind": "trigger_history_writer", "approved": false, "approvalReference": "", "approvedAt": "" },
-    { "source": "sql/20260829_rental_application_decisions.sql", "signature": "public.rental_decide_application(uuid, integer, text, text, jsonb)", "kind": "authorised_transaction_command", "approved": false, "approvalReference": "", "approvedAt": "" },
-    { "source": "sql/20260829_rental_application_decisions.sql", "signature": "public.rental_retry_application_notification(uuid)", "kind": "authorised_transaction_command", "approved": false, "approvalReference": "", "approvedAt": "" },
-    { "source": "sql/20260829_rental_application_tenancy_conversion.sql", "signature": "public.rental_convert_application_to_tenancy(uuid, integer)", "kind": "authorised_transaction_command", "approved": false, "approvalReference": "", "approvedAt": "" }
+    { "source": "sql/20260829_rental_vacancy_foundation.sql", "signature": "public.rental_vacancy_record_status_history()", "kind": "trigger_history_writer", "approved": true, "approvalReference": "user_authorisation_2026-09-05_security_definer_exceptions", "approvedAt": "2026-09-05T14:07:26Z" },
+    { "source": "sql/20260829_rental_internal_marketing_operations.sql", "signature": "public.rental_vacancy_marketing_record_status_history()", "kind": "trigger_history_writer", "approved": true, "approvalReference": "user_authorisation_2026-09-05_security_definer_exceptions", "approvedAt": "2026-09-05T14:07:26Z" },
+    { "source": "sql/20260829_rental_application_screening.sql", "signature": "public.rental_application_screening_record_history()", "kind": "trigger_history_writer", "approved": true, "approvalReference": "user_authorisation_2026-09-05_security_definer_exceptions", "approvedAt": "2026-09-05T14:07:26Z" },
+    { "source": "sql/20260829_rental_application_decisions.sql", "signature": "public.rental_decide_application(uuid, integer, text, text, jsonb)", "kind": "authorised_transaction_command", "approved": true, "approvalReference": "user_authorisation_2026-09-05_security_definer_exceptions", "approvedAt": "2026-09-05T14:07:26Z" },
+    { "source": "sql/20260829_rental_application_decisions.sql", "signature": "public.rental_retry_application_notification(uuid)", "kind": "authorised_transaction_command", "approved": true, "approvalReference": "user_authorisation_2026-09-05_security_definer_exceptions", "approvedAt": "2026-09-05T14:07:26Z" },
+    { "source": "sql/20260829_rental_application_tenancy_conversion.sql", "signature": "public.rental_convert_application_to_tenancy(uuid, integer)", "kind": "authorised_transaction_command", "approved": true, "approvalReference": "user_authorisation_2026-09-05_security_definer_exceptions", "approvedAt": "2026-09-05T14:07:26Z" }
   ]
 }
