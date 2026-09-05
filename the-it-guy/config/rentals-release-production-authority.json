@@ -1,0 +1,10 @@
+{
+  "approved": false,
+  "approvalReference": "",
+  "approvedAt": "",
+  "releaseCommit": "",
+  "sourceChainSha256": "",
+  "productionProjectRef": "",
+  "rollbackReference": "",
+  "operations": []
+}
