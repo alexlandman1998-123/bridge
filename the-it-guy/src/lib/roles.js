@@ -77,44 +77,16 @@ function createAgentPipelineNav() {
   }
 }
 
-function createAgentRentalsPipelineNav() {
-  return {
-    key: 'rental_pipeline',
-    label: 'Pipeline',
-    to: '/agent/rentals/pipeline/leads',
-    activeMatch: ['/agent/rentals/pipeline', '/agent/rentals/pipeline/dashboard', '/agent/rentals/pipeline/leads', '/agent/rentals/pipeline/follow-ups', '/agent/rentals/pipeline/service-levels', '/agent/rentals/pipeline/performance', '/agent/rentals/pipeline/placement-handoff', '/agent/rentals/pipeline/outcomes', '/agent/rentals/pipeline/automation', '/agent/rentals/pipeline/management-report', '/agent/rentals/pipeline/communications', '/agent/rentals/pipeline/matches', '/agent/rentals/pipeline/fica', '/agent/rentals/pipeline/mandates', '/agent/rentals/pipeline/listing-handoff', '/agent/rentals/pipeline/viewings', '/agent/rentals/pipeline/calendar'],
-    children: [
-      { key: 'rental_pipeline_dashboard', label: 'CRM Dashboard', to: '/agent/rentals/pipeline/dashboard' },
-      { key: 'rental_pipeline_leads', label: 'Leads', to: '/agent/rentals/pipeline/leads' },
-      { key: 'rental_pipeline_follow_ups', label: 'Follow-ups', to: '/agent/rentals/pipeline/follow-ups' },
-      { key: 'rental_pipeline_service_levels', label: 'Service Levels', to: '/agent/rentals/pipeline/service-levels' },
-      { key: 'rental_pipeline_performance', label: 'Lead Performance', to: '/agent/rentals/pipeline/performance' },
-      { key: 'rental_pipeline_placement_handoff', label: 'Placement Handoff', to: '/agent/rentals/pipeline/placement-handoff' },
-      { key: 'rental_pipeline_outcomes', label: 'Lead Outcomes', to: '/agent/rentals/pipeline/outcomes' },
-      { key: 'rental_pipeline_automation', label: 'Automation Queue', to: '/agent/rentals/pipeline/automation' },
-      { key: 'rental_pipeline_management_report', label: 'Management Report', to: '/agent/rentals/pipeline/management-report' },
-      { key: 'rental_pipeline_communications', label: 'Communications', to: '/agent/rentals/pipeline/communications' },
-      { key: 'rental_pipeline_matches', label: 'Tenant Matches', to: '/agent/rentals/pipeline/matches' },
-      { key: 'rental_pipeline_fica', label: 'FICA Readiness', to: '/agent/rentals/pipeline/fica' },
-      { key: 'rental_pipeline_mandates', label: 'Landlord Mandates', to: '/agent/rentals/pipeline/mandates' },
-      { key: 'rental_pipeline_listing_handoff', label: 'Listing Handoff', to: '/agent/rentals/pipeline/listing-handoff' },
-      { key: 'rental_pipeline_viewings', label: 'Viewings', to: '/agent/rentals/pipeline/viewings' },
-      { key: 'rental_pipeline_calendar', label: 'Calendar', to: '/agent/rentals/pipeline/calendar' },
-    ],
-  }
-}
-
 const RENTAL_NAV = Object.freeze({
   [RENTAL_OPERATING_MODES.longTerm]: ({ canManageOrganisation = false, isBranchManager = false } = {}) => [
     { key: 'rental_dashboard', label: 'Dashboard', to: '/agent/rentals/long-term/dashboard', activeMatch: ['/agent/rentals/dashboard', '/agent/rentals/long-term/dashboard'] },
-    { key: 'rental_applications', label: 'Applications', to: '/agent/rentals/applications', activeMatch: ['/agent/rentals/applications', '/agent/rentals/pipeline/applications'] },
+    { key: 'rental_leads', label: 'Leads', to: '/agent/rentals/pipeline/leads', activeMatch: ['/agent/rentals/pipeline'] },
     { key: 'rental_tenancies', label: 'Tenancies', to: '/agent/rentals/tenancies', activeMatch: ['/agent/rentals/tenancies'] },
-    createAgentRentalsPipelineNav(),
+    { key: 'rental_properties', label: 'Properties', to: '/agent/rentals/portfolio/properties', activeMatch: ['/agent/rentals/portfolio', '/agent/rentals/properties'] },
     { key: 'rental_listings', label: 'Listings', to: '/agent/rentals/listings', activeMatch: ['/agent/rentals/listings'] },
-    { key: 'rental_properties', label: 'Properties & Mandates', to: '/agent/rentals/portfolio/properties', activeMatch: ['/agent/rentals/portfolio', '/agent/rentals/properties'] },
     { key: 'rental_maintenance', label: 'Maintenance', to: '/agent/rentals/maintenance', activeMatch: ['/agent/rentals/maintenance'] },
+    { key: 'rental_people', label: 'People', to: '/clients', children: [{ key: 'rental_people_tenants', label: 'Tenants', to: '/clients' }, { key: 'rental_people_landlords', label: 'Landlords', to: '/clients' }, { key: 'rental_people_contacts', label: 'Contacts', to: '/clients' }] },
     ...(canManageOrganisation ? [{ key: 'rental_agency', label: 'Organisation', to: '/agency/branches', navSection: 'secondary', activeMatch: ['/agency/branches', '/agency/agents', '/agency/commission', '/agency/partners', '/partners'], children: [{ key: 'rental_agency_branches', label: 'Branches', to: '/agency/branches' }, ...(!isBranchManager ? [{ key: 'rental_agency_people', label: 'Agents', to: '/agency/agents' }] : []), ...(!isBranchManager ? [{ key: 'rental_agency_partners', label: 'Partners', to: '/agency/partners', activeMatch: ['/agency/partners', '/partners'] }] : []), ...(!isBranchManager ? [{ key: 'rental_agency_commission', label: 'Commission', to: '/agency/commission' }] : [])] }] : []),
-    { key: 'rental_clients', label: 'Clients', to: '/clients', navSection: 'secondary' },
   ],
   [RENTAL_OPERATING_MODES.shortTerm]: () => [
     { key: 'short_term_dashboard', label: 'Overview', to: '/agent/rentals/short-term/dashboard', activeMatch: ['/agent/rentals/short-term/dashboard'] },
