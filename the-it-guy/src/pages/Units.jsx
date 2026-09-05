@@ -1967,7 +1967,7 @@ function Units() {
       ) : null}
 
       {!showInitialTransactionsLoading && isSupabaseConfigured ? (
-        <Suspense fallback={isTransactionsRoute ? <TransactionsRouteShell /> : <LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />}>
+        <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />}>
           {isBondRole ? (
           <BondApplicationsTable
             rows={rows}

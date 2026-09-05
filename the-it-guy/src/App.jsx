@@ -35,6 +35,8 @@ import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/busine
 import { RentalModuleBoundary } from './modules/rentals/shell/RentalModuleBoundary'
 import {
   RentalApplicationsPage,
+  RentalTenantPortalPage,
+  RentalLandlordPortalPage,
   RentalCalendarPage,
   ShortTermRentalCalendarPage,
   ShortTermRentalDashboardPage,
@@ -44,6 +46,20 @@ import {
   ShortTermRatesPage,
   RentalViewingsPage,
   RentalLeadsPage,
+  RentalCrmDashboardPage,
+  RentalLeadWorkspacePage,
+  RentalLeadFollowUpsPage,
+  RentalLeadServiceLevelsPage,
+  RentalLeadPerformancePage,
+  RentalTenantPlacementPage,
+  RentalLeadOutcomesPage,
+  RentalLeadAutomationPage,
+  RentalLeadManagementReportPage,
+  RentalLeadCommunicationsPage,
+  RentalLeadMatchesPage,
+  RentalLeadFicaPage,
+  RentalLandlordMandatesPage,
+  RentalLandlordListingsPage,
   RentalListingCreatePage,
   RentalListingDetailPage,
   RentalListingsPage,
@@ -1876,6 +1892,8 @@ function AppRoutes() {
           <Route path="/qr/arch9" element={<Arch9LaunchConcierge />} />
           <Route path="/card/:cardSlug" element={<AppErrorBoundary scope="agent-digital-card" title="Agent digital card failed to load"><PublicAgentDigitalCardPage /></AppErrorBoundary>} />
           <Route path="/rental-application/:token" element={<AppErrorBoundary scope="rental-applicant-journey" title="Rental application failed to load"><RentalApplicantJourneyPage /></AppErrorBoundary>} />
+          <Route path="/tenant/:token" element={<AppErrorBoundary scope="rental-tenant-portal" title="Tenant portal failed to load"><RentalTenantPortalPage /></AppErrorBoundary>} />
+          <Route path="/landlord/:token" element={<AppErrorBoundary scope="rental-landlord-portal" title="Landlord portal failed to load"><RentalLandlordPortalPage /></AppErrorBoundary>} />
           <Route path="/intake/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/a/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/young-law" element={<AppErrorBoundary scope="young-law-calculators" title="Young Law calculators failed to load"><YoungLawCalculatorsPage /></AppErrorBoundary>} />
@@ -2987,6 +3005,10 @@ function AppRoutes() {
               />
               <Route path="/agent/rentals/tenancies/:tenancyId" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.tenancies}><RentalTenancyDetailPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route
+                path="/agent/rentals/pipeline/dashboard"
+                element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalCrmDashboardPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>}
+              />
+              <Route
                 path="/agent/rentals/pipeline/leads"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -2998,6 +3020,19 @@ function AppRoutes() {
                   </RoleRoute>
                 }
               />
+              <Route path="/agent/rentals/pipeline/leads/:leadId" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadWorkspacePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/follow-ups" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadFollowUpsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/service-levels" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadServiceLevelsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/performance" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadPerformancePage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/placement-handoff" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalTenantPlacementPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/outcomes" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadOutcomesPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/automation" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadAutomationPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/management-report" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadManagementReportPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/communications" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadCommunicationsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/matches" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadMatchesPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/fica" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLeadFicaPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/mandates" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLandlordMandatesPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/pipeline/listing-handoff" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalLandlordListingsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route
                 path="/agent/rentals/pipeline/viewings"
                 element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.leads}><RentalViewingsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>}

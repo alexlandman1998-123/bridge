@@ -1,0 +1,2 @@
+export const RENTAL_TENANT_PORTAL_REQUEST_TYPES = Object.freeze(['maintenance', 'access', 'general'])
+export function validateRentalTenantPortalRequest({ requestType = '', message = '' } = {}) { const errors = []; if (!RENTAL_TENANT_PORTAL_REQUEST_TYPES.includes(String(requestType).trim().toLowerCase())) errors.push('Choose a supported request type.'); const length = String(message).trim().length; if (length < 10 || length > 4000) errors.push('Request message must be 10 to 4,000 characters.'); return errors }

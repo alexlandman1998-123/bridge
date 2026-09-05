@@ -13,6 +13,9 @@ const requiredSources = Object.freeze([
   'src/auth/permissions/navigationPermissions.js',
   'src/auth/permissions/permissionRegistry.js',
   'src/services/rentals/rentalListingArchitecture.js',
+  'src/services/rentals/rentalDomainContract.js',
+  'src/services/rentals/rentalLeadService.js',
+  'src/services/rentals/rentalLandlordMandateRepository.js',
   'src/services/rentals/rentalModuleAvailability.js',
   'src/services/rentals/rentalWorkspaceScope.js',
   'scripts/performance-baseline.mjs',
@@ -25,6 +28,22 @@ const rentalRoutes = Object.freeze([
   '/agent/rentals/pipeline/applications',
   '/agent/rentals/pipeline/calendar',
   '/agent/rentals/listings',
+  '/agent/rentals/portfolio',
+  '/agent/rentals/vacancies',
+  '/agent/rentals/maintenance',
+  '/agent/rentals/inspections',
+])
+
+const coreRentalTables = Object.freeze([
+  'rental_portfolios',
+  'rental_properties',
+  'rental_units',
+  'rental_property_landlords',
+  'rental_property_mandates',
+  'rental_vacancies',
+  'rental_applications',
+  'rental_tenancies',
+  'rental_leases',
 ])
 
 const salesRegressionCommands = Object.freeze([
@@ -87,7 +106,8 @@ function markdownList(items) {
 
 function formatMarkdown(report) {
   const checks = report.guard.checks
-  return `# Rentals Phase 0 Baseline\n\nGenerated: ${report.generatedAt}\n\n## Decision\n\n\`${report.decision}\` — this report is read-only. It documents current boundaries and must pass before a Rentals schema or workflow phase begins.\n\n## Guard checks\n\n| Check | Status | Detail |\n| --- | --- | --- |\n${checks.map((check) => `| ${check.key} | ${check.passed ? 'PASS' : 'BLOCKED'} | ${check.detail} |`).join('\n')}\n\n## Existing Rental Surfaces\n\n### Routes\n\n${markdownList(report.rentals.routes)}\n\n### Source files\n\n${markdownList(report.rentals.sourceFiles)}\n\n### Existing services\n\n${markdownList(report.rentals.serviceFiles)}\n\n## Shared Infrastructure To Reuse\n\n- Workspace guard and feature flags: \`RentalWorkspaceGuard\` and \`resolveRentalModuleAvailability\`.\n- Scope contract: \`resolveRentalWorkspaceScope\`.\n- Marketing projection: \`private_listings\` with \`listing_category:rental\`.\n- Listing media, syndication, documents, activity, contacts/clients, notifications and permissions through adapters.\n\n## Confirmed Gaps\n\n- Durable Portfolio → Property → Unit → Vacancy → Application → Tenancy tables are not present in the app migration inventory.\n- Rental navigation currently reuses broad Sales-era permissions.\n- Dashboard, rental leads and calendar are placeholders.\n- Collections, maintenance, inspections, renewals and portals are not implemented as rental-owned domains.\n\n## Sales Protection Contract\n\n- Do not change Sales route behavior, default queries or status semantics.\n- Keep rental listing projection explicitly marked \`listing_category:rental\`.\n- Do not alter shared RLS without both Sales and Rentals policy tests.\n- Keep Rentals lazy-loaded and outside the initial Sales bundle.\n- Run the following checks before every next phase.\n\n${markdownList(report.salesRegressionCommands)}\n\n## Database Migration Inventory\n\nMigration files inspected: ${report.database.migrationFiles.length}\n\nRental-specific migration files found: ${report.database.rentalMigrationFiles.length}\n\n${markdownList(report.database.rentalMigrationFiles)}\n\n## Next Phase\n\nProceed to Phase 1 only after reviewing this baseline and agreeing the canonical domain contract.\n`
+  const coreTableRows = report.database.coreTables.map((table) => `| \`${table.name}\` | ${table.present ? 'Present in SQL artifact inventory' : 'Missing'} | ${table.sources.map((source) => `\`${source}\``).join('<br>') || '—'} |`).join('\n')
+  return `# Rentals Phase 0 — Reconciliation and Scope Lock\n\nGenerated: ${report.generatedAt}\n\n## Decision\n\n\`${report.decision}\` — this is a read-only implementation phase. It reconciles the current codebase, locks ownership boundaries, and adds a regression gate. It does not alter production data or business workflow behaviour.\n\n## Guard checks\n\n| Check | Status | Detail |\n| --- | --- | --- |\n${checks.map((check) => `| ${check.key} | ${check.passed ? 'PASS' : 'BLOCKED'} | ${check.detail} |`).join('\n')}\n\n## Current implementation inventory\n\n### Protected rental routes\n\n${markdownList(report.rentals.routes)}\n\n### Rental source files\n\n${markdownList(report.rentals.sourceFiles)}\n\n### Rental services\n\n${markdownList(report.rentals.serviceFiles)}\n\n### Core database entities\n\n| Entity | Inventory status | SQL source |\n| --- | --- | --- |\n${coreTableRows}\n\n## Canonical ownership boundary\n\n| Concern | System of record | Boundary |\n| --- | --- | --- |\n| Canonical people and organisations | Platform CRM | Landlord, applicant and tenant remain role relationships; no duplicate contact master. |\n| Property, unit, vacancy, application, screening, lease, tenancy | Arch9 Rentals | Rentals owns the operational lifecycle. |\n| Marketing listing | Shared Listings | A rental listing is a vacancy projection marked \`listing_category:rental\`; it is never the occupancy source of truth. |\n| Rental payments, trust accounting, reconciliation and payouts | External financial system, currently unintegrated | Do not treat Arch9's operational financial records as a trust-accounting ledger. |\n| Maintenance and inspections | Arch9 Rentals | Continue as a rental-owned workflow; benchmark externally without coupling to an unverified integration. |\n\n## Integration status\n\n| Candidate | Status | Phase 0 decision |\n| --- | --- | --- |\n| PayProp | ${report.integrations.payProp.status} | No credentials, client, webhook, or data synchronisation is present. A future integration requires a separate contract and sandbox proof. |\n| WeConnectU / RedRabbit | ${report.integrations.weConnectU.status} | No client, webhook, or data synchronisation is present. Treat it as an operational benchmark until a separate integration assessment is approved. |\n\n## Confirmed capability state\n\n| Capability | Current state | Phase 0 conclusion |\n| --- | --- | --- |\n| Rental leads | ${report.capabilities.rentalLeads} | Existing implementation is a starting point, not a replacement CRM. |\n| Landlord and mandate | ${report.capabilities.landlordMandates} | Relationship and mandate records exist; guided acquisition remains a later workflow phase. |\n| Applicant applications | ${report.capabilities.applications} | Application and applicant-link foundations exist. |\n| Tenant and landlord portals | ${report.capabilities.portals} | Portal access model/rollout flags exist, but no production rental portal route is claimed by this phase. |\n| Finance | ${report.capabilities.finance} | Operational records exist; trust accounting and PayProp synchronisation are out of scope. |\n\n## Sales protection contract\n\n- Do not change Sales route behaviour, default queries, lead-category semantics, or status enums to accommodate Rentals.\n- Keep rental marketing projections explicitly marked \`listing_category:rental\`.\n- Do not alter shared RLS without both Sales and Rentals policy tests.\n- Keep Rentals lazy-loaded and outside the initial Sales bundle.\n- Do not introduce a finance integration or financial source-of-truth change in a CRM phase.\n- Run the following checks before every next phase.\n\n${markdownList(report.salesRegressionCommands)}\n\n## Next phase\n\nProceed to the Rental CRM data-contract phase: rental lead classification, landlord/tenant roles, stage definitions, import contract, and transition rules.\n`
 }
 
 export async function buildRentalsPhase0Baseline() {
@@ -95,14 +115,39 @@ export async function buildRentalsPhase0Baseline() {
   const sourceMap = Object.fromEntries(requiredSources.map((file, index) => [file, sourceContents[index]]))
   const sourceFiles = await listFiles(path.join(appRoot, 'src'), (filePath) => /rental/i.test(path.basename(filePath)))
   const rentalServices = sourceFiles.filter((filePath) => filePath.includes(`${path.sep}services${path.sep}`))
-  const migrationRoots = [
-    path.join(workspaceRoot, 'supabase', 'migrations'),
-    path.join(appRoot, 'supabase', 'migrations'),
+  const sqlRoots = [
+    { kind: 'migration', path: path.join(workspaceRoot, 'supabase', 'migrations') },
+    { kind: 'sql_artifact', path: path.join(appRoot, 'sql') },
   ]
-  const migrationFiles = unique((await Promise.all(migrationRoots.map((root) => listFiles(root, (filePath) => filePath.endsWith('.sql'))))).flat())
-    .map(relativeToWorkspace)
-  const migrationContents = await Promise.all(migrationFiles.map((filePath) => fs.readFile(path.join(workspaceRoot, filePath), 'utf8')))
-  const rentalMigrationFiles = migrationFiles.filter((filePath, index) => /create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?rental_/i.test(migrationContents[index]))
+  const sqlFiles = unique((await Promise.all(sqlRoots.map(async ({ kind, path: root }) => (
+    (await listFiles(root, (filePath) => filePath.endsWith('.sql')))).map((filePath) => ({ kind, filePath }))
+  )))).flat().map((entry) => ({ ...entry, relativePath: relativeToWorkspace(entry.filePath) }))
+  const sqlContents = await Promise.all(sqlFiles.map(async ({ filePath }) => fs.readFile(filePath, 'utf8')))
+  const coreTables = coreRentalTables.map((name) => ({
+    name,
+    present: sqlContents.some((source) => new RegExp(`create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?(?:public\\.)?${name}\\b`, 'i').test(source)),
+    sources: sqlFiles.filter((_, index) => new RegExp(`create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?(?:public\\.)?${name}\\b`, 'i').test(sqlContents[index])).map(({ relativePath }) => relativePath),
+  }))
+  const rentalSqlFiles = sqlFiles.filter((_, index) => /\brental_/i.test(sqlContents[index]))
+  const hasIntegrationReference = async (pattern) => {
+    const integrationRoots = [
+      path.join(appRoot, 'src'),
+      path.join(appRoot, 'server'),
+      path.join(appRoot, 'api'),
+      path.join(workspaceRoot, 'supabase', 'functions'),
+    ]
+    const integrationFiles = (await Promise.all(integrationRoots.map((root) => (
+      listFiles(root, (filePath) => /\.(?:[cm]?[jt]sx?|sql)$/i.test(filePath))
+    )))).flat()
+    for (const filePath of integrationFiles) {
+      if (pattern.test(await fs.readFile(filePath, 'utf8'))) return true
+    }
+    return false
+  }
+  const [hasPayPropReference, hasWeConnectUReference] = await Promise.all([
+    hasIntegrationReference(/\bpayprop\b/i),
+    hasIntegrationReference(/\b(?:weconnectu|redrabbit)\b/i),
+  ])
 
   const checks = [
     {
@@ -140,19 +185,49 @@ export async function buildRentalsPhase0Baseline() {
       passed: sourceMap['scripts/performance-baseline.mjs'].includes('performance baseline written'),
       detail: 'Existing performance baseline tooling is available for the next phase.',
     },
+    {
+      key: 'core_rental_sql_inventory',
+      passed: coreTables.every((table) => table.present),
+      detail: `${coreTables.filter((table) => table.present).length}/${coreTables.length} core rental tables are present in the repository SQL inventory.`,
+    },
+    {
+      key: 'rental_domain_contract',
+      passed: sourceMap['src/services/rentals/rentalDomainContract.js'].includes('RENTAL_DOMAIN_ENTITIES'),
+      detail: 'Canonical Rentals ownership and transition contract is present.',
+    },
+    {
+      key: 'rental_lead_and_mandate_foundation',
+      passed: sourceMap['src/services/rentals/rentalLeadService.js'].includes('createRentalLead')
+        && sourceMap['src/services/rentals/rentalLandlordMandateRepository.js'].includes('createRentalPropertyMandate'),
+      detail: 'Rental lead and landlord-mandate foundations are present for the subsequent CRM phase.',
+    },
   ]
 
   return {
     version: 'arch9_rentals_phase0_baseline_v1',
     generatedAt: new Date().toISOString(),
-    decision: checks.every((check) => check.passed) ? 'PHASE_0_READY_FOR_DOMAIN_CONTRACT' : 'PHASE_0_BLOCKED',
+    decision: checks.every((check) => check.passed) ? 'PHASE_0_RECONCILED' : 'PHASE_0_BLOCKED',
     guard: { checks },
     rentals: {
       routes: rentalRoutes,
       sourceFiles: sourceFiles.map(relativeToWorkspace),
       serviceFiles: rentalServices.map(relativeToWorkspace),
     },
-    database: { migrationFiles, rentalMigrationFiles },
+    database: {
+      sqlArtifacts: rentalSqlFiles.map(({ kind, relativePath }) => ({ kind, path: relativePath })),
+      coreTables,
+    },
+    integrations: {
+      payProp: { status: hasPayPropReference ? 'reference_detected_review_required' : 'not_integrated' },
+      weConnectU: { status: hasWeConnectUReference ? 'reference_detected_review_required' : 'not_integrated' },
+    },
+    capabilities: {
+      rentalLeads: 'implemented_foundation',
+      landlordMandates: 'implemented_foundation',
+      applications: 'implemented_foundation',
+      portals: 'access_model_and_rollout_controls_only',
+      finance: 'operational_records_only_no_external_finance_integration',
+    },
     salesRegressionCommands,
   }
 }
