@@ -1,4 +1,4 @@
-const AUTHORING_ITEMS = Object.freeze([
+export const RENTAL_MANAGED_MIGRATION_AUTHORING_ITEMS = Object.freeze([
   ['rental_property_foundation', 'sql/20260829_rental_property_foundation.sql'],
   ['rental_unit_foundation', 'sql/20260829_rental_unit_foundation.sql'],
   ['rental_portfolio_foundation', 'sql/20260829_rental_portfolio_foundation.sql'],
@@ -25,7 +25,7 @@ export function buildRentalManagedMigrationAuthoringWorkOrder(sourceLock = {}) {
     sourceLock: sourceLock.chainSha256 || null,
     scaffoldAllowed: authoringAllowed,
     applyAllowed: false,
-    items: AUTHORING_ITEMS,
+    items: RENTAL_MANAGED_MIGRATION_AUTHORING_ITEMS,
     reviewRequirements: [
       'Create every new managed migration with `supabase migration new`; never invent timestamps.',
       'Copy only the locked source content after dependency, idempotence, RLS, trigger, view, storage, and extension review.',
