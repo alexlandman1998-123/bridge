@@ -17,29 +17,16 @@ export const RENTAL_FOUNDATION_MIGRATION_SOURCES = Object.freeze([
   'sql/20260829_rental_application_tenancy_conversion.sql',
   'supabase/migrations/20260905120250_rental_portal_foundation.sql',
 ])
-
-const REQUIRED_EVIDENCE = Object.freeze([
-  ['productionLedger', 'production migration-ledger export'],
-  ['productionCatalog', 'production rental catalog report'],
-  ['stagingRecovery', 'staging snapshot/disposability confirmation'],
-  ['stagingFreeze', 'staging deployment and side-effect freeze confirmation'],
-])
-
-function text(value) {
-  return String(value ?? '').trim()
-}
-
-function validEvidence(value) {
-  return Boolean(value && value.confirmed === true && text(value.reference) && text(value.recordedAt))
-}
+import { assessRentalRecoveryEvidence } from './rentalRecoveryEvidence.js'
 
 export function assessRentalFoundationMigrationPlan({ evidence = {}, sourceFiles = [] } = {}) {
   const suppliedSources = Array.isArray(sourceFiles) ? sourceFiles : []
   const sourceOrderMatches = suppliedSources.length === RENTAL_FOUNDATION_MIGRATION_SOURCES.length
     && suppliedSources.every((source, index) => source === RENTAL_FOUNDATION_MIGRATION_SOURCES[index])
-  const missingEvidence = REQUIRED_EVIDENCE
-    .filter(([key]) => !validEvidence(evidence[key]))
-    .map(([, label]) => label)
+  const evidenceAssessment = assessRentalRecoveryEvidence(evidence)
+  const missingEvidence = evidenceAssessment.checks
+    .filter((check) => !check.pass)
+    .map((check) => check.code)
 
   return {
     version: 'arch9_rental_foundation_migration_plan_phase3_v1',
@@ -49,7 +36,8 @@ export function assessRentalFoundationMigrationPlan({ evidence = {}, sourceFiles
     sourceOrderMatches,
     sourceFiles: RENTAL_FOUNDATION_MIGRATION_SOURCES,
     missingEvidence,
-    generationAllowed: missingEvidence.length === 0 && sourceOrderMatches,
+    evidenceChecks: evidenceAssessment.checks,
+    generationAllowed: evidenceAssessment.ready && sourceOrderMatches,
     applyAllowed: false,
     nextAction: missingEvidence.length || !sourceOrderMatches
       ? 'Attach all recovery evidence and preserve the approved source order before authoring managed migrations.'

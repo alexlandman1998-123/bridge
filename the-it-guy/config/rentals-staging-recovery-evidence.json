@@ -2,21 +2,38 @@
   "productionLedger": {
     "confirmed": false,
     "reference": "",
-    "recordedAt": ""
+    "recordedAt": "",
+    "projectRef": "",
+    "artifactSha256": "",
+    "containsSecrets": false,
+    "containsCustomerRecords": false
   },
   "productionCatalog": {
     "confirmed": false,
     "reference": "",
-    "recordedAt": ""
+    "recordedAt": "",
+    "projectRef": "",
+    "artifactSha256": "",
+    "containsSecrets": false,
+    "containsCustomerRecords": false
   },
   "stagingRecovery": {
     "confirmed": false,
     "reference": "",
-    "recordedAt": ""
+    "recordedAt": "",
+    "projectRef": "",
+    "recoveryMode": "",
+    "containsSecrets": false,
+    "containsCustomerRecords": false
   },
   "stagingFreeze": {
     "confirmed": false,
     "reference": "",
-    "recordedAt": ""
+    "recordedAt": "",
+    "projectRef": "",
+    "deploymentsFrozen": false,
+    "outboundIntegrationsFrozen": false,
+    "containsSecrets": false,
+    "containsCustomerRecords": false
   }
 }
