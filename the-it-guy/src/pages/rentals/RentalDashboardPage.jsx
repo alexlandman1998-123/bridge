@@ -3,10 +3,9 @@ import { Building2, ClipboardList, FileSignature, Loader2, RefreshCw, TriangleAl
 import { Link } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { buildRentalDashboardSnapshot } from '../../services/rentals/rentalDashboardModel'
-import { listPersistedRentalApplications } from '../../services/rentals/rentalApplicationRepository.js'
+import { listPersistedRentalApplications, listPersistedRentalTenancies } from '../../services/rentals/rentalApplicationRepository.js'
 import { listRentalLeads } from '../../services/rentals/rentalLeadService'
 import { listRentalListingsForAgent } from '../../services/rentals/rentalListingDraftService'
-import { listRentalLeaseWorkflowsForAgent } from '../../services/rentals/rentalLeaseWorkflowService'
 import { listRentalManagementWorkspace } from '../../services/rentals/rentalManagementService'
 import { buildRentalListingQueryOptions, resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
 
@@ -28,7 +27,7 @@ export default function RentalDashboardPage() {
         listRentalListingsForAgent(scope.assignedAgentId, options),
         listRentalLeads(scope.organisationId, { assignedAgentId: scope.assignedAgentId, branchId: scope.branchId, scopeLevel: scope.scopeLevel, includeAllOrganisationLeads: scope.scopeLevel === 'organisation' }),
         listPersistedRentalApplications(scope.organisationId),
-        listRentalLeaseWorkflowsForAgent(scope.assignedAgentId, options),
+        listPersistedRentalTenancies(scope.organisationId),
         listRentalManagementWorkspace(scope.assignedAgentId, options),
       ])
       setSnapshot(buildRentalDashboardSnapshot({ listings, leads, applications, leases, managementEvents: management.events }))
