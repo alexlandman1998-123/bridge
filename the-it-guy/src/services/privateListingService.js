@@ -1837,6 +1837,22 @@ async function uploadToPrivateListingDocumentsBucket(client, filePath, file, opt
   return bucket
 }
 
+async function removePrivateListingDocumentObject(client, filePath, preferredBucket = '') {
+  const buckets = [normalizeText(preferredBucket), ...DOCUMENTS_BUCKET_CANDIDATES].filter(Boolean)
+  const checked = new Set()
+  let lastError = null
+  for (const bucketName of buckets) {
+    if (checked.has(bucketName)) continue
+    checked.add(bucketName)
+    const result = await client.storage.from(bucketName).remove([filePath])
+    if (!result.error) return true
+    if (isStorageBucketNotFoundError(result.error)) continue
+    lastError = result.error
+  }
+  if (lastError) throw lastError
+  return false
+}
+
 async function createPrivateListingDocumentSignedUrl(client, filePath, expiresInSeconds = 120, preferredBucket = '') {
   if (!filePath) return ''
   const bucketCandidates = [
@@ -8905,64 +8921,56 @@ export async function uploadSellerClientPortalDocument({
   const timestamp = Date.now()
   const filePath = `seller-portal/${listing.id}/${timestamp}-${safeOriginalName}`
 
-  await uploadToPrivateListingDocumentsBucket(storageClient, filePath, file, {
+  const uploadedBucket = await uploadToPrivateListingDocumentsBucket(storageClient, filePath, file, {
     upsert: false,
     contentType: file.type || undefined,
   })
 
-  const rpc = await client.rpc('bridge_upload_private_listing_seller_document', {
-    p_token: normalizedToken,
-    p_requirement_key: normalizedRequirementKey || null,
-    p_document_name: file.name || safeOriginalName,
-    p_storage_path: filePath,
-    p_file_url: null,
-    p_document_type: normalizedDocumentType,
-    p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
-    p_category: category || 'Seller Document',
-    p_access_token: resolvedAccessToken || null,
-  })
-
-  if (rpc.error && !isMissingRpcError(rpc.error, 'bridge_upload_private_listing_seller_document')) {
-    throw rpc.error
+  let rpc
+  try {
+    rpc = await client.rpc('bridge_upload_private_listing_seller_document', {
+      p_token: normalizedToken,
+      p_requirement_key: normalizedRequirementKey || null,
+      p_document_name: file.name || safeOriginalName,
+      p_storage_path: filePath,
+      p_file_url: null,
+      p_document_type: normalizedDocumentType,
+      p_canonical_requirement_instance_id: canonicalRequirementInstanceId || null,
+      p_category: category || 'Seller Document',
+      p_access_token: resolvedAccessToken || null,
+    })
+    if (rpc.error) throw rpc.error
+    if (!rpc.data?.document?.id) {
+      throw new Error('Seller upload did not return a linked document record.')
+    }
+    if (!['canonically_linked', 'pending_transaction_link'].includes(normalizeText(rpc.data?.document_trust_state))) {
+      throw new Error('Seller upload did not return a Document Trust linking result.')
+    }
+  } catch (databaseError) {
+    try {
+      await removePrivateListingDocumentObject(storageClient, filePath, uploadedBucket)
+    } catch (cleanupError) {
+      console.error('Seller portal upload rollback could not remove its storage object', {
+        bucket: uploadedBucket,
+        filePath,
+        cleanupError,
+      })
+      databaseError.storageCleanupError = cleanupError
+    }
+    const uploadError = new Error('Your document was not linked to the transaction file. Nothing was submitted; please retry or contact support.')
+    uploadError.code = 'seller_document_canonical_link_failed'
+    uploadError.cause = databaseError
+    throw uploadError
   }
-  const usedFallbackUpload = Boolean(rpc.error)
 
-  let documentRow = null
-  if (!rpc.error) {
-    documentRow = rpc.data?.document && typeof rpc.data.document === 'object'
-      ? normalizeDocumentRows([rpc.data.document])[0] || null
-      : null
-  }
+  const documentRow = rpc.data.document && typeof rpc.data.document === 'object'
+    ? normalizeDocumentRows([rpc.data.document])[0] || null
+    : null
   const promotedSharedDocument = rpc.data?.shared_document && typeof rpc.data.shared_document === 'object'
     ? rpc.data.shared_document
     : null
   const pendingTransactionPromotion = Boolean(rpc.data?.pending_transaction_promotion)
   const promotedTransactionId = normalizeText(rpc.data?.transaction_id || '')
-
-  if (!documentRow) {
-    const insertPayload = {
-      private_listing_id: listing.id,
-      requirement_id: matchedRequirement?.id || null,
-      document_type: normalizedDocumentType,
-      document_name: file.name || safeOriginalName,
-      storage_path: filePath,
-      file_url: null,
-      uploaded_by: null,
-      status: 'uploaded',
-      visibility: 'seller_visible',
-      uploaded_at: new Date().toISOString(),
-      ...(canonicalRequirementInstanceId ? { canonical_requirement_instance_id: canonicalRequirementInstanceId } : {}),
-    }
-    const inserted = await insertPrivateListingDocumentRow(client, insertPayload)
-    if (inserted.error && !isMissingColumnError(inserted.error) && !isMissingTableError(inserted.error, 'private_listing_documents')) {
-      throw inserted.error
-    }
-    documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
-
-    if (matchedRequirement?.id) {
-      await updatePrivateListingRequirementStatus(matchedRequirement.id, 'uploaded').catch(() => null)
-    }
-  }
 
   if (canonicalRequirementInstanceId) {
     await linkUploadedDocumentToRequirement({
@@ -8992,17 +9000,6 @@ export async function uploadSellerClientPortalDocument({
     console.warn('[Private Listings] non-blocking seller journey lead sync skipped after seller portal upload', error)
     return false
   })
-
-  if (usedFallbackUpload) {
-    await notifyAgentWhenSellerDocumentsComplete(client, {
-      listing,
-      documentRow,
-      transactionId: promotedTransactionId || listing?.transactionId || listing?.transaction_id || '',
-    }).catch((error) => {
-      console.warn('[Private Listings] seller document completion notification skipped after fallback upload', error)
-      return null
-    })
-  }
 
   const documentRequestUpdate = await linkSellerPortalDocumentRequestUpload(storageClient, {
     transactionId: promotedTransactionId || listing?.transactionId || listing?.transaction_id || '',

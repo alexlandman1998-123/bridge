@@ -12,7 +12,7 @@ function RequirementUploadArea({
   const linkedDocument = requirement.linkedDocument || null
   const openKey = String(linkedDocument?.file_path || linkedDocument?.storage_path || linkedDocument?.id || linkedDocument?.url || '').trim()
   const opening = Boolean(openKey && openingDocumentPath === openKey)
-  const canOpen = Boolean(linkedDocument)
+  const canOpen = Boolean(linkedDocument && requirement.canOpenDocument)
   const canUpload = Boolean(requirement.canUpload && typeof onUpload === 'function')
   const uploadLabel = requirement.status === 'rejected'
     ? 'Upload replacement'

@@ -1,6 +1,7 @@
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
   fetchClientPortalByToken,
+  fetchClientPortalCanonicalDocumentProjection,
   fetchClientPortalContextsByToken,
   fetchClientPortalCoreByToken,
   fetchClientPortalJourneySnapshotByToken,
@@ -77,6 +78,12 @@ function normalizeWorkspace(value = 'shared') {
   if (normalized === 'selling' || normalized === 'seller') return 'selling'
   if (normalized === 'buying' || normalized === 'buyer') return 'buying'
   return 'shared'
+}
+
+export const DOCUMENT_TRUST_PHASE4_FLAG = 'VITE_DOCUMENT_TRUST_PHASE4_ENABLED'
+
+export function isDocumentTrustPhase4Enabled(value = import.meta.env?.[DOCUMENT_TRUST_PHASE4_FLAG]) {
+  return ['1', 'true', 'yes', 'on', 'enabled'].includes(String(value || '').trim().toLowerCase())
 }
 
 function normalizeValue(value = '') {
@@ -3250,7 +3257,134 @@ export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspa
   }
 }
 
+function canonicalBuyerDocumentCategory(packKey = '') {
+  const key = normalizeDocumentMatchKey(packKey)
+  if (/buyer_finance|bond/.test(key)) return 'finance'
+  if (/property|estate|sectional|tenant/.test(key)) return 'property'
+  if (/attorney_generated|mandate|otp/.test(key)) return 'sales'
+  return 'fica'
+}
+
+function canonicalRequirementStatusForPortal(status = '') {
+  const normalized = normalizeDocumentStatus(status)
+  return normalized === 'pending' ? 'required' : normalized
+}
+
+export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionError = '') {
+  if (projectionError) {
+    return {
+      requiredDocuments: [],
+      additionalRequests: [],
+      uploadedDocuments: [],
+      saleDocuments: [],
+      approvedDocuments: [],
+      rejectedDocuments: [],
+      signedDocuments: [],
+      items: [],
+      summary: { total: 0, outstanding: 0, uploaded: 0, underReview: 0, approved: 0, rejected: 0, blocking: 0 },
+      canonicalRequirements: [],
+      canonicalProjection: null,
+      canonicalOnly: true,
+      loadError: 'Your secure document room is temporarily unavailable. Please refresh or contact your transaction team.',
+    }
+  }
+
+  const documents = Array.isArray(projection?.documents) ? projection.documents : []
+  const documentsByRequirementId = new Map()
+  const documentsById = new Map()
+  documents.forEach((document) => {
+    const documentId = String(document?.id || '').trim()
+    const requirementId = String(document?.canonical_requirement_instance_id || document?.canonicalRequirementInstanceId || '').trim()
+    if (documentId) documentsById.set(documentId, document)
+    if (requirementId && !documentsByRequirementId.has(requirementId)) documentsByRequirementId.set(requirementId, document)
+  })
+
+  const requirements = Array.isArray(projection?.requirements) ? projection.requirements : []
+  const requiredDocuments = requirements.map((requirement) => {
+    const id = String(requirement?.id || '').trim()
+    const definition = requirement?.document_definitions || {}
+    const packKey = String(requirement?.pack_key || definition?.pack_key || '').trim()
+    const linkedDocument = documentsById.get(String(requirement?.satisfied_by_document_id || '').trim()) ||
+      documentsByRequirementId.get(id) || null
+    const status = canonicalRequirementStatusForPortal(requirement?.status || 'required')
+    const terminal = ['approved', 'completed', 'waived', 'not_applicable'].includes(status)
+    const uploadable = Array.isArray(requirement?.uploadable_by_roles)
+      && requirement.uploadable_by_roles.some((role) => ['buyer', 'client', 'purchaser'].includes(normalizeValue(role)))
+    const title = String(definition?.display_label || requirement?.display_label || requirement?.document_definition_key || 'Document').trim()
+    const categoryKey = canonicalBuyerDocumentCategory(packKey)
+    return {
+      id: `canonical_requirement_${id}`,
+      sourceId: id,
+      sourceType: 'required_document',
+      authoritativeSource: 'canonical_projection',
+      canonicalRequirementInstanceId: id,
+      canonical_requirement_instance_id: id,
+      key: String(requirement?.document_definition_key || '').trim(),
+      title,
+      description: String(definition?.description || requirement?.description || 'Supporting document required for your purchase.').trim(),
+      group: packKey,
+      category: packKey,
+      buyerCategoryKey: categoryKey,
+      buyerCategoryLabel: categoryKey,
+      status,
+      requiredDocumentStatus: status,
+      rejectionReason: String(requirement?.rejection_reason || '').trim(),
+      linkedDocument,
+      hasUploadedDocument: Boolean(linkedDocument),
+      isClientVisible: true,
+      isCoreRequirement: true,
+      uploadKey: id,
+      uploadSpec: uploadable && !terminal
+        ? {
+            type: 'canonical_requirement',
+            requirementInstanceId: id,
+            requirementKey: String(requirement?.document_definition_key || '').trim(),
+            documentDefinitionKey: String(requirement?.document_definition_key || '').trim(),
+            documentType: String(requirement?.document_definition_key || '').trim(),
+            category: packKey,
+          }
+        : null,
+    }
+  })
+  const items = requiredDocuments
+  const summary = items.reduce((result, item) => {
+    const status = normalizeDocumentStatus(item.status)
+    result.total += 1
+    if (status === 'rejected') result.rejected += 1
+    else if (['required', 'requested'].includes(status)) result.outstanding += 1
+    else if (status === 'uploaded') result.uploaded += 1
+    else if (status === 'under_review') result.underReview += 1
+    else if (['approved', 'completed'].includes(status)) result.approved += 1
+    if (['required', 'requested', 'rejected'].includes(status)) result.blocking += 1
+    return result
+  }, { total: 0, outstanding: 0, uploaded: 0, underReview: 0, approved: 0, rejected: 0, blocking: 0 })
+
+  return {
+    requiredDocuments,
+    additionalRequests: [],
+    uploadedDocuments: documents,
+    saleDocuments: [],
+    approvedDocuments: requiredDocuments.filter((item) => ['approved', 'completed'].includes(item.status)),
+    rejectedDocuments: requiredDocuments.filter((item) => item.status === 'rejected'),
+    signedDocuments: [],
+    items,
+    summary,
+    canonicalRequirements: requirements,
+    canonicalProjection: projection,
+    canonicalOnly: true,
+    documentRequestContainers: [],
+    documentRequestContainerSummary: { total: 0, additionalRequests: 0 },
+    allDocumentRequestContainerSummary: { total: 0, additionalRequests: 0 },
+  }
+}
+
 export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
+  if (workspaceMode === 'buying' && portalData?.canonicalDocumentProjection) {
+    return buildCanonicalBuyerDocumentCenter(portalData.canonicalDocumentProjection)
+  }
+  if (workspaceMode === 'buying' && portalData?.canonicalDocumentProjectionError) {
+    return buildCanonicalBuyerDocumentCenter(null, portalData.canonicalDocumentProjectionError)
+  }
   const sellerDocumentPack = workspaceMode === 'selling'
     ? resolveSellerPortalRequiredDocumentPack(portalData, workspaceMode)
     : null
@@ -3839,6 +3973,24 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
     sellerPortalAccessToken: options?.sellerPortalAccessToken,
     clientRole,
   })
+  if (workspaceMode === 'buying' && !isSellerOnboardingToken(token) && isDocumentTrustPhase4Enabled()) {
+    try {
+      const canonicalDocumentProjection = await fetchClientPortalCanonicalDocumentProjection(token)
+      if (portalData?.transaction?.id && canonicalDocumentProjection.transactionId !== portalData.transaction.id) {
+        throw new Error('Canonical document projection transaction does not match the portal transaction.')
+      }
+      portalData = {
+        ...portalData,
+        canonicalDocumentProjection,
+      }
+    } catch (error) {
+      console.error('[document-trust-phase4] Buyer canonical projection unavailable; legacy document reads are fenced.', error)
+      portalData = {
+        ...portalData,
+        canonicalDocumentProjectionError: error?.message || 'Canonical document projection unavailable.',
+      }
+    }
+  }
   if (!isSellerOnboardingToken(token) && portalData?.transaction?.id) {
     const attorneyLaneUpdates = await fetchClientPortalAttorneyLaneUpdatesByToken(token, clientRole, { limit: 12 }).catch((error) => {
       console.warn('[client-portal-attorney-updates] Failed to resolve attorney updates', {
