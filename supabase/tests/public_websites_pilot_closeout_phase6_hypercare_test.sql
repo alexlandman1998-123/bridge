@@ -1,0 +1,30 @@
+begin;
+select plan(24);
+
+select has_table('public', 'website_hypercare_windows', 'hypercare windows exist');
+select has_table('public', 'website_hypercare_daily_observations', 'daily observations exist');
+select has_table('public', 'website_hypercare_incidents', 'incident register exists');
+select has_table('public', 'website_hypercare_events', 'immutable event ledger exists');
+select col_is_fk('public', 'website_hypercare_windows', array['release_id', 'organisation_id'], 'window is bound to a production release');
+select col_is_fk('public', 'website_hypercare_windows', array['website_site_id', 'organisation_id'], 'window is bound to the organisation website');
+select has_function('public', 'website_start_hypercare', array['uuid','text'], 'start command exists');
+select has_function('public', 'website_record_hypercare_observation', array['uuid','date','jsonb','text'], 'daily observation command exists');
+select has_function('public', 'website_record_hypercare_incident', array['uuid','text','text','text','text'], 'incident command exists');
+select has_function('public', 'website_resolve_hypercare_incident', array['uuid','text','text'], 'incident resolution command exists');
+select has_function('public', 'website_accept_hypercare', array['uuid','jsonb','text'], 'acceptance command exists');
+select ok(not has_function_privilege('anon', 'public.website_start_hypercare(uuid,text)', 'execute'), 'anonymous callers cannot start hypercare');
+select ok(not has_function_privilege('authenticated', 'public.website_start_hypercare(uuid,text)', 'execute'), 'browser callers cannot start hypercare');
+select ok(has_function_privilege('service_role', 'public.website_start_hypercare(uuid,text)', 'execute'), 'release operator can start hypercare');
+select ok(not has_function_privilege('authenticated', 'public.website_accept_hypercare(uuid,jsonb,text)', 'execute'), 'browser callers cannot accept production');
+select ok(has_function_privilege('service_role', 'public.website_accept_hypercare(uuid,jsonb,text)', 'execute'), 'release operator can accept production');
+select ok(not has_table_privilege('authenticated', 'public.website_hypercare_windows', 'insert'), 'browser callers cannot create windows');
+select ok(not has_table_privilege('authenticated', 'public.website_hypercare_daily_observations', 'insert'), 'browser callers cannot write observations');
+select ok(not has_table_privilege('authenticated', 'public.website_hypercare_incidents', 'insert'), 'browser callers cannot create incidents');
+select ok(not has_table_privilege('service_role', 'public.website_hypercare_daily_observations', 'update'), 'daily evidence cannot be rewritten directly');
+select ok(not has_table_privilege('service_role', 'public.website_hypercare_daily_observations', 'delete'), 'daily evidence cannot be erased directly');
+select ok(not has_table_privilege('service_role', 'public.website_hypercare_events', 'update'), 'event history cannot be rewritten directly');
+select ok(not has_table_privilege('service_role', 'public.website_hypercare_events', 'delete'), 'event history cannot be erased directly');
+select ok(has_function_privilege('service_role', 'public.website_rollback_production_release(uuid,text,text)', 'execute'), 'pilot pause and rollback command remains ready');
+
+select * from finish();
+rollback;

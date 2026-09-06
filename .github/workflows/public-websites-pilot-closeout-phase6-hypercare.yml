@@ -1,0 +1,127 @@
+name: Public Websites Pilot Closeout Phase 6 Hypercare
+
+on:
+  pull_request:
+    paths:
+      - 'apps/websites/**'
+      - 'supabase/migrations/*public_websites*'
+      - 'supabase/tests/public_websites*'
+      - 'the-it-guy/scripts/public-websites-pilot-closeout-phase6*'
+      - 'docs/public-websites-pilot-closeout-phase6*'
+      - '.github/workflows/public-websites-pilot-closeout-phase6-hypercare.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Controlled hypercare operation
+        required: true
+        default: status
+        type: choice
+        options: [status, start, observe, incident, resolve, accept]
+      organisation_id:
+        description: Exact Kingstons organisation UUID
+        required: true
+        type: string
+      evidence_json:
+        description: Daily observation JSON; required for observe
+        required: false
+        type: string
+      acceptance_json:
+        description: Named final acceptance JSON; required for accept
+        required: false
+        type: string
+      incident_id:
+        description: Incident UUID; required for resolve
+        required: false
+        type: string
+      severity:
+        description: Incident severity (low, medium, high, critical)
+        required: false
+        type: string
+      category:
+        description: Incident category
+        required: false
+        type: string
+      summary:
+        description: Incident summary
+        required: false
+        type: string
+      resolution:
+        description: Incident resolution; required for resolve
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Verify Phase 6 hypercare contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/websites/package-lock.json
+            the-it-guy/package-lock.json
+      - run: npm ci
+        working-directory: apps/websites
+      - run: npm ci
+        working-directory: the-it-guy
+      - run: node scripts/public-websites-pilot-closeout-phase6-hypercare.test.mjs
+        working-directory: the-it-guy
+      - run: npm run typecheck && npm run build
+        working-directory: apps/websites
+
+  hypercare-operation:
+    name: Controlled production hypercare operation
+    needs: source-contract
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: public-websites-production
+    env:
+      SUPABASE_PRODUCTION_PROJECT_REF: ${{ secrets.SUPABASE_PRODUCTION_PROJECT_REF }}
+      SUPABASE_PRODUCTION_URL: ${{ secrets.SUPABASE_PRODUCTION_URL }}
+      SUPABASE_PRODUCTION_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_PRODUCTION_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: the-it-guy
+      - name: Materialise reviewed evidence
+        if: inputs.action == 'observe' || inputs.action == 'accept'
+        env:
+          EVIDENCE_JSON: ${{ inputs.evidence_json }}
+          ACCEPTANCE_JSON: ${{ inputs.acceptance_json }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          node -e "const fs=require('node:fs'); const key=process.env.ACTION==='observe'?'EVIDENCE_JSON':'ACCEPTANCE_JSON'; const file=process.env.ACTION==='observe'?'observation.json':'acceptance.json'; if(!process.env[key]) throw new Error(key+' is required'); fs.writeFileSync(file,process.env[key],{mode:0o400})"
+        working-directory: the-it-guy
+      - name: Execute fail-closed Phase 6 operation
+        shell: bash
+        run: |
+          args=(--"${{ inputs.action }}" --organisation-id "${{ inputs.organisation_id }}" --operator "github:${{ github.actor }}" --output phase6-evidence.json)
+          if [[ "${{ inputs.action }}" != "status" ]]; then args+=(--confirm AUTHORIZE_KINGSTONS_HYPERCARE_RECORDING); fi
+          if [[ "${{ inputs.action }}" == "observe" ]]; then args+=(--evidence observation.json); fi
+          if [[ "${{ inputs.action }}" == "accept" ]]; then args+=(--acceptance acceptance.json); fi
+          if [[ "${{ inputs.action }}" == "incident" ]]; then args+=(--severity "${{ inputs.severity }}" --category "${{ inputs.category }}" --summary "${{ inputs.summary }}"); fi
+          if [[ "${{ inputs.action }}" == "resolve" ]]; then args+=(--incident-id "${{ inputs.incident_id }}" --resolution "${{ inputs.resolution }}"); fi
+          node scripts/public-websites-pilot-closeout-phase6-hypercare.mjs "${args[@]}"
+        working-directory: the-it-guy
+      - name: Upload Phase 6 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-websites-phase6-${{ inputs.action }}
+          path: the-it-guy/phase6-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
+
+# No schedule is enabled before the Kingstons custom domain is genuinely live.
+# This workflow cannot add a Vercel domain, promote a deployment, change DNS, or send a lead.

@@ -1,0 +1,31 @@
+{
+  "contract": "public-websites-pilot-closeout-phase6-observation-v1",
+  "routesPassed": true,
+  "mobilePassed": true,
+  "desktopPassed": true,
+  "listingSyncPassed": true,
+  "imageDeliveryPassed": true,
+  "allLeadsInCrm": true,
+  "runtimeErrorCount": 0,
+  "tenantLeakCount": 0,
+  "lostLeadCount": 0,
+  "brokenListingCount": 0,
+  "seriousRegressionCount": 0,
+  "routeChecks": [
+    { "url": "https://www.example-agency.co.za/", "status": 200, "checkedAt": "2026-09-07T08:00:00Z" },
+    { "url": "https://www.example-agency.co.za/properties", "status": 200, "checkedAt": "2026-09-07T08:01:00Z" },
+    { "url": "https://www.example-agency.co.za/sitemap.xml", "status": 200, "checkedAt": "2026-09-07T08:02:00Z" }
+  ],
+  "mediaChecks": [
+    { "assetId": "00000000-0000-4000-8000-000000000000", "status": 200, "checkedAt": "2026-09-07T08:03:00Z" }
+  ],
+  "leadReconciliation": {
+    "submissions": 0,
+    "reconciled": 0,
+    "duplicates": 0,
+    "failedNotifications": 0,
+    "checkedAt": "2026-09-07T08:05:00Z"
+  },
+  "vercelRuntimeLogReference": "replace-with-reviewed-log-reference",
+  "browserEvidenceReference": "replace-with-mobile-and-desktop-evidence"
+}
