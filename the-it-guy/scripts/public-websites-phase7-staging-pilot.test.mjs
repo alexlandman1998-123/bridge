@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { assertStagingTarget, parsePilotArgs } from './public-websites-phase7-pilot.mjs'
+import { assertStagingTarget, parsePilotArgs, pilotStatusValue } from './public-websites-phase7-pilot.mjs'
 
 const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const repositoryRoot = resolve(appRoot, '..')
 const read = (path) => readFileSync(path, 'utf8')
 
 const migration = read(resolve(repositoryRoot, 'supabase/migrations/20260905184642_public_websites_phase7_staging_pilot.sql'))
+const hostnameConstraintMigration = read(resolve(repositoryRoot, 'supabase/migrations/20260906070110_public_websites_phase7_hostname_constraint.sql'))
 const databaseTest = read(resolve(repositoryRoot, 'supabase/tests/public_websites_phase7_staging_pilot_rls_test.sql'))
 const publicRepository = read(resolve(repositoryRoot, 'apps/websites/lib/site-repository.ts'))
 const workspaceService = read(resolve(appRoot, 'src/services/websiteWorkspaceService.js'))
@@ -30,6 +31,9 @@ for (const [pattern, message] of [
   [/before insert on public\.website_lead_submissions/i, 'gates CRM lead ingestion in the database'],
   [/revoke all on function public\.website_set_pilot_enrolment[\s\S]*from public, anon, authenticated/i, 'keeps pilot configuration service-only'],
 ]) assert.match(migration, pattern, message)
+
+assert.match(hostnameConstraintMigration, /drop constraint if exists website_domains_hostname_check/i, 'repairs the foundation hostname constraint')
+assert.match(hostnameConstraintMigration, /hostname ~ '\^\[a-z0-9\].*\(\?:\\\./i, 'accepts standard lowercase DNS label separators')
 
 assert.match(databaseTest, /plan\(18\)/, 'database contract has a fixed assertion plan')
 assert.match(databaseTest, /not has_table_privilege\('authenticated'.*'insert'/, 'database test prevents self-enrolment')
@@ -67,6 +71,8 @@ assert.match(workflow, /manual_acceptance_json/, 'the staging workflow accepts r
 assert.match(workflow, /--require-ready/, 'CI blocks on incomplete pilot evidence')
 
 assert.deepEqual(parsePilotArgs(['--activate', '--organisation-id', '11111111-1111-4111-8111-111111111111']).status, 'activate')
+assert.equal(pilotStatusValue('activate'), 'active', 'the activation flag maps to the database active status')
+assert.equal(pilotStatusValue('plan'), 'planned', 'the planning flag maps to the database planned status')
 assert.throws(() => parsePilotArgs(['--activate', '--pause']), /only one pilot status mutation/i)
 assert.throws(() => assertStagingTarget({
   SUPABASE_STAGING_PROJECT_REF: 'isdowlnollckzvltkasn',

@@ -49,6 +49,13 @@ export function parsePilotArgs(argv = process.argv.slice(2)) {
   }
 }
 
+export function pilotStatusValue(status) {
+  if (status === 'activate') return 'active'
+  if (status === 'plan') return 'planned'
+  if (status === 'complete') return 'completed'
+  return status
+}
+
 export function loadManualAcceptance(path, organisationId, expectedSourceCommit = process.env.GITHUB_SHA || '') {
   if (!path) return null
   let evidence
@@ -260,7 +267,7 @@ async function main() {
   if (options.status) {
     const { error } = await client.rpc('website_set_pilot_enrolment', {
       p_organisation_id: options.organisationId,
-      p_status: options.status === 'plan' ? 'planned' : options.status === 'complete' ? 'completed' : options.status,
+      p_status: pilotStatusValue(options.status),
       p_configured_by: options.operator,
       p_operator_notes: options.notes || null,
     })
