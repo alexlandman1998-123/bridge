@@ -266,16 +266,16 @@ begin
   from public.website_sites site
   where site.id = p_website_site_id
     and site.organisation_id = p_organisation_id
-    and site.status = 'published'
+    and site.status = 'draft'
     and site.template_key = 'property-standard-v1'
-    and site.published_revision_id is not null
+    and site.published_revision_id is null
   for update;
 
   select revision.* into strict v_revision
   from public.website_site_revisions revision
-  where revision.id = v_site.published_revision_id
-    and revision.website_site_id = v_site.id
-    and revision.status = 'published'
+  where revision.website_site_id = v_site.id
+    and revision.revision_number = 1
+    and revision.status = 'draft'
   for update;
 
   select count(*)::integer,
@@ -304,9 +304,19 @@ begin
   end if;
 
   update public.website_site_revisions revision
-  set content_fingerprint = v_fingerprint,
+  set status = 'published',
+      content_fingerprint = v_fingerprint,
+      published_by = coalesce(revision.published_by, revision.created_by),
+      published_at = coalesce(revision.published_at, now()),
       updated_at = now()
   where revision.id = v_revision.id;
+
+  update public.website_sites site
+  set status = 'published',
+      published_revision_id = v_revision.id,
+      updated_at = now()
+  where site.id = v_site.id
+    and site.organisation_id = p_organisation_id;
 
   update public.website_production_dark_launches launch
   set website_site_id = v_site.id,
