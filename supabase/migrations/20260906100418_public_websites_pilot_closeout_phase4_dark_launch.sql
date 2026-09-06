@@ -90,7 +90,7 @@ for each row execute function public.website_reject_dark_launch_event_mutation()
 alter table public.website_production_dark_launches enable row level security;
 alter table public.website_production_dark_launch_events enable row level security;
 revoke all on table public.website_production_dark_launches from public, anon, authenticated;
-revoke all on table public.website_production_dark_launch_events from public, anon, authenticated;
+revoke all on table public.website_production_dark_launch_events from public, anon, authenticated, service_role;
 grant select on table public.website_production_dark_launches to authenticated;
 grant select on table public.website_production_dark_launch_events to authenticated;
 grant select, insert, update on table public.website_production_dark_launches to service_role;
