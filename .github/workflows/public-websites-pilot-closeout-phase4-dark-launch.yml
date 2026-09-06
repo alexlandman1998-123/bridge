@@ -1,0 +1,121 @@
+name: Public Websites Pilot Closeout Phase 4 Dark Launch
+
+on:
+  pull_request:
+    paths:
+      - 'apps/websites/**'
+      - 'the-it-guy/src/components/marketing/WebsiteWorkspace.*'
+      - 'the-it-guy/src/services/websiteWorkspaceService.js'
+      - 'the-it-guy/scripts/public-websites-pilot-closeout-phase4-dark-launch*'
+      - 'supabase/migrations/*public_websites_pilot_closeout_phase4*'
+      - 'supabase/tests/public_websites_pilot_closeout_phase4*'
+      - 'docs/public-websites-pilot-closeout-phase4*'
+      - '.github/workflows/public-websites-pilot-closeout-phase4-dark-launch.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Production dark-launch operation
+        required: true
+        default: status
+        type: choice
+        options: [prepare, seed, activate, pause, resume, rollback, status]
+      manifest_json:
+        description: Exact reviewed Phase 4 dark-launch manifest
+        required: true
+        type: string
+      reason:
+        description: Required for pause and rollback
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Verify Phase 4 dark-launch contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/websites/package-lock.json
+            the-it-guy/package-lock.json
+      - run: npm ci
+        working-directory: apps/websites
+      - run: npm ci
+        working-directory: the-it-guy
+      - run: node scripts/public-websites-pilot-closeout-phase4-dark-launch.test.mjs
+        working-directory: the-it-guy
+      - run: npm run typecheck && npm run build
+        working-directory: apps/websites
+
+  production-operation:
+    name: Controlled production dark-launch operation
+    needs: source-contract
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: public-websites-production
+    env:
+      SUPABASE_STAGING_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+      SUPABASE_STAGING_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_STAGING_SERVICE_ROLE_KEY }}
+      SUPABASE_PRODUCTION_URL: ${{ secrets.SUPABASE_PRODUCTION_URL }}
+      SUPABASE_PRODUCTION_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_PRODUCTION_SERVICE_ROLE_KEY }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_WEBSITES_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEBSITES_PROJECT_ID }}
+      WEBSITE_RELEASE_SMOKE_EMAIL: ${{ secrets.WEBSITE_RELEASE_SMOKE_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: the-it-guy
+      - run: npm install --global vercel@48.10.2
+      - name: Materialise reviewed manifest
+        env:
+          MANIFEST_JSON: ${{ inputs.manifest_json }}
+        run: |
+          node -e "require('node:fs').writeFileSync('phase4.json', process.env.MANIFEST_JSON, { mode: 0o400 })"
+        working-directory: the-it-guy
+      - name: Inspect exact deployment coordinates
+        if: contains(fromJSON('["prepare","seed","activate","resume"]'), inputs.action)
+        env:
+          MANIFEST_JSON: ${{ inputs.manifest_json }}
+        run: |
+          candidate=$(node -e "process.stdout.write(JSON.parse(process.env.MANIFEST_JSON).candidateDeploymentUrl)")
+          rollback=$(node -e "process.stdout.write(JSON.parse(process.env.MANIFEST_JSON).rollbackDeploymentUrl)")
+          vercel inspect "$candidate" --token="$VERCEL_TOKEN"
+          vercel inspect "$rollback" --token="$VERCEL_TOKEN"
+      - name: Execute fail-closed dark-launch operation
+        shell: bash
+        run: |
+          args=(--"${{ inputs.action }}" --manifest phase4.json --operator "github:${{ github.actor }}" --output phase4-evidence.json)
+          if [[ "${{ inputs.action }}" != "status" ]]; then
+            args+=(--confirm AUTHORIZE_KINGSTONS_PRODUCTION_DARK_LAUNCH_NO_DNS)
+          fi
+          if [[ "${{ inputs.action }}" == "pause" || "${{ inputs.action }}" == "rollback" ]]; then
+            args+=(--reason "${{ inputs.reason }}")
+          fi
+          if [[ "${{ inputs.action }}" == "activate" || "${{ inputs.action }}" == "resume" ]]; then
+            args+=(--base-url "$(node -e "process.stdout.write(require('./phase4.json').candidateDeploymentUrl)")" --require-active)
+          fi
+          if [[ "${{ inputs.action }}" == "activate" ]]; then
+            args+=(--submit-smoke-lead)
+          fi
+          node scripts/public-websites-pilot-closeout-phase4-dark-launch.mjs "${args[@]}"
+        working-directory: the-it-guy
+      - name: Upload Phase 4 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-websites-phase4-${{ inputs.action }}
+          path: the-it-guy/phase4-evidence.json
+          if-no-files-found: warn
+          retention-days: 90
