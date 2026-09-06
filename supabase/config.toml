@@ -202,3 +202,9 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/resolve-final-signed-document-access/deno.json"
 entrypoint = "./functions/resolve-final-signed-document-access/index.ts"
+
+[functions.website-listing-publication]
+enabled = true
+verify_jwt = true
+import_map = "./functions/website-listing-publication/deno.json"
+entrypoint = "./functions/website-listing-publication/index.ts"

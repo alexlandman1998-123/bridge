@@ -11,7 +11,11 @@ function read(path) {
 }
 
 const migration = read(resolve(repositoryRoot, 'supabase/migrations/20260905175935_public_websites_phase3_listing_channel.sql'))
+const durableMediaMigration = read(resolve(repositoryRoot, 'supabase/migrations/20260906074654_public_websites_durable_listing_media.sql'))
 const databaseTest = read(resolve(repositoryRoot, 'supabase/tests/public_websites_phase3_listing_channel_rls_test.sql'))
+const durableMediaDatabaseTest = read(resolve(repositoryRoot, 'supabase/tests/public_websites_durable_listing_media_test.sql'))
+const durableMediaFunction = read(resolve(repositoryRoot, 'supabase/functions/website-listing-publication/index.ts'))
+const durableMediaHelpers = read(resolve(repositoryRoot, 'supabase/functions/_shared/websiteListingMedia.ts'))
 const service = read(resolve(appRoot, 'src/services/websiteListingPublicationService.js'))
 const panel = read(resolve(appRoot, 'src/components/listings/WebsiteListingPublicationPanel.jsx'))
 const listingDetail = read(resolve(appRoot, 'src/pages/AgentListingDetail.jsx'))
@@ -46,12 +50,44 @@ assert.match(databaseTest, /relrowsecurity/, 'database test checks RLS')
 assert.match(databaseTest, /not has_table_privilege\('anon'/, 'database test checks anonymous denial')
 assert.match(databaseTest, /has_function_privilege\('authenticated'/, 'database test checks guarded RPC access')
 
+for (const [pattern, message] of [
+  [/create table if not exists public\.website_listing_media_assets/i, 'creates the durable website media ledger'],
+  [/source_media_id uuid references public\.listing_media\(id\) on delete set null/i, 'preserves cleanup evidence when source media is removed'],
+  [/storage_bucket text not null default 'listing-media'/i, 'uses the existing public listing media bucket'],
+  [/source_fingerprint text not null/i, 'records a content fingerprint'],
+  [/byte_size bigint not null/i, 'records and bounds copied bytes'],
+  [/alter table public\.website_listing_media_assets enable row level security/i, 'enables RLS on the asset ledger'],
+  [/revoke all on table public\.website_listing_media_assets from public, anon, authenticated/i, 'blocks direct browser ledger writes'],
+  [/website_register_listing_media_assets/i, 'registers a service-only atomic media set'],
+  [/website_commit_listing_publication/i, 'commits publication through a service-only command'],
+  [/drop function if exists public\.website_set_listing_publication/i, 'removes the legacy browser-callable mutation'],
+  [/Prepare durable website media before publishing or updating this listing/i, 'fails closed when durable copies are missing'],
+  [/asset\.public_url/i, 'snapshots durable public URLs instead of source signed URLs'],
+  [/set status = 'retired'/i, 'retires assets when a listing is unpublished'],
+]) {
+  assert.match(durableMediaMigration, pattern, message)
+}
+
+assert.match(durableMediaDatabaseTest, /not has_table_privilege\('authenticated'/, 'durable media pgTAP checks browser denial')
+assert.match(durableMediaDatabaseTest, /confdeltype = 'n'/, 'durable media pgTAP checks cleanup-safe source deletion')
+assert.match(durableMediaHelpers, /source\.origin !== project\.origin/, 'rejects cross-project and external storage URLs')
+assert.match(durableMediaHelpers, /SHA-256/, 'uses content-addressed immutable object paths')
+assert.match(durableMediaFunction, /admin\.storage\.from\(source\.bucket\)\.download/, 'downloads source media server-side')
+assert.match(durableMediaFunction, /upsert: false/, 'does not overwrite immutable CDN objects')
+assert.match(durableMediaFunction, /website_register_listing_media_assets/, 'atomically registers the copied media set')
+assert.match(durableMediaFunction, /website_commit_listing_publication/, 'commits only through the server-side publisher')
+assert.match(durableMediaFunction, /cleanupRetiredAssets/, 'removes retired public copies')
+assert.match(durableMediaFunction, /removeNewUploads/, 'removes partial uploads when preparation fails')
+assert.match(durableMediaFunction, /admin\.auth\.getUser\(token\)/, 'verifies the authenticated actor server-side')
+
 assert.match(service, /website_get_listing_publication_status/, 'client loads readiness from the guarded RPC')
-assert.match(service, /website_set_listing_publication/, 'client mutates through the guarded RPC')
+assert.match(service, /functions\.invoke\('website-listing-publication'/, 'client routes mutations through the durable media publisher')
 for (const label of ['Publish to website', 'Update website', 'Unpublish', 'Refresh status']) {
   assert.match(panel, new RegExp(label, 'i'), `renders the ${label} control`)
 }
 assert.match(panel, /The CRM remains the source of truth/i, 'explains the source-of-truth boundary')
+assert.match(panel, /Durable public images/i, 'shows durable image readiness')
+assert.match(panel, /mediaCleanupPending/i, 'surfaces incomplete public media cleanup')
 assert.match(listingDetail, /<WebsiteListingPublicationPanel/, 'mounts the channel controls in listing detail')
 assert.match(listingDetail, /prepareAgencyWebsiteListing/, 'saves current CRM details before a channel publish/update')
 
