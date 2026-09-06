@@ -629,6 +629,7 @@ const DEVELOPMENT_LEAD_FUNNEL_STAGES = [
 ]
 
 const CARD_SHELL = 'rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]'
+const SHOW_LEGACY_MARKETING_EDITOR = false
 const READ_ONLY_FIELD_CLASS = 'border-[#e3eaf3] bg-[#f8fafd] text-[#1f3347] shadow-none focus:border-[#e3eaf3] focus:ring-0'
 const UNIT_QUICK_FIELD_CLASS = 'h-10 w-full rounded-[10px] border border-transparent bg-transparent px-3 py-2 text-sm font-semibold text-[#142132] outline-none transition hover:border-[#dbe5ef] hover:bg-[#fbfcfe] focus:border-[#1f7a45] focus:bg-white focus:ring-2 focus:ring-[#dcefe4]'
 
@@ -9889,7 +9890,7 @@ function DevelopmentDetail() {
                     <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
                       {renderEditableMarketingContent()}
                     </form>
-                    {false ? (
+                    {SHOW_LEGACY_MARKETING_EDITOR ? (
                       <form className={`${CARD_SHELL} space-y-5`} onSubmit={handleMarketingSave}>
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div>

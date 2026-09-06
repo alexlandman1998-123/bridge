@@ -58,7 +58,7 @@ function resolveDemoBrand(token = '', prospectConfig = null) {
   const accentColour = config.accentColour || DEMO_BRAND.accentColour
   return {
     ...DEMO_BRAND,
-    organisationId: `demo-${config.slug || normalizedProspectDemoSlug(token) || 'prospect'}`,
+    organisationId: `demo-${config.slug || normalizeProspectDemoSlug(token) || 'prospect'}`,
     organisationName: agencyName,
     agencyName,
     senderName: agencyName,

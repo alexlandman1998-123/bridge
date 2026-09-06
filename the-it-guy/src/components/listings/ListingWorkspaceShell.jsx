@@ -30,15 +30,15 @@ function getToneStyle(tone = 'neutral') {
   return toneStyles[tone] || toneStyles.neutral
 }
 
-function getStatusIcon(tone = 'neutral') {
-  if (tone === 'success') return CheckCircle2
-  if (tone === 'warning' || tone === 'danger') return AlertCircle
-  if (tone === 'pending') return Clock3
-  return Circle
+function StatusIcon({ tone = 'neutral', className }) {
+  const props = { className, 'aria-hidden': true }
+  if (tone === 'success') return <CheckCircle2 {...props} />
+  if (tone === 'warning' || tone === 'danger') return <AlertCircle {...props} />
+  if (tone === 'pending') return <Clock3 {...props} />
+  return <Circle {...props} />
 }
 
 export function ListingWorkspaceStatusPill({ tone = 'neutral', children, className }) {
-  const Icon = getStatusIcon(tone)
   const styles = getToneStyle(tone)
 
   return (
@@ -49,7 +49,7 @@ export function ListingWorkspaceStatusPill({ tone = 'neutral', children, classNa
         className,
       )}
     >
-      <Icon className={cn('h-4 w-4 shrink-0', styles.icon)} aria-hidden="true" />
+      <StatusIcon tone={tone} className={cn('h-4 w-4 shrink-0', styles.icon)} />
       <span className="truncate">{children}</span>
     </span>
   )
