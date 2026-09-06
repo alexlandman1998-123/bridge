@@ -81,3 +81,26 @@ apply a migration, deploy an application, or alter a remote environment.
 - Remote `origin/main` remains unchanged and local `main` is intentionally ahead.
 - The migration/staging hold remains in force; synchronising Git history does
   not authorise a database push or Rental production release.
+
+## Phase 8 remote-main publication — 6 September 2026
+
+Immediately before publication, `git fetch --prune origin` confirmed that
+`origin/main` was unchanged at
+`2c0d8b4154bbd307965fdfd67964a04e3c347a42`. It remained a strict ancestor of
+local `main`, with zero remote-only commits, so the update qualifies for a
+normal fast-forward push. Force push, history rewriting, and branch deletion
+remain prohibited.
+
+Phase 8 publishes the reconciled Git history to `origin/main` only after the
+core service suite passes from the final local tree. It does not publish the
+application, apply migrations, alter Supabase, remove recovery refs or stashes,
+or approve the blocked Rental release.
+
+### Phase 8 gate
+
+- Refresh remote refs and require `origin/main` to be an ancestor of local
+  `main`.
+- Require a clean worktree and a passing core service suite.
+- Push with the explicit refspec `main:main`, without force.
+- Fetch the remote result and require local and remote `main` to resolve to the
+  same commit before declaring Git publication complete.
