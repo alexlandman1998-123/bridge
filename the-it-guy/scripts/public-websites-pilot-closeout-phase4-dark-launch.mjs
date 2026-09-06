@@ -125,6 +125,14 @@ function duplicateStorageError(error) {
   return Number(error?.statusCode || 0) === 409 || /already exists|duplicate/i.test(String(error?.message || ''))
 }
 
+function describeError(error) {
+  if (error instanceof Error) return error.message
+  if (error && typeof error === 'object') {
+    return [error.message, error.details, error.hint, error.code].filter(Boolean).join(' | ') || JSON.stringify(error)
+  }
+  return String(error)
+}
+
 async function copyStorageObject({ sourceClient, sourceTarget, destinationClient, destinationBucket, sourceUrl, destinationPath }) {
   const source = parseStorageUrl(sourceUrl, sourceTarget)
   const downloaded = await sourceClient.storage.from(source.bucket).download(source.path)
@@ -221,16 +229,16 @@ async function seedProduction({ staging, production, manifest, operator }) {
     }
 
     const insertedSite = await prod.from('website_sites').insert({
-      id: siteId, organisation_id: manifest.organisationId, template_key: 'property-standard-v1', status: 'published',
+      id: siteId, organisation_id: manifest.organisationId, template_key: 'property-standard-v1', status: 'draft',
       preview_slug: `${stagingSite.preview_slug}-production`.slice(0, 63), locale: stagingSite.locale,
       currency_code: stagingSite.currency_code, created_by: actor.user_id,
     })
     if (insertedSite.error) throw insertedSite.error
     siteCreated = true
     const insertedRevision = await prod.from('website_site_revisions').insert({
-      id: revisionId, website_site_id: siteId, revision_number: 1, status: 'published', brand_json: brand,
+      id: revisionId, website_site_id: siteId, revision_number: 1, status: 'draft', brand_json: brand,
       seo_json: stagingRevision.seo_json, navigation_json: stagingRevision.navigation_json,
-      created_by: actor.user_id, published_by: actor.user_id, published_at: new Date().toISOString(),
+      created_by: actor.user_id,
       content_fingerprint: null,
     })
     if (insertedRevision.error) throw insertedRevision.error
@@ -262,8 +270,6 @@ async function seedProduction({ staging, production, manifest, operator }) {
       created_by: actor.user_id, updated_by: actor.user_id,
     })
     if (publicationResult.error) throw publicationResult.error
-    const siteUpdate = await prod.from('website_sites').update({ published_revision_id: revisionId }).eq('id', siteId).eq('organisation_id', manifest.organisationId)
-    if (siteUpdate.error) throw siteUpdate.error
     const binding = await prod.rpc('website_bind_production_dark_launch_content', {
       p_organisation_id: manifest.organisationId,
       p_website_site_id: siteId,
@@ -402,7 +408,7 @@ async function main() {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((error) => {
-    console.error(`Phase 4 dark launch blocked: ${error instanceof Error ? error.message : String(error)}`)
+    console.error(`Phase 4 dark launch blocked: ${describeError(error)}`)
     process.exitCode = 1
   })
 }
