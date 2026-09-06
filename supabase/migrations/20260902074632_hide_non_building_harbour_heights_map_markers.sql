@@ -44,4 +44,4 @@ set marketing_content = jsonb_set(
   true
 )
 from site_plan_maps as maps
-where profile.development_id = maps.development_id;
+where profile.development_id = maps.development_id;;

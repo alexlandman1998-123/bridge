@@ -1,6 +1,6 @@
 # Supabase Migration Phase 7 Canonical Ledger Repair Report
 
-Generated: 2026-09-06T15:41:09.013Z
+Generated: 2026-09-06T16:00:47.590Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -16,16 +16,16 @@ Phase 7 is a single-candidate ledger repair for the canonical document verificat
 | Apply mode | no |
 | Candidate version | 202607120003 |
 | Candidate module | canonical_documents |
-| Local migration files | 928 |
+| Local migration files | 989 |
 | Duplicate local timestamps | 0 |
 | Before ledger state | recorded applied |
 | After ledger state | recorded applied |
 | Evidence ready | yes |
 | Object checks | 1/1 |
-| Matched rows before | 832 |
-| Matched rows after | 832 |
-| Pure local-only rows before | 95 |
-| Pure local-only rows after | 95 |
+| Matched rows before | 895 |
+| Matched rows after | 895 |
+| Pure local-only rows before | 93 |
+| Pure local-only rows after | 93 |
 
 ## Candidate Matrix
 
@@ -63,7 +63,7 @@ Phase 7 is a single-candidate ledger repair for the canonical document verificat
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase7-canonical-evidence-57288.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase7-canonical-evidence-61945.sql --output-format json | ok | Initialising login role... |
 | migration repair not run | skipped | plan mode |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
 

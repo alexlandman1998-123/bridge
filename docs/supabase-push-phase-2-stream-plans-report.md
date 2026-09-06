@@ -1,6 +1,6 @@
 # Supabase Push Phase 2 Stream Plans Report
 
-Generated: 2026-09-06T15:54:49.649Z
+Generated: 2026-09-06T16:00:47.042Z
 
 ## Scope
 
@@ -10,8 +10,8 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 
 | Field | Value |
 | --- | --- |
-| Manifest rows | 95 |
-| Planned rows | 95 |
+| Manifest rows | 93 |
+| Planned rows | 93 |
 | Approved corrective substitutions | 0 |
 | Streams | 3 |
 
@@ -21,7 +21,7 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 | --- | --- | --- |
 | `bond_finance_runtime` | 8 | `apply_original_after_dependency_check`: 7<br>`corrective_migration_required`: 1 |
 | `attorney_identity_access` | 1 | `repair_only_after_smoke`: 1 |
-| `other` | 86 | `repair_only_after_smoke`: 39<br>`corrective_migration_required`: 10<br>`manual_data_review`: 13<br>`apply_original_after_dependency_check`: 24 |
+| `other` | 84 | `repair_only_after_smoke`: 39<br>`corrective_migration_required`: 10<br>`manual_data_review`: 12<br>`apply_original_after_dependency_check`: 23 |
 
 ## Work Queue
 
@@ -83,9 +83,7 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 | `20260901170254` | `other` | `20260901165511` | `apply_original_after_dependency_check` | `none_live` | `20260901170254_development_structure_hierarchy_phase2.sql` |
 | `20260901170909` | `other` | `20260901170254` | `apply_original_after_dependency_check` | `none_live` | `20260901170909_development_product_catalogue_phase4.sql` |
 | `20260901174924` | `other` | `20260901170909` | `apply_original_after_dependency_check` | `none_live` | `20260901174924_website_draft_page_authoring_phase7.sql` |
-| `20260902074000` | `other` | `20260901174924` | `manual_data_review` | `no_static_objects` | `20260902074000_hide_non_building_harbour_heights_map_markers.sql` |
-| `20260902085300` | `other` | `20260902074000` | `repair_only_after_smoke` | `all_live` | `20260902085300_allow_platform_admin_profile_role.sql` |
-| `20260902095249` | `other` | `20260902085300` | `repair_only_after_smoke` | `all_live` | `20260902095249_public_development_organisation_branding.sql` |
+| `20260902095249` | `other` | `20260901174924` | `repair_only_after_smoke` | `all_live` | `20260902095249_public_development_organisation_branding.sql` |
 | `20260902105303` | `other` | `20260902095249` | `repair_only_after_smoke` | `all_live` | `20260902105303_public_development_high_contrast_branding.sql` |
 | `20260903094624` | `other` | `20260902105303` | `repair_only_after_smoke` | `all_live` | `20260903094624_organisation_workspace_lock.sql` |
 | `20260903122031` | `other` | `20260903094624` | `corrective_migration_required` | `partial_live` | `20260903122031_development_marketing_collaboration_foundation.sql` |
@@ -118,7 +116,7 @@ Phase 2 runs every staging stream plan from the current manifest. It is read-onl
 | `20260906070938` | `other` | `20260906070515` | `corrective_migration_required` | `partial_live` | `20260906070938_attorney_lane_delegation_phase3.sql` |
 | `20260906071644` | `other` | `20260906070938` | `apply_original_after_dependency_check` | `none_live` | `20260906071644_attorney_coordination_propagation_phase4.sql` |
 | `20260906123000` | `other` | `20260906071644` | `repair_only_after_smoke` | `all_live` | `20260906123000_public_websites_pilot_closeout_phase5_go_live.sql` |
-| `20260906130000` | `other` | `20260906123000` | `apply_original_after_dependency_check` | `none_live` | `20260906130000_meta_lead_ads_integration.sql` |
+| `20260906130000` | `other` | `20260906123000` | `repair_only_after_smoke` | `all_live` | `20260906130000_meta_lead_ads_integration.sql` |
 | `20260906133000` | `other` | `20260906130000` | `repair_only_after_smoke` | `all_live` | `20260906133000_public_websites_pilot_closeout_phase6_hypercare.sql` |
 | `20260906134500` | `other` | `20260906133000` | `repair_only_after_smoke` | `all_live` | `20260906134500_public_websites_pilot_closeout_phase6_hypercare_indexes.sql` |
 | `20260906140000` | `other` | `20260906134500` | `repair_only_after_smoke` | `all_live` | `20260906140000_public_websites_pilot_closeout_phase6_approval_gate.sql` |

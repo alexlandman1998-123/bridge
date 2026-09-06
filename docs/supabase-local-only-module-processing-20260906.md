@@ -4,16 +4,16 @@ Generated: 6 September 2026
 
 ## Decision
 
-All 95 pure local-only migrations have been assigned to a product module and an
+All 93 pure local-only migrations have been assigned to a product module and an
 explicit execution route. This pass is a guarded planning pass: it did not
 apply SQL or alter either the staging or production migration ledger.
 
-The local-only queue cannot safely execute yet. The preceding remote-only
-classification found 47 unique production-history migrations that must be
-restored to source control first, plus 16 timestamp/name pairs affecting 17
-local-only files. Those 17 local rows are held until the pair decisions are
-complete. No current local-only row has valid staging evidence under its current
-version and stream binding.
+The prerequisite remote-history restoration is complete: all 63 remote-only
+files are now represented locally and the live reconciliation reports zero
+pure remote-only rows. Two executable-SQL-equivalent local timestamp aliases
+were retired; 15 materially different successors from the other 14 pairs stay
+in this local-only queue. No current local-only row has valid staging evidence
+under its current version and stream binding.
 
 ## Module queue
 
@@ -24,32 +24,31 @@ version and stream binding.
 | Canonical documents | 3 | 0 | 2 | 0 | 1 |
 | Commercial | 5 | 3 | 0 | 0 | 2 |
 | Developer/referral | 9 | 3 | 3 | 3 | 0 |
-| Lead capture/CRM | 9 | 3 | 3 | 2 | 1 |
-| Other | 30 | 16 | 9 | 2 | 3 |
+| Lead capture/CRM | 9 | 4 | 2 | 2 | 1 |
+| Other | 29 | 16 | 9 | 2 | 2 |
 | Transaction network | 12 | 5 | 5 | 1 | 1 |
-| Workspace platform | 14 | 8 | 0 | 1 | 5 |
-| **Total** | **95** | **40** | **31** | **11** | **13** |
+| Workspace platform | 13 | 7 | 0 | 1 | 5 |
+| **Total** | **93** | **40** | **30** | **11** | **12** |
 
 ## Processing outcome
 
 | Outcome | Rows | State |
 | --- | ---: | --- |
-| Repair only after smoke | 40 | 16 held by remote/local pair review; remaining 24 require current staging smoke evidence. |
-| Apply original after dependency check | 31 | Queue after exact remote-history restoration and staging preflight. |
+| Repair only after smoke | 40 | Require current module-specific staging smoke evidence. |
+| Apply original after dependency check | 30 | Queue for one-version staging execution after dependency preflight. |
 | Corrective migration required | 11 | Blocked until a new idempotent corrective migration is reviewed. Do not replay the original SQL. |
-| Manual data review | 13 | Blocked until intended data outcomes and idempotency are reviewed; one is also a normalized timestamp pair. |
+| Manual data review | 12 | Blocked until intended data outcomes and idempotency are reviewed. |
 | Ready for production now | 0 | No current staging evidence is bound to these versions and streams. |
 
-## Remote-pair hold set
+## Resolved remote-pair set
 
-The following 17 local-only migrations must not be repaired or applied until
-their remote counterpart decision is recorded:
+The two normalized aliases in this former 17-file hold set were retired. The
+remaining 15 files contain materially different SQL from their restored remote
+predecessors and remain pending successors:
 
 - `20260831071807_canonical_transaction_requirements_on_creation.sql`
 - `20260831072652_canonical_transaction_requirements_on_creation.sql`
 - `20260901140943_harden_admin_portal_authorization.sql`
-- `20260902074000_hide_non_building_harbour_heights_map_markers.sql`
-- `20260902085300_allow_platform_admin_profile_role.sql`
 - `20260905141015_rental_application_submission.sql`
 - `20260905141016_rental_application_documents.sql`
 - `20260905141017_rental_application_review_workspace.sql`
@@ -81,21 +80,17 @@ their remote counterpart decision is recorded:
 - Transaction network: `20260831131538`
 - Workspace platform: `20260820174624`, `20260820192038`,
   `20260820192857`, `20260824084233`, `20260824092531`
-- Other: `20260830160810`, `20260831153322`, `20260902074000`
+- Other: `20260830160810`, `20260831153322`
 
 ## Required order
 
-1. Restore the 47 unique remote-history files without executing them against
-   production.
-2. Resolve the two normalized timestamp aliases and the 14 different-SQL pairs.
-3. Refresh Phase 5 so the 17 held local rows receive their canonical decision.
-4. Process the 24 unpaired repair candidates module-by-module with current
-   staging smoke evidence and `sqlApplied=false` receipts.
-5. Process the 31 apply candidates one version at a time on staging after their
+1. Process the 40 repair candidates module-by-module with current staging smoke
+   evidence and `sqlApplied=false` receipts.
+2. Process the 30 apply candidates one version at a time on staging after their
    dependency preflight.
-6. Create and review the 11 corrective migrations and complete the 13 manual
+3. Create and review the 11 corrective migrations and complete the 12 manual
    data decisions.
-7. Promote only evidence-backed rows through the Phase 7 production gate, then
+4. Promote only evidence-backed rows through the Phase 7 production gate, then
    rerun the live reconciliation after each module batch.
 
 The detailed per-version commands and evidence paths are in

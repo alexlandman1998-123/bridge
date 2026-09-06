@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-06T15:54:49.699Z",
+  "generatedAt": "2026-09-06T16:00:47.217Z",
   "sourcePlan": "docs/supabase-push-phase-2-stream-plans.json",
-  "inputRows": 95,
+  "inputRows": 93,
   "dedupedRows": 0,
   "rows": [
     {
@@ -1600,67 +1600,9 @@
       ]
     },
     {
-      "version": "20260902074000",
-      "stream": "other",
-      "dependsOn": "20260901174924",
-      "module": "other",
-      "file": "20260902074000_hide_non_building_harbour_heights_map_markers.sql",
-      "objectStatus": "no_static_objects",
-      "liveCount": 0,
-      "objectCount": 0,
-      "action": "manual_data_review",
-      "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
-      "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260902074000-other.md",
-      "commands": [
-        "# Complete manual data review first: docs/manual-review/20260902074000-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
-      ],
-      "evidenceFile": "docs/staging-evidence/20260902074000-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260902074000-other.json",
-      "clearanceDecision": null,
-      "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
-    },
-    {
-      "version": "20260902085300",
-      "stream": "other",
-      "dependsOn": "20260902074000",
-      "module": "workspace_platform",
-      "file": "20260902085300_allow_platform_admin_profile_role.sql",
-      "objectStatus": "all_live",
-      "liveCount": 1,
-      "objectCount": 1,
-      "action": "repair_only_after_smoke",
-      "gate": "Run module behavior tests; then record only this version as applied.",
-      "route": "repair_only",
-      "stage": "staging_ledger_only",
-      "blocked": false,
-      "sqlAllowed": false,
-      "ledgerAllowed": true,
-      "evidenceRequired": true,
-      "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260902085300 --evidence docs/staging-evidence/20260902085300-other.json --confirm APPLY_TO_STAGING_ONLY"
-      ],
-      "evidenceFile": "docs/staging-evidence/20260902085300-other.json",
-      "notes": [
-        "Do not apply SQL; expected objects are already live.",
-        "Run module smoke tests first.",
-        "Evidence must use sqlApplied=false."
-      ]
-    },
-    {
       "version": "20260902095249",
       "stream": "other",
-      "dependsOn": "20260902085300",
+      "dependsOn": "20260901174924",
       "module": "developer_referral",
       "file": "20260902095249_public_development_organisation_branding.sql",
       "objectStatus": "all_live",
@@ -2571,26 +2513,25 @@
       "dependsOn": "20260906123000",
       "module": "lead_capture_crm",
       "file": "20260906130000_meta_lead_ads_integration.sql",
-      "objectStatus": "none_live",
-      "liveCount": 0,
+      "objectStatus": "all_live",
+      "liveCount": 11,
       "objectCount": 11,
-      "action": "apply_original_after_dependency_check",
-      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.",
-      "route": "apply_original",
-      "stage": "staging_sql_then_ledger",
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied.",
+      "route": "repair_only",
+      "stage": "staging_ledger_only",
       "blocked": false,
-      "sqlAllowed": true,
+      "sqlAllowed": false,
       "ledgerAllowed": true,
       "evidenceRequired": true,
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906130000 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906130000 --evidence docs/staging-evidence/20260906130000-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260906130000-other.json",
       "notes": [
-        "Run dependency and catalog preflight before applying SQL.",
-        "Apply only this file; do not run a broad db push.",
-        "Record the staging ledger only after reviewed evidence exists."
+        "Do not apply SQL; expected objects are already live.",
+        "Run module smoke tests first.",
+        "Evidence must use sqlApplied=false."
       ]
     },
     {
@@ -2676,20 +2617,20 @@
     }
   ],
   "actionCounts": {
-    "apply_original_after_dependency_check": 31,
+    "apply_original_after_dependency_check": 30,
     "corrective_migration_required": 11,
     "repair_only_after_smoke": 40,
-    "manual_data_review": 13
+    "manual_data_review": 12
   },
   "routeCounts": {
-    "apply_original": 31,
+    "apply_original": 30,
     "corrective_required": 11,
     "repair_only": 40,
-    "manual_review": 13
+    "manual_review": 12
   },
   "streamCounts": {
     "bond_finance_runtime": 8,
     "attorney_identity_access": 1,
-    "other": 86
+    "other": 84
   }
 }

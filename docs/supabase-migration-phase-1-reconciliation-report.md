@@ -1,6 +1,6 @@
 # Supabase Migration Phase 1 Reconciliation Report
 
-Generated: 2026-09-06T15:39:50.144Z
+Generated: 2026-09-06T15:59:36.933Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -11,12 +11,12 @@ Phase 1 is read-only. This report is built from the local migration directory, `
 
 | Metric | Value |
 | --- | --- |
-| Local migration files | 928 |
+| Local migration files | 989 |
 | Duplicate local timestamps | 0 |
-| Remote ledger rows fetched | 992 |
-| Remote matched rows | 832 |
-| Remote-only rows | 64 |
-| Local-only rows in CLI comparison | 96 |
+| Remote ledger rows fetched | 990 |
+| Remote matched rows | 895 |
+| Remote-only rows | 1 |
+| Local-only rows in CLI comparison | 94 |
 | Split local/remote versions | 1 |
 | Live onboarding object checks ready | 17/17 |
 
@@ -48,9 +48,9 @@ No duplicate local migration timestamps detected.
 
 | Bucket | Count |
 | --- | --- |
-| matched | 832 |
-| remote-only | 64 |
-| local-only | 96 |
+| matched | 895 |
+| remote-only | 1 |
+| local-only | 94 |
 | divergent | 0 |
 | split versions | 1 |
 
@@ -60,70 +60,7 @@ No duplicate local migration timestamps detected.
 
 ### Remote-Only Rows
 
-- 20260817065106
-- 20260820110704
-- 20260827102952
-- 20260827104611
-- 20260827131153
-- 20260827133621
-- 20260827133842
-- 20260827133951
-- 20260827185146
-- 20260828203637
-- 20260829203552
-- 20260829203648
-- 20260829203735
-- 20260829204144
-- 20260829204623
-- 20260829204840
-- 20260829210157
-- 20260830084850
-- 20260830085317
-- 20260830085705
-- 20260830090204
-- 20260830091124
-- 20260830091652
-- 20260830092741
-- 20260830093509
-- 20260830094123
-- 20260830095017
-- 20260830095430
-- 20260830100753
-- 20260830100807
-- 20260830100936
-- 20260830101115
-- 20260830101259
-- 20260830101318
-- 20260830101846
-- 20260830102633
-- 20260830102724
-- 20260830102811
-- 20260830102846
-- 20260830102937
-- 20260830103810
-- 20260830103913
-- 20260830104159
-- 20260830104242
-- 20260830105816
-- 20260830105908
-- 20260830110749
-- 20260830111228
-- 20260830111659
-- 20260830113004
-- 20260830113531
-- 20260830114448
-- 20260831074851
-- 20260831125342
-- 20260831205101
-- 20260902064058
-- 20260902074632
-- 20260902085246
 - 202609030001
-- 20260905173226
-- 20260906112843
-- 20260906112854
-- 20260906113258
-- 20260906113353
 
 ### Local-Only Rows
 
@@ -175,8 +112,6 @@ No duplicate local migration timestamps detected.
 - 20260901170254
 - 20260901170909
 - 20260901174924
-- 20260902074000
-- 20260902085300
 - 20260902095249
 - 20260902105303
 - 202609030001
@@ -250,7 +185,7 @@ No duplicate local migration timestamps detected.
 
 | Command | Status | Parsed rows | Notes |
 | --- | --- | --- | --- |
-| npx supabase migration list --linked --output-format json | ok | 992 | Initialising login role... Connecting to remote database... |
+| npx supabase migration list --linked --output-format json | ok | 990 | Initialising login role... Connecting to remote database... |
 | npx supabase db query --linked --file /Users/alexanderlandman/the-it-guy/sql/supabase-phase1-live-object-checks.sql --output-format json | ok | 17 | Initialising login role... |
 
 ## Live Check SQL Fingerprint

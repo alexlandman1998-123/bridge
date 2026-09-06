@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-06T15:40:28.162Z",
+  "generatedAt": "2026-09-06T15:59:51.378Z",
   "linkedProjectRef": "isdowlnollckzvltkasn",
   "status": "MODULE_AUDIT_READY",
   "rows": [
@@ -676,33 +676,9 @@
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     },
     {
-      "version": "20260902074000",
-      "stream": "other",
-      "dependsOn": "20260901174924",
-      "module": "other",
-      "file": "20260902074000_hide_non_building_harbour_heights_map_markers.sql",
-      "objectStatus": "no_static_objects",
-      "liveCount": 0,
-      "objectCount": 0,
-      "action": "manual_data_review",
-      "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair."
-    },
-    {
-      "version": "20260902085300",
-      "stream": "other",
-      "dependsOn": "20260902074000",
-      "module": "workspace_platform",
-      "file": "20260902085300_allow_platform_admin_profile_role.sql",
-      "objectStatus": "all_live",
-      "liveCount": 1,
-      "objectCount": 1,
-      "action": "repair_only_after_smoke",
-      "gate": "Run module behavior tests; then record only this version as applied."
-    },
-    {
       "version": "20260902095249",
       "stream": "other",
-      "dependsOn": "20260902085300",
+      "dependsOn": "20260901174924",
       "module": "developer_referral",
       "file": "20260902095249_public_development_organisation_branding.sql",
       "objectStatus": "all_live",
@@ -1101,11 +1077,11 @@
       "dependsOn": "20260906123000",
       "module": "lead_capture_crm",
       "file": "20260906130000_meta_lead_ads_integration.sql",
-      "objectStatus": "none_live",
-      "liveCount": 0,
+      "objectStatus": "all_live",
+      "liveCount": 11,
       "objectCount": 11,
-      "action": "apply_original_after_dependency_check",
-      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied."
     },
     {
       "version": "20260906133000",

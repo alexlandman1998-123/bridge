@@ -1,6 +1,6 @@
 # Supabase Push Phase 5 Production Promotion Report
 
-Generated: 2026-09-06T15:54:49.772Z
+Generated: 2026-09-06T16:00:47.403Z
 
 ## Scope
 
@@ -10,9 +10,9 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 
 | Field | Value |
 | --- | --- |
-| Rows considered | 95 |
+| Rows considered | 93 |
 | Ready for production | 0 |
-| Blocked | 95 |
+| Blocked | 93 |
 | Production env configured | No |
 | Production recovery locked | Yes |
 
@@ -21,8 +21,8 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | Production Route | Rows |
 | --- | --- |
 | `blocked_corrective_required` | 11 |
-| `blocked_manual_review` | 13 |
-| `production_apply_sql` | 31 |
+| `blocked_manual_review` | 12 |
+| `production_apply_sql` | 30 |
 | `production_no_sql_record_after_smoke` | 40 |
 
 ## Work Queue
@@ -85,8 +85,6 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | `20260901170254` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260901170254-other.json` | `staging_evidence_missing` |
 | `20260901170909` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260901170909-other.json` | `staging_evidence_missing` |
 | `20260901174924` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260901174924-other.json` | `staging_evidence_missing` |
-| `20260902074000` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/20260902074000-other.json` | `upstream_manual_review` |
-| `20260902085300` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260902085300-other.json` | `staging_evidence_missing` |
 | `20260902095249` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260902095249-other.json` | `staging_evidence_missing` |
 | `20260902105303` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260902105303-other.json` | `staging_evidence_missing` |
 | `20260903094624` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260903094624-other.json` | `staging_evidence_missing` |
@@ -120,7 +118,7 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | `20260906070938` | `other` | `blocked_corrective_required` | No | `docs/staging-evidence/20260906070938-other.json` | `upstream_corrective_required` |
 | `20260906071644` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260906071644-other.json` | `staging_evidence_missing` |
 | `20260906123000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906123000-other.json` | `staging_evidence_missing` |
-| `20260906130000` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260906130000-other.json` | `staging_evidence_missing` |
+| `20260906130000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906130000-other.json` | `staging_evidence_missing` |
 | `20260906133000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906133000-other.json` | `staging_evidence_missing` |
 | `20260906134500` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906134500-other.json` | `staging_evidence_missing` |
 | `20260906140000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906140000-other.json` | `staging_evidence_missing` |

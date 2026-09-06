@@ -1,6 +1,6 @@
 # Supabase Push Phase 1 Staging Prep Report
 
-Generated: 2026-09-06T15:54:49.832Z
+Generated: 2026-09-06T16:00:46.703Z
 
 ## Scope
 
@@ -15,9 +15,9 @@ Phase 1 prepares the staging evidence package for the migration push path. It do
 
 | Field | Value |
 | --- | --- |
-| Manifest rows | 95 |
-| Runner-eligible rows | 71 |
-| Blocked rows requiring corrective/manual work | 24 |
+| Manifest rows | 93 |
+| Runner-eligible rows | 70 |
+| Blocked rows requiring corrective/manual work | 23 |
 
 ## Streams
 
@@ -25,15 +25,15 @@ Phase 1 prepares the staging evidence package for the migration push path. It do
 | --- | --- |
 | `attorney_identity_access` | 1 |
 | `bond_finance_runtime` | 8 |
-| `other` | 86 |
+| `other` | 84 |
 
 ## Actions
 
 | Action | Rows |
 | --- | --- |
-| `apply_original_after_dependency_check` | 31 |
+| `apply_original_after_dependency_check` | 30 |
 | `corrective_migration_required` | 11 |
-| `manual_data_review` | 13 |
+| `manual_data_review` | 12 |
 | `repair_only_after_smoke` | 40 |
 
 ## Runner Eligibility
@@ -41,8 +41,8 @@ Phase 1 prepares the staging evidence package for the migration push path. It do
 | Eligibility | Rows |
 | --- | --- |
 | `blocked_create_corrective_migration` | 11 |
-| `blocked_manual_data_review` | 13 |
-| `staging_apply_then_record` | 31 |
+| `blocked_manual_data_review` | 12 |
+| `staging_apply_then_record` | 30 |
 | `staging_record_only_after_smoke` | 40 |
 
 ## Work Queue
@@ -105,8 +105,6 @@ Phase 1 prepares the staging evidence package for the migration push path. It do
 | `20260901170254` | `other` | `apply_original_after_dependency_check` | `none_live` | `staging_apply_then_record` | `20260901170254_development_structure_hierarchy_phase2.sql` |
 | `20260901170909` | `other` | `apply_original_after_dependency_check` | `none_live` | `staging_apply_then_record` | `20260901170909_development_product_catalogue_phase4.sql` |
 | `20260901174924` | `other` | `apply_original_after_dependency_check` | `none_live` | `staging_apply_then_record` | `20260901174924_website_draft_page_authoring_phase7.sql` |
-| `20260902074000` | `other` | `manual_data_review` | `no_static_objects` | `blocked_manual_data_review` | `20260902074000_hide_non_building_harbour_heights_map_markers.sql` |
-| `20260902085300` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260902085300_allow_platform_admin_profile_role.sql` |
 | `20260902095249` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260902095249_public_development_organisation_branding.sql` |
 | `20260902105303` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260902105303_public_development_high_contrast_branding.sql` |
 | `20260903094624` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260903094624_organisation_workspace_lock.sql` |
@@ -140,7 +138,7 @@ Phase 1 prepares the staging evidence package for the migration push path. It do
 | `20260906070938` | `other` | `corrective_migration_required` | `partial_live` | `blocked_create_corrective_migration` | `20260906070938_attorney_lane_delegation_phase3.sql` |
 | `20260906071644` | `other` | `apply_original_after_dependency_check` | `none_live` | `staging_apply_then_record` | `20260906071644_attorney_coordination_propagation_phase4.sql` |
 | `20260906123000` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260906123000_public_websites_pilot_closeout_phase5_go_live.sql` |
-| `20260906130000` | `other` | `apply_original_after_dependency_check` | `none_live` | `staging_apply_then_record` | `20260906130000_meta_lead_ads_integration.sql` |
+| `20260906130000` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260906130000_meta_lead_ads_integration.sql` |
 | `20260906133000` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260906133000_public_websites_pilot_closeout_phase6_hypercare.sql` |
 | `20260906134500` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260906134500_public_websites_pilot_closeout_phase6_hypercare_indexes.sql` |
 | `20260906140000` | `other` | `repair_only_after_smoke` | `all_live` | `staging_record_only_after_smoke` | `20260906140000_public_websites_pilot_closeout_phase6_approval_gate.sql` |

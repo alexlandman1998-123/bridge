@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-06T15:54:49.649Z",
-  "manifestRowCount": 95,
-  "plannedRowCount": 95,
+  "generatedAt": "2026-09-06T16:00:47.042Z",
+  "manifestRowCount": 93,
+  "plannedRowCount": 93,
   "approvedCorrectiveSubstitutions": 0,
   "streams": [
     {
@@ -21,26 +21,26 @@
     },
     {
       "stream": "other",
-      "count": 86,
+      "count": 84,
       "actionCounts": {
         "repair_only_after_smoke": 39,
         "corrective_migration_required": 10,
-        "manual_data_review": 13,
-        "apply_original_after_dependency_check": 24
+        "manual_data_review": 12,
+        "apply_original_after_dependency_check": 23
       }
     }
   ],
   "actionCounts": {
-    "apply_original_after_dependency_check": 31,
+    "apply_original_after_dependency_check": 30,
     "corrective_migration_required": 11,
     "repair_only_after_smoke": 40,
-    "manual_data_review": 13
+    "manual_data_review": 12
   },
   "objectStatusCounts": {
-    "none_live": 31,
+    "none_live": 30,
     "partial_live": 11,
     "all_live": 40,
-    "no_static_objects": 13
+    "no_static_objects": 12
   },
   "rows": [
     {
@@ -716,33 +716,9 @@
       "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
     },
     {
-      "version": "20260902074000",
-      "stream": "other",
-      "dependsOn": "20260901174924",
-      "module": "other",
-      "file": "20260902074000_hide_non_building_harbour_heights_map_markers.sql",
-      "objectStatus": "no_static_objects",
-      "liveCount": 0,
-      "objectCount": 0,
-      "action": "manual_data_review",
-      "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair."
-    },
-    {
-      "version": "20260902085300",
-      "stream": "other",
-      "dependsOn": "20260902074000",
-      "module": "workspace_platform",
-      "file": "20260902085300_allow_platform_admin_profile_role.sql",
-      "objectStatus": "all_live",
-      "liveCount": 1,
-      "objectCount": 1,
-      "action": "repair_only_after_smoke",
-      "gate": "Run module behavior tests; then record only this version as applied."
-    },
-    {
       "version": "20260902095249",
       "stream": "other",
-      "dependsOn": "20260902085300",
+      "dependsOn": "20260901174924",
       "module": "developer_referral",
       "file": "20260902095249_public_development_organisation_branding.sql",
       "objectStatus": "all_live",
@@ -1141,11 +1117,11 @@
       "dependsOn": "20260906123000",
       "module": "lead_capture_crm",
       "file": "20260906130000_meta_lead_ads_integration.sql",
-      "objectStatus": "none_live",
-      "liveCount": 0,
+      "objectStatus": "all_live",
+      "liveCount": 11,
       "objectCount": 11,
-      "action": "apply_original_after_dependency_check",
-      "gate": "Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks."
+      "action": "repair_only_after_smoke",
+      "gate": "Run module behavior tests; then record only this version as applied."
     },
     {
       "version": "20260906133000",

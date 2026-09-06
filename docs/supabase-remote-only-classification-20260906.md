@@ -4,12 +4,11 @@ Generated: 6 September 2026
 
 ## Scope and safety
 
-This is a read-only classification of the 63 pure remote-only versions in the
-linked production project `isdowlnollckzvltkasn`. The comparison was refreshed
-from the live migration ledger. `supabase migration fetch` was run in an
-isolated temporary directory to recover the history-table SQL; no fetched file
-was copied into the repository and no SQL, `db push`, `db reset`, or migration
-repair was executed.
+This report classifies and records the source-history restoration of the 63
+pure remote-only versions in linked production project `isdowlnollckzvltkasn`.
+The SQL was fetched into an isolated temporary directory, verified by version,
+and restored byte-for-byte to `supabase/migrations`. No SQL, `db push`,
+`db reset`, or migration repair was executed against a database.
 
 All 63 SQL bodies are recoverable from the linked migration history. None of
 the 63 versions exists in any currently reachable Git ref.
@@ -18,9 +17,9 @@ the 63 versions exists in any currently reachable Git ref.
 
 | Classification | Count | Decision |
 | --- | ---: | --- |
-| Unique remote history | 47 | Candidate for exact history restoration, subject to a clean-database replay test and dependency review. |
-| Normalized-equivalent retimestamp | 2 | Treat as timestamp aliases; choose the remote timestamp as canonical before removing the unapplied local duplicate. |
-| Same-name, different-SQL pair | 14 | Do not call these aliases. Review the SQL pair and choose a canonical or corrective history before restoration. |
+| Unique remote history | 47 | Restored exactly from the production history table. |
+| Normalized-equivalent retimestamp | 2 | Remote timestamp retained as canonical; unapplied local duplicate retired. |
+| Same-name, different-SQL pair | 14 | Remote applied history restored; 15 materially different local successors retained as pending migrations. |
 | Unrecoverable | 0 | No missing SQL bodies. |
 
 Module distribution: rental 42, developer/referral 4, transaction network 4,
@@ -39,9 +38,9 @@ comparison. The executable SQL is otherwise equivalent.
 
 ## Same-name pairs with materially different SQL
 
-These entries need pairwise SQL review. Restoring the remote file alongside its
-local counterpart could replay two different implementations during a clean
-database build.
+These entries were confirmed to contain materially different SQL. The remote
+file is retained as applied history and the local counterpart remains a
+distinct pending successor. They are not timestamp aliases.
 
 | Remote version | Local counterpart(s) |
 | --- | --- |
@@ -62,10 +61,9 @@ database build.
 
 ## Unique remote history candidates
 
-These have no same-named local counterpart. Exact SQL is available from the
-linked migration history, but restoration is not yet authorized because the
-full recovered chain must pass a clean-database replay without also applying
-the 95 unresolved local-only migrations.
+These have no same-named local counterpart. Their exact SQL was restored from
+the linked migration history. They must not be executed against production
+again because their versions are already recorded there.
 
 ### Rental (35)
 
@@ -122,15 +120,12 @@ the 95 unresolved local-only migrations.
 | Developer/referral | `20260831074851_developer_document_portal_sale_route_followup.sql` |
 | Canonical documents | `20260831205101_canonical_document_identity_and_portal_requests.sql` |
 
-## Recommended next action
+## Completion evidence
 
-Restore and verify in three review batches:
+The post-restoration live reconciliation reports 895 matched rows, zero pure
+remote-only rows, 93 pure local-only rows, and one reviewed split-ledger row.
+There are 989 local migration files and no duplicate local timestamps. The two
+retired local aliases account for the reduction from 95 to 93 local-only rows.
 
-1. Resolve the two normalized-equivalent timestamp aliases by selecting one
-   canonical timestamp per pair.
-2. Review the 14 same-name SQL pairs and record whether the local file
-   supersedes, extends, or conflicts with the production version.
-3. Restore the 47 unique remote files exactly from the linked history into a
-   reconciliation branch, then run a clean-database migration replay before
-   merging. Do not execute these files against production; their versions are
-   already recorded there.
+The remaining work is exclusively the evidence-backed processing of the 93
+local-only successors. The broad-push freeze remains active.

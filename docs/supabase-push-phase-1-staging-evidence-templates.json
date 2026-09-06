@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-09-06T15:54:49.832Z",
+  "generatedAt": "2026-09-06T16:00:46.703Z",
   "sourceManifest": "docs/supabase-phase-5-application-manifest.json",
-  "rowCount": 95,
+  "rowCount": 93,
   "instructions": [
     "Replace TODO_STAGING_PROJECT_REF with the non-production Supabase project ref.",
     "Use one reviewed evidence object per migration version.",
@@ -1298,52 +1298,6 @@
       }
     },
     {
-      "version": "20260902074000",
-      "stream": "other",
-      "file": "20260902074000_hide_non_building_harbour_heights_map_markers.sql",
-      "action": "manual_data_review",
-      "objectStatus": "no_static_objects",
-      "runnerEligibility": "blocked_manual_data_review",
-      "stagingEvidenceTemplate": {
-        "version": "20260902074000",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": null,
-        "stagingLedgerRecorded": null,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Complete manual data review before deciding apply or repair."
-        ]
-      }
-    },
-    {
-      "version": "20260902085300",
-      "stream": "other",
-      "file": "20260902085300_allow_platform_admin_profile_role.sql",
-      "action": "repair_only_after_smoke",
-      "objectStatus": "all_live",
-      "runnerEligibility": "staging_record_only_after_smoke",
-      "stagingEvidenceTemplate": {
-        "version": "20260902085300",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": false,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Do not apply SQL; record the ledger only after smoke evidence passes."
-        ]
-      }
-    },
-    {
       "version": "20260902095249",
       "stream": "other",
       "file": "20260902095249_public_development_organisation_branding.sql",
@@ -2106,14 +2060,14 @@
       "version": "20260906130000",
       "stream": "other",
       "file": "20260906130000_meta_lead_ads_integration.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
       "stagingEvidenceTemplate": {
         "version": "20260906130000",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
+        "sqlApplied": false,
         "stagingLedgerRecorded": true,
         "catalogChecks": "pass",
         "behaviorChecks": "pass",
@@ -2121,7 +2075,7 @@
         "reviewedBy": "TODO_REVIEWER",
         "approvedBy": "TODO_APPROVER",
         "notes": [
-          "Apply this original migration file to staging before recording the ledger."
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
         ]
       }
     },

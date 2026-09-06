@@ -1,6 +1,6 @@
 # Supabase Push Phase 3 Action Routing Report
 
-Generated: 2026-09-06T15:54:49.699Z
+Generated: 2026-09-06T16:00:47.217Z
 
 ## Scope
 
@@ -10,28 +10,28 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 
 | Field | Value |
 | --- | --- |
-| Rows | 95 |
-| Runner-eligible rows | 71 |
-| Blocked rows | 24 |
-| SQL-allowed rows | 31 |
-| Ledger-allowed rows | 71 |
+| Rows | 93 |
+| Runner-eligible rows | 70 |
+| Blocked rows | 23 |
+| SQL-allowed rows | 30 |
+| Ledger-allowed rows | 70 |
 
 ## Actions
 
 | Action | Rows |
 | --- | --- |
-| `apply_original_after_dependency_check` | 31 |
+| `apply_original_after_dependency_check` | 30 |
 | `corrective_migration_required` | 11 |
-| `manual_data_review` | 13 |
+| `manual_data_review` | 12 |
 | `repair_only_after_smoke` | 40 |
 
 ## Routes
 
 | Route | Rows |
 | --- | --- |
-| `apply_original` | 31 |
+| `apply_original` | 30 |
 | `corrective_required` | 11 |
-| `manual_review` | 13 |
+| `manual_review` | 12 |
 | `repair_only` | 40 |
 
 ## Work Queue
@@ -94,8 +94,6 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 | `20260901170254` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `20260901170254_development_structure_hierarchy_phase2.sql` |
 | `20260901170909` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `20260901170909_development_product_catalogue_phase4.sql` |
 | `20260901174924` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `20260901174924_website_draft_page_authoring_phase7.sql` |
-| `20260902074000` | `other` | `manual_data_review` | `manual_review` | Yes | No | No | `20260902074000_hide_non_building_harbour_heights_map_markers.sql` |
-| `20260902085300` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260902085300_allow_platform_admin_profile_role.sql` |
 | `20260902095249` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260902095249_public_development_organisation_branding.sql` |
 | `20260902105303` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260902105303_public_development_high_contrast_branding.sql` |
 | `20260903094624` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260903094624_organisation_workspace_lock.sql` |
@@ -129,7 +127,7 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 | `20260906070938` | `other` | `corrective_migration_required` | `corrective_required` | Yes | No | No | `20260906070938_attorney_lane_delegation_phase3.sql` |
 | `20260906071644` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `20260906071644_attorney_coordination_propagation_phase4.sql` |
 | `20260906123000` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260906123000_public_websites_pilot_closeout_phase5_go_live.sql` |
-| `20260906130000` | `other` | `apply_original_after_dependency_check` | `apply_original` | No | Yes | Yes | `20260906130000_meta_lead_ads_integration.sql` |
+| `20260906130000` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260906130000_meta_lead_ads_integration.sql` |
 | `20260906133000` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260906133000_public_websites_pilot_closeout_phase6_hypercare.sql` |
 | `20260906134500` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260906134500_public_websites_pilot_closeout_phase6_hypercare_indexes.sql` |
 | `20260906140000` | `other` | `repair_only_after_smoke` | `repair_only` | No | No | Yes | `20260906140000_public_websites_pilot_closeout_phase6_approval_gate.sql` |
@@ -194,8 +192,6 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 | `20260901170254` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260901170254 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260901170254 --evidence docs/staging-evidence/20260901170254-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260901170909` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260901170909 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260901170909 --evidence docs/staging-evidence/20260901170909-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260901174924` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260901174924 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260901174924 --evidence docs/staging-evidence/20260901174924-other.json --confirm APPLY_TO_STAGING_ONLY` |
-| `20260902074000` | `# Complete manual data review first: docs/manual-review/20260902074000-other.md`<br>`# Decide whether this becomes an apply, repair-only, or replacement data migration.` |
-| `20260902085300` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260902085300 --evidence docs/staging-evidence/20260902085300-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260902095249` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260902095249 --evidence docs/staging-evidence/20260902095249-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260902105303` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260902105303 --evidence docs/staging-evidence/20260902105303-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260903094624` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260903094624 --evidence docs/staging-evidence/20260903094624-other.json --confirm APPLY_TO_STAGING_ONLY` |
@@ -229,7 +225,7 @@ Phase 3 handles rows by action. It converts the phase 2 stream plans into explic
 | `20260906070938` | `# Create an idempotent corrective migration first: supabase/migrations/TODO_20260906070938_corrective_other.sql`<br>`# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution.` |
 | `20260906071644` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906071644 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906071644 --evidence docs/staging-evidence/20260906071644-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260906123000` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906123000 --evidence docs/staging-evidence/20260906123000-other.json --confirm APPLY_TO_STAGING_ONLY` |
-| `20260906130000` | `node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906130000 --confirm APPLY_TO_STAGING_ONLY`<br>`node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906130000 --evidence docs/staging-evidence/20260906130000-other.json --confirm APPLY_TO_STAGING_ONLY` |
+| `20260906130000` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906130000 --evidence docs/staging-evidence/20260906130000-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260906133000` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906133000 --evidence docs/staging-evidence/20260906133000-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260906134500` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906134500 --evidence docs/staging-evidence/20260906134500-other.json --confirm APPLY_TO_STAGING_ONLY` |
 | `20260906140000` | `node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906140000 --evidence docs/staging-evidence/20260906140000-other.json --confirm APPLY_TO_STAGING_ONLY` |

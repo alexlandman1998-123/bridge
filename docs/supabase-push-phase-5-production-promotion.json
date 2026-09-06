@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-06T15:54:49.772Z",
+  "generatedAt": "2026-09-06T16:00:47.403Z",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "productionEnvConfigured": false,
   "recoveryLock": {
@@ -849,36 +849,6 @@
       "commands": []
     },
     {
-      "version": "20260902074000",
-      "stream": "other",
-      "file": "20260902074000_hide_non_building_harbour_heights_map_markers.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
-      "stagingEvidenceFile": "docs/staging-evidence/20260902074000-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260902074000-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "upstream_manual_review"
-      ],
-      "commands": []
-    },
-    {
-      "version": "20260902085300",
-      "stream": "other",
-      "file": "20260902085300_allow_platform_admin_profile_role.sql",
-      "action": "repair_only_after_smoke",
-      "route": "repair_only",
-      "productionRoute": "production_no_sql_record_after_smoke",
-      "stagingEvidenceFile": "docs/staging-evidence/20260902085300-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260902085300-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
-    },
-    {
       "version": "20260902095249",
       "stream": "other",
       "file": "20260902095249_public_development_organisation_branding.sql",
@@ -1377,9 +1347,9 @@
       "version": "20260906130000",
       "stream": "other",
       "file": "20260906130000_meta_lead_ads_integration.sql",
-      "action": "apply_original_after_dependency_check",
-      "route": "apply_original",
-      "productionRoute": "production_apply_sql",
+      "action": "repair_only_after_smoke",
+      "route": "repair_only",
+      "productionRoute": "production_no_sql_record_after_smoke",
       "stagingEvidenceFile": "docs/staging-evidence/20260906130000-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260906130000-other.json",
       "readyForProduction": false,
@@ -1435,11 +1405,11 @@
     }
   ],
   "routeCounts": {
-    "production_apply_sql": 31,
+    "production_apply_sql": 30,
     "blocked_corrective_required": 11,
     "production_no_sql_record_after_smoke": 40,
-    "blocked_manual_review": 13
+    "blocked_manual_review": 12
   },
   "readyCount": 0,
-  "blockedCount": 95
+  "blockedCount": 93
 }
