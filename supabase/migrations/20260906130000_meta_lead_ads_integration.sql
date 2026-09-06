@@ -74,12 +74,16 @@ alter table public.meta_lead_ads_forms enable row level security;
 alter table public.meta_lead_ads_oauth_states enable row level security;
 alter table public.meta_lead_ads_events enable row level security;
 
+drop policy if exists meta_lead_ads_connections_admin_read on public.meta_lead_ads_connections;
 create policy meta_lead_ads_connections_admin_read on public.meta_lead_ads_connections for select to authenticated
   using (public.bridge_is_org_admin(organisation_id));
+drop policy if exists meta_lead_ads_forms_member_read on public.meta_lead_ads_forms;
 create policy meta_lead_ads_forms_member_read on public.meta_lead_ads_forms for select to authenticated
   using (public.bridge_is_active_member(organisation_id));
+drop policy if exists meta_lead_ads_forms_admin_write on public.meta_lead_ads_forms;
 create policy meta_lead_ads_forms_admin_write on public.meta_lead_ads_forms for all to authenticated
   using (public.bridge_is_org_admin(organisation_id)) with check (public.bridge_is_org_admin(organisation_id));
+drop policy if exists meta_lead_ads_events_member_read on public.meta_lead_ads_events;
 create policy meta_lead_ads_events_member_read on public.meta_lead_ads_events for select to authenticated
   using (public.bridge_is_active_member(organisation_id));
 

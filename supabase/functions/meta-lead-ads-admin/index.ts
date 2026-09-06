@@ -4,6 +4,7 @@ import { RecordValue, text } from "../_shared/metaLeadAds.ts";
 
 const GRAPH_VERSION=text(Deno.env.get("META_GRAPH_VERSION"))||"v23.0";
 const APP_ID=text(Deno.env.get("META_APP_ID"))||"1010066162083846";
+const LOGIN_CONFIG_ID=text(Deno.env.get("META_LEAD_ADS_LOGIN_CONFIG_ID"));
 const CORS={"access-control-allow-origin":"*","access-control-allow-headers":"authorization,apikey,content-type","access-control-allow-methods":"GET,POST,OPTIONS"};
 const json=(status:number,body:RecordValue)=>new Response(JSON.stringify(body),{status,headers:{...CORS,"content-type":"application/json"}});
 const base64=(bytes:Uint8Array)=>btoa(String.fromCharCode(...bytes));
@@ -35,8 +36,9 @@ Deno.serve(async(req)=>{
   try{
     if(action==="start_authorization"){
       const raw=base64(crypto.getRandomValues(new Uint8Array(32))).replace(/[+/=]/g,""),returnUrl=text(body.returnUrl);if(!/^https:\/\/app\.arch9\.co\.za(?:\/|$)/.test(returnUrl)&&!/^http:\/\/localhost:\d+(?:\/|$)/.test(returnUrl))return json(400,{error:"Invalid return URL."});
+      if(!LOGIN_CONFIG_ID)return json(500,{error:"Meta Lead Ads login configuration is not configured."});
       await db.from("meta_lead_ads_oauth_states").insert({state_hash:await sha256(raw),organisation_id:org,requested_by:userId,return_url:returnUrl,expires_at:new Date(Date.now()+10*60*1000).toISOString()});
-      const q=new URLSearchParams({client_id:APP_ID,redirect_uri:callbackUrl(),state:raw,response_type:"code",scope:"pages_show_list,pages_read_engagement,pages_manage_metadata,leads_retrieval,business_management"});return json(200,{authorizationUrl:`https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth?${q}`});
+      const q=new URLSearchParams({client_id:APP_ID,redirect_uri:callbackUrl(),state:raw,response_type:"code",config_id:LOGIN_CONFIG_ID});return json(200,{authorizationUrl:`https://www.facebook.com/${GRAPH_VERSION}/dialog/oauth?${q}`});
     }
     if(action==="list"){
       const rows=await db.from("meta_lead_ads_connections").select("id,page_id,page_name,business_id,connection_status,last_error_message,last_checked_at,connected_at").eq("organisation_id",org);return json(200,{connections:rows.data||[]});
