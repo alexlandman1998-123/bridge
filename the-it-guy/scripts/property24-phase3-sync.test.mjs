@@ -23,7 +23,7 @@ for (const path of [
   assert.ok(fs.existsSync(new URL(`../${path}`, import.meta.url)), `${path} should exist`)
 }
 
-assert.ok(fs.existsSync(new URL('../../supabase/migrations/202608200002_property24_agent_catalog_mappings.sql', import.meta.url)))
+assert.ok(fs.existsSync(new URL('../../supabase/migrations/20260831140736_property24_agent_catalog_mappings.sql', import.meta.url)))
 
 const arch9Agent = normalizeArch9AgentCandidate({
   user_id: '00000000-0000-4000-8000-000000000001',

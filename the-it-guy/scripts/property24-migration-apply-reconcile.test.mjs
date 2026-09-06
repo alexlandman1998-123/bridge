@@ -273,7 +273,7 @@ assert.equal(options.attempts, 2)
 const appPackage = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 assert.equal(appPackage.scripts['property24:migration-apply-reconcile'], 'node scripts/property24-migration-apply-reconcile.mjs')
 assert.equal(appPackage.scripts['test:property24-migration-apply-reconcile'], 'node scripts/property24-migration-apply-reconcile.test.mjs')
-const mappingMigration = fs.readFileSync(new URL('../../supabase/migrations/202608200002_property24_agent_catalog_mappings.sql', import.meta.url), 'utf8')
+const mappingMigration = fs.readFileSync(new URL('../../supabase/migrations/20260831140736_property24_agent_catalog_mappings.sql', import.meta.url), 'utf8')
 assert.match(mappingMigration, /property24_mappings_set_updated_at[\s\S]*set search_path = public/)
 
 console.log('Property24 migration apply/reconcile tests passed')

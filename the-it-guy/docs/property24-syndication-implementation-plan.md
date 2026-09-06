@@ -333,7 +333,7 @@ Implemented code:
 - `server/property24/synchronisationService.js`
 - `scripts/property24-sync-preview.mjs`
 - `sql/20260820_property24_agent_catalog_mappings.sql`
-- `supabase/migrations/202608200002_property24_agent_catalog_mappings.sql`
+- `supabase/migrations/20260831140736_property24_agent_catalog_mappings.sql`
 - `npm run test:property24-phase3-sync`
 
 Implemented command:
