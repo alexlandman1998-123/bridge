@@ -45,6 +45,7 @@ for (const [pattern, message] of [
   [/website_approve_dark_launch_go_live/i, 'provides a service-only go-live approval transition'],
   [/clientApproved":true[\s\S]*emailDnsChangesAllowed":false[\s\S]*nameserverChangesAllowed":false/i, 'requires safe client approval'],
   [/launch\.status = 'active'/i, 'requires the active dark launch'],
+  [/v_rollback <> v_launch\.candidate_deployment_url/i, 'uses the active dark launch as the rollback target'],
   [/revision\.content_fingerprint = v_launch\.production_content_fingerprint/i, 'binds the reviewed production content'],
   [/domainLinked', false[\s\S]*dnsChanged', false/i, 'does not link or change DNS during approval'],
   [/Recorded client go-live approval evidence is immutable/i, 'makes recorded client approval immutable'],
