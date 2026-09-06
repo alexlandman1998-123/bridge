@@ -108,6 +108,18 @@ verify_jwt = false
 import_map = "./functions/whatsapp-webhook/deno.json"
 entrypoint = "./functions/whatsapp-webhook/index.ts"
 
+[functions.meta-lead-ads-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/meta-lead-ads-webhook/deno.json"
+entrypoint = "./functions/meta-lead-ads-webhook/index.ts"
+
+[functions.meta-lead-ads-admin]
+enabled = true
+verify_jwt = false
+import_map = "./functions/meta-lead-ads-admin/deno.json"
+entrypoint = "./functions/meta-lead-ads-admin/index.ts"
+
 [functions.resend-webhook]
 enabled = true
 verify_jwt = false

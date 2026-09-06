@@ -4,7 +4,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const REQUIRED_OVERRIDE = 'I_UNDERSTAND_LEDGER_DRIFT'
+const REQUIRED_OVERRIDE = 'I_UNDERSTAND_PRODUCTION_SCHEMA_FREEZE'
 const BLOCKED_COMMANDS = new Set([
   'db push',
   'db reset',
@@ -71,14 +71,14 @@ function printStatus({ repoRoot, files }) {
   console.log(`Repo: ${repoRoot}`)
   console.log(`Local migration files: ${files.length}`)
   console.log('')
-  console.log('Blocked broad commands while the remote migration ledger is drifted:')
+  console.log('Blocked broad commands while production is under the schema freeze:')
   console.log('- supabase db push')
   console.log('- supabase db reset')
   console.log('- supabase migration repair')
   console.log('')
   console.log('Allowed Phase 0 work:')
   console.log('- Read-only diagnostics: migration list, SELECT catalog checks, REST RPC probes.')
-  console.log('- Narrow production patches only when a user-facing incident is blocked.')
+  console.log('- Emergency production patches only for a confirmed user-facing incident, with written approval.')
   console.log('- Every patch must have a small SQL file, a live object check, and a rollback/no-residue smoke test where possible.')
   console.log('')
 
@@ -118,8 +118,8 @@ if (BLOCKED_COMMANDS.has(normalizedCommand) && !overrideEnabled) {
   console.error('')
   console.error(`Command: supabase ${normalizedCommand}`)
   console.error('')
-  console.error('Reason: the linked Supabase migration ledger is drifted; broad migration commands can misreport or apply the wrong set of migrations.')
-  console.error('Use docs/supabase-migration-phase-0-stabilization.md before any production DB change.')
+  console.error('Reason: production migration history is not yet a trustworthy deployment source; broad commands could apply an unreviewed set of migrations.')
+  console.error('Use the clean-baseline Phase 0 runbook before any production DB change.')
   console.error('')
   console.error(`Emergency override, only after documented approval: BRIDGE_SUPABASE_PHASE0_OVERRIDE=${REQUIRED_OVERRIDE}`)
   process.exit(2)

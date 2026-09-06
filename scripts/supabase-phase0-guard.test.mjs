@@ -44,7 +44,7 @@ assert.match(diagnostic.stdout, /Allowed Phase 0 work:/)
 
 const override = runGuard(
   ['db', 'push', '--linked'],
-  { BRIDGE_SUPABASE_PHASE0_OVERRIDE: 'I_UNDERSTAND_LEDGER_DRIFT' },
+  { BRIDGE_SUPABASE_PHASE0_OVERRIDE: 'I_UNDERSTAND_PRODUCTION_SCHEMA_FREEZE' },
 )
 assert.equal(override.status, 0, override.stderr)
 assert.match(override.stderr, /Phase 0 override accepted\./)

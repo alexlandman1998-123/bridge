@@ -1,3 +1,5 @@
+-- Version corrected from 202608200002 after it collided with the WhatsApp template seed migration.
+-- This migration was introduced on 2026-08-31 and has not been recorded in the linked production ledger.
 begin;
 
 create table if not exists public.property24_accounts (
