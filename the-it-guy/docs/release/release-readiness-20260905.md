@@ -60,3 +60,24 @@ historical gate is to become authoritative again.
 - **Not approved for database or functional Rental promotion.** No migration,
   staging deployment, production deployment, or remote branch update is
   authorised by this result.
+
+## Phase 7 local-main integration — 6 September 2026
+
+Local `main` was fast-forwarded from `2c0d8b4154bbd307965fdfd67964a04e3c347a42`
+to the Phase 6 validated release tip
+`0c78ea73462dbe091e68c4a6554de048b7a24f38`. The update applied 74 commits
+without a merge commit or conflict. The source branch
+`codex/release-validation-tooling` remains at the validated tip as a stable
+reconciliation reference.
+
+This phase updates only the local `main` ref and this closeout record. It does
+not push `main`, delete or rewrite a branch, drop the Phase 0 recovery stash,
+apply a migration, deploy an application, or alter a remote environment.
+
+### Phase 7 decision
+
+- Local `main` now contains the complete reconciled workspace and migration
+  files from Phases 0–6.
+- Remote `origin/main` remains unchanged and local `main` is intentionally ahead.
+- The migration/staging hold remains in force; synchronising Git history does
+  not authorise a database push or Rental production release.
