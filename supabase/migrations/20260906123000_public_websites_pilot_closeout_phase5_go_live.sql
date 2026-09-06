@@ -101,12 +101,13 @@ begin
   from public.website_production_dark_launches launch
   where launch.organisation_id = p_organisation_id
     and launch.status = 'active'
-    and launch.source_commit = v_source_commit
-    and launch.candidate_deployment_url = v_candidate
-    and launch.rollback_deployment_url = v_rollback
     and launch.website_site_id is not null
     and launch.production_content_fingerprint is not null
   for update;
+
+  if v_candidate = v_rollback or v_rollback <> v_launch.candidate_deployment_url then
+    raise exception 'The Phase 5 rollback target must be the active Phase 4 dark-launch deployment.' using errcode = '22023';
+  end if;
 
   if not exists (
     select 1 from public.website_sites site
@@ -172,6 +173,7 @@ begin
     pg_catalog.jsonb_build_object(
       'phase', 5,
       'darkLaunchId', v_launch.id,
+      'darkLaunchSourceCommit', v_launch.source_commit,
       'phase4EvidenceFingerprint', v_evidence,
       'clientApproverName', v_approver,
       'clientApproverRole', v_role,

@@ -11,7 +11,7 @@ The release remains on the protected Vercel production preview until a completed
 ## Delivered
 
 - A service-only database transition from the exact active dark launch to an approved go-live release.
-- Approval bound to the Kingstons organisation, exact commit, candidate deployment, rollback deployment, Phase 4 evidence fingerprint, published site and production content fingerprint.
+- Approval bound to the Kingstons organisation, exact Phase 5 commit and candidate deployment, the active Phase 4 deployment as rollback, the Phase 4 evidence fingerprint, published site and production content fingerprint.
 - Mandatory named client approver, approver role, approval reference and recent timestamp.
 - A DNS baseline command that records website, nameserver, MX, SPF, DKIM/DMARC-adjacent TXT data without making changes.
 - A fail-closed preflight report for approval, domain-link, DNS, TLS, redirects, robots, sitemap, analytics and CRM lead readiness.
