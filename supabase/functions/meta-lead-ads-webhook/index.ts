@@ -54,9 +54,9 @@ Deno.serve(async (req) => {
       const detail=await response.json() as RecordValue;
       if(!response.ok) throw new Error(text((detail.error as RecordValue)?.message)||"Meta lead retrieval failed.");
       const fields=leadFields(detail.field_data), contact=contactFromFields(fields);
-      const ingested=await db.rpc("meta_ingest_lead_ad",{p_leadgen_id:change.leadgenId,p_organisation_id:connection.organisation_id,p_page_id:change.pageId,p_form_id:change.formId,p_full_name:contact.fullName,p_email:contact.email,p_phone:contact.phone,p_payload:{...detail,normalized_fields:fields}});
+      const ingested=await db.rpc("meta_ingest_lead_ad",{p_leadgen_id:change.leadgenId,p_organisation_id:connection.organisation_id,p_page_id:change.pageId,p_form_id:change.formId,p_full_name:contact.fullName,p_email:contact.email,p_phone:contact.phone,p_payload:{...detail,normalized_fields:fields},p_ingestion_source:"live",p_meta_created_at:text(detail.created_time)||null,p_import_id:null});
       if(ingested.error) throw new Error(ingested.error.message);
-      await db.from("meta_lead_ads_events").update({status:"processed",crm_lead_id:ingested.data,processed_at:new Date().toISOString(),payload_json:detail,error_message:null}).eq("id",eventId);
+      await db.from("meta_lead_ads_events").update({status:"processed",crm_lead_id:ingested.data,processed_at:new Date().toISOString(),payload_json:detail,ingestion_source:"live",meta_created_at:text(detail.created_time)||null,error_message:null}).eq("id",eventId);
       results.push({leadgenId:change.leadgenId,status:"processed"});
     } catch(error) {
       const message=error instanceof Error ? error.message : "Lead processing failed.";
