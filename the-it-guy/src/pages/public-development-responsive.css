@@ -49,9 +49,6 @@
   max-height: 42px;
   object-fit: contain;
   object-position: left center;
-  /* Organisation primary artwork can be coloured. On this dark hero it is
-     deliberately rendered as a white mark without replacing the real logo. */
-  filter: brightness(0) invert(1);
 }
 
 .public-development-mobile-logo {
@@ -63,7 +60,6 @@
   max-height: 44px;
   object-fit: contain;
   object-position: left center;
-  filter: brightness(0) invert(1);
 }
 
 .public-development-desktop #overview header > :last-child > a {
@@ -109,6 +105,17 @@
 .public-development-desktop #enquire a[class*="bg-[#d0ab55]"] {
   background: var(--development-accent) !important;
   color: #14352c !important;
+}
+
+/* The visualiser is shared by every public development. Its original Revo
+   palette is expressed through Tailwind utility classes, so bind those
+   surfaces to the organisation colours supplied by the public landing RPC. */
+.public-development-desktop .bg-\[\#073e32\] {
+  background-color: var(--development-primary) !important;
+}
+
+.public-development-desktop .bg-\[\#d0ab55\] {
+  background-color: var(--development-accent) !important;
 }
 
 .public-development-mobile #enquire,
