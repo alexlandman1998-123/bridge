@@ -1,8 +1,8 @@
 # Public Websites — Phase 2 Brand Editor
 
-**Status:** implemented locally; migration deployment and environment smoke test pending
+**Status:** implemented and verified for Kingstons Real Estate in isolated staging; production untouched
 
-**Implemented:** 5 September 2026
+**Implemented:** 6 September 2026
 
 ## Outcome
 
@@ -11,7 +11,7 @@ An organisation administrator can edit the identity of an existing website draft
 ## Editable website values
 
 - company display name;
-- light-background and dark-background logos, by upload or HTTPS URL;
+- light-background and dark-background logos, by controlled workspace upload;
 - primary, secondary and accent colours;
 - contact email and phone;
 - WhatsApp number; and
@@ -25,11 +25,14 @@ The first `property-standard-v1` template now reads the published revision's lig
 
 ## Security and consistency
 
-- `website_update_draft_brand(uuid, uuid, jsonb, boolean)` requires an authenticated caller and verifies `bridge_is_org_admin` against the site's organisation.
-- The function updates only a revision with `status = 'draft'` that belongs to the supplied site, and locks it during the write.
-- Input is an allow-listed JSON object. Values must be text; colours must be six-digit hex values; logo and website URLs must use HTTPS; email and field lengths are validated.
-- The privileged function pins an empty `search_path`, fully qualifies database objects, and is not executable by `PUBLIC` or `anon`.
-- Logo upload uses the existing organisation-scoped branding bucket rules. The website stores the resulting asset URL in its draft revision.
+- `website-brand-publication` verifies the caller's JWT, then the service-only `website_commit_draft_brand` command independently verifies active organisation-admin membership.
+- The command updates only a revision with `status = 'draft'` that belongs to the supplied site, and locks it during the write.
+- Input is an allow-listed JSON object. Values must be text; colours must be six-digit hex values; company website URLs must use HTTPS; email and field lengths are validated.
+- Arbitrary external logo URLs are no longer accepted. A logo must resolve to an approved Storage object owned by the same Supabase project.
+- Before save, reset, initial creation or publication, the server downloads the source logo, validates its type and 10 MB limit, hashes it and writes an immutable public copy below `organisations/{organisation}/websites/{site}/branding/{variant}/{sha256}.{extension}`.
+- `website_brand_assets` records the source, fingerprint, exact public URL, tenant, variant and cleanup state. Browser roles have no direct write access to this ledger or the commit command.
+- Failed multi-logo copies are compensated. Replaced objects are retained while any draft, published or archived revision references them, then retired and removed when no revision needs them.
+- Publication readiness rejects any draft logo that is not registered as an active durable website asset. The publisher can automatically repair a legacy draft during the publish action.
 - The public renderer continues to resolve only `published` sites and `published` revisions.
 
 ## Verification
@@ -49,16 +52,18 @@ npm --prefix apps/websites run typecheck
 npm --prefix apps/websites run build
 ```
 
-## Deployment gate
+## Staging evidence
 
-Apply the Phase 1 and Phase 2 migrations to a non-production Supabase environment, then verify with an organisation administrator that:
+Migration `20260906090949_public_websites_durable_brand_assets.sql` and the `website-brand-publication` Edge Function are deployed to `Arch9 Staging` only. The pgTAP contract passes all 17 checks.
 
-1. existing organisation identity values are present when the website is created;
-2. both logo uploads render in the Website Studio preview;
-3. save persists after a full browser refresh;
-4. reset restores current organisation branding without changing the organisation branding row;
-5. an invalid colour, HTTP URL, unsupported field and non-administrator request are rejected;
-6. the public website remains unchanged while the edited revision is a draft; and
-7. after publishing, the shared header/footer and all public routes render the saved identity.
+Kingstons Real Estate passed the live staging flow as its principal actor:
 
-Phase 3 can proceed in parallel locally, but deployment should not advance beyond non-production until this database-backed smoke test passes.
+1. existing organisation identity values were copied and registered without manual storage repair;
+2. light and dark logos were written to immutable website-owned paths and return HTTP 200;
+3. revision 5 was published with the original Kingstons identity and all three organisation colours;
+4. the protected homepage and About page return HTTP 200 and contain the exact durable logo paths;
+5. a temporary replacement logo was saved to a later draft without changing the live revision;
+6. reset restored the organisation branding, retired and deleted the unused website object, and the test draft was discarded; and
+7. an administrator from another organisation received HTTP 403 for a Kingstons brand mutation.
+
+Production deployment remains a separate release decision and has not been performed.

@@ -32,11 +32,12 @@ The isolated staging pilot was activated for Kingstons Real Estate on 6 Septembe
 - `apps/websites` is linked to the dedicated `arch9-websites-staging` Vercel project with staging-only server credentials;
 - the protected GitHub environment `public-websites-staging` contains the six required deployment secrets;
 - Kingstons is the single active enrolment and its `property-standard-v1` site is published at the protected Vercel preview hostname;
-- the Kingstons logo asset was copied into public staging storage because the database clone retained an expired production signed URL;
+- the original Kingstons logo repair has been replaced by the permanent Phase 2 brand pipeline: both variants are now registered under immutable website-owned paths, return HTTP 200 and publish automatically from organisation branding;
 - the nine Kingstons gallery assets were copied read-only from production private storage into durable public staging URLs after browser review exposed the clone's expired signed URLs; all nine staging assets return HTTP 200 and production received no writes;
 - the permanent publication pipeline is deployed to staging and uses the dedicated `listing-media` bucket, immutable content-addressed paths and a tenant-scoped asset ledger; Kingstons passed publish, update, unpublish and republish with all nine objects copied or deleted automatically and no cleanup backlog;
 - all standard public routes return HTTP 200, a synthetic enquiry routes once into the staging CRM and an identical retry resolves to the same lead and receipt;
 - a temporary published branding change was visibly verified and then removed with the immutable revision rollback command;
+- a reversible replacement-logo test proved draft isolation, organisation-brand reset and automatic retirement/deletion of the unused website object; a cross-tenant administrator request was denied with HTTP 403;
 - listing `PRV-202607130739-6FA9` completed publish, update, unpublish and republish as the Kingstons principal, with nine images and no website-channel blockers;
 - during unpublish, `/properties` remained healthy while the listing disappeared and its detail route returned HTTP 404; after republish, the collection and detail routes returned HTTP 200 with the Lynnwood and asking-price content;
 - browser review at 320px, 375px and 768px confirms the fixed gallery renders without broken images, horizontal overflow, out-of-bounds content or console errors; and

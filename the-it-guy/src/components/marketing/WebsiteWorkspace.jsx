@@ -21,6 +21,10 @@ const PUBLICATION_LABELS = {
   rolled_back: 'Prior revision restored',
 }
 
+function isRepairableBrandBlocker(value) {
+  return /^Prepare the (light|dark) website logo as a durable public asset before publishing\.$/i.test(String(value || '').trim())
+}
+
 function getOrganisationId(authState) {
   return String(authState?.currentWorkspace?.id || authState?.currentMembership?.workspaceId || authState?.currentMembership?.workspace_id || '').trim()
 }
@@ -51,7 +55,8 @@ export default function WebsiteWorkspace({ onBack }) {
   }, [overview.archivedRevisions, rollbackRevisionId])
   const primaryDomain = overview.domains.find((domain) => domain.is_primary) || overview.domains.find((domain) => domain.domain_kind === 'preview')
   const hasPublishedSite = overview.site?.status === 'published' && Boolean(overview.publishedRevision)
-  const publicationReady = overview.publicationReadiness?.ready === true
+  const publicationBlockers = Array.isArray(overview.publicationReadiness?.blockers) ? overview.publicationReadiness.blockers : []
+  const publicationReady = overview.publicationReadiness?.ready === true || (publicationBlockers.length > 0 && publicationBlockers.every(isRepairableBrandBlocker))
   const createSite = async () => {
     if (!organisationId || action) return
     setAction('create')

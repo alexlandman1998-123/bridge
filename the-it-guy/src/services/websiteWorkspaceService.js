@@ -1,4 +1,6 @@
-import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+
+const WEBSITE_BRAND_PUBLICATION_FUNCTION = 'website-brand-publication'
 
 function text(value) {
   return String(value || '').trim()
@@ -89,27 +91,26 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
 export async function saveWebsiteDraftBrand(siteId, revisionId, brand) {
   assertWebsiteControlReady(siteId)
   if (!text(revisionId)) throw new Error('An editable website draft is required.')
-  const { data, error } = await supabase.rpc('website_update_draft_brand', {
-    p_website_site_id: siteId,
-    p_revision_id: revisionId,
-    p_brand_patch: brand && typeof brand === 'object' ? brand : {},
-    p_reset_to_organisation: false,
+  const result = await invokeEdgeFunction(WEBSITE_BRAND_PUBLICATION_FUNCTION, {
+    body: {
+      action: 'save',
+      siteId,
+      revisionId,
+      brand: brand && typeof brand === 'object' ? brand : {},
+    },
   })
-  if (error) throw error
-  return data
+  assertEdgeFunctionSuccess(result, 'Website branding could not be saved.')
+  return result.data
 }
 
 export async function resetWebsiteDraftBrand(siteId, revisionId) {
   assertWebsiteControlReady(siteId)
   if (!text(revisionId)) throw new Error('An editable website draft is required.')
-  const { data, error } = await supabase.rpc('website_update_draft_brand', {
-    p_website_site_id: siteId,
-    p_revision_id: revisionId,
-    p_brand_patch: {},
-    p_reset_to_organisation: true,
+  const result = await invokeEdgeFunction(WEBSITE_BRAND_PUBLICATION_FUNCTION, {
+    body: { action: 'reset', siteId, revisionId },
   })
-  if (error) throw error
-  return data
+  assertEdgeFunctionSuccess(result, 'Website branding could not be reset.')
+  return result.data
 }
 
 export async function createWebsiteSite(organisationId) {
@@ -117,12 +118,12 @@ export async function createWebsiteSite(organisationId) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured for website setup.')
   if (!safeOrganisationId) throw new Error('An organisation is required to create a website.')
 
-  const { data, error } = await supabase.rpc('website_create_site', {
-    p_organisation_id: safeOrganisationId,
+  const result = await invokeEdgeFunction(WEBSITE_BRAND_PUBLICATION_FUNCTION, {
+    body: { action: 'create', organisationId: safeOrganisationId },
   })
-  if (error) throw error
-  if (!data?.siteId) throw new Error('The website setup did not return a site.')
-  return data
+  assertEdgeFunctionSuccess(result, 'The website setup could not be completed.')
+  if (!result.data?.siteId) throw new Error('The website setup did not return a site.')
+  return result.data
 }
 
 function assertWebsiteControlReady(siteId) {
@@ -204,9 +205,11 @@ export async function createWebsiteDraft(siteId) {
 export async function publishWebsiteDraft(siteId, revisionId) {
   assertWebsiteControlReady(siteId)
   if (!text(revisionId)) throw new Error('A draft revision is required.')
-  const { data, error } = await supabase.rpc('website_publish_revision', { p_website_site_id: siteId, p_revision_id: revisionId })
-  if (error) throw error
-  return data
+  const result = await invokeEdgeFunction(WEBSITE_BRAND_PUBLICATION_FUNCTION, {
+    body: { action: 'publish', siteId, revisionId },
+  })
+  assertEdgeFunctionSuccess(result, 'The website draft could not be published.')
+  return result.data
 }
 
 export async function rollbackWebsiteRevision(siteId, revisionId) {
@@ -220,10 +223,9 @@ export async function rollbackWebsiteRevision(siteId, revisionId) {
 export async function discardWebsiteDraft(siteId, revisionId) {
   assertWebsiteControlReady(siteId)
   if (!text(revisionId)) throw new Error('An editable website draft is required.')
-  const { data, error } = await supabase.rpc('website_discard_draft_revision', {
-    p_website_site_id: siteId,
-    p_revision_id: revisionId,
+  const result = await invokeEdgeFunction(WEBSITE_BRAND_PUBLICATION_FUNCTION, {
+    body: { action: 'discard', siteId, revisionId },
   })
-  if (error) throw error
-  return data
+  assertEdgeFunctionSuccess(result, 'The website draft could not be discarded.')
+  return result.data
 }
