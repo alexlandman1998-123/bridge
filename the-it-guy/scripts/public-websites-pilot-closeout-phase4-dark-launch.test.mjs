@@ -16,6 +16,7 @@ const repositoryRoot = resolve(appRoot, '..')
 const read = (path) => readFileSync(path, 'utf8')
 const migration = read(resolve(repositoryRoot, 'supabase/migrations/20260906100418_public_websites_pilot_closeout_phase4_dark_launch.sql'))
 const databaseTest = read(resolve(repositoryRoot, 'supabase/tests/public_websites_pilot_closeout_phase4_dark_launch_test.sql'))
+const eventAclMigration = read(resolve(repositoryRoot, 'supabase/migrations/20260906103100_public_websites_phase4_dark_launch_event_acl.sql'))
 const repository = read(resolve(repositoryRoot, 'apps/websites/lib/site-repository.ts'))
 const workspace = read(resolve(appRoot, 'src/components/marketing/WebsiteWorkspace.jsx'))
 const operator = read(resolve(appRoot, 'scripts/public-websites-pilot-closeout-phase4-dark-launch.mjs'))
@@ -38,6 +39,7 @@ for (const [pattern, message] of [
 
 assert.match(databaseTest, /plan\(22\)/, 'database contract has a fixed plan')
 assert.match(databaseTest, /service role cannot rewrite dark-launch events/, 'database contract protects immutable events')
+assert.match(eventAclMigration, /revoke all[\s\S]*service_role[\s\S]*grant select, insert[\s\S]*service_role/i, 'follow-up migration makes the production event ledger append-only')
 
 assert.match(repository, /website_production_dark_launches/, 'public resolution reads the dark-launch gate')
 assert.match(repository, /preview_hostname.*hostname/s, 'public resolution binds the exact preview hostname')
