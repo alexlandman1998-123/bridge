@@ -1,9 +1,11 @@
-import { supabase } from '../lib/supabaseClient'
+import { assertEdgeFunctionSuccess, invokeEdgeFunction } from '../lib/supabaseClient'
 
 async function call(action, organisationId, payload = {}) {
-  if (!supabase) throw new Error('Supabase is required for Meta Lead Ads.')
-  const { data, error } = await supabase.functions.invoke('meta-lead-ads-admin', { body: { action, organisationId, ...payload } })
-  if (error) throw error
+  const result = await invokeEdgeFunction('meta-lead-ads-admin', {
+    body: { action, organisationId, ...payload },
+  })
+  assertEdgeFunctionSuccess(result, 'Meta Lead Ads request failed.')
+  const { data } = result
   if (data?.error) throw new Error(data.error)
   return data || {}
 }

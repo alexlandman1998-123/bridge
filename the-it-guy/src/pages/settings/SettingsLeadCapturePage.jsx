@@ -766,7 +766,10 @@ export default function SettingsLeadCapturePage() {
     const state = query.get('state') || sessionStorage.getItem(`arch9:meta-lead-ads:${organisationId}`) || ''
     if (!state) return
     setSaving(true)
-    completeMetaLeadAdsAuthorization(organisationId, state).then((result) => setMetaPages(result.pages || [])).catch((metaError) => setError(metaError.message)).finally(() => setSaving(false))
+    completeMetaLeadAdsAuthorization(organisationId, state).then((result) => {
+      setMetaPages(result.pages || [])
+      setError('')
+    }).catch((metaError) => setError(metaError.message)).finally(() => setSaving(false))
   }, [organisationId])
 
   async function authorizeMeta() {
