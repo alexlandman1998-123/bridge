@@ -127,11 +127,11 @@ export const SETTINGS_NAV_GROUPS = [
       {
         to: '/settings/lead-capture',
         label: 'Lead Capture',
-        description: 'Inbound addresses, digital cards, routing health, and agent activation.',
+        description: 'Direct portal, Meta Lead Ads, and digital agent-card routing.',
         icon: Mail,
         roles: ['agent', 'developer'],
         permission: PERMISSIONS.manageWorkspaceSettings,
-        keywords: 'lead capture forwarding addresses agent activation inbound enquiry health property24 private property website parser review queue digital card qr business card',
+        keywords: 'lead capture direct api property24 private property meta facebook instagram lead ads digital card qr business card',
       },
       {
         to: '/settings/syndication',

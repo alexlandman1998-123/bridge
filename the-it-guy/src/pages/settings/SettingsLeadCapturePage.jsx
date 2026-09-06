@@ -1163,57 +1163,25 @@ export default function SettingsLeadCapturePage() {
     return <SettingsLoadingState label="Loading lead capture settings..." />
   }
 
-  const myAliases = canManage ? aliases.filter((alias) => alias.agentUserId === profileId) : currentUserAliases
-  const visibleMyAliases = getPrimaryLeadCaptureAliases(myAliases.length ? myAliases : aliases.filter((alias) => !alias.agentUserId))
-
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
         kicker="Settings"
         title="Lead Capture"
-        description="Forwarding addresses, agent activation status, and inbound lead email health."
+        description="Direct property portal, Meta Lead Ads, and digital agent-card lead routing."
         actions={
-          <>
-            <SecondaryButton icon={RefreshCw} onClick={load} disabled={saving}>Refresh</SecondaryButton>
-            {canManage ? (
-              <PrimaryButton icon={Mail} onClick={generateAgencyAddresses} disabled={saving || !organisationId}>Generate Agency Addresses</PrimaryButton>
-            ) : (
-              <PrimaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate My Addresses</PrimaryButton>
-            )}
-          </>
+          <SecondaryButton icon={RefreshCw} onClick={load} disabled={saving}>Refresh</SecondaryButton>
         }
       />
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {notice ? <SettingsBanner tone="success">{notice}</SettingsBanner> : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-        <MetricCard label="Active Addresses" value={generatedCount} icon={Mail} />
+      <section className="grid gap-4 md:grid-cols-3">
         <MetricCard label="Active Agents" value={activeAgentCount} icon={UsersRound} />
         <MetricCard label="Digital Cards" value={activeCardCount} icon={IdCard} />
         <MetricCard label="Card Views" value={cardViewCount} icon={QrCode} />
-        <MetricCard label="Emails Received" value={receivedCount} icon={Inbox} />
-        <MetricCard label="Needs Review" value={failureCount} icon={AlertCircle} />
       </section>
-
-      <SettingsSectionCard
-        title="My Capture Addresses"
-        description={`Status: ${STATUS_META[currentUserStatus]?.label || STATUS_META.not_started.label}`}
-        actions={!visibleMyAliases.length ? <SecondaryButton icon={Mail} onClick={generateMyAddresses} disabled={saving || !organisationId || !profileId}>Generate My Addresses</SecondaryButton> : null}
-      >
-        {visibleMyAliases.length ? (
-          <div className="grid gap-3">
-            {visibleMyAliases.map((alias) => (
-              <AliasAddressRow key={alias.aliasId || alias.emailAddress} alias={alias} onCopy={copyAddress} />
-            ))}
-          </div>
-        ) : (
-          <SettingsEmptyState
-            title="No lead capture addresses yet"
-            description="Generate an address before routing portal enquiries into Arch9."
-          />
-        )}
-      </SettingsSectionCard>
 
       {canManage ? (
         <SettingsSectionCard title="Facebook & Instagram Lead Ads" description="Authorise an agency Page, select forms, and route each form into this organisation's CRM.">
@@ -1281,123 +1249,6 @@ export default function SettingsLeadCapturePage() {
         </SettingsSectionCard>
       ) : null}
 
-      {canManage ? (
-        <SettingsSectionCard title="Agency Activation" description="Agent-level lead capture status across the organisation.">
-          {rows.length ? (
-            <div className="overflow-hidden rounded-[18px] border border-[#e3eaf2] bg-white">
-              <table className="min-w-full divide-y divide-[#e8eef5] text-left">
-                <thead className="bg-[#f8fbfe]">
-                  <tr className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">
-                    <th className="px-4 py-3">Agent</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3">Primary Address</th>
-                    <th className="px-4 py-3">Last Email</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row) => (
-                    <AgentStatusRow key={row.userId || 'agency'} row={row} onCopy={copyAddress} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <SettingsEmptyState
-              title="No agents found"
-              description="Invite users before generating agent capture addresses."
-            />
-          )}
-        </SettingsSectionCard>
-      ) : null}
-
-      {canManage ? (
-        <ProductionSetupSection
-          domain={leadCaptureDomain}
-          webhookUrl={webhookUrl}
-          dnsRows={dnsRows}
-          onCopy={copyAddress}
-        />
-      ) : null}
-
-      <SettingsSectionCard title="Recent Inbound Emails" description="Latest raw email events received through capture addresses.">
-        {inboundEmails.length ? (
-          <div className="grid gap-3">
-            {inboundEmails.slice(0, 8).map((email) => (
-              <div key={email.emailId} className="grid gap-3 rounded-[14px] border border-[#e3ebf3] bg-white p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusPill status={email.status === 'processed' ? 'active' : email.status === 'failed' ? 'not_started' : 'test_received'} />
-                    <span className="text-sm font-semibold text-[#162334]">{email.subject || 'Inbound lead email'}</span>
-                  </div>
-                  <p className="mt-1 truncate text-sm text-[#6b7d93]">{email.fromEmail || 'Unknown sender'} · {formatDateTime(email.receivedAt)}</p>
-                  <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a9aab]">
-                    {email.parserName || 'parser pending'} · {formatConfidence(email.parseConfidence)}
-                  </p>
-                  {email.parseWarnings?.length ? (
-                    <p className="mt-1 text-xs text-[#9a6408]">{email.parseWarnings.join(', ')}</p>
-                  ) : null}
-                </div>
-                {email.leadId ? (
-                  <span className="inline-flex items-center gap-2 text-sm font-semibold text-[#1f7a45]">
-                    <CheckCircle2 size={16} /> Lead Created
-                  </span>
-                ) : (
-                  <span className="text-sm font-semibold text-[#6b7d93]">{email.status}</span>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <SettingsEmptyState
-            title="No inbound email yet"
-            description="Received lead emails will appear here after the inbound provider is connected."
-          />
-        )}
-      </SettingsSectionCard>
-
-      <SettingsSectionCard title="Lead Capture Review Queue" description="Open parse failures and low-confidence inbound lead emails.">
-        <ReviewQueueFilters
-          filters={reviewFilters}
-          setFilters={setReviewFilters}
-          sources={LEAD_CAPTURE_SOURCES}
-          users={users}
-          total={reviewItemsWithAssignment.length}
-          visible={filteredReviewItems.length}
-        />
-        {filteredReviewItems.length ? (
-          <div className="grid gap-3">
-            {filteredReviewItems.slice(0, 24).map((item) => (
-              <ReviewQueueItem
-                key={item.id}
-                item={item}
-                saving={saving}
-                onRepair={openRepairItem}
-                onResolve={(reviewItem) => updateReviewItem(reviewItem, 'resolve')}
-                onIgnore={(reviewItem) => updateReviewItem(reviewItem, 'ignore')}
-              />
-            ))}
-          </div>
-        ) : (
-          <SettingsEmptyState
-            title="No lead capture reviews open"
-            description="Try a broader source, status, confidence, agent, or text search."
-          />
-        )}
-      </SettingsSectionCard>
-
-      <RepairDrawer
-        item={selectedRepairItem}
-        draft={repairDraft}
-        users={users}
-        onChange={setRepairDraft}
-        onClose={() => {
-          setSelectedRepairItem(null)
-          setRepairDraft({})
-        }}
-        onCreateLead={createLeadFromRepair}
-        onLinkLead={linkExistingLeadFromRepair}
-        saving={saving}
-      />
     </div>
   )
 }
