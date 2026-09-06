@@ -58,6 +58,8 @@ function parseArgs(argv) {
     fetchRemote: false,
     write: false,
     json: false,
+    staging: false,
+    auditRepairOnly: false,
   }
 
   for (const arg of argv) {
@@ -67,6 +69,10 @@ function parseArgs(argv) {
       options.write = true
     } else if (arg === '--json') {
       options.json = true
+    } else if (arg === '--staging') {
+      options.staging = true
+    } else if (arg === '--audit-repair-only') {
+      options.auditRepairOnly = true
     } else if (arg === '--help' || arg === '-h') {
       options.help = true
     } else {
@@ -220,8 +226,9 @@ function runSupabase(repoRoot, args) {
     },
   })
 
+  const displayArgs = args.map((arg, index) => args[index - 1] === '--db-url' ? '<redacted-db-url>' : arg)
   return {
-    command: `npx supabase ${args.join(' ')}`,
+    command: `npx supabase ${displayArgs.join(' ')}`,
     ok: result.status === 0 && !result.error,
     status: result.status,
     stdout: result.stdout || '',
@@ -807,10 +814,12 @@ function generateReport({
 }
 
 function printUsage() {
-  console.log('Usage: node scripts/supabase-phase5-module-drift-audit.mjs [--fetch-remote] [--write] [--json]')
+  console.log('Usage: node scripts/supabase-phase5-module-drift-audit.mjs [--fetch-remote] [--staging] [--audit-repair-only] [--write] [--json]')
   console.log('')
   console.log('Options:')
   console.log('  --fetch-remote  Fetch linked Supabase migration list and run catalog-only object checks.')
+  console.log('  --staging       Use the guarded staging DB URL from the environment instead of the linked project.')
+  console.log('  --audit-repair-only  Audit all production repair-only candidates, including staging-recorded versions.')
   console.log('  --write         Write docs/supabase-migration-phase-5-module-drift-report.md.')
   console.log('  --json          Print a compact machine-readable summary.')
 }
@@ -841,20 +850,38 @@ function main() {
   let objectRows = []
   let driftRows = []
   let moduleSummaries = []
+  let repairOnlyAudit = []
 
   if (options.fetchRemote) {
-    migrationCommand = runSupabase(repoRoot, ['migration', 'list', '--linked', '--output-format', 'json'])
+    const stagingProjectRef = normalizeText(process.env.SUPABASE_STAGING_PROJECT_REF)
+    const stagingDbUrl = normalizeText(process.env.SUPABASE_STAGING_DB_URL)
+    if (options.staging && (!stagingProjectRef || !stagingDbUrl)) {
+      throw new Error('--staging requires SUPABASE_STAGING_PROJECT_REF and SUPABASE_STAGING_DB_URL.')
+    }
+    if (options.staging && stagingProjectRef === 'isdowlnollckzvltkasn') {
+      throw new Error('Refusing to treat the production project as staging.')
+    }
+    const targetArgs = options.staging ? ['--db-url', stagingDbUrl] : ['--linked']
+    migrationCommand = runSupabase(repoRoot, ['migration', 'list', ...targetArgs, '--output-format', 'json'])
     const migrationRows = migrationCommand.ok ? parseMigrationRows(migrationCommand.stdout) : []
     buckets = ledgerBuckets(migrationRows)
     const localOnlyVersions = new Set(buckets.localOnly.map((row) => row.local))
+    const repairOnlyVersions = new Set()
+    if (options.auditRepairOnly) {
+      const productionManifest = JSON.parse(readFileSync(path.join(repoRoot, MANIFEST_PATH), 'utf8'))
+      for (const row of productionManifest.rows || []) {
+        if (row.action === 'repair_only_after_smoke') repairOnlyVersions.add(String(row.version))
+      }
+    }
+    const objectCheckVersions = new Set([...localOnlyVersions, ...repairOnlyVersions])
     extractedObjects = files
-      .filter((file) => localOnlyVersions.has(file.version))
+      .filter((file) => objectCheckVersions.has(file.version))
       .flatMap((file) => extractObjectsFromSql(file, repoRoot))
 
     if (extractedObjects.length) {
       const tempSqlPath = path.join(os.tmpdir(), `supabase-phase5-object-checks-${process.pid}.sql`)
       writeFileSync(tempSqlPath, buildObjectCheckSql(extractedObjects))
-      objectCommand = runSupabase(repoRoot, ['db', 'query', '--linked', '--file', tempSqlPath, '--output-format', 'json'])
+      objectCommand = runSupabase(repoRoot, ['db', 'query', ...targetArgs, '--file', tempSqlPath, '--output-format', 'json'])
       objectRows = objectCommand.ok ? parseObjectRows(objectCommand.stdout) : []
     }
 
@@ -866,6 +893,28 @@ function main() {
     }
 
     driftRows = buildMigrationDrift({ files, buckets, objectRowsByFile, fetchRemote: true })
+    repairOnlyAudit = files
+      .filter((file) => repairOnlyVersions.has(file.version))
+      .map((file) => {
+        const objects = objectRowsByFile.get(file.file) || []
+        const liveCount = objects.filter((object) => object.liveExists).length
+        return {
+          version: file.version,
+          module: file.module,
+          file: file.file,
+          objectStatus: objects.length === 0
+            ? 'no_static_objects'
+            : liveCount === objects.length
+              ? 'all_live'
+              : liveCount === 0
+                ? 'none_live'
+                : 'partial_live',
+          liveCount,
+          objectCount: objects.length,
+          ledgerRecorded: buckets.matched.some((row) => row.local === file.version),
+        }
+      })
+      .sort((a, b) => a.version.localeCompare(b.version))
     moduleSummaries = summarizeModules(driftRows)
   } else {
     driftRows = []
@@ -946,6 +995,7 @@ function main() {
         noneLive: summary.noneLive,
         noStaticObjects: summary.noStaticObjects,
       })),
+      repairOnlyAudit,
     }, null, 2))
   } else if (!options.write) {
     console.log(report)

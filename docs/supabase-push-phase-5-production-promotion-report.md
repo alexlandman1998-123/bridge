@@ -1,6 +1,6 @@
 # Supabase Push Phase 5 Production Promotion Report
 
-Generated: 2026-09-06T16:00:47.403Z
+Generated: 2026-09-06T16:16:12.128Z
 
 ## Scope
 
@@ -11,8 +11,8 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | Field | Value |
 | --- | --- |
 | Rows considered | 93 |
-| Ready for production | 0 |
-| Blocked | 93 |
+| Ready for production | 14 |
+| Blocked | 79 |
 | Production env configured | No |
 | Production recovery locked | Yes |
 
@@ -48,15 +48,15 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | `20260820192857` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/20260820192857-other.json` | `upstream_manual_review` |
 | `20260820193436` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260820193436-other.json` | `staging_evidence_missing` |
 | `202608230001` | `other` | `blocked_corrective_required` | No | `docs/staging-evidence/202608230001-other.json` | `upstream_corrective_required` |
-| `202608230002` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/202608230002-other.json` | `staging_evidence_missing` |
-| `202608240001` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/202608240001-other.json` | `staging_evidence_missing` |
+| `202608230002` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/202608230002-other.json` | None |
+| `202608240001` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/202608240001-other.json` | None |
 | `20260824084233` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/20260824084233-other.json` | `upstream_manual_review` |
-| `20260824091732` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260824091732-other.json` | `staging_evidence_missing` |
+| `20260824091732` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260824091732-other.json` | None |
 | `20260824092531` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/20260824092531-other.json` | `upstream_manual_review` |
 | `202608250001` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/202608250001-other.json` | `upstream_manual_review` |
-| `20260827081713` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260827081713-other.json` | `staging_evidence_missing` |
+| `20260827081713` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260827081713-other.json` | None |
 | `20260827083108` | `other` | `blocked_corrective_required` | No | `docs/staging-evidence/20260827083108-other.json` | `upstream_corrective_required` |
-| `20260827091439` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260827091439-other.json` | `staging_evidence_missing` |
+| `20260827091439` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260827091439-other.json` | None |
 | `202608290001` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202608290001-other.json` | `staging_evidence_missing` |
 | `202608290002` | `other` | `production_apply_sql` | No | `docs/staging-evidence/202608290002-other.json` | `staging_evidence_missing` |
 | `20260829103738` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260829103738-other.json` | `staging_evidence_missing` |
@@ -68,8 +68,8 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | `20260829204153` | `other` | `blocked_corrective_required` | No | `docs/staging-evidence/20260829204153-other.json` | `upstream_corrective_required` |
 | `20260830125035` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260830125035-other.json` | `staging_evidence_missing` |
 | `20260830160810` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/20260830160810-other.json` | `upstream_manual_review` |
-| `20260831071807` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260831071807-other.json` | `staging_evidence_missing` |
-| `20260831072652` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260831072652-other.json` | `staging_evidence_missing` |
+| `20260831071807` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260831071807-other.json` | None |
+| `20260831072652` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260831072652-other.json` | None |
 | `20260831120000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260831120000-other.json` | `staging_evidence_missing` |
 | `20260831131538` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/20260831131538-other.json` | `upstream_manual_review` |
 | `20260831140736` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260831140736-other.json` | `staging_evidence_missing` |
@@ -81,16 +81,16 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | `20260901140943` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260901140943-other.json` | `staging_evidence_missing` |
 | `20260901143358` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/20260901143358-other.json` | `upstream_manual_review` |
 | `20260901145225` | `other` | `blocked_manual_review` | No | `docs/staging-evidence/20260901145225-other.json` | `upstream_manual_review` |
-| `20260901165511` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260901165511-other.json` | `staging_evidence_missing` |
+| `20260901165511` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260901165511-other.json` | None |
 | `20260901170254` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260901170254-other.json` | `staging_evidence_missing` |
 | `20260901170909` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260901170909-other.json` | `staging_evidence_missing` |
 | `20260901174924` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260901174924-other.json` | `staging_evidence_missing` |
 | `20260902095249` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260902095249-other.json` | `staging_evidence_missing` |
 | `20260902105303` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260902105303-other.json` | `staging_evidence_missing` |
-| `20260903094624` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260903094624-other.json` | `staging_evidence_missing` |
+| `20260903094624` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260903094624-other.json` | None |
 | `20260903122031` | `other` | `blocked_corrective_required` | No | `docs/staging-evidence/20260903122031-other.json` | `upstream_corrective_required` |
 | `20260903130012` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260903130012-other.json` | `staging_evidence_missing` |
-| `20260905090353` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260905090353-other.json` | `staging_evidence_missing` |
+| `20260905090353` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260905090353-other.json` | None |
 | `20260905091122` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260905091122-other.json` | `staging_evidence_missing` |
 | `20260905095152` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260905095152-other.json` | `staging_evidence_missing` |
 | `20260905120250` | `other` | `blocked_corrective_required` | No | `docs/staging-evidence/20260905120250-other.json` | `upstream_corrective_required` |
@@ -117,15 +117,30 @@ Phase 5 promotes runner-eligible rows to production only after reviewed staging 
 | `20260906070515` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260906070515-other.json` | `staging_evidence_missing` |
 | `20260906070938` | `other` | `blocked_corrective_required` | No | `docs/staging-evidence/20260906070938-other.json` | `upstream_corrective_required` |
 | `20260906071644` | `other` | `production_apply_sql` | No | `docs/staging-evidence/20260906071644-other.json` | `staging_evidence_missing` |
-| `20260906123000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906123000-other.json` | `staging_evidence_missing` |
+| `20260906123000` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260906123000-other.json` | None |
 | `20260906130000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906130000-other.json` | `staging_evidence_missing` |
-| `20260906133000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906133000-other.json` | `staging_evidence_missing` |
-| `20260906134500` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906134500-other.json` | `staging_evidence_missing` |
-| `20260906140000` | `other` | `production_no_sql_record_after_smoke` | No | `docs/staging-evidence/20260906140000-other.json` | `staging_evidence_missing` |
+| `20260906133000` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260906133000-other.json` | None |
+| `20260906134500` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260906134500-other.json` | None |
+| `20260906140000` | `other` | `production_no_sql_record_after_smoke` | Yes | `docs/staging-evidence/20260906140000-other.json` | None |
 
 ## Commands
 
-No production commands are enabled yet because no rows have complete staging evidence.
+| Version | Command |
+| --- | --- |
+| `202608230002` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202608230002 --staging-evidence docs/staging-evidence/202608230002-other.json --production-evidence docs/production-evidence/202608230002-other.json --confirm APPLY_TO_PRODUCTION` |
+| `202608240001` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202608240001 --staging-evidence docs/staging-evidence/202608240001-other.json --production-evidence docs/production-evidence/202608240001-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260824091732` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260824091732 --staging-evidence docs/staging-evidence/20260824091732-other.json --production-evidence docs/production-evidence/20260824091732-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260827081713` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260827081713 --staging-evidence docs/staging-evidence/20260827081713-other.json --production-evidence docs/production-evidence/20260827081713-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260827091439` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260827091439 --staging-evidence docs/staging-evidence/20260827091439-other.json --production-evidence docs/production-evidence/20260827091439-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260831071807` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260831071807 --staging-evidence docs/staging-evidence/20260831071807-other.json --production-evidence docs/production-evidence/20260831071807-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260831072652` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260831072652 --staging-evidence docs/staging-evidence/20260831072652-other.json --production-evidence docs/production-evidence/20260831072652-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260901165511` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260901165511 --staging-evidence docs/staging-evidence/20260901165511-other.json --production-evidence docs/production-evidence/20260901165511-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260903094624` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260903094624 --staging-evidence docs/staging-evidence/20260903094624-other.json --production-evidence docs/production-evidence/20260903094624-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260905090353` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260905090353 --staging-evidence docs/staging-evidence/20260905090353-other.json --production-evidence docs/production-evidence/20260905090353-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260906123000` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260906123000 --staging-evidence docs/staging-evidence/20260906123000-other.json --production-evidence docs/production-evidence/20260906123000-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260906133000` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260906133000 --staging-evidence docs/staging-evidence/20260906133000-other.json --production-evidence docs/production-evidence/20260906133000-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260906134500` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260906134500 --staging-evidence docs/staging-evidence/20260906134500-other.json --production-evidence docs/production-evidence/20260906134500-other.json --confirm APPLY_TO_PRODUCTION` |
+| `20260906140000` | `node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260906140000 --staging-evidence docs/staging-evidence/20260906140000-other.json --production-evidence docs/production-evidence/20260906140000-other.json --confirm APPLY_TO_PRODUCTION` |
 
 ## Required Environment Before Promotion
 

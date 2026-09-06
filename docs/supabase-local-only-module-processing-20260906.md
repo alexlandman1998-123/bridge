@@ -12,8 +12,9 @@ The prerequisite remote-history restoration is complete: all 63 remote-only
 files are now represented locally and the live reconciliation reports zero
 pure remote-only rows. Two executable-SQL-equivalent local timestamp aliases
 were retired; 15 materially different successors from the other 14 pairs stay
-in this local-only queue. No current local-only row has valid staging evidence
-under its current version and stream binding.
+in this local-only queue. A subsequent guarded staging pass completed valid
+evidence for 14 repair-only rows; the other 26 repair candidates are blocked
+because their expected objects are absent or only partially present.
 
 ## Module queue
 
@@ -34,11 +35,11 @@ under its current version and stream binding.
 
 | Outcome | Rows | State |
 | --- | ---: | --- |
-| Repair only after smoke | 40 | Require current module-specific staging smoke evidence. |
+| Repair only after smoke | 40 | 14 complete on staging; 25 none-live and 1 partial-live remain blocked. |
 | Apply original after dependency check | 30 | Queue for one-version staging execution after dependency preflight. |
 | Corrective migration required | 11 | Blocked until a new idempotent corrective migration is reviewed. Do not replay the original SQL. |
 | Manual data review | 12 | Blocked until intended data outcomes and idempotency are reviewed. |
-| Ready for production now | 0 | No current staging evidence is bound to these versions and streams. |
+| Ready for production now | 0 | The 14 evidence-complete rows are still blocked by predecessors absent from the production ledger. |
 
 ## Resolved remote-pair set
 
@@ -84,13 +85,15 @@ predecessors and remain pending successors:
 
 ## Required order
 
-1. Process the 40 repair candidates module-by-module with current staging smoke
-   evidence and `sqlApplied=false` receipts.
+1. Process the predecessor migrations required by the 14 evidence-complete
+   repair rows; do not bypass the production dependency gate.
 2. Process the 30 apply candidates one version at a time on staging after their
    dependency preflight.
-3. Create and review the 11 corrective migrations and complete the 12 manual
+3. Route the 25 none-live repair candidates through staged SQL execution and
+   review a corrective path for the single partial-live candidate.
+4. Create and review the 11 corrective migrations and complete the 12 manual
    data decisions.
-4. Promote only evidence-backed rows through the Phase 7 production gate, then
+5. Promote only evidence-backed rows through the Phase 7 production gate, then
    rerun the live reconciliation after each module batch.
 
 The detailed per-version commands and evidence paths are in

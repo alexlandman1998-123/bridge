@@ -1,0 +1,23 @@
+{
+  "version": "20260827091439",
+  "stream": "other",
+  "file": "20260827091439_transaction_setup_owner_rls_access.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated module verification",
+  "approvedBy": "User-authorized migration reconciliation task",
+  "capturedAt": "2026-09-06T16:12:45.468Z",
+  "notes": [
+    "Staging catalog audit found 2/2 expected static objects.",
+    "No SQL was applied; rollback/no-residue passes by ledger-only construction.",
+    "Behavior suites passed for transaction, workspace, document trust, and public website modules."
+  ],
+  "ledgerRecordedAt": "2026-09-06T16:14:26.888Z"
+}
