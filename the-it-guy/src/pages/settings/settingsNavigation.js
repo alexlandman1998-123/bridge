@@ -129,7 +129,7 @@ export const SETTINGS_NAV_GROUPS = [
         label: 'Lead Capture',
         description: 'Inbound addresses, digital cards, routing health, and agent activation.',
         icon: Mail,
-        roles: ['agent'],
+        roles: ['agent', 'developer'],
         permission: PERMISSIONS.manageWorkspaceSettings,
         keywords: 'lead capture forwarding addresses agent activation inbound enquiry health property24 private property website parser review queue digital card qr business card',
       },

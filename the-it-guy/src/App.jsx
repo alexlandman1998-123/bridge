@@ -3768,7 +3768,7 @@ function AppRoutes() {
                 <Route
                   path="lead-capture"
                   element={
-                    <RoleRoute allowedRoles={['agent']}>
+                    <RoleRoute allowedRoles={['agent', 'developer']}>
                       <SettingsLeadCapturePage />
                     </RoleRoute>
                   }
