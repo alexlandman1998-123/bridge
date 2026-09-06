@@ -60,6 +60,14 @@ import {
   resolveLeadCaptureReviewItem,
 } from '../../services/leadEmailCaptureService'
 import {
+  completeMetaLeadAdsAuthorization,
+  connectMetaLeadAdsPage,
+  listMetaLeadAdsConnections,
+  listMetaLeadAdsForms,
+  selectMetaLeadAdsForms,
+  startMetaLeadAdsAuthorization,
+} from '../../services/metaLeadAdsService'
+import {
   SettingsBanner,
   SettingsEmptyState,
   SettingsLoadingState,
@@ -670,6 +678,10 @@ export default function SettingsLeadCapturePage() {
   })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [metaConnections, setMetaConnections] = useState([])
+  const [metaPages, setMetaPages] = useState([])
+  const [metaForms, setMetaForms] = useState([])
+  const [metaConnectionId, setMetaConnectionId] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -722,6 +734,8 @@ export default function SettingsLeadCapturePage() {
         inboundEmails: nextInboundEmails,
         status: 'all',
       }))
+      const meta = await listMetaLeadAdsConnections(organisationId).catch(() => ({ connections: [] }))
+      setMetaConnections(meta.connections || [])
     } catch (loadError) {
       setError(loadError?.message || 'Lead capture settings could not be loaded.')
     } finally {
@@ -744,6 +758,38 @@ export default function SettingsLeadCapturePage() {
     workspaceType: resolvedWorkspaceType,
   })
   const organisationId = normalizeText(context?.organisation?.id || currentWorkspace?.id)
+
+  useEffect(() => {
+    if (!organisationId || typeof window === 'undefined') return
+    const query = new URLSearchParams(window.location.search)
+    if (query.get('meta_authorized') !== '1') return
+    const state = query.get('state') || sessionStorage.getItem(`arch9:meta-lead-ads:${organisationId}`) || ''
+    if (!state) return
+    setSaving(true)
+    completeMetaLeadAdsAuthorization(organisationId, state).then((result) => setMetaPages(result.pages || [])).catch((metaError) => setError(metaError.message)).finally(() => setSaving(false))
+  }, [organisationId])
+
+  async function authorizeMeta() {
+    setSaving(true); setError('')
+    try { window.location.assign(await startMetaLeadAdsAuthorization(organisationId, window.location.href.split('?')[0])) }
+    catch (metaError) { setError(metaError.message || 'Meta authorisation could not start.'); setSaving(false) }
+  }
+  async function chooseMetaPage(pageId) {
+    setSaving(true); setError('')
+    try {
+      const state=sessionStorage.getItem(`arch9:meta-lead-ads:${organisationId}`)||''
+      const result=await connectMetaLeadAdsPage(organisationId,state,pageId)
+      const connection=result.connection; setMetaConnectionId(connection.id)
+      const forms=await listMetaLeadAdsForms(organisationId,connection.id); setMetaForms(forms.forms||[])
+    } catch(metaError) { setError(metaError.message||'Meta Page could not be connected.') } finally { setSaving(false) }
+  }
+  async function enableMetaForms() {
+    setSaving(true); setError('')
+    try {
+      await selectMetaLeadAdsForms(organisationId,metaConnectionId,metaForms.filter((form)=>form.selected).map((form)=>({id:form.id,name:form.name,branchId:form.branchId||null,assignedAgentId:form.assignedAgentId||null})))
+      setNotice('Facebook Lead Ads forms connected and subscribed to leadgen.'); await load()
+    } catch(metaError) { setError(metaError.message||'Meta forms could not be enabled.') } finally { setSaving(false) }
+  }
   const profileId = normalizeText(profile?.id)
   const currentUser = users.find((user) => normalizeText(user.userId || user.id) === profileId) || {
     userId: profileId,
@@ -1168,6 +1214,17 @@ export default function SettingsLeadCapturePage() {
           />
         )}
       </SettingsSectionCard>
+
+      {canManage ? (
+        <SettingsSectionCard title="Facebook & Instagram Lead Ads" description="Authorise an agency Page, select forms, and route each form into this organisation's CRM.">
+          <div className="grid gap-3">
+            <div className="flex flex-wrap gap-2"><PrimaryButton onClick={authorizeMeta} disabled={saving || !organisationId}>Authorise Meta</PrimaryButton></div>
+            {metaConnections.map((connection) => <div key={connection.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><strong>{connection.page_name}</strong><p className="text-sm text-[#6b7d93]">{connection.connection_status}{connection.last_error_message ? ` · ${connection.last_error_message}` : ''}</p></div>)}
+            {metaPages.length ? <div className="grid gap-2">{metaPages.map((page) => <SecondaryButton key={page.id} onClick={() => chooseMetaPage(page.id)} disabled={saving}>Use {page.name}</SecondaryButton>)}</div> : null}
+            {metaForms.length ? <div className="grid gap-2">{metaForms.map((form,index) => <label key={form.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><input type="checkbox" checked={Boolean(form.selected)} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,selected:event.target.checked}:item))} /> <span className="ml-2 font-semibold">{form.name}</span><select className="ml-3 rounded border p-1" value={form.assignedAgentId||''} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,assignedAgentId:event.target.value}:item))}><option value="">Agency queue</option>{users.filter(isActiveAgentUser).map((user)=><option key={getUserId(user)} value={getUserId(user)}>{getUserDisplayName(user)}</option>)}</select></label>)}<PrimaryButton onClick={enableMetaForms} disabled={saving || !metaForms.some((form)=>form.selected)}>Enable selected forms</PrimaryButton></div> : null}
+          </div>
+        </SettingsSectionCard>
+      ) : null}
 
       {canManage ? (
         <SettingsSectionCard
