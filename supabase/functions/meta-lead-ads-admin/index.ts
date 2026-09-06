@@ -14,6 +14,8 @@ function callbackUrl(){return `${text(Deno.env.get("SUPABASE_URL")).replace(/\/$
 async function encrypt(token:string){const kb=Uint8Array.from(atob(text(Deno.env.get("META_TOKEN_ENCRYPTION_KEY"))),c=>c.charCodeAt(0));if(kb.length!==32)throw new Error("Meta token encryption is not configured.");const iv=crypto.getRandomValues(new Uint8Array(12));const key=await crypto.subtle.importKey("raw",kb,"AES-GCM",false,["encrypt"]);const cipher=new Uint8Array(await crypto.subtle.encrypt({name:"AES-GCM",iv},key,new TextEncoder().encode(token)));return `${base64(iv)}.${base64(cipher)}`;}
 async function decrypt(ciphertext:string){const kb=Uint8Array.from(atob(text(Deno.env.get("META_TOKEN_ENCRYPTION_KEY"))),c=>c.charCodeAt(0)),[a,b]=ciphertext.split(".");const key=await crypto.subtle.importKey("raw",kb,"AES-GCM",false,["decrypt"]);return new TextDecoder().decode(await crypto.subtle.decrypt({name:"AES-GCM",iv:Uint8Array.from(atob(a),c=>c.charCodeAt(0))},key,Uint8Array.from(atob(b),c=>c.charCodeAt(0))));}
 async function graph(path:string,token:string,init?:RequestInit){const join=path.includes("?")?"&":"?";const r=await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${path}${join}access_token=${encodeURIComponent(token)}`,init);const body=await r.json() as RecordValue;if(!r.ok)throw new Error(text((body.error as RecordValue)?.message)||"Meta API request failed.");return body;}
+function requestedDate(value:unknown,label:string){const raw=text(value);if(!raw)return null;const date=new Date(raw);if(Number.isNaN(date.getTime()))throw new Error(`${label} must be a valid ISO-8601 date.`);return date;}
+function inRange(value:unknown,from:Date|null,to:Date|null){const date=new Date(text(value));if(Number.isNaN(date.getTime()))return false;return (!from||date>=from)&&(!to||date<=to);}
 async function actor(req:Request,db:any,organisationId:string){const jwt=text(req.headers.get("authorization")).replace(/^Bearer\s+/i,"");const user=(await db.auth.getUser(jwt)).data.user;if(!user)throw new Error("Unauthenticated.");const member=await db.from("organisation_users").select("role,status").eq("organisation_id",organisationId).eq("user_id",user.id).maybeSingle();if(!member.data||member.data.status!=="active"||!["principal","owner","director","admin","super_admin","developer","agency_admin"].includes(member.data.role))throw new Error("Organisation administrator access required.");return user.id;}
 
 Deno.serve(async(req)=>{
@@ -53,6 +55,27 @@ Deno.serve(async(req)=>{
       if(saved.error)throw new Error(saved.error.message);await db.from("meta_lead_ads_oauth_states").update({token_ciphertext:null}).eq("state_hash",stateRow.state_hash);return json(200,{connection:saved.data});
     }
     const connectionId=text(body.connectionId),row=(await db.from("meta_lead_ads_connections").select("*").eq("id",connectionId).eq("organisation_id",org).maybeSingle()).data;if(!row)return json(404,{error:"Connection not found."});
+    if(action==="preview_import"){
+      const formId=text(body.formId),mapping=(await db.from("meta_lead_ads_forms").select("id,form_id,form_name,page_id,lead_type,is_active").eq("connection_id",row.id).eq("organisation_id",org).eq("form_id",formId).eq("is_active",true).maybeSingle()).data;
+      if(!mapping||text(mapping.page_id)!==text(row.page_id))return json(404,{error:"An enabled form mapping for this Page is required before previewing an import."});
+      const requestedFrom=requestedDate(body.requestedFrom,"Start date"),requestedTo=requestedDate(body.requestedTo,"End date");
+      if(requestedFrom&&requestedTo&&requestedFrom>requestedTo)return json(400,{error:"Start date must be before end date."});
+      const current=(await db.from("meta_lead_ads_imports").select("id,status").eq("organisation_id",org).eq("form_mapping_id",mapping.id).in("status",["previewing","ready","importing","paused"]).maybeSingle()).data;
+      if(current&&["importing","paused"].includes(text(current.status)))return json(409,{error:"This form already has an import in progress. Resume or complete it before creating another preview."});
+      const token=await decrypt(row.token_ciphertext),response=await graph(`${mapping.form_id}/leads?fields=id,created_time&limit=100`,token),leads=Array.isArray(response.data)?response.data as RecordValue[]:[];
+      const scoped=leads.filter(lead=>text(lead.id)&&inRange(lead.created_time,requestedFrom,requestedTo));
+      const leadIds=scoped.map(lead=>text(lead.id)),references=leadIds.map(id=>`meta-leadgen:${id}`);
+      const existingLeads=references.length?(await db.from("leads").select("source_reference_id").eq("organisation_id",org).in("source_reference_id",references)).data||[]:[];
+      const existingEvents=leadIds.length?(await db.from("meta_lead_ads_events").select("leadgen_id").eq("organisation_id",org).in("leadgen_id",leadIds)).data||[]:[];
+      const known=new Set([...existingLeads.map((lead:RecordValue)=>text(lead.source_reference_id).replace(/^meta-leadgen:/,"")),...existingEvents.map((event:RecordValue)=>text(event.leadgen_id))]);
+      const duplicateCount=scoped.filter(lead=>known.has(text(lead.id))).length, newCount=scoped.length-duplicateCount;
+      const paging=response.paging&&typeof response.paging==="object"?response.paging as RecordValue:{},cursors=paging.cursors&&typeof paging.cursors==="object"?paging.cursors as RecordValue:{};
+      const previewComplete=!text(paging.next),metadata={preview:{sample_limit:100,complete:previewComplete,next_after:text(cursors.after)||null,returned_count:leads.length,matched_count:scoped.length,previewed_at:new Date().toISOString()}};
+      const values={organisation_id:org,connection_id:row.id,form_mapping_id:mapping.id,page_id:row.page_id,form_id:mapping.form_id,requested_from:requestedFrom?.toISOString()||null,requested_to:requestedTo?.toISOString()||null,status:"ready",next_cursor:null,discovered_count:scoped.length,imported_count:0,duplicate_count:duplicateCount,invalid_count:0,failed_count:0,suppress_notifications:true,requested_by:userId,started_at:null,completed_at:null,last_error_message:null,metadata_json:metadata};
+      const saved=current?await db.from("meta_lead_ads_imports").update(values).eq("id",current.id).select("id,status,discovered_count,duplicate_count").single():await db.from("meta_lead_ads_imports").insert(values).select("id,status,discovered_count,duplicate_count").single();
+      if(saved.error)throw new Error(saved.error.message);
+      return json(200,{import:{id:saved.data.id,status:saved.data.status,formId:mapping.form_id,formName:mapping.form_name,leadType:text(mapping.lead_type)||"buyer",requestedFrom:requestedFrom?.toISOString()||null,requestedTo:requestedTo?.toISOString()||null,previewed:scoped.length,newLeads:newCount,duplicates:duplicateCount,complete:previewComplete,hasMore:!previewComplete}});
+    }
     if(action==="list_forms"){
       const token=await decrypt(row.token_ciphertext),graphForms=(await graph(`${row.page_id}/leadgen_forms?fields=id,name,status&limit=200`,token)).data||[];
       const mappings=(await db.from("meta_lead_ads_forms").select("form_id,branch_id,assigned_agent_id,lead_type,is_active").eq("connection_id",row.id).eq("organisation_id",org)).data||[];
