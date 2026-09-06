@@ -735,7 +735,17 @@ export default function SettingsLeadCapturePage() {
         status: 'all',
       }))
       const meta = await listMetaLeadAdsConnections(organisationId).catch(() => ({ connections: [] }))
-      setMetaConnections(meta.connections || [])
+      const connections = meta.connections || []
+      setMetaConnections(connections)
+      const activeConnection = connections.find((connection) => connection.connection_status === 'connected')
+      if (activeConnection?.id) {
+        setMetaConnectionId(activeConnection.id)
+        const forms = await listMetaLeadAdsForms(organisationId, activeConnection.id)
+        setMetaForms(forms.forms || [])
+      } else {
+        setMetaConnectionId('')
+        setMetaForms([])
+      }
     } catch (loadError) {
       setError(loadError?.message || 'Lead capture settings could not be loaded.')
     } finally {
