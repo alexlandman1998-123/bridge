@@ -1,0 +1,20 @@
+{
+  "version": "20260905100908",
+  "stream": "bond_finance_runtime",
+  "file": "20260905100908_bond_application_portal_phase3_draft_editing.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production single-row promotion verification",
+  "capturedAt": "2026-09-06T16:49:30.000Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": ["Both expected draft-editing functions are live in production.", "Bond application portal Phase 3 editing contract passed."],
+  "verification": {"source": "production_single_row_phase7_gate", "stagingEvidenceFile": "docs/staging-evidence/20260905100908-bond_finance_runtime.json", "productionProjectRef": "isdowlnollckzvltkasn", "route": "production_apply_sql"}
+}

@@ -1,0 +1,29 @@
+{
+  "version": "20260828203724",
+  "stream": "bond_finance_runtime",
+  "file": "20260828203724_bond_application_idempotent_document_reconciliation.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production single-row promotion verification",
+  "capturedAt": "2026-09-06T16:43:30.000Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Both expected indexes and the requirement_identity column are live in production.",
+    "All 1,584 existing transaction-required-document rows have a non-null requirement identity after reconciliation.",
+    "The transaction conversion commission hook contract passed; an unrelated requested package-script alias was absent and was not counted as evidence."
+  ],
+  "verification": {
+    "source": "production_single_row_phase7_gate",
+    "stagingEvidenceFile": "docs/staging-evidence/20260828203724-bond_finance_runtime.json",
+    "productionProjectRef": "isdowlnollckzvltkasn",
+    "route": "production_apply_sql"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "version": "20260905100612",
+  "stream": "bond_finance_runtime",
+  "file": "20260905100612_bond_application_portal_phase2_access_tokens.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex production single-row promotion verification",
+  "capturedAt": "2026-09-06T16:46:00.000Z",
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": ["Production catalog audit found 6/6 expected objects.", "Bond application portal Phase 2 access contract passed."],
+  "verification": {"source": "production_single_row_phase7_gate", "stagingEvidenceFile": "docs/staging-evidence/20260905100612-bond_finance_runtime.json", "productionProjectRef": "isdowlnollckzvltkasn", "route": "production_apply_sql"}
+}

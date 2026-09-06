@@ -42,7 +42,13 @@ const correctiveReplay = run([
   '--apply-sql', '--version', '202608200001', '--confirm', 'APPLY_TO_PRODUCTION',
 ])
 assert.equal(correctiveReplay.status, 1)
-assert.match(correctiveReplay.stderr, /Manifest action corrective_migration_required cannot be mutated/)
+assert.match(correctiveReplay.stderr, /Expected one manifest row for 202608200001; found 0/)
+
+const approvedCorrectiveRequiresEvidence = run([
+  '--apply-sql', '--version', '20260906163540', '--confirm', 'APPLY_TO_PRODUCTION',
+])
+assert.equal(approvedCorrectiveRequiresEvidence.status, 1)
+assert.match(approvedCorrectiveRequiresEvidence.stderr, /--staging-evidence is required/)
 
 const repairOnlyReplay = run([
   '--apply-sql', '--version', '20260903094957', '--confirm', 'APPLY_TO_PRODUCTION',
