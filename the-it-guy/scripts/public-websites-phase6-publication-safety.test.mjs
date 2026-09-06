@@ -11,6 +11,7 @@ const migration = read(resolve(repositoryRoot, 'supabase/migrations/202609051833
 const databaseTest = read(resolve(repositoryRoot, 'supabase/tests/public_websites_phase6_publication_safety_rls_test.sql'))
 const publicRepository = read(resolve(repositoryRoot, 'apps/websites/lib/site-repository.ts'))
 const publicTypes = read(resolve(repositoryRoot, 'apps/websites/lib/types.ts'))
+const brandPublisher = read(resolve(repositoryRoot, 'supabase/functions/website-brand-publication/index.ts'))
 const workspaceService = read(resolve(appRoot, 'src/services/websiteWorkspaceService.js'))
 const workspace = read(resolve(appRoot, 'src/components/marketing/WebsiteWorkspace.jsx'))
 
@@ -53,7 +54,8 @@ assert.match(publicRepository, /\.eq\('id', site\.published_revision_id\)[\s\S]*
 assert.doesNotMatch(publicRepository, /website_site_revisions!inner\(status\)/, 'public page reads do not infer live content from revision status alone')
 
 assert.match(workspaceService, /website_revision_readiness/, 'CRM loads authoritative publication blockers')
-assert.match(workspaceService, /website_discard_draft_revision/, 'CRM discards drafts through the guarded command')
+assert.match(workspaceService, /action: 'discard'/, 'CRM routes draft discard through the website publisher')
+assert.match(brandPublisher, /website_discard_draft_revision/, 'the verified publisher calls the guarded discard command')
 assert.match(workspaceService, /website_publication_events/, 'CRM loads publication evidence')
 assert.match(workspaceService, /revision\.id === site\.published_revision_id/, 'CRM identifies the live revision from the exact pointer')
 assert.match(workspaceService, /page\.revision_id === activeRevision\?\.id/, 'CRM editor shows only the active draft or live revision pages')

@@ -208,3 +208,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/website-listing-publication/deno.json"
 entrypoint = "./functions/website-listing-publication/index.ts"
+
+[functions.website-brand-publication]
+enabled = true
+verify_jwt = true
+import_map = "./functions/website-brand-publication/deno.json"
+entrypoint = "./functions/website-brand-publication/index.ts"

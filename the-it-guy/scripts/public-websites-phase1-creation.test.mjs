@@ -11,6 +11,7 @@ function read(path) {
 }
 
 const migration = read(resolve(repositoryRoot, 'supabase/migrations/20260905173734_public_websites_phase1_creation.sql'))
+const brandPublisher = read(resolve(repositoryRoot, 'supabase/functions/website-brand-publication/index.ts'))
 const service = read(resolve(appRoot, 'src/services/websiteWorkspaceService.js'))
 const workspace = read(resolve(appRoot, 'src/components/marketing/WebsiteWorkspace.jsx'))
 
@@ -33,7 +34,8 @@ for (const [pattern, message] of [
 }
 
 assert.match(service, /export async function createWebsiteSite\(organisationId\)/, 'exports the setup client')
-assert.match(service, /supabase\.rpc\('website_create_site'/, 'calls the atomic database command')
+assert.match(service, /action: 'create'/, 'routes setup through the durable brand publisher')
+assert.match(brandPublisher, /userClient\.rpc\("website_create_site"/, 'the verified publisher calls the atomic database command')
 assert.match(workspace, /overview\.mode === 'ready_to_create'/, 'shows setup only when no website exists')
 assert.match(workspace, /Create website/, 'provides the agency administrator setup action')
 assert.match(workspace, /Future website edits will not change email or document branding/, 'explains the copied-brand boundary')
