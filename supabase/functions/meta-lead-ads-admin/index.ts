@@ -55,17 +55,17 @@ Deno.serve(async(req)=>{
     const connectionId=text(body.connectionId),row=(await db.from("meta_lead_ads_connections").select("*").eq("id",connectionId).eq("organisation_id",org).maybeSingle()).data;if(!row)return json(404,{error:"Connection not found."});
     if(action==="list_forms"){
       const token=await decrypt(row.token_ciphertext),graphForms=(await graph(`${row.page_id}/leadgen_forms?fields=id,name,status&limit=200`,token)).data||[];
-      const mappings=(await db.from("meta_lead_ads_forms").select("form_id,branch_id,assigned_agent_id,is_active").eq("connection_id",row.id).eq("organisation_id",org)).data||[];
+      const mappings=(await db.from("meta_lead_ads_forms").select("form_id,branch_id,assigned_agent_id,lead_type,is_active").eq("connection_id",row.id).eq("organisation_id",org)).data||[];
       const byFormId=new Map(mappings.map((mapping:RecordValue)=>[text(mapping.form_id),mapping]));
-      return json(200,{forms:(graphForms as RecordValue[]).map((form)=>{const mapping=byFormId.get(text(form.id));return {...form,selected:Boolean(mapping?.is_active),branchId:mapping?.branch_id||null,assignedAgentId:mapping?.assigned_agent_id||null};})});
+      return json(200,{forms:(graphForms as RecordValue[]).map((form)=>{const mapping=byFormId.get(text(form.id));return {...form,selected:Boolean(mapping?.is_active),branchId:mapping?.branch_id||null,assignedAgentId:mapping?.assigned_agent_id||null,leadType:text(mapping?.lead_type)||"buyer"};})});
     }
     if(action==="select_forms"){
       const forms=Array.isArray(body.forms)?body.forms as RecordValue[]:[],token=await decrypt(row.token_ciphertext);
       for(const form of forms){
-        const branchId=text(form.branchId),agentId=text(form.assignedAgentId);
+        const branchId=text(form.branchId),agentId=text(form.assignedAgentId),leadType=text(form.leadType)==="seller"?"seller":"buyer";
         if(branchId){const branch=(await db.from("organisation_branches").select("id").eq("id",branchId).eq("organisation_id",org).maybeSingle()).data;if(!branch)throw new Error("Selected branch does not belong to this organisation.");}
         if(agentId){const member=(await db.from("organisation_users").select("user_id").eq("user_id",agentId).eq("organisation_id",org).eq("status","active").maybeSingle()).data;if(!member)throw new Error("Selected agent does not belong to this organisation.");}
-        const saved=await db.from("meta_lead_ads_forms").upsert({connection_id:row.id,organisation_id:org,page_id:row.page_id,form_id:text(form.id),form_name:text(form.name),branch_id:branchId||null,assigned_agent_id:agentId||null,is_active:true},{onConflict:"organisation_id,form_id"});if(saved.error)throw new Error(saved.error.message);
+        const saved=await db.from("meta_lead_ads_forms").upsert({connection_id:row.id,organisation_id:org,page_id:row.page_id,form_id:text(form.id),form_name:text(form.name),branch_id:branchId||null,assigned_agent_id:agentId||null,lead_type:leadType,is_active:true},{onConflict:"organisation_id,form_id"});if(saved.error)throw new Error(saved.error.message);
       }
       await graph(`${row.page_id}/subscribed_apps`,token,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({subscribed_fields:"leadgen"})});return json(200,{connected:true,formsSelected:forms.length});
     }
