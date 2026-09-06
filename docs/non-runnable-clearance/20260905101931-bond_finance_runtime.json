@@ -1,0 +1,136 @@
+{
+  "version": "20260905101931",
+  "stream": "bond_finance_runtime",
+  "dependsOn": "20260905101301",
+  "module": "bond_finance",
+  "file": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 1,
+  "objectCount": 11,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 10,
+  "objects": [
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_bond_application_portal_delivery_action_centre_view",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_claim_notification_reminder_events_phase4",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_prepare_bond_application_portal_delivery_phase5",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_queue_bond_application_portal_reminders_phase5",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_redact_bond_application_portal_delivery_token_phase5",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_send_bond_application_portal_delivery_for_originator",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "bond_application_portal_delivery_events_notification_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "bond_application_portal_delivery_events_package_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "bond_application_portal_delivery_events_assigned_originator_read",
+      "relationName": "bond_application_portal_delivery_events",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "table",
+      "objectName": "bond_application_portal_delivery_events",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260905101931",
+      "migrationFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "stream": "bond_finance_runtime",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_redact_bond_application_portal_delivery_token_phase5",
+      "relationName": "",
+      "liveExists": false
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "supabase/migrations/20260906163535_corrective_bond_delivery_reminders.sql",
+  "correctiveVersion": "20260906163535",
+  "definitionDiffReviewedBy": "Codex production catalog diff review",
+  "correctiveMigrationReviewedBy": "Codex idempotent single-source corrective review",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/20260905101931-bond_finance_runtime.md",
+  "clearanceFile": "docs/non-runnable-clearance/20260905101931-bond_finance_runtime.json"
+}

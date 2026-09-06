@@ -1,0 +1,96 @@
+{
+  "version": "20260906070938",
+  "stream": "other",
+  "dependsOn": "20260906070515",
+  "module": "attorney",
+  "file": "20260906070938_attorney_lane_delegation_phase3.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 1,
+  "objectCount": 7,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 6,
+  "objects": [
+    {
+      "migrationVersion": "20260906070938",
+      "migrationFile": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_can_mutate_attorney_lane",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260906070938",
+      "migrationFile": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_grant_attorney_lane_delegation",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260906070938",
+      "migrationFile": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_revoke_attorney_lane_delegation",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260906070938",
+      "migrationFile": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "attorney_lane_delegations_delegate_active_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260906070938",
+      "migrationFile": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "attorney_lane_delegations_firm_active_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260906070938",
+      "migrationFile": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "attorney_lane_delegations_select_involved",
+      "relationName": "attorney_lane_delegations",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260906070938",
+      "migrationFile": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "table",
+      "objectName": "attorney_lane_delegations",
+      "relationName": "",
+      "liveExists": false
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "supabase/migrations/20260906163638_corrective_attorney_lane_delegation.sql",
+  "correctiveVersion": "20260906163638",
+  "definitionDiffReviewedBy": "Codex production catalog diff review",
+  "correctiveMigrationReviewedBy": "Codex idempotent single-source corrective review",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/20260906070938-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/20260906070938-other.json"
+}

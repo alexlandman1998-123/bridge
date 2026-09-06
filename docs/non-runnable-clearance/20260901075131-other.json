@@ -1,0 +1,136 @@
+{
+  "version": "20260901075131",
+  "stream": "other",
+  "dependsOn": "20260831190341",
+  "module": "developer_referral",
+  "file": "20260901075131_public_development_landing_and_access_boundary.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 10,
+  "objectCount": 11,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 1,
+  "objects": [
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_can_manage_development_record",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_can_manage_development_units",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_can_view_development_record",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "get_public_development_landing",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "developments_delete_scoped",
+      "relationName": "developments",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "developments_select_scoped",
+      "relationName": "developments",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "developments_update_scoped",
+      "relationName": "developments",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "units_delete_scoped",
+      "relationName": "units",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "units_insert_scoped",
+      "relationName": "units",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "units_select_scoped",
+      "relationName": "units",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901075131",
+      "migrationFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "units_update_scoped",
+      "relationName": "units",
+      "liveExists": true
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "supabase/migrations/20260906163601_corrective_development_access_boundary.sql",
+  "correctiveVersion": "20260906163601",
+  "definitionDiffReviewedBy": "Codex production catalog diff review",
+  "correctiveMigrationReviewedBy": "Codex idempotent single-source corrective review",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/20260901075131-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/20260901075131-other.json"
+}

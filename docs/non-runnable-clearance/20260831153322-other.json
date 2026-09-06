@@ -1,0 +1,38 @@
+{
+  "version": "20260831153322",
+  "stream": "other",
+  "dependsOn": "20260831150740",
+  "module": "other",
+  "file": "20260831153322_staging_rls_warning_view_hardening.sql",
+  "objectStatus": "no_static_objects",
+  "liveCount": 0,
+  "objectCount": 0,
+  "action": "manual_data_review",
+  "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
+  "clearanceDecision": "apply_original_after_dependency_check",
+  "missingCount": 0,
+  "objects": [],
+  "manualReview": {
+    "checked": true,
+    "decision": "apply_original_after_dependency_check",
+    "source": "Original SQL intent and idempotency review against current production routing evidence",
+    "ledgerRecorded": false,
+    "intendedOutcomeReviewed": true,
+    "idempotency": "Catalog-driven view hardening sets security_invoker and deterministic grants; reruns converge on the same state.",
+    "requiredChecks": [
+      "staging_dependency_preflight",
+      "post_apply_catalog_or_definition_check",
+      "module_behavior_smoke"
+    ],
+    "blockers": []
+  },
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "",
+  "correctiveVersion": null,
+  "definitionDiffReviewedBy": "",
+  "correctiveMigrationReviewedBy": "",
+  "blockers": [],
+  "packetFile": "docs/manual-review/20260831153322-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/20260831153322-other.json"
+}

@@ -1,0 +1,246 @@
+{
+  "version": "20260901110612",
+  "stream": "other",
+  "dependsOn": "20260901075131",
+  "module": "developer_referral",
+  "file": "20260901110612_development_organisation_relationship_foundation.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 9,
+  "objectCount": 22,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 13,
+  "objects": [
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_can_manage_development_record",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_can_manage_development_units",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_can_view_development_record",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_has_development_relationship_capability",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_seed_development_primary_operator",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_touch_development_organisation_relationship_updated_at",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_organisation_relationships_development_active_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_organisation_relationships_organisation_active_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_organisation_relationships_delete_scoped",
+      "relationName": "development_organisation_relationships",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_organisation_relationships_insert_scoped",
+      "relationName": "development_organisation_relationships",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_organisation_relationships_select_scoped",
+      "relationName": "development_organisation_relationships",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_organisation_relationships_update_scoped",
+      "relationName": "development_organisation_relationships",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "developments_delete_scoped",
+      "relationName": "developments",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "developments_select_scoped",
+      "relationName": "developments",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "developments_update_scoped",
+      "relationName": "developments",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "units_delete_scoped",
+      "relationName": "units",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "units_insert_scoped",
+      "relationName": "units",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "units_select_scoped",
+      "relationName": "units",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "units_update_scoped",
+      "relationName": "units",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "table",
+      "objectName": "development_organisation_relationships",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_development_organisation_relationships_updated_at",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260901110612",
+      "migrationFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_development_seed_primary_operator",
+      "relationName": "",
+      "liveExists": false
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "supabase/migrations/20260906163615_corrective_development_org_relationships.sql",
+  "correctiveVersion": "20260906163615",
+  "definitionDiffReviewedBy": "Codex production catalog diff review",
+  "correctiveMigrationReviewedBy": "Codex idempotent single-source corrective review",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/20260901110612-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/20260901110612-other.json"
+}

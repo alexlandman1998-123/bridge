@@ -1,0 +1,38 @@
+{
+  "version": "20260820192857",
+  "stream": "other",
+  "dependsOn": "20260820192038",
+  "module": "workspace_platform",
+  "file": "20260820192857_remove_admin_external_inventory_counts.sql",
+  "objectStatus": "no_static_objects",
+  "liveCount": 0,
+  "objectCount": 0,
+  "action": "manual_data_review",
+  "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
+  "clearanceDecision": "apply_original_after_dependency_check",
+  "missingCount": 0,
+  "objects": [],
+  "manualReview": {
+    "checked": true,
+    "decision": "apply_original_after_dependency_check",
+    "source": "Original SQL intent and idempotency review against current production routing evidence",
+    "ledgerRecorded": false,
+    "intendedOutcomeReviewed": true,
+    "idempotency": "Retires obsolete external-inventory snapshot storage with DROP TABLE IF EXISTS and replaces the dashboard function; staging backup and smoke checks are required before execution.",
+    "requiredChecks": [
+      "staging_dependency_preflight",
+      "post_apply_catalog_or_definition_check",
+      "module_behavior_smoke"
+    ],
+    "blockers": []
+  },
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "",
+  "correctiveVersion": null,
+  "definitionDiffReviewedBy": "",
+  "correctiveMigrationReviewedBy": "",
+  "blockers": [],
+  "packetFile": "docs/manual-review/20260820192857-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/20260820192857-other.json"
+}

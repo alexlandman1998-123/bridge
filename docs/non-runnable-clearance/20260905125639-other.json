@@ -1,0 +1,46 @@
+{
+  "version": "20260905125639",
+  "stream": "other",
+  "dependsOn": "20260905120250",
+  "module": "lead_capture_crm",
+  "file": "20260905125639_rental_application_lead_linkage.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 1,
+  "objectCount": 2,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 1,
+  "objects": [
+    {
+      "migrationVersion": "20260905125639",
+      "migrationFile": "20260905125639_rental_application_lead_linkage.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "rental_convert_application_to_tenancy",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260905125639",
+      "migrationFile": "20260905125639_rental_application_lead_linkage.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "rental_applications_lead_updated_idx",
+      "relationName": "",
+      "liveExists": false
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "supabase/migrations/20260906163629_corrective_rental_application_lead_linkage.sql",
+  "correctiveVersion": "20260906163629",
+  "definitionDiffReviewedBy": "Codex production catalog diff review",
+  "correctiveMigrationReviewedBy": "Codex idempotent single-source corrective review",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/20260905125639-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/20260905125639-other.json"
+}

@@ -1,0 +1,366 @@
+{
+  "version": "20260903122031",
+  "stream": "other",
+  "dependsOn": "20260903094624",
+  "module": "developer_referral",
+  "file": "20260903122031_development_marketing_collaboration_foundation.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 4,
+  "objectCount": 34,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 30,
+  "objects": [
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "constraint",
+      "objectName": "development_documents_approval_status_check",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "constraint",
+      "objectName": "development_documents_file_size_check",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "constraint",
+      "objectName": "development_documents_supersedes_document_id_fkey",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "constraint",
+      "objectName": "development_documents_version_check",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "constraint",
+      "objectName": "development_documents_visibility_check",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_has_development_marketing_access",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_log_development_document_marketing_activity",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_log_development_marketing_access_activity",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_touch_development_marketing_updated_at",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_documents_marketing_library_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_documents_supersedes_document_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_marketing_access_active_email_unique",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_marketing_access_active_organisation_unique",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_marketing_access_active_user_unique",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_marketing_access_organisation_lookup_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_marketing_access_recipient_lookup_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_marketing_activity_access_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_marketing_activity_development_recent_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "development_marketing_activity_document_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_documents_delete_scoped",
+      "relationName": "development_documents",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_documents_insert_scoped",
+      "relationName": "development_documents",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_documents_select_scoped",
+      "relationName": "development_documents",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_documents_update_scoped",
+      "relationName": "development_documents",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_marketing_access_delete_scoped",
+      "relationName": "development_marketing_access",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_marketing_access_insert_scoped",
+      "relationName": "development_marketing_access",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_marketing_access_select_scoped",
+      "relationName": "development_marketing_access",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_marketing_access_update_scoped",
+      "relationName": "development_marketing_access",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_marketing_activity_insert_scoped",
+      "relationName": "development_marketing_activity",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "development_marketing_activity_select_scoped",
+      "relationName": "development_marketing_activity",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "table",
+      "objectName": "development_marketing_access",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "table",
+      "objectName": "development_marketing_activity",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_development_document_marketing_activity",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_development_marketing_access_activity",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "20260903122031",
+      "migrationFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_development_marketing_access_updated_at",
+      "relationName": "",
+      "liveExists": false
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "supabase/migrations/20260906163622_corrective_development_marketing_collaboration.sql",
+  "correctiveVersion": "20260906163622",
+  "definitionDiffReviewedBy": "Codex production catalog diff review",
+  "correctiveMigrationReviewedBy": "Codex idempotent single-source corrective review",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/20260903122031-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/20260903122031-other.json"
+}

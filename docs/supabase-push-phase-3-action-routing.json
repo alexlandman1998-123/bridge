@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-06T16:00:47.217Z",
+  "generatedAt": "2026-09-06T16:39:57.404Z",
   "sourcePlan": "docs/supabase-push-phase-2-stream-plans.json",
   "inputRows": 93,
   "dedupedRows": 0,
@@ -117,33 +117,38 @@
       ]
     },
     {
-      "version": "20260905101931",
+      "version": "20260906163535",
       "stream": "bond_finance_runtime",
       "dependsOn": "20260905101301",
       "module": "bond_finance",
-      "file": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "file": "20260906163535_corrective_bond_delivery_reminders.sql",
       "objectStatus": "partial_live",
       "liveCount": 1,
       "objectCount": 11,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260905101931_corrective_bond_finance_runtime.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260905101931_corrective_bond_finance_runtime.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163535 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163535 --evidence docs/staging-evidence/20260906163535-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260905101931-bond_finance_runtime.json",
+      "evidenceFile": "docs/staging-evidence/20260906163535-bond_finance_runtime.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260905101931-bond_finance_runtime.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163535_corrective_bond_delivery_reminders.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260905101931",
+      "originalFile": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260905101931-bond_finance_runtime.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163535_corrective_bond_delivery_reminders.sql"
     },
     {
       "version": "20260905102430",
@@ -311,33 +316,38 @@
       ]
     },
     {
-      "version": "202608200001",
+      "version": "20260906163540",
       "stream": "other",
       "dependsOn": "20260818203652",
       "module": "other",
-      "file": "202608200001_whatsapp_integration_foundation.sql",
+      "file": "20260906163540_corrective_whatsapp_foundation.sql",
       "objectStatus": "partial_live",
       "liveCount": 2,
       "objectCount": 20,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_202608200001_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_202608200001_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163540 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163540 --evidence docs/staging-evidence/20260906163540-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/202608200001-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163540-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/202608200001-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163540_corrective_whatsapp_foundation.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "202608200001",
+      "originalFile": "202608200001_whatsapp_integration_foundation.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202608200001-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163540_corrective_whatsapp_foundation.sql"
     },
     {
       "version": "202608200002",
@@ -348,27 +358,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/202608200002-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/202608200002-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608200002 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608200002 --evidence docs/staging-evidence/202608200002-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/202608200002-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/202608200002-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/202608200002-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "202608200002",
+      "originalFile": "202608200002_whatsapp_template_seed.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202608200002-other.json"
     },
     {
       "version": "20260820160621",
@@ -407,27 +418,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260820174624-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260820174624-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260820174624 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260820174624 --evidence docs/staging-evidence/20260820174624-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260820174624-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260820174624-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260820174624-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260820174624",
+      "originalFile": "20260820174624_admin_dashboard_units_as_listings.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260820174624-other.json"
     },
     {
       "version": "20260820192038",
@@ -438,27 +450,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260820192038-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260820192038-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260820192038 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260820192038 --evidence docs/staging-evidence/20260820192038-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260820192038-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260820192038-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260820192038-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260820192038",
+      "originalFile": "20260820192038_admin_dashboard_external_inventory_snapshots.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260820192038-other.json"
     },
     {
       "version": "20260820192857",
@@ -469,27 +482,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260820192857-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260820192857-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260820192857 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260820192857 --evidence docs/staging-evidence/20260820192857-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260820192857-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260820192857-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260820192857-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260820192857",
+      "originalFile": "20260820192857_remove_admin_external_inventory_counts.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260820192857-other.json"
     },
     {
       "version": "20260820193436",
@@ -520,33 +534,38 @@
       ]
     },
     {
-      "version": "202608230001",
+      "version": "20260906163545",
       "stream": "other",
       "dependsOn": "20260820193436",
       "module": "workspace_platform",
-      "file": "202608230001_agency_onboarding_flow.sql",
+      "file": "20260906163545_corrective_agency_onboarding.sql",
       "objectStatus": "partial_live",
       "liveCount": 1,
       "objectCount": 15,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_202608230001_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_202608230001_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163545 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163545 --evidence docs/staging-evidence/20260906163545-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/202608230001-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163545-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/202608230001-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163545_corrective_agency_onboarding.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "202608230001",
+      "originalFile": "202608230001_agency_onboarding_flow.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202608230001-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163545_corrective_agency_onboarding.sql"
     },
     {
       "version": "202608230002",
@@ -611,27 +630,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260824084233-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260824084233-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260824084233 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260824084233 --evidence docs/staging-evidence/20260824084233-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260824084233-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260824084233-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260824084233-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260824084233",
+      "originalFile": "20260824084233_add_prospect_demo_brand_colours.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260824084233-other.json"
     },
     {
       "version": "20260824091732",
@@ -669,27 +689,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260824092531-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260824092531-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260824092531 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260824092531 --evidence docs/staging-evidence/20260824092531-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260824092531-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260824092531-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260824092531-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260824092531",
+      "originalFile": "20260824092531_add_prospect_demo_light_dark_logos.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260824092531-other.json"
     },
     {
       "version": "202608250001",
@@ -700,27 +721,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/202608250001-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/202608250001-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608250001 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608250001 --evidence docs/staging-evidence/202608250001-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/202608250001-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/202608250001-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/202608250001-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "202608250001",
+      "originalFile": "202608250001_remove_listing_mandate_activation_guards.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/202608250001-other.json"
     },
     {
       "version": "20260827081713",
@@ -750,33 +772,38 @@
       ]
     },
     {
-      "version": "20260827083108",
+      "version": "20260906163551",
       "stream": "other",
       "dependsOn": "20260827081713",
       "module": "transaction_network",
-      "file": "20260827083108_normalize_transaction_participant_statuses.sql",
+      "file": "20260906163551_corrective_transaction_participant_statuses.sql",
       "objectStatus": "partial_live",
       "liveCount": 1,
       "objectCount": 3,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260827083108_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260827083108_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163551 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163551 --evidence docs/staging-evidence/20260906163551-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260827083108-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163551-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260827083108-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163551_corrective_transaction_participant_statuses.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260827083108",
+      "originalFile": "20260827083108_normalize_transaction_participant_statuses.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260827083108-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163551_corrective_transaction_participant_statuses.sql"
     },
     {
       "version": "20260827091439",
@@ -1029,33 +1056,38 @@
       ]
     },
     {
-      "version": "20260829204153",
+      "version": "20260906163555",
       "stream": "other",
       "dependsOn": "20260829195657",
       "module": "lead_capture_crm",
-      "file": "20260829204153_seller_onboarding_completion_receipt_and_projection_rls.sql",
+      "file": "20260906163555_corrective_seller_onboarding_receipt.sql",
       "objectStatus": "partial_live",
       "liveCount": 1,
       "objectCount": 3,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260829204153_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260829204153_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163555 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163555 --evidence docs/staging-evidence/20260906163555-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260829204153-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163555-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260829204153-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163555_corrective_seller_onboarding_receipt.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260829204153",
+      "originalFile": "20260829204153_seller_onboarding_completion_receipt_and_projection_rls.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260829204153-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163555_corrective_seller_onboarding_receipt.sql"
     },
     {
       "version": "20260830125035",
@@ -1093,27 +1125,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260830160810-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260830160810-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260830160810 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260830160810 --evidence docs/staging-evidence/20260830160810-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260830160810-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260830160810-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260830160810-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260830160810",
+      "originalFile": "20260830160810_secure_auth_bootstrap_rpc.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260830160810-other.json"
     },
     {
       "version": "20260831071807",
@@ -1205,27 +1238,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260831131538-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260831131538-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260831131538 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831131538 --evidence docs/staging-evidence/20260831131538-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260831131538-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260831131538-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260831131538-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260831131538",
+      "originalFile": "20260831131538_property24_canonical_connection_backfill.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260831131538-other.json"
     },
     {
       "version": "20260831140736",
@@ -1291,27 +1325,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260831153322-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260831153322-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260831153322 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831153322 --evidence docs/staging-evidence/20260831153322-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260831153322-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260831153322-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260831153322-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260831153322",
+      "originalFile": "20260831153322_staging_rls_warning_view_hardening.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260831153322-other.json"
     },
     {
       "version": "20260831190341",
@@ -1342,62 +1377,72 @@
       ]
     },
     {
-      "version": "20260901075131",
+      "version": "20260906163601",
       "stream": "other",
       "dependsOn": "20260831190341",
       "module": "developer_referral",
-      "file": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "file": "20260906163601_corrective_development_access_boundary.sql",
       "objectStatus": "partial_live",
       "liveCount": 10,
       "objectCount": 11,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260901075131_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260901075131_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163601 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163601 --evidence docs/staging-evidence/20260906163601-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260901075131-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163601-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260901075131-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163601_corrective_development_access_boundary.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260901075131",
+      "originalFile": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260901075131-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163601_corrective_development_access_boundary.sql"
     },
     {
-      "version": "20260901110612",
+      "version": "20260906163615",
       "stream": "other",
       "dependsOn": "20260901075131",
       "module": "developer_referral",
-      "file": "20260901110612_development_organisation_relationship_foundation.sql",
+      "file": "20260906163615_corrective_development_org_relationships.sql",
       "objectStatus": "partial_live",
       "liveCount": 9,
       "objectCount": 22,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260901110612_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260901110612_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163615 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163615 --evidence docs/staging-evidence/20260906163615-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260901110612-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163615-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260901110612-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163615_corrective_development_org_relationships.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260901110612",
+      "originalFile": "20260901110612_development_organisation_relationship_foundation.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260901110612-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163615_corrective_development_org_relationships.sql"
     },
     {
       "version": "20260901140943",
@@ -1435,27 +1480,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260901143358-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260901143358-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260901143358 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260901143358 --evidence docs/staging-evidence/20260901143358-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260901143358-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260901143358-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260901143358-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260901143358",
+      "originalFile": "20260901143358_property24_category_listing_facts.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260901143358-other.json"
     },
     {
       "version": "20260901145225",
@@ -1466,27 +1512,28 @@
       "objectStatus": "no_static_objects",
       "liveCount": 0,
       "objectCount": 0,
-      "action": "manual_data_review",
+      "action": "apply_original_after_dependency_check",
       "gate": "Verify the intended data outcome and idempotency manually before deciding apply or repair.",
-      "route": "manual_review",
-      "stage": "blocked_until_manual_decision",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "manualReviewFile": "docs/manual-review/20260901145225-other.md",
       "commands": [
-        "# Complete manual data review first: docs/manual-review/20260901145225-other.md",
-        "# Decide whether this becomes an apply, repair-only, or replacement data migration."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260901145225 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260901145225 --evidence docs/staging-evidence/20260901145225-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
       "evidenceFile": "docs/staging-evidence/20260901145225-other.json",
-      "clearanceFile": "docs/non-runnable-clearance/20260901145225-other.json",
-      "clearanceDecision": null,
       "notes": [
-        "No static objects were extracted, so catalog checks cannot decide the path.",
-        "Verify intended rows and idempotency manually.",
-        "Do not record ledger state until the reviewed data decision is documented."
-      ]
+        "Manual data review approved in docs/non-runnable-clearance/20260901145225-other.json.",
+        "Effective action is apply_original_after_dependency_check."
+      ],
+      "originalAction": "manual_data_review",
+      "originalVersion": "20260901145225",
+      "originalFile": "20260901145225_property24_commercial_canonical_backfill.sql",
+      "clearanceDecision": "apply_original_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260901145225-other.json"
     },
     {
       "version": "20260901165511",
@@ -1681,33 +1728,38 @@
       ]
     },
     {
-      "version": "20260903122031",
+      "version": "20260906163622",
       "stream": "other",
       "dependsOn": "20260903094624",
       "module": "developer_referral",
-      "file": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "file": "20260906163622_corrective_development_marketing_collaboration.sql",
       "objectStatus": "partial_live",
       "liveCount": 4,
       "objectCount": 34,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260903122031_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260903122031_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163622 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163622 --evidence docs/staging-evidence/20260906163622-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260903122031-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163622-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260903122031-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163622_corrective_development_marketing_collaboration.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260903122031",
+      "originalFile": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260903122031-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163622_corrective_development_marketing_collaboration.sql"
     },
     {
       "version": "20260903130012",
@@ -1821,62 +1873,72 @@
       ]
     },
     {
-      "version": "20260905120250",
+      "version": "20260906163617",
       "stream": "other",
       "dependsOn": "20260905095152",
       "module": "other",
-      "file": "20260905120250_rental_portal_foundation.sql",
+      "file": "20260906163617_corrective_rental_portal_foundation.sql",
       "objectStatus": "partial_live",
       "liveCount": 3,
       "objectCount": 11,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260905120250_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260905120250_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163617 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163617 --evidence docs/staging-evidence/20260906163617-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260905120250-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163617-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260905120250-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163617_corrective_rental_portal_foundation.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260905120250",
+      "originalFile": "20260905120250_rental_portal_foundation.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260905120250-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163617_corrective_rental_portal_foundation.sql"
     },
     {
-      "version": "20260905125639",
+      "version": "20260906163629",
       "stream": "other",
       "dependsOn": "20260905120250",
       "module": "lead_capture_crm",
-      "file": "20260905125639_rental_application_lead_linkage.sql",
+      "file": "20260906163629_corrective_rental_application_lead_linkage.sql",
       "objectStatus": "partial_live",
       "liveCount": 1,
       "objectCount": 2,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260905125639_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260905125639_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163629 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163629 --evidence docs/staging-evidence/20260906163629-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260905125639-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163629-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260905125639-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163629_corrective_rental_application_lead_linkage.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260905125639",
+      "originalFile": "20260905125639_rental_application_lead_linkage.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260905125639-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163629_corrective_rental_application_lead_linkage.sql"
     },
     {
       "version": "20260905141005",
@@ -2424,33 +2486,38 @@
       ]
     },
     {
-      "version": "20260906070938",
+      "version": "20260906163638",
       "stream": "other",
       "dependsOn": "20260906070515",
       "module": "attorney",
-      "file": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "file": "20260906163638_corrective_attorney_lane_delegation.sql",
       "objectStatus": "partial_live",
       "liveCount": 1,
       "objectCount": 7,
-      "action": "corrective_migration_required",
+      "action": "apply_original_after_dependency_check",
       "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
-      "route": "corrective_required",
-      "stage": "blocked_until_corrective_migration",
-      "blocked": true,
-      "sqlAllowed": false,
-      "ledgerAllowed": false,
+      "route": "apply_original",
+      "stage": "staging_sql_then_ledger",
+      "blocked": false,
+      "sqlAllowed": true,
+      "ledgerAllowed": true,
       "evidenceRequired": true,
-      "correctiveMigrationFile": "supabase/migrations/TODO_20260906070938_corrective_other.sql",
       "commands": [
-        "# Create an idempotent corrective migration first: supabase/migrations/TODO_20260906070938_corrective_other.sql",
-        "# Then rerun npm run supabase:phase5 and npm run supabase:push:phase2 before staging execution."
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163638 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163638 --evidence docs/staging-evidence/20260906163638-other.json --confirm APPLY_TO_STAGING_ONLY"
       ],
-      "evidenceFile": "docs/staging-evidence/20260906070938-other.json",
+      "evidenceFile": "docs/staging-evidence/20260906163638-other.json",
       "notes": [
-        "Do not replay the original migration; live catalog is partial.",
-        "Diff live definitions and create a narrowly scoped corrective migration.",
-        "The corrective migration gets its own review and staging evidence."
-      ]
+        "Corrective migration approved in docs/non-runnable-clearance/20260906070938-other.json.",
+        "Effective action is apply_corrective_after_dependency_check.",
+        "Corrective migration file is supabase/migrations/20260906163638_corrective_attorney_lane_delegation.sql."
+      ],
+      "originalAction": "corrective_migration_required",
+      "originalVersion": "20260906070938",
+      "originalFile": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "clearanceDecision": "apply_corrective_after_dependency_check",
+      "clearanceFile": "docs/non-runnable-clearance/20260906070938-other.json",
+      "correctiveMigrationFile": "supabase/migrations/20260906163638_corrective_attorney_lane_delegation.sql"
     },
     {
       "version": "20260906071644",
@@ -2617,16 +2684,12 @@
     }
   ],
   "actionCounts": {
-    "apply_original_after_dependency_check": 30,
-    "corrective_migration_required": 11,
-    "repair_only_after_smoke": 40,
-    "manual_data_review": 12
+    "apply_original_after_dependency_check": 53,
+    "repair_only_after_smoke": 40
   },
   "routeCounts": {
-    "apply_original": 30,
-    "corrective_required": 11,
-    "repair_only": 40,
-    "manual_review": 12
+    "apply_original": 53,
+    "repair_only": 40
   },
   "streamCounts": {
     "bond_finance_runtime": 8,

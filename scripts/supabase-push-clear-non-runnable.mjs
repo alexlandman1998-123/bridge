@@ -380,6 +380,10 @@ function packetMarkdown(row) {
     ? `
 ## Manual Review Evidence
 
+- Review source: \`${row.manualReview?.source || 'not checked'}\`
+- Intended outcome reviewed: \`${row.manualReview?.intendedOutcomeReviewed === true ? 'yes' : 'not recorded'}\`
+- Idempotency: ${row.manualReview?.idempotency || 'not recorded'}
+- Required checks: ${(row.manualReview?.requiredChecks || []).map((check) => `\`${check}\``).join(', ') || 'not recorded'}
 - Candidate count: \`${row.manualReview?.candidateCount ?? 'not checked'}\`
 - Compliant active defaults: \`${row.manualReview?.compliantActiveDefaults ?? 'not checked'}\`
 - Selected template: \`${row.manualReview?.selectedTemplateId || 'not checked'}\`
@@ -439,7 +443,7 @@ Generated: ${result.generatedAt}
 
 ## Scope
 
-This step clears the five non-runnable manifest rows into explicit review packets. It runs read-only live checks when requested and does not apply SQL, record ledgers, relink Supabase, or modify production.
+This step clears the non-runnable manifest rows into explicit review packets. It runs read-only live checks when requested and does not apply SQL, record ledgers, relink Supabase, or modify production.
 
 ## Summary
 

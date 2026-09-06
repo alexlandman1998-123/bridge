@@ -1,0 +1,226 @@
+{
+  "version": "202608200001",
+  "stream": "other",
+  "dependsOn": "20260818203652",
+  "module": "other",
+  "file": "202608200001_whatsapp_integration_foundation.sql",
+  "objectStatus": "partial_live",
+  "liveCount": 2,
+  "objectCount": 20,
+  "action": "corrective_migration_required",
+  "gate": "Diff live definitions, create an idempotent corrective migration, and verify both outcomes.",
+  "clearanceDecision": "apply_corrective_after_dependency_check",
+  "missingCount": 18,
+  "objects": [
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "constraint",
+      "objectName": "communication_deliveries_status_check",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_notification_templates_set_updated_at",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_organisation_communication_channels_set_updated_at",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "function",
+      "objectName": "bridge_set_communication_deliveries_updated_at_phase9",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "communication_deliveries_provider_message_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "notification_templates_global_event_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "notification_templates_global_key_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "notification_templates_org_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "organisation_communication_channels_default_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "organisation_communication_channels_org_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "index",
+      "objectName": "organisation_communication_channels_phone_idx",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "notification_templates_manage_admin",
+      "relationName": "notification_templates",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "notification_templates_select_member",
+      "relationName": "notification_templates",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "organisation_communication_channels_manage_admin",
+      "relationName": "organisation_communication_channels",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "policy",
+      "objectName": "organisation_communication_channels_select_member",
+      "relationName": "organisation_communication_channels",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "table",
+      "objectName": "notification_templates",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "table",
+      "objectName": "organisation_communication_channels",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_communication_deliveries_updated_at",
+      "relationName": "",
+      "liveExists": true
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_notification_templates_updated_at",
+      "relationName": "",
+      "liveExists": false
+    },
+    {
+      "migrationVersion": "202608200001",
+      "migrationFile": "202608200001_whatsapp_integration_foundation.sql",
+      "stream": "other",
+      "action": "corrective_migration_required",
+      "objectType": "trigger",
+      "objectName": "trg_organisation_communication_channels_updated_at",
+      "relationName": "",
+      "liveExists": false
+    }
+  ],
+  "manualReview": null,
+  "approvedBy": "User-authorized blocked migration resolution",
+  "approvedAt": "2026-09-06T16:37:47.416Z",
+  "correctiveMigrationFile": "supabase/migrations/20260906163540_corrective_whatsapp_foundation.sql",
+  "correctiveVersion": "20260906163540",
+  "definitionDiffReviewedBy": "Codex production catalog diff review",
+  "correctiveMigrationReviewedBy": "Codex idempotent single-source corrective review",
+  "blockers": [],
+  "packetFile": "docs/corrective-migration-packets/202608200001-other.md",
+  "clearanceFile": "docs/non-runnable-clearance/202608200001-other.json"
+}
