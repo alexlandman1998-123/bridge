@@ -19,10 +19,12 @@ export async function setWebsiteListingPublication(listingId, action) {
   const client = requirePublicationClient(listingId)
   const safeAction = String(action || '').trim().toLowerCase()
   if (!['publish', 'update', 'unpublish'].includes(safeAction)) throw new Error('Choose a valid website publication action.')
-  const { data, error } = await client.rpc('website_set_listing_publication', {
-    p_listing_id: listingId,
-    p_action: safeAction,
+  const { data, error } = await client.functions.invoke('website-listing-publication', {
+    body: { listingId, action: safeAction },
   })
   if (error) throw error
-  return data && typeof data === 'object' ? data : {}
+  if (data?.error) throw new Error(data.error)
+  return data?.publication && typeof data.publication === 'object'
+    ? { ...data.publication, mediaCleanupPending: Number(data?.media?.pending || 0) }
+    : {}
 }

@@ -90,10 +90,11 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
       <div className="mt-4 grid gap-3 sm:grid-cols-3">
         <div className="rounded-[14px] border border-[#dbe9df] bg-white/85 p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Website</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.websiteStatus || 'Not created'}</p></div>
         <div className="rounded-[14px] border border-[#dbe9df] bg-white/85 p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Listing projection</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.projectionStatus || 'Not saved'}</p></div>
-        <div className="rounded-[14px] border border-[#dbe9df] bg-white/85 p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Public images</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.imageCount ?? 0}</p></div>
+        <div className="rounded-[14px] border border-[#dbe9df] bg-white/85 p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Durable public images</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.durableImageCount ?? 0} / {publication?.imageCount ?? 0}</p></div>
       </div>
 
       {readinessBlockers.length ? <div className="mt-4 rounded-[14px] border border-[#f0d9ad] bg-[#fff9ec] p-3"><p className="text-sm font-semibold text-[#825514]">Readiness checks</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#825514]">{readinessBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div> : null}
+      {publication?.mediaCleanupPending > 0 ? <div className="mt-4 rounded-[14px] border border-[#efc4c4] bg-[#fff5f5] p-3 text-xs leading-5 text-[#8a3030]">{publication.mediaCleanupPending} public media object{publication.mediaCleanupPending === 1 ? '' : 's'} could not be removed yet. Retry Unpublish before closing this listing.</div> : null}
       {error ? <p className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
       {notice ? <p className="mt-4 rounded-[14px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
 
