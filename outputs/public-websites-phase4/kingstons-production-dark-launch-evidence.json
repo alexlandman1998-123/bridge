@@ -1,0 +1,43 @@
+{
+  "contract": "public-websites-pilot-closeout-phase4-evidence-v1",
+  "capturedAt": "2026-09-06T10:45:28.082Z",
+  "target": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "hostname": "arch9-websites-production-3ydimxgph-alexs-projects-f5496a21.vercel.app"
+  },
+  "status": "ACTIVE",
+  "active": true,
+  "checks": [
+    { "id": "launch:exact-commit", "passed": true, "evidence": "edd2f12001b700c2bc5b45c16f62a90fde4fb55c" },
+    { "id": "launch:production-content-bound", "passed": true, "evidence": "35e2a60f171b512bd5de675c3cdcd729" },
+    { "id": "launch:no-client-hostname", "passed": true, "evidence": "arch9-websites-production-3ydimxgph-alexs-projects-f5496a21.vercel.app" },
+    { "id": "launch:active", "passed": true, "evidence": "active" },
+    { "id": "site:published", "passed": true, "evidence": "published" },
+    { "id": "pages:standard", "passed": true, "evidence": "about, contact, home, valuation" },
+    { "id": "branding:durable", "passed": true, "evidence": "2 production asset(s)" },
+    { "id": "listing:published", "passed": true, "evidence": "1 publication(s)" },
+    { "id": "listing:durable-media", "passed": true, "evidence": "6 production asset(s)" },
+    { "id": "leads:routed", "passed": true, "required": false, "evidence": "1 routed lead(s)" },
+    { "id": "controls:pause-exercised", "passed": true, "required": false, "evidence": "prepared, prepared, seeded, activated, paused, resumed, rolled_back, resumed" },
+    { "id": "controls:rollback-exercised", "passed": true, "required": false, "evidence": "prepared, prepared, seeded, activated, paused, resumed, rolled_back, resumed" },
+    { "id": "public:/", "passed": true, "evidence": "HTTP 200" },
+    { "id": "public:/properties", "passed": true, "evidence": "HTTP 200" },
+    { "id": "public:/about", "passed": true, "evidence": "HTTP 200" },
+    { "id": "public:/contact", "passed": true, "evidence": "HTTP 200" },
+    { "id": "public:/valuation", "passed": true, "evidence": "HTTP 200" },
+    { "id": "public:/robots.txt", "passed": true, "evidence": "HTTP 200" },
+    { "id": "public:/sitemap.xml", "passed": true, "evidence": "HTTP 200" }
+  ],
+  "events": [
+    { "action": "prepared", "created_at": "2026-09-06T10:36:44.538559+00:00" },
+    { "action": "prepared", "created_at": "2026-09-06T10:40:47.541043+00:00" },
+    { "action": "seeded", "created_at": "2026-09-06T10:41:05.057116+00:00" },
+    { "action": "activated", "created_at": "2026-09-06T10:41:17.944096+00:00" },
+    { "action": "paused", "created_at": "2026-09-06T10:42:29.536609+00:00" },
+    { "action": "resumed", "created_at": "2026-09-06T10:42:41.71513+00:00" },
+    { "action": "rolled_back", "created_at": "2026-09-06T10:43:32.73761+00:00" },
+    { "action": "resumed", "created_at": "2026-09-06T10:44:46.135503+00:00" }
+  ],
+  "evidenceFingerprint": "1ea4b83757e356370a21d3e6cc1398e4c3b150714b465ef1e3a0e98c3babb560"
+}

@@ -1,0 +1,24 @@
+{
+  "contract": "public-websites-pilot-closeout-phase6-status-v1",
+  "capturedAt": "2026-09-06T11:31:00Z",
+  "projectRef": "isdowlnollckzvltkasn",
+  "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+  "status": "BLOCKED_PRE_LIVE",
+  "phase6Implemented": true,
+  "schemaInstalled": true,
+  "observationStarted": false,
+  "hypercareWindows": 0,
+  "activeProductionReleases": 0,
+  "activePrimaryCustomDomains": 0,
+  "domainLinked": false,
+  "dnsChangedByPhase6": false,
+  "clientTrafficMoved": false,
+  "startGateVerified": true,
+  "startGateResult": "Hypercare is blocked until the client-approved Phase 5 release and its custom domain are active.",
+  "exitGatePassed": false,
+  "blockers": [
+    "Phase 5 custom-domain production release is not active.",
+    "The Kingstons domain is intentionally not linked and primary.",
+    "Seven to fourteen real production observation days have not started."
+  ]
+}

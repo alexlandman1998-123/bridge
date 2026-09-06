@@ -1,0 +1,201 @@
+{
+  "contract": "public-websites-pilot-closeout-phase5-readiness-v1",
+  "capturedAt": "2026-09-06T11:00:27.286Z",
+  "target": {
+    "projectRef": "isdowlnollckzvltkasn",
+    "organisationId": "ec19d0a6-bcba-4eef-aa72-9972de88204d",
+    "hostname": "www.kingstons.co.za"
+  },
+  "status": "BLOCKED_PRE_LINK",
+  "readyForPhase6": false,
+  "boundary": {
+    "domainLinked": false,
+    "dnsChanged": false,
+    "clientTrafficMoved": false
+  },
+  "checks": [
+    {
+      "id": "dark-launch:active",
+      "passed": true,
+      "evidence": "active"
+    },
+    {
+      "id": "client-approval:recorded",
+      "passed": false,
+      "evidence": "missing"
+    },
+    {
+      "id": "domain:linked",
+      "passed": false,
+      "evidence": "not linked (intentional)"
+    },
+    {
+      "id": "domain:active-primary",
+      "passed": false,
+      "evidence": "not active"
+    },
+    {
+      "id": "dns:baseline-captured",
+      "passed": true,
+      "evidence": "13 website record(s)"
+    },
+    {
+      "id": "dns:email-baseline-captured",
+      "passed": true,
+      "evidence": "5 email/identity record(s)"
+    },
+    {
+      "id": "dns:nameservers-captured",
+      "passed": true,
+      "evidence": "ns1.clusterdns.co.za, ns2.clusterdns.co.za, ns3.hostdns.co.za, ns4.clusterdns.org"
+    },
+    {
+      "id": "https:ready",
+      "passed": false,
+      "evidence": "HTTP 200"
+    },
+    {
+      "id": "redirect:apex-to-primary",
+      "passed": false,
+      "evidence": "https://www.kingstons.co.za/"
+    },
+    {
+      "id": "seo:robots",
+      "passed": false,
+      "evidence": "HTTP 200"
+    },
+    {
+      "id": "seo:sitemap",
+      "passed": false,
+      "evidence": "HTTP 404"
+    },
+    {
+      "id": "analytics:present",
+      "passed": false,
+      "evidence": "awaiting domain activation"
+    },
+    {
+      "id": "crm:post-activation-lead",
+      "passed": false,
+      "evidence": "awaiting domain activation"
+    },
+    {
+      "id": "email-dns:unchanged",
+      "passed": true,
+      "evidence": "read-only baseline; no changes made"
+    }
+  ],
+  "dnsBaseline": {
+    "contract": "public-websites-pilot-closeout-phase5-dns-baseline-v1",
+    "hostname": "www.kingstons.co.za",
+    "registrableDomain": "kingstons.co.za",
+    "capturedAt": "2026-09-06T11:00:26.515Z",
+    "websiteRecordsBefore": [
+      {
+        "name": "www.kingstons.co.za",
+        "type": "CNAME",
+        "value": "d3btbtlngzilyw.cloudfront.net"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "A",
+        "value": "143.204.4.84"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "A",
+        "value": "143.204.4.129"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "A",
+        "value": "143.204.4.121"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "A",
+        "value": "143.204.4.94"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "AAAA",
+        "value": "2600:9000:2052:c200:11:c5cc:ae00:93a1"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "AAAA",
+        "value": "2600:9000:2052:e800:11:c5cc:ae00:93a1"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "AAAA",
+        "value": "2600:9000:2052:4800:11:c5cc:ae00:93a1"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "AAAA",
+        "value": "2600:9000:2052:b800:11:c5cc:ae00:93a1"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "AAAA",
+        "value": "2600:9000:2052:4c00:11:c5cc:ae00:93a1"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "AAAA",
+        "value": "2600:9000:2052:4400:11:c5cc:ae00:93a1"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "AAAA",
+        "value": "2600:9000:2052:aa00:11:c5cc:ae00:93a1"
+      },
+      {
+        "name": "www.kingstons.co.za",
+        "type": "AAAA",
+        "value": "2600:9000:2052:b400:11:c5cc:ae00:93a1"
+      }
+    ],
+    "emailAndIdentityRecordsBefore": [
+      {
+        "name": "kingstons.co.za",
+        "type": "MX",
+        "priority": 10,
+        "value": "kingstons-co-za.mail.protection.outlook.com"
+      },
+      {
+        "name": "kingstons.co.za",
+        "type": "TXT",
+        "value": "google-site-verification=2AOpSNxwolcAOir_wOEYYWKdZGbumS6S7Glyp8GUB8o"
+      },
+      {
+        "name": "kingstons.co.za",
+        "type": "TXT",
+        "value": "google-site-verification=umZS3HujoaniZlPRLPnC7oRmxnz8-0xgQfqJU2HrGYw"
+      },
+      {
+        "name": "kingstons.co.za",
+        "type": "TXT",
+        "value": "v=spf1 include:spf.protection.outlook.com ~all"
+      },
+      {
+        "name": "_dmarc.kingstons.co.za",
+        "type": "TXT",
+        "value": "v=DMARC1; p=none; rua=mailto:support@propdata.net; ruf=mailto:support@propdata.net;"
+      }
+    ],
+    "nameserversBefore": [
+      "ns1.clusterdns.co.za",
+      "ns2.clusterdns.co.za",
+      "ns3.hostdns.co.za",
+      "ns4.clusterdns.org"
+    ],
+    "plannedWebsiteRecords": [],
+    "emailDnsUnchanged": true,
+    "nameserversUnchanged": true,
+    "domainLinked": false,
+    "dnsChanged": false
+  },
+  "evidenceFingerprint": "f3a00712e976d696b08e193c96d939c981cad5465ec46df0bb5b15efabf99ea7"
+}
