@@ -104,3 +104,32 @@ or approve the blocked Rental release.
 - Push with the explicit refspec `main:main`, without force.
 - Fetch the remote result and require local and remote `main` to resolve to the
   same commit before declaring Git publication complete.
+
+## Phase 9 post-publication verification — 6 September 2026
+
+GitHub resolved both local and remote `main` to the Phase 8 publication commit
+`e4fb0bdf67d72269879e2137638aabcacdfdc109`. The workflows triggered for that
+exact commit completed successfully:
+
+| Workflow | Run | Result |
+| --- | ---: | --- |
+| Supabase Phase 0 Guard | `34042675569` | Pass |
+| Supabase Phase 8 Closeout Gate | `34042675607` | Pass |
+| MVP release certification | `34042675570` | Pass |
+
+Recovery remains available after publication. The Phase 0 backup branch still
+resolves to `f66c7539a87bbfc25a32cf71aa8b3bf90b0d4c9c`, the validated reconciliation
+branch remains at `0c78ea73462dbe091e68c4a6554de048b7a24f38`, and the Phase 0 safety stash
+remains at `1b615b1b47c2be62f8e5597138b906e219d22249`.
+
+### Phase 9 decision
+
+- Git publication and the repository's required post-push safety checks are
+  complete.
+- Recovery refs and stashes are retained; branch cleanup requires a separate,
+  explicit destructive-action decision.
+- The database migration hold remains active. This handoff does not apply SQL,
+  deploy an application, or approve Rental production activation.
+- The Phase 9 closeout commit must itself be fast-forwarded to `origin/main`
+  and pass the same required GitHub checks before the reconciliation sequence
+  is considered fully closed.
