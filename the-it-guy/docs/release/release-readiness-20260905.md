@@ -130,6 +130,9 @@ remains at `1b615b1b47c2be62f8e5597138b906e219d22249`.
   explicit destructive-action decision.
 - The database migration hold remains active. This handoff does not apply SQL,
   deploy an application, or approve Rental production activation.
-- The Phase 9 closeout commit must itself be fast-forwarded to `origin/main`
-  and pass the same required GitHub checks before the reconciliation sequence
-  is considered fully closed.
+- The Phase 9 closeout commit must itself be fast-forwarded to `origin/main`.
+  Because it changes only this release record, the path-filtered Supabase and
+  MVP push workflows are not expected to create new runs. Their Phase 8 results
+  remain authoritative for the unchanged executable tree; the two Supabase
+  safety contracts are rerun locally and the dispatchable MVP certification is
+  rerun manually when closing the sequence.
