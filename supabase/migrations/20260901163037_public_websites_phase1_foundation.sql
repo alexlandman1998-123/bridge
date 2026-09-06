@@ -40,7 +40,7 @@ create table if not exists public.website_domains (
   updated_at timestamptz not null default now(),
   constraint website_domains_hostname_check check (
     hostname = lower(hostname)
-    and hostname ~ '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$'
+    and hostname ~ '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$'
   ),
   constraint website_domains_dns_instructions_object_check check (jsonb_typeof(dns_instructions) = 'object')
 );
