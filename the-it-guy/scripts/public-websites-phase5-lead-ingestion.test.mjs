@@ -37,7 +37,8 @@ assert.doesNotMatch(route, /\.from\(['"](?:contacts|leads|website_lead_submissio
 assert.match(route, /createHmac\('sha256'/, 'route hashes visitor addresses instead of storing IPs')
 assert.match(route, /MAX_BODY_BYTES/, 'route rejects oversized request bodies')
 assert.match(route, /companyWebsite/, 'route applies the bot honeypot')
-assert.match(route, /website_prepare_lead_notification_fallback/, 'route attempts the durable manager fallback')
+assert.match(route, /website-lead-dispatcher/, 'route kicks the durable lead notification dispatcher')
+assert.doesNotMatch(route, /functions\/v1\/send-email/, 'route does not own one-shot provider delivery')
 assert.doesNotMatch(route, /NextResponse\.json\(\{\s*accepted:\s*true,\s*leadId/, 'public response does not expose an internal CRM lead identifier')
 
 assert.match(form, /useRef<string \| null>/, 'form keeps one idempotency key across retries')

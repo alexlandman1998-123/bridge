@@ -214,3 +214,9 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/website-brand-publication/deno.json"
 entrypoint = "./functions/website-brand-publication/index.ts"
+
+[functions.website-lead-dispatcher]
+enabled = true
+verify_jwt = true
+import_map = "./functions/website-lead-dispatcher/deno.json"
+entrypoint = "./functions/website-lead-dispatcher/index.ts"

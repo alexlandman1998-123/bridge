@@ -10,7 +10,8 @@ Phase 5 connects public agency website enquiries to the existing CRM without all
 - Page enquiries must reference a page in the currently published revision, and the form purpose must match the page kind.
 - A stable idempotency key makes browser and provider retries safe. Exact tenant-scoped email or phone matches reuse a contact; every genuine new submission still creates its own lead.
 - Assigned listing enquiries route to an active listing agent. Other enquiries route to the unassigned CRM queue and notify the first active principal/admin/branch manager.
-- If delivery to an assigned agent fails, a durable manager fallback event is created and attempted. Notification failure never rolls back or removes the CRM lead.
+- Delivery is handled by a durable, service-only outbox worker. Provider failures use bounded retries, interrupted claims are recovered, and the database scheduler checks the queue every minute.
+- If delivery to an assigned agent still fails after its retry budget, a durable manager fallback event is created and dispatched with its own retry budget. Notification failure never rolls back or removes the CRM lead.
 - Oversized payloads, a honeypot, and a ten-minute request limit protect the endpoint. The limit uses an HMAC-SHA256 fingerprint; raw IP addresses are never stored.
 - Privacy consent is mandatory. Marketing consent is optional and stored separately.
 
@@ -28,6 +29,8 @@ ARCH9_APP_URL
 `WEBSITES_LEAD_FINGERPRINT_SECRET` should be a generated value of at least 32 random characters. Do not expose it or the service-role key through a `NEXT_PUBLIC_` variable.
 
 The shared `send-email` function also requires `RESEND_API_KEY` and a verified `RESEND_FROM_EMAIL`. `LEAD_OPERATIONS_EMAILS_ENABLED=false` deliberately records a skipped delivery instead of treating it as sent.
+
+The Supabase Vault values `arch9_project_url` and `arch9_service_role_key` must point to the same environment. The `arch9-website-lead-dispatcher-1m` job uses those values without embedding credentials in SQL.
 
 ## Verification
 
@@ -54,5 +57,6 @@ With the local Supabase stack running, execute `supabase test db`. The Phase 5 p
 5. Disable or remove that agent membership and confirm the Lead lands unassigned and the manager receives the notification.
 6. Force the agent email delivery to fail and confirm the manager fallback event records its own outcome without changing the Lead.
 7. Unpublish the website listing channel and confirm the public property enquiry is rejected.
+8. Leave a notification queued, invoke the dispatcher, and confirm the attempt count and provider outcome are recorded. Force an interrupted `processing` claim older than five minutes and confirm the next worker run recovers it.
 
 Phase 5 is complete at source level after the migration and email function are deployed. Phase 6 publication isolation/recovery is now implemented locally; production release still requires migration deployment plus the staging and cross-device acceptance work defined in the foundation roadmap.
