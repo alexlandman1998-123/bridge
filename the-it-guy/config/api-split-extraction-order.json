@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "strategy": "compatibility-facade-and-feature-flags",
+  "legacyFacade": "src/lib/api.js",
+  "rules": [
+    "keep existing export names, arguments, return shapes, errors, and authentication behavior unchanged during move-only extraction",
+    "extract one domain per release train",
+    "enable a feature flag only after contract and staging smoke evidence pass",
+    "rollback by disabling the domain flag and retaining the facade export"
+  ],
+  "order": ["reporting", "documents", "developments", "transactions"],
+  "productionActivation": false
+}

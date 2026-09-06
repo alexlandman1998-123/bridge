@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "name": "Arch9 Schema Baseline Rehearsal",
+  "projectRef": "rlavzicedrilmpaamviu",
+  "organizationId": "wkojfhtmzbvaxgsdfscp",
+  "region": "eu-west-1",
+  "createdAt": "2026-09-06T12:56:14.953987Z",
+  "purpose": "Isolated schema-baseline rehearsal only. It must not receive application traffic or production data until the approved rehearsal plan permits it.",
+  "status": "schema_equivalence_blocked_pending_replay",
+  "schemaCapture": {
+    "capturedAt": "2026-09-06T15:25:00+02:00",
+    "scope": "public schema only; no table data or auth data",
+    "file": "/Users/alexanderlandman/arch9-db-recovery/production-public-schema-20260906-1530.sql",
+    "bytes": 6912643,
+    "sha256": "0eec8728d3e4ef0fb696cd82c6941e09bbd835a4fb50445a9751c10711a63054"
+  },
+  "rehearsalPrerequisites": {
+    "extensions": ["btree_gist", "pg_net", "pg_cron"],
+    "verifiedEmptyAfterRollback": true,
+    "replayMode": "single transaction"
+  },
+  "equivalenceGate": {
+    "implemented": true,
+    "lastResult": "not_equivalent_pending_phase_1_replay",
+    "command": "node the-it-guy/scripts/verify-schema-baseline-equivalence.mjs --strict"
+  },
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "credentialStorage": "macOS Keychain service: Arch9 Schema Baseline Rehearsal Supabase DB",
+  "guardrails": [
+    "Do not link the primary working tree to this project.",
+    "Do not run db push, migration repair, or application deployment against production.",
+    "Do not promote the existing staging project to production.",
+    "Do not copy production data before schema equivalence and explicit data-migration approval."
+  ]
+}

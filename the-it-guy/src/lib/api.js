@@ -6,6 +6,7 @@ import {
   trackCompatibilityFallbackState,
 } from '../services/observability/compatibilityFallbackTelemetry.js'
 import { resolveClientPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
+import { updateDocumentClientVisibilityRecord } from '../domains/documents/api.js'
 export { generateMandateDocumentFromTemplate } from './generateMandateDocument'
 import {
   CANONICAL_TRANSACTION_STAGES,
@@ -96,6 +97,7 @@ import {
   resolveWizardInitialTransactionStage,
 } from '../core/transactions/newTransactionSetupHealth.js'
 import { resolveTransactionSaleProfile } from '../core/transactions/transactionSaleProfile.js'
+import { assertTransactionCreationInput } from '../core/transactions/transactionCreationInput.js'
 import {
   TransactionCreationIncompleteError,
   buildTransactionCreationPersistencePatch,
@@ -30733,25 +30735,12 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   const transactionType = saleProfile.transactionType || normalizeStoredTransactionType(setup?.transactionType, 'developer_sale')
   const propertyType = normalizeTransactionPropertyType(setup?.propertyType)
 
-  if (transactionType === 'developer_sale' && (!setup?.developmentId || !setup?.unitId)) {
-    throw new Error('Development and unit are required.')
-  }
-
-  if (transactionType === 'private_property' && !propertyType) {
-    throw new Error('Property category is required for a private property transaction.')
-  }
-
-  if (transactionType === 'private_property' && !String(setup?.propertyAddressLine1 || '').trim()) {
-    throw new Error('Property address is required for a private matter.')
-  }
-
-  if (transactionType === 'private_property' && !String(setup?.city || '').trim()) {
-    throw new Error('City is required for a private matter.')
-  }
-
-  if (!allowIncomplete && !setup?.buyerName?.trim()) {
-    throw new Error('Buyer full name is required.')
-  }
+  assertTransactionCreationInput({
+    setup,
+    transactionType,
+    propertyType,
+    allowIncomplete,
+  })
 
   const linkedPrivateListingId = transactionType === 'private_property'
     ? normalizeNullableUuid(
@@ -45684,66 +45673,17 @@ export async function updateOtpDocumentWorkflowState({
   return updateQuery.data
 }
 
-export async function generateOtpDocumentFromTemplate({
-  transactionId,
-} = {}) {
-  const normalizedTransactionId = String(transactionId || '').trim()
-  if (!normalizedTransactionId) {
-    throw new Error('Transaction is required.')
-  }
-
-  const error = new Error(
-    'The legacy OTP DOCX renderer is retired. Generate OTPs through the canonical packet-bound PDF workflow.',
-  )
-  error.code = 'OTP_LEGACY_RENDERER_RETIRED'
-  error.requiredAction = 'CREATE_OR_REISSUE_CANONICAL_OTP_PDF'
-  throw error
-}
+export { generateOtpDocumentFromTemplate } from '../domains/documents/api.js'
 
 export async function updateDocumentClientVisibility(documentId, isClientVisible) {
   const client = requireClient()
-  const visibilityScope = isClientVisible ? 'shared' : 'internal'
-
-  let query = await client
-    .from('documents')
-    .update({
-      is_client_visible: Boolean(isClientVisible),
-      visibility_scope: visibilityScope,
-    })
-    .eq('id', documentId)
-    .select('id, transaction_id, is_client_visible, visibility_scope')
-    .single()
-
-  if (query.error && isMissingColumnError(query.error, 'visibility_scope')) {
-    query = await client
-      .from('documents')
-      .update({ is_client_visible: Boolean(isClientVisible) })
-      .eq('id', documentId)
-      .select('id, transaction_id, is_client_visible')
-      .single()
-  }
-
-  const { data, error } = query
-
-  if (error) {
-    if (error.code === '42703') {
-      throw new Error('is_client_visible column is missing. Run sql/schema.sql first.')
-    }
-
-    throw error
-  }
-
-  await logTransactionEventIfPossible(client, {
-    transactionId: data?.transaction_id || null,
-    eventType: 'DocumentVisibilityChanged',
-    eventData: {
-      documentId: data?.id || documentId,
-      isClientVisible: Boolean(data?.is_client_visible ?? isClientVisible),
-      visibilityScope: data?.visibility_scope || visibilityScope,
-    },
+  return updateDocumentClientVisibilityRecord({
+    client,
+    documentId,
+    isClientVisible,
+    isMissingColumnError,
+    recordEvent: (event) => logTransactionEventIfPossible(client, event),
   })
-
-  return data
 }
 
 export async function archiveTransactionDocument(documentId) {

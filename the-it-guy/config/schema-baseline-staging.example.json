@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "environment": "replacement-staging",
+  "projectRef": "rlavzicedrilmpaamviu",
+  "dataPolicy": "isolated-test-data-only",
+  "trafficPolicy": "no-production-traffic",
+  "requiredEnvironmentNames": ["VITE_SUPABASE_URL", "VITE_SUPABASE_ANON_KEY", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+  "activationRequires": ["schema_equivalence_verified", "managed_configuration_verified", "application_smoke_tests_passed"]
+}

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "status": "blocked_pending_schema_equivalence",
+  "historicalLedger": {
+    "productionRef": "isdowlnollckzvltkasn",
+    "evidence": "production-migration-ledger-reconciliation-2026-09-06-classified.json",
+    "rule": "preserve as evidence; never mass-repair or rewrite it"
+  },
+  "forwardOnlyBaseline": {
+    "target": "rlavzicedrilmpaamviu",
+    "rule": "create one reviewed baseline migration only after Phase 2 equivalence passes",
+    "subsequentChanges": "new timestamped migrations, reviewed and applied first to replacement staging"
+  },
+  "prohibited": ["supabase migration repair against production", "backdating new migrations", "promoting legacy staging"],
+  "exitCriteria": ["schema equivalence verified", "baseline migration applied to an empty rehearsal", "new migration applies cleanly after baseline"]
+}

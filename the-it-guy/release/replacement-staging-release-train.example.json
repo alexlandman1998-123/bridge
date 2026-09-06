@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "status": "template_not_approved",
+  "targetProjectRef": "rlavzicedrilmpaamviu",
+  "steps": {
+    "migrationReviewed": false,
+    "appliedToReplacementStaging": false,
+    "schemaEquivalenceRetested": false,
+    "apiSmokeTestsPassed": false,
+    "rollbackPlanReviewed": false,
+    "productionApprovalRecorded": false,
+    "postDeployEvidenceRecorded": false
+  },
+  "rules": [
+    "one reviewed migration or backward-compatible application change per train",
+    "no production database write before replacement-staging evidence passes",
+    "production deployment requires a separately recorded approval",
+    "rollback means restore the previous application deployment; never rewrite migration history"
+  ]
+}

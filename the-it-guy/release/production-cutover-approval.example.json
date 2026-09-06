@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "status": "template_not_approved",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "candidateProjectRef": "rlavzicedrilmpaamviu",
+  "changeWindow": null,
+  "approver": null,
+  "freezeConfirmed": false,
+  "backupAndRollbackConfirmed": false,
+  "stagingEvidenceReference": null,
+  "productionSmokeChecks": ["authentication", "core transaction read/write", "document access", "public API error rate"],
+  "rollback": "restore the previous application deployment and disable the new API-domain flag; do not rewrite migration history"
+}

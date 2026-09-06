@@ -1,0 +1,2232 @@
+{
+  "version": 1,
+  "generatedAt": "2026-09-06T13:01:26.943Z",
+  "mode": "read_only",
+  "environment": "production",
+  "source": {
+    "localMigrationDirectory": "supabase/migrations",
+    "linkedLedgerSnapshot": "/Users/alexanderlandman/.codex/attachments/5ed535ff-1d0f-4d16-83dc-7ba847dece14/pasted-text.txt",
+    "note": "The snapshot is parsed for remote versions only. No database mutation was performed."
+  },
+  "summary": {
+    "localMigrationCount": 928,
+    "remoteMigrationCount": 896,
+    "matchedVersionCount": 833,
+    "localOnlyCount": 95,
+    "remoteOnlyCount": 63
+  },
+  "entries": [
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260817174624",
+      "file": "supabase/migrations/20260817174624_arch9_inbound_leads_flow.sql",
+      "slug": "arch9_inbound_leads_flow",
+      "sha256": "31a8c0a5d53736d9b93cc3f00c5858914246110419e5b3954c1443e2ebf2a110",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260818203652",
+      "file": "supabase/migrations/20260818203652_arch9_inbound_leads_snapshot_profile_shape.sql",
+      "slug": "arch9_inbound_leads_snapshot_profile_shape",
+      "sha256": "bf4179fc57ad641836f8e042458891e88ad93d71626ad2b57a6f9fff7f4f58ae",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "202608200001",
+      "file": "supabase/migrations/202608200001_whatsapp_integration_foundation.sql",
+      "slug": "whatsapp_integration_foundation",
+      "sha256": "9aa0127506302c7d61f769228253231b17e1be2c6ab5fed8ab6e83f6aeaa97b8",
+      "intent": {
+        "domain": "whatsapp_notifications",
+        "evidence": "Inferred from migration filename and SQL content (/whatsapp|notification_templates|meta_/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "202608200002",
+      "file": "supabase/migrations/202608200002_whatsapp_template_seed.sql",
+      "slug": "whatsapp_template_seed",
+      "sha256": "bfbdb17c539cf15410f91b7fd3629507e10ec101c73dddeff4b4895bfa811b44",
+      "intent": {
+        "domain": "whatsapp_notifications",
+        "evidence": "Inferred from migration filename and SQL content (/whatsapp|notification_templates|meta_/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260820160621",
+      "file": "supabase/migrations/20260820160621_journey_stage_overrides_phase2.sql",
+      "slug": "journey_stage_overrides_phase2",
+      "sha256": "1bcd74dcdaf43a06a035f4843d570ad69ae740eccdae879396676e409124ccd9",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260820174624",
+      "file": "supabase/migrations/20260820174624_admin_dashboard_units_as_listings.sql",
+      "slug": "admin_dashboard_units_as_listings",
+      "sha256": "896de2a954f5bb729467ba43dcf0a6d8bc87ea7d4c28e782ad1a4a6f7b893e3e",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260820192038",
+      "file": "supabase/migrations/20260820192038_admin_dashboard_external_inventory_snapshots.sql",
+      "slug": "admin_dashboard_external_inventory_snapshots",
+      "sha256": "8932e5df772d2f3a0a958cd24c6dfd31dfa47e624a4043f5a8f5d4cf787a130e",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260820192857",
+      "file": "supabase/migrations/20260820192857_remove_admin_external_inventory_counts.sql",
+      "slug": "remove_admin_external_inventory_counts",
+      "sha256": "ca8650aa654f5a966b9c89e55c93978baf9317685384fee935369eeb2de8574b",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260820193436",
+      "file": "supabase/migrations/20260820193436_admin_dashboard_exact_active_listing_tokens.sql",
+      "slug": "admin_dashboard_exact_active_listing_tokens",
+      "sha256": "252ea57e0a101796ae79445745f955ab1f06dd9f7746cee465a91a9e57fae4df",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "202608230001",
+      "file": "supabase/migrations/202608230001_agency_onboarding_flow.sql",
+      "slug": "agency_onboarding_flow",
+      "sha256": "fff77b53a276b7213990a7f61e6e3f2158df100f262a72b4652a6b4a7baec9af",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "202608230002",
+      "file": "supabase/migrations/202608230002_transaction_sale_profile_phase1.sql",
+      "slug": "transaction_sale_profile_phase1",
+      "sha256": "e2a08b091516d936659ce6f3dfcc6e07a2d911c7ead2eaa1211199bcc2ea136d",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "202608240001",
+      "file": "supabase/migrations/202608240001_prospect_demo_configs.sql",
+      "slug": "prospect_demo_configs",
+      "sha256": "2bb5e26bef1a7927cf036e91bc054a1c135d66a13e2c57c26453c905910942a5",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260824084233",
+      "file": "supabase/migrations/20260824084233_add_prospect_demo_brand_colours.sql",
+      "slug": "add_prospect_demo_brand_colours",
+      "sha256": "f9757f02939190ff4413f2673f367e04408b9533d8dc929005818674d61916e8",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260824091732",
+      "file": "supabase/migrations/20260824091732_align_prospect_demo_admin_rls.sql",
+      "slug": "align_prospect_demo_admin_rls",
+      "sha256": "b53f652e151522f732249d112ce148fd70eb71ff22b23785fa1dddb02464a510",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260824092531",
+      "file": "supabase/migrations/20260824092531_add_prospect_demo_light_dark_logos.sql",
+      "slug": "add_prospect_demo_light_dark_logos",
+      "sha256": "7c15a0048519c510eb0ff8ee1dc6bb4a25d25ef2c0a1cb150d695484e7f04147",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "202608250001",
+      "file": "supabase/migrations/202608250001_remove_listing_mandate_activation_guards.sql",
+      "slug": "remove_listing_mandate_activation_guards",
+      "sha256": "ec69727b54656152734f85ca730471d30843bff8f92df3532f41f97638dee83c",
+      "intent": {
+        "domain": "documents",
+        "evidence": "Inferred from migration filename and SQL content (/document|template|signing/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260827081713",
+      "file": "supabase/migrations/20260827081713_normalize_transaction_participant_assignment_sources.sql",
+      "slug": "normalize_transaction_participant_assignment_sources",
+      "sha256": "1d73a380b915d0189b4a295d4c4a35474a1fd0607380c449bc0c5b05365192c0",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260827083108",
+      "file": "supabase/migrations/20260827083108_normalize_transaction_participant_statuses.sql",
+      "slug": "normalize_transaction_participant_statuses",
+      "sha256": "8a91de7b5b2f5f731927f5928ac8742cf875714e24207c94ba74725ca2b2d115",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260827091439",
+      "file": "supabase/migrations/20260827091439_transaction_setup_owner_rls_access.sql",
+      "slug": "transaction_setup_owner_rls_access",
+      "sha256": "ae4839ea62ec5b2368b3b56770016bbcaf579c1ae1a4c154657e758616b2ebb2",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260828203724",
+      "file": "supabase/migrations/20260828203724_bond_application_idempotent_document_reconciliation.sql",
+      "slug": "bond_application_idempotent_document_reconciliation",
+      "sha256": "f35030119fcaa81e491821fbe47c070570b1c16c62d073bb9d3fd6c4260664ac",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "202608290001",
+      "file": "supabase/migrations/202608290001_lead_multi_agent_assignments.sql",
+      "slug": "lead_multi_agent_assignments",
+      "sha256": "ffd6d33a145fd07c2a256f435a8e5b1542c9456938949aab321086a1ccdd850c",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "202608290002",
+      "file": "supabase/migrations/202608290002_client_compliance_verification.sql",
+      "slug": "client_compliance_verification",
+      "sha256": "a7c9ad9e86106bbfb2fa6816d3ae739958a9c240a115e279acbd42d2a2a53e03",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260829103738",
+      "file": "supabase/migrations/20260829103738_transaction_sync_phase2_canonical_propagation.sql",
+      "slug": "transaction_sync_phase2_canonical_propagation",
+      "sha256": "dffe58feafc26a21c79cfb4bc5eb81b7ea1e47e1249fd3d9713fdc3039a9e8ed",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260829105514",
+      "file": "supabase/migrations/20260829105514_transaction_sync_phase3_module_adapters.sql",
+      "slug": "transaction_sync_phase3_module_adapters",
+      "sha256": "6da61663577a4f225c8ad796288bd752e3bfd1cad5787f7bd5618a7656819410",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260829111644",
+      "file": "supabase/migrations/20260829111644_transaction_sync_phase6_controlled_recovery.sql",
+      "slug": "transaction_sync_phase6_controlled_recovery",
+      "sha256": "973de7d3fd7a63cbc84e4c1b155044ac331510dac5347a9d94447c2ed2841c40",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260829112135",
+      "file": "supabase/migrations/20260829112135_transaction_sync_phase7_canary_certification.sql",
+      "slug": "transaction_sync_phase7_canary_certification",
+      "sha256": "bb6010f8cb6764fc83c027e6483cc302268ffc74fe7c86f79ef70653687e0e5e",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260829112530",
+      "file": "supabase/migrations/20260829112530_transaction_sync_phase8_fleet_release_gate.sql",
+      "slug": "transaction_sync_phase8_fleet_release_gate",
+      "sha256": "0dd527728d4c19d4d544b5c434ccc66245796dc7652c5220362a149c5db92cb2",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260829195657",
+      "file": "supabase/migrations/20260829195657_seller_onboarding_link_fast_prepare.sql",
+      "slug": "seller_onboarding_link_fast_prepare",
+      "sha256": "d1915258d2c9a3c035eee0b80ea796fb439d834ee5c36dc09fb9c2e6eb47d889",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260829204153",
+      "file": "supabase/migrations/20260829204153_seller_onboarding_completion_receipt_and_projection_rls.sql",
+      "slug": "seller_onboarding_completion_receipt_and_projection_rls",
+      "sha256": "207258e6321e1aea43bfc39d8415e82f364e514c315d1eb7879c984cbae2c7d1",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260830125035",
+      "file": "supabase/migrations/20260830125035_attorney_dashboard_rpc_hot_path.sql",
+      "slug": "attorney_dashboard_rpc_hot_path",
+      "sha256": "f4a1385a60e0e8c572b80f1fc47d95ef091dd2b60dd69cdedbdc86f0d6d56670",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260830160810",
+      "file": "supabase/migrations/20260830160810_secure_auth_bootstrap_rpc.sql",
+      "slug": "secure_auth_bootstrap_rpc",
+      "sha256": "8dd17389e46c7dc3ce5a29feec6d31f0a2cd7c03b091540d74790e55e57af519",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260831071807",
+      "file": "supabase/migrations/20260831071807_canonical_transaction_requirements_on_creation.sql",
+      "slug": "canonical_transaction_requirements_on_creation",
+      "sha256": "3b65f51bb91d8c8bea154c5c5dce96e8a165326e4c882231efa1571daf973552",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260831072652",
+      "file": "supabase/migrations/20260831072652_canonical_transaction_requirements_on_creation.sql",
+      "slug": "canonical_transaction_requirements_on_creation",
+      "sha256": "05b934fa53b2427e049942f5b23453348b80857bb53192e9c3a015702205ea40",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260831120000",
+      "file": "supabase/migrations/20260831120000_property24_migration_listing_media_storage.sql",
+      "slug": "property24_migration_listing_media_storage",
+      "sha256": "43e90e14e8ac5bc244306df8c93d5826d41154b47c5db595220478017c92308e",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260831131538",
+      "file": "supabase/migrations/20260831131538_property24_canonical_connection_backfill.sql",
+      "slug": "property24_canonical_connection_backfill",
+      "sha256": "a0bfcbaf38a1e4d95a852961fc71470a3bc8e858ebd4734bd4c8c7345387c990",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260831140736",
+      "file": "supabase/migrations/20260831140736_property24_agent_catalog_mappings.sql",
+      "slug": "property24_agent_catalog_mappings",
+      "sha256": "c7bc8023d08bfbbb19adce6b28fa87b400abdf7259f8ed7b571104a8b0a83ef7",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260831150740",
+      "file": "supabase/migrations/20260831150740_property24_live_cutover_gate.sql",
+      "slug": "property24_live_cutover_gate",
+      "sha256": "aeaa14d8ee3a69a323d4c75ef9c9d7c0d454b21ca22a057091b0103c9b17c97b",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260831153322",
+      "file": "supabase/migrations/20260831153322_staging_rls_warning_view_hardening.sql",
+      "slug": "staging_rls_warning_view_hardening",
+      "sha256": "1c81e6c961aeeb01f3496ee45f968ff1d3c03ef2f9205a4ddb43e0d1dfe03780",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260831190341",
+      "file": "supabase/migrations/20260831190341_compatibility_fallback_retirement_telemetry.sql",
+      "slug": "compatibility_fallback_retirement_telemetry",
+      "sha256": "736ae57dc039c658d645c58033f3d0f77211af99439c2ee295604e05829ba605",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901075131",
+      "file": "supabase/migrations/20260901075131_public_development_landing_and_access_boundary.sql",
+      "slug": "public_development_landing_and_access_boundary",
+      "sha256": "6012fdf2fdf17048e65e47a45288d004a8032f6e7455b14650a1475a8c0bd230",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901110612",
+      "file": "supabase/migrations/20260901110612_development_organisation_relationship_foundation.sql",
+      "slug": "development_organisation_relationship_foundation",
+      "sha256": "a0f4d968e4c09e30a25fdde69730ae27c9a419b186fb4ed41313f2db354a406c",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901140943",
+      "file": "supabase/migrations/20260901140943_harden_admin_portal_authorization.sql",
+      "slug": "harden_admin_portal_authorization",
+      "sha256": "3dcd726db538cbf403a9d9eb36f82302e90a238205b02e5ea73659e8848edc6d",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901143358",
+      "file": "supabase/migrations/20260901143358_property24_category_listing_facts.sql",
+      "slug": "property24_category_listing_facts",
+      "sha256": "35e9cd20f7bd0a61f9c50b03f88d249cfeba13262b8e215d104e5dc4d774c2cf",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901145225",
+      "file": "supabase/migrations/20260901145225_property24_commercial_canonical_backfill.sql",
+      "slug": "property24_commercial_canonical_backfill",
+      "sha256": "f8df2ac5951535345904e86458c5e9c0496b02834c69f5891e9964bc34e4d84b",
+      "intent": {
+        "domain": "property24",
+        "evidence": "Inferred from migration filename and SQL content (/property24|external_inventory|listing_media/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901165511",
+      "file": "supabase/migrations/20260901165511_website_publication_workflow_phase6.sql",
+      "slug": "website_publication_workflow_phase6",
+      "sha256": "bbc4343fa611b226b55479d8aa1f92f2cda8a645338efbd9fe471e16772499b9",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901170254",
+      "file": "supabase/migrations/20260901170254_development_structure_hierarchy_phase2.sql",
+      "slug": "development_structure_hierarchy_phase2",
+      "sha256": "18f28c24696fb2ebf5a4130222b4597727fb472f2b95d1e802be3f64ca0e401a",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901170909",
+      "file": "supabase/migrations/20260901170909_development_product_catalogue_phase4.sql",
+      "slug": "development_product_catalogue_phase4",
+      "sha256": "7c7e8e604bf6660db8ed9687367bceba9289e4b258d2b798d9f6c2aad0c51419",
+      "intent": {
+        "domain": "documents",
+        "evidence": "Inferred from migration filename and SQL content (/document|template|signing/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260901174924",
+      "file": "supabase/migrations/20260901174924_website_draft_page_authoring_phase7.sql",
+      "slug": "website_draft_page_authoring_phase7",
+      "sha256": "1d5cc2447a2a2e2e86f85515c588cf36250fc9ce3e6c7a40b9869af4ed1cc8ee",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260902074000",
+      "file": "supabase/migrations/20260902074000_hide_non_building_harbour_heights_map_markers.sql",
+      "slug": "hide_non_building_harbour_heights_map_markers",
+      "sha256": "27c669c8fc3082dbe0134456d23eb351c0625da8bd2ea471e75ed0051bedba1b",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260902085300",
+      "file": "supabase/migrations/20260902085300_allow_platform_admin_profile_role.sql",
+      "slug": "allow_platform_admin_profile_role",
+      "sha256": "7dcc8400def09cafbfd24675d93269b9503ad90541fac6928bd311612b05b516",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260902095249",
+      "file": "supabase/migrations/20260902095249_public_development_organisation_branding.sql",
+      "slug": "public_development_organisation_branding",
+      "sha256": "a32745c81e0b5e86166ee702a03a7b661d92fa8d626ddc88bf907a5b8bfbae5a",
+      "intent": {
+        "domain": "documents",
+        "evidence": "Inferred from migration filename and SQL content (/document|template|signing/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260902105303",
+      "file": "supabase/migrations/20260902105303_public_development_high_contrast_branding.sql",
+      "slug": "public_development_high_contrast_branding",
+      "sha256": "4d8a954ff0e1df28bc82f6deb6134e0f661bb57bc5d3a235a36f9c67ae9d6dc9",
+      "intent": {
+        "domain": "documents",
+        "evidence": "Inferred from migration filename and SQL content (/document|template|signing/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260903094624",
+      "file": "supabase/migrations/20260903094624_organisation_workspace_lock.sql",
+      "slug": "organisation_workspace_lock",
+      "sha256": "67ca5f688267d560b8b65636f6ca3e5afeff875ab922fb51b1a20da9149725b9",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260903094957",
+      "file": "supabase/migrations/20260903094957_retire_inactive_attorney_assignments.sql",
+      "slug": "retire_inactive_attorney_assignments",
+      "sha256": "c971a3817aefe9ed1bfff4c92bcadcdb5fb1dcef4cb01c40448d65e6773464df",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260903122031",
+      "file": "supabase/migrations/20260903122031_development_marketing_collaboration_foundation.sql",
+      "slug": "development_marketing_collaboration_foundation",
+      "sha256": "690c5fcd67bff325c038871aa835788b0f0131d861b9de4c99a39330d30743c6",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260903130012",
+      "file": "supabase/migrations/20260903130012_development_marketing_invite_delivery_phase5.sql",
+      "slug": "development_marketing_invite_delivery_phase5",
+      "sha256": "ea0e94d9bbc1e160b909c534c913f125b7d58b6f0fcac9a0418922ba17db9152",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905090353",
+      "file": "supabase/migrations/20260905090353_document_trust_phase1_seller_atomic_link.sql",
+      "slug": "document_trust_phase1_seller_atomic_link",
+      "sha256": "63ac6fbb81a7aca8e397b536587c7145b9d4e29a88dede689a89e52c1b63140d",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905091122",
+      "file": "supabase/migrations/20260905091122_document_trust_phase3_role_scoped_projections.sql",
+      "slug": "document_trust_phase3_role_scoped_projections",
+      "sha256": "f5715bf079462ba06461a229eac867d8982373e24f54876e097d060694b2b4cb",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905095152",
+      "file": "supabase/migrations/20260905095152_document_trust_phase61_confirmed_remediation.sql",
+      "slug": "document_trust_phase61_confirmed_remediation",
+      "sha256": "d53e84f7c4311c92f2d407a655ae1aa7f77daf78d27c41108fbd46658b4b5eac",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905100612",
+      "file": "supabase/migrations/20260905100612_bond_application_portal_phase2_access_tokens.sql",
+      "slug": "bond_application_portal_phase2_access_tokens",
+      "sha256": "efb438fbb247c706f92f636b769803eeab3d78975fc27f49bf46a453be89271b",
+      "intent": {
+        "domain": "documents",
+        "evidence": "Inferred from migration filename and SQL content (/document|template|signing/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905100908",
+      "file": "supabase/migrations/20260905100908_bond_application_portal_phase3_draft_editing.sql",
+      "slug": "bond_application_portal_phase3_draft_editing",
+      "sha256": "24a6c77347266321beb9a2b2bc29cd2a6d1fa39ce9af8b388a75f895ca9cfcc6",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905101301",
+      "file": "supabase/migrations/20260905101301_bond_application_portal_phase4_originator_action_centre.sql",
+      "slug": "bond_application_portal_phase4_originator_action_centre",
+      "sha256": "f94544ebfd972d6fa7f0a91a02206c60d94d8c0cc4a9b0f30f26dc8a5afa0c13",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905101931",
+      "file": "supabase/migrations/20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
+      "slug": "bond_application_portal_phase5_delivery_reminders",
+      "sha256": "991b2388fc192a9ddc80b30707af0ff2c4b34e56fdf0f862b0ad832baab17a92",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905102430",
+      "file": "supabase/migrations/20260905102430_bond_application_portal_phase6_document_continuity.sql",
+      "slug": "bond_application_portal_phase6_document_continuity",
+      "sha256": "1a6814d8c1a932849fede5f00ed471b7816107f28455e08225dfceb20d2a63cc",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905102813",
+      "file": "supabase/migrations/20260905102813_bond_application_portal_phase7_submission_readiness.sql",
+      "slug": "bond_application_portal_phase7_submission_readiness",
+      "sha256": "3d1cdd7d4ea8e377a693769311e4af085c3a99fd8afbb2f24454dca5f393f5cb",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905102934",
+      "file": "supabase/migrations/20260905102934_bond_application_portal_phase8_external_submission_record.sql",
+      "slug": "bond_application_portal_phase8_external_submission_record",
+      "sha256": "965d939024ac13ab522d011612603661adf1fa737dfac66333ea588e940a6007",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905120250",
+      "file": "supabase/migrations/20260905120250_rental_portal_foundation.sql",
+      "slug": "rental_portal_foundation",
+      "sha256": "c79d7f44badc6be5de655cad3da143a1d6a2e1e6cf880a8017fb3bd8f4653145",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905125639",
+      "file": "supabase/migrations/20260905125639_rental_application_lead_linkage.sql",
+      "slug": "rental_application_lead_linkage",
+      "sha256": "aae53b51d9b3f0d19c51ffe456c75a181c72295df956dfeaf994bb2e0be87410",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141005",
+      "file": "supabase/migrations/20260905141005_rental_property_foundation.sql",
+      "slug": "rental_property_foundation",
+      "sha256": "300329a14332562c5da9d3959850e6e274793129de8c8e3cb17239baca33e096",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141007",
+      "file": "supabase/migrations/20260905141007_rental_unit_foundation.sql",
+      "slug": "rental_unit_foundation",
+      "sha256": "09d18f86a9c171bc0ea3b8c9bb2ed06793933f1bd0eb4cd3106f78f3a474938d",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141008",
+      "file": "supabase/migrations/20260905141008_rental_portfolio_foundation.sql",
+      "slug": "rental_portfolio_foundation",
+      "sha256": "e9cad34157e8ea95ac0481737f5ecee2146b61237ba821cc20e6843a4a134e16",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141009",
+      "file": "supabase/migrations/20260905141009_rental_landlord_mandate_foundation.sql",
+      "slug": "rental_landlord_mandate_foundation",
+      "sha256": "b7d01eddaa80a9b27ac1cdc35aac7bf296b61abdc2cad4562dea710b5c34c3a8",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141010",
+      "file": "supabase/migrations/20260905141010_rental_vacancy_foundation.sql",
+      "slug": "rental_vacancy_foundation",
+      "sha256": "bf5710b6e8efe3a20edcccf728708ca5d72a63713acc5604fc1cd65bdcfd1f7b",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141011",
+      "file": "supabase/migrations/20260905141011_rental_evidence_foundation.sql",
+      "slug": "rental_evidence_foundation",
+      "sha256": "03bafc8124043aa986b022668ab10d3ce54029ac46c46196c23dc04b5ce14ab4",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141012",
+      "file": "supabase/migrations/20260905141012_rental_vacancy_marketing_foundation.sql",
+      "slug": "rental_vacancy_marketing_foundation",
+      "sha256": "5fec98d776a6a49df1c48971ff83c6d15256891a0f516a80165a178ba5b1d13c",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141013",
+      "file": "supabase/migrations/20260905141013_rental_internal_marketing_operations.sql",
+      "slug": "rental_internal_marketing_operations",
+      "sha256": "b7ef4a262e7b983e725942e1961fc069bb9a2a03faa776b07bb3c19a3bd1c6b6",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141014",
+      "file": "supabase/migrations/20260905141014_rental_applications_and_applicant_access.sql",
+      "slug": "rental_applications_and_applicant_access",
+      "sha256": "260c8333523be3c83dfa5b7cc0d5889738592810a9da5ec9a70c7a1191db5e98",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141015",
+      "file": "supabase/migrations/20260905141015_rental_application_submission.sql",
+      "slug": "rental_application_submission",
+      "sha256": "26434914ef69d8b66bcced982404d5dd73b0aece55ee819e17b9c96d3dc4d7ba",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141016",
+      "file": "supabase/migrations/20260905141016_rental_application_documents.sql",
+      "slug": "rental_application_documents",
+      "sha256": "bc3eeb8c29da2c37fa9d683fd8b2ca5f1652e3253480024211e8a5d30292fb61",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141017",
+      "file": "supabase/migrations/20260905141017_rental_application_review_workspace.sql",
+      "slug": "rental_application_review_workspace",
+      "sha256": "127a8b73985b179a607c7c9e10ed2d65aa5e05bf7a9de45ded06456d57a9e4fd",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141018",
+      "file": "supabase/migrations/20260905141018_rental_application_screening.sql",
+      "slug": "rental_application_screening",
+      "sha256": "c4c376dc55518c31200807478c1d1c60cfb1b1999ecec9549a454bf3686da573",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141019",
+      "file": "supabase/migrations/20260905141019_rental_application_screening_reviewer_actor.sql",
+      "slug": "rental_application_screening_reviewer_actor",
+      "sha256": "89bd935dfe21dce5abb21285f710f6fd7b55b76b207129884ded371bbf9e9233",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141020",
+      "file": "supabase/migrations/20260905141020_rental_application_decisions.sql",
+      "slug": "rental_application_decisions",
+      "sha256": "6923386cceaa37154cc8196138c1835654116b3a4af9275eb35a6594e48b4136",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905141021",
+      "file": "supabase/migrations/20260905141021_rental_application_tenancy_conversion.sql",
+      "slug": "rental_application_tenancy_conversion",
+      "sha256": "148d91079fd74ad796cd4341d2c5b51988ef4a4d26ef065edca63c6cbd12ee0c",
+      "intent": {
+        "domain": "rentals",
+        "evidence": "Inferred from migration filename and SQL content (/rental|tenancy|landlord|inspection|maintenance/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260905150420",
+      "file": "supabase/migrations/20260905150420_development_visual_analytics_phase14.sql",
+      "slug": "development_visual_analytics_phase14",
+      "sha256": "bc09a110b4d7bb66b29366c173ac38bfa5dc1080aa4c8f45bd01cc547d611b57",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906063435",
+      "file": "supabase/migrations/20260906063435_public_websites_phase7_privilege_hardening.sql",
+      "slug": "public_websites_phase7_privilege_hardening",
+      "sha256": "e004774985a00a640b87dd50998bbb4bb23c615a50bf0fac96b7b86f7b782781",
+      "intent": {
+        "domain": "unclassified",
+        "evidence": "No domain keyword match; requires reviewer classification."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906065759",
+      "file": "supabase/migrations/20260906065759_agent_phase2_rls_acceptance.sql",
+      "slug": "agent_phase2_rls_acceptance",
+      "sha256": "679c01ef47aa27334264531e6711aa70794d43eb3651c89fb0c70c3bd9c3f588",
+      "intent": {
+        "domain": "transactions",
+        "evidence": "Inferred from migration filename and SQL content (/transaction|buyer_portal|seller_handoff/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906070515",
+      "file": "supabase/migrations/20260906070515_attorney_coordination_nomination_phase2.sql",
+      "slug": "attorney_coordination_nomination_phase2",
+      "sha256": "2153ab7236018b419a1dcb8a18c15dc41d772e169151495533499c647a42a9eb",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906070938",
+      "file": "supabase/migrations/20260906070938_attorney_lane_delegation_phase3.sql",
+      "slug": "attorney_lane_delegation_phase3",
+      "sha256": "662397f6e03c4e7a8e203a296c025bd4bace9eb287b6b88b4061b328960d808d",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906071644",
+      "file": "supabase/migrations/20260906071644_attorney_coordination_propagation_phase4.sql",
+      "slug": "attorney_coordination_propagation_phase4",
+      "sha256": "a10669c3a56a0df0c70a3241761320a2760caa7c9a2cd49f27361d1d3417c026",
+      "intent": {
+        "domain": "attorneys",
+        "evidence": "Inferred from migration filename and SQL content (/attorney|matter/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906123000",
+      "file": "supabase/migrations/20260906123000_public_websites_pilot_closeout_phase5_go_live.sql",
+      "slug": "public_websites_pilot_closeout_phase5_go_live",
+      "sha256": "e3627154539db97da6fd54e3b0df9996bdad611f43ab1b6e6a2253d6fbc96e60",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906130000",
+      "file": "supabase/migrations/20260906130000_meta_lead_ads_integration.sql",
+      "slug": "meta_lead_ads_integration",
+      "sha256": "d2961667d58347c38fc196838fab26ae4eafdd8529d040b21544f7cdec487c37",
+      "intent": {
+        "domain": "whatsapp_notifications",
+        "evidence": "Inferred from migration filename and SQL content (/whatsapp|notification_templates|meta_/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906133000",
+      "file": "supabase/migrations/20260906133000_public_websites_pilot_closeout_phase6_hypercare.sql",
+      "slug": "public_websites_pilot_closeout_phase6_hypercare",
+      "sha256": "9721343a3734766ed1b965c15d012abc05012c85b092666258a23b2083b64482",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906134500",
+      "file": "supabase/migrations/20260906134500_public_websites_pilot_closeout_phase6_hypercare_indexes.sql",
+      "slug": "public_websites_pilot_closeout_phase6_hypercare_indexes",
+      "sha256": "7eb1a9a51a5dba40dbb2f1adfa48033ab34cd9188b5b327eaa7b7f7ab7363dd5",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "direction": "local_only",
+      "reviewStatus": "needs_sql_review",
+      "intendedEnvironment": "staging_then_production",
+      "proposedAction": "Verify whether this SQL has already been applied under a different version; otherwise stage it as a new migration.",
+      "version": "20260906140000",
+      "file": "supabase/migrations/20260906140000_public_websites_pilot_closeout_phase6_approval_gate.sql",
+      "slug": "public_websites_pilot_closeout_phase6_approval_gate",
+      "sha256": "124f164ce5b38cff081a6bbbc708008057d2f040d48228e3d7d0029f81db209f",
+      "intent": {
+        "domain": "access_control",
+        "evidence": "Inferred from migration filename and SQL content (/rls|policy|organisation_id|organization_id/u)."
+      }
+    },
+    {
+      "version": "20260817065106",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260820110704",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260827102952",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260827104611",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260827131153",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260827133621",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260827133842",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260827133951",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260827185146",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260828203637",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260829203552",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260829203648",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260829203735",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260829204144",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260829204623",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260829204840",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260829210157",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830084850",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830085317",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830085705",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830090204",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830091124",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830091652",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830092741",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830093509",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830094123",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830095017",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830095430",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830100753",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830100807",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830100936",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830101115",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830101259",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830101318",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830101846",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830102633",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830102724",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830102811",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830102846",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830102937",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830103810",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830103913",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830104159",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830104242",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830105816",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830105908",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830110749",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830111228",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830111659",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830113004",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830113531",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260830114448",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260831074851",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260831125342",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260831205101",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260902064058",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260902074632",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260902085246",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260905173226",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260906112843",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260906112854",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260906113258",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    },
+    {
+      "version": "20260906113353",
+      "direction": "remote_only",
+      "reviewStatus": "requires_source_recovery",
+      "intendedEnvironment": "production",
+      "proposedAction": "Recover the original SQL and commit it locally before considering any migration-history repair.",
+      "file": null,
+      "slug": null,
+      "sha256": null,
+      "intent": {
+        "domain": "unknown",
+        "evidence": "The remote migration ledger stores a version, not the original migration filename or SQL."
+      }
+    }
+  ]
+}

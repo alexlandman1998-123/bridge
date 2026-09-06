@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "name": "api-split-production-baseline",
+  "baseCommit": "REPLACE_WITH_THE_CURRENT_PRODUCTION_COMMIT",
+  "candidateCommit": "REPLACE_WITH_THE_RELEASE_CANDIDATE_COMMIT",
+  "environments": {
+    "stagingProjectRef": "REPLACE_WITH_STAGING_PROJECT_REF",
+    "productionProjectRef": "isdowlnollckzvltkasn"
+  },
+  "allowedChangedPaths": [
+    "REPLACE_WITH_EACH_PATH_INCLUDED_IN_THIS_RELEASE"
+  ],
+  "migrations": [],
+  "approval": {
+    "owner": "REPLACE_WITH_RELEASE_OWNER",
+    "rollbackPlan": "REPLACE_WITH_ROLLBACK_PLAN",
+    "createdAt": "REPLACE_WITH_ISO_TIMESTAMP"
+  }
+}
