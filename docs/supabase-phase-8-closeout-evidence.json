@@ -52,6 +52,32 @@
       "rollbackOrNoResidue": "pass",
       "reviewedBy": "Codex production single-row promotion verification",
       "productionEvidenceFile": "docs/production-evidence/20260905101301-bond_finance_runtime.json"
+    },
+    {
+      "version": "20260817174624",
+      "stream": "other",
+      "file": "20260817174624_arch9_inbound_leads_flow.sql",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Codex production catalog and workspace behavior verification",
+      "productionEvidenceFile": "docs/production-evidence/20260817174624-other.json"
+    },
+    {
+      "version": "20260818203652",
+      "stream": "other",
+      "file": "20260818203652_arch9_inbound_leads_snapshot_profile_shape.sql",
+      "stagingLedgerRecorded": true,
+      "productionTargetStateVerified": true,
+      "productionLedgerRecorded": true,
+      "catalogChecks": "pass",
+      "behaviorChecks": "pass",
+      "rollbackOrNoResidue": "pass",
+      "reviewedBy": "Codex production catalog and workspace behavior verification",
+      "productionEvidenceFile": "docs/production-evidence/20260818203652-other.json"
     }
   ]
 }

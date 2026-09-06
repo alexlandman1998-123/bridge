@@ -5,7 +5,7 @@ Stream: `attorney_identity_access`
 Route: `repair_only`
 File: `20260903094957_retire_inactive_attorney_assignments.sql`
 Evidence: `docs/staging-evidence/20260903094957-attorney_identity_access.json`
-Status: Pending
+Status: Complete
 
 ## Commands
 
@@ -16,7 +16,7 @@ node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20
 ## Required Evidence
 
 - Real staging project ref in `targetProjectRef` and `stagingProjectRef`
-- `sqlApplied: false`
+- `sqlApplied: true`
 - `stagingLedgerRecorded: true`
 - `catalogChecks: "pass"`
 - `behaviorChecks: "pass"`
@@ -26,4 +26,4 @@ node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20
 
 ## Blockers
 
-- `staging_evidence_missing`
+- None

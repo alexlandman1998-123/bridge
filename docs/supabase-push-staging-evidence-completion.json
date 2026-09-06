@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-06T16:17:50.843Z",
+  "generatedAt": "2026-09-06T17:32:57.815Z",
   "sourceRouting": "docs/supabase-push-phase-3-action-routing.json",
   "stagingEnv": {
     "projectRef": "vaszuxjeoajeuhlcnzzf",
@@ -27,10 +27,8 @@
       "completionFile": "docs/staging-evidence-completion/20260828203724-bond_finance_runtime.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260828203724 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260828203724 --evidence docs/staging-evidence/20260828203724-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
@@ -46,10 +44,8 @@
       "completionFile": "docs/staging-evidence-completion/20260905100612-bond_finance_runtime.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260905100612 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905100612 --evidence docs/staging-evidence/20260905100612-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
@@ -65,10 +61,8 @@
       "completionFile": "docs/staging-evidence-completion/20260905100908-bond_finance_runtime.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260905100908 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905100908 --evidence docs/staging-evidence/20260905100908-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
@@ -84,13 +78,30 @@
       "completionFile": "docs/staging-evidence-completion/20260905101301-bond_finance_runtime.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
+      "complete": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260905101301 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905101301 --evidence docs/staging-evidence/20260905101301-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163535",
+      "stream": "bond_finance_runtime",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163535_corrective_bond_delivery_reminders.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163535-bond_finance_runtime.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163535-bond_finance_runtime.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
       "complete": false,
       "blockers": [
         "staging_evidence_missing"
       ],
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260905101301 --confirm APPLY_TO_STAGING_ONLY",
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905101301 --evidence docs/staging-evidence/20260905101301-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163535 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163535 --evidence docs/staging-evidence/20260906163535-bond_finance_runtime.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -158,12 +169,10 @@
       "file": "20260903094957_retire_inactive_attorney_assignments.sql",
       "evidenceFile": "docs/staging-evidence/20260903094957-attorney_identity_access.json",
       "completionFile": "docs/staging-evidence-completion/20260903094957-attorney_identity_access.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260903094957 --evidence docs/staging-evidence/20260903094957-attorney_identity_access.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -178,10 +187,8 @@
       "completionFile": "docs/staging-evidence-completion/20260817174624-other.md",
       "expectedSqlApplied": false,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260817174624 --evidence docs/staging-evidence/20260817174624-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -196,12 +203,48 @@
       "completionFile": "docs/staging-evidence-completion/20260818203652-other.md",
       "expectedSqlApplied": false,
       "phase1ReceiptRequired": false,
+      "complete": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260818203652 --evidence docs/staging-evidence/20260818203652-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163540",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163540_corrective_whatsapp_foundation.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163540-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163540-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
       "complete": false,
       "blockers": [
         "staging_evidence_missing"
       ],
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260818203652 --evidence docs/staging-evidence/20260818203652-other.json --confirm APPLY_TO_STAGING_ONLY"
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163540 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163540 --evidence docs/staging-evidence/20260906163540-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "202608200002",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202608200002_whatsapp_template_seed.sql",
+      "evidenceFile": "docs/staging-evidence/202608200002-other.json",
+      "completionFile": "docs/staging-evidence-completion/202608200002-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608200002 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608200002 --evidence docs/staging-evidence/202608200002-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -224,6 +267,63 @@
       ]
     },
     {
+      "version": "20260820174624",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260820174624_admin_dashboard_units_as_listings.sql",
+      "evidenceFile": "docs/staging-evidence/20260820174624-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260820174624-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260820174624 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260820174624 --evidence docs/staging-evidence/20260820174624-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260820192038",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260820192038_admin_dashboard_external_inventory_snapshots.sql",
+      "evidenceFile": "docs/staging-evidence/20260820192038-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260820192038-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260820192038 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260820192038 --evidence docs/staging-evidence/20260820192038-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260820192857",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260820192857_remove_admin_external_inventory_counts.sql",
+      "evidenceFile": "docs/staging-evidence/20260820192857-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260820192857-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260820192857 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260820192857 --evidence docs/staging-evidence/20260820192857-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
       "version": "20260820193436",
       "stream": "other",
       "route": "apply_original",
@@ -240,6 +340,25 @@
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260820193436 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260820193436 --evidence docs/staging-evidence/20260820193436-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163545",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163545_corrective_agency_onboarding.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163545-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163545-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163545 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163545 --evidence docs/staging-evidence/20260906163545-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -275,6 +394,25 @@
       ]
     },
     {
+      "version": "20260824084233",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260824084233_add_prospect_demo_brand_colours.sql",
+      "evidenceFile": "docs/staging-evidence/20260824084233-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260824084233-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260824084233 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260824084233 --evidence docs/staging-evidence/20260824084233-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
       "version": "20260824091732",
       "stream": "other",
       "route": "repair_only",
@@ -291,6 +429,44 @@
       ]
     },
     {
+      "version": "20260824092531",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260824092531_add_prospect_demo_light_dark_logos.sql",
+      "evidenceFile": "docs/staging-evidence/20260824092531-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260824092531-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260824092531 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260824092531 --evidence docs/staging-evidence/20260824092531-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "202608250001",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "202608250001_remove_listing_mandate_activation_guards.sql",
+      "evidenceFile": "docs/staging-evidence/202608250001-other.json",
+      "completionFile": "docs/staging-evidence-completion/202608250001-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608250001 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608250001 --evidence docs/staging-evidence/202608250001-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
       "version": "20260827081713",
       "stream": "other",
       "route": "repair_only",
@@ -304,6 +480,25 @@
       "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260827081713 --evidence docs/staging-evidence/20260827081713-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163551",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163551_corrective_transaction_participant_statuses.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163551-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163551-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163551 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163551 --evidence docs/staging-evidence/20260906163551-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -332,10 +527,8 @@
       "completionFile": "docs/staging-evidence-completion/202608290001-other.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608290001 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608290001 --evidence docs/staging-evidence/202608290001-other.json --confirm APPLY_TO_STAGING_ONLY"
@@ -351,10 +544,8 @@
       "completionFile": "docs/staging-evidence-completion/202608290002-other.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 202608290002 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 202608290002 --evidence docs/staging-evidence/202608290002-other.json --confirm APPLY_TO_STAGING_ONLY"
@@ -408,10 +599,8 @@
       "completionFile": "docs/staging-evidence-completion/20260829111644-other.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260829111644 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260829111644 --evidence docs/staging-evidence/20260829111644-other.json --confirm APPLY_TO_STAGING_ONLY"
@@ -463,14 +652,31 @@
       "file": "20260829195657_seller_onboarding_link_fast_prepare.sql",
       "evidenceFile": "docs/staging-evidence/20260829195657-other.json",
       "completionFile": "docs/staging-evidence-completion/20260829195657-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260829195657 --evidence docs/staging-evidence/20260829195657-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163555",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163555_corrective_seller_onboarding_receipt.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163555-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163555-other.md",
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
       "complete": false,
       "blockers": [
         "staging_evidence_missing"
       ],
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260829195657 --evidence docs/staging-evidence/20260829195657-other.json --confirm APPLY_TO_STAGING_ONLY"
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163555 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163555 --evidence docs/staging-evidence/20260906163555-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -481,14 +687,31 @@
       "file": "20260830125035_attorney_dashboard_rpc_hot_path.sql",
       "evidenceFile": "docs/staging-evidence/20260830125035-other.json",
       "completionFile": "docs/staging-evidence-completion/20260830125035-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260830125035 --evidence docs/staging-evidence/20260830125035-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260830160810",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260830160810_secure_auth_bootstrap_rpc.sql",
+      "evidenceFile": "docs/staging-evidence/20260830160810-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260830160810-other.md",
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
       "complete": false,
       "blockers": [
         "staging_evidence_missing"
       ],
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260830125035 --evidence docs/staging-evidence/20260830125035-other.json --confirm APPLY_TO_STAGING_ONLY"
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260830160810 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260830160810 --evidence docs/staging-evidence/20260830160810-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -531,14 +754,31 @@
       "file": "20260831120000_property24_migration_listing_media_storage.sql",
       "evidenceFile": "docs/staging-evidence/20260831120000-other.json",
       "completionFile": "docs/staging-evidence-completion/20260831120000-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831120000 --evidence docs/staging-evidence/20260831120000-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260831131538",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260831131538_property24_canonical_connection_backfill.sql",
+      "evidenceFile": "docs/staging-evidence/20260831131538-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260831131538-other.md",
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
       "complete": false,
       "blockers": [
         "staging_evidence_missing"
       ],
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831120000 --evidence docs/staging-evidence/20260831120000-other.json --confirm APPLY_TO_STAGING_ONLY"
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260831131538 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831131538 --evidence docs/staging-evidence/20260831131538-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -549,12 +789,10 @@
       "file": "20260831140736_property24_agent_catalog_mappings.sql",
       "evidenceFile": "docs/staging-evidence/20260831140736-other.json",
       "completionFile": "docs/staging-evidence-completion/20260831140736-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831140736 --evidence docs/staging-evidence/20260831140736-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -579,6 +817,25 @@
       ]
     },
     {
+      "version": "20260831153322",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260831153322_staging_rls_warning_view_hardening.sql",
+      "evidenceFile": "docs/staging-evidence/20260831153322-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260831153322-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260831153322 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831153322 --evidence docs/staging-evidence/20260831153322-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
       "version": "20260831190341",
       "stream": "other",
       "route": "apply_original",
@@ -588,13 +845,49 @@
       "completionFile": "docs/staging-evidence-completion/20260831190341-other.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
+      "complete": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260831190341 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831190341 --evidence docs/staging-evidence/20260831190341-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163601",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163601_corrective_development_access_boundary.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163601-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163601-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
       "complete": false,
       "blockers": [
         "staging_evidence_missing"
       ],
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260831190341 --confirm APPLY_TO_STAGING_ONLY",
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260831190341 --evidence docs/staging-evidence/20260831190341-other.json --confirm APPLY_TO_STAGING_ONLY"
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163601 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163601 --evidence docs/staging-evidence/20260906163601-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163615",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163615_corrective_development_org_relationships.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163615-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163615-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163615 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163615 --evidence docs/staging-evidence/20260906163615-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -613,6 +906,44 @@
       ],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260901140943 --evidence docs/staging-evidence/20260901140943-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260901143358",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260901143358_property24_category_listing_facts.sql",
+      "evidenceFile": "docs/staging-evidence/20260901143358-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260901143358-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260901143358 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260901143358 --evidence docs/staging-evidence/20260901143358-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260901145225",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260901145225_property24_commercial_canonical_backfill.sql",
+      "evidenceFile": "docs/staging-evidence/20260901145225-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260901145225-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260901145225 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260901145225 --evidence docs/staging-evidence/20260901145225-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -696,12 +1027,10 @@
       "file": "20260902095249_public_development_organisation_branding.sql",
       "evidenceFile": "docs/staging-evidence/20260902095249-other.json",
       "completionFile": "docs/staging-evidence-completion/20260902095249-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260902095249 --evidence docs/staging-evidence/20260902095249-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -716,10 +1045,8 @@
       "completionFile": "docs/staging-evidence-completion/20260902105303-other.md",
       "expectedSqlApplied": false,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260902105303 --evidence docs/staging-evidence/20260902105303-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -738,6 +1065,25 @@
       "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260903094624 --evidence docs/staging-evidence/20260903094624-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163622",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163622_corrective_development_marketing_collaboration.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163622-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163622-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163622 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163622 --evidence docs/staging-evidence/20260906163622-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -785,10 +1131,8 @@
       "completionFile": "docs/staging-evidence-completion/20260905091122-other.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260905091122 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905091122 --evidence docs/staging-evidence/20260905091122-other.json --confirm APPLY_TO_STAGING_ONLY"
@@ -804,13 +1148,49 @@
       "completionFile": "docs/staging-evidence-completion/20260905095152-other.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
+      "complete": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260905095152 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905095152 --evidence docs/staging-evidence/20260905095152-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163617",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163617_corrective_rental_portal_foundation.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163617-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163617-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
       "complete": false,
       "blockers": [
         "staging_evidence_missing"
       ],
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260905095152 --confirm APPLY_TO_STAGING_ONLY",
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905095152 --evidence docs/staging-evidence/20260905095152-other.json --confirm APPLY_TO_STAGING_ONLY"
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163617 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163617 --evidence docs/staging-evidence/20260906163617-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163629",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163629_corrective_rental_application_lead_linkage.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163629-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163629-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
+      "complete": false,
+      "blockers": [
+        "staging_evidence_missing"
+      ],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163629 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163629 --evidence docs/staging-evidence/20260906163629-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -821,12 +1201,10 @@
       "file": "20260905141005_rental_property_foundation.sql",
       "evidenceFile": "docs/staging-evidence/20260905141005-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141005-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141005 --evidence docs/staging-evidence/20260905141005-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -839,12 +1217,10 @@
       "file": "20260905141007_rental_unit_foundation.sql",
       "evidenceFile": "docs/staging-evidence/20260905141007-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141007-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141007 --evidence docs/staging-evidence/20260905141007-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -876,12 +1252,10 @@
       "file": "20260905141009_rental_landlord_mandate_foundation.sql",
       "evidenceFile": "docs/staging-evidence/20260905141009-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141009-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141009 --evidence docs/staging-evidence/20260905141009-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -894,12 +1268,10 @@
       "file": "20260905141010_rental_vacancy_foundation.sql",
       "evidenceFile": "docs/staging-evidence/20260905141010-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141010-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141010 --evidence docs/staging-evidence/20260905141010-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -931,12 +1303,10 @@
       "file": "20260905141012_rental_vacancy_marketing_foundation.sql",
       "evidenceFile": "docs/staging-evidence/20260905141012-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141012-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141012 --evidence docs/staging-evidence/20260905141012-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -967,12 +1337,10 @@
       "file": "20260905141014_rental_applications_and_applicant_access.sql",
       "evidenceFile": "docs/staging-evidence/20260905141014-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141014-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141014 --evidence docs/staging-evidence/20260905141014-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -985,12 +1353,10 @@
       "file": "20260905141015_rental_application_submission.sql",
       "evidenceFile": "docs/staging-evidence/20260905141015-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141015-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141015 --evidence docs/staging-evidence/20260905141015-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -1003,12 +1369,10 @@
       "file": "20260905141016_rental_application_documents.sql",
       "evidenceFile": "docs/staging-evidence/20260905141016-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141016-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141016 --evidence docs/staging-evidence/20260905141016-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -1021,12 +1385,10 @@
       "file": "20260905141017_rental_application_review_workspace.sql",
       "evidenceFile": "docs/staging-evidence/20260905141017-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141017-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141017 --evidence docs/staging-evidence/20260905141017-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -1039,12 +1401,10 @@
       "file": "20260905141018_rental_application_screening.sql",
       "evidenceFile": "docs/staging-evidence/20260905141018-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141018-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141018 --evidence docs/staging-evidence/20260905141018-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -1059,10 +1419,8 @@
       "completionFile": "docs/staging-evidence-completion/20260905141019-other.md",
       "expectedSqlApplied": false,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141019 --evidence docs/staging-evidence/20260905141019-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -1075,12 +1433,10 @@
       "file": "20260905141020_rental_application_decisions.sql",
       "evidenceFile": "docs/staging-evidence/20260905141020-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905141020-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905141020 --evidence docs/staging-evidence/20260905141020-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -1111,12 +1467,10 @@
       "file": "20260905150420_development_visual_analytics_phase14.sql",
       "evidenceFile": "docs/staging-evidence/20260905150420-other.json",
       "completionFile": "docs/staging-evidence-completion/20260905150420-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260905150420 --evidence docs/staging-evidence/20260905150420-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -1150,10 +1504,8 @@
       "completionFile": "docs/staging-evidence-completion/20260906065759-other.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906065759 --confirm APPLY_TO_STAGING_ONLY",
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906065759 --evidence docs/staging-evidence/20260906065759-other.json --confirm APPLY_TO_STAGING_ONLY"
@@ -1169,13 +1521,30 @@
       "completionFile": "docs/staging-evidence-completion/20260906070515-other.md",
       "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
+      "complete": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906070515 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906070515 --evidence docs/staging-evidence/20260906070515-other.json --confirm APPLY_TO_STAGING_ONLY"
+      ]
+    },
+    {
+      "version": "20260906163638",
+      "stream": "other",
+      "route": "apply_original",
+      "action": "apply_original_after_dependency_check",
+      "file": "20260906163638_corrective_attorney_lane_delegation.sql",
+      "evidenceFile": "docs/staging-evidence/20260906163638-other.json",
+      "completionFile": "docs/staging-evidence-completion/20260906163638-other.md",
+      "expectedSqlApplied": true,
+      "phase1ReceiptRequired": false,
       "complete": false,
       "blockers": [
         "staging_evidence_missing"
       ],
       "commands": [
-        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906070515 --confirm APPLY_TO_STAGING_ONLY",
-        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906070515 --evidence docs/staging-evidence/20260906070515-other.json --confirm APPLY_TO_STAGING_ONLY"
+        "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260906163638 --confirm APPLY_TO_STAGING_ONLY",
+        "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906163638 --evidence docs/staging-evidence/20260906163638-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
     },
     {
@@ -1221,12 +1590,10 @@
       "file": "20260906130000_meta_lead_ads_integration.sql",
       "evidenceFile": "docs/staging-evidence/20260906130000-other.json",
       "completionFile": "docs/staging-evidence-completion/20260906130000-other.md",
-      "expectedSqlApplied": false,
+      "expectedSqlApplied": true,
       "phase1ReceiptRequired": false,
-      "complete": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
+      "complete": true,
+      "blockers": [],
       "commands": [
         "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260906130000 --evidence docs/staging-evidence/20260906130000-other.json --confirm APPLY_TO_STAGING_ONLY"
       ]
@@ -1281,12 +1648,12 @@
     }
   ],
   "routeCounts": {
-    "apply_original": 30,
+    "apply_original": 53,
     "repair_only": 40
   },
   "blockerCounts": {
-    "staging_evidence_missing": 56
+    "staging_evidence_missing": 44
   },
-  "completeCount": 14,
-  "pendingCount": 56
+  "completeCount": 49,
+  "pendingCount": 44
 }

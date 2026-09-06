@@ -1,6 +1,6 @@
 # Supabase Migration Phase 5 Module Drift Report
 
-Generated: 2026-09-06T16:53:03.253Z
+Generated: 2026-09-06T17:36:17.481Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -15,24 +15,24 @@ Phase 5 is read-only. It classifies the remaining migration ledger drift by modu
 | Local migration files | 1000 |
 | Duplicate local timestamps | 0 |
 | Remote ledger fetched | yes |
-| Matched rows | 899 |
+| Matched rows | 901 |
 | Split local/remote versions | 1 |
 | Reviewed split baseline | 0 |
 | Unreviewed split versions | 1 |
-| Pure local-only rows | 100 |
+| Pure local-only rows | 98 |
 | Pure remote-only rows | 0 |
-| Application manifest rows | 100 |
-| Extracted objects checked | 736 |
+| Application manifest rows | 98 |
+| Extracted objects checked | 704 |
 
 ## Module Summary
 
 | Module | Pure Local-Only | Split Rows | Unreviewed Split | All Live | Partial Live | None Live | No Static Objects | Recommendation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | other | 31 | 0 | 0 | 16 | 4 | 9 | 2 | Needs object-level review; do not repair as a batch yet. |
-| workspace_platform | 14 | 0 | 0 | 7 | 2 | 0 | 5 | Needs object-level review; do not repair as a batch yet. |
 | transaction_network | 13 | 0 | 0 | 5 | 2 | 5 | 1 | Needs object-level review; do not repair as a batch yet. |
 | developer_referral | 12 | 0 | 0 | 3 | 6 | 3 | 0 | Needs object-level review; do not repair as a batch yet. |
 | lead_capture_crm | 11 | 1 | 1 | 5 | 4 | 2 | 1 | Resolve split ledger rows before any module repair batch. |
+| workspace_platform | 12 | 0 | 0 | 5 | 2 | 0 | 5 | Needs object-level review; do not repair as a batch yet. |
 | attorney | 6 | 0 | 0 | 2 | 2 | 2 | 0 | Needs object-level review; do not repair as a batch yet. |
 | bond_finance | 5 | 0 | 0 | 0 | 2 | 3 | 0 | Needs object-level review; do not repair as a batch yet. |
 | commercial | 5 | 0 | 0 | 3 | 0 | 0 | 2 | Needs module owner review; static objects were limited or not fetched. |
@@ -83,8 +83,6 @@ These pure local-only migrations have all statically extracted objects present i
 | 20260827091439 | transaction_network | 20260827091439_transaction_setup_owner_rls_access.sql | 2/2 |
 | 20260831071807 | transaction_network | 20260831071807_canonical_transaction_requirements_on_creation.sql | 2/2 |
 | 20260831072652 | transaction_network | 20260831072652_canonical_transaction_requirements_on_creation.sql | 2/2 |
-| 20260817174624 | workspace_platform | 20260817174624_arch9_inbound_leads_flow.sql | 31/31 |
-| 20260818203652 | workspace_platform | 20260818203652_arch9_inbound_leads_snapshot_profile_shape.sql | 1/1 |
 | 202608240001 | workspace_platform | 202608240001_prospect_demo_configs.sql | 7/7 |
 | 20260824091732 | workspace_platform | 20260824091732_align_prospect_demo_admin_rls.sql | 1/1 |
 | 20260901140943 | workspace_platform | 20260901140943_harden_admin_portal_authorization.sql | 3/3 |
@@ -153,7 +151,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | apply_original_after_dependency_check | 37 |
 | corrective_migration_required | 11 |
 | manual_data_review | 12 |
-| repair_only_after_smoke | 40 |
+| repair_only_after_smoke | 38 |
 
 | Version | Stream | Depends On | Module | File | Evidence | Action | Required Gate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -162,9 +160,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 20260905102813 | bond_finance_runtime | 20260905102430 | bond_finance | 20260905102813_bond_application_portal_phase7_submission_readiness.sql | none_live (0/5) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
 | 20260905102934 | bond_finance_runtime | 20260905102813 | bond_finance | 20260905102934_bond_application_portal_phase8_external_submission_record.sql | none_live (0/5) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
 | 20260903094957 | attorney_identity_access | stream preflight | attorney | 20260903094957_retire_inactive_attorney_assignments.sql | all_live (2/2) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 20260817174624 | other | stream preflight | workspace_platform | 20260817174624_arch9_inbound_leads_flow.sql | all_live (31/31) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 20260818203652 | other | 20260817174624 | workspace_platform | 20260818203652_arch9_inbound_leads_snapshot_profile_shape.sql | all_live (1/1) | repair_only_after_smoke | Run module behavior tests; then record only this version as applied. |
-| 202608200001 | other | 20260818203652 | other | 202608200001_whatsapp_integration_foundation.sql | partial_live (2/20) | corrective_migration_required | Diff live definitions, create an idempotent corrective migration, and verify both outcomes. |
+| 202608200001 | other | stream preflight | other | 202608200001_whatsapp_integration_foundation.sql | partial_live (2/20) | corrective_migration_required | Diff live definitions, create an idempotent corrective migration, and verify both outcomes. |
 | 202608200002 | other | 202608200001 | canonical_documents | 202608200002_whatsapp_template_seed.sql | no_static_objects | manual_data_review | Verify the intended data outcome and idempotency manually before deciding apply or repair. |
 | 20260820160621 | other | 202608200002 | other | 20260820160621_journey_stage_overrides_phase2.sql | none_live (0/9) | apply_original_after_dependency_check | Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks. |
 | 20260820174624 | other | 20260820160621 | workspace_platform | 20260820174624_admin_dashboard_units_as_listings.sql | no_static_objects | manual_data_review | Verify the intended data outcome and idempotency manually before deciding apply or repair. |
@@ -349,8 +345,6 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | 20260831072652 | pure_local_only | transaction_network | 20260831072652_canonical_transaction_requirements_on_creation.sql | all_live | 2/2 |
 | 20260831131538 | pure_local_only | transaction_network | 20260831131538_property24_canonical_connection_backfill.sql | no_static_objects | n/a |
 | 20260906163551 | pure_local_only | transaction_network | 20260906163551_corrective_transaction_participant_statuses.sql | partial_live | 1/3 |
-| 20260817174624 | pure_local_only | workspace_platform | 20260817174624_arch9_inbound_leads_flow.sql | all_live | 31/31 |
-| 20260818203652 | pure_local_only | workspace_platform | 20260818203652_arch9_inbound_leads_snapshot_profile_shape.sql | all_live | 1/1 |
 | 20260820174624 | pure_local_only | workspace_platform | 20260820174624_admin_dashboard_units_as_listings.sql | no_static_objects | n/a |
 | 20260820192038 | pure_local_only | workspace_platform | 20260820192038_admin_dashboard_external_inventory_snapshots.sql | no_static_objects | n/a |
 | 20260820192857 | pure_local_only | workspace_platform | 20260820192857_remove_admin_external_inventory_counts.sql | no_static_objects | n/a |
@@ -368,8 +362,8 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 
 | Metric | Value |
 | --- | --- |
-| Static objects extracted | 736 |
-| Catalog rows returned | 736 |
+| Static objects extracted | 704 |
+| Catalog rows returned | 704 |
 | Object check command | ok |
 
 ## Command Evidence
@@ -377,7 +371,7 @@ This is a conservative staging manifest, not authorization to apply SQL. `Depend
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-74562.sql --output-format json | ok | Initialising login role... |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase5-object-checks-86804.sql --output-format json | ok | Initialising login role... |
 
 ## Next Step
 

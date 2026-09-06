@@ -5,7 +5,7 @@ Stream: `bond_finance_runtime`
 Route: `apply_original`
 File: `20260828203724_bond_application_idempotent_document_reconciliation.sql`
 Evidence: `docs/staging-evidence/20260828203724-bond_finance_runtime.json`
-Status: Pending
+Status: Complete
 
 ## Commands
 
@@ -30,4 +30,4 @@ node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20
 
 ## Blockers
 
-- `staging_evidence_missing`
+- None

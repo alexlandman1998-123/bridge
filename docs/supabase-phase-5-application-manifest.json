@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-06T16:53:03.253Z",
+  "generatedAt": "2026-09-06T17:36:17.481Z",
   "linkedProjectRef": "isdowlnollckzvltkasn",
   "status": "MODULE_AUDIT_READY",
   "rows": [
@@ -64,33 +64,9 @@
       "gate": "Run module behavior tests; then record only this version as applied."
     },
     {
-      "version": "20260817174624",
-      "stream": "other",
-      "dependsOn": "stream preflight",
-      "module": "workspace_platform",
-      "file": "20260817174624_arch9_inbound_leads_flow.sql",
-      "objectStatus": "all_live",
-      "liveCount": 31,
-      "objectCount": 31,
-      "action": "repair_only_after_smoke",
-      "gate": "Run module behavior tests; then record only this version as applied."
-    },
-    {
-      "version": "20260818203652",
-      "stream": "other",
-      "dependsOn": "20260817174624",
-      "module": "workspace_platform",
-      "file": "20260818203652_arch9_inbound_leads_snapshot_profile_shape.sql",
-      "objectStatus": "all_live",
-      "liveCount": 1,
-      "objectCount": 1,
-      "action": "repair_only_after_smoke",
-      "gate": "Run module behavior tests; then record only this version as applied."
-    },
-    {
       "version": "202608200001",
       "stream": "other",
-      "dependsOn": "20260818203652",
+      "dependsOn": "stream preflight",
       "module": "other",
       "file": "202608200001_whatsapp_integration_foundation.sql",
       "objectStatus": "partial_live",
