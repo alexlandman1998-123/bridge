@@ -1,0 +1,21 @@
+{
+  "version": "20260831072652",
+  "stream": "other",
+  "file": "20260831072652_canonical_transaction_requirements_on_creation.sql",
+  "productionRoute": "production_no_sql_record_after_smoke",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Complete after production smoke verification and production ledger recording. No production SQL should be applied."
+  ]
+}

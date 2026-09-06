@@ -1,0 +1,21 @@
+{
+  "version": "20260906070515",
+  "stream": "other",
+  "file": "20260906070515_attorney_coordination_nomination_phase2.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "version": "20260905091122",
+  "stream": "other",
+  "file": "20260905091122_document_trust_phase3_role_scoped_projections.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ]
+}

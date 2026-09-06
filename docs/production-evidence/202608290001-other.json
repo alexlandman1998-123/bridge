@@ -1,0 +1,21 @@
+{
+  "version": "202608290001",
+  "stream": "other",
+  "file": "202608290001_lead_multi_agent_assignments.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ]
+}

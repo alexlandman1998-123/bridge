@@ -1,0 +1,23 @@
+{
+  "version": "20260830125035",
+  "stream": "other",
+  "file": "20260830125035_attorney_dashboard_rpc_hot_path.sql",
+  "productionRoute": "production_no_sql_record_after_smoke",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": false,
+  "promotionBlockers": [
+    "staging_evidence_missing"
+  ],
+  "notes": [
+    "Complete after production smoke verification and production ledger recording. No production SQL should be applied."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "version": "20260824091732",
+  "stream": "other",
+  "file": "20260824091732_align_prospect_demo_admin_rls.sql",
+  "productionRoute": "production_no_sql_record_after_smoke",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": false,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": true,
+  "promotionBlockers": [],
+  "notes": [
+    "Complete after production smoke verification and production ledger recording. No production SQL should be applied."
+  ]
+}

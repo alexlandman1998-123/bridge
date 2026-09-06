@@ -1,0 +1,23 @@
+{
+  "version": "20260905141008",
+  "stream": "other",
+  "file": "20260905141008_rental_portfolio_foundation.sql",
+  "productionRoute": "production_apply_sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": false,
+  "productionTargetStateVerified": false,
+  "productionLedgerRecorded": false,
+  "catalogChecks": "pending",
+  "behaviorChecks": "pending",
+  "rollbackOrNoResidue": "pending",
+  "reviewedBy": "",
+  "capturedAt": null,
+  "promotionReady": false,
+  "promotionBlockers": [
+    "staging_evidence_missing"
+  ],
+  "notes": [
+    "Complete after production SQL apply, target-state verification, and production ledger recording."
+  ]
+}

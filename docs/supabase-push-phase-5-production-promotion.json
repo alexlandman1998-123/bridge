@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-09-06T16:16:12.128Z",
+  "generatedAt": "2026-09-06T16:55:20.463Z",
   "productionProjectRef": "isdowlnollckzvltkasn",
   "productionEnvConfigured": false,
   "recoveryLock": {
@@ -17,11 +17,12 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260828203724-bond_finance_runtime.json",
       "productionEvidenceFile": "docs/production-evidence/20260828203724-bond_finance_runtime.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260828203724 --staging-evidence docs/staging-evidence/20260828203724-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260828203724 --staging-evidence docs/staging-evidence/20260828203724-bond_finance_runtime.json --production-evidence docs/production-evidence/20260828203724-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
     },
     {
       "version": "20260905100612",
@@ -32,11 +33,12 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260905100612-bond_finance_runtime.json",
       "productionEvidenceFile": "docs/production-evidence/20260905100612-bond_finance_runtime.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260905100612 --staging-evidence docs/staging-evidence/20260905100612-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260905100612 --staging-evidence docs/staging-evidence/20260905100612-bond_finance_runtime.json --production-evidence docs/production-evidence/20260905100612-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
     },
     {
       "version": "20260905100908",
@@ -47,11 +49,12 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260905100908-bond_finance_runtime.json",
       "productionEvidenceFile": "docs/production-evidence/20260905100908-bond_finance_runtime.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260905100908 --staging-evidence docs/staging-evidence/20260905100908-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260905100908 --staging-evidence docs/staging-evidence/20260905100908-bond_finance_runtime.json --production-evidence docs/production-evidence/20260905100908-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
     },
     {
       "version": "20260905101301",
@@ -62,24 +65,25 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260905101301-bond_finance_runtime.json",
       "productionEvidenceFile": "docs/production-evidence/20260905101301-bond_finance_runtime.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260905101301 --staging-evidence docs/staging-evidence/20260905101301-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260905101301 --staging-evidence docs/staging-evidence/20260905101301-bond_finance_runtime.json --production-evidence docs/production-evidence/20260905101301-bond_finance_runtime.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "20260906163535",
+      "stream": "bond_finance_runtime",
+      "file": "20260906163535_corrective_bond_delivery_reminders.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163535-bond_finance_runtime.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163535-bond_finance_runtime.json",
       "readyForProduction": false,
       "blockers": [
         "staging_evidence_missing"
-      ],
-      "commands": []
-    },
-    {
-      "version": "20260905101931",
-      "stream": "bond_finance_runtime",
-      "file": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260905101931-bond_finance_runtime.json",
-      "productionEvidenceFile": "docs/production-evidence/20260905101931-bond_finance_runtime.json",
-      "readyForProduction": false,
-      "blockers": [
-        "upstream_corrective_required"
       ],
       "commands": []
     },
@@ -174,17 +178,17 @@
       "commands": []
     },
     {
-      "version": "202608200001",
+      "version": "20260906163540",
       "stream": "other",
-      "file": "202608200001_whatsapp_integration_foundation.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/202608200001-other.json",
-      "productionEvidenceFile": "docs/production-evidence/202608200001-other.json",
+      "file": "20260906163540_corrective_whatsapp_foundation.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163540-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163540-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_corrective_required"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -192,14 +196,14 @@
       "version": "202608200002",
       "stream": "other",
       "file": "202608200002_whatsapp_template_seed.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/202608200002-other.json",
       "productionEvidenceFile": "docs/production-evidence/202608200002-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -222,14 +226,14 @@
       "version": "20260820174624",
       "stream": "other",
       "file": "20260820174624_admin_dashboard_units_as_listings.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260820174624-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260820174624-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -237,14 +241,14 @@
       "version": "20260820192038",
       "stream": "other",
       "file": "20260820192038_admin_dashboard_external_inventory_snapshots.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260820192038-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260820192038-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -252,14 +256,14 @@
       "version": "20260820192857",
       "stream": "other",
       "file": "20260820192857_remove_admin_external_inventory_counts.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260820192857-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260820192857-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -279,17 +283,17 @@
       "commands": []
     },
     {
-      "version": "202608230001",
+      "version": "20260906163545",
       "stream": "other",
-      "file": "202608230001_agency_onboarding_flow.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/202608230001-other.json",
-      "productionEvidenceFile": "docs/production-evidence/202608230001-other.json",
+      "file": "20260906163545_corrective_agency_onboarding.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163545-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163545-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_corrective_required"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -327,14 +331,14 @@
       "version": "20260824084233",
       "stream": "other",
       "file": "20260824084233_add_prospect_demo_brand_colours.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260824084233-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260824084233-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -357,14 +361,14 @@
       "version": "20260824092531",
       "stream": "other",
       "file": "20260824092531_add_prospect_demo_light_dark_logos.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260824092531-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260824092531-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -372,14 +376,14 @@
       "version": "202608250001",
       "stream": "other",
       "file": "202608250001_remove_listing_mandate_activation_guards.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/202608250001-other.json",
       "productionEvidenceFile": "docs/production-evidence/202608250001-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -399,17 +403,17 @@
       ]
     },
     {
-      "version": "20260827083108",
+      "version": "20260906163551",
       "stream": "other",
-      "file": "20260827083108_normalize_transaction_participant_statuses.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260827083108-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260827083108-other.json",
+      "file": "20260906163551_corrective_transaction_participant_statuses.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163551-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163551-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_corrective_required"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -437,11 +441,12 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/202608290001-other.json",
       "productionEvidenceFile": "docs/production-evidence/202608290001-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202608290001 --staging-evidence docs/staging-evidence/202608290001-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202608290001 --staging-evidence docs/staging-evidence/202608290001-other.json --production-evidence docs/production-evidence/202608290001-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
     },
     {
       "version": "202608290002",
@@ -452,11 +457,12 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/202608290002-other.json",
       "productionEvidenceFile": "docs/production-evidence/202608290002-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 202608290002 --staging-evidence docs/staging-evidence/202608290002-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 202608290002 --staging-evidence docs/staging-evidence/202608290002-other.json --production-evidence docs/production-evidence/202608290002-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
     },
     {
       "version": "20260829103738",
@@ -497,11 +503,12 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260829111644-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260829111644-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260829111644 --staging-evidence docs/staging-evidence/20260829111644-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260829111644 --staging-evidence docs/staging-evidence/20260829111644-other.json --production-evidence docs/production-evidence/20260829111644-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
     },
     {
       "version": "20260829112135",
@@ -549,17 +556,17 @@
       "commands": []
     },
     {
-      "version": "20260829204153",
+      "version": "20260906163555",
       "stream": "other",
-      "file": "20260829204153_seller_onboarding_completion_receipt_and_projection_rls.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260829204153-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260829204153-other.json",
+      "file": "20260906163555_corrective_seller_onboarding_receipt.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163555-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163555-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_corrective_required"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -582,14 +589,14 @@
       "version": "20260830160810",
       "stream": "other",
       "file": "20260830160810_secure_auth_bootstrap_rpc.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260830160810-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260830160810-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -642,14 +649,14 @@
       "version": "20260831131538",
       "stream": "other",
       "file": "20260831131538_property24_canonical_connection_backfill.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260831131538-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260831131538-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -687,14 +694,14 @@
       "version": "20260831153322",
       "stream": "other",
       "file": "20260831153322_staging_rls_warning_view_hardening.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260831153322-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260831153322-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -707,6 +714,22 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260831190341-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260831190341-other.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260831190341 --staging-evidence docs/staging-evidence/20260831190341-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260831190341 --staging-evidence docs/staging-evidence/20260831190341-other.json --production-evidence docs/production-evidence/20260831190341-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "20260906163601",
+      "stream": "other",
+      "file": "20260906163601_corrective_development_access_boundary.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163601-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163601-other.json",
       "readyForProduction": false,
       "blockers": [
         "staging_evidence_missing"
@@ -714,32 +737,17 @@
       "commands": []
     },
     {
-      "version": "20260901075131",
+      "version": "20260906163615",
       "stream": "other",
-      "file": "20260901075131_public_development_landing_and_access_boundary.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260901075131-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260901075131-other.json",
+      "file": "20260906163615_corrective_development_org_relationships.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163615-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163615-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_corrective_required"
-      ],
-      "commands": []
-    },
-    {
-      "version": "20260901110612",
-      "stream": "other",
-      "file": "20260901110612_development_organisation_relationship_foundation.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260901110612-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260901110612-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "upstream_corrective_required"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -762,14 +770,14 @@
       "version": "20260901143358",
       "stream": "other",
       "file": "20260901143358_property24_category_listing_facts.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260901143358-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260901143358-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -777,14 +785,14 @@
       "version": "20260901145225",
       "stream": "other",
       "file": "20260901145225_property24_commercial_canonical_backfill.sql",
-      "action": "manual_data_review",
-      "route": "manual_review",
-      "productionRoute": "blocked_manual_review",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260901145225-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260901145225-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_manual_review"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -894,17 +902,17 @@
       ]
     },
     {
-      "version": "20260903122031",
+      "version": "20260906163622",
       "stream": "other",
-      "file": "20260903122031_development_marketing_collaboration_foundation.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260903122031-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260903122031-other.json",
+      "file": "20260906163622_corrective_development_marketing_collaboration.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163622-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163622-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_corrective_required"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -947,11 +955,12 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260905091122-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260905091122-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260905091122 --staging-evidence docs/staging-evidence/20260905091122-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260905091122 --staging-evidence docs/staging-evidence/20260905091122-other.json --production-evidence docs/production-evidence/20260905091122-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
     },
     {
       "version": "20260905095152",
@@ -962,6 +971,22 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260905095152-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260905095152-other.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260905095152 --staging-evidence docs/staging-evidence/20260905095152-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260905095152 --staging-evidence docs/staging-evidence/20260905095152-other.json --production-evidence docs/production-evidence/20260905095152-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "20260906163617",
+      "stream": "other",
+      "file": "20260906163617_corrective_rental_portal_foundation.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163617-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163617-other.json",
       "readyForProduction": false,
       "blockers": [
         "staging_evidence_missing"
@@ -969,32 +994,17 @@
       "commands": []
     },
     {
-      "version": "20260905120250",
+      "version": "20260906163629",
       "stream": "other",
-      "file": "20260905120250_rental_portal_foundation.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260905120250-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260905120250-other.json",
+      "file": "20260906163629_corrective_rental_application_lead_linkage.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163629-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163629-other.json",
       "readyForProduction": false,
       "blockers": [
-        "upstream_corrective_required"
-      ],
-      "commands": []
-    },
-    {
-      "version": "20260905125639",
-      "stream": "other",
-      "file": "20260905125639_rental_application_lead_linkage.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260905125639-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260905125639-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "upstream_corrective_required"
+        "staging_evidence_missing"
       ],
       "commands": []
     },
@@ -1277,11 +1287,12 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260906065759-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260906065759-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "staging_evidence_missing"
-      ],
-      "commands": []
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260906065759 --staging-evidence docs/staging-evidence/20260906065759-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260906065759 --staging-evidence docs/staging-evidence/20260906065759-other.json --production-evidence docs/production-evidence/20260906065759-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
     },
     {
       "version": "20260906070515",
@@ -1292,24 +1303,25 @@
       "productionRoute": "production_apply_sql",
       "stagingEvidenceFile": "docs/staging-evidence/20260906070515-other.json",
       "productionEvidenceFile": "docs/production-evidence/20260906070515-other.json",
+      "readyForProduction": true,
+      "blockers": [],
+      "commands": [
+        "node scripts/supabase-phase7-production-execution.mjs --apply-sql --version 20260906070515 --staging-evidence docs/staging-evidence/20260906070515-other.json --confirm APPLY_TO_PRODUCTION",
+        "node scripts/supabase-phase7-production-execution.mjs --record-applied --version 20260906070515 --staging-evidence docs/staging-evidence/20260906070515-other.json --production-evidence docs/production-evidence/20260906070515-other.json --confirm APPLY_TO_PRODUCTION"
+      ]
+    },
+    {
+      "version": "20260906163638",
+      "stream": "other",
+      "file": "20260906163638_corrective_attorney_lane_delegation.sql",
+      "action": "apply_original_after_dependency_check",
+      "route": "apply_original",
+      "productionRoute": "production_apply_sql",
+      "stagingEvidenceFile": "docs/staging-evidence/20260906163638-other.json",
+      "productionEvidenceFile": "docs/production-evidence/20260906163638-other.json",
       "readyForProduction": false,
       "blockers": [
         "staging_evidence_missing"
-      ],
-      "commands": []
-    },
-    {
-      "version": "20260906070938",
-      "stream": "other",
-      "file": "20260906070938_attorney_lane_delegation_phase3.sql",
-      "action": "corrective_migration_required",
-      "route": "corrective_required",
-      "productionRoute": "blocked_corrective_required",
-      "stagingEvidenceFile": "docs/staging-evidence/20260906070938-other.json",
-      "productionEvidenceFile": "docs/production-evidence/20260906070938-other.json",
-      "readyForProduction": false,
-      "blockers": [
-        "upstream_corrective_required"
       ],
       "commands": []
     },
@@ -1405,11 +1417,9 @@
     }
   ],
   "routeCounts": {
-    "production_apply_sql": 30,
-    "blocked_corrective_required": 11,
-    "production_no_sql_record_after_smoke": 40,
-    "blocked_manual_review": 12
+    "production_apply_sql": 53,
+    "production_no_sql_record_after_smoke": 40
   },
-  "readyCount": 14,
-  "blockedCount": 79
+  "readyCount": 26,
+  "blockedCount": 67
 }
