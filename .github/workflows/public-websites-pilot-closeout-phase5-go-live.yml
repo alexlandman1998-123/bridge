@@ -1,0 +1,120 @@
+name: Public Websites Pilot Closeout Phase 5 Go-live
+
+on:
+  pull_request:
+    paths:
+      - 'apps/websites/**'
+      - 'supabase/migrations/*public_websites*'
+      - 'supabase/tests/public_websites*'
+      - 'the-it-guy/scripts/public-websites-pilot-closeout-phase5*'
+      - 'docs/public-websites-pilot-closeout-phase5*'
+      - '.github/workflows/public-websites-pilot-closeout-phase5-go-live.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Pre-link operation only
+        required: true
+        default: preflight
+        type: choice
+        options: [preflight, approve]
+      organisation_id:
+        description: Exact approved agency UUID
+        required: true
+        type: string
+      hostname:
+        description: Intended client-facing hostname
+        required: true
+        type: string
+      approval_json:
+        description: Named client approval JSON; required only for approve
+        required: false
+        type: string
+      phase4_evidence_json:
+        description: Immutable Phase 4 ACTIVE evidence JSON; required only for approve
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Verify Phase 5 pre-link contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/websites/package-lock.json
+            the-it-guy/package-lock.json
+      - run: npm ci
+        working-directory: apps/websites
+      - run: npm ci
+        working-directory: the-it-guy
+      - run: node scripts/public-websites-pilot-closeout-phase5-go-live.test.mjs
+        working-directory: the-it-guy
+      - run: npm run typecheck && npm run build
+        working-directory: apps/websites
+
+  pre-link-operation:
+    name: Controlled Phase 5 pre-link operation
+    needs: source-contract
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: public-websites-production
+    env:
+      SUPABASE_PRODUCTION_PROJECT_REF: ${{ secrets.SUPABASE_PRODUCTION_PROJECT_REF }}
+      SUPABASE_PRODUCTION_URL: ${{ secrets.SUPABASE_PRODUCTION_URL }}
+      SUPABASE_PRODUCTION_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_PRODUCTION_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: the-it-guy
+      - name: Materialise approval inputs
+        if: inputs.action == 'approve'
+        env:
+          APPROVAL_JSON: ${{ inputs.approval_json }}
+          PHASE4_EVIDENCE_JSON: ${{ inputs.phase4_evidence_json }}
+        run: |
+          node -e "const fs=require('node:fs'); for (const [name,key] of [['approval.json','APPROVAL_JSON'],['phase4.json','PHASE4_EVIDENCE_JSON']]) { if(!process.env[key]) throw new Error(key+' is required'); fs.writeFileSync(name,process.env[key],{mode:0o400}) }"
+        working-directory: the-it-guy
+      - name: Capture read-only pre-link evidence
+        if: inputs.action == 'preflight'
+        run: |
+          node scripts/public-websites-pilot-closeout-phase5-go-live.mjs \
+            --preflight \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --hostname "${{ inputs.hostname }}" \
+            --output phase5-pre-link-evidence.json
+        working-directory: the-it-guy
+      - name: Record named client approval without linking the domain
+        if: inputs.action == 'approve'
+        run: |
+          node scripts/public-websites-pilot-closeout-phase5-go-live.mjs \
+            --approve \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --hostname "${{ inputs.hostname }}" \
+            --approval approval.json \
+            --phase4-evidence phase4.json \
+            --operator "github:${{ github.actor }}" \
+            --confirm AUTHORIZE_KINGSTONS_CLIENT_DOMAIN_GO_LIVE \
+            --output phase5-approval-evidence.json
+        working-directory: the-it-guy
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-websites-phase5-${{ inputs.action }}
+          path: the-it-guy/phase5-*.json
+          if-no-files-found: warn
+          retention-days: 90
+
+# This workflow intentionally contains no Vercel domain, promote, DNS or email mutation.
