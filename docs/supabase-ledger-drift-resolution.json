@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-11T15:59:05.701Z",
+  "generatedAt": "2026-09-06T15:50:50.059Z",
   "status": "LEDGER_DRIFT_BLOCKED",
   "closeoutSource": "scripts/supabase-phase8-closeout.mjs",
   "splitInvestigationSource": "scripts/supabase-phase6-split-ledger-investigation.mjs",
@@ -7,38 +7,22 @@
   "splitCommandStatus": 0,
   "resolved": false,
   "reviewedSplitVersions": [
-    "202606010001",
-    "202606030007",
-    "202606030008",
-    "202606030009",
-    "202606030010",
-    "202606030011",
-    "202606040001",
-    "202606040002",
-    "202606040004",
-    "202606040005",
-    "202606050001",
-    "202606080002",
-    "202606090010",
-    "202606110004",
-    "202606110005",
-    "202606110006",
-    "202606110007"
+    "202609030001"
   ],
   "unresolvedSplitVersions": [],
   "counts": {
-    "pureLocalOnly": 2,
-    "pureRemoteOnly": 0,
+    "pureLocalOnly": 95,
+    "pureRemoteOnly": 63,
     "divergent": 0,
-    "splitRows": 17,
-    "reviewedSplitRows": 17,
+    "splitRows": 1,
+    "reviewedSplitRows": 1,
     "unresolvedSplitRows": 0,
-    "blockers": 2
+    "blockers": 158
   },
   "rows": {
     "pureLocalOnly": [
       {
-        "version": "202607310007",
+        "version": "20260817174624",
         "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
@@ -47,7 +31,844 @@
         "command": ""
       },
       {
-        "version": "202607310008",
+        "version": "20260818203652",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202608200001",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202608200002",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260820160621",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260820174624",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260820192038",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260820192857",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260820193436",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202608230001",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202608230002",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202608240001",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260824084233",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260824091732",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260824092531",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202608250001",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260827081713",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260827083108",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260827091439",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260828203724",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202608290001",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "202608290002",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260829103738",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260829105514",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260829111644",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260829112135",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260829112530",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260829195657",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260829204153",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260830125035",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260830160810",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260831071807",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260831072652",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260831120000",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260831131538",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260831140736",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260831150740",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260831153322",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260831190341",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901075131",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901110612",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901140943",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901143358",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901145225",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901165511",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901170254",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901170909",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260901174924",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260902074000",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260902085300",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260902095249",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260902105303",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260903094624",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260903094957",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260903122031",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260903130012",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905090353",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905091122",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905095152",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905100612",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905100908",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905101301",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905101931",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905102430",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905102813",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905102934",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905120250",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905125639",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141005",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141007",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141008",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141009",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141010",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141011",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141012",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141013",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141014",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141015",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141016",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141017",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141018",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141019",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141020",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905141021",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260905150420",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906063435",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906065759",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906070515",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906070938",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906071644",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906123000",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906130000",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906133000",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906134500",
+        "resolution": "unmanaged_pure_local_only",
+        "resolved": false,
+        "blockers": [
+          "missing_production_promotion_plan"
+        ],
+        "command": ""
+      },
+      {
+        "version": "20260906140000",
         "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
@@ -56,156 +877,580 @@
         "command": ""
       }
     ],
-    "pureRemoteOnly": [],
+    "pureRemoteOnly": [
+      {
+        "version": "20260817065106",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260817065106_*.sql"
+      },
+      {
+        "version": "20260820110704",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260820110704_*.sql"
+      },
+      {
+        "version": "20260827102952",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260827102952_*.sql"
+      },
+      {
+        "version": "20260827104611",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260827104611_*.sql"
+      },
+      {
+        "version": "20260827131153",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260827131153_*.sql"
+      },
+      {
+        "version": "20260827133621",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260827133621_*.sql"
+      },
+      {
+        "version": "20260827133842",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260827133842_*.sql"
+      },
+      {
+        "version": "20260827133951",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260827133951_*.sql"
+      },
+      {
+        "version": "20260827185146",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260827185146_*.sql"
+      },
+      {
+        "version": "20260828203637",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260828203637_*.sql"
+      },
+      {
+        "version": "20260829203552",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260829203552_*.sql"
+      },
+      {
+        "version": "20260829203648",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260829203648_*.sql"
+      },
+      {
+        "version": "20260829203735",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260829203735_*.sql"
+      },
+      {
+        "version": "20260829204144",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260829204144_*.sql"
+      },
+      {
+        "version": "20260829204623",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260829204623_*.sql"
+      },
+      {
+        "version": "20260829204840",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260829204840_*.sql"
+      },
+      {
+        "version": "20260829210157",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260829210157_*.sql"
+      },
+      {
+        "version": "20260830084850",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830084850_*.sql"
+      },
+      {
+        "version": "20260830085317",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830085317_*.sql"
+      },
+      {
+        "version": "20260830085705",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830085705_*.sql"
+      },
+      {
+        "version": "20260830090204",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830090204_*.sql"
+      },
+      {
+        "version": "20260830091124",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830091124_*.sql"
+      },
+      {
+        "version": "20260830091652",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830091652_*.sql"
+      },
+      {
+        "version": "20260830092741",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830092741_*.sql"
+      },
+      {
+        "version": "20260830093509",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830093509_*.sql"
+      },
+      {
+        "version": "20260830094123",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830094123_*.sql"
+      },
+      {
+        "version": "20260830095017",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830095017_*.sql"
+      },
+      {
+        "version": "20260830095430",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830095430_*.sql"
+      },
+      {
+        "version": "20260830100753",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830100753_*.sql"
+      },
+      {
+        "version": "20260830100807",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830100807_*.sql"
+      },
+      {
+        "version": "20260830100936",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830100936_*.sql"
+      },
+      {
+        "version": "20260830101115",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830101115_*.sql"
+      },
+      {
+        "version": "20260830101259",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830101259_*.sql"
+      },
+      {
+        "version": "20260830101318",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830101318_*.sql"
+      },
+      {
+        "version": "20260830101846",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830101846_*.sql"
+      },
+      {
+        "version": "20260830102633",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830102633_*.sql"
+      },
+      {
+        "version": "20260830102724",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830102724_*.sql"
+      },
+      {
+        "version": "20260830102811",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830102811_*.sql"
+      },
+      {
+        "version": "20260830102846",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830102846_*.sql"
+      },
+      {
+        "version": "20260830102937",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830102937_*.sql"
+      },
+      {
+        "version": "20260830103810",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830103810_*.sql"
+      },
+      {
+        "version": "20260830103913",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830103913_*.sql"
+      },
+      {
+        "version": "20260830104159",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830104159_*.sql"
+      },
+      {
+        "version": "20260830104242",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830104242_*.sql"
+      },
+      {
+        "version": "20260830105816",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830105816_*.sql"
+      },
+      {
+        "version": "20260830105908",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830105908_*.sql"
+      },
+      {
+        "version": "20260830110749",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830110749_*.sql"
+      },
+      {
+        "version": "20260830111228",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830111228_*.sql"
+      },
+      {
+        "version": "20260830111659",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830111659_*.sql"
+      },
+      {
+        "version": "20260830113004",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830113004_*.sql"
+      },
+      {
+        "version": "20260830113531",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830113531_*.sql"
+      },
+      {
+        "version": "20260830114448",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260830114448_*.sql"
+      },
+      {
+        "version": "20260831074851",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260831074851_*.sql"
+      },
+      {
+        "version": "20260831125342",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260831125342_*.sql"
+      },
+      {
+        "version": "20260831205101",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260831205101_*.sql"
+      },
+      {
+        "version": "20260902064058",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260902064058_*.sql"
+      },
+      {
+        "version": "20260902074632",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260902074632_*.sql"
+      },
+      {
+        "version": "20260902085246",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260902085246_*.sql"
+      },
+      {
+        "version": "20260905173226",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260905173226_*.sql"
+      },
+      {
+        "version": "20260906112843",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260906112843_*.sql"
+      },
+      {
+        "version": "20260906112854",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260906112854_*.sql"
+      },
+      {
+        "version": "20260906113258",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260906113258_*.sql"
+      },
+      {
+        "version": "20260906113353",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260906113353_*.sql"
+      }
+    ],
     "divergent": [],
     "splitRows": [
       {
-        "version": "202606010001",
-        "module": "transaction_network",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606030007",
+        "version": "202609030001",
         "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606030008",
-        "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606030009",
-        "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606030010",
-        "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606030011",
-        "module": "notification_automation",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606040001",
-        "module": "workspace_platform",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606040002",
-        "module": "workspace_platform",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606040004",
-        "module": "workspace_platform",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606040005",
-        "module": "workspace_platform",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606050001",
-        "module": "bond_finance",
-        "objectStatus": "no_static_objects",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_manual_sql",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606080002",
-        "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606090010",
-        "module": "other",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606110004",
-        "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606110005",
-        "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606110006",
-        "module": "commercial",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
-      },
-      {
-        "version": "202606110007",
-        "module": "commercial",
         "objectStatus": "all_live",
         "remoteNameStatus": "remote_name_matches",
         "decision": "confirmed_live_split",
@@ -215,7 +1460,163 @@
     ]
   },
   "blockers": [
-    "202607310007:missing_production_promotion_plan",
-    "202607310008:missing_production_promotion_plan"
+    "20260817174624:missing_production_promotion_plan",
+    "20260818203652:missing_production_promotion_plan",
+    "202608200001:missing_production_promotion_plan",
+    "202608200002:missing_production_promotion_plan",
+    "20260820160621:missing_production_promotion_plan",
+    "20260820174624:missing_production_promotion_plan",
+    "20260820192038:missing_production_promotion_plan",
+    "20260820192857:missing_production_promotion_plan",
+    "20260820193436:missing_production_promotion_plan",
+    "202608230001:missing_production_promotion_plan",
+    "202608230002:missing_production_promotion_plan",
+    "202608240001:missing_production_promotion_plan",
+    "20260824084233:missing_production_promotion_plan",
+    "20260824091732:missing_production_promotion_plan",
+    "20260824092531:missing_production_promotion_plan",
+    "202608250001:missing_production_promotion_plan",
+    "20260827081713:missing_production_promotion_plan",
+    "20260827083108:missing_production_promotion_plan",
+    "20260827091439:missing_production_promotion_plan",
+    "20260828203724:missing_production_promotion_plan",
+    "202608290001:missing_production_promotion_plan",
+    "202608290002:missing_production_promotion_plan",
+    "20260829103738:missing_production_promotion_plan",
+    "20260829105514:missing_production_promotion_plan",
+    "20260829111644:missing_production_promotion_plan",
+    "20260829112135:missing_production_promotion_plan",
+    "20260829112530:missing_production_promotion_plan",
+    "20260829195657:missing_production_promotion_plan",
+    "20260829204153:missing_production_promotion_plan",
+    "20260830125035:missing_production_promotion_plan",
+    "20260830160810:missing_production_promotion_plan",
+    "20260831071807:missing_production_promotion_plan",
+    "20260831072652:missing_production_promotion_plan",
+    "20260831120000:missing_production_promotion_plan",
+    "20260831131538:missing_production_promotion_plan",
+    "20260831140736:missing_production_promotion_plan",
+    "20260831150740:missing_production_promotion_plan",
+    "20260831153322:missing_production_promotion_plan",
+    "20260831190341:missing_production_promotion_plan",
+    "20260901075131:missing_production_promotion_plan",
+    "20260901110612:missing_production_promotion_plan",
+    "20260901140943:missing_production_promotion_plan",
+    "20260901143358:missing_production_promotion_plan",
+    "20260901145225:missing_production_promotion_plan",
+    "20260901165511:missing_production_promotion_plan",
+    "20260901170254:missing_production_promotion_plan",
+    "20260901170909:missing_production_promotion_plan",
+    "20260901174924:missing_production_promotion_plan",
+    "20260902074000:missing_production_promotion_plan",
+    "20260902085300:missing_production_promotion_plan",
+    "20260902095249:missing_production_promotion_plan",
+    "20260902105303:missing_production_promotion_plan",
+    "20260903094624:missing_production_promotion_plan",
+    "20260903094957:missing_production_promotion_plan",
+    "20260903122031:missing_production_promotion_plan",
+    "20260903130012:missing_production_promotion_plan",
+    "20260905090353:missing_production_promotion_plan",
+    "20260905091122:missing_production_promotion_plan",
+    "20260905095152:missing_production_promotion_plan",
+    "20260905100612:missing_production_promotion_plan",
+    "20260905100908:missing_production_promotion_plan",
+    "20260905101301:missing_production_promotion_plan",
+    "20260905101931:missing_production_promotion_plan",
+    "20260905102430:missing_production_promotion_plan",
+    "20260905102813:missing_production_promotion_plan",
+    "20260905102934:missing_production_promotion_plan",
+    "20260905120250:missing_production_promotion_plan",
+    "20260905125639:missing_production_promotion_plan",
+    "20260905141005:missing_production_promotion_plan",
+    "20260905141007:missing_production_promotion_plan",
+    "20260905141008:missing_production_promotion_plan",
+    "20260905141009:missing_production_promotion_plan",
+    "20260905141010:missing_production_promotion_plan",
+    "20260905141011:missing_production_promotion_plan",
+    "20260905141012:missing_production_promotion_plan",
+    "20260905141013:missing_production_promotion_plan",
+    "20260905141014:missing_production_promotion_plan",
+    "20260905141015:missing_production_promotion_plan",
+    "20260905141016:missing_production_promotion_plan",
+    "20260905141017:missing_production_promotion_plan",
+    "20260905141018:missing_production_promotion_plan",
+    "20260905141019:missing_production_promotion_plan",
+    "20260905141020:missing_production_promotion_plan",
+    "20260905141021:missing_production_promotion_plan",
+    "20260905150420:missing_production_promotion_plan",
+    "20260906063435:missing_production_promotion_plan",
+    "20260906065759:missing_production_promotion_plan",
+    "20260906070515:missing_production_promotion_plan",
+    "20260906070938:missing_production_promotion_plan",
+    "20260906071644:missing_production_promotion_plan",
+    "20260906123000:missing_production_promotion_plan",
+    "20260906130000:missing_production_promotion_plan",
+    "20260906133000:missing_production_promotion_plan",
+    "20260906134500:missing_production_promotion_plan",
+    "20260906140000:missing_production_promotion_plan",
+    "20260817065106:remote_history_without_local_migration_file",
+    "20260820110704:remote_history_without_local_migration_file",
+    "20260827102952:remote_history_without_local_migration_file",
+    "20260827104611:remote_history_without_local_migration_file",
+    "20260827131153:remote_history_without_local_migration_file",
+    "20260827133621:remote_history_without_local_migration_file",
+    "20260827133842:remote_history_without_local_migration_file",
+    "20260827133951:remote_history_without_local_migration_file",
+    "20260827185146:remote_history_without_local_migration_file",
+    "20260828203637:remote_history_without_local_migration_file",
+    "20260829203552:remote_history_without_local_migration_file",
+    "20260829203648:remote_history_without_local_migration_file",
+    "20260829203735:remote_history_without_local_migration_file",
+    "20260829204144:remote_history_without_local_migration_file",
+    "20260829204623:remote_history_without_local_migration_file",
+    "20260829204840:remote_history_without_local_migration_file",
+    "20260829210157:remote_history_without_local_migration_file",
+    "20260830084850:remote_history_without_local_migration_file",
+    "20260830085317:remote_history_without_local_migration_file",
+    "20260830085705:remote_history_without_local_migration_file",
+    "20260830090204:remote_history_without_local_migration_file",
+    "20260830091124:remote_history_without_local_migration_file",
+    "20260830091652:remote_history_without_local_migration_file",
+    "20260830092741:remote_history_without_local_migration_file",
+    "20260830093509:remote_history_without_local_migration_file",
+    "20260830094123:remote_history_without_local_migration_file",
+    "20260830095017:remote_history_without_local_migration_file",
+    "20260830095430:remote_history_without_local_migration_file",
+    "20260830100753:remote_history_without_local_migration_file",
+    "20260830100807:remote_history_without_local_migration_file",
+    "20260830100936:remote_history_without_local_migration_file",
+    "20260830101115:remote_history_without_local_migration_file",
+    "20260830101259:remote_history_without_local_migration_file",
+    "20260830101318:remote_history_without_local_migration_file",
+    "20260830101846:remote_history_without_local_migration_file",
+    "20260830102633:remote_history_without_local_migration_file",
+    "20260830102724:remote_history_without_local_migration_file",
+    "20260830102811:remote_history_without_local_migration_file",
+    "20260830102846:remote_history_without_local_migration_file",
+    "20260830102937:remote_history_without_local_migration_file",
+    "20260830103810:remote_history_without_local_migration_file",
+    "20260830103913:remote_history_without_local_migration_file",
+    "20260830104159:remote_history_without_local_migration_file",
+    "20260830104242:remote_history_without_local_migration_file",
+    "20260830105816:remote_history_without_local_migration_file",
+    "20260830105908:remote_history_without_local_migration_file",
+    "20260830110749:remote_history_without_local_migration_file",
+    "20260830111228:remote_history_without_local_migration_file",
+    "20260830111659:remote_history_without_local_migration_file",
+    "20260830113004:remote_history_without_local_migration_file",
+    "20260830113531:remote_history_without_local_migration_file",
+    "20260830114448:remote_history_without_local_migration_file",
+    "20260831074851:remote_history_without_local_migration_file",
+    "20260831125342:remote_history_without_local_migration_file",
+    "20260831205101:remote_history_without_local_migration_file",
+    "20260902064058:remote_history_without_local_migration_file",
+    "20260902074632:remote_history_without_local_migration_file",
+    "20260902085246:remote_history_without_local_migration_file",
+    "20260905173226:remote_history_without_local_migration_file",
+    "20260906112843:remote_history_without_local_migration_file",
+    "20260906112854:remote_history_without_local_migration_file",
+    "20260906113258:remote_history_without_local_migration_file",
+    "20260906113353:remote_history_without_local_migration_file"
   ]
 }

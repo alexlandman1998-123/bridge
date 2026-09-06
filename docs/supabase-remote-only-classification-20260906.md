@@ -1,0 +1,136 @@
+# Supabase Remote-Only Migration Classification
+
+Generated: 6 September 2026
+
+## Scope and safety
+
+This is a read-only classification of the 63 pure remote-only versions in the
+linked production project `isdowlnollckzvltkasn`. The comparison was refreshed
+from the live migration ledger. `supabase migration fetch` was run in an
+isolated temporary directory to recover the history-table SQL; no fetched file
+was copied into the repository and no SQL, `db push`, `db reset`, or migration
+repair was executed.
+
+All 63 SQL bodies are recoverable from the linked migration history. None of
+the 63 versions exists in any currently reachable Git ref.
+
+## Classification summary
+
+| Classification | Count | Decision |
+| --- | ---: | --- |
+| Unique remote history | 47 | Candidate for exact history restoration, subject to a clean-database replay test and dependency review. |
+| Normalized-equivalent retimestamp | 2 | Treat as timestamp aliases; choose the remote timestamp as canonical before removing the unapplied local duplicate. |
+| Same-name, different-SQL pair | 14 | Do not call these aliases. Review the SQL pair and choose a canonical or corrective history before restoration. |
+| Unrecoverable | 0 | No missing SQL bodies. |
+
+Module distribution: rental 42, developer/referral 4, transaction network 4,
+bond finance 4, website publication 4, workspace platform 2, attorney 1,
+lead capture/CRM 1, and canonical documents 1.
+
+## Normalized-equivalent retimestamps
+
+Comments, whitespace, and trailing duplicate semicolons were ignored for this
+comparison. The executable SQL is otherwise equivalent.
+
+| Remote version | Remote file | Local counterpart |
+| --- | --- | --- |
+| `20260902074632` | `hide_non_building_harbour_heights_map_markers` | `20260902074000_hide_non_building_harbour_heights_map_markers.sql` |
+| `20260902085246` | `allow_platform_admin_profile_role` | `20260902085300_allow_platform_admin_profile_role.sql` |
+
+## Same-name pairs with materially different SQL
+
+These entries need pairwise SQL review. Restoring the remote file alongside its
+local counterpart could replay two different implementations during a clean
+database build.
+
+| Remote version | Local counterpart(s) |
+| --- | --- |
+| `20260829203552_rental_application_documents.sql` | `20260905141016_rental_application_documents.sql` |
+| `20260829203648_rental_application_submission.sql` | `20260905141015_rental_application_submission.sql` |
+| `20260829203735_rental_application_review_workspace.sql` | `20260905141017_rental_application_review_workspace.sql` |
+| `20260829204144_rental_application_screening.sql` | `20260905141018_rental_application_screening.sql` |
+| `20260829204623_rental_application_screening_reviewer_actor.sql` | `20260905141019_rental_application_screening_reviewer_actor.sql` |
+| `20260829204840_rental_application_decisions.sql` | `20260905141020_rental_application_decisions.sql` |
+| `20260829210157_rental_application_tenancy_conversion.sql` | `20260905141021_rental_application_tenancy_conversion.sql` |
+| `20260831125342_canonical_transaction_requirements_on_creation.sql` | `20260831071807_canonical_transaction_requirements_on_creation.sql`; `20260831072652_canonical_transaction_requirements_on_creation.sql` |
+| `20260902064058_harden_admin_portal_authorization.sql` | `20260901140943_harden_admin_portal_authorization.sql` |
+| `20260905173226_development_visual_analytics_phase14.sql` | `20260905150420_development_visual_analytics_phase14.sql` |
+| `20260906112843_public_websites_pilot_closeout_phase6_hypercare.sql` | `20260906133000_public_websites_pilot_closeout_phase6_hypercare.sql` |
+| `20260906112854_public_websites_pilot_closeout_phase6_hypercare_indexes.sql` | `20260906134500_public_websites_pilot_closeout_phase6_hypercare_indexes.sql` |
+| `20260906113258_public_websites_pilot_closeout_phase5_go_live.sql` | `20260906123000_public_websites_pilot_closeout_phase5_go_live.sql` |
+| `20260906113353_public_websites_pilot_closeout_phase6_approval_gate.sql` | `20260906140000_public_websites_pilot_closeout_phase6_approval_gate.sql` |
+
+## Unique remote history candidates
+
+These have no same-named local counterpart. Exact SQL is available from the
+linked migration history, but restoration is not yet authorized because the
+full recovered chain must pass a clean-database replay without also applying
+the 95 unresolved local-only migrations.
+
+### Rental (35)
+
+`20260830084850_rental_lease_versions.sql`,
+`20260830085317_rental_lease_manual_signing.sql`,
+`20260830085705_rental_move_in_readiness.sql`,
+`20260830090204_rental_incoming_inspection.sql`,
+`20260830091124_rental_tenancy_activation.sql`,
+`20260830091652_rental_tenancy_workspace.sql`,
+`20260830092741_rental_financial_model.sql`,
+`20260830093509_rental_charge_schedules.sql`,
+`20260830094123_rental_payment_capture.sql`,
+`20260830095017_rental_payment_allocations_fix.sql`,
+`20260830095430_rental_payment_allocation_splits.sql`,
+`20260830100753_rental_financial_corrections_core.sql`,
+`20260830100807_rental_financial_correction_balances.sql`,
+`20260830100936_rental_financial_period_controls.sql`,
+`20260830101115_rental_financial_adjustment_reversal.sql`,
+`20260830101259_rental_arrears_collections_dashboard.sql`,
+`20260830101318_rental_arrears_summary_reconciliation.sql`,
+`20260830101846_rental_financial_imports.sql`,
+`20260830102633_rental_maintenance_request_intake.sql`,
+`20260830102724_rental_maintenance_triage_assignment.sql`,
+`20260830102811_rental_maintenance_quotes_approvals.sql`,
+`20260830102846_rental_maintenance_execution_completion.sql`,
+`20260830102937_rental_mobile_inspections.sql`,
+`20260830103810_rental_collection_reminders_repair.sql`,
+`20260830103913_rental_inspection_templates_scheduling.sql`,
+`20260830104159_rental_schema_reconciliation_repair.sql`,
+`20260830104242_rental_trigger_search_path_hardening.sql`,
+`20260830105816_rental_media_upload_hardening.sql`,
+`20260830105908_rental_media_upload_policy_path_fix.sql`,
+`20260830110749_rental_tenant_portal_actions.sql`,
+`20260830111228_rental_landlord_portal_decisions.sql`,
+`20260830111659_rental_landlord_portal_read_models.sql`,
+`20260830113004_rental_renewal_workflow.sql`,
+`20260830113531_rental_renewal_lease_version.sql`, and
+`20260830114448_rental_notice_capture.sql`.
+
+### Other modules (12)
+
+| Module | Remote file |
+| --- | --- |
+| Developer/referral | `20260817065106_development_financial_defaults_phase1_missing_columns.sql` |
+| Lead capture/CRM | `20260820110704_property24_listing_syncs.sql` |
+| Transaction network | `20260827102952_repair_partner_pipeline_assignment_scope.sql` |
+| Attorney | `20260827104611_repair_attorney_incoming_matter_visible_status.sql` |
+| Bond finance | `20260827131153_repair_bond_originator_transaction_scope.sql` |
+| Bond finance | `20260827133621_repair_missing_roleplayer_bond_handoffs.sql` |
+| Bond finance | `20260827133842_repair_missing_roleplayer_bond_handoffs_execution.sql` |
+| Transaction network | `20260827133951_repair_roleplayer_participant_scope_alignment.sql` |
+| Transaction network | `20260827185146_allow_transaction_spine_roleplayers_to_read_linked_transaction_entities.sql` |
+| Bond finance | `20260828203637_agent_bond_application_rpc_acl_hardening.sql` |
+| Developer/referral | `20260831074851_developer_document_portal_sale_route_followup.sql` |
+| Canonical documents | `20260831205101_canonical_document_identity_and_portal_requests.sql` |
+
+## Recommended next action
+
+Restore and verify in three review batches:
+
+1. Resolve the two normalized-equivalent timestamp aliases by selecting one
+   canonical timestamp per pair.
+2. Review the 14 same-name SQL pairs and record whether the local file
+   supersedes, extends, or conflicts with the production version.
+3. Restore the 47 unique remote files exactly from the linked history into a
+   reconciliation branch, then run a clean-database migration replay before
+   merging. Do not execute these files against production; their versions are
+   already recorded there.
