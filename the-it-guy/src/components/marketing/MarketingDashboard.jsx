@@ -125,7 +125,7 @@ function QuickActions({ onNavigate }) {
     { label: 'WhatsApp campaign', detail: 'Start a message', icon: MessageCircle, section: 'whatsapp' },
     { label: 'Show day', detail: 'Plan an open home', icon: CalendarDays, section: 'show-days' },
     { label: 'Launch', detail: 'Create a launch', icon: Sparkles, section: 'launches' },
-    { label: 'Website', detail: 'Set up your site', icon: Globe2, section: 'website' },
+    { label: 'Website & landing pages', detail: 'Manage your agency site and campaign pages', icon: Globe2, section: 'website' },
   ]
   return (
     <section className="md-quick-actions" aria-label="Quick actions">
