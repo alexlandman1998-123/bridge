@@ -64,6 +64,9 @@ import {
   connectMetaLeadAdsPage,
   listMetaLeadAdsConnections,
   listMetaLeadAdsForms,
+  listMetaLeadAdsImports,
+  previewMetaLeadAdsImport,
+  processMetaLeadAdsImportBatch,
   selectMetaLeadAdsForms,
   startMetaLeadAdsAuthorization,
 } from '../../services/metaLeadAdsService'
@@ -682,6 +685,11 @@ export default function SettingsLeadCapturePage() {
   const [metaPages, setMetaPages] = useState([])
   const [metaForms, setMetaForms] = useState([])
   const [metaConnectionId, setMetaConnectionId] = useState('')
+  const [metaImports, setMetaImports] = useState([])
+  const [metaImportFormId, setMetaImportFormId] = useState('')
+  const [metaImportFrom, setMetaImportFrom] = useState('')
+  const [metaImportTo, setMetaImportTo] = useState('')
+  const [metaImportPreview, setMetaImportPreview] = useState(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -742,9 +750,14 @@ export default function SettingsLeadCapturePage() {
         setMetaConnectionId(activeConnection.id)
         const forms = await listMetaLeadAdsForms(organisationId, activeConnection.id)
         setMetaForms(forms.forms || [])
+        setMetaImportFormId((current) => current || forms.forms?.find((form) => form.selected)?.id || '')
+        const imports = await listMetaLeadAdsImports(organisationId, activeConnection.id)
+        setMetaImports(imports.imports || [])
       } else {
         setMetaConnectionId('')
         setMetaForms([])
+        setMetaImports([])
+        setMetaImportPreview(null)
       }
     } catch (loadError) {
       setError(loadError?.message || 'Lead capture settings could not be loaded.')
@@ -793,7 +806,7 @@ export default function SettingsLeadCapturePage() {
       const state=sessionStorage.getItem(`arch9:meta-lead-ads:${organisationId}`)||''
       const result=await connectMetaLeadAdsPage(organisationId,state,pageId)
       const connection=result.connection; setMetaConnectionId(connection.id)
-      const forms=await listMetaLeadAdsForms(organisationId,connection.id); setMetaForms(forms.forms||[])
+      const forms=await listMetaLeadAdsForms(organisationId,connection.id); setMetaForms(forms.forms||[]); setMetaImportFormId(forms.forms?.find((form)=>form.selected)?.id||'')
     } catch(metaError) { setError(metaError.message||'Meta Page could not be connected.') } finally { setSaving(false) }
   }
   async function enableMetaForms() {
@@ -802,6 +815,34 @@ export default function SettingsLeadCapturePage() {
       await selectMetaLeadAdsForms(organisationId,metaConnectionId,metaForms.filter((form)=>form.selected).map((form)=>({id:form.id,name:form.name,branchId:form.branchId||null,assignedAgentId:form.assignedAgentId||null,leadType:form.leadType||'buyer'})))
       setNotice('Facebook Lead Ads forms connected and subscribed to leadgen.'); await load()
     } catch(metaError) { setError(metaError.message||'Meta forms could not be enabled.') } finally { setSaving(false) }
+  }
+  async function refreshMetaImports() {
+    if (!organisationId || !metaConnectionId) return
+    const result = await listMetaLeadAdsImports(organisationId, metaConnectionId)
+    setMetaImports(result.imports || [])
+  }
+  async function previewHistoricalMetaLeads() {
+    if (!metaImportFormId) { setError('Choose an enabled Meta form before previewing historical leads.'); return }
+    setSaving(true); setError(''); setNotice('')
+    try {
+      const result = await previewMetaLeadAdsImport(organisationId, metaConnectionId, metaImportFormId, metaImportFrom, metaImportTo)
+      setMetaImportPreview(result.import || null)
+      await refreshMetaImports()
+      setNotice('Historical lead preview is ready. Confirm before any CRM leads are created.')
+    } catch (metaError) { setError(metaError.message || 'Historical lead preview could not be created.') } finally { setSaving(false) }
+  }
+  async function processHistoricalMetaImport(importId) {
+    setSaving(true); setError(''); setNotice('')
+    try {
+      let result = null
+      for (let batch = 0; batch < 20; batch += 1) {
+        result = await processMetaLeadAdsImportBatch(organisationId, metaConnectionId, importId)
+        setMetaImportPreview(result.import || null)
+        if (!result.import?.hasMore) break
+      }
+      await refreshMetaImports()
+      setNotice(result?.import?.complete ? 'Historical lead import completed.' : 'Import paused after 500 leads. Continue it when you are ready.')
+    } catch (metaError) { setError(metaError.message || 'Historical lead import could not continue.'); await refreshMetaImports().catch(() => {}) } finally { setSaving(false) }
   }
   const profileId = normalizeText(profile?.id)
   const currentUser = users.find((user) => normalizeText(user.userId || user.id) === profileId) || {
@@ -1203,6 +1244,22 @@ export default function SettingsLeadCapturePage() {
             {metaConnections.map((connection) => <div key={connection.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><strong>{connection.page_name}</strong><p className="text-sm text-[#6b7d93]">{connection.connection_status}{connection.last_error_message ? ` · ${connection.last_error_message}` : ''}</p></div>)}
             {metaPages.length ? <div className="grid gap-2">{metaPages.map((page) => <SecondaryButton key={page.id} onClick={() => chooseMetaPage(page.id)} disabled={saving}>Use {page.name}</SecondaryButton>)}</div> : null}
             {metaForms.length ? <div className="grid gap-2">{metaForms.map((form,index) => <div key={form.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><label><input type="checkbox" checked={Boolean(form.selected)} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,selected:event.target.checked}:item))} /> <span className="ml-2 font-semibold">{form.name}</span></label><div className="mt-3 flex flex-wrap gap-3"><label className="text-sm font-medium text-[#52677e]">Lead type <select className="ml-2 rounded border p-1" value={form.leadType||'buyer'} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,leadType:event.target.value}:item))}><option value="buyer">Buyer</option><option value="seller">Seller</option></select></label><label className="text-sm font-medium text-[#52677e]">Route to <select className="ml-2 rounded border p-1" value={form.assignedAgentId||''} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,assignedAgentId:event.target.value}:item))}><option value="">Agency queue</option>{users.filter(isActiveAgentUser).map((user)=><option key={getUserId(user)} value={getUserId(user)}>{getUserDisplayName(user)}</option>)}</select></label></div></div>)}<PrimaryButton onClick={enableMetaForms} disabled={saving || !metaForms.some((form)=>form.selected)}>Enable selected forms</PrimaryButton></div> : null}
+            {metaForms.some((form) => form.selected) ? (
+              <div className="mt-2 grid gap-4 rounded-[16px] border border-[#c9ddf3] bg-[#f7fbff] p-4">
+                <div>
+                  <h3 className="font-semibold text-[#162334]">Historical Meta leads</h3>
+                  <p className="mt-1 text-sm text-[#5f7288]">Preview a form before importing. Historical leads keep their original Meta submission date and do not trigger new-lead notifications or SLA timers.</p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-3">
+                  <label className="grid gap-1 text-sm font-medium text-[#52677e]">Form<select className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportFormId} onChange={(event) => { setMetaImportFormId(event.target.value); setMetaImportPreview(null) }}><option value="">Choose form</option>{metaForms.filter((form) => form.selected).map((form) => <option key={form.id} value={form.id}>{form.name} · {form.leadType === 'seller' ? 'Seller' : 'Buyer'}</option>)}</select></label>
+                  <label className="grid gap-1 text-sm font-medium text-[#52677e]">From (optional)<input type="date" className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportFrom} onChange={(event) => { setMetaImportFrom(event.target.value); setMetaImportPreview(null) }} /></label>
+                  <label className="grid gap-1 text-sm font-medium text-[#52677e]">To (optional)<input type="date" className="min-h-10 rounded-[10px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334]" value={metaImportTo} onChange={(event) => { setMetaImportTo(event.target.value); setMetaImportPreview(null) }} /></label>
+                </div>
+                <div className="flex flex-wrap gap-2"><SecondaryButton icon={Search} onClick={previewHistoricalMetaLeads} disabled={saving || !metaImportFormId}>Preview historical leads</SecondaryButton>{metaImportPreview?.id ? <PrimaryButton icon={Download} onClick={() => processHistoricalMetaImport(metaImportPreview.id)} disabled={saving}>Confirm and import</PrimaryButton> : null}</div>
+                {metaImportPreview ? <div className="grid gap-2 rounded-[12px] border border-[#d7e7f7] bg-white p-3 text-sm text-[#35546c]"><p className="font-semibold text-[#162334]">Preview: {metaImportPreview.newLeads ?? metaImportPreview.imported_count ?? 0} new, {metaImportPreview.duplicates ?? metaImportPreview.duplicate_count ?? 0} already known.</p><p>{metaImportPreview.complete ? 'This preview reached the end of the form.' : 'Preview samples the first 100 available records; the import will continue safely in batches.'}</p></div> : null}
+                {metaImports.length ? <div className="overflow-hidden rounded-[12px] border border-[#dbe5ef] bg-white"><table className="min-w-full text-left text-sm"><thead className="bg-[#f8fbfe] text-xs font-semibold uppercase tracking-[0.1em] text-[#7b8da6]"><tr><th className="px-3 py-2">Form</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Results</th><th className="px-3 py-2">Action</th></tr></thead><tbody>{metaImports.map((item) => <tr key={item.id} className="border-t border-[#e8eef5]"><td className="px-3 py-3">{metaForms.find((form) => form.id === item.form_id)?.name || item.form_id}<p className="mt-1 text-xs text-[#7b8da6]">{formatDateTime(item.created_at)}</p></td><td className="px-3 py-3"><span className="font-semibold capitalize text-[#35546c]">{String(item.status || '').replace('_', ' ')}</span>{item.last_error_message ? <p className="mt-1 max-w-xs text-xs text-[#b54747]">{item.last_error_message}</p> : null}</td><td className="px-3 py-3 text-xs text-[#5f7288]">{item.imported_count || 0} imported · {item.duplicate_count || 0} known · {item.failed_count || 0} failed</td><td className="px-3 py-3">{['ready', 'paused'].includes(item.status) ? <SecondaryButton icon={RefreshCw} onClick={() => processHistoricalMetaImport(item.id)} disabled={saving}>{item.status === 'paused' ? 'Continue' : 'Start import'}</SecondaryButton> : <span className="text-xs text-[#7b8da6]">{item.status === 'completed' ? 'Complete' : 'Working'}</span>}</td></tr>)}</tbody></table></div> : null}
+              </div>
+            ) : null}
           </div>
         </SettingsSectionCard>
       ) : null}

@@ -55,6 +55,10 @@ Deno.serve(async(req)=>{
       if(saved.error)throw new Error(saved.error.message);await db.from("meta_lead_ads_oauth_states").update({token_ciphertext:null}).eq("state_hash",stateRow.state_hash);return json(200,{connection:saved.data});
     }
     const connectionId=text(body.connectionId),row=(await db.from("meta_lead_ads_connections").select("*").eq("id",connectionId).eq("organisation_id",org).maybeSingle()).data;if(!row)return json(404,{error:"Connection not found."});
+    if(action==="list_imports"){
+      const imports=await db.from("meta_lead_ads_imports").select("id,form_id,status,requested_from,requested_to,discovered_count,imported_count,duplicate_count,invalid_count,failed_count,last_error_message,started_at,completed_at,created_at,updated_at").eq("organisation_id",org).eq("connection_id",row.id).order("created_at",{ascending:false}).limit(20);
+      if(imports.error)throw new Error(imports.error.message);return json(200,{imports:imports.data||[]});
+    }
     if(action==="preview_import"){
       const formId=text(body.formId),mapping=(await db.from("meta_lead_ads_forms").select("id,form_id,form_name,page_id,lead_type,is_active").eq("connection_id",row.id).eq("organisation_id",org).eq("form_id",formId).eq("is_active",true).maybeSingle()).data;
       if(!mapping||text(mapping.page_id)!==text(row.page_id))return json(404,{error:"An enabled form mapping for this Page is required before previewing an import."});

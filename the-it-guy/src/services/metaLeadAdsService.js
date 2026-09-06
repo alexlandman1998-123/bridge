@@ -21,4 +21,7 @@ export const completeMetaLeadAdsAuthorization = (organisationId, state) => call(
 export const connectMetaLeadAdsPage = (organisationId, state, pageId) => call('connect_page', organisationId, { state, pageId })
 export const listMetaLeadAdsForms = (organisationId, connectionId) => call('list_forms', organisationId, { connectionId })
 export const selectMetaLeadAdsForms = (organisationId, connectionId, forms) => call('select_forms', organisationId, { connectionId, forms })
+export const listMetaLeadAdsImports = (organisationId, connectionId) => call('list_imports', organisationId, { connectionId })
+export const previewMetaLeadAdsImport = (organisationId, connectionId, formId, requestedFrom, requestedTo) => call('preview_import', organisationId, { connectionId, formId, requestedFrom: requestedFrom || null, requestedTo: requestedTo || null })
+export const processMetaLeadAdsImportBatch = (organisationId, connectionId, importId) => call('process_import_batch', organisationId, { connectionId, importId })
 export const disconnectMetaLeadAds = (organisationId, connectionId) => call('disconnect', organisationId, { connectionId })
