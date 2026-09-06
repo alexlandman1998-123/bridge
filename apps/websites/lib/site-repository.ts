@@ -227,22 +227,34 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
 
   const runtimeEnvironment = websiteRuntimeEnvironment()
   if (!runtimeEnvironment) return null
-  const releaseGate = runtimeEnvironment === 'production'
-    ? supabase
-      .from('website_production_releases')
-      .select('status')
-      .eq('organisation_id', site.organisation_id)
-      .eq('target_hostname', hostname)
-      .eq('status', 'active')
-      .maybeSingle()
-    : supabase
-      .from('website_pilot_enrolments')
-      .select('status')
-      .eq('organisation_id', site.organisation_id)
-      .eq('status', 'active')
-      .maybeSingle()
+  const releaseGates = runtimeEnvironment === 'production'
+    ? [
+      supabase
+        .from('website_production_releases')
+        .select('status')
+        .eq('organisation_id', site.organisation_id)
+        .eq('target_hostname', hostname)
+        .eq('status', 'active')
+        .maybeSingle(),
+      supabase
+        .from('website_production_dark_launches')
+        .select('status')
+        .eq('organisation_id', site.organisation_id)
+        .eq('website_site_id', site.id)
+        .eq('preview_hostname', hostname)
+        .eq('status', 'active')
+        .maybeSingle(),
+    ]
+    : [
+      supabase
+        .from('website_pilot_enrolments')
+        .select('status')
+        .eq('organisation_id', site.organisation_id)
+        .eq('status', 'active')
+        .maybeSingle(),
+    ]
 
-  const [revisionResult, releaseGateResult] = await Promise.all([
+  const [revisionResult, ...releaseGateResults] = await Promise.all([
     supabase
       .from('website_site_revisions')
       .select('brand_json')
@@ -250,12 +262,16 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
       .eq('website_site_id', site.id)
       .eq('status', 'published')
       .maybeSingle(),
-    releaseGate,
+    ...releaseGates,
   ])
 
   if (revisionResult.error) throw revisionResult.error
-  if (releaseGateResult.error) throw releaseGateResult.error
-  if (!revisionResult.data || !releaseGateResult.data) return null
+  const releaseGateError = releaseGateResults.find((result) => result.error)?.error
+  if (releaseGateError) throw releaseGateError
+  const gateOpen = runtimeEnvironment === 'production'
+    ? (domain.domain_kind === 'custom' ? Boolean(releaseGateResults[0]?.data) : Boolean(releaseGateResults[1]?.data))
+    : Boolean(releaseGateResults[0]?.data)
+  if (!revisionResult.data || !gateOpen) return null
 
   const brand = (revisionResult.data?.brand_json || {}) as Record<string, unknown>
   const properties = await getPublishedWebsiteListings(supabase, { id: site.id, organisationId: site.organisation_id }, 12)

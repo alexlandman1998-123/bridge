@@ -1,0 +1,12 @@
+{
+  "contract": "public-websites-pilot-closeout-phase4-dark-launch-v1",
+  "organisationId": "00000000-0000-4000-8000-000000000000",
+  "listingId": "00000000-0000-4000-8000-000000000000",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "stagingContentFingerprint": "00000000000000000000000000000000",
+  "candidateDeploymentUrl": "https://agency-candidate.vercel.app",
+  "rollbackDeploymentUrl": "https://agency-rollback.vercel.app",
+  "approvedBy": "Replace with accountable approver",
+  "approvalReference": "Replace with change reference",
+  "confirmation": "REPLACE_WITH_REQUIRED_CONFIRMATION"
+}

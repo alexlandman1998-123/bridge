@@ -13,10 +13,10 @@ function latest(items = []) {
 export async function getWebsiteWorkspaceOverview(organisationId) {
   const safeOrganisationId = text(organisationId)
   if (!safeOrganisationId || !isSupabaseConfigured || !supabase) {
-    return { mode: 'unconfigured', pilot: null, productionRelease: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
+    return { mode: 'unconfigured', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
   }
 
-  const [pilotResult, productionReleaseResult] = await Promise.all([
+  const [pilotResult, productionReleaseResult, productionDarkLaunchResult] = await Promise.all([
     supabase
       .from('website_pilot_enrolments')
       .select('cohort, status, activated_at, paused_at, completed_at, updated_at')
@@ -27,16 +27,24 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
       .select('status, target_hostname, source_commit, candidate_deployment_url, approval_reference, approved_at, domain_verified_at, activated_at, paused_at, updated_at')
       .eq('organisation_id', safeOrganisationId)
       .maybeSingle(),
+    supabase
+      .from('website_production_dark_launches')
+      .select('status, source_commit, candidate_deployment_url, rollback_deployment_url, preview_hostname, approval_reference, activated_at, paused_at, rolled_back_at, updated_at')
+      .eq('organisation_id', safeOrganisationId)
+      .maybeSingle(),
   ])
   if (pilotResult.error) throw pilotResult.error
   if (productionReleaseResult.error) throw productionReleaseResult.error
+  if (productionDarkLaunchResult.error) throw productionDarkLaunchResult.error
   const productionRelease = productionReleaseResult.data
-  const productionAccess = productionRelease && ['approved', 'active', 'paused'].includes(productionRelease.status)
+  const productionDarkLaunch = productionDarkLaunchResult.data
+  const productionAccess = (productionRelease && ['approved', 'active', 'paused'].includes(productionRelease.status))
+    || (productionDarkLaunch && ['prepared', 'active', 'paused'].includes(productionDarkLaunch.status))
   if (!pilotResult.data && !productionAccess) {
-    return { mode: 'pilot_unavailable', pilot: null, productionRelease, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
+    return { mode: 'pilot_unavailable', pilot: null, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
   }
   if (pilotResult.data && pilotResult.data.status !== 'active' && !productionAccess) {
-    return { mode: 'pilot_paused', pilot: pilotResult.data, productionRelease, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
+    return { mode: 'pilot_paused', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
   }
 
   const siteResult = await supabase
@@ -45,7 +53,7 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
     .eq('organisation_id', safeOrganisationId)
     .maybeSingle()
   if (siteResult.error) throw siteResult.error
-  if (!siteResult.data) return { mode: 'ready_to_create', pilot: pilotResult.data, productionRelease, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
+  if (!siteResult.data) return { mode: 'ready_to_create', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
 
   const site = siteResult.data
   const [domainsResult, revisionsResult, pagesResult, eventsResult] = await Promise.all([
@@ -76,6 +84,7 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
     mode: 'connected',
     pilot: pilotResult.data,
     productionRelease,
+    productionDarkLaunch,
     site: { id: site.id, previewSlug: text(site.preview_slug), status: text(site.status), templateKey: text(site.template_key), publishedRevisionId: site.published_revision_id || null, updatedAt: site.updated_at || null },
     domains: domainsResult.data || [],
     pages: (pagesResult.data || []).filter((page) => page.revision_id === activeRevision?.id),

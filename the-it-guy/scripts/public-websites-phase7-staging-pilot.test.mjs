@@ -41,7 +41,7 @@ assert.match(databaseTest, /not has_function_privilege\('authenticated'.*website
 assert.match(databaseTest, /has_function_privilege\('service_role'.*website_set_pilot_enrolment/, 'database test permits the staging operator')
 
 assert.match(publicRepository, /from\('website_pilot_enrolments'\)[\s\S]*\.eq\('status', 'active'\)/, 'public serving requires active pilot enrolment')
-assert.match(publicRepository, /if \(!revisionResult\.data \|\| !releaseGateResult\.data\) return null/, 'public serving fails closed')
+assert.match(publicRepository, /if \(!revisionResult\.data \|\| !gateOpen\) return null/, 'public serving fails closed')
 assert.match(workspaceService, /mode: 'pilot_unavailable'/, 'CRM distinguishes agencies outside the pilot')
 assert.match(workspaceService, /mode: 'pilot_paused'/, 'CRM distinguishes paused pilots')
 assert.match(workspace, /Website Studio is opening with one agency first/, 'CRM explains the controlled rollout')
