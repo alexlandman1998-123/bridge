@@ -1,124 +1,271 @@
-import { randomUUID } from 'crypto'
+import { createHmac } from 'crypto'
 import { NextResponse } from 'next/server'
-import { normalizeHostname, resolveSite } from '@/lib/site-repository'
+import { normalizeHostname } from '@/lib/site-repository'
 import { getServerSupabase } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
 
-type LeadBody = {
-  type?: string
-  propertyId?: string
-  name?: string
-  email?: string
-  phone?: string
-  message?: string
-  privacyAccepted?: boolean
-  pageUrl?: string
-  referrer?: string
-  campaignPageId?: string
-  idempotencyKey?: string
-}
-
+const MAX_BODY_BYTES = 16 * 1024
 const supportedTypes = new Set(['property_enquiry', 'general_enquiry', 'valuation_request', 'campaign_enquiry'])
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const idempotencyPattern = /^[A-Za-z0-9._:-]{16,128}$/
 
-function text(value: unknown, maximum = 500): string {
-  return String(value || '').trim().slice(0, maximum)
+type LeadBody = {
+  type?: unknown
+  propertyId?: unknown
+  pageId?: unknown
+  name?: unknown
+  email?: unknown
+  phone?: unknown
+  message?: unknown
+  privacyAccepted?: unknown
+  marketingConsent?: unknown
+  pageUrl?: unknown
+  referrer?: unknown
+  idempotencyKey?: unknown
+  companyWebsite?: unknown
 }
 
-function splitName(value: string): { firstName: string; lastName: string | null } {
-  const [firstName = '', ...rest] = value.trim().split(/\s+/)
-  return { firstName, lastName: rest.join(' ') || null }
+type CaptureResult = {
+  accepted?: boolean
+  duplicate?: boolean
+  rateLimited?: boolean
+  receiptId?: string
+  leadId?: string
+  notificationEventId?: string
+  organisationId?: string
+  recipientEmail?: string
+  recipientName?: string
+  eventKind?: string
+  propertyLabel?: string
+  leadName?: string
+  leadEmail?: string
+  leadPhone?: string
+  leadCategory?: string
+}
+
+type NotificationTarget = {
+  receiptId: string
+  notificationEventId: string
+  organisationId: string
+  recipientEmail: string
+  recipientName?: string
+  eventKind: string
+  propertyLabel?: string
+  leadId: string
+  leadName?: string
+  leadEmail?: string
+  leadPhone?: string
+  leadCategory?: string
+}
+
+function text(value: unknown, maximum = 500): string {
+  return typeof value === 'string' ? value.trim().slice(0, maximum) : ''
+}
+
+function safeUrl(value: unknown): URL | null {
+  try {
+    const candidate = new URL(text(value, 2048))
+    return candidate.protocol === 'https:' || candidate.protocol === 'http:' ? candidate : null
+  } catch {
+    return null
+  }
+}
+
+function attribution(request: Request, body: LeadBody, host: string) {
+  const page = safeUrl(body.pageUrl)
+  const referrer = safeUrl(body.referrer)
+  const pageMatchesSite = page && normalizeHostname(page.host) === host
+  return {
+    pagePath: pageMatchesSite ? page.pathname.slice(0, 2048) : undefined,
+    referrer: referrer ? `${referrer.origin}${referrer.pathname}`.slice(0, 2048) : undefined,
+    utmSource: pageMatchesSite ? text(page.searchParams.get('utm_source'), 160) : undefined,
+    utmMedium: pageMatchesSite ? text(page.searchParams.get('utm_medium'), 160) : undefined,
+    utmCampaign: pageMatchesSite ? text(page.searchParams.get('utm_campaign'), 160) : undefined,
+    utmTerm: pageMatchesSite ? text(page.searchParams.get('utm_term'), 160) : undefined,
+    utmContent: pageMatchesSite ? text(page.searchParams.get('utm_content'), 160) : undefined,
+    userAgent: text(request.headers.get('user-agent'), 512),
+  }
+}
+
+function requestFingerprint(request: Request, host: string): string | null {
+  const secret = process.env.WEBSITES_LEAD_FINGERPRINT_SECRET
+  if (!secret || secret.length < 32) throw new Error('WEBSITES_LEAD_FINGERPRINT_SECRET is not configured securely')
+  const forwarded = text(request.headers.get('x-forwarded-for'), 512).split(',')[0]?.trim()
+  const address = forwarded || text(request.headers.get('x-real-ip'), 128)
+  if (!address) return null
+  return createHmac('sha256', secret).update(`${host}:${address}`).digest('hex')
+}
+
+function errorText(value: unknown): string {
+  if (value instanceof Error) return value.message.slice(0, 500)
+  return text(value, 500) || 'Notification delivery failed.'
+}
+
+function providerMessageId(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const body = payload as { providerResponse?: unknown }
+  if (!body.providerResponse || typeof body.providerResponse !== 'object') return null
+  return text((body.providerResponse as { id?: unknown }).id, 500) || null
+}
+
+async function sendNotification(target: NotificationTarget) {
+  const url = process.env.SUPABASE_URL
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!url || !serviceKey) throw new Error('Notification service is not configured')
+  const appUrl = String(process.env.ARCH9_APP_URL || 'https://app.arch9.co.za').replace(/\/$/, '')
+  const response = await fetch(`${url.replace(/\/$/, '')}/functions/v1/send-email`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${serviceKey}`,
+      apikey: serviceKey,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      type: target.eventKind,
+      eventKind: target.eventKind,
+      to: target.recipientEmail,
+      recipientName: target.recipientName,
+      organisationId: target.organisationId,
+      leadId: target.leadId,
+      leadName: target.leadName,
+      leadEmail: target.leadEmail,
+      leadPhone: target.leadPhone,
+      leadSource: 'Website',
+      leadCategory: target.leadCategory,
+      leadStatus: 'New Lead',
+      propertyLabel: target.propertyLabel,
+      actionLink: `${appUrl}/pipeline/leads/${target.leadId}`,
+      idempotencyKey: `website-lead:${target.receiptId}:${target.notificationEventId}`,
+    }),
+    signal: AbortSignal.timeout(8_000),
+  })
+  const payload = await response.json().catch(() => ({})) as { sent?: boolean; suppressed?: boolean; error?: unknown; providerResponse?: unknown }
+  if (!response.ok) throw new Error(text(payload.error, 500) || `Notification service returned ${response.status}`)
+  return { status: payload.sent === false || payload.suppressed ? 'skipped' : 'sent', providerMessageId: providerMessageId(payload) }
+}
+
+async function recordDelivery(
+  supabase: ReturnType<typeof getServerSupabase>,
+  target: Pick<NotificationTarget, 'receiptId' | 'notificationEventId'>,
+  status: 'sent' | 'failed' | 'skipped',
+  messageId?: string | null,
+  error?: string | null,
+) {
+  await supabase.rpc('website_complete_lead_notification', {
+    p_receipt_id: target.receiptId,
+    p_notification_event_id: target.notificationEventId,
+    p_delivery_status: status,
+    p_provider_message_id: messageId || null,
+    p_error_message: error || null,
+  })
+}
+
+async function dispatchWithFallback(supabase: ReturnType<typeof getServerSupabase>, captured: CaptureResult) {
+  if (!captured.receiptId || !captured.notificationEventId || !captured.organisationId || !captured.recipientEmail || !captured.eventKind || !captured.leadId) return
+  const primary: NotificationTarget = {
+    receiptId: captured.receiptId,
+    notificationEventId: captured.notificationEventId,
+    organisationId: captured.organisationId,
+    recipientEmail: captured.recipientEmail,
+    recipientName: captured.recipientName,
+    eventKind: captured.eventKind,
+    propertyLabel: captured.propertyLabel,
+    leadId: captured.leadId,
+    leadName: captured.leadName,
+    leadEmail: captured.leadEmail,
+    leadPhone: captured.leadPhone,
+    leadCategory: captured.leadCategory,
+  }
+  try {
+    const delivered = await sendNotification(primary)
+    await recordDelivery(supabase, primary, delivered.status as 'sent' | 'skipped', delivered.providerMessageId)
+  } catch (error) {
+    const failure = errorText(error)
+    const fallbackResult = await supabase.rpc('website_prepare_lead_notification_fallback', {
+      p_receipt_id: primary.receiptId,
+      p_error_message: failure,
+    })
+    const fallback = fallbackResult.data as { available?: boolean; notificationEventId?: string; recipientEmail?: string; recipientName?: string; eventKind?: string } | null
+    if (fallbackResult.error || !fallback?.available || !fallback.notificationEventId || !fallback.recipientEmail) return
+    const managerTarget: NotificationTarget = {
+      ...primary,
+      notificationEventId: fallback.notificationEventId,
+      recipientEmail: fallback.recipientEmail,
+      recipientName: fallback.recipientName,
+      eventKind: fallback.eventKind || 'new_enquiry_unassigned_manager',
+    }
+    try {
+      const delivered = await sendNotification(managerTarget)
+      await recordDelivery(supabase, managerTarget, delivered.status as 'sent' | 'skipped', delivered.providerMessageId)
+    } catch (fallbackError) {
+      await recordDelivery(supabase, managerTarget, 'failed', null, errorText(fallbackError))
+    }
+  }
 }
 
 export async function POST(request: Request) {
+  const declaredLength = Number(request.headers.get('content-length') || 0)
+  if (declaredLength > MAX_BODY_BYTES) return NextResponse.json({ error: 'Request is too large.' }, { status: 413 })
+
   let body: LeadBody
-  try { body = await request.json() as LeadBody } catch { return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 }) }
+  try {
+    const raw = await request.text()
+    if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) return NextResponse.json({ error: 'Request is too large.' }, { status: 413 })
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Body must be an object')
+    body = parsed as LeadBody
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
+  }
+
+  // Honeypot submissions receive a neutral response and never reach CRM storage.
+  if (text(body.companyWebsite, 256)) return NextResponse.json({ accepted: true }, { status: 202 })
 
   const host = normalizeHostname(request.headers.get('host'))
-  const site = await resolveSite(host)
-  if (!site || site.status !== 'published') return NextResponse.json({ error: 'Website unavailable.' }, { status: 404 })
-
   const type = text(body.type, 48)
   const name = text(body.name, 160)
   const email = text(body.email, 254).toLowerCase()
   const phone = text(body.phone, 64)
-  const message = text(body.message, 4000)
   const idempotencyKey = text(body.idempotencyKey, 128)
-  const campaignPageId = text(body.campaignPageId, 64) || null
-  if (!supportedTypes.has(type) || !name || !emailPattern.test(email) || !phone || !body.privacyAccepted || !idempotencyKey) {
+  if (!host || !supportedTypes.has(type) || name.length < 2 || (!email && !phone) || (email && !emailPattern.test(email)) || body.privacyAccepted !== true || !idempotencyPattern.test(idempotencyKey)) {
     return NextResponse.json({ error: 'Please complete the required fields.' }, { status: 400 })
   }
 
-  let supabase
+  let supabase: ReturnType<typeof getServerSupabase>
+  let fingerprint: string | null
   try {
     supabase = getServerSupabase()
+    fingerprint = requestFingerprint(request, host)
   } catch {
-    return NextResponse.json({ error: 'Enquiries are not configured for this preview yet.' }, { status: 503 })
-  }
-  if (body.propertyId) {
-    const { data: property, error } = await supabase
-      .from('listing_publication_data')
-      .select('listing_id, title, private_listings!inner(organisation_id)')
-      .eq('listing_id', body.propertyId)
-      .eq('status', 'Published')
-      .eq('private_listings.organisation_id', site.organisationId)
-      .maybeSingle()
-    if (error || !property) return NextResponse.json({ error: 'Property unavailable.' }, { status: 404 })
-  }
-  if (campaignPageId) {
-    const { data: page, error } = await supabase.from('website_pages')
-      .select('id, page_kind, website_site_revisions!inner(status)')
-      .eq('id', campaignPageId).eq('website_site_id', site.id).eq('page_kind', 'campaign').eq('website_site_revisions.status', 'published').maybeSingle()
-    if (error || !page) return NextResponse.json({ error: 'Campaign unavailable.' }, { status: 404 })
+    return NextResponse.json({ error: 'Enquiries are temporarily unavailable.' }, { status: 503 })
   }
 
-  const receipt = {
-    website_site_id: site.id,
-    organisation_id: site.organisationId,
-    listing_id: body.propertyId || null,
-    page_id: campaignPageId,
-    submission_type: type,
-    idempotency_key: idempotencyKey,
-    payload_json: { name, email, phone, message, campaignPageId, privacyAccepted: true },
-    attribution_json: { host, pageUrl: text(body.pageUrl, 2048), referrer: text(body.referrer, 2048) },
-  }
-  const receiptResult = await supabase.from('website_lead_submissions').insert(receipt).select('id').maybeSingle()
-  if (receiptResult.error?.code === '23505') return NextResponse.json({ accepted: true, duplicate: true }, { status: 202 })
-  if (receiptResult.error || !receiptResult.data) return NextResponse.json({ error: 'Unable to record enquiry.' }, { status: 500 })
+  const capture = await supabase.rpc('website_capture_lead_submission', {
+    p_hostname: host,
+    p_submission_type: type,
+    p_listing_id: text(body.propertyId, 64) || null,
+    p_page_id: text(body.pageId, 64) || null,
+    p_name: name,
+    p_email: email || null,
+    p_phone: phone || null,
+    p_message: text(body.message, 4000) || null,
+    p_privacy_accepted: true,
+    p_marketing_consent: body.marketingConsent === true,
+    p_idempotency_key: idempotencyKey,
+    p_request_fingerprint: fingerprint,
+    p_attribution: attribution(request, body, host),
+  })
 
-  try {
-    const { firstName, lastName } = splitName(name)
-    const { data: existingContact } = await supabase.from('contacts').select('contact_id').eq('organisation_id', site.organisationId).eq('email', email).limit(1).maybeSingle()
-    const contactId = existingContact?.contact_id || randomUUID()
-    if (!existingContact) {
-      const contactResult = await supabase.from('contacts').insert({ contact_id: contactId, organisation_id: site.organisationId, first_name: firstName, last_name: lastName, email, phone, contact_type: 'Lead', notes: message || null })
-      if (contactResult.error) throw contactResult.error
-    }
-    const leadId = randomUUID()
-    const leadResult = await supabase.from('leads').insert({
-      lead_id: leadId,
-      organisation_id: site.organisationId,
-      contact_id: contactId,
-      lead_domain: 'agency',
-      lead_category: type === 'valuation_request' ? 'seller' : 'buyer',
-      lead_direction: 'Inbound',
-      lead_source: 'Website',
-      source_channel: 'website',
-      stage: 'New Lead',
-      status: 'New Lead',
-      priority: 'High',
-      listing_id: body.propertyId || null,
-      enquired_listing_id: body.propertyId || null,
-      source_reference_id: idempotencyKey,
-      raw_enquiry_payload: receipt.payload_json,
-      notes: message || null,
-    }).select('lead_id').single()
-    if (leadResult.error) throw leadResult.error
-    await supabase.from('website_lead_submissions').update({ lead_id: leadId, status: 'routed', routed_at: new Date().toISOString() }).eq('id', receiptResult.data.id)
-    return NextResponse.json({ accepted: true, leadId }, { status: 201 })
-  } catch (error) {
-    await supabase.from('website_lead_submissions').update({ status: 'failed', failure_reason: error instanceof Error ? error.message.slice(0, 500) : 'CRM write failed' }).eq('id', receiptResult.data.id)
-    return NextResponse.json({ error: 'Unable to route enquiry.' }, { status: 500 })
+  if (capture.error) {
+    const status = capture.error.code === 'P0002' ? 404 : ['22023', '22P02'].includes(capture.error.code || '') ? 400 : 500
+    return NextResponse.json({ error: status === 404 ? 'This enquiry destination is unavailable.' : status === 400 ? 'Please check the enquiry details.' : 'Unable to record enquiry.' }, { status })
   }
+
+  const captured = capture.data as CaptureResult
+  if (captured.rateLimited) return NextResponse.json({ error: 'Please wait before sending another enquiry.' }, { status: 429 })
+  if (!captured.accepted && !captured.duplicate) return NextResponse.json({ error: 'Unable to record enquiry.' }, { status: 500 })
+  if (!captured.duplicate) await dispatchWithFallback(supabase, captured)
+
+  return NextResponse.json({ accepted: true, duplicate: captured.duplicate === true }, { status: captured.duplicate ? 202 : 201 })
 }

@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
     root: __dirname,
   },
   images: {
-    remotePatterns: [{ protocol: 'https', hostname: '*.supabase.co' }],
+    remotePatterns: [{ protocol: 'https', hostname: '**' }],
   },
 }
 

@@ -1,0 +1,10 @@
+{
+  "contract": "public-websites-phase8-domain-verification-v1",
+  "hostname": "www.example-agency.co.za",
+  "verifiedAt": "2026-09-05T12:00:00.000Z",
+  "verifiedBy": "Replace with operator",
+  "hostnameResolved": false,
+  "certificateReady": false,
+  "emailDnsUnchanged": false,
+  "nameserversUnchanged": false
+}

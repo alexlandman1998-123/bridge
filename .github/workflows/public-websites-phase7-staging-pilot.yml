@@ -1,0 +1,165 @@
+name: Public Websites Phase 7 Staging Pilot
+
+on:
+  pull_request:
+    paths:
+      - 'apps/websites/**'
+      - 'the-it-guy/src/components/marketing/WebsiteWorkspace.*'
+      - 'the-it-guy/src/services/websiteWorkspaceService.js'
+      - 'the-it-guy/scripts/public-websites-phase*.mjs'
+      - 'supabase/migrations/*public_websites*'
+      - 'supabase/tests/public_websites*'
+      - 'docs/public-websites*'
+      - '.github/workflows/public-websites-phase7-staging-pilot.yml'
+  workflow_dispatch:
+    inputs:
+      pilot_organisation_id:
+        description: Organisation UUID already enrolled in the staging pilot
+        required: true
+        type: string
+      run_live_acceptance:
+        description: Deploy and run live pilot acceptance
+        required: true
+        default: false
+        type: boolean
+      manual_acceptance_json:
+        description: Reviewed public-websites-phase7-manual-acceptance-v1 JSON; required for a Phase 8 PASS
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Verify website release contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/websites/package-lock.json
+            the-it-guy/package-lock.json
+
+      - name: Install website dependencies
+        run: npm ci
+        working-directory: apps/websites
+
+      - name: Install CRM dependencies
+        run: npm ci
+        working-directory: the-it-guy
+
+      - name: Run website contracts
+        run: |
+          node scripts/public-websites-phase1-creation.test.mjs
+          node scripts/public-websites-phase2-brand-editor.test.mjs
+          node scripts/public-websites-phase3-listing-channel.test.mjs
+          node scripts/public-websites-phase4-page-authoring.test.mjs
+          node scripts/public-websites-phase5-lead-ingestion.test.mjs
+          node scripts/public-websites-phase6-publication-safety.test.mjs
+          node scripts/public-websites-phase7-staging-pilot.test.mjs
+        working-directory: the-it-guy
+
+      - name: Type-check and build public website
+        run: |
+          npm run typecheck
+          npm run build
+        working-directory: apps/websites
+
+  staging-pilot:
+    name: Deploy isolated staging pilot
+    needs: source-contract
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live_acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: public-websites-staging
+    env:
+      SUPABASE_STAGING_PROJECT_REF: ${{ secrets.SUPABASE_STAGING_PROJECT_REF }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_STAGING_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_STAGING_SERVICE_ROLE_KEY }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_WEBSITES_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEBSITES_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: |
+          npm ci --prefix apps/websites
+          npm ci --prefix the-it-guy
+
+      - name: Install pinned Vercel CLI
+        run: npm install --global vercel@48.10.2
+
+      - name: Pull preview environment
+        run: vercel pull --yes --environment=preview
+        working-directory: apps/websites
+
+      - name: Build the reviewed preview artifact
+        run: vercel build
+        working-directory: apps/websites
+
+      - name: Deploy the prebuilt artifact
+        id: deploy
+        shell: bash
+        run: |
+          deployment_url=$(vercel deploy --prebuilt --yes --target=preview)
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+        working-directory: apps/websites
+
+      - name: Bind generated hostname to the pilot site
+        shell: bash
+        run: |
+          hostname=${{ steps.deploy.outputs.url }}
+          hostname=${hostname#https://}
+          node scripts/public-websites-phase7-pilot.mjs \
+            --bind-hostname "$hostname" \
+            --organisation-id "${{ inputs.pilot_organisation_id }}" \
+            --operator "github:${{ github.actor }}" \
+            --confirm MANAGE_ONE_AGENCY_STAGING_PILOT
+        working-directory: the-it-guy
+
+      - name: Record reviewed manual acceptance
+        if: inputs.manual_acceptance_json != ''
+        env:
+          PHASE7_MANUAL_ACCEPTANCE_JSON: ${{ inputs.manual_acceptance_json }}
+        run: |
+          node -e "require('node:fs').writeFileSync('public-websites-phase7-manual-acceptance.json', process.env.PHASE7_MANUAL_ACCEPTANCE_JSON, { mode: 0o600 })"
+        working-directory: the-it-guy
+
+      - name: Run live acceptance and write evidence
+        shell: bash
+        run: |
+          manual_evidence=()
+          if [[ -s public-websites-phase7-manual-acceptance.json ]]; then
+            manual_evidence=(--manual-evidence public-websites-phase7-manual-acceptance.json)
+          fi
+          node scripts/public-websites-phase7-pilot.mjs \
+            --organisation-id "${{ inputs.pilot_organisation_id }}" \
+            --base-url "${{ steps.deploy.outputs.url }}" \
+            "${manual_evidence[@]}" \
+            --output public-websites-phase7-evidence.json \
+            --require-ready
+        working-directory: the-it-guy
+
+      - name: Upload staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-websites-phase7-evidence
+          path: the-it-guy/public-websites-phase7-evidence.json
+          if-no-files-found: error
+          retention-days: 30

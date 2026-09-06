@@ -45,6 +45,7 @@ import { getProperty24ListingStatusOptions } from './settings/property24Settings
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
 import ListingAgentReassignmentPanel from '../components/listings/ListingAgentReassignmentPanel'
+import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
 import {
   ListingWorkspacePortalActionPanel,
   ListingWorkspacePortalChecklist,
@@ -4330,7 +4331,7 @@ function AgentListingDetail() {
       hydratedMarketingListingIdRef.current = String(mergedSavedListing?.id || updatedListing.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage(options.successMessage || 'Listing details saved.')
-      return { ok: true, listing: mergedSavedListing }
+      return { ok: true, listing: mergedSavedListing, distributionSync }
     } catch (error) {
       console.error('[AgentListingDetail] Supabase listing save failed', error)
       setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
@@ -4454,6 +4455,29 @@ function AgentListingDetail() {
     } finally {
       setPublicationSaving(false)
     }
+  }
+
+  async function prepareAgencyWebsiteListing() {
+    const blockers = getArch9PublicationBlockers(marketingDraft, coverImage)
+    if (blockers.length) throw new Error(`Before publishing to the agency website: ${blockers.join(' ')}`)
+
+    const currentListingStatus = normalizeKey(marketingDraft.listingStatus)
+    const nextDraft = {
+      ...marketingDraft,
+      publicationStatus: 'Published',
+      listingStatus: ['sold', 'withdrawn', 'transaction_created'].includes(currentListingStatus)
+        ? marketingDraft.listingStatus
+        : 'active',
+    }
+    setMarketingDraft(nextDraft)
+    const saveResult = await saveMarketingDraft(nextDraft, {
+      listingVisibility: 'active_market',
+      successMessage: 'Listing details prepared for the agency website.',
+    })
+    if (saveResult?.distributionSync?.skipped) {
+      throw saveResult.distributionSync.error || new Error('The listing saved, but its public projection could not be synchronized. Retry before publishing to the website.')
+    }
+    return saveResult
   }
 
   async function callProperty24ListingAction(action, body = {}, options = {}) {
@@ -11790,6 +11814,13 @@ function AgentListingDetail() {
                 )}
               </div>
             </section>
+
+            <WebsiteListingPublicationPanel
+              listingId={listingRecord?.id}
+              listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
+              preparationBlockers={arch9PublicationBlockers}
+              onPrepare={prepareAgencyWebsiteListing}
+            />
 
             <section className="rounded-[24px] border border-[#cfe0ef] bg-gradient-to-br from-[#f8fbff] via-white to-[#eef6fb] p-5 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">

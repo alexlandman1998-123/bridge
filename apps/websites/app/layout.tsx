@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './styles.css'
+import './brand.css'
 
 export const metadata: Metadata = {
   title: 'PropData Websites',

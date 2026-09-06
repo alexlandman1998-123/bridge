@@ -1,0 +1,19 @@
+{
+  "contract": "public-websites-phase7-manual-acceptance-v1",
+  "organisationId": "00000000-0000-4000-8000-000000000000",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "reviewedBy": "Replace with reviewer name",
+  "reviewedAt": "2026-09-05T12:00:00.000Z",
+  "notes": "Replace with devices, browsers and any accepted observations.",
+  "checks": {
+    "crossTenantIsolation": false,
+    "draftIsolation": false,
+    "listingPublishUpdateUnpublish": false,
+    "leadIdempotencyAndFallback": false,
+    "mobile320": false,
+    "mobile375": false,
+    "tablet768": false,
+    "iosSafari": false,
+    "androidChrome": false
+  }
+}

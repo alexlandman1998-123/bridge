@@ -1,0 +1,254 @@
+name: Public Websites Phase 8 Production Release
+
+on:
+  pull_request:
+    paths:
+      - 'apps/websites/**'
+      - 'the-it-guy/src/components/marketing/WebsiteWorkspace.*'
+      - 'the-it-guy/src/services/websiteWorkspaceService.js'
+      - 'the-it-guy/scripts/public-websites-phase*.mjs'
+      - 'supabase/migrations/*public_websites*'
+      - 'supabase/tests/public_websites*'
+      - 'docs/public-websites*'
+      - '.github/workflows/public-websites-phase8-production-release.yml'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Controlled release operation
+        required: true
+        default: plan
+        type: choice
+        options: [plan, approve, prepare-domain, verify-domain, activate, rollback, status]
+      organisation_id:
+        description: Exact approved agency UUID
+        required: true
+        type: string
+      phase7_evidence_json:
+        description: Immutable Phase 7 PASS evidence JSON; required for plan, approval and activation
+        required: false
+        type: string
+      approval_json:
+        description: Phase 8 production approval JSON; required for plan, approval, activation and rollback
+        required: false
+        type: string
+      dns_snapshot_json:
+        description: Website-only DNS snapshot JSON; required for prepare-domain
+        required: false
+        type: string
+      domain_verification_json:
+        description: DNS/TLS verification JSON; required for verify-domain
+        required: false
+        type: string
+      rollback_reason:
+        description: Incident or rollback reason
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    name: Verify complete website contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            apps/websites/package-lock.json
+            the-it-guy/package-lock.json
+      - run: npm ci
+        working-directory: apps/websites
+      - run: npm ci
+        working-directory: the-it-guy
+      - name: Run Phases 1–8 contracts
+        run: |
+          node scripts/public-websites-phase1-creation.test.mjs
+          node scripts/public-websites-phase2-brand-editor.test.mjs
+          node scripts/public-websites-phase3-listing-channel.test.mjs
+          node scripts/public-websites-phase4-page-authoring.test.mjs
+          node scripts/public-websites-phase5-lead-ingestion.test.mjs
+          node scripts/public-websites-phase6-publication-safety.test.mjs
+          node scripts/public-websites-phase7-staging-pilot.test.mjs
+          node scripts/public-websites-phase8-controlled-production-release.test.mjs
+        working-directory: the-it-guy
+      - name: Build public website
+        run: |
+          npm run typecheck
+          npm run build
+        working-directory: apps/websites
+
+  production-release:
+    name: Controlled production operation
+    needs: source-contract
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: public-websites-production
+    env:
+      SUPABASE_PRODUCTION_PROJECT_REF: ${{ secrets.SUPABASE_PRODUCTION_PROJECT_REF }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_PRODUCTION_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_PRODUCTION_SERVICE_ROLE_KEY }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_WEBSITES_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_WEBSITES_PROJECT_ID }}
+      WEBSITE_RELEASE_SMOKE_EMAIL: ${{ secrets.WEBSITE_RELEASE_SMOKE_EMAIL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: the-it-guy
+      - run: npm install --global vercel@48.10.2
+
+      - name: Materialise reviewed release inputs
+        env:
+          PHASE7_EVIDENCE_JSON: ${{ inputs.phase7_evidence_json }}
+          PHASE8_APPROVAL_JSON: ${{ inputs.approval_json }}
+          PHASE8_DNS_SNAPSHOT_JSON: ${{ inputs.dns_snapshot_json }}
+          PHASE8_DOMAIN_VERIFICATION_JSON: ${{ inputs.domain_verification_json }}
+        run: |
+          node -e "const fs=require('node:fs'); for (const [name,key] of [['phase7.json','PHASE7_EVIDENCE_JSON'],['approval.json','PHASE8_APPROVAL_JSON'],['dns.json','PHASE8_DNS_SNAPSHOT_JSON'],['verification.json','PHASE8_DOMAIN_VERIFICATION_JSON']]) if(process.env[key]) { fs.writeFileSync(name,process.env[key],{mode:0o400}); fs.chmodSync(name,0o400) }"
+        working-directory: the-it-guy
+
+      - name: Validate release evidence and approval
+        if: contains(fromJSON('["plan","approve","prepare-domain","verify-domain","activate"]'), inputs.action)
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --plan \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --phase7-evidence phase7.json \
+            --approval approval.json \
+            --output phase8-plan-evidence.json
+        working-directory: the-it-guy
+
+      - name: Read approved deployment coordinates
+        id: approval
+        if: contains(fromJSON('["plan","approve","prepare-domain","verify-domain","activate"]'), inputs.action) && inputs.approval_json != ''
+        env:
+          PHASE8_APPROVAL_JSON: ${{ inputs.approval_json }}
+        shell: bash
+        run: |
+          node -e "const fs=require('node:fs'); const value=JSON.parse(process.env.PHASE8_APPROVAL_JSON); for (const [key,item] of [['candidate',value.candidateDeploymentUrl],['rollback',value.rollbackDeploymentUrl],['hostname',value.targetHostname]]) fs.appendFileSync(process.env.GITHUB_OUTPUT, key+'='+item+'\n')"
+
+      - name: Record production approval
+        if: inputs.action == 'approve'
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --approve \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --phase7-evidence phase7.json \
+            --approval approval.json \
+            --operator "github:${{ github.actor }}" \
+            --confirm AUTHORIZE_ONE_AGENCY_WEBSITE_PRODUCTION_RELEASE \
+            --output phase8-approval-evidence.json
+        working-directory: the-it-guy
+
+      - name: Prepare website-only domain change
+        if: inputs.action == 'prepare-domain'
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --prepare-domain \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --dns-snapshot dns.json \
+            --operator "github:${{ github.actor }}" \
+            --confirm AUTHORIZE_ONE_AGENCY_WEBSITE_PRODUCTION_RELEASE \
+            --output phase8-domain-preparation.json
+          vercel domains add "${{ steps.approval.outputs.hostname }}" "${{ secrets.VERCEL_WEBSITES_PROJECT_ID }}" --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: the-it-guy
+
+      - name: Verify domain and TLS evidence
+        if: inputs.action == 'verify-domain'
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --verify-domain \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --verification verification.json \
+            --operator "github:${{ github.actor }}" \
+            --confirm AUTHORIZE_ONE_AGENCY_WEBSITE_PRODUCTION_RELEASE \
+            --output phase8-domain-verification.json
+        working-directory: the-it-guy
+
+      - name: Inspect approved candidate and rollback deployment
+        if: inputs.action == 'activate'
+        run: |
+          vercel inspect "${{ steps.approval.outputs.candidate }}" --token=${{ secrets.VERCEL_TOKEN }}
+          vercel inspect "${{ steps.approval.outputs.rollback }}" --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/websites
+
+      - name: Promote the exact reviewed deployment
+        if: inputs.action == 'activate'
+        run: vercel promote "${{ steps.approval.outputs.candidate }}" --yes --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: apps/websites
+
+      - name: Open production serving gate
+        if: inputs.action == 'activate'
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --activate \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --approval approval.json \
+            --operator "github:${{ github.actor }}" \
+            --confirm AUTHORIZE_ONE_AGENCY_WEBSITE_PRODUCTION_RELEASE \
+            --base-url "https://${{ steps.approval.outputs.hostname }}" \
+            --output phase8-production-evidence.json \
+            --submit-smoke-lead \
+            --require-active \
+            --require-lead
+        working-directory: the-it-guy
+
+      - name: Fail closed after an unsuccessful activation
+        if: failure() && inputs.action == 'activate'
+        continue-on-error: true
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --rollback \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --operator "github:${{ github.actor }}" \
+            --reason "Automatic rollback after failed Phase 8 activation" \
+            --confirm AUTHORIZE_ONE_AGENCY_WEBSITE_PRODUCTION_RELEASE
+          vercel rollback "${{ steps.approval.outputs.rollback }}" --yes --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: the-it-guy
+
+      - name: Capture stored rollback target
+        if: inputs.action == 'rollback'
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --output phase8-pre-rollback-status.json
+        working-directory: the-it-guy
+
+      - name: Execute approved rollback
+        if: inputs.action == 'rollback'
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --rollback \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --operator "github:${{ github.actor }}" \
+            --reason "${{ inputs.rollback_reason }}" \
+            --confirm AUTHORIZE_ONE_AGENCY_WEBSITE_PRODUCTION_RELEASE \
+            --output phase8-rollback-evidence.json
+          rollback_url=$(node -e "const value=require('./phase8-pre-rollback-status.json'); if(!value.release?.rollbackDeploymentUrl) throw new Error('Stored rollback deployment is missing'); process.stdout.write(value.release.rollbackDeploymentUrl)")
+          vercel rollback "$rollback_url" --yes --token=${{ secrets.VERCEL_TOKEN }}
+        working-directory: the-it-guy
+
+      - name: Capture current production status
+        if: inputs.action == 'status'
+        run: |
+          node scripts/public-websites-phase8-release.mjs \
+            --organisation-id "${{ inputs.organisation_id }}" \
+            --output phase8-production-status.json
+        working-directory: the-it-guy
+
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: public-websites-phase8-${{ inputs.action }}
+          path: the-it-guy/phase8-*.json
+          if-no-files-found: warn
+          retention-days: 90
