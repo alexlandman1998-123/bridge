@@ -144,3 +144,33 @@ supersede an older implementation.
 - Closed without porting: workspace snapshot, Tuckers hotfix, storage-quota branches, and public websites pilot.
 - Advance to Phase 5 selective review: Private Property isolation, production stabilization, client-portal mobile launch, navigation-query phase 6, and buyer-portal phase 7.
 - No branch, tag, worktree, migration, or remote reference was changed by this audit.
+
+## Phase 5 selective forward-port — 6 September 2026
+
+Each Phase 4 candidate was evaluated as a behavioral source, not as a merge
+source. Branch-added contracts were inventoried separately from old tests that
+were merely modified on the divergent branch. The review also excluded
+environment evidence, production execution records, and migrations already
+covered by the Phase 3 migration-drift hold.
+
+| Branch | Current-tree validation | Phase 5 disposition |
+| --- | --- | --- |
+| `codex/private-property-isolation-20260831` | The durable Phase 10–15 capture, sequence, verification, workbook, and return-package contracts pass. The retained rental follow-up contract exposed a stale assertion: it supplied an unsupported preview-only image option while the mapper correctly retained the controlled Arch9 CDN fixture. | **Forward-port one contract repair.** Keep the row-recovery execution chain and its production evidence on the source branch; do not import mutation runners or historical receipts. |
+| `release/production-stabilization-20260830` | Current contracts pass for navigation/auth stability, cold-load bootstrap isolation, target-flow performance, operational evidence, and fresh-evidence promotion. | **Behavior represented.** Do not import the old route-shell implementation, rental migration chain, or certification evidence. |
+| `release/client-portal-mobile-launch` | The branch's launch implementation is coupled to an older portal shell. Its phase certification files are historical release evidence, not reusable authority for the evolved portal. Current shared portal contracts remain the release authority. | **No code port.** Do not copy stale certification receipts or overwrite the current portal shell. |
+| `codex/navigation-query-phase6` | The current release tree retains and passes the production navigation/auth, cold-bootstrap, and target-flow gates. The source branch's query-baseline suite depends on its historical telemetry schema and migrations. | **No code port.** Preserve the current observability implementation; do not import the old query schema or workflow. |
+| `codex/buyer-portal-phase7-cutover` | Its two commits are shared foundations for the later navigation branch and include broad historical workflow/migration changes. Modified snapshot tests fail against evolved route markup, but do not identify a missing current behavior. | **No code port.** Do not cherry-pick the broad foundation commits. |
+
+### Phase 5 gate
+
+- Forward-ported change: repair the Private Property rental follow-up contract
+  so it asserts the controlled CDN preview fixture actually accepted by the
+  mapper.
+- Verified current production-stabilization gates: navigation/auth stability,
+  cold-load bootstrap isolation, target-flow performance, target-flow
+  operations, and promotion freshness.
+- No migrations, production evidence, operational mutation runners, branch
+  refs, worktrees, or remote refs were changed.
+- The five selective-review branches are closed for direct integration. Any
+  future salvage must begin as a newly scoped current-baseline change with a
+  current behavioral reproduction, not by cherry-picking these branch tips.

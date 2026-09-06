@@ -54,15 +54,24 @@ const preview = createPrivatePropertyArch9ListingPreview({
     propertyId: 'PP-SANDBOX-RENTAL-COM-M2-001',
     branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F',
     suburbId: '140',
-    additionalPhotoUrls: 'https://images.unsplash.com/photo-1493809842364-78817add7ffb?auto=format&fit=crop&w=1600&q=80',
   },
 })
 assert.equal(preview.canPreview, true)
 assert.match(preview.listingXml, /<AgentId>ARCH9-SANDBOX-USER-1,ARCH9-SANDBOX-USER-2<\/AgentId>/)
-assert.match(preview.listingXml, /photo-1493809842364-78817add7ffb/)
+assert.match(preview.listingXml, /rental-commercial-m2-1\.jpg/)
 
 const residentialPreview = createPrivatePropertyArch9ListingPreview({
   ...fixture,
+  listing: {
+    ...fixture.listing,
+    property_type: 'Apartment',
+  },
+  publication: {
+    ...fixture.publication,
+    property_type: 'Apartment',
+    bedrooms: 2,
+    bathrooms: 1,
+  },
   agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
   options: {
     ...fixture.options,
