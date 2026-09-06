@@ -33,11 +33,13 @@ The isolated staging pilot was activated for Kingstons Real Estate on 6 Septembe
 - the protected GitHub environment `public-websites-staging` contains the six required deployment secrets;
 - Kingstons is the single active enrolment and its `property-standard-v1` site is published at the protected Vercel preview hostname;
 - the Kingstons logo asset was copied into public staging storage because the database clone retained an expired production signed URL;
+- the nine Kingstons gallery assets were likewise copied read-only from production private storage into durable public staging URLs after browser review exposed the clone's expired signed URLs; all nine staging assets return HTTP 200 and production received no writes;
 - all standard public routes return HTTP 200, a synthetic enquiry routes once into the staging CRM and an identical retry resolves to the same lead and receipt;
 - a temporary published branding change was visibly verified and then removed with the immutable revision rollback command;
 - listing `PRV-202607130739-6FA9` completed publish, update, unpublish and republish as the Kingstons principal, with nine images and no website-channel blockers;
 - during unpublish, `/properties` remained healthy while the listing disappeared and its detail route returned HTTP 404; after republish, the collection and detail routes returned HTTP 200 with the Lynnwood and asking-price content; and
-- the post-lifecycle Phase 7 evidence has fingerprint `9e69d2fe59cab71cfb2aac00ae492a5ea91b213137a638ad091ad39594b29e92`, one published listing and no automated failures.
+- browser review at 320px, 375px and 768px confirms the fixed gallery renders without broken images, horizontal overflow, out-of-bounds content or console errors; and
+- the final Phase 7 evidence has fingerprint `9fb2d515f4eadf27d28c96ffd5e119a7d872b28f2f67ddba90341fd9000810a9`, one published listing and no automated failures.
 
 Phase 7 remains blocked from completion only until the named reviewer completes the nine manual acceptance checks: cross-tenant isolation, draft isolation, reviewed listing lifecycle, lead fallback, 320px, 375px, 768px, iOS Safari and Android Chrome.
 
