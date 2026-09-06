@@ -1,7 +1,7 @@
 {
-  "generatedAt": "2026-07-29T19:36:03.366Z",
+  "generatedAt": "2026-09-06T15:54:49.832Z",
   "sourceManifest": "docs/supabase-phase-5-application-manifest.json",
-  "rowCount": 33,
+  "rowCount": 95,
   "instructions": [
     "Replace TODO_STAGING_PROJECT_REF with the non-production Supabase project ref.",
     "Use one reviewed evidence object per migration version.",
@@ -10,60 +10,14 @@
   ],
   "rows": [
     {
-      "version": "202607270013",
-      "stream": "legal_document_runtime",
-      "file": "202607270013_final_mandate_completion_terminal_state.sql",
-      "action": "repair_only_after_smoke",
-      "objectStatus": "all_live",
-      "runnerEligibility": "staging_record_only_after_smoke",
-      "stagingEvidenceTemplate": {
-        "version": "202607270013",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": false,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Do not apply SQL; record the ledger only after smoke evidence passes."
-        ]
-      }
-    },
-    {
-      "version": "202607270015",
+      "version": "20260828203724",
       "stream": "bond_finance_runtime",
-      "file": "202607270015_bond_finance_document_metadata_cleanup.sql",
-      "action": "manual_data_review",
-      "objectStatus": "no_static_objects",
-      "runnerEligibility": "blocked_manual_data_review",
-      "stagingEvidenceTemplate": {
-        "version": "202607270015",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": null,
-        "stagingLedgerRecorded": null,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Complete manual data review before deciding apply or repair."
-        ]
-      }
-    },
-    {
-      "version": "202607280003",
-      "stream": "bond_finance_runtime",
-      "file": "202607280003_guided_bond_application_phase5_submissions.sql",
+      "file": "20260828203724_bond_application_idempotent_document_reconciliation.sql",
       "action": "apply_original_after_dependency_check",
       "objectStatus": "none_live",
       "runnerEligibility": "staging_apply_then_record",
       "stagingEvidenceTemplate": {
-        "version": "202607280003",
+        "version": "20260828203724",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
         "sqlApplied": true,
@@ -79,14 +33,14 @@
       }
     },
     {
-      "version": "202607280004",
+      "version": "20260905100612",
       "stream": "bond_finance_runtime",
-      "file": "202607280004_guided_bond_application_phase6_participants.sql",
+      "file": "20260905100612_bond_application_portal_phase2_access_tokens.sql",
       "action": "apply_original_after_dependency_check",
       "objectStatus": "none_live",
       "runnerEligibility": "staging_apply_then_record",
       "stagingEvidenceTemplate": {
-        "version": "202607280004",
+        "version": "20260905100612",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
         "sqlApplied": true,
@@ -102,14 +56,14 @@
       }
     },
     {
-      "version": "202607280005",
+      "version": "20260905100908",
       "stream": "bond_finance_runtime",
-      "file": "202607280005_guided_bond_application_phase7_sureties_revisions.sql",
+      "file": "20260905100908_bond_application_portal_phase3_draft_editing.sql",
       "action": "apply_original_after_dependency_check",
       "objectStatus": "none_live",
       "runnerEligibility": "staging_apply_then_record",
       "stagingEvidenceTemplate": {
-        "version": "202607280005",
+        "version": "20260905100908",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
         "sqlApplied": true,
@@ -125,14 +79,14 @@
       }
     },
     {
-      "version": "202607280006",
+      "version": "20260905101301",
       "stream": "bond_finance_runtime",
-      "file": "202607280006_guided_bond_application_phase8_external_exports.sql",
+      "file": "20260905101301_bond_application_portal_phase4_originator_action_centre.sql",
       "action": "apply_original_after_dependency_check",
       "objectStatus": "none_live",
       "runnerEligibility": "staging_apply_then_record",
       "stagingEvidenceTemplate": {
-        "version": "202607280006",
+        "version": "20260905101301",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
         "sqlApplied": true,
@@ -148,336 +102,14 @@
       }
     },
     {
-      "version": "202607280007",
+      "version": "20260905101931",
       "stream": "bond_finance_runtime",
-      "file": "202607280007_guided_bond_application_phase8a_originator_intake.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280007",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280008",
-      "stream": "bond_finance_runtime",
-      "file": "202607280008_guided_bond_application_phase8b_originator_document_requests.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280008",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280009",
-      "stream": "bond_finance_runtime",
-      "file": "202607280009_guided_bond_application_phase8c_originator_progress_tracking.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280009",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280010",
-      "stream": "bond_finance_runtime",
-      "file": "202607280010_guided_bond_application_phase8d_originator_offers_grants.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280010",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280011",
-      "stream": "bond_finance_runtime",
-      "file": "202607280011_guided_bond_application_phase8e_buyer_offer_grant_experience.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280011",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280012",
-      "stream": "bond_finance_runtime",
-      "file": "202607280012_guided_bond_application_phase8f_agent_progress_view.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280012",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280013",
-      "stream": "bond_finance_runtime",
-      "file": "202607280013_guided_bond_application_phase8g_attorney_handoff.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280013",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280014",
-      "stream": "bond_finance_runtime",
-      "file": "202607280014_guided_bond_application_phase8h_recipient_specific_formats.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280014",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280015",
-      "stream": "bond_finance_runtime",
-      "file": "202607280015_guided_bond_application_phase8i_governance_reporting.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280015",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607260008",
-      "stream": "other",
-      "file": "202607260008_document_packet_hot_lookup_indexes.sql",
-      "action": "repair_only_after_smoke",
-      "objectStatus": "all_live",
-      "runnerEligibility": "staging_record_only_after_smoke",
-      "stagingEvidenceTemplate": {
-        "version": "202607260008",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": false,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Do not apply SQL; record the ledger only after smoke evidence passes."
-        ]
-      }
-    },
-    {
-      "version": "202607270002",
-      "stream": "other",
-      "file": "202607270002_agency_lead_workspace_hot_path_indexes.sql",
-      "action": "repair_only_after_smoke",
-      "objectStatus": "all_live",
-      "runnerEligibility": "staging_record_only_after_smoke",
-      "stagingEvidenceTemplate": {
-        "version": "202607270002",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": false,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Do not apply SQL; record the ledger only after smoke evidence passes."
-        ]
-      }
-    },
-    {
-      "version": "202607270009",
-      "stream": "other",
-      "file": "202607270009_client_portal_bootstrap_hot_path_indexes.sql",
-      "action": "repair_only_after_smoke",
-      "objectStatus": "all_live",
-      "runnerEligibility": "staging_record_only_after_smoke",
-      "stagingEvidenceTemplate": {
-        "version": "202607270009",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": false,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Do not apply SQL; record the ledger only after smoke evidence passes."
-        ]
-      }
-    },
-    {
-      "version": "202607270010",
-      "stream": "other",
-      "file": "202607270010_seller_document_completion_notification.sql",
-      "action": "repair_only_after_smoke",
-      "objectStatus": "all_live",
-      "runnerEligibility": "staging_record_only_after_smoke",
-      "stagingEvidenceTemplate": {
-        "version": "202607270010",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": false,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Do not apply SQL; record the ledger only after smoke evidence passes."
-        ]
-      }
-    },
-    {
-      "version": "202607270011",
-      "stream": "other",
-      "file": "202607270011_attorney_transaction_key_dates.sql",
-      "action": "manual_data_review",
-      "objectStatus": "no_static_objects",
-      "runnerEligibility": "blocked_manual_data_review",
-      "stagingEvidenceTemplate": {
-        "version": "202607270011",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": null,
-        "stagingLedgerRecorded": null,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Complete manual data review before deciding apply or repair."
-        ]
-      }
-    },
-    {
-      "version": "202607270012",
-      "stream": "other",
-      "file": "202607270012_canonical_matter_lifecycle_stages.sql",
+      "file": "20260905101931_bond_application_portal_phase5_delivery_reminders.sql",
       "action": "corrective_migration_required",
       "objectStatus": "partial_live",
       "runnerEligibility": "blocked_create_corrective_migration",
       "stagingEvidenceTemplate": {
-        "version": "202607270012",
+        "version": "20260905101931",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
         "sqlApplied": null,
@@ -493,14 +125,83 @@
       }
     },
     {
-      "version": "202607270014",
-      "stream": "other",
-      "file": "202607270014_certify_native_structured_legal_pdf.sql",
+      "version": "20260905102430",
+      "stream": "bond_finance_runtime",
+      "file": "20260905102430_bond_application_portal_phase6_document_continuity.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260905102430",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260905102813",
+      "stream": "bond_finance_runtime",
+      "file": "20260905102813_bond_application_portal_phase7_submission_readiness.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260905102813",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260905102934",
+      "stream": "bond_finance_runtime",
+      "file": "20260905102934_bond_application_portal_phase8_external_submission_record.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260905102934",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260903094957",
+      "stream": "attorney_identity_access",
+      "file": "20260903094957_retire_inactive_attorney_assignments.sql",
       "action": "repair_only_after_smoke",
       "objectStatus": "all_live",
       "runnerEligibility": "staging_record_only_after_smoke",
       "stagingEvidenceTemplate": {
-        "version": "202607270014",
+        "version": "20260903094957",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
         "sqlApplied": false,
@@ -516,17 +217,17 @@
       }
     },
     {
-      "version": "202607280002",
+      "version": "20260817174624",
       "stream": "other",
-      "file": "202607280002_email_notification_branding_readiness.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
+      "file": "20260817174624_arch9_inbound_leads_flow.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
       "stagingEvidenceTemplate": {
-        "version": "202607280002",
+        "version": "20260817174624",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
+        "sqlApplied": false,
         "stagingLedgerRecorded": true,
         "catalogChecks": "pass",
         "behaviorChecks": "pass",
@@ -534,22 +235,22 @@
         "reviewedBy": "TODO_REVIEWER",
         "approvedBy": "TODO_APPROVER",
         "notes": [
-          "Apply this original migration file to staging before recording the ledger."
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
         ]
       }
     },
     {
-      "version": "202607280016",
+      "version": "20260818203652",
       "stream": "other",
-      "file": "202607280016_originator_rollout_phase_r1_internal_readiness.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
+      "file": "20260818203652_arch9_inbound_leads_snapshot_profile_shape.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
       "stagingEvidenceTemplate": {
-        "version": "202607280016",
+        "version": "20260818203652",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
+        "sqlApplied": false,
         "stagingLedgerRecorded": true,
         "catalogChecks": "pass",
         "behaviorChecks": "pass",
@@ -557,203 +258,65 @@
         "reviewedBy": "TODO_REVIEWER",
         "approvedBy": "TODO_APPROVER",
         "notes": [
-          "Apply this original migration file to staging before recording the ledger."
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
         ]
       }
     },
     {
-      "version": "202607280017",
+      "version": "202608200001",
       "stream": "other",
-      "file": "202607280017_originator_rollout_phase_r2_workspace_mvp.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280017",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280018",
-      "stream": "other",
-      "file": "202607280018_originator_rollout_phase_r3_document_requests.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280018",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280019",
-      "stream": "other",
-      "file": "202607280019_originator_rollout_phase_r4_progress_tracking.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280019",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280020",
-      "stream": "other",
-      "file": "202607280020_originator_rollout_phase_r5_offers_grants_capture.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280020",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280021",
-      "stream": "other",
-      "file": "202607280021_originator_rollout_phase_r6_one_originator_pilot.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280021",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280022",
-      "stream": "other",
-      "file": "202607280022_originator_rollout_phase_r7_operational_hardening.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280022",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280023",
-      "stream": "other",
-      "file": "202607280023_originator_rollout_phase_r8_multi_originator_rollout.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280023",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607280024",
-      "stream": "other",
-      "file": "202607280024_originator_rollout_phase_r9_optional_formal_integrations.sql",
-      "action": "apply_original_after_dependency_check",
-      "objectStatus": "none_live",
-      "runnerEligibility": "staging_apply_then_record",
-      "stagingEvidenceTemplate": {
-        "version": "202607280024",
-        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
-        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
-        "sqlApplied": true,
-        "stagingLedgerRecorded": true,
-        "catalogChecks": "pass",
-        "behaviorChecks": "pass",
-        "rollbackOrNoResidue": "pass",
-        "reviewedBy": "TODO_REVIEWER",
-        "approvedBy": "TODO_APPROVER",
-        "notes": [
-          "Apply this original migration file to staging before recording the ledger."
-        ]
-      }
-    },
-    {
-      "version": "202607290005",
-      "stream": "other",
-      "file": "202607290005_corrective_canonical_matter_lifecycle_stages.sql",
-      "action": "apply_original_after_dependency_check",
+      "file": "202608200001_whatsapp_integration_foundation.sql",
+      "action": "corrective_migration_required",
       "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "202608200001",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "202608200002",
+      "stream": "other",
+      "file": "202608200002_whatsapp_template_seed.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "202608200002",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260820160621",
+      "stream": "other",
+      "file": "20260820160621_journey_stage_overrides_phase2.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
       "runnerEligibility": "staging_apply_then_record",
       "stagingEvidenceTemplate": {
-        "version": "202607290005",
+        "version": "20260820160621",
         "targetProjectRef": "TODO_STAGING_PROJECT_REF",
         "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
         "sqlApplied": true,
@@ -765,6 +328,1869 @@
         "approvedBy": "TODO_APPROVER",
         "notes": [
           "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260820174624",
+      "stream": "other",
+      "file": "20260820174624_admin_dashboard_units_as_listings.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260820174624",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260820192038",
+      "stream": "other",
+      "file": "20260820192038_admin_dashboard_external_inventory_snapshots.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260820192038",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260820192857",
+      "stream": "other",
+      "file": "20260820192857_remove_admin_external_inventory_counts.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260820192857",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260820193436",
+      "stream": "other",
+      "file": "20260820193436_admin_dashboard_exact_active_listing_tokens.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260820193436",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "202608230001",
+      "stream": "other",
+      "file": "202608230001_agency_onboarding_flow.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "202608230001",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "202608230002",
+      "stream": "other",
+      "file": "202608230002_transaction_sale_profile_phase1.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "202608230002",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "202608240001",
+      "stream": "other",
+      "file": "202608240001_prospect_demo_configs.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "202608240001",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260824084233",
+      "stream": "other",
+      "file": "20260824084233_add_prospect_demo_brand_colours.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260824084233",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260824091732",
+      "stream": "other",
+      "file": "20260824091732_align_prospect_demo_admin_rls.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260824091732",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260824092531",
+      "stream": "other",
+      "file": "20260824092531_add_prospect_demo_light_dark_logos.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260824092531",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "202608250001",
+      "stream": "other",
+      "file": "202608250001_remove_listing_mandate_activation_guards.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "202608250001",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260827081713",
+      "stream": "other",
+      "file": "20260827081713_normalize_transaction_participant_assignment_sources.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260827081713",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260827083108",
+      "stream": "other",
+      "file": "20260827083108_normalize_transaction_participant_statuses.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "20260827083108",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "20260827091439",
+      "stream": "other",
+      "file": "20260827091439_transaction_setup_owner_rls_access.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260827091439",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "202608290001",
+      "stream": "other",
+      "file": "202608290001_lead_multi_agent_assignments.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "202608290001",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "202608290002",
+      "stream": "other",
+      "file": "202608290002_client_compliance_verification.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "202608290002",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260829103738",
+      "stream": "other",
+      "file": "20260829103738_transaction_sync_phase2_canonical_propagation.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260829103738",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260829105514",
+      "stream": "other",
+      "file": "20260829105514_transaction_sync_phase3_module_adapters.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260829105514",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260829111644",
+      "stream": "other",
+      "file": "20260829111644_transaction_sync_phase6_controlled_recovery.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260829111644",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260829112135",
+      "stream": "other",
+      "file": "20260829112135_transaction_sync_phase7_canary_certification.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260829112135",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260829112530",
+      "stream": "other",
+      "file": "20260829112530_transaction_sync_phase8_fleet_release_gate.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260829112530",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260829195657",
+      "stream": "other",
+      "file": "20260829195657_seller_onboarding_link_fast_prepare.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260829195657",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260829204153",
+      "stream": "other",
+      "file": "20260829204153_seller_onboarding_completion_receipt_and_projection_rls.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "20260829204153",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "20260830125035",
+      "stream": "other",
+      "file": "20260830125035_attorney_dashboard_rpc_hot_path.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260830125035",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260830160810",
+      "stream": "other",
+      "file": "20260830160810_secure_auth_bootstrap_rpc.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260830160810",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260831071807",
+      "stream": "other",
+      "file": "20260831071807_canonical_transaction_requirements_on_creation.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260831071807",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260831072652",
+      "stream": "other",
+      "file": "20260831072652_canonical_transaction_requirements_on_creation.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260831072652",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260831120000",
+      "stream": "other",
+      "file": "20260831120000_property24_migration_listing_media_storage.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260831120000",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260831131538",
+      "stream": "other",
+      "file": "20260831131538_property24_canonical_connection_backfill.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260831131538",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260831140736",
+      "stream": "other",
+      "file": "20260831140736_property24_agent_catalog_mappings.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260831140736",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260831150740",
+      "stream": "other",
+      "file": "20260831150740_property24_live_cutover_gate.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260831150740",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260831153322",
+      "stream": "other",
+      "file": "20260831153322_staging_rls_warning_view_hardening.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260831153322",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260831190341",
+      "stream": "other",
+      "file": "20260831190341_compatibility_fallback_retirement_telemetry.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260831190341",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260901075131",
+      "stream": "other",
+      "file": "20260901075131_public_development_landing_and_access_boundary.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "20260901075131",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "20260901110612",
+      "stream": "other",
+      "file": "20260901110612_development_organisation_relationship_foundation.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "20260901110612",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "20260901140943",
+      "stream": "other",
+      "file": "20260901140943_harden_admin_portal_authorization.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260901140943",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260901143358",
+      "stream": "other",
+      "file": "20260901143358_property24_category_listing_facts.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260901143358",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260901145225",
+      "stream": "other",
+      "file": "20260901145225_property24_commercial_canonical_backfill.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260901145225",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260901165511",
+      "stream": "other",
+      "file": "20260901165511_website_publication_workflow_phase6.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260901165511",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260901170254",
+      "stream": "other",
+      "file": "20260901170254_development_structure_hierarchy_phase2.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260901170254",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260901170909",
+      "stream": "other",
+      "file": "20260901170909_development_product_catalogue_phase4.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260901170909",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260901174924",
+      "stream": "other",
+      "file": "20260901174924_website_draft_page_authoring_phase7.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260901174924",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260902074000",
+      "stream": "other",
+      "file": "20260902074000_hide_non_building_harbour_heights_map_markers.sql",
+      "action": "manual_data_review",
+      "objectStatus": "no_static_objects",
+      "runnerEligibility": "blocked_manual_data_review",
+      "stagingEvidenceTemplate": {
+        "version": "20260902074000",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Complete manual data review before deciding apply or repair."
+        ]
+      }
+    },
+    {
+      "version": "20260902085300",
+      "stream": "other",
+      "file": "20260902085300_allow_platform_admin_profile_role.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260902085300",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260902095249",
+      "stream": "other",
+      "file": "20260902095249_public_development_organisation_branding.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260902095249",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260902105303",
+      "stream": "other",
+      "file": "20260902105303_public_development_high_contrast_branding.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260902105303",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260903094624",
+      "stream": "other",
+      "file": "20260903094624_organisation_workspace_lock.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260903094624",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260903122031",
+      "stream": "other",
+      "file": "20260903122031_development_marketing_collaboration_foundation.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "20260903122031",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "20260903130012",
+      "stream": "other",
+      "file": "20260903130012_development_marketing_invite_delivery_phase5.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260903130012",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260905090353",
+      "stream": "other",
+      "file": "20260905090353_document_trust_phase1_seller_atomic_link.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905090353",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905091122",
+      "stream": "other",
+      "file": "20260905091122_document_trust_phase3_role_scoped_projections.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260905091122",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260905095152",
+      "stream": "other",
+      "file": "20260905095152_document_trust_phase61_confirmed_remediation.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260905095152",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260905120250",
+      "stream": "other",
+      "file": "20260905120250_rental_portal_foundation.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "20260905120250",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "20260905125639",
+      "stream": "other",
+      "file": "20260905125639_rental_application_lead_linkage.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "20260905125639",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "20260905141005",
+      "stream": "other",
+      "file": "20260905141005_rental_property_foundation.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141005",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141007",
+      "stream": "other",
+      "file": "20260905141007_rental_unit_foundation.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141007",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141008",
+      "stream": "other",
+      "file": "20260905141008_rental_portfolio_foundation.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141008",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260905141009",
+      "stream": "other",
+      "file": "20260905141009_rental_landlord_mandate_foundation.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141009",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141010",
+      "stream": "other",
+      "file": "20260905141010_rental_vacancy_foundation.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141010",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141011",
+      "stream": "other",
+      "file": "20260905141011_rental_evidence_foundation.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141011",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260905141012",
+      "stream": "other",
+      "file": "20260905141012_rental_vacancy_marketing_foundation.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141012",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141013",
+      "stream": "other",
+      "file": "20260905141013_rental_internal_marketing_operations.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141013",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141014",
+      "stream": "other",
+      "file": "20260905141014_rental_applications_and_applicant_access.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141014",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141015",
+      "stream": "other",
+      "file": "20260905141015_rental_application_submission.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141015",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141016",
+      "stream": "other",
+      "file": "20260905141016_rental_application_documents.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141016",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141017",
+      "stream": "other",
+      "file": "20260905141017_rental_application_review_workspace.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141017",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141018",
+      "stream": "other",
+      "file": "20260905141018_rental_application_screening.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141018",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141019",
+      "stream": "other",
+      "file": "20260905141019_rental_application_screening_reviewer_actor.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141019",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141020",
+      "stream": "other",
+      "file": "20260905141020_rental_application_decisions.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141020",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905141021",
+      "stream": "other",
+      "file": "20260905141021_rental_application_tenancy_conversion.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905141021",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260905150420",
+      "stream": "other",
+      "file": "20260905150420_development_visual_analytics_phase14.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260905150420",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260906063435",
+      "stream": "other",
+      "file": "20260906063435_public_websites_phase7_privilege_hardening.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260906063435",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260906065759",
+      "stream": "other",
+      "file": "20260906065759_agent_phase2_rls_acceptance.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260906065759",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260906070515",
+      "stream": "other",
+      "file": "20260906070515_attorney_coordination_nomination_phase2.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260906070515",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260906070938",
+      "stream": "other",
+      "file": "20260906070938_attorney_lane_delegation_phase3.sql",
+      "action": "corrective_migration_required",
+      "objectStatus": "partial_live",
+      "runnerEligibility": "blocked_create_corrective_migration",
+      "stagingEvidenceTemplate": {
+        "version": "20260906070938",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": null,
+        "stagingLedgerRecorded": null,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Create and test a new idempotent corrective migration before evidence can be completed."
+        ]
+      }
+    },
+    {
+      "version": "20260906071644",
+      "stream": "other",
+      "file": "20260906071644_attorney_coordination_propagation_phase4.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260906071644",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260906123000",
+      "stream": "other",
+      "file": "20260906123000_public_websites_pilot_closeout_phase5_go_live.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260906123000",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260906130000",
+      "stream": "other",
+      "file": "20260906130000_meta_lead_ads_integration.sql",
+      "action": "apply_original_after_dependency_check",
+      "objectStatus": "none_live",
+      "runnerEligibility": "staging_apply_then_record",
+      "stagingEvidenceTemplate": {
+        "version": "20260906130000",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": true,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Apply this original migration file to staging before recording the ledger."
+        ]
+      }
+    },
+    {
+      "version": "20260906133000",
+      "stream": "other",
+      "file": "20260906133000_public_websites_pilot_closeout_phase6_hypercare.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260906133000",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260906134500",
+      "stream": "other",
+      "file": "20260906134500_public_websites_pilot_closeout_phase6_hypercare_indexes.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260906134500",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
+        ]
+      }
+    },
+    {
+      "version": "20260906140000",
+      "stream": "other",
+      "file": "20260906140000_public_websites_pilot_closeout_phase6_approval_gate.sql",
+      "action": "repair_only_after_smoke",
+      "objectStatus": "all_live",
+      "runnerEligibility": "staging_record_only_after_smoke",
+      "stagingEvidenceTemplate": {
+        "version": "20260906140000",
+        "targetProjectRef": "TODO_STAGING_PROJECT_REF",
+        "stagingProjectRef": "TODO_STAGING_PROJECT_REF",
+        "sqlApplied": false,
+        "stagingLedgerRecorded": true,
+        "catalogChecks": "pass",
+        "behaviorChecks": "pass",
+        "rollbackOrNoResidue": "pass",
+        "reviewedBy": "TODO_REVIEWER",
+        "approvedBy": "TODO_APPROVER",
+        "notes": [
+          "Do not apply SQL; record the ledger only after smoke evidence passes."
         ]
       }
     }
