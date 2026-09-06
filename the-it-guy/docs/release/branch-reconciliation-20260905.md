@@ -115,3 +115,32 @@ Obtain confirmation for the 14 already-integrated remote branches, then delete
 only that approved list. Schedule selective feature comparison for the seven
 priority branches before deciding whether their remaining changes should be
 ported to fresh, production-based branches.
+
+## Phase 4 main-sync audit — 6 September 2026
+
+The priority branches were re-audited against `codex/release-validation-tooling`
+after the working tree was converted into focused commits. The comparison used
+commit patch equivalence plus branch-introduced path/blob coverage; differing
+tip blobs were treated conservatively because later release work can legitimately
+supersede an older implementation.
+
+| Branch | Audit evidence | Disposition |
+| --- | --- | --- |
+| `codex/phase1-workspace-snapshot-20260905` | The snapshot commit is now an ancestor of the release branch. Of its 182 introduced paths, 171 still match its tip exactly and 11 have deliberate later edits or retirements. | **Represented / retain as safety history.** Do not merge or cherry-pick. |
+| `codex/private-property-isolation-20260831` | 35 graph-unique commits; all 182 introduced paths exist in the release tree, but only 19 match the old tip exactly and the stream contains operational evidence plus mutation tooling. | **Partially represented / selective review required.** Do not merge wholesale; Phase 5 must separate durable code from environment-specific execution evidence. |
+| `release/production-stabilization-20260830` | 15 divergent commits, four patch-equivalent; all 228 introduced paths exist, with 39 exact tip matches and 189 subsequently evolved files. | **Partially represented / selective review required.** Validate auth shell, route-loading, performance-gate and promotion behavior individually in Phase 5. |
+| `release/client-portal-mobile-launch` | 10 graph-unique commits; all 212 introduced paths exist, with 25 exact tip matches and 187 evolved files. | **Partially represented / selective review required.** Audit mobile behavior and each certification gate independently; no direct merge. |
+| `codex/tuckers-access-hotfix` | Its sole commit is patch-equivalent to release history. All five paths exist and four have later edits. | **Already represented.** No merge or cherry-pick. |
+| `codex/storage-quota-recovery` | Its four paths all exist. The release tree retains the quota-error boundary, local-draft cleanup, unstorable image filtering and guarded storage writes. Both branch-specific tests pass. | **Superseded by evolved implementation.** No merge or cherry-pick. |
+| `codex/property24-draft-quota-production` | Its two paths exist and its draft-storage guard is included in the evolved storage-quota implementation above. | **Superseded.** No merge or cherry-pick. |
+| `codex/navigation-query-phase6` | Six graph-unique commits; all 304 introduced paths exist, but only eight match the old tip exactly and 296 have subsequently evolved. | **Partially represented / selective review required.** Phase 5 must test navigation-query and digital-card behavior against the current implementation. |
+| `codex/buyer-portal-phase7-cutover` | Two graph-unique commits; all 231 introduced paths exist, with six exact tip matches and 225 evolved files. | **Partially represented / selective review required.** Validate buyer portal cutover behavior against current portal routes and contracts. |
+| `codex/public-websites-phase7-pilot` | All 15 divergent commits are patch-equivalent to the rewritten website sequence on the release branch; 122 of 124 branch paths match exactly and the remaining config/env files contain later additions. | **Already represented by rewritten history.** No merge or cherry-pick. |
+
+### Phase 4 gate
+
+- Direct merges from all audited branches are prohibited.
+- No priority branch remains unclassified.
+- Closed without porting: workspace snapshot, Tuckers hotfix, storage-quota branches, and public websites pilot.
+- Advance to Phase 5 selective review: Private Property isolation, production stabilization, client-portal mobile launch, navigation-query phase 6, and buyer-portal phase 7.
+- No branch, tag, worktree, migration, or remote reference was changed by this audit.
