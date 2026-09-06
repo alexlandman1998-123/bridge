@@ -30,33 +30,7 @@ type CaptureResult = {
   accepted?: boolean
   duplicate?: boolean
   rateLimited?: boolean
-  receiptId?: string
-  leadId?: string
   notificationEventId?: string
-  organisationId?: string
-  recipientEmail?: string
-  recipientName?: string
-  eventKind?: string
-  propertyLabel?: string
-  leadName?: string
-  leadEmail?: string
-  leadPhone?: string
-  leadCategory?: string
-}
-
-type NotificationTarget = {
-  receiptId: string
-  notificationEventId: string
-  organisationId: string
-  recipientEmail: string
-  recipientName?: string
-  eventKind: string
-  propertyLabel?: string
-  leadId: string
-  leadName?: string
-  leadEmail?: string
-  leadPhone?: string
-  leadCategory?: string
 }
 
 function text(value: unknown, maximum = 500): string {
@@ -97,111 +71,21 @@ function requestFingerprint(request: Request, host: string): string | null {
   return createHmac('sha256', secret).update(`${host}:${address}`).digest('hex')
 }
 
-function errorText(value: unknown): string {
-  if (value instanceof Error) return value.message.slice(0, 500)
-  return text(value, 500) || 'Notification delivery failed.'
-}
-
-function providerMessageId(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') return null
-  const body = payload as { providerResponse?: unknown }
-  if (!body.providerResponse || typeof body.providerResponse !== 'object') return null
-  return text((body.providerResponse as { id?: unknown }).id, 500) || null
-}
-
-async function sendNotification(target: NotificationTarget) {
+async function dispatchQueuedNotification(notificationEventId: string | undefined) {
+  if (!notificationEventId) return
   const url = process.env.SUPABASE_URL
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !serviceKey) throw new Error('Notification service is not configured')
-  const appUrl = String(process.env.ARCH9_APP_URL || 'https://app.arch9.co.za').replace(/\/$/, '')
-  const response = await fetch(`${url.replace(/\/$/, '')}/functions/v1/send-email`, {
+  if (!url || !serviceKey) return
+  await fetch(`${url.replace(/\/$/, '')}/functions/v1/website-lead-dispatcher`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${serviceKey}`,
       apikey: serviceKey,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({
-      type: target.eventKind,
-      eventKind: target.eventKind,
-      to: target.recipientEmail,
-      recipientName: target.recipientName,
-      organisationId: target.organisationId,
-      leadId: target.leadId,
-      leadName: target.leadName,
-      leadEmail: target.leadEmail,
-      leadPhone: target.leadPhone,
-      leadSource: 'Website',
-      leadCategory: target.leadCategory,
-      leadStatus: 'New Lead',
-      propertyLabel: target.propertyLabel,
-      actionLink: `${appUrl}/pipeline/leads/${target.leadId}`,
-      idempotencyKey: `website-lead:${target.receiptId}:${target.notificationEventId}`,
-    }),
-    signal: AbortSignal.timeout(8_000),
-  })
-  const payload = await response.json().catch(() => ({})) as { sent?: boolean; suppressed?: boolean; error?: unknown; providerResponse?: unknown }
-  if (!response.ok) throw new Error(text(payload.error, 500) || `Notification service returned ${response.status}`)
-  return { status: payload.sent === false || payload.suppressed ? 'skipped' : 'sent', providerMessageId: providerMessageId(payload) }
-}
-
-async function recordDelivery(
-  supabase: ReturnType<typeof getServerSupabase>,
-  target: Pick<NotificationTarget, 'receiptId' | 'notificationEventId'>,
-  status: 'sent' | 'failed' | 'skipped',
-  messageId?: string | null,
-  error?: string | null,
-) {
-  await supabase.rpc('website_complete_lead_notification', {
-    p_receipt_id: target.receiptId,
-    p_notification_event_id: target.notificationEventId,
-    p_delivery_status: status,
-    p_provider_message_id: messageId || null,
-    p_error_message: error || null,
-  })
-}
-
-async function dispatchWithFallback(supabase: ReturnType<typeof getServerSupabase>, captured: CaptureResult) {
-  if (!captured.receiptId || !captured.notificationEventId || !captured.organisationId || !captured.recipientEmail || !captured.eventKind || !captured.leadId) return
-  const primary: NotificationTarget = {
-    receiptId: captured.receiptId,
-    notificationEventId: captured.notificationEventId,
-    organisationId: captured.organisationId,
-    recipientEmail: captured.recipientEmail,
-    recipientName: captured.recipientName,
-    eventKind: captured.eventKind,
-    propertyLabel: captured.propertyLabel,
-    leadId: captured.leadId,
-    leadName: captured.leadName,
-    leadEmail: captured.leadEmail,
-    leadPhone: captured.leadPhone,
-    leadCategory: captured.leadCategory,
-  }
-  try {
-    const delivered = await sendNotification(primary)
-    await recordDelivery(supabase, primary, delivered.status as 'sent' | 'skipped', delivered.providerMessageId)
-  } catch (error) {
-    const failure = errorText(error)
-    const fallbackResult = await supabase.rpc('website_prepare_lead_notification_fallback', {
-      p_receipt_id: primary.receiptId,
-      p_error_message: failure,
-    })
-    const fallback = fallbackResult.data as { available?: boolean; notificationEventId?: string; recipientEmail?: string; recipientName?: string; eventKind?: string } | null
-    if (fallbackResult.error || !fallback?.available || !fallback.notificationEventId || !fallback.recipientEmail) return
-    const managerTarget: NotificationTarget = {
-      ...primary,
-      notificationEventId: fallback.notificationEventId,
-      recipientEmail: fallback.recipientEmail,
-      recipientName: fallback.recipientName,
-      eventKind: fallback.eventKind || 'new_enquiry_unassigned_manager',
-    }
-    try {
-      const delivered = await sendNotification(managerTarget)
-      await recordDelivery(supabase, managerTarget, delivered.status as 'sent' | 'skipped', delivered.providerMessageId)
-    } catch (fallbackError) {
-      await recordDelivery(supabase, managerTarget, 'failed', null, errorText(fallbackError))
-    }
-  }
+    body: JSON.stringify({ eventId: notificationEventId }),
+    signal: AbortSignal.timeout(4_000),
+  }).catch(() => null)
 }
 
 export async function POST(request: Request) {
@@ -265,7 +149,7 @@ export async function POST(request: Request) {
   const captured = capture.data as CaptureResult
   if (captured.rateLimited) return NextResponse.json({ error: 'Please wait before sending another enquiry.' }, { status: 429 })
   if (!captured.accepted && !captured.duplicate) return NextResponse.json({ error: 'Unable to record enquiry.' }, { status: 500 })
-  if (!captured.duplicate) await dispatchWithFallback(supabase, captured)
+  if (!captured.duplicate) await dispatchQueuedNotification(captured.notificationEventId)
 
   return NextResponse.json({ accepted: true, duplicate: captured.duplicate === true }, { status: captured.duplicate ? 202 : 201 })
 }
