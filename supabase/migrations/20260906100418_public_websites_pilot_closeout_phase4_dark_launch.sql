@@ -45,6 +45,10 @@ create unique index website_production_dark_launches_preview_hostname_unique_idx
   on public.website_production_dark_launches (preview_hostname);
 create unique index website_production_dark_launches_id_organisation_unique_idx
   on public.website_production_dark_launches (id, organisation_id);
+create index website_production_dark_launches_listing_idx
+  on public.website_production_dark_launches (listing_id);
+create index website_production_dark_launches_site_organisation_idx
+  on public.website_production_dark_launches (website_site_id, organisation_id);
 
 drop trigger if exists trg_website_production_dark_launches_updated_at on public.website_production_dark_launches;
 create trigger trg_website_production_dark_launches_updated_at
@@ -70,6 +74,8 @@ create table public.website_production_dark_launch_events (
 
 create index website_production_dark_launch_events_created_idx
   on public.website_production_dark_launch_events (dark_launch_id, created_at desc);
+create index website_production_dark_launch_events_launch_organisation_idx
+  on public.website_production_dark_launch_events (dark_launch_id, organisation_id);
 
 create or replace function public.website_reject_dark_launch_event_mutation()
 returns trigger
