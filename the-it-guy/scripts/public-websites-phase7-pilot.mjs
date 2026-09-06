@@ -2,13 +2,15 @@
 
 import { chmodSync, readFileSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { resolve } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { spawnSync } from 'node:child_process'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createClient } from '@supabase/supabase-js'
 
 const PRODUCTION_PROJECT_REF = 'isdowlnollckzvltkasn'
 const MUTATION_CONFIRMATION = 'MANAGE_ONE_AGENCY_STAGING_PILOT'
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const WEBSITE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../apps/websites')
 const MANUAL_ACCEPTANCE_CHECKS = [
   'crossTenantIsolation',
   'draftIsolation',
@@ -90,6 +92,36 @@ function uniqueKinds(pages = []) {
   return [...new Set(pages.map((page) => page.page_kind))].sort()
 }
 
+function protectedPreviewStatus(path, baseUrl) {
+  if (!process.env.VERCEL_TOKEN || !process.env.VERCEL_ORG_ID || !process.env.VERCEL_PROJECT_ID) return null
+  const result = spawnSync('vercel', [
+    'curl',
+    path,
+    '--deployment',
+    baseUrl,
+    '--',
+    '--silent',
+    '--show-error',
+    '--output',
+    '/dev/null',
+    '--write-out',
+    '%{http_code}',
+  ], {
+    cwd: WEBSITE_ROOT,
+    encoding: 'utf8',
+    env: process.env,
+    maxBuffer: 1024 * 1024,
+    timeout: 20_000,
+  })
+  if (result.error) throw new Error(`Vercel protected preview request failed: ${result.error.message}`)
+  if (result.status !== 0) {
+    throw new Error(`Vercel protected preview request exited ${result.status}: ${String(result.stderr || result.stdout).trim() || 'no diagnostic returned'}`)
+  }
+  const match = String(result.stdout).match(/([1-5][0-9]{2})\s*$/)
+  if (!match) throw new Error('Vercel protected preview request did not return an HTTP status.')
+  return Number(match[1])
+}
+
 async function publicSmoke(baseUrl) {
   if (!baseUrl) return { requested: false, checks: [] }
   const parsed = new URL(baseUrl)
@@ -100,8 +132,9 @@ async function publicSmoke(baseUrl) {
   const checks = []
   for (const path of paths) {
     try {
-      const response = await fetch(new URL(path, parsed), { redirect: 'manual', signal: AbortSignal.timeout(10_000) })
-      checks.push(checked(response.status >= 200 && response.status < 400, `public:${path}`, `HTTP ${response.status}`))
+      const protectedStatus = protectedPreviewStatus(path, parsed.origin)
+      const status = protectedStatus ?? (await fetch(new URL(path, parsed), { redirect: 'manual', signal: AbortSignal.timeout(10_000) })).status
+      checks.push(checked(status >= 200 && status < 400, `public:${path}`, `HTTP ${status}`))
     } catch (error) {
       checks.push(checked(false, `public:${path}`, error instanceof Error ? error.message : 'request failed'))
     }
