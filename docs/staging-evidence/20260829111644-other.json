@@ -1,0 +1,23 @@
+{
+  "version": "20260829111644",
+  "stream": "other",
+  "file": "20260829111644_transaction_sync_phase6_controlled_recovery.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated staging verification",
+  "approvedBy": "User-authorized missing-schema staging application",
+  "capturedAt": "2026-09-06T16:26:15.000Z",
+  "notes": [
+    "Post-apply staging catalog audit found 4/4 expected static objects.",
+    "Transaction sync Phase 6 controlled recovery suite passed.",
+    "The migration was executed as a single reviewed file through the guarded staging runner; no production database was targeted."
+  ],
+  "ledgerRecordedAt": "2026-09-06T16:28:55.560Z"
+}

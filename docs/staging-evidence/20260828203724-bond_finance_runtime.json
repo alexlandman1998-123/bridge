@@ -1,0 +1,23 @@
+{
+  "version": "20260828203724",
+  "stream": "bond_finance_runtime",
+  "file": "20260828203724_bond_application_idempotent_document_reconciliation.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated staging verification",
+  "approvedBy": "User-authorized missing-schema staging application",
+  "capturedAt": "2026-09-06T16:26:15.000Z",
+  "notes": [
+    "Post-apply staging catalog audit found 2/2 expected static objects.",
+    "Bond application portal and transaction conversion contract suites passed.",
+    "The migration was executed as a single reviewed file through the guarded staging runner; no production database was targeted."
+  ],
+  "ledgerRecordedAt": "2026-09-06T16:26:54.958Z"
+}

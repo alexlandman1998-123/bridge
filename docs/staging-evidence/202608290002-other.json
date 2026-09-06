@@ -1,0 +1,23 @@
+{
+  "version": "202608290002",
+  "stream": "other",
+  "file": "202608290002_client_compliance_verification.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated staging verification",
+  "approvedBy": "User-authorized missing-schema staging application",
+  "capturedAt": "2026-09-06T16:26:15.000Z",
+  "notes": [
+    "Post-apply staging catalog audit found 12/12 expected static objects.",
+    "Seller profile FICA verification contract passed.",
+    "The migration was executed as a single reviewed file through the guarded staging runner; no production database was targeted."
+  ],
+  "ledgerRecordedAt": "2026-09-06T16:28:36.757Z"
+}

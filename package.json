@@ -167,6 +167,7 @@
     "@supabase/supabase-js": "^2.98.0"
   },
   "devDependencies": {
+    "pg": "8.16.3",
     "vite": "^8.0.3"
   }
 }

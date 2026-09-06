@@ -1,0 +1,23 @@
+{
+  "version": "20260905095152",
+  "stream": "other",
+  "file": "20260905095152_document_trust_phase6_remediation.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated staging verification",
+  "approvedBy": "User-authorized missing-schema staging application",
+  "capturedAt": "2026-09-06T16:31:30.000Z",
+  "notes": [
+    "Post-apply staging catalog audit found 2/2 expected static objects.",
+    "Document trust Phase 3 role-projection and Phase 6.1 remediation contracts passed.",
+    "The migration was executed as a single reviewed file through the guarded staging runner; no production database was targeted."
+  ],
+  "ledgerRecordedAt": "2026-09-06T16:31:16.439Z"
+}

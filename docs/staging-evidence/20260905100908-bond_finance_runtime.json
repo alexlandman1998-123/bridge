@@ -1,0 +1,23 @@
+{
+  "version": "20260905100908",
+  "stream": "bond_finance_runtime",
+  "file": "20260905100908_bond_application_portal_phase3_draft_editing.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated staging verification",
+  "approvedBy": "User-authorized missing-schema staging application",
+  "capturedAt": "2026-09-06T16:26:15.000Z",
+  "notes": [
+    "Post-apply staging catalog audit found 2/2 expected static objects.",
+    "Bond application portal Phase 3 editing contract passed.",
+    "The migration was executed as a single reviewed file through the guarded staging runner; no production database was targeted."
+  ],
+  "ledgerRecordedAt": "2026-09-06T16:27:39.031Z"
+}
