@@ -1,0 +1,24 @@
+{
+  "version": "20260905141015",
+  "stream": "other",
+  "file": "20260905141015_rental_application_submission.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingRoute": "apply_missing_repair_sql",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated module verification",
+  "approvedBy": "User-authorized migration reconciliation task",
+  "capturedAt": "2026-09-06T17:24:54.651Z",
+  "notes": [
+    "Staging catalog audit found 2/2 expected static objects.",
+    "SQL was applied only after a fresh none-live guard result; the post-apply catalog is all-live.",
+    "Behavior suites passed for transaction, workspace, document trust, and public website modules."
+  ],
+  "ledgerRecordedAt": "2026-09-06T17:29:10.091Z"
+}

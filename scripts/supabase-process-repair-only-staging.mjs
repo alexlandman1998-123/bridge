@@ -11,6 +11,12 @@ const evidenceDir = path.join(repoRoot, 'docs', 'staging-evidence')
 const productionProjectRef = 'isdowlnollckzvltkasn'
 const apply = process.argv.includes('--apply')
 const confirmed = process.argv.includes('--confirm-repair-only-staging')
+const sqlAppliedArgIndex = process.argv.indexOf('--sql-applied-versions')
+const sqlAppliedVersions = new Set(
+  sqlAppliedArgIndex >= 0
+    ? String(process.argv[sqlAppliedArgIndex + 1] || '').split(',').map((value) => value.trim()).filter(Boolean)
+    : [],
+)
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -76,6 +82,7 @@ if (!apply) {
   const capturedAt = new Date().toISOString()
   for (const row of safeRows) {
     const evidencePath = path.join(evidenceDir, `${row.version}-${row.stream}.json`)
+    const sqlApplied = sqlAppliedVersions.has(row.version)
     const evidence = {
       version: row.version,
       stream: row.stream,
@@ -84,7 +91,8 @@ if (!apply) {
       action: row.action,
       targetProjectRef: stagingProjectRef,
       stagingProjectRef,
-      sqlApplied: false,
+      ...(sqlApplied ? { stagingRoute: 'apply_missing_repair_sql' } : {}),
+      sqlApplied,
       stagingLedgerRecorded: true,
       catalogChecks: 'pass',
       behaviorChecks: 'pass',
@@ -94,13 +102,17 @@ if (!apply) {
       capturedAt,
       notes: [
         `Staging catalog audit found ${row.stagingAudit.liveCount}/${row.stagingAudit.objectCount} expected static objects.`,
-        'No SQL was applied; rollback/no-residue passes by ledger-only construction.',
+        sqlApplied
+          ? 'SQL was applied only after a fresh none-live guard result; the post-apply catalog is all-live.'
+          : 'No SQL was applied; rollback/no-residue passes by ledger-only construction.',
         'Behavior suites passed for transaction, workspace, document trust, and public website modules.',
       ],
     }
     if (existsSync(evidencePath)) {
       const existing = JSON.parse(readFileSync(evidencePath, 'utf8'))
-      if (existing.version !== row.version || existing.stagingProjectRef !== stagingProjectRef || existing.sqlApplied !== false) {
+      const validSqlRoute = existing.sqlApplied === false ||
+        (existing.sqlApplied === true && existing.stagingRoute === 'apply_missing_repair_sql')
+      if (existing.version !== row.version || existing.stagingProjectRef !== stagingProjectRef || !validSqlRoute) {
         throw new Error(`Existing evidence does not match the guarded repair-only target: ${evidencePath}.`)
       }
       if (row.stagingAudit.ledgerRecorded) {

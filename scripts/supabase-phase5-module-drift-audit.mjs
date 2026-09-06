@@ -911,6 +911,12 @@ function main() {
                 : 'partial_live',
           liveCount,
           objectCount: objects.length,
+          objects: objects.map(({ objectType, objectName, relationName, liveExists }) => ({
+            objectType,
+            objectName,
+            relationName,
+            liveExists,
+          })),
           ledgerRecorded: buckets.matched.some((row) => row.local === file.version),
         }
       })

@@ -1,0 +1,23 @@
+{
+  "version": "20260902105303",
+  "stream": "other",
+  "file": "20260902105303_public_development_high_contrast_branding.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated developer-referral module verification",
+  "approvedBy": "User-authorized migration reconciliation task",
+  "capturedAt": "2026-09-06T19:10:00+02:00",
+  "notes": [
+    "The preceding branding migration made this row's 1/1 expected object live.",
+    "SQL replay was skipped after the fresh all-live guard result.",
+    "Internal and external referral behavior tests passed."
+  ],
+  "ledgerRecordedAt": "2026-09-06T17:13:40.096Z"
+}
