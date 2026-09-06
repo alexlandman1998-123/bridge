@@ -1,6 +1,6 @@
 # Public Websites — Phase 7 One-Agency Staging Pilot
 
-**Status:** Kingstons Real Estate active in isolated staging; public routes, branding, lead routing and rollback verified; listing and reviewed device acceptance pending
+**Status:** Kingstons Real Estate active in isolated staging; automated public routes, branding, listing lifecycle, lead routing, rollback and database isolation verified; reviewed manual acceptance pending
 
 **Implemented:** 5 September 2026
 
@@ -27,17 +27,19 @@ The release remains on the single `property-standard-v1` template. An agency mus
 
 The isolated staging pilot was activated for Kingstons Real Estate on 6 September 2026:
 
-- the `Arch9 Staging` Supabase project contains the controlled public-website migration chain through `20260906070110_public_websites_phase7_hostname_constraint.sql`;
-- the website pgTAP contracts pass against staging, while unrelated pre-existing database lint findings remain outside this release scope;
+- the `Arch9 Staging` Supabase project contains the controlled public-website migration chain through `20260906070110_public_websites_phase7_hostname_constraint.sql`, plus the existing `202608250001_remove_listing_mandate_activation_guards.sql` migration applied to staging only with explicit approval;
+- the website pgTAP contracts pass against staging (`ok 18` after the guard migration), while unrelated pre-existing database lint findings remain outside this release scope;
 - `apps/websites` is linked to the dedicated `arch9-websites-staging` Vercel project with staging-only server credentials;
 - the protected GitHub environment `public-websites-staging` contains the six required deployment secrets;
 - Kingstons is the single active enrolment and its `property-standard-v1` site is published at the protected Vercel preview hostname;
 - the Kingstons logo asset was copied into public staging storage because the database clone retained an expired production signed URL;
 - all standard public routes return HTTP 200, a synthetic enquiry routes once into the staging CRM and an identical retry resolves to the same lead and receipt;
-- a temporary published branding change was visibly verified and then removed with the immutable revision rollback command; and
-- listing `PRV-202607130739-6FA9` remains outside the website channel because the staging database's canonical-mandate guard rejects its incomplete final-artifact evidence.
+- a temporary published branding change was visibly verified and then removed with the immutable revision rollback command;
+- listing `PRV-202607130739-6FA9` completed publish, update, unpublish and republish as the Kingstons principal, with nine images and no website-channel blockers;
+- during unpublish, `/properties` remained healthy while the listing disappeared and its detail route returned HTTP 404; after republish, the collection and detail routes returned HTTP 200 with the Lynnwood and asking-price content; and
+- the post-lifecycle Phase 7 evidence has fingerprint `9e69d2fe59cab71cfb2aac00ae492a5ea91b213137a638ad091ad39594b29e92`, one published listing and no automated failures.
 
-Phase 7 remains blocked from completion until a genuinely eligible Kingstons listing can exercise publish, update, unpublish and republish, and the named reviewer completes the cross-device manual acceptance record.
+Phase 7 remains blocked from completion only until the named reviewer completes the nine manual acceptance checks: cross-tenant isolation, draft isolation, reviewed listing lifecycle, lead fallback, 320px, 375px, 768px, iOS Safari and Android Chrome.
 
 ## Staging activation runbook
 
