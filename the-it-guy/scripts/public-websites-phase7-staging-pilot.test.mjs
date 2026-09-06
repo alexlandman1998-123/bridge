@@ -46,6 +46,8 @@ assert.match(workspace, /Public serving and new enquiries are paused/, 'CRM expl
 assert.match(pilotRunner, /Refusing to target the production Supabase project/, 'operator refuses production')
 assert.match(pilotRunner, /MANAGE_ONE_AGENCY_STAGING_PILOT/, 'operator requires an explicit mutation confirmation')
 assert.match(pilotRunner, /public:\$\{path\}/, 'operator performs public route smoke checks')
+assert.match(pilotRunner, /spawnSync\('vercel',[\s\S]*'curl',[\s\S]*'--deployment'/, 'operator can pass Vercel Preview protection without making the deployment public')
+assert.match(pilotRunner, /VERCEL_TOKEN[\s\S]*VERCEL_ORG_ID[\s\S]*VERCEL_PROJECT_ID/, 'protected smoke checks require explicit scoped Vercel credentials')
 assert.match(pilotRunner, /leads:routed-to-crm/, 'operator requires durable CRM lead evidence')
 assert.match(pilotRunner, /listings:published-channel/, 'operator requires listing publication evidence')
 assert.match(pilotRunner, /publication:rollback-exercised/, 'operator requires a real recovery exercise')
