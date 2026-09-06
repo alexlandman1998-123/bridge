@@ -1,0 +1,24 @@
+{
+  "version": "20260831120000",
+  "stream": "other",
+  "file": "20260831120000_property24_migration_listing_media_storage.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "stagingRoute": "apply_missing_repair_sql",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated lead-capture module verification",
+  "approvedBy": "User-authorized migration reconciliation task",
+  "capturedAt": "2026-09-06T19:07:28+02:00",
+  "notes": [
+    "Fresh preflight proved 0/4 expected objects live before apply.",
+    "Post-apply catalog audit found 4/4 objects live.",
+    "Lead-ingestion behavior tests passed."
+  ],
+  "ledgerRecordedAt": "2026-09-06T17:08:57.080Z"
+}

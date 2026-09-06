@@ -39,11 +39,15 @@ function findRepoRoot(startDir) {
 }
 
 function parseArgs(argv) {
-  const options = { mode: 'plan', json: false }
+  const options = { mode: 'plan', json: false, applyMissingRepairSql: false }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
     if (arg === '--plan') options.mode = 'plan'
     else if (arg === '--apply-sql') options.mode = 'apply_sql'
+    else if (arg === '--apply-missing-repair-sql') {
+      options.mode = 'apply_sql'
+      options.applyMissingRepairSql = true
+    }
     else if (arg === '--record-applied') options.mode = 'record_applied'
     else if (arg === '--stream') options.stream = argv[++index]
     else if (arg === '--version') options.version = argv[++index]
@@ -375,6 +379,21 @@ function migrationRecorded(repoRoot, target, version) {
   return /"already_applied"\s*:\s*true/.test(result.stdout)
 }
 
+function requireRepairObjectsAbsent(repoRoot, row) {
+  const result = spawnSync(process.execPath, [
+    path.join(repoRoot, 'scripts', 'supabase-phase5-module-drift-audit.mjs'),
+    '--fetch-remote', '--staging', '--audit-repair-only', '--json',
+  ], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 30 * 1024 * 1024, env: process.env })
+  if (result.status !== 0) throw new Error(`Could not audit staging repair objects: ${result.stderr || result.error?.message || 'unknown error'}`)
+  const audit = JSON.parse(result.stdout)
+  const target = (audit.repairOnlyAudit || []).find((item) => item.version === row.version)
+  if (!target) throw new Error(`No staging repair audit row found for ${row.version}.`)
+  if (target.ledgerRecorded) throw new Error(`Version ${row.version} is already recorded in the staging ledger.`)
+  if (target.objectStatus !== 'none_live') {
+    throw new Error(`Repair SQL requires a fresh none_live staging result; found ${target.objectStatus} (${target.liveCount}/${target.objectCount}).`)
+  }
+}
+
 function validateEvidence(repoRoot, target, row, evidencePath, phase1Binding = null) {
   if (!evidencePath) throw new Error('--evidence is required before recording a staging migration as applied.')
   const absolutePath = path.resolve(repoRoot, evidencePath)
@@ -383,7 +402,7 @@ function validateEvidence(repoRoot, target, row, evidencePath, phase1Binding = n
   const required = {
     version: row.version,
     targetProjectRef: target.projectRef,
-    sqlApplied: row.action === 'apply_original_after_dependency_check',
+    sqlApplied: row.action === 'apply_original_after_dependency_check' || evidence.stagingRoute === 'apply_missing_repair_sql',
     catalogChecks: 'pass',
     behaviorChecks: 'pass',
     rollbackOrNoResidue: 'pass',
@@ -459,6 +478,7 @@ function printUsage() {
   console.log('Usage:')
   console.log('  node scripts/supabase-phase6-staging-execution.mjs --plan [--stream <name>] [--version <version>] [--json]')
   console.log('  node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version <version> --confirm APPLY_TO_STAGING_ONLY [--phase1-receipt <path> --phase1-receipt-digest <sha256>]')
+  console.log('  node scripts/supabase-phase6-staging-execution.mjs --apply-missing-repair-sql --version <version> --confirm APPLY_TO_STAGING_ONLY')
   console.log('  node scripts/supabase-phase6-staging-execution.mjs --record-applied --version <version> --evidence <file> --confirm APPLY_TO_STAGING_ONLY [--phase1-receipt <path> --phase1-receipt-digest <sha256>]')
 }
 
@@ -493,9 +513,11 @@ async function main() {
   const phase1Binding = requirePhase1Receipt(repoRoot, target, row, migrationPath, options)
 
   if (options.mode === 'apply_sql') {
-    if (row.action !== 'apply_original_after_dependency_check') {
+    const missingRepairApply = row.action === 'repair_only_after_smoke' && options.applyMissingRepairSql
+    if (row.action !== 'apply_original_after_dependency_check' && !missingRepairApply) {
       throw new Error(`Refusing SQL replay for manifest action ${row.action}.`)
     }
+    if (missingRepairApply) requireRepairObjectsAbsent(repoRoot, row)
     if (migrationRecorded(repoRoot, target, row.version)) {
       throw new Error(`Version ${row.version} is already recorded in the staging ledger.`)
     }

@@ -1,0 +1,24 @@
+{
+  "version": "20260830125035",
+  "stream": "other",
+  "file": "20260830125035_attorney_dashboard_rpc_hot_path.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "stagingRoute": "apply_missing_repair_sql",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated attorney module verification",
+  "approvedBy": "User-authorized migration reconciliation task",
+  "capturedAt": "2026-09-06T19:07:28+02:00",
+  "notes": [
+    "Fresh preflight proved 0/2 expected objects live before apply.",
+    "Post-apply catalog audit found 2/2 objects live.",
+    "Attorney lead behavior tests passed."
+  ],
+  "ledgerRecordedAt": "2026-09-06T17:08:19.326Z"
+}

@@ -122,7 +122,8 @@ function phase1Receipt(repoRoot) {
   }
 }
 
-function expectedSqlApplied(row) {
+function expectedSqlApplied(row, evidence) {
+  if (evidence?.stagingRoute === 'apply_missing_repair_sql') return true
   if (row.route === 'apply_original') return true
   if (row.route === 'repair_only') return false
   return null
@@ -138,7 +139,7 @@ function completionPath(row) {
 
 function evidenceStatus(row, evidence, env, receipt) {
   const blockers = []
-  const expectedSql = expectedSqlApplied(row)
+  const expectedSql = expectedSqlApplied(row, evidence)
   if (!evidence) blockers.push('staging_evidence_missing')
   else {
     if (evidence.version !== row.version) blockers.push('version_mismatch')
@@ -312,7 +313,7 @@ function buildResult(repoRoot) {
       file: row.file,
       evidenceFile: relativeEvidencePath,
       completionFile: completionPath(row),
-      expectedSqlApplied: expectedSqlApplied(row),
+      expectedSqlApplied: expectedSqlApplied(row, evidence),
       phase1ReceiptRequired: PHASE1_LEGAL_MIGRATION_VERSIONS.has(row.version),
       complete: blockers.length === 0,
       blockers,

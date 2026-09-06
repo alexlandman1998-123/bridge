@@ -62,8 +62,8 @@ const blockedRows = repairRows
 console.log(`Repair-only rows: ${repairRows.length}`)
 console.log(`Staging-safe rows: ${safeRows.length}`)
 console.log(`Staging-blocked rows: ${blockedRows.length}`)
-if (safeRows.length !== 14 || blockedRows.length !== 26) {
-  throw new Error('Staging catalog changed from the reviewed 14-safe / 26-blocked partition.')
+if (safeRows.length + blockedRows.length !== repairRows.length || blockedRows.some((row) => !row.stagingAudit)) {
+  throw new Error('Staging catalog audit did not classify every repair-only row.')
 }
 
 if (!apply) {

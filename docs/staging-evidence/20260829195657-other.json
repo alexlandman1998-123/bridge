@@ -1,0 +1,24 @@
+{
+  "version": "20260829195657",
+  "stream": "other",
+  "file": "20260829195657_seller_onboarding_link_fast_prepare.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "stagingRoute": "apply_missing_repair_sql",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex automated lead-capture module verification",
+  "approvedBy": "User-authorized migration reconciliation task",
+  "capturedAt": "2026-09-06T19:00:00.000+02:00",
+  "notes": [
+    "Fresh preflight proved 0/1 expected objects were live before applying this migration to staging.",
+    "Post-apply catalog audit found 1/1 expected static objects live.",
+    "Lead-ingestion behavior tests passed before the staging ledger was recorded."
+  ],
+  "ledgerRecordedAt": "2026-09-06T17:04:47.956Z"
+}
