@@ -1,33 +1,42 @@
 # Public Websites — Phase 0 Foundation Contract
 
-**Status:** ready for implementation review
+**Status:** approved and scope-frozen for implementation
+
+**Scope frozen:** 5 September 2026
 
 **Scope:** neutral, property-first PropData website product
 **Explicitly not a Kingdom or Bounce build:** this phase defines the reusable product those clients will later configure or extend.
 
 ## 1. Outcome and boundary
 
-Phase 0 freezes the smallest safe product boundary for a multi-tenant public websites platform. It produces an implementation contract only. It does **not** add database objects, grant public database access, deploy a public site, move a domain, or change email/DNS configuration.
+Phase 0 freezes the smallest safe product boundary for a multi-tenant public websites platform. It is the authoritative release contract for the first agency pilot. Phase 0 does **not** add database objects, grant public database access, deploy a public site, move a domain, or change email/DNS configuration.
 
 The first public website product will let an agency:
 
 - show only its approved public property stock;
 - present a branded, mobile-first property website;
-- edit controlled marketing content and publish it through iSite;
+- edit controlled marketing content and publish it through the Website workspace;
 - collect enquiries directly into the existing PropData CRM;
 - review a site on a PropData preview domain before connecting a client-owned domain.
 
 The product is intentionally an opinionated website system, not a general-purpose page builder.
 
+### Product naming
+
+- The agency-facing feature name is **Website** or **Website Studio**.
+- `iSite` may remain in historical notes or internal implementation references, but it is not the public product name and must not appear in new agency-facing copy.
+
 ### In scope for the first release
 
 - One neutral property template (`property-standard-v1`).
 - Hostname-to-site resolution for preview and later client domains.
-- Agency branding, navigation, homepage and standard-page content.
-- Property search, results, property details, agents and area pages.
-- Controlled campaign landing pages.
-- Property/general/valuation/campaign enquiry forms and WhatsApp click attribution.
+- Agency logo, colours, company name and contact details, initially seeded from organisation branding and then editable as website-specific draft values.
+- Controlled navigation, homepage and standard-page content.
+- Property search, results and property details.
+- One controlled campaign landing-page format.
+- Property, general, valuation and campaign enquiry forms.
 - CRM lead creation, routing metadata and fallback notification handling.
+- Explicit publish, update and unpublish control from the CRM listing module to the agency website.
 - Draft, preview, publish and rollback-to-last-published content lifecycle.
 - Responsive/mobile-first interface, SEO metadata, canonical URLs and sitemap.
 - Domain connection instructions and verification status only; automated provisioning follows later.
@@ -36,26 +45,30 @@ The product is intentionally an opinionated website system, not a general-purpos
 
 - A free-form drag-and-drop editor or arbitrary custom HTML/CSS/JavaScript.
 - More than one standard property template.
+- Dedicated agent profile/index pages and dedicated area profile/index pages.
+- Multiple landing-page layouts or a landing-page template marketplace.
+- Testimonials, galleries, agent collections and area collections as independently configurable first-release blocks.
 - Vehicle inventory, finance or trade-in flows (Bounce is a later vertical module).
 - Direct public reads of internal tables or browser-side privileged credentials.
 - Domain registrar transfer, DNS nameserver transfer or DNS-zone management.
 - Changing, deleting or otherwise managing MX, SPF, DKIM or DMARC email records.
 - Billing, plan limits, internationalisation and region-specific legal packs.
 - Third-party campaign/analytics integrations beyond preserving UTM/referrer attribution.
+- Self-service custom-domain provisioning and automated DNS changes.
 
 ## 2. Product map
 
 ```text
 Marketing
 ├── Listings
-│   └── Existing listing editor; controls whether a listing is public
+│   └── Existing listing editor; publishes, updates or unpublishes a listing on the agency website
 └── Website
     ├── Overview and preview URL
     ├── Brand
     ├── Home
     ├── Pages
-    ├── Campaign pages
-    ├── Featured listings and agents
+    ├── One campaign-page format
+    ├── Featured listings
     ├── Domains
     └── Publish history
 
@@ -63,10 +76,8 @@ Public website
 ├── Home
 ├── Buy / Rent search and results
 ├── Property detail
-├── Agents
-├── Areas
 ├── Standard pages (About, Contact, Valuation)
-└── Campaign landing pages
+└── Campaign landing page
 ```
 
 The public site is a separate server-rendered application. It is a consumer of approved public projections from PropData; it does not become a second CRM or listing editor.
@@ -85,6 +96,32 @@ The first implementation must reuse the following established platform boundarie
 | CRM enquiry context | `public.leads` fields added by `202607010003_lead_enquiry_property_fields.sql` | Website leads must populate organisation, listing/property context and source reference. |
 | Existing lead ingestion | lead-capture aliases, inbound lead processing and notification paths | Website form submission is a first-class CRM write, with email as a notification/fallback—not the system of record. |
 | Marketing shell | `the-it-guy/src/pages/MarketingComingSoonPage.jsx` | The later Website workspace is mounted under Marketing without disturbing existing email, WhatsApp, Show Day or launch routes. |
+
+## 3A. First-release capability contract
+
+The following five capabilities are non-negotiable. A release that omits any one of them is not the first production-ready website product.
+
+| Capability | Required first-release behaviour | Source of truth | Ownership rule |
+| --- | --- | --- | --- |
+| Logo | Seed the website draft from `logo_light_url` and `logo_dark_url`; render an appropriate logo in the header and footer; allow an organisation administrator to replace the website logo. | `organisation_branding` for the initial seed; website revision after creation | A website-specific edit does not overwrite organisation, email or document branding. |
+| Company colours | Seed primary, secondary and accent colours; apply them consistently to template controls and key surfaces; maintain accessible fallbacks. | `organisation_branding` for the initial seed; website revision after creation | A website-specific edit is draft-only until publication. |
+| Editable identity | Let an organisation administrator edit company display name, logo, colours, phone, email and WhatsApp number, preview the draft and reset it to current organisation-branding values. | Current website draft | Only organisation administrators may save or publish website identity changes. |
+| CRM leads | Persist every accepted enquiry as a durable website receipt, then create or reuse a contact and create exactly one CRM lead with organisation, listing/page and attribution context. | CRM contact and lead records | Hostname resolution determines the organisation; the browser never supplies a trusted organisation id. |
+| CRM listings | Let the listing module publish, update and unpublish the agency-website channel. Only eligible `Published` projection records appear publicly, and public media comes from approved listing media. | `private_listings` plus `listing_publication_data` and `listing_media` public projections | The public website never becomes a second listing editor or source of truth. |
+
+### First-release public routes
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Editable branded home page with property search, featured properties, agency introduction and enquiry CTA. |
+| `/properties` | Sale/rental results with text, transaction type and bedroom filters. |
+| `/properties/[slug]` | Property details, approved media and property enquiry. |
+| `/about` | Controlled agency introduction content. |
+| `/contact` | Agency contact details and general enquiry form. |
+| `/valuation` | Valuation proposition and valuation request form. |
+| `/[campaign-slug]` | The single approved campaign landing-page format. |
+
+No additional public route is required to declare the first template production-ready.
 
 ### Data readiness constraints
 
@@ -171,21 +208,17 @@ The first editor exposes only structured blocks. A page has an ordered list of b
 | Hero | Primary page message | heading, supporting text, image, CTA label/link |
 | Rich text | About or editorial copy | heading, body, optional CTA |
 | Property collection | Featured/recent/reduced stock | source rule, heading, max items |
-| Agent collection | Team promotion | selected agents or organisation rule, heading |
-| Area collection | Suburb/area discovery | selected areas, heading, image/copy |
-| Image gallery | Brand/storytelling | image set, captions, heading |
-| Testimonial | Social proof | quote, author, optional role/image |
 | Benefits | Service proposition | heading and 3–6 icon/text items |
 | FAQ | Repeated buyer/seller questions | question/answer pairs |
 | Lead form | Website conversion | form purpose, routing target, confirmation copy |
 | CTA | Directional action | heading, copy, label, destination |
 
-The standard home page sequence is Hero → property search → featured properties → areas → agents → valuation CTA → testimonials. Each section can be hidden or reordered within safe layout rules.
+The standard home page sequence is Hero → property search → featured properties → agency introduction/benefits → valuation CTA → enquiry. Each section can be hidden or reordered within safe layout rules.
 
 ### Standard and campaign pages
 
 - Standard pages: Home, About, Contact and Valuation are enabled initially.
-- Campaign page: an agency selects an approved campaign layout and supplies its editable block content.
+- Campaign page: an agency uses the single approved layout and supplies its hero, featured-property and enquiry content.
 - Every page has a slug, SEO title, description, social image, draft state, published revision and prior published revision.
 - Publishing is all-or-nothing per site revision. A rollback restores the previous public revision without mutating listings or CRM records.
 
@@ -199,7 +232,7 @@ type WebsiteLeadSubmission = {
   organisationId: string // resolved by server, never trusted from client input
   type: 'property_enquiry' | 'general_enquiry' | 'valuation_request' | 'campaign_enquiry'
   propertyId?: string
-  campaignPageId?: string
+  pageId?: string
   name: string
   email?: string
   phone?: string
@@ -264,7 +297,7 @@ Before a live connection, support must record the existing website record values
 3. **Public read model:** server-only allow-list query/RPC/view with property/media validity checks, tenant tests and cache invalidation strategy.
 4. **Property template:** neutral visual system and mobile search/results/detail journey using demo data.
 5. **Lead command:** server endpoint/Edge Function with anti-spam, idempotency, CRM routing, observability and fallback notification.
-6. **iSite Website workspace:** draft editor and preview/publish shell mounted under Marketing, behind a feature flag.
+6. **Website workspace:** brand/content editor and preview/publish shell mounted under Marketing, behind a feature flag.
 
 ## 10. Mandatory release gates
 
@@ -275,13 +308,15 @@ Phase 1 cannot progress to a real client configuration until all of the followin
 - A property enquiry creates one CRM lead with accurate site, property, page and UTM attribution; repeated submission with the same idempotency key does not duplicate it.
 - Agent notification failure does not lose the already-created CRM lead.
 - Draft edits never appear publicly until published; rollback restores the prior revision.
-- Search, filter, property gallery, form and WhatsApp CTA pass the mobile acceptance map.
+- Search, filter, property gallery and enquiry forms pass the mobile acceptance map.
+- A newly created website inherits the organisation logo and colours, and an administrator can change them in a draft without altering the source organisation branding.
+- Publishing, updating and unpublishing an agency-website listing from the CRM listing module produces the matching public result without duplicate entry.
 - No service-role/secret key reaches a browser bundle, and RLS/advisor checks pass for new objects.
 - Preview-domain, canonical-domain and domain rollback runbooks are tested without modifying any email DNS records.
 
 ## 11. Decisions deferred intentionally
 
-- Exact page-builder UX and visual design beyond the `property-standard-v1` block catalogue.
+- Additional block types and page-builder UX beyond the frozen `property-standard-v1` catalogue.
 - Exact Vercel project/domain automation implementation.
 - Which organisation/agent fields are authoritative for public contact display.
 - Legal copy, POPIA consent wording, cookie policy and retention policy by target market.
@@ -289,3 +324,33 @@ Phase 1 cannot progress to a real client configuration until all of the followin
 - Multi-language, multi-currency and regional-data-residency design.
 
 These decisions are deferred so the first build remains a safe, neutral website product rather than a Kingdom-specific or vehicle-specific fork.
+
+## 12. Delivery phases and scope-change rule
+
+The frozen implementation sequence is:
+
+1. Website creation and organisation-brand seeding.
+2. Logo, colour and contact editing with draft preview.
+3. CRM listing publish, update and unpublish controls.
+4. Editable home, standard pages and the single campaign format.
+5. CRM lead routing, attribution, abuse protection and notification fallback.
+6. Draft/publication isolation, rollback and tenant-safety verification.
+7. One-agency staging pilot.
+8. Controlled production release.
+
+An item outside the in-scope list does not enter this release merely because it is useful or technically adjacent. It must be recorded as a later-phase candidate. A scope change requires an explicit product decision that states which existing first-release item or delivery date is being traded for it.
+
+## 13. Phase 0 completion record
+
+Phase 0 is complete when this document records all of the following:
+
+- [x] One template key is fixed: `property-standard-v1`.
+- [x] The agency-facing product name is fixed: Website / Website Studio.
+- [x] The required public routes are fixed.
+- [x] Logo, colour, editing, CRM lead and CRM listing behaviours are fixed.
+- [x] The system-of-record boundary is fixed: CRM for listings and leads; website revisions for website presentation.
+- [x] Draft, publication, tenant and domain-safety boundaries are fixed.
+- [x] Non-goals and later-release candidates are explicit.
+- [x] Mandatory release evidence is explicit.
+
+**Phase 0 result:** complete. Implementation proceeds with Phase 1 and may not expand the frozen first-release scope without the change rule above.

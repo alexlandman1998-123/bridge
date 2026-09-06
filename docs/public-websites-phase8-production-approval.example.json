@@ -1,0 +1,12 @@
+{
+  "contract": "public-websites-phase8-production-approval-v1",
+  "organisationId": "00000000-0000-4000-8000-000000000000",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "targetHostname": "www.example-agency.co.za",
+  "candidateDeploymentUrl": "https://example-agency-candidate.vercel.app",
+  "rollbackDeploymentUrl": "https://example-agency-rollback.vercel.app",
+  "approvedBy": "Replace with accountable approver",
+  "approvedAt": "2026-09-05T12:00:00.000Z",
+  "approvalReference": "Replace with approval ticket or change reference",
+  "confirmation": "REPLACE_WITH_REQUIRED_CONFIRMATION"
+}

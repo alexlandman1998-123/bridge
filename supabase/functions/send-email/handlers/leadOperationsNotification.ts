@@ -411,6 +411,9 @@ export async function handleLeadOperationsNotificationEmail(
     subject,
     html,
     text,
+    idempotencyKey:
+      normalizeText(payload.idempotencyKey || payload.idempotency_key) ||
+      undefined,
   });
 
   if (!sendResult.ok) {

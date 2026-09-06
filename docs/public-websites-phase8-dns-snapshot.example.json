@@ -1,0 +1,11 @@
+{
+  "contract": "public-websites-phase8-dns-snapshot-v1",
+  "hostname": "www.example-agency.co.za",
+  "capturedAt": "2026-09-05T12:00:00.000Z",
+  "capturedBy": "Replace with operator",
+  "rollbackContact": "Replace with client or DNS owner",
+  "websiteRecordsBefore": [],
+  "plannedWebsiteRecords": [],
+  "emailDnsUnchanged": false,
+  "nameserversUnchanged": false
+}

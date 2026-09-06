@@ -20,31 +20,39 @@ export type PublicProperty = {
 export type ResolvedSite = {
   id: string
   organisationId: string
+  publishedRevisionId: string
   name: string
   status: 'draft' | 'published' | 'suspended'
   primaryColor: string
   secondaryColor: string
+  accentColor: string
+  logoUrl?: string
+  logoLightUrl?: string
+  logoDarkUrl?: string
   phone?: string
   email?: string
+  website?: string
+  whatsappNumber?: string
   preview: boolean
   properties: PublicProperty[]
 }
 
 export type WebsiteBlock =
-  | { type: 'hero'; heading: string; body?: string; eyebrow?: string; ctaLabel?: string; ctaHref?: string }
-  | { type: 'rich_text'; heading?: string; body: string; ctaLabel?: string; ctaHref?: string }
-  | { type: 'benefits'; heading?: string; items: Array<{ title: string; body: string }> }
-  | { type: 'faq'; heading?: string; items: Array<{ question: string; answer: string }> }
-  | { type: 'property_collection'; heading?: string; maxItems?: number; transactionType?: 'sale' | 'rental' }
-  | { type: 'lead_form'; heading?: string; body?: string; purpose?: 'general_enquiry' | 'valuation_request' | 'campaign_enquiry' }
-  | { type: 'cta'; heading: string; body?: string; ctaLabel: string; ctaHref: string }
+  | { type: 'hero'; hidden?: boolean; heading: string; body?: string; eyebrow?: string; ctaLabel?: string; ctaHref?: string }
+  | { type: 'rich_text'; hidden?: boolean; heading?: string; body: string; ctaLabel?: string; ctaHref?: string }
+  | { type: 'benefits'; hidden?: boolean; heading?: string; items: Array<{ title: string; body: string }> }
+  | { type: 'faq'; hidden?: boolean; heading?: string; items: Array<{ question: string; answer: string }> }
+  | { type: 'property_collection'; hidden?: boolean; heading?: string; maxItems?: number; transactionType?: 'sale' | 'rental' }
+  | { type: 'lead_form'; hidden?: boolean; heading?: string; body?: string; purpose?: 'general_enquiry' | 'valuation_request' | 'campaign_enquiry' }
+  | { type: 'cta'; hidden?: boolean; heading: string; body?: string; ctaLabel: string; ctaHref: string }
 
 export type PublicPage = {
   id: string
   slug: string
-  kind: 'about' | 'contact' | 'valuation' | 'campaign'
+  kind: 'home' | 'about' | 'contact' | 'valuation' | 'campaign'
   title: string
   seoTitle?: string
   seoDescription?: string
+  socialImageUrl?: string
   blocks: WebsiteBlock[]
 }

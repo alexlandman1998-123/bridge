@@ -4,10 +4,12 @@ import type { PublicPage, PublicProperty, ResolvedSite, WebsiteBlock } from '@/l
 const demoSite: ResolvedSite = {
   id: '00000000-0000-0000-0000-000000000001',
   organisationId: '00000000-0000-0000-0000-000000000001',
+  publishedRevisionId: '00000000-0000-0000-0000-000000000002',
   name: 'PropData Demo Realty',
   status: 'published',
   primaryColor: '#125b50',
   secondaryColor: '#e7bc71',
+  accentColor: '#e7bc71',
   phone: '+27 12 000 0000',
   email: 'hello@example.propdata.co.za',
   preview: true,
@@ -19,6 +21,17 @@ const demoSite: ResolvedSite = {
 }
 
 const demoPages: PublicPage[] = [
+  {
+    id: '00000000-0000-0000-0000-000000000010', slug: '', kind: 'home', title: 'Home',
+    seoTitle: 'PropData Demo Realty | Property for sale and to rent', seoDescription: 'Explore property for sale and to rent with PropData Demo Realty.',
+    blocks: [
+      { type: 'hero', eyebrow: 'PROPERTY, SIMPLIFIED', heading: 'Find the place that feels like home.', body: 'Beautifully presented property, knowledgeable people and a simpler way to move.' },
+      { type: 'property_collection', heading: 'Featured properties', maxItems: 3 },
+      { type: 'rich_text', heading: 'Property advice that starts with people.', body: 'Talk to our local team about your next move.' },
+      { type: 'cta', heading: 'What is your property worth?', body: 'Request a valuation from our local team.', ctaLabel: 'Request a valuation', ctaHref: '/valuation' },
+      { type: 'lead_form', heading: 'Start your next move.', body: 'Tell us what you are looking for and our team will be in touch.', purpose: 'general_enquiry' },
+    ],
+  },
   {
     id: '00000000-0000-0000-0000-000000000011', slug: 'spring-viewing', kind: 'campaign', title: 'Spring viewing collection',
     seoTitle: 'Spring viewing collection | PropData Demo Realty', seoDescription: 'A curated collection of homes to view this spring.',
@@ -50,6 +63,11 @@ function isDemoMode(hostname: string): boolean {
   return configuredHosts.includes(hostname)
 }
 
+export function websiteRuntimeEnvironment(): 'staging' | 'production' | null {
+  const configured = String(process.env.WEBSITES_RUNTIME_ENV || '').trim().toLowerCase()
+  return configured === 'staging' || configured === 'production' ? configured : null
+}
+
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.map(String).filter(Boolean) : []
 }
@@ -63,9 +81,11 @@ function blocks(value: unknown): WebsiteBlock[] {
 function mapPage(row: Record<string, unknown>): PublicPage {
   const pageKind = String(row.page_kind)
   return {
-    id: String(row.id), slug: String(row.slug), kind: (['about', 'contact', 'valuation', 'campaign'].includes(pageKind) ? pageKind : 'campaign') as PublicPage['kind'],
+    id: String(row.id), slug: String(row.slug), kind: (['home', 'about', 'contact', 'valuation', 'campaign'].includes(pageKind) ? pageKind : 'campaign') as PublicPage['kind'],
     title: String(row.title || 'Agency page'), seoTitle: row.seo_title ? String(row.seo_title) : undefined,
-    seoDescription: row.seo_description ? String(row.seo_description) : undefined, blocks: blocks(row.content_blocks),
+    seoDescription: row.seo_description ? String(row.seo_description) : undefined,
+    socialImageUrl: row.social_image_url ? String(row.social_image_url) : undefined,
+    blocks: blocks(row.content_blocks),
   }
 }
 
@@ -106,25 +126,59 @@ function filterProperties(properties: PublicProperty[], query: Record<string, st
   })
 }
 
+function mapSnapshotMedia(value: unknown): PublicProperty['media'] {
+  if (!Array.isArray(value)) return []
+  const allowed = new Set<PublicProperty['media'][number]['type']>(['image', 'floor_plan', 'video', 'virtual_tour'])
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return []
+    const row = item as Record<string, unknown>
+    const type = String(row.media_type || '') as PublicProperty['media'][number]['type']
+    const url = String(row.file_url || '')
+    if (!allowed.has(type) || !/^https:\/\/[^\s]+$/i.test(url)) return []
+    return [{ type, url, caption: row.caption ? String(row.caption) : undefined, order: Number(row.sort_order || 0) }]
+  })
+}
+
+async function getPublishedWebsiteListings(
+  supabase: ReturnType<typeof getServerSupabase>,
+  site: Pick<ResolvedSite, 'id' | 'organisationId'>,
+  limit = 100,
+) {
+  const channelResult = await supabase
+    .from('website_listing_publications')
+    .select('listing_id, publication_json, media_json')
+    .eq('website_site_id', site.id)
+    .eq('status', 'published')
+    .order('last_synced_at', { ascending: false })
+    .limit(limit)
+  if (channelResult.error) throw channelResult.error
+  const listingIds = (channelResult.data || []).map((row) => String(row.listing_id)).filter(Boolean)
+  if (!listingIds.length) return []
+
+  const eligibilityResult = await supabase
+    .from('listing_publication_data')
+    .select('listing_id, private_listings!inner(organisation_id)')
+    .in('listing_id', listingIds)
+    .eq('status', 'Published')
+    .eq('private_listings.organisation_id', site.organisationId)
+  if (eligibilityResult.error) throw eligibilityResult.error
+  const eligibleIds = new Set((eligibilityResult.data || []).map((row) => String(row.listing_id)))
+
+  return (channelResult.data || []).flatMap((channel) => {
+    const listingId = String(channel.listing_id)
+    if (!eligibleIds.has(listingId) || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
+    return [{
+      row: { ...(channel.publication_json as Record<string, unknown>), listing_id: listingId },
+      media: mapSnapshotMedia(channel.media_json),
+    }]
+  })
+}
+
 export async function getPublicProperties(site: ResolvedSite, query: Record<string, string | undefined> = {}): Promise<PublicProperty[]> {
   if (site.preview && site.id === demoSite.id) return filterProperties(site.properties, query)
   const supabase = getServerSupabase()
-  const { data, error } = await supabase.from('listing_publication_data')
-    .select('listing_id, title, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, parking_bays, floor_size, description, features, amenities, private_listings!inner(organisation_id)')
-    .eq('status', 'Published').eq('private_listings.organisation_id', site.organisationId).order('updated_at', { ascending: false }).limit(100)
-  if (error) throw error
-  const ids = (data || []).map((row) => String(row.listing_id))
-  const mediaResult = ids.length ? await supabase.from('listing_media').select('listing_id, media_type, file_url, caption, sort_order').in('listing_id', ids).order('sort_order') : { data: [], error: null }
-  if (mediaResult.error) throw mediaResult.error
-  const mediaByListing = new Map<string, PublicProperty['media']>()
-  for (const item of mediaResult.data || []) {
-    const allowed = ['image', 'floor_plan', 'video', 'virtual_tour'] as const
-    if (!allowed.includes(item.media_type as typeof allowed[number])) continue
-    const collection = mediaByListing.get(String(item.listing_id)) || []
-    collection.push({ type: item.media_type as PublicProperty['media'][number]['type'], url: item.file_url, caption: item.caption || undefined, order: item.sort_order || 0 })
-    mediaByListing.set(String(item.listing_id), collection)
-  }
-  return filterProperties((data || []).map((row) => mapProperty(row as Record<string, unknown>, mediaByListing.get(String(row.listing_id)) || [])), query)
+  const listings = await getPublishedWebsiteListings(supabase, site)
+  return filterProperties(listings.map(({ row, media }) => mapProperty(row, media)), query)
 }
 
 export async function getPublicProperty(site: ResolvedSite, slug: string): Promise<PublicProperty | null> {
@@ -136,8 +190,8 @@ export async function getPublicPage(site: ResolvedSite, slug: string): Promise<P
   if (site.preview && site.id === demoSite.id) return demoPages.find((page) => page.slug === slug) || null
   const supabase = getServerSupabase()
   const { data, error } = await supabase.from('website_pages')
-    .select('id, slug, page_kind, title, seo_title, seo_description, content_blocks, website_site_revisions!inner(status)')
-    .eq('website_site_id', site.id).eq('slug', slug).eq('website_site_revisions.status', 'published').maybeSingle()
+    .select('id, slug, page_kind, title, seo_title, seo_description, social_image_url, content_blocks')
+    .eq('website_site_id', site.id).eq('revision_id', site.publishedRevisionId).eq('slug', slug).maybeSingle()
   if (error) throw error
   return data ? mapPage(data as Record<string, unknown>) : null
 }
@@ -146,8 +200,8 @@ export async function getPublicPages(site: ResolvedSite): Promise<PublicPage[]> 
   if (site.preview && site.id === demoSite.id) return demoPages
   const supabase = getServerSupabase()
   const { data, error } = await supabase.from('website_pages')
-    .select('id, slug, page_kind, title, seo_title, seo_description, content_blocks, website_site_revisions!inner(status)')
-    .eq('website_site_id', site.id).eq('website_site_revisions.status', 'published').neq('page_kind', 'home').order('slug')
+    .select('id, slug, page_kind, title, seo_title, seo_description, social_image_url, content_blocks')
+    .eq('website_site_id', site.id).eq('revision_id', site.publishedRevisionId).neq('page_kind', 'home').order('slug')
   if (error) throw error
   return (data || []).map((page) => mapPage(page as Record<string, unknown>))
 }
@@ -160,7 +214,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
   const supabase = getServerSupabase()
   const { data: domain, error: domainError } = await supabase
     .from('website_domains')
-    .select('website_site_id, domain_kind, website_sites!inner(id, organisation_id, status)')
+    .select('website_site_id, domain_kind, website_sites!inner(id, organisation_id, status, published_revision_id)')
     .eq('hostname', hostname)
     .eq('status', 'active')
     .maybeSingle()
@@ -168,39 +222,60 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
   if (domainError) throw domainError
   if (!domain?.website_sites || Array.isArray(domain.website_sites)) return null
 
-  const site = domain.website_sites as { id: string; organisation_id: string; status: ResolvedSite['status'] }
-  if (site.status !== 'published') return null
+  const site = domain.website_sites as { id: string; organisation_id: string; status: ResolvedSite['status']; published_revision_id: string | null }
+  if (site.status !== 'published' || !site.published_revision_id) return null
 
-  const [revisionResult, propertiesResult] = await Promise.all([
+  const runtimeEnvironment = websiteRuntimeEnvironment()
+  if (!runtimeEnvironment) return null
+  const releaseGate = runtimeEnvironment === 'production'
+    ? supabase
+      .from('website_production_releases')
+      .select('status')
+      .eq('organisation_id', site.organisation_id)
+      .eq('target_hostname', hostname)
+      .eq('status', 'active')
+      .maybeSingle()
+    : supabase
+      .from('website_pilot_enrolments')
+      .select('status')
+      .eq('organisation_id', site.organisation_id)
+      .eq('status', 'active')
+      .maybeSingle()
+
+  const [revisionResult, releaseGateResult] = await Promise.all([
     supabase
       .from('website_site_revisions')
       .select('brand_json')
+      .eq('id', site.published_revision_id)
       .eq('website_site_id', site.id)
       .eq('status', 'published')
       .maybeSingle(),
-    supabase
-      .from('listing_publication_data')
-      .select('listing_id, title, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, parking_bays, floor_size, description, private_listings!inner(organisation_id)')
-      .eq('status', 'Published')
-      .eq('private_listings.organisation_id', site.organisation_id)
-      .order('updated_at', { ascending: false })
-      .limit(12),
+    releaseGate,
   ])
 
   if (revisionResult.error) throw revisionResult.error
-  if (propertiesResult.error) throw propertiesResult.error
+  if (releaseGateResult.error) throw releaseGateResult.error
+  if (!revisionResult.data || !releaseGateResult.data) return null
 
   const brand = (revisionResult.data?.brand_json || {}) as Record<string, unknown>
+  const properties = await getPublishedWebsiteListings(supabase, { id: site.id, organisationId: site.organisation_id }, 12)
   return {
     id: site.id,
     organisationId: site.organisation_id,
+    publishedRevisionId: site.published_revision_id,
     name: String(brand.name || 'PropData Property'),
     status: site.status,
     primaryColor: String(brand.primaryColor || '#125b50'),
     secondaryColor: String(brand.secondaryColor || '#e7bc71'),
+    accentColor: String(brand.accentColor || brand.secondaryColor || '#e7bc71'),
+    logoUrl: brand.logoUrl ? String(brand.logoUrl) : undefined,
+    logoLightUrl: brand.logoLightUrl ? String(brand.logoLightUrl) : undefined,
+    logoDarkUrl: brand.logoDarkUrl ? String(brand.logoDarkUrl) : undefined,
     phone: brand.phone ? String(brand.phone) : undefined,
     email: brand.email ? String(brand.email) : undefined,
+    website: brand.website ? String(brand.website) : undefined,
+    whatsappNumber: brand.whatsappNumber ? String(brand.whatsappNumber) : undefined,
     preview: domain.domain_kind === 'preview',
-    properties: (propertiesResult.data || []).map((row) => mapProperty(row as Record<string, unknown>)),
+    properties: properties.map(({ row, media }) => mapProperty(row, media)),
   }
 }
