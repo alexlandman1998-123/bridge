@@ -1,0 +1,19 @@
+{
+  "version": "attorney-coordination-controlled-rollout-v1",
+  "phase6ReportFingerprint": "replace-with-phase6-report-fingerprint",
+  "phase6EvidenceFingerprint": "replace-with-phase6-evidence-fingerprint",
+  "codeRevision": "replace-with-tested-revision",
+  "stagingProjectRef": "replace-staging-project-ref",
+  "productionProjectRef": "replace-production-project-ref",
+  "organisationIds": ["replace-one-pilot-organisation"],
+  "featureFlag": "attorney_coordination_v1",
+  "killSwitchVerified": false,
+  "migrations": [
+    "20260906070938_attorney_lane_delegation_phase3",
+    "20260906071644_attorney_coordination_propagation_phase4"
+  ],
+  "authorizedBy": "Named release owner",
+  "authorizedAt": "replace-with-ISO-timestamp",
+  "changeReference": "replace-with-change-ticket",
+  "confirmation": "AUTHORIZE_ATTORNEY_COORDINATION_PILOT"
+}

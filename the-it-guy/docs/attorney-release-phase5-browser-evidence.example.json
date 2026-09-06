@@ -1,0 +1,19 @@
+{
+  "sourceFingerprint": "COPY_FROM_PHASE5_PREFLIGHT",
+  "walkthroughs": [
+    { "role": "transfer_attorney", "viewport": "desktop", "passed": false, "evidence": "" },
+    { "role": "transfer_attorney", "viewport": "mobile", "passed": false, "evidence": "" },
+    { "role": "bond_attorney", "viewport": "desktop", "passed": false, "evidence": "" },
+    { "role": "bond_attorney", "viewport": "mobile", "passed": false, "evidence": "" },
+    { "role": "cancellation_attorney", "viewport": "desktop", "passed": false, "evidence": "" },
+    { "role": "cancellation_attorney", "viewport": "mobile", "passed": false, "evidence": "" }
+  ],
+  "destinations": [
+    { "destination": "attorney_matter_workspace", "passed": false, "evidence": "" },
+    { "destination": "transaction_workspace", "passed": false, "evidence": "" },
+    { "destination": "attorney_operations", "passed": false, "evidence": "" },
+    { "destination": "agent_transaction_view", "passed": false, "evidence": "" },
+    { "destination": "buyer_portal", "passed": false, "evidence": "" },
+    { "destination": "seller_portal", "passed": false, "evidence": "" }
+  ]
+}

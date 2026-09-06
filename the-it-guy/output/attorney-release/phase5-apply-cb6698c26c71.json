@@ -1,0 +1,80 @@
+{
+  "version": "attorney-propagation-reconciliation-phase3-v1",
+  "mode": "apply",
+  "environment": "staging",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "manifestFingerprint": "8bda4c24f2924160bc82cce452833531dbde8ea728379bf2ad16c8b7037e4247",
+  "scope": "approved",
+  "batchLimit": 10,
+  "targetCount": 4,
+  "beforeGlobal": {
+    "status": "warning",
+    "gapCount": 5,
+    "counts": {
+      "missingBaseline": 0,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 389,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 5,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "afterGlobal": {
+    "status": "healthy",
+    "gapCount": 0,
+    "counts": {
+      "missingBaseline": 0,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 394,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 0,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "results": [
+    {
+      "recordKey": "faec454040c03091",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "fb48ce7dbe87a10d",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "fb9f309de28d2292",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "fc4772ee89938478",
+      "matterClass": "genuine",
+      "beforeGapCount": 2,
+      "afterGapCount": 0,
+      "repaired": 2,
+      "idempotentCandidate": true
+    }
+  ],
+  "controls": {
+    "transactionSpecificRpcOnly": true,
+    "clientVisibleMutationAllowed": false,
+    "rawTransactionIdsIncluded": false,
+    "maximumBatchSize": 10
+  },
+  "receiptFingerprint": "2c244f52d7e726e99e72c68f6d551ae5b575e16bdc3daf7d52ecf31efcd96739",
+  "createdAt": "2026-09-05T18:27:04.773Z"
+}

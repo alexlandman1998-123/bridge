@@ -1,0 +1,20 @@
+{
+  "deploymentId": "COPY_FROM_PHASE8_EXECUTION_RECEIPT",
+  "planFingerprint": "COPY_FROM_PHASE8_EXECUTION_RECEIPT",
+  "observedAt": "",
+  "observationHours": 0,
+  "totalActions": 0,
+  "actionsByRole": { "transfer_attorney": 0, "bond_attorney": 0, "cancellation_attorney": 0 },
+  "successfulActionRate": 0,
+  "propagationP95Seconds": 0,
+  "propagationStatus": "unknown",
+  "propagationGapCount": 0,
+  "runtimeErrorCount": 0,
+  "clientUnsafeProjectionCount": 0,
+  "securityIncidents": 0,
+  "visibilityBreaches": 0,
+  "dataIntegrityFailures": 0,
+  "unexpectedPermissionAllows": 0,
+  "unresolvedCriticalIncidents": 0,
+  "evidenceFingerprint": "GENERATE_FROM_ALL_PRECEDING_FIELDS"
+}

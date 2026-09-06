@@ -1,0 +1,32 @@
+{
+  "phase": 9,
+  "version": "attorney-practical-expansion-plan-phase9-v1",
+  "status": "BLOCKED",
+  "expansionAuthorized": false,
+  "waveCount": 0,
+  "blockerCount": 3,
+  "blockers": [
+    {
+      "code": "PHASE8_NOT_READY",
+      "remedy": "Complete the healthy controlled-pilot observation."
+    },
+    {
+      "code": "PHASE8_EVIDENCE_MISMATCH",
+      "remedy": "Use the exact Phase 8 expansion-readiness evidence."
+    },
+    {
+      "code": "ACTIVE_PILOT_TARGETING_MISSING",
+      "remedy": "Use the active Phase 7 feature flag and cohort as the expansion baseline."
+    }
+  ],
+  "planFingerprint": null,
+  "summary": {
+    "targetingMode": "organisation_id_allowlist",
+    "maximumWaveGrowthFactor": 2,
+    "minimumHoursBetweenWaves": 24,
+    "expansionPerformedByChecker": false,
+    "featureFlagChangedByChecker": false,
+    "productionMutated": false
+  },
+  "reportFingerprint": "15592c4f4d7de013f728d25318aae9fda0072a64d6cbc051744b35e9ce7da246"
+}

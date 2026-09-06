@@ -1,0 +1,29 @@
+{
+  "version": "attorney-release-phase6-observation-v2",
+  "sourceFingerprint": "d11eba8f5cf174c680ea1d4d23fb593a5fa493b3e3b8dd5c21cb73df28477513",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "startedAt": "2026-09-05T18:27:06.706Z",
+  "observedAt": "2026-09-05T18:43:07.239Z",
+  "observationHours": 0.27,
+  "cohortSize": 1,
+  "totalActions": 0,
+  "actionsByRole": {
+    "transfer_attorney": 0,
+    "bond_attorney": 0,
+    "cancellation_attorney": 0
+  },
+  "successfulActionRate": 0,
+  "propagationP95Seconds": 0,
+  "currentGapCount": 0,
+  "securityIncidents": 0,
+  "visibilityBreaches": 0,
+  "dataIntegrityFailures": 0,
+  "unexpectedPermissionAllows": 0,
+  "unresolvedCriticalIncidents": 0,
+  "incidentReview": {
+    "reviewedBy": "workspace-owner-request",
+    "approvalReference": "conversation-phase6-2026-09-05",
+    "reviewedAt": "2026-09-05T18:30:43.694Z"
+  },
+  "observationFingerprint": "5f605c140d6826a9ad77305b466791f8260aa37a736a32bc98fd0999f5f470e5"
+}

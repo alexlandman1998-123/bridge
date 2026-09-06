@@ -1,0 +1,128 @@
+{
+  "version": "attorney-propagation-reconciliation-phase3-v1",
+  "mode": "apply",
+  "environment": "staging",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "manifestFingerprint": "1083d7122f9d056f4080fa59afbf678d74f6c85e54bfff0cdccfb65092462194",
+  "scope": "approved",
+  "batchLimit": 10,
+  "targetCount": 10,
+  "beforeGlobal": {
+    "status": "warning",
+    "gapCount": 28,
+    "counts": {
+      "missingBaseline": 0,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 366,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 28,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "afterGlobal": {
+    "status": "warning",
+    "gapCount": 17,
+    "counts": {
+      "missingBaseline": 0,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 377,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 17,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "results": [
+    {
+      "recordKey": "d35c7f61af4d39ee",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "d4b5b9acae37c666",
+      "matterClass": "genuine",
+      "beforeGapCount": 2,
+      "afterGapCount": 0,
+      "repaired": 2,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "da090e75ecacf03a",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "db02bb5acfc33c73",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "de66d06e914c012c",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "df1270af5af3bd3b",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "e30cbe55ba822f99",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "e5d60f069cd8df53",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "e8bbec063f218dfc",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "e99ff5df0a6b2e75",
+      "matterClass": "genuine",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    }
+  ],
+  "controls": {
+    "transactionSpecificRpcOnly": true,
+    "clientVisibleMutationAllowed": false,
+    "rawTransactionIdsIncluded": false,
+    "maximumBatchSize": 10
+  },
+  "receiptFingerprint": "4ba000bc39ab0392cace1089b06badae61a5c58f0bca0db1d6aaf97c7696eed5",
+  "createdAt": "2026-09-05T18:26:49.051Z"
+}

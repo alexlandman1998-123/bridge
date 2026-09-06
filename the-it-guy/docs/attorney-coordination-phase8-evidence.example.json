@@ -1,0 +1,21 @@
+{
+  "version": "attorney-coordination-pilot-observation-v1",
+  "environment": "production",
+  "productionProjectRef": "replace-production-project-ref",
+  "phase7ReceiptFingerprint": "replace-phase7-receipt-fingerprint",
+  "observedBy": "Named operations owner",
+  "startedAt": "replace-with-ISO-timestamp",
+  "completedAt": "replace-at-least-24-hours-later",
+  "monitoringEvidence": "replace-with-dashboard-export",
+  "actions": [],
+  "healthChecks": [],
+  "controlChecks": [],
+  "securityIncidents": 0,
+  "visibilityIncidents": 0,
+  "unexpectedPermissionAllows": 0,
+  "propagationGaps": 0,
+  "attributionGaps": 0,
+  "dataIntegrityIncidents": 0,
+  "runtimeErrors": 0,
+  "defects": []
+}

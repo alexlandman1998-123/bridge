@@ -301,7 +301,7 @@ function canDepartmentViewAssignment(assignment = {}, permissions = {}, membersh
     return Boolean(permissions.can_view_transfer_matters || permissions.can_view_bond_matters)
   }
   if (assignmentType === 'cancellation' || assignmentType === 'cancellation_attorney') {
-    return Boolean(permissions.can_view_transfer_matters)
+    return Boolean(permissions.can_view_cancellation_matters)
   }
   return false
 }

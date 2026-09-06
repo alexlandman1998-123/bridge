@@ -1,0 +1,35 @@
+{
+  "version": "attorney-propagation-classification-phase2-v1",
+  "environment": "staging",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "sourceHealth": {
+    "status": "healthy",
+    "gapCount": 0,
+    "counts": {
+      "missingBaseline": 0,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 394,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 0,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "reconciliation": {
+    "classifiedGapCount": 0,
+    "matchesRpcGapCount": true,
+    "byGapType": {},
+    "byMatterClass": {},
+    "byProcessKey": {},
+    "byDecision": {}
+  },
+  "privacy": {
+    "rawTransactionIdsIncluded": false,
+    "clientNamesIncluded": false,
+    "clientContactsIncluded": false
+  },
+  "entries": [],
+  "manifestFingerprint": "7e0e0a3035bcf29385e41fab87422a37e02e71913e466aef2d4bca52bae14a76",
+  "generatedAt": "2026-09-05T18:27:11.945Z"
+}

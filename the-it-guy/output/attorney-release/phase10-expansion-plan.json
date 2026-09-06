@@ -1,0 +1,108 @@
+{
+  "phase": 10,
+  "version": "attorney-release-steady-state-phase10-v1",
+  "status": "BLOCKED",
+  "deploymentId": "",
+  "phase9ReportFingerprint": "",
+  "evaluatedAt": "2026-09-05T18:41:34.328Z",
+  "blockerCount": 18,
+  "rollbackTriggerCount": 0,
+  "blockers": [
+    {
+      "code": "PHASE9_VERIFIED_RECEIPT_REQUIRED",
+      "remedy": "Complete the canary and provide its immutable Phase 9 VERIFIED receipt."
+    },
+    {
+      "code": "PHASE9_RECEIPT_INTEGRITY_FAILED",
+      "remedy": "Use an unmodified, read-only Phase 9 receipt."
+    },
+    {
+      "code": "STEADY_STATE_EVIDENCE_MISMATCH",
+      "remedy": "Provide fingerprinted readiness evidence for the verified canary."
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field supportOwner.",
+      "field": "supportOwner"
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field monitoringOwner.",
+      "field": "monitoringOwner"
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field securityOwner.",
+      "field": "securityOwner"
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field rollbackOwner.",
+      "field": "rollbackOwner"
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field incidentChannel.",
+      "field": "incidentChannel"
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field supportRunbook.",
+      "field": "supportRunbook"
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field monitoringDashboard.",
+      "field": "monitoringDashboard"
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field rollbackDeploymentId.",
+      "field": "rollbackDeploymentId"
+    },
+    {
+      "code": "STEADY_STATE_OWNER_OR_CONTROL_MISSING",
+      "remedy": "Complete readiness field rollbackDrillAt.",
+      "field": "rollbackDrillAt"
+    },
+    {
+      "code": "OPERATIONAL_HANDOFF_INCOMPLETE",
+      "remedy": "Complete on-call, support, monitoring, and rollback handoff."
+    },
+    {
+      "code": "EXPANSION_LIMIT_INVALID",
+      "remedy": "Use gradual expansion capped between 1% and 25% per approved step.",
+      "maximumExpansionPercent": 0
+    },
+    {
+      "code": "EXPANSION_BATCH_INVALID",
+      "remedy": "Limit each expansion step to one through ten attorney organisations."
+    },
+    {
+      "code": "EXPANSION_APPROVAL_MISMATCH",
+      "remedy": "Approve the exact verified deployment and Phase 9 receipt."
+    },
+    {
+      "code": "ACCOUNTABLE_EXPANSION_APPROVAL_REQUIRED",
+      "remedy": "Record accountable expansion approval."
+    },
+    {
+      "code": "EXACT_EXPANSION_CONFIRMATION_REQUIRED",
+      "remedy": "Use the exact confirmation AUTHORIZE_ATTORNEY_GA_EXPANSION."
+    }
+  ],
+  "rollbackTriggers": [],
+  "expansion": {
+    "mode": "",
+    "maximumExpansionPercent": 0,
+    "maximumOrganisationsPerStep": 0,
+    "automaticExpansion": false
+  },
+  "execution": {
+    "productionMutated": false,
+    "cohortExpanded": false,
+    "deploymentChanged": false,
+    "rollbackPerformed": false
+  },
+  "planFingerprint": "448875dbf9ab3d7a18c277aa6370f84f3aa116cbb0d581c01c905d5d424f19ef"
+}

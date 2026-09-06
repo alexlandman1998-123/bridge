@@ -1,0 +1,45 @@
+{
+  "phase": 7,
+  "version": "attorney-release-final-gate-phase7-v1",
+  "releaseFingerprint": "aa603f052c3fde8a9e2bc66a13d4e7eb1b7ee71ed07124fc3925b2f0954b62b9",
+  "sourceFingerprint": "d11eba8f5cf174c680ea1d4d23fb593a5fa493b3e3b8dd5c21cb73df28477513",
+  "status": "NO_GO",
+  "evaluatedAt": "2026-09-05T18:36:13.214Z",
+  "blockerCount": 4,
+  "blockers": [
+    {
+      "code": "PHASE6_NOT_STABILIZED",
+      "remedy": "Complete the real Phase 6 observation window and action sample.",
+      "phase6Status": "HOLD"
+    },
+    {
+      "code": "APPROVAL_FINGERPRINT_MISMATCH",
+      "remedy": "Approve the exact Phase 7 release fingerprint after all evidence passes."
+    },
+    {
+      "code": "ACCOUNTABLE_APPROVAL_REQUIRED",
+      "remedy": "Record an accountable release owner, timestamp, and approval reference."
+    },
+    {
+      "code": "EXACT_RELEASE_CONFIRMATION_REQUIRED",
+      "remedy": "Use the exact confirmation AUTHORIZE_ATTORNEY_RELEASE."
+    }
+  ],
+  "evidence": {
+    "observerPassed": true,
+    "phase6Status": "HOLD",
+    "phase6ArtifactIntegrityPassed": true,
+    "livePropagationCheckPassed": true,
+    "codeGatePassed": true,
+    "buildPassed": true,
+    "localGatesSkipped": false,
+    "fingerprintFiles": [
+      "src/services/attorneyReleaseStabilisation.js",
+      "src/services/attorneyReleasePhase7.js",
+      "scripts/observe-attorney-release-phase6-staging.mjs",
+      "scripts/check-attorney-release-phase6-staging.mjs",
+      "scripts/check-attorney-release-phase7.mjs"
+    ]
+  },
+  "reportFingerprint": "9d559bd26625fcda11b1fd53ad6e3e7e194b3a15d2b124ba7e8cc520d6f0c67e"
+}

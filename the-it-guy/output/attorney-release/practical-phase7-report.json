@@ -1,0 +1,32 @@
+{
+  "phase": 7,
+  "version": "attorney-practical-controlled-rollout-phase7-v1",
+  "status": "BLOCKED",
+  "executionAuthorized": false,
+  "pilotActive": false,
+  "blockerCount": 3,
+  "blockers": [
+    {
+      "code": "PHASE6_NOT_APPROVED",
+      "remedy": "Obtain approval for the immutable Phase 6 candidate."
+    },
+    {
+      "code": "PHASE6_CANDIDATE_MISMATCH",
+      "remedy": "Use the exact approved Phase 6 candidate and approval."
+    },
+    {
+      "code": "PRODUCTION_TARGET_MISMATCH",
+      "remedy": "Use the exact approved production project."
+    }
+  ],
+  "requestFingerprint": null,
+  "receiptFingerprint": null,
+  "summary": {
+    "deploymentPerformedByChecker": false,
+    "featureFlagChangedByChecker": false,
+    "maximumPilotOrganisations": 3,
+    "requiredRoleSmokes": 3,
+    "requiredDestinationSmokes": 6
+  },
+  "reportFingerprint": "22eea8cdbcb158c988a12446718611642df20f859947bc4452b12be0c5b4a3d9"
+}

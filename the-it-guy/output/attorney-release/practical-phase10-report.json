@@ -1,0 +1,32 @@
+{
+  "phase": 10,
+  "version": "attorney-practical-expansion-closeout-phase10-v1",
+  "status": "BLOCKED",
+  "generalAvailabilityApproved": false,
+  "blockerCount": 3,
+  "blockers": [
+    {
+      "code": "PHASE9_NOT_APPROVED",
+      "remedy": "Approve the graduated expansion plan."
+    },
+    {
+      "code": "PHASE9_PLAN_MISMATCH",
+      "remedy": "Use the exact approved Phase 9 plan and approval."
+    },
+    {
+      "code": "APPROVED_WAVES_MISSING",
+      "remedy": "Use an approved plan with at least one wave."
+    }
+  ],
+  "waveMetrics": [],
+  "ledgerFingerprint": null,
+  "summary": {
+    "plannedWaves": 0,
+    "completedWaveMetrics": 0,
+    "flagsChangedByChecker": false,
+    "cohortChangedByChecker": false,
+    "rollbackPerformedByChecker": false,
+    "productionMutated": false
+  },
+  "reportFingerprint": "ab0dfd689dbeb4fdbfb472b6725be4d6ec506f53c2e497670768792f7007a812"
+}

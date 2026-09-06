@@ -1,0 +1,72 @@
+{
+  "phase": 9,
+  "version": "attorney-release-canary-assurance-phase9-v1",
+  "status": "BLOCKED",
+  "deploymentId": "",
+  "planFingerprint": "",
+  "evaluatedAt": "2026-09-05T18:40:04.809Z",
+  "summary": {
+    "blockerCount": 4,
+    "rollbackTriggerCount": 0,
+    "holdCount": 5
+  },
+  "blockers": [
+    {
+      "code": "PHASE8_EXECUTION_RECEIPT_REQUIRED",
+      "remedy": "Supply the immutable receipt from an authorized Phase 8 canary cutover."
+    },
+    {
+      "code": "PHASE8_RECEIPT_INTEGRITY_FAILED",
+      "remedy": "Use an unmodified, read-only Phase 8 execution receipt."
+    },
+    {
+      "code": "PRODUCTION_EVIDENCE_INTEGRITY_FAILED",
+      "remedy": "Refresh fingerprinted evidence for the exact canary deployment and plan."
+    },
+    {
+      "code": "PRODUCTION_EVIDENCE_STALE",
+      "remedy": "Refresh Phase 9 production evidence.",
+      "ageMinutes": null
+    }
+  ],
+  "rollbackTriggers": [],
+  "holds": [
+    {
+      "code": "CANARY_WINDOW_INCOMPLETE",
+      "remedy": "Observe the production canary for at least 24 hours.",
+      "observationHours": 0
+    },
+    {
+      "code": "CANARY_SAMPLE_TOO_SMALL",
+      "remedy": "Observe at least 15 canary attorney actions.",
+      "totalActions": 0
+    },
+    {
+      "code": "CANARY_ROLE_SAMPLE_TOO_SMALL",
+      "remedy": "Observe at least three transfer_attorney actions.",
+      "role": "transfer_attorney",
+      "count": 0
+    },
+    {
+      "code": "CANARY_ROLE_SAMPLE_TOO_SMALL",
+      "remedy": "Observe at least three bond_attorney actions.",
+      "role": "bond_attorney",
+      "count": 0
+    },
+    {
+      "code": "CANARY_ROLE_SAMPLE_TOO_SMALL",
+      "remedy": "Observe at least three cancellation_attorney actions.",
+      "role": "cancellation_attorney",
+      "count": 0
+    }
+  ],
+  "evidence": {
+    "executionReceiptLoaded": false,
+    "receiptIntegrityPassed": false,
+    "observationLoaded": false,
+    "evidenceIntegrityPassed": false,
+    "mutatedProduction": false,
+    "rollbackPerformed": false
+  },
+  "reportFingerprint": "fe18514545dc2d7b821c6a3282013dae2cce1a10f7f62a7055a636a3d2cda735"
+}

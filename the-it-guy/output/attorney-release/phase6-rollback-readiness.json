@@ -1,0 +1,10 @@
+{
+  "version": "attorney-release-phase6-rollback-v2",
+  "sourceFingerprint": "d11eba8f5cf174c680ea1d4d23fb593a5fa493b3e3b8dd5c21cb73df28477513",
+  "owner": "workspace-owner-request",
+  "approvalReference": "conversation-phase6-2026-09-05",
+  "verifiedAt": "2026-09-05T18:30:43.694Z",
+  "environment": "staging",
+  "procedure": "Stop the attorney pilot, preserve the audit ledger, disable pilot access, restore the recoverable staging backup if required, and rerun propagation health before reopening access.",
+  "rollbackFingerprint": "7a10e079bbe150112e0153ec5206be23adfcf2f858ca869e3cfdd469ce08dfe2"
+}

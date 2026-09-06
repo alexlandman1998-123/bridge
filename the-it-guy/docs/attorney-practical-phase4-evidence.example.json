@@ -1,0 +1,19 @@
+{
+  "version": "attorney-practical-remediation-regression-phase4-v1",
+  "environment": "staging",
+  "contractFingerprint": "COPY_FROM_PRACTICAL_PHASE0_REPORT",
+  "phase1EvidenceFingerprint": "COPY_FROM_PRACTICAL_PHASE1_REPORT",
+  "phase2EvidenceFingerprint": "COPY_FROM_PRACTICAL_PHASE2_REPORT",
+  "phase3EvidenceFingerprint": "COPY_FROM_PRACTICAL_PHASE3_REPORT",
+  "executedBy": "Release engineer",
+  "startedAt": "2026-09-06T14:00:00.000Z",
+  "completedAt": "2026-09-06T15:00:00.000Z",
+  "codeRevision": "GIT_COMMIT",
+  "deploymentReference": "STAGING_DEPLOYMENT",
+  "remediations": [],
+  "regressionSuites": [],
+  "matrixRetests": [],
+  "newP0Count": 0,
+  "newP1Count": 0,
+  "reopenedDefectCount": 0
+}

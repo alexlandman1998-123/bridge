@@ -1,0 +1,11 @@
+{
+  "version": "attorney-practical-propagation-proof-phase2-v1",
+  "environment": "staging",
+  "contractFingerprint": "COPY_FROM_PRACTICAL_PHASE0_REPORT",
+  "phase1EvidenceFingerprint": "COPY_FROM_PRACTICAL_PHASE1_REPORT",
+  "executedBy": "UAT owner",
+  "startedAt": "2026-09-06T12:00:00.000Z",
+  "completedAt": "2026-09-06T13:00:00.000Z",
+  "proofs": [],
+  "defects": []
+}

@@ -1,0 +1,16 @@
+{
+  "status": "CANARY_ACTIVE",
+  "deploymentId": "",
+  "deploymentUrl": "https://promoted-candidate.vercel.app",
+  "rollbackDeploymentId": "",
+  "planFingerprint": "COPY_FROM_READY_PHASE8_PLAN",
+  "releaseFingerprint": "COPY_FROM_PHASE7_GO_RECEIPT",
+  "cohortDigest": "COPY_FROM_READY_PHASE8_PLAN",
+  "cohortSize": 1,
+  "promotedAt": "",
+  "activatedAt": "",
+  "executedBy": "",
+  "approvalReference": "",
+  "receiptFingerprint": "GENERATE_FROM_ALL_PRECEDING_FIELDS",
+  "immutable": true
+}

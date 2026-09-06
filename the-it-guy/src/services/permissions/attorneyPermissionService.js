@@ -22,6 +22,7 @@ import {
   normalizeText,
   requireClient,
 } from '../attorneyFirmServiceShared'
+import { getActiveAttorneyLaneDelegation, isActiveAttorneyLaneDelegation } from '../attorneyLaneDelegationService.js'
 
 const PROFESSIONAL_APP_ROLES = new Set(['agent', 'developer', 'bond_originator'])
 
@@ -48,6 +49,7 @@ function assignmentAllows(assignment = null, snakeCaseKey, camelCaseKey) {
 function roleCanEditLane(permissions = {}, attorneyRole = 'transfer_attorney') {
   const normalizedRole = normalizeAttorneyTransactionRole(attorneyRole)
   if (normalizedRole === 'bond_attorney') return Boolean(permissions.can_edit_bond_workflow)
+  if (normalizedRole === 'cancellation_attorney') return Boolean(permissions.can_edit_cancellation_workflow)
   return Boolean(permissions.can_edit_transfer_workflow)
 }
 
@@ -57,6 +59,7 @@ export function resolveAttorneyActionPermissions({
   attorneyRole = 'transfer_attorney',
   attorneyAccess = null,
   canViewAsAttorney = false,
+  attorneyDelegation = null,
 } = {}) {
   const isAttorneyAppUser = normalizeAppRole(appRole) === 'attorney'
   const hasActiveMembership = Boolean(membership?.isActive && membership?.professionalRole)
@@ -70,14 +73,19 @@ export function resolveAttorneyActionPermissions({
       attorneyAccess?.managementOverrideEnabled &&
       attorneyAccess?.canViewMatter,
   )
-  const hasLaneAuthority = Boolean(isAssignedParticipant || managementOverrideEnabled)
+  const delegatedCapabilities = new Set(
+    isActiveAttorneyLaneDelegation(attorneyDelegation) ? attorneyDelegation.capabilities || [] : [],
+  )
+  const mayActOnBehalf = Boolean(permissions.can_act_on_behalf_of_attorney && delegatedCapabilities.size)
+  const hasLaneAuthority = Boolean(isAssignedParticipant || managementOverrideEnabled || mayActOnBehalf)
   const actionBase = Boolean(isAttorneyAppUser && hasActiveMembership && canViewAsAttorney && hasLaneAuthority)
   const documentsAllowed = assignmentAllows(assignment, 'can_manage_documents', 'canManageDocuments')
   const signingAllowed = assignmentAllows(assignment, 'can_manage_signing', 'canManageSigning')
   const laneUpdateAllowed = assignmentAllows(assignment, 'can_update_workflow_lane', 'canUpdateWorkflowLane')
   const internalNotesAllowed = assignmentAllows(assignment, 'can_add_internal_notes', 'canAddInternalNotes')
   const sharedUpdatesAllowed = assignmentAllows(assignment, 'can_add_shared_updates', 'canAddSharedUpdates')
-  const canAddSharedUpdate = Boolean(actionBase && sharedUpdatesAllowed && permissions.can_comment_shared)
+  const delegated = (capability) => mayActOnBehalf && delegatedCapabilities.has(capability)
+  const canAddSharedUpdate = Boolean(actionBase && permissions.can_comment_shared && (sharedUpdatesAllowed || delegated('shared_updates')))
 
   return {
     permissions,
@@ -87,14 +95,13 @@ export function resolveAttorneyActionPermissions({
     hasLaneAuthority,
     canUpdateLane: Boolean(
       actionBase &&
-        laneUpdateAllowed &&
-        (roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled),
+        ((laneUpdateAllowed && (roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled)) || delegated('workflow')),
     ),
-    canRequestDocuments: Boolean(actionBase && documentsAllowed && permissions.can_request_documents),
-    canUploadDocuments: Boolean(actionBase && documentsAllowed && permissions.can_upload_documents),
-    canReviewDocuments: Boolean(actionBase && documentsAllowed && permissions.can_review_documents),
+    canRequestDocuments: Boolean(actionBase && permissions.can_request_documents && (documentsAllowed || delegated('documents'))),
+    canUploadDocuments: Boolean(actionBase && permissions.can_upload_documents && (documentsAllowed || delegated('documents'))),
+    canReviewDocuments: Boolean(actionBase && permissions.can_review_documents && (documentsAllowed || delegated('documents'))),
     canManageSigning: Boolean(actionBase && signingAllowed && permissions.can_manage_signing_appointments),
-    canAddInternalNote: Boolean(actionBase && internalNotesAllowed && permissions.can_comment_internal),
+    canAddInternalNote: Boolean(actionBase && permissions.can_comment_internal && (internalNotesAllowed || delegated('internal_notes'))),
     canAddSharedUpdate,
     canPublishClientVisibleUpdate: Boolean(
       canAddSharedUpdate && permissions.can_publish_client_visible_updates,
@@ -105,6 +112,8 @@ export function resolveAttorneyActionPermissions({
         canViewAsAttorney &&
         permissions.can_view_internal_comments,
     ),
+    actingOnBehalf: mayActOnBehalf,
+    delegationId: mayActOnBehalf ? attorneyDelegation.id : null,
   }
 }
 
@@ -266,9 +275,15 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
   const attorneyAccess = isAttorneyAppUser
     ? await getAttorneyLaneAccessContext({ userId: actor.userId, transactionId, attorneyRole: role }).catch(() => null)
     : null
-  const membership = isAttorneyAppUser
+  let membership = isAttorneyAppUser
     ? await resolveAttorneyMembershipForTransaction(actor.client, actor.userId, transactionId, role).catch(() => null)
     : null
+  const attorneyDelegation = isAttorneyAppUser && ['bond_attorney', 'cancellation_attorney'].includes(role)
+    ? await getActiveAttorneyLaneDelegation({ transactionId, attorneyRole: role, delegateUserId: actor.userId }, { client: actor.client }).catch(() => null)
+    : null
+  if (!membership && attorneyDelegation) {
+    membership = await resolveAttorneyMembershipForTransaction(actor.client, actor.userId, transactionId, 'transfer_attorney').catch(() => null)
+  }
   const membershipRole = String(membership?.professionalRole || attorneyAccess?.firmRole || '').trim().toLowerCase()
   const isFirmManagement = isAttorneyProfessionalManagementRole(membership || { professionalRole: membershipRole })
   const assignedRoles = isAttorneyAppUser ? await getUserAttorneyRolesForTransaction(actor.userId, transactionId).catch(() => []) : []
@@ -290,7 +305,7 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
 
   const canViewAsAttorney = Boolean(
     membership?.isActive &&
-      (attorneyAccess?.canViewMatter ||
+      (attorneyDelegation || attorneyAccess?.canViewMatter ||
         (isAttorneyAppUser && await canAccessAttorneyMatter(transactionId, null, actor.userId).catch(() => false))),
   )
   const canViewAsProfessional = Boolean(hasProfessionalParticipantAccess || hasLegacyProfessionalAccess)
@@ -302,7 +317,14 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     attorneyRole: role,
     attorneyAccess,
     canViewAsAttorney,
+    attorneyDelegation,
   })
+  const canManageDelegation = Boolean(
+    isAttorneyAppUser &&
+      ['bond_attorney', 'cancellation_attorney'].includes(role) &&
+      !actionPermissions.actingOnBehalf &&
+      (attorneyAccess?.isAssignedParticipant || isFirmManagement),
+  )
 
   return {
     userId: actor.userId,
@@ -331,7 +353,10 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     canReassignAttorney: canAssignLane,
     canViewInternalNotes: actionPermissions.canViewInternalNotes,
     canViewProfessionalUpdates: canViewLegalWorkspace,
-    viewReason: canViewAsAttorney ? attorneyAccess?.reason || 'attorney_access' : canViewAsProfessional ? 'professional_participant' : 'no_access',
+    actingOnBehalf: actionPermissions.actingOnBehalf,
+    delegation: actionPermissions.actingOnBehalf ? attorneyDelegation : null,
+    canManageDelegation,
+    viewReason: actionPermissions.actingOnBehalf ? 'explicit_lane_delegation' : canViewAsAttorney ? attorneyAccess?.reason || 'attorney_access' : canViewAsProfessional ? 'professional_participant' : 'no_access',
   }
 }
 

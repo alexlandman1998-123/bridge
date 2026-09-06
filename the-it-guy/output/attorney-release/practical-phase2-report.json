@@ -1,0 +1,32 @@
+{
+  "phase": 2,
+  "version": "attorney-practical-propagation-proof-phase2-v1",
+  "status": "BLOCKED",
+  "executionAuthorized": false,
+  "sourceCount": 0,
+  "blockerCount": 3,
+  "blockers": [
+    {
+      "code": "PHASE1_NOT_PASSED",
+      "remedy": "Complete and pass practical authenticated browser UAT before testing propagation."
+    },
+    {
+      "code": "PHASE1_EVIDENCE_CONTRACT_STALE",
+      "remedy": "Use Phase 1 evidence from the current release-bar contract."
+    },
+    {
+      "code": "PHASE1_EVIDENCE_FINGERPRINT_MISMATCH",
+      "remedy": "Regenerate the Phase 1 report from the exact evidence supplied to Phase 2."
+    }
+  ],
+  "evidenceFingerprint": null,
+  "summary": {
+    "propagationSources": 0,
+    "destinations": 6,
+    "visibilityClasses": 3,
+    "maximumObservationSeconds": 120,
+    "stagingOnly": true,
+    "productionMutated": false
+  },
+  "reportFingerprint": "906c69787abc64c63dea963c45f0c3fd8468018daf83c78e040413b7de1cf47a"
+}

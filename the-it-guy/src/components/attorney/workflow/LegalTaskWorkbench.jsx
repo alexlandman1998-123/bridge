@@ -231,6 +231,7 @@ export default function LegalTaskWorkbench({
   const primaryAction = model.primaryAction
   const completeActionIsPrimary = primaryAction?.id === model.completeAction?.id
   const dueDateLabel = formatDueDate(model.dueDate)
+  const completionHelpId = `legal-task-completion-help-${model.taskKey}`
 
   function emitActionEvent(action = {}, placement = 'secondary') {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -269,7 +270,10 @@ export default function LegalTaskWorkbench({
         onSelectTask={onSelectTask}
       />
 
-      <main className="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.04)]">
+      <main
+        className="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.04)]"
+        aria-busy={saving}
+      >
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <header className="shrink-0 border-b border-slate-200 px-5 py-5 lg:px-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -326,12 +330,18 @@ export default function LegalTaskWorkbench({
                   size="sm"
                   className="mt-4"
                   disabled={saving || primaryAction.disabled}
-                  title={primaryAction.disabled ? primaryAction.description : ''}
+                  aria-describedby={primaryAction.disabled ? completionHelpId : undefined}
                   onClick={() => runAction(primaryAction, 'primary')}
                 >
                   {primaryAction.source === 'status' ? <CheckCircle2 size={15} /> : <ChevronRight size={15} />}
                   {primaryAction.label}
                 </Button>
+                {primaryAction.disabled ? (
+                  <p id={completionHelpId} className="mt-3 text-sm font-medium leading-5 text-emerald-900">
+                    <span className="font-semibold">Before you can complete this task:</span>{' '}
+                    {model.completionMessage || primaryAction.description}
+                  </p>
+                ) : null}
               </section>
             ) : null}
 
@@ -421,14 +431,19 @@ export default function LegalTaskWorkbench({
                   type="button"
                   size="sm"
                   disabled={saving || !model.canComplete || model.completeAction.disabled}
-                  title={!model.canComplete ? model.completionMessage : ''}
+                  aria-describedby={!model.canComplete ? completionHelpId : undefined}
                   onClick={() => runAction(model.completeAction, 'completion')}
                 >
                   <CheckCircle2 size={15} /> Complete task
                 </Button>
               ) : null}
             </div>
-            {!model.canComplete ? <p className="mt-2 text-xs text-slate-500">{model.completionMessage}</p> : null}
+            {!model.canComplete && !primaryAction?.disabled ? (
+              <p id={completionHelpId} className="mt-2 text-sm leading-5 text-slate-600">
+                <span className="font-semibold text-slate-800">Before you can complete this task:</span>{' '}
+                {model.completionMessage}
+              </p>
+            ) : null}
           </footer>
         </div>
       </main>
@@ -440,7 +455,7 @@ export default function LegalTaskWorkbench({
         onClose={onCloseStatusDraft}
         footer={(
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={onCloseStatusDraft}>Cancel</Button>
+            <Button type="button" variant="secondary" disabled={saving} onClick={onCloseStatusDraft}>Cancel</Button>
             <Button
               type="submit"
               form="legal-task-workbench-status-form"
@@ -451,7 +466,7 @@ export default function LegalTaskWorkbench({
           </div>
         )}
       >
-        <form id="legal-task-workbench-status-form" className="space-y-4" onSubmit={onSubmitStatusDraft}>
+        <form id="legal-task-workbench-status-form" className="space-y-4" aria-busy={saving} onSubmit={onSubmitStatusDraft}>
           <div>
             <span className="text-xs font-medium text-slate-500">Task</span>
             <strong className="mt-1 block text-sm font-semibold text-slate-950">{statusDraft?.task?.label || model.taskLabel}</strong>
@@ -465,6 +480,7 @@ export default function LegalTaskWorkbench({
             <label className="grid gap-2 text-sm font-medium text-slate-700">
               Reason <span className="text-red-600">*</span>
               <Field
+                autoFocus
                 value={statusDraft?.reason || ''}
                 onChange={(event) => onStatusDraftChange?.({ ...statusDraft, reason: event.target.value })}
                 placeholder="What is preventing this task from progressing?"

@@ -7,7 +7,7 @@ import {
 } from '../core/transactions/bondHybridFinanceWorkflow'
 import { isBondFinanceType, normalizeFinanceType } from '../core/transactions/financeType'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
-import { fetchTransactionsByParticipantSummary } from '../lib/api'
+import { fetchTransactionsByParticipantSummary } from '../domains/reporting/api.js'
 import { bondPerfLog } from '../lib/performanceTrace'
 import { canViewFinanceWorkflow } from './bondFinanceWorkflowOwnershipService'
 import {

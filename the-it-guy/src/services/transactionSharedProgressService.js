@@ -26,6 +26,7 @@ function mapRow(row = {}) {
       : null,
     sourceType: row.source_type,
     sourceId: row.source_id || null,
+    attorneyActionAttribution: row.attorney_action_attribution || null,
     updatedAt: row.updated_at,
     createdAt: row.created_at,
   }

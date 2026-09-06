@@ -1,0 +1,100 @@
+{
+  "phase": 1,
+  "version": "attorney-practical-browser-uat-phase1-v1",
+  "status": "BLOCKED",
+  "executionAuthorized": false,
+  "matrix": [
+    {
+      "id": "transfer_attorney:desktop",
+      "role": "transfer_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_review_document",
+        "confirm_lodgement_or_registration"
+      ]
+    },
+    {
+      "id": "transfer_attorney:mobile",
+      "role": "transfer_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_review_document",
+        "confirm_lodgement_or_registration"
+      ]
+    },
+    {
+      "id": "bond_attorney:desktop",
+      "role": "bond_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "update_guarantee_or_conditions",
+        "schedule_or_confirm_signing"
+      ]
+    },
+    {
+      "id": "bond_attorney:mobile",
+      "role": "bond_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "update_guarantee_or_conditions",
+        "schedule_or_confirm_signing"
+      ]
+    },
+    {
+      "id": "cancellation_attorney:desktop",
+      "role": "cancellation_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_capture_figures",
+        "confirm_lodgement_or_closeout"
+      ]
+    },
+    {
+      "id": "cancellation_attorney:mobile",
+      "role": "cancellation_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_capture_figures",
+        "confirm_lodgement_or_closeout"
+      ]
+    }
+  ],
+  "blockerCount": 2,
+  "blockers": [
+    {
+      "code": "PHASE0_NOT_ACCEPTED",
+      "remedy": "Approve the practical Phase 0 release bar before using UAT credentials or changing staging data."
+    },
+    {
+      "code": "PHASE0_APPROVAL_MISSING_OR_STALE",
+      "remedy": "Provide the exact Phase 0 approval for the current contract fingerprint."
+    }
+  ],
+  "evidenceFingerprint": null,
+  "summary": {
+    "requiredWalkthroughs": 6,
+    "requiredActionExecutions": 30,
+    "authenticatedBrowserEvidence": true,
+    "stagingOnly": true,
+    "productionMutated": false
+  },
+  "reportFingerprint": "32b23b7864f3cff4cdab79df9fe29c6426c55bd54ae37beecab20877d8917819"
+}

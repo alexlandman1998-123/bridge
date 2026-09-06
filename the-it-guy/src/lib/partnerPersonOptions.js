@@ -58,8 +58,6 @@ function personMatchesRole(person = {}, roleType = '') {
       'cancellation_attorney',
       'director_partner',
       'firm_admin',
-      'attorney_admin',
-      'attorney_manager',
     ].some((allowed) => role === allowed || role.includes(allowed))
   }
   return true

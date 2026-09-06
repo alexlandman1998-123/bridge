@@ -1,0 +1,13 @@
+{
+  "releaseFingerprint": "COPY_FROM_PHASE7_GO_RECEIPT",
+  "deploymentId": "",
+  "deploymentUrl": "https://verified-preview.vercel.app",
+  "verifiedAt": "",
+  "browserSmokePassed": false,
+  "rollbackDeploymentId": "",
+  "rollbackTested": false,
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "organisationIds": [],
+  "monitoringOwner": "",
+  "rollbackOwner": ""
+}

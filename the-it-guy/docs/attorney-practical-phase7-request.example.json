@@ -1,0 +1,12 @@
+{
+  "version": "attorney-practical-controlled-rollout-phase7-v1",
+  "candidateFingerprint": "COPY_FROM_PHASE6_REPORT",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "authorizedBy": "Release owner",
+  "authorizedAt": "2026-09-07T13:00:00.000Z",
+  "changeReference": "CHANGE_REFERENCE",
+  "confirmation": "EXECUTE_ATTORNEY_CONTROLLED_RELEASE",
+  "organisationIds": [],
+  "featureFlag": "COPY_FROM_PHASE6_CANDIDATE",
+  "cohortReference": "COPY_FROM_PHASE6_CANDIDATE"
+}

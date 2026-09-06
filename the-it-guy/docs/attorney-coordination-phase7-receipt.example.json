@@ -1,0 +1,25 @@
+{
+  "version": "attorney-coordination-controlled-rollout-v1",
+  "requestFingerprint": "replace-with-request-fingerprint",
+  "productionProjectRef": "replace-production-project-ref",
+  "codeRevision": "replace-with-tested-revision",
+  "organisationIds": ["replace-one-pilot-organisation"],
+  "featureFlag": "attorney_coordination_v1",
+  "featureFlagEnabled": false,
+  "killSwitchAvailable": false,
+  "appliedMigrations": [
+    "20260906070938_attorney_lane_delegation_phase3",
+    "20260906071644_attorney_coordination_propagation_phase4"
+  ],
+  "activatedAt": "replace-with-ISO-timestamp",
+  "activatedBy": "Named release operator",
+  "roleSmokes": [],
+  "destinationSmokes": [],
+  "securityIncidents": 0,
+  "visibilityIncidents": 0,
+  "unexpectedPermissionAllows": 0,
+  "propagationGaps": 0,
+  "attributionGaps": 0,
+  "productionErrors": 0,
+  "monitoringEvidence": "replace-with-evidence-path"
+}

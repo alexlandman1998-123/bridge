@@ -1,0 +1,7 @@
+{
+  "ledgerFingerprint": "replace-ledger-fingerprint",
+  "approvedBy": "Named accountable owner",
+  "approvedAt": "replace-with-ISO-timestamp",
+  "approvalReference": "replace-approval-reference",
+  "confirmation": "ACCEPT_ATTORNEY_COORDINATION_STEADY_STATE"
+}

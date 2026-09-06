@@ -1,0 +1,27 @@
+{
+  "phase": 9,
+  "mode": "expansion_plan_validation_only",
+  "generatedAt": "2026-09-06T07:29:01.326Z",
+  "productionMutated": false,
+  "cohortExpanded": false,
+  "featureFlagChanged": false,
+  "status": "BLOCKED",
+  "expansionAuthorized": false,
+  "blockers": [
+    {
+      "code": "PHASE8_NOT_READY",
+      "message": "A clean Phase 8 observation is required."
+    },
+    {
+      "code": "PHASE8_EVIDENCE_MISMATCH",
+      "message": "Use the exact Phase 8 evidence bound to its report."
+    },
+    {
+      "code": "ACTIVE_PILOT_INVALID",
+      "message": "Start from the exact active one-organisation pilot."
+    }
+  ],
+  "waveCount": 0,
+  "planFingerprint": null,
+  "reportFingerprint": "6ec891514fe6313b8115bab48f585dd842cf2cc3b16d50e12383654f9f9aba60"
+}

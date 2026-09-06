@@ -1,0 +1,22 @@
+{
+  "version": "attorney-practical-expansion-plan-phase9-v1",
+  "phase8EvidenceFingerprint": "COPY_FROM_PHASE8_REPORT",
+  "preparedBy": "Release manager",
+  "preparedAt": "2026-09-08T15:00:00.000Z",
+  "changeReference": "CHANGE_REFERENCE",
+  "featureFlag": "COPY_FROM_PHASE7_RECEIPT",
+  "targetingMode": "organisation_id_allowlist",
+  "defaultOff": true,
+  "assignmentStable": true,
+  "evaluationLogged": true,
+  "killSwitchVerified": true,
+  "rollbackOwner": "Operations",
+  "rollbackRunbookPath": "docs/rollback.md",
+  "maximumRollbackMinutes": 15,
+  "currentOrganisationIds": [],
+  "waves": [],
+  "monitoringOwner": "Operations",
+  "monitoringDashboardPath": "MONITORING_EVIDENCE",
+  "supportOwner": "Support",
+  "escalationPath": "SUPPORT_RUNBOOK"
+}

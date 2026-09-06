@@ -50,6 +50,11 @@ import {
   publishTransactionSharedProgress,
 } from '../transactionSharedProgressService.js'
 import {
+  buildAttorneyDelegationAttribution,
+  getActiveAttorneyLaneDelegation,
+  getAttorneyLaneDelegations,
+} from '../attorneyLaneDelegationService.js'
+import {
   assertAttorneyTaskStatusAction,
   buildAttorneyTaskMutationPacket,
 } from '../../core/transactions/attorneyTaskOperationalContract.js'
@@ -305,7 +310,7 @@ function normalizeClientRecipients(recipients = [], visibility = 'internal') {
     }
   }
 
-  return normalized.size ? [...normalized] : ['buyer', 'seller']
+  return [...normalized]
 }
 
 function normalizeDocumentVisibilityScope(value, fallback = 'professional_shared') {
@@ -652,10 +657,19 @@ async function insertTransactionEvent(client, {
   visibility = 'internal',
   eventData = {},
 }) {
+  const attorneyRole = eventData.attorneyRole || LANE_META[safeNormalizeWorkflowLane(eventData.laneKey)]?.attorneyRole || ''
+  const delegation = actorId && ['bond_attorney', 'cancellation_attorney'].includes(attorneyRole)
+    ? await getActiveAttorneyLaneDelegation({
+        transactionId,
+        attorneyRole,
+        delegateUserId: actorId,
+      }, { client }).catch(() => null)
+    : null
+  const attribution = buildAttorneyDelegationAttribution(delegation, actorId)
   const payload = {
     transaction_id: transactionId,
     event_type: eventType,
-    event_data: eventData,
+    event_data: { ...eventData, attorneyActionAttribution: attribution },
     created_by: actorId,
     created_by_role: createdByRole,
     visibility_scope: visibility,
@@ -1005,6 +1019,9 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
 
   const transaction = await fetchTransaction(client, normalizedTransactionId)
   const assignments = await getTransactionAttorneyAssignments(normalizedTransactionId).catch(() => [])
+  const delegations = actor?.id
+    ? await getAttorneyLaneDelegations({ transactionId: normalizedTransactionId }, { client }).catch(() => [])
+    : []
   const workflow = resolveAttorneyWorkflowForTransaction(transaction, assignments)
   const legalDocuments = resolveLegalDocumentRequirements(transaction)
   const requiredLaneKeys = Object.entries(workflow.lanes)
@@ -1148,6 +1165,8 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
       const assignment = mapAssignmentForLane(assignments, laneKey)
       const lane = mapLaneRow({ ...row, process_type: laneKey }, stepsBySubprocessId[row.id] || [], assignment)
       const permissionContext = laneContexts[laneKey] || deniedLaneContext
+      const laneDelegations = delegations.filter((item) => item.attorney_role === lane.attorneyRole)
+      const transferAssignment = mapAssignmentForLane(assignments, 'transfer')
       const visibleUpdates = updates.filter((update) => {
         if (!(update.lane_key === laneKey || update.attorney_role === lane.attorneyRole)) return false
         return canSeeAttorneyUpdateVisibility(permissionContext, update.visibility)
@@ -1192,6 +1211,12 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
       const updateOptions = resolveAttorneyUpdateOptions(transaction, lane.attorneyRole)
       return {
         ...lane,
+        activeDelegation: permissionContext?.actingOnBehalf ? permissionContext.delegation : null,
+        delegations: laneDelegations,
+        delegationCandidate: transferAssignment?.attorneyUserId ? {
+          userId: transferAssignment.attorneyUserId,
+          name: transferAssignment.attorneyUser?.name || transferAssignment.primaryAttorney?.name || transferAssignment.attorneyUser?.email || transferAssignment.primaryAttorney?.email || 'Assigned transfer attorney',
+        } : null,
         permissions: {
           canView: Boolean(permissionContext?.canViewLane),
           canUpdateStage: Boolean(permissionContext?.canUpdateLane),
@@ -1204,6 +1229,9 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
           canManageSigning: Boolean(permissionContext?.canManageSigning),
           canAssignAttorney: Boolean(permissionContext?.canAssignAttorney),
           readOnlyReason: permissionContext?.viewReason || 'view_only',
+          actingOnBehalf: Boolean(permissionContext?.actingOnBehalf),
+          delegationId: permissionContext?.delegation?.id || null,
+          canManageDelegation: Boolean(permissionContext?.canManageDelegation),
         },
         updates: visibleUpdates,
         updateOptions,
@@ -1886,6 +1914,9 @@ export async function addAttorneyTransactionUpdate({
   const defaultVisibility = isGenericInternalNote ? 'internal' : registryType.defaultVisibility || 'internal'
   const normalizedVisibility = normalizeVisibility(visibility || defaultVisibility)
   const normalizedClientRecipients = normalizeClientRecipients(clientRecipients, normalizedVisibility)
+  if (normalizedVisibility === 'client_visible' && normalizedClientRecipients.length === 0) {
+    throw new Error('Select at least one client recipient before publishing this update.')
+  }
   if (isGenericInternalNote && normalizedVisibility === 'client_visible') {
     throw new Error('Internal notes cannot be made client-visible.')
   }

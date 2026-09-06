@@ -1,0 +1,22 @@
+{
+  "version": "attorney-practical-pilot-observation-phase8-v1",
+  "environment": "production",
+  "productionProjectRef": "isdowlnollckzvltkasn",
+  "phase7ReceiptFingerprint": "COPY_FROM_PHASE7_REPORT",
+  "observedBy": "Operations",
+  "startedAt": "2026-09-07T14:00:00.000Z",
+  "completedAt": "2026-09-08T14:00:00.000Z",
+  "monitoringDashboardPath": "MONITORING_EVIDENCE",
+  "actions": [],
+  "healthChecks": [],
+  "runtimeLogScan": {},
+  "webVitals": {},
+  "destinationHealth": [],
+  "browserCheckpoints": [],
+  "securityIncidents": 0,
+  "visibilityIncidents": 0,
+  "dataIntegrityIncidents": 0,
+  "propagationGaps": 0,
+  "unexpectedPermissionAllows": 0,
+  "supportTickets": []
+}

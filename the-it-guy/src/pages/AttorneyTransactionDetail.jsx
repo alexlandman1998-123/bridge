@@ -20985,11 +20985,14 @@ function AttorneyTransactionDetail() {
 
   function buildRoleplayerSelection(roleType, option) {
     if (!option) return null
+    const firmFirstAllocation = roleType === 'bond_attorney' || roleType === 'cancellation_attorney'
     return {
       roleType,
       organisationId: option.organisationId,
       relationshipId: option.relationshipId,
-      userId: option.userId || null,
+      userId: firmFirstAllocation ? null : option.userId || null,
+      firmFirstAllocation,
+      preferredAttorneyUserId: firmFirstAllocation ? option.userId || null : null,
       companyName: option.companyName,
       contactPerson: option.contactPerson || option.companyName,
       email: option.email,
@@ -21008,9 +21011,16 @@ function AttorneyTransactionDetail() {
       activationTrigger:
         roleType === 'bond_originator'
           ? 'buyer_selects_bond_or_hybrid'
-          : roleType === 'bond_attorney'
-            ? 'bond_approved'
+          : firmFirstAllocation
+            ? 'appointed_firm_staff_assignment'
             : 'attorney_instruction_stage',
+      snapshot: firmFirstAllocation
+        ? {
+            firmFirstAllocation: true,
+            preferredAttorneyUserId: option.userId || null,
+            allocationState: 'awaiting_firm_acceptance',
+          }
+        : {},
     }
   }
 
@@ -24705,14 +24715,14 @@ function AttorneyTransactionDetail() {
               value={roleplayerConfirmDraft.bondAttorney}
               onChange={(value) => updateRoleplayerConfirmDraft('bondAttorney', value)}
               options={bondAttorneyOptions}
-              helper="Optional. Usually activated after bond approval or bank instruction."
+              helper="Optional. This nominates the firm; its authorised manager must accept and allocate the primary bond attorney."
             />
             <RoleplayerSelect
               label="Cancellation Attorney"
               value={roleplayerConfirmDraft.cancellationAttorney}
               onChange={(value) => updateRoleplayerConfirmDraft('cancellationAttorney', value)}
               options={cancellationAttorneyOptions}
-              helper="Optional. Use when the seller bond cancellation leg needs its own attorney."
+              helper="Optional. This nominates the firm; its authorised manager must accept and allocate the primary cancellation attorney."
             />
           </div>
           <div className="rounded-[14px] border border-borderSoft bg-surfaceAlt px-4 py-3 text-helper leading-5 text-textMuted">

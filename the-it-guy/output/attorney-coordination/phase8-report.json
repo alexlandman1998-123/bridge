@@ -1,0 +1,27 @@
+{
+  "phase": 8,
+  "mode": "observation_validation_only",
+  "generatedAt": "2026-09-06T07:27:10.132Z",
+  "productionMutated": false,
+  "cohortExpanded": false,
+  "status": "BLOCKED",
+  "expansionReady": false,
+  "blockers": [
+    {
+      "code": "PHASE7_PILOT_NOT_ACTIVE",
+      "message": "An active Phase 7 pilot is required."
+    },
+    {
+      "code": "PHASE7_RECEIPT_MISMATCH",
+      "message": "Observe the exact Phase 7 activation receipt."
+    },
+    {
+      "code": "PILOT_CONTROL_INVALID",
+      "message": "The active pilot target, flag and kill switch must be intact."
+    }
+  ],
+  "rollbackTriggers": [],
+  "metrics": null,
+  "evidenceFingerprint": null,
+  "reportFingerprint": "c215866f72fc2d4fdd6e88ace6e0a744aa5f1a353d79f24df5ca4381d71177b8"
+}

@@ -27,6 +27,7 @@ function inferOperationLaneKeys({ role = '', permissions = {}, practiceQualifica
   if (normalizedRole === 'transfer_attorney') return ['transfer']
   if (qualifications.length) return ATTORNEY_OPERATION_LANES.filter((laneKey) => qualifications.includes(laneKey))
   if (permissions.can_view_bond_matters && !permissions.can_view_transfer_matters) return ['bond']
+  if (permissions.can_view_cancellation_matters && !permissions.can_view_transfer_matters && !permissions.can_view_bond_matters) return ['cancellation']
   if (permissions.can_view_transfer_matters && !permissions.can_view_bond_matters) return ['transfer']
   return ['transfer']
 }

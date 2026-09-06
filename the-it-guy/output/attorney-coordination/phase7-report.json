@@ -1,0 +1,26 @@
+{
+  "phase": 7,
+  "mode": "validation_only",
+  "generatedAt": "2026-09-06T07:25:32.392Z",
+  "deploymentPerformed": false,
+  "featureFlagChanged": false,
+  "status": "BLOCKED",
+  "pilotAuthorized": false,
+  "pilotActive": false,
+  "blockers": [
+    {
+      "code": "PHASE6_NOT_PASSED",
+      "message": "A genuine Phase 6 PASSED report is required."
+    },
+    {
+      "code": "PHASE6_EVIDENCE_MISMATCH",
+      "message": "Use the exact Phase 6 evidence bound to the report."
+    },
+    {
+      "code": "PHASE6_SOURCE_INVALID",
+      "message": "Phase 6 evidence must identify staging and a code revision."
+    }
+  ],
+  "rollbackTriggers": [],
+  "reportFingerprint": "330b9ad5be6fdc5f3f39d3f2f05e3dfe0434058b7e5f454fe451922b6994d3e5"
+}

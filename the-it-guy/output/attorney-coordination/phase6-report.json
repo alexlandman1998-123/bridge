@@ -1,0 +1,36 @@
+{
+  "phase": 6,
+  "mode": "read_only_acceptance_gate",
+  "generatedAt": "2026-09-06T07:23:58.019Z",
+  "productionMutated": false,
+  "schema": {
+    "stagingSafe": false,
+    "delegationTable": false,
+    "delegationAttribution": false,
+    "sharedProgressAttribution": false
+  },
+  "diagnostics": [
+    {
+      "check": "staging_target",
+      "passed": false,
+      "message": "STAGING_URL_INVALID, STAGING_PROJECT_REF_MISSING"
+    },
+    {
+      "check": "staging_read_credentials",
+      "passed": false,
+      "message": "SUPABASE_SERVICE_ROLE_KEY is required for this read-only schema probe."
+    }
+  ],
+  "evidencePath": null,
+  "evidenceFingerprint": null,
+  "status": "BLOCKED",
+  "blockers": [
+    "A positively identified staging target is required.",
+    "Required database capability is unavailable: delegationTable.",
+    "Required database capability is unavailable: delegationAttribution.",
+    "Required database capability is unavailable: sharedProgressAttribution."
+  ],
+  "failures": [],
+  "passedScenarios": 0,
+  "reportFingerprint": "751a0b031104e464634383a0682fc191c4267cf791e5967897616c2e73f88086"
+}

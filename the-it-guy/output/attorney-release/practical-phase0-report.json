@@ -1,0 +1,39 @@
+{
+  "phase": 0,
+  "version": "attorney-practical-release-acceptance-phase0-v1",
+  "status": "READY_FOR_APPROVAL",
+  "contractFingerprint": "9b91c3915a72fbaa372e24eaf9f993d1ccc5f653aa49397a54193341aae95e72",
+  "contractBlockerCount": 0,
+  "blockerCount": 3,
+  "blockers": [
+    {
+      "code": "RELEASE_BAR_APPROVAL_REQUIRED",
+      "remedy": "Record the accountable owner, timestamp, and approval reference."
+    },
+    {
+      "code": "RELEASE_BAR_APPROVAL_MISMATCH",
+      "remedy": "Approve the exact contract fingerprint."
+    },
+    {
+      "code": "EXACT_RELEASE_BAR_CONFIRMATION_REQUIRED",
+      "remedy": "Use the exact confirmation ACCEPT_ATTORNEY_RELEASE_BAR."
+    }
+  ],
+  "acceptance": {
+    "roles": 3,
+    "roleActions": 15,
+    "viewports": 2,
+    "destinations": 6,
+    "soak": {
+      "minimumHours": 24,
+      "minimumTotalActions": 30,
+      "minimumActionsPerRole": 5,
+      "minimumSuccessfulActionRate": 0.99,
+      "maximumPropagationP95Seconds": 120,
+      "maximumPropagationGaps": 0,
+      "maximumSafetyIncidents": 0
+    },
+    "productionMutated": false
+  },
+  "reportFingerprint": "ef768132e972804c93a19a61ab8ac0b48413561ca2761d3a8704cc0bece34f84"
+}

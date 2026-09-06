@@ -1,0 +1,88 @@
+{
+  "version": "attorney-propagation-reconciliation-phase3-v1",
+  "mode": "apply",
+  "environment": "staging",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "manifestFingerprint": "43921b16e1ffa7b53f6d5cae7716fb5a38d4d5474265150417c8528d86da0972",
+  "scope": "approved",
+  "batchLimit": 5,
+  "targetCount": 5,
+  "beforeGlobal": {
+    "status": "warning",
+    "gapCount": 129,
+    "counts": {
+      "missingBaseline": 5,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 265,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 124,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "afterGlobal": {
+    "status": "warning",
+    "gapCount": 124,
+    "counts": {
+      "missingBaseline": 0,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 270,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 124,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "results": [
+    {
+      "recordKey": "0edddf672f2beb49",
+      "matterClass": "demo",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "4e5c11ea01d43e56",
+      "matterClass": "demo",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "83748d27c335672e",
+      "matterClass": "demo",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "db6939ae17a209cc",
+      "matterClass": "demo",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "f0755af3f5d869f4",
+      "matterClass": "demo",
+      "beforeGapCount": 1,
+      "afterGapCount": 0,
+      "repaired": 1,
+      "idempotentCandidate": true
+    }
+  ],
+  "controls": {
+    "transactionSpecificRpcOnly": true,
+    "clientVisibleMutationAllowed": false,
+    "rawTransactionIdsIncluded": false,
+    "maximumBatchSize": 10
+  },
+  "receiptFingerprint": "4a5e9db88f0d011cec3c068f0fbaf784eb5d4f22c42de4830d4b5c2a0e0728eb",
+  "createdAt": "2026-09-05T18:25:33.660Z"
+}

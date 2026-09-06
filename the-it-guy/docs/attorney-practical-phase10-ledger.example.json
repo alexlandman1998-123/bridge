@@ -1,0 +1,16 @@
+{
+  "version": "attorney-practical-expansion-closeout-phase10-v1",
+  "planFingerprint": "COPY_FROM_PHASE9_REPORT",
+  "executedBy": "Release manager",
+  "startedAt": "ISO_TIMESTAMP",
+  "completedAt": "ISO_TIMESTAMP",
+  "waves": [],
+  "finalOrganisationIds": [],
+  "targetPopulationCovered": false,
+  "targetPopulationReference": "ELIGIBLE_POPULATION_REFERENCE",
+  "flagStillDefaultOff": true,
+  "flagRetirementDeferred": true,
+  "monitoringActive": true,
+  "supportHandoffComplete": true,
+  "rollbackStillAvailable": true
+}

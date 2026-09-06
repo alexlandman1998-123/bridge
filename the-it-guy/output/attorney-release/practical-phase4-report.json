@@ -1,0 +1,123 @@
+{
+  "phase": 4,
+  "version": "attorney-practical-remediation-regression-phase4-v1",
+  "status": "BLOCKED",
+  "executionAuthorized": false,
+  "defectCount": 0,
+  "matrix": [
+    {
+      "id": "transfer_attorney:desktop",
+      "role": "transfer_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_review_document",
+        "confirm_lodgement_or_registration"
+      ]
+    },
+    {
+      "id": "transfer_attorney:mobile",
+      "role": "transfer_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_review_document",
+        "confirm_lodgement_or_registration"
+      ]
+    },
+    {
+      "id": "bond_attorney:desktop",
+      "role": "bond_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "update_guarantee_or_conditions",
+        "schedule_or_confirm_signing"
+      ]
+    },
+    {
+      "id": "bond_attorney:mobile",
+      "role": "bond_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "update_guarantee_or_conditions",
+        "schedule_or_confirm_signing"
+      ]
+    },
+    {
+      "id": "cancellation_attorney:desktop",
+      "role": "cancellation_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_capture_figures",
+        "confirm_lodgement_or_closeout"
+      ]
+    },
+    {
+      "id": "cancellation_attorney:mobile",
+      "role": "cancellation_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_capture_figures",
+        "confirm_lodgement_or_closeout"
+      ]
+    }
+  ],
+  "blockerCount": 6,
+  "blockers": [
+    {
+      "code": "PHASE1_NOT_PASSED",
+      "remedy": "Pass practical Phase 1 before final remediation regression.",
+      "phase": 1
+    },
+    {
+      "code": "PHASE1_EVIDENCE_MISMATCH",
+      "remedy": "Use the exact passed Phase 1 evidence.",
+      "phase": 1
+    },
+    {
+      "code": "PHASE2_NOT_PASSED",
+      "remedy": "Pass practical Phase 2 before final remediation regression.",
+      "phase": 2
+    },
+    {
+      "code": "PHASE2_EVIDENCE_MISMATCH",
+      "remedy": "Use the exact passed Phase 2 evidence.",
+      "phase": 2
+    },
+    {
+      "code": "PHASE3_NOT_PASSED",
+      "remedy": "Pass practical Phase 3 before final remediation regression.",
+      "phase": 3
+    },
+    {
+      "code": "PHASE3_EVIDENCE_MISMATCH",
+      "remedy": "Use the exact passed Phase 3 evidence.",
+      "phase": 3
+    }
+  ],
+  "evidenceFingerprint": null,
+  "summary": {
+    "discoveredDefects": 0,
+    "requiredRegressionSuites": 4,
+    "requiredMatrixRetests": 6,
+    "stagingOnly": true,
+    "productionMutated": false
+  },
+  "reportFingerprint": "857707a1e1b47eb6d54d7ceb0bbeed94364344b41598f76094066a202304f32a"
+}

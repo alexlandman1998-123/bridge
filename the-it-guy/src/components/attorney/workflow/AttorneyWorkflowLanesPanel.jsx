@@ -19,6 +19,11 @@ import {
 import Button from '../../ui/Button'
 import Field from '../../ui/Field'
 import Modal from '../../ui/Modal'
+import {
+  ATTORNEY_DELEGATION_CAPABILITIES,
+  grantAttorneyLaneDelegation,
+  revokeAttorneyLaneDelegation,
+} from '../../../services/attorneyLaneDelegationService.js'
 
 const STATUS_CLASS = {
   completed: 'border-success/30 bg-successSoft text-success',
@@ -48,6 +53,12 @@ function formatDate(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return 'Not set'
   return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function defaultDelegationExpiry() {
+  const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  date.setMinutes(date.getMinutes() - date.getTimezoneOffset())
+  return date.toISOString().slice(0, 16)
 }
 
 function getLaneIcon(status) {
@@ -87,7 +98,7 @@ function getFirstUpdateOption(updateOptions = {}) {
 function normalizeDraftRecipients(recipients = [], visibility = 'internal') {
   if (visibility !== 'client_visible') return []
   const normalized = new Set((Array.isArray(recipients) ? recipients : [recipients]).filter((item) => ['buyer', 'seller'].includes(item)))
-  return normalized.size ? [...normalized] : ['buyer', 'seller']
+  return [...normalized]
 }
 
 function visibilityLabel(value) {
@@ -122,6 +133,9 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   const [readiness, setReadiness] = useState(null)
   const [timelineFilter, setTimelineFilter] = useState('all')
   const [saving, setSaving] = useState(false)
+  const [delegationDraft, setDelegationDraft] = useState(null)
+  const [revocationDraft, setRevocationDraft] = useState(null)
+  const [notice, setNotice] = useState('')
 
   const load = useCallback(async () => {
     if (!transactionId) return
@@ -169,11 +183,13 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
       await load()
     }
     await onChanged?.()
+    setNotice('Attorney workflow updated successfully.')
   }
 
   async function handleStageSubmit(event) {
     event.preventDefault()
     if (!stageDraft) return
+    setNotice('')
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
@@ -197,6 +213,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   async function handleNoteSubmit(event) {
     event.preventDefault()
     if (!noteDraft) return
+    setNotice('')
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
@@ -220,6 +237,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   async function handleBlockerSubmit(event) {
     event.preventDefault()
     if (!blockerDraft) return
+    setNotice('')
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
@@ -244,6 +262,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   }
 
   async function handleResolveBlocker(blockerId) {
+    setNotice('')
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
@@ -260,6 +279,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   async function handleDocumentSubmit(event) {
     event.preventDefault()
     if (!documentDraft) return
+    setNotice('')
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
@@ -283,6 +303,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
     event.preventDefault()
     if (!uploadDraft) return
     const file = event.currentTarget.documentFile.files?.[0]
+    setNotice('')
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
@@ -306,6 +327,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   }
 
   async function handleGenerateLaneRequests(laneKey) {
+    setNotice('')
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
@@ -321,6 +343,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
   async function handleReviewSubmit(event) {
     event.preventDefault()
     if (!reviewDraft) return
+    setNotice('')
     setSaving(true)
     setState((previous) => ({ ...previous, error: '' }))
     try {
@@ -335,6 +358,49 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
       await refreshAfterChange(next)
     } catch (error) {
       setState((previous) => ({ ...previous, error: error?.message || 'Unable to review document.' }))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelegationSubmit(event) {
+    event.preventDefault()
+    if (!delegationDraft) return
+    setNotice('')
+    setSaving(true)
+    setState((previous) => ({ ...previous, error: '' }))
+    try {
+      await grantAttorneyLaneDelegation({
+        transactionId,
+        attorneyRole: delegationDraft.attorneyRole,
+        delegateUserId: delegationDraft.delegateUserId,
+        capabilities: delegationDraft.capabilities,
+        reason: delegationDraft.reason,
+        expiresAt: new Date(delegationDraft.expiresAt).toISOString(),
+      })
+      setDelegationDraft(null)
+      await refreshAfterChange()
+      setNotice('Delegated access granted successfully.')
+    } catch (error) {
+      setState((previous) => ({ ...previous, error: error?.message || 'Unable to grant delegated access.' }))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRevocationSubmit(event) {
+    event.preventDefault()
+    if (!revocationDraft) return
+    setNotice('')
+    setSaving(true)
+    setState((previous) => ({ ...previous, error: '' }))
+    try {
+      await revokeAttorneyLaneDelegation({ delegationId: revocationDraft.delegationId, reason: revocationDraft.reason })
+      setRevocationDraft(null)
+      await refreshAfterChange()
+      setNotice('Delegated access revoked successfully.')
+    } catch (error) {
+      setState((previous) => ({ ...previous, error: error?.message || 'Unable to revoke delegated access.' }))
     } finally {
       setSaving(false)
     }
@@ -373,7 +439,11 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
       </div>
 
       {state.error ? (
-        <p className="mb-4 rounded-control border border-danger/30 bg-dangerSoft px-4 py-3 text-sm text-danger">{state.error}</p>
+        <p role="alert" className="mb-4 rounded-control border border-danger/30 bg-dangerSoft px-4 py-3 text-sm text-danger">{state.error}</p>
+      ) : null}
+
+      {notice ? (
+        <p role="status" aria-live="polite" className="mb-4 rounded-control border border-success/30 bg-successSoft px-4 py-3 text-sm text-success">{notice}</p>
       ) : null}
 
       {orderedLanes.length ? (
@@ -480,6 +550,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
 
           {orderedLanes.map((lane) => {
             const Icon = getLaneIcon(lane.laneStatus)
+            const activeManagedDelegation = lane.delegations?.find((item) => item.status === 'active' && new Date(item.expires_at) > new Date())
             return (
               <article key={lane.id} className="rounded-[18px] border border-borderSoft bg-surfaceAlt/70 p-4">
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -493,6 +564,20 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                         <p className="mt-1 text-sm text-textMuted">{buildAssignedLabel(lane)}</p>
                       </div>
                     </div>
+
+                    {lane.permissions?.actingOnBehalf ? (
+                      <div className="mt-4 rounded-control border border-info/30 bg-infoSoft px-4 py-3 text-sm text-info" role="status">
+                        <strong>Acting on behalf of the responsible {lane.label.toLowerCase()}.</strong>{' '}
+                        Your access is limited to {lane.activeDelegation?.capabilities?.map(toTitle).join(', ') || 'the delegated actions'} and expires {formatDate(lane.activeDelegation?.expires_at)}.
+                      </div>
+                    ) : null}
+
+                    {lane.permissions?.canManageDelegation && activeManagedDelegation ? (
+                      <div className="mt-4 rounded-control border border-warning/30 bg-warningSoft px-4 py-3 text-sm text-warning">
+                        <strong>{lane.delegationCandidate?.name || 'The transfer attorney'} may act on behalf of this lane.</strong>{' '}
+                        Access: {activeManagedDelegation.capabilities?.map(toTitle).join(', ')} until {formatDate(activeManagedDelegation.expires_at)}.
+                      </div>
+                    ) : null}
 
                     <div className="mt-4 grid gap-3 md:grid-cols-4">
                       <div className="rounded-control border border-borderSoft bg-surface px-4 py-3">
@@ -598,6 +683,25 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                   </div>
 
                   <div className="flex shrink-0 flex-wrap gap-2 xl:w-[220px]">
+                    {lane.permissions?.canManageDelegation && lane.delegationCandidate ? (
+                      activeManagedDelegation ? (
+                        <Button type="button" variant="secondary" className="w-full" onClick={() => setRevocationDraft({ delegationId: activeManagedDelegation.id, laneLabel: lane.label, reason: '' })}>
+                          Revoke Delegation
+                        </Button>
+                      ) : (
+                        <Button type="button" variant="secondary" className="w-full" onClick={() => setDelegationDraft({
+                          attorneyRole: lane.attorneyRole,
+                          laneLabel: lane.label,
+                          delegateUserId: lane.delegationCandidate.userId,
+                          delegateName: lane.delegationCandidate.name,
+                          capabilities: ['workflow'],
+                          reason: '',
+                          expiresAt: defaultDelegationExpiry(),
+                        })}>
+                          Delegate Actions
+                        </Button>
+                      )
+                    ) : null}
                     {lane.permissions?.canUpdateStage ||
                     lane.permissions?.canAddInternalNote ||
                     lane.permissions?.canAddSharedUpdate ||
@@ -916,7 +1020,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                                 else current.delete(option.value)
                                 return {
                                   ...previous,
-                                  clientRecipients: current.size ? [...current] : ['buyer', 'seller'],
+                                  clientRecipients: [...current],
                                 }
                               })
                             }
@@ -927,6 +1031,9 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                     })}
                   </div>
                 </fieldset>
+                {normalizeDraftRecipients(noteDraft.clientRecipients, noteDraft.visibility).length === 0 ? (
+                  <p role="alert" className="m-0 text-xs font-semibold">Select at least one client recipient.</p>
+                ) : null}
               </div>
             ) : null}
             <label className="grid gap-1.5 text-sm font-medium text-textStrong">
@@ -943,7 +1050,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
               <Button type="button" variant="secondary" onClick={() => setNoteDraft(null)} disabled={saving}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={saving || !noteDraft.message.trim()}>
+              <Button type="submit" disabled={saving || !noteDraft.message.trim() || (noteDraft.visibility === 'client_visible' && normalizeDraftRecipients(noteDraft.clientRecipients, noteDraft.visibility).length === 0)}>
                 {saving ? 'Saving…' : 'Save Update'}
               </Button>
             </div>
@@ -1200,6 +1307,60 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
               <Button type="submit" disabled={saving || !blockerDraft.title.trim()}>
                 {saving ? 'Saving…' : 'Add Blocker'}
               </Button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {delegationDraft ? (
+        <Modal open title={`Delegate ${delegationDraft.laneLabel} Actions`} onClose={() => setDelegationDraft(null)}>
+          <form onSubmit={handleDelegationSubmit} className="grid gap-4">
+            <p className="rounded-control border border-info/30 bg-infoSoft px-4 py-3 text-sm text-info">
+              Granting access to <strong>{delegationDraft.delegateName}</strong>, the assigned transfer attorney. They remain identified as the actual actor.
+            </p>
+            <fieldset className="grid gap-2">
+              <legend className="text-sm font-medium text-textStrong">Allowed actions</legend>
+              {ATTORNEY_DELEGATION_CAPABILITIES.map((capability) => (
+                <label key={capability} className="flex min-h-11 items-center gap-3 rounded-control border border-borderSoft bg-surfaceAlt px-3 py-2 text-sm text-textStrong">
+                  <input type="checkbox" checked={delegationDraft.capabilities.includes(capability)} onChange={(event) => setDelegationDraft((previous) => ({
+                    ...previous,
+                    capabilities: event.target.checked ? [...previous.capabilities, capability] : previous.capabilities.filter((item) => item !== capability),
+                  }))} />
+                  {toTitle(capability)}
+                </label>
+              ))}
+            </fieldset>
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              Access expires
+              <Field type="datetime-local" value={delegationDraft.expiresAt} onChange={(event) => setDelegationDraft((previous) => ({ ...previous, expiresAt: event.target.value }))} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              Reason
+              <Field as="textarea" rows={3} value={delegationDraft.reason} onChange={(event) => setDelegationDraft((previous) => ({ ...previous, reason: event.target.value }))} placeholder="Why does the transfer attorney need to act for this lane?" />
+            </label>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setDelegationDraft(null)} disabled={saving}>Cancel</Button>
+              <Button type="submit" disabled={saving || !delegationDraft.reason.trim() || !delegationDraft.capabilities.length || !delegationDraft.expiresAt}>
+                {saving ? 'Granting…' : 'Grant Delegation'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
+      {revocationDraft ? (
+        <Modal open title="Revoke Delegated Access" onClose={() => setRevocationDraft(null)}>
+          <form onSubmit={handleRevocationSubmit} className="grid gap-4">
+            <p className="rounded-control border border-warning/30 bg-warningSoft px-4 py-3 text-sm text-warning">
+              Revocation immediately removes the transfer attorney’s delegated {revocationDraft.laneLabel} actions.
+            </p>
+            <label className="grid gap-1.5 text-sm font-medium text-textStrong">
+              Revocation reason
+              <Field as="textarea" rows={3} value={revocationDraft.reason} onChange={(event) => setRevocationDraft((previous) => ({ ...previous, reason: event.target.value }))} />
+            </label>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={() => setRevocationDraft(null)} disabled={saving}>Cancel</Button>
+              <Button type="submit" disabled={saving || !revocationDraft.reason.trim()}>{saving ? 'Revoking…' : 'Revoke Access'}</Button>
             </div>
           </form>
         </Modal>

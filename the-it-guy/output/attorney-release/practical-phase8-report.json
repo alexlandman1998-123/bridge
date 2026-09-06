@@ -1,0 +1,33 @@
+{
+  "phase": 8,
+  "version": "attorney-practical-pilot-observation-phase8-v1",
+  "status": "BLOCKED",
+  "expansionReady": false,
+  "blockerCount": 3,
+  "blockers": [
+    {
+      "code": "PHASE7_PILOT_NOT_ACTIVE",
+      "remedy": "Complete the controlled rollout and immediate production smoke."
+    },
+    {
+      "code": "PHASE7_RECEIPT_MISMATCH",
+      "remedy": "Use the exact active-pilot deployment receipt."
+    },
+    {
+      "code": "PRODUCTION_TARGET_MISMATCH",
+      "remedy": "Observe only the approved production project."
+    }
+  ],
+  "metrics": null,
+  "evidenceFingerprint": null,
+  "summary": {
+    "minimumPilotHours": 24,
+    "minimumActions": 30,
+    "maximumPropagationP95Seconds": 120,
+    "browserCheckpoints": 6,
+    "observedDestinations": 6,
+    "cohortExpandedByChecker": false,
+    "productionMutated": false
+  },
+  "reportFingerprint": "d3939f56b0ff54b5facfbb5d016d299027c176d98a477670c9e01dffeb66a9e7"
+}

@@ -1,0 +1,27 @@
+{
+  "version": "attorney-coordination-acceptance-v1",
+  "environment": "staging",
+  "transactionId": "replace-with-staging-transaction-id",
+  "codeRevision": "replace-with-git-revision",
+  "executedBy": "Named UAT owner",
+  "startedAt": "2026-09-06T08:00:00.000Z",
+  "completedAt": "2026-09-06T09:00:00.000Z",
+  "actors": {
+    "transfer": { "userId": "replace-transfer-user", "firmId": "replace-transfer-firm" },
+    "bond": { "userId": "replace-bond-user", "firmId": "replace-bond-firm" },
+    "cancellation": { "userId": "replace-cancellation-user", "firmId": "replace-cancellation-firm" }
+  },
+  "scenarios": [],
+  "destinations": {
+    "attorney_workspace": false,
+    "transaction_sync": false,
+    "televent_updates": false
+  },
+  "attribution": {
+    "actualActorPreserved": false,
+    "responsibleFirmPreserved": false,
+    "delegationIdPreserved": false
+  },
+  "ui": { "desktopPassed": false, "mobilePassed": false, "keyboardPassed": false },
+  "defects": []
+}

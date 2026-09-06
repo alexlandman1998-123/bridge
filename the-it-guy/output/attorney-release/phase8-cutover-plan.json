@@ -1,0 +1,79 @@
+{
+  "phase": 8,
+  "version": "attorney-release-controlled-cutover-phase8-v1",
+  "status": "BLOCKED",
+  "releaseFingerprint": "",
+  "cohortSize": 0,
+  "blockers": [
+    {
+      "code": "PHASE7_GO_RECEIPT_REQUIRED",
+      "remedy": "Complete Phase 7 and supply its immutable GO receipt."
+    },
+    {
+      "code": "PHASE7_RECEIPT_INTEGRITY_FAILED",
+      "remedy": "Use an unmodified, read-only Phase 7 receipt."
+    },
+    {
+      "code": "CANDIDATE_FINGERPRINT_MISMATCH",
+      "remedy": "Verify the preview against the exact Phase 7 release fingerprint."
+    },
+    {
+      "code": "VERIFIED_PREVIEW_REQUIRED",
+      "remedy": "Record the validated Vercel preview deployment, timestamp, and successful browser smoke."
+    },
+    {
+      "code": "ROLLBACK_DEPLOYMENT_REQUIRED",
+      "remedy": "Record and test the known-good rollback deployment before cutover."
+    },
+    {
+      "code": "PRODUCTION_TARGET_MISMATCH",
+      "remedy": "Bind the plan to the canonical production project reference."
+    },
+    {
+      "code": "CANARY_COHORT_OUT_OF_BOUNDS",
+      "remedy": "Use one to three explicitly identified attorney organisations.",
+      "cohortSize": 0
+    },
+    {
+      "code": "CUTOVER_OWNERS_REQUIRED",
+      "remedy": "Record monitoring and rollback owners."
+    },
+    {
+      "code": "CUTOVER_APPROVAL_MISMATCH",
+      "remedy": "Approve the exact release fingerprint and candidate deployment."
+    },
+    {
+      "code": "ACCOUNTABLE_CUTOVER_APPROVAL_REQUIRED",
+      "remedy": "Record an accountable cutover owner, timestamp, and reference."
+    },
+    {
+      "code": "EXACT_CUTOVER_CONFIRMATION_REQUIRED",
+      "remedy": "Use the exact confirmation AUTHORIZE_ATTORNEY_CANARY_CUTOVER."
+    }
+  ],
+  "blockerCount": 11,
+  "evaluatedAt": "2026-09-05T18:37:45.145Z",
+  "candidate": {
+    "deploymentId": "",
+    "deploymentUrl": "",
+    "rollbackDeploymentId": "",
+    "productionProjectRef": "",
+    "cohortSize": 0,
+    "cohortDigest": "",
+    "monitoringOwner": "",
+    "rollbackOwner": ""
+  },
+  "execution": {
+    "mutatedProduction": false,
+    "deploymentPerformed": false,
+    "requiredSequence": [
+      "promote_verified_preview",
+      "enable_approved_canary_cohort",
+      "run_browser_smoke",
+      "check_production_propagation",
+      "observe_errors_and_latency",
+      "rollback_on_any_stop_condition"
+    ]
+  },
+  "planFingerprint": "a83821fdf762ddf95daa8916b755fda3d6b88d8ef297d379ee6fde68fd4db420"
+}

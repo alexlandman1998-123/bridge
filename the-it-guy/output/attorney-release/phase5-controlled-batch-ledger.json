@@ -1,0 +1,230 @@
+{
+  "version": "attorney-propagation-controlled-batches-phase5-v1",
+  "environment": "staging",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "batches": [
+    {
+      "batchKey": "e3a89d65cad5",
+      "mode": "dry_run",
+      "matterClass": "other_demo",
+      "manifestFingerprint": "43921b16e1ffa7b53f6d5cae7716fb5a38d4d5474265150417c8528d86da0972",
+      "nextManifestFingerprint": "43921b16e1ffa7b53f6d5cae7716fb5a38d4d5474265150417c8528d86da0972",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 5,
+      "beforeGapCount": 129,
+      "afterGapCount": 129,
+      "repairedCount": 0,
+      "receiptFingerprint": "cc6d128c24662710c1fa313d83171bed96433e49c757a727dbbc053a1f5a6a7a",
+      "completedAt": "2026-09-05T18:25:26.619Z"
+    },
+    {
+      "batchKey": "e3a89d65cad5",
+      "mode": "apply",
+      "matterClass": "other_demo",
+      "manifestFingerprint": "43921b16e1ffa7b53f6d5cae7716fb5a38d4d5474265150417c8528d86da0972",
+      "nextManifestFingerprint": "7da379e953f28d727e093b975637bb9d96c933842baf99aa2919fa81c1fe7fcf",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 5,
+      "beforeGapCount": 129,
+      "afterGapCount": 124,
+      "repairedCount": 5,
+      "receiptFingerprint": "4a5e9db88f0d011cec3c068f0fbaf784eb5d4f22c42de4830d4b5c2a0e0728eb",
+      "completedAt": "2026-09-05T18:25:35.602Z"
+    },
+    {
+      "batchKey": "b101965a7d0d",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "7da379e953f28d727e093b975637bb9d96c933842baf99aa2919fa81c1fe7fcf",
+      "nextManifestFingerprint": "876d0fb9ad4ae9b8ade58b046ffb501c71587b39bab0b3a1abe8a03731e91e9b",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 124,
+      "afterGapCount": 111,
+      "repairedCount": 13,
+      "receiptFingerprint": "d3043ce4d3019bc7304ec9204d1295f9f1f5c9e3f52a764996dcdd5ce279b3bd",
+      "completedAt": "2026-09-05T18:25:45.989Z"
+    },
+    {
+      "batchKey": "38606ff5a531",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "876d0fb9ad4ae9b8ade58b046ffb501c71587b39bab0b3a1abe8a03731e91e9b",
+      "nextManifestFingerprint": "ffe6cc20f7af2d213a0fd61a75104c68f202b078a9a7b74379bbff8be771b096",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 111,
+      "afterGapCount": 100,
+      "repairedCount": 11,
+      "receiptFingerprint": "392b74e3dcb0601775835b5c9a6bcc562e378af70b8bcffc951bf2814d68a036",
+      "completedAt": "2026-09-05T18:25:53.390Z"
+    },
+    {
+      "batchKey": "53fcd2eeb47a",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "ffe6cc20f7af2d213a0fd61a75104c68f202b078a9a7b74379bbff8be771b096",
+      "nextManifestFingerprint": "34958199b719b5f2c2655fbd9f6a146121b64ca80c880eb537e4384aad2608f3",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 100,
+      "afterGapCount": 86,
+      "repairedCount": 14,
+      "receiptFingerprint": "0b6a1509c5f353d1222b0552164a327a504ac9ac9589a7ed65228c7c070f7fec",
+      "completedAt": "2026-09-05T18:26:00.776Z"
+    },
+    {
+      "batchKey": "2a91c3ccd4a4",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "34958199b719b5f2c2655fbd9f6a146121b64ca80c880eb537e4384aad2608f3",
+      "nextManifestFingerprint": "9f28a440170d33c14f5bed4d52e4b1279238bbbd8156be25e8b21def94e349a9",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 86,
+      "afterGapCount": 72,
+      "repairedCount": 14,
+      "receiptFingerprint": "d6a457990d840217e516f1b2473404f9237e92f71fb9db4b9288561f0d1c6394",
+      "completedAt": "2026-09-05T18:26:11.737Z"
+    },
+    {
+      "batchKey": "4987f0ca5e55",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "9f28a440170d33c14f5bed4d52e4b1279238bbbd8156be25e8b21def94e349a9",
+      "nextManifestFingerprint": "88b7c27cfbe9695eccbd202e56d4668f1b85cc62984ec9f9ed5aeaf2b126386f",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 72,
+      "afterGapCount": 62,
+      "repairedCount": 10,
+      "receiptFingerprint": "592ba771623a9a239a28e6383dc3a1904226dab4fd6d8bce3d6f44b13fa7b15f",
+      "completedAt": "2026-09-05T18:26:19.103Z"
+    },
+    {
+      "batchKey": "a77e38868c6c",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "88b7c27cfbe9695eccbd202e56d4668f1b85cc62984ec9f9ed5aeaf2b126386f",
+      "nextManifestFingerprint": "d1d66dc4ac6e24f6ec568997deb117f416d11650c82494387eea803f8303024e",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 62,
+      "afterGapCount": 50,
+      "repairedCount": 12,
+      "receiptFingerprint": "dc001b67d44207a195af1d1acfdaeb8f87e119af80065022bb5acaa46192dd74",
+      "completedAt": "2026-09-05T18:26:26.312Z"
+    },
+    {
+      "batchKey": "e57cd6bed136",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "d1d66dc4ac6e24f6ec568997deb117f416d11650c82494387eea803f8303024e",
+      "nextManifestFingerprint": "01524951520b4c0ddabdf911e6a95ac5b0705f6166ce6e8c423cfa99ce833b48",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 50,
+      "afterGapCount": 39,
+      "repairedCount": 11,
+      "receiptFingerprint": "79c7c5438230a6438cdb7b16279eb1b6c268ebac426c282d5825bfc9bba8cbec",
+      "completedAt": "2026-09-05T18:26:36.631Z"
+    },
+    {
+      "batchKey": "f4a70dc3b425",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "01524951520b4c0ddabdf911e6a95ac5b0705f6166ce6e8c423cfa99ce833b48",
+      "nextManifestFingerprint": "1083d7122f9d056f4080fa59afbf678d74f6c85e54bfff0cdccfb65092462194",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 39,
+      "afterGapCount": 28,
+      "repairedCount": 11,
+      "receiptFingerprint": "bb7cf7a711246f38ac1a1815a82d0101a02e08a4761c735bcf012ae9b578b383",
+      "completedAt": "2026-09-05T18:26:43.834Z"
+    },
+    {
+      "batchKey": "ac7c59adaa9a",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "1083d7122f9d056f4080fa59afbf678d74f6c85e54bfff0cdccfb65092462194",
+      "nextManifestFingerprint": "22c4dab3660b60e0a6fa6038d89fa1b42ee608c1c83843a12ff3429848771c25",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 28,
+      "afterGapCount": 17,
+      "repairedCount": 11,
+      "receiptFingerprint": "4ba000bc39ab0392cace1089b06badae61a5c58f0bca0db1d6aaf97c7696eed5",
+      "completedAt": "2026-09-05T18:26:51.004Z"
+    },
+    {
+      "batchKey": "6cd6213d34c9",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "22c4dab3660b60e0a6fa6038d89fa1b42ee608c1c83843a12ff3429848771c25",
+      "nextManifestFingerprint": "8bda4c24f2924160bc82cce452833531dbde8ea728379bf2ad16c8b7037e4247",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 10,
+      "beforeGapCount": 17,
+      "afterGapCount": 5,
+      "repairedCount": 12,
+      "receiptFingerprint": "efea4ecdd57ae0d61b3cb0e85733f562850eafc74b17c0f00739f56f65fb5f2a",
+      "completedAt": "2026-09-05T18:27:02.079Z"
+    },
+    {
+      "batchKey": "cb6698c26c71",
+      "mode": "apply",
+      "matterClass": "genuine",
+      "manifestFingerprint": "8bda4c24f2924160bc82cce452833531dbde8ea728379bf2ad16c8b7037e4247",
+      "nextManifestFingerprint": "7e0e0a3035bcf29385e41fab87422a37e02e71913e466aef2d4bca52bae14a76",
+      "approval": {
+        "approvedBy": "workspace-owner-request",
+        "approvalReference": "conversation-phase5-2026-09-05"
+      },
+      "targetCount": 4,
+      "beforeGapCount": 5,
+      "afterGapCount": 0,
+      "repairedCount": 5,
+      "receiptFingerprint": "2c244f52d7e726e99e72c68f6d551ae5b575e16bdc3daf7d52ecf31efcd96739",
+      "completedAt": "2026-09-05T18:27:06.706Z"
+    }
+  ],
+  "ledgerFingerprint": "d11eba8f5cf174c680ea1d4d23fb593a5fa493b3e3b8dd5c21cb73df28477513",
+  "updatedAt": "2026-09-05T18:27:06.706Z"
+}

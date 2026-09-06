@@ -204,6 +204,7 @@ function inferLaneKeysFromRole({ role = '', permissions = {}, practiceQualificat
     return ATTORNEY_MATTER_SCOPE_LANES.filter((laneKey) => qualifications.includes(laneKey))
   }
   if (permissions.can_view_bond_matters && !permissions.can_view_transfer_matters) return ['bond']
+  if (permissions.can_view_cancellation_matters && !permissions.can_view_transfer_matters && !permissions.can_view_bond_matters) return ['cancellation']
   if (permissions.can_view_transfer_matters && !permissions.can_view_bond_matters) return ['transfer']
   return ['transfer']
 }

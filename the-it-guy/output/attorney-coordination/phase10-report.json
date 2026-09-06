@@ -1,0 +1,28 @@
+{
+  "phase": 10,
+  "mode": "closeout_validation_only",
+  "generatedAt": "2026-09-06T07:30:51.245Z",
+  "productionMutated": false,
+  "cohortChanged": false,
+  "featureFlagChanged": false,
+  "rollbackPerformed": false,
+  "status": "BLOCKED",
+  "steadyStateApproved": false,
+  "blockers": [
+    {
+      "code": "PHASE9_NOT_APPROVED",
+      "message": "An approved Phase 9 expansion plan is required."
+    },
+    {
+      "code": "PHASE9_PLAN_MISMATCH",
+      "message": "Use the exact approved Phase 9 plan and approval."
+    },
+    {
+      "code": "APPROVED_WAVES_MISSING",
+      "message": "The approved plan must contain at least one wave."
+    }
+  ],
+  "rollbackTriggers": [],
+  "waveMetrics": [],
+  "reportFingerprint": "e1664ea78b6cf30b4bd802a6c215ac053889ca90a640b9e27d5f8efd29e86bb7"
+}

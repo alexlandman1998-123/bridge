@@ -2,6 +2,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
+import { assertAttorneyStagingTarget } from './lib/attorney-staging-safety.mjs'
 import {
   getAttorneyStageDefinitionsForLane,
   getAttorneyStageKeysForLane,
@@ -49,6 +50,15 @@ const serviceRoleKey = envValue('SUPABASE_SERVICE_ROLE_KEY')
 if (!supabaseUrl || !serviceRoleKey) {
   throw new Error('Missing SUPABASE_URL/VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.')
 }
+
+assertAttorneyStagingTarget({
+  supabaseUrl,
+  expectedProjectRef: envValue('SUPABASE_STAGING_PROJECT_REF'),
+  productionProjectRef: envValue('VITE_PRODUCTION_SUPABASE_PROJECT_REF'),
+  environment: ENVIRONMENT,
+  recoveryConfirmation: envValue('SUPABASE_STAGING_RECOVERY_CONFIRMED'),
+  requireRecovery: true,
+})
 
 const supabase = createClient(supabaseUrl, serviceRoleKey, {
   auth: {

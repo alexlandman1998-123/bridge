@@ -1,0 +1,21 @@
+{
+  "version": "attorney-coordination-graduated-expansion-v1",
+  "phase8EvidenceFingerprint": "replace-phase8-evidence-fingerprint",
+  "preparedBy": "Named release manager",
+  "preparedAt": "replace-with-ISO-timestamp",
+  "changeReference": "replace-change-reference",
+  "featureFlag": "attorney_coordination_v1",
+  "targetingMode": "organisation_id_allowlist",
+  "defaultOff": true,
+  "evaluationLogged": true,
+  "killSwitchVerified": false,
+  "rollbackOwner": "Named operations owner",
+  "rollbackRunbook": "replace-runbook-path",
+  "maximumRollbackMinutes": 15,
+  "currentOrganisationIds": ["replace-current-pilot-organisation"],
+  "waves": [],
+  "monitoringOwner": "Named monitoring owner",
+  "monitoringEvidencePath": "replace-dashboard-path",
+  "supportOwner": "Named support owner",
+  "escalationPath": "replace-escalation-path"
+}

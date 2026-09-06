@@ -1,0 +1,10 @@
+{
+  "version": "attorney-release-phase6-rollback-v2",
+  "sourceFingerprint": "COPY_FROM_PHASE5_CONTROLLED_BATCH_LEDGER",
+  "owner": "",
+  "approvalReference": "",
+  "verifiedAt": "",
+  "environment": "staging",
+  "procedure": "Stop the attorney pilot, preserve the audit ledger, disable pilot access, restore the recoverable staging backup if required, and rerun propagation health before reopening access.",
+  "rollbackFingerprint": "GENERATED_BY_OBSERVER"
+}

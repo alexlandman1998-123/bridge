@@ -1,0 +1,38 @@
+{
+  "version": "attorney-practical-release-bar-phase0-v1",
+  "environment": "staging",
+  "roles": {
+    "transfer_attorney": ["open_assigned_matter", "progress_stage", "add_internal_note", "request_or_review_document", "confirm_lodgement_or_registration"],
+    "bond_attorney": ["open_assigned_matter", "progress_stage", "add_internal_note", "update_guarantee_or_conditions", "schedule_or_confirm_signing"],
+    "cancellation_attorney": ["open_assigned_matter", "progress_stage", "add_internal_note", "request_or_capture_figures", "confirm_lodgement_or_closeout"]
+  },
+  "viewports": ["desktop", "mobile"],
+  "destinations": ["attorney_matter_workspace", "transaction_workspace", "attorney_operations", "agent_transaction_view", "buyer_portal", "seller_portal"],
+  "visibility": {
+    "internal": ["attorney_matter_workspace", "attorney_operations"],
+    "professional_shared": ["attorney_matter_workspace", "transaction_workspace", "attorney_operations", "agent_transaction_view"],
+    "client_visible": ["attorney_matter_workspace", "transaction_workspace", "attorney_operations", "agent_transaction_view", "buyer_portal", "seller_portal"]
+  },
+  "defectPolicy": {
+    "p0": "security_visibility_or_data_integrity_failure",
+    "p1": "blocked_attorney_action_or_broken_propagation",
+    "p2": "release_impacting_usability_or_responsive_failure",
+    "p3": "non_blocking_cosmetic_issue",
+    "releaseRequires": "zero_open_p0_p1_and_agreed_p2_disposition"
+  },
+  "soak": {
+    "minimumHours": 24,
+    "minimumTotalActions": 30,
+    "minimumActionsPerRole": 5,
+    "minimumSuccessfulActionRate": 0.99,
+    "maximumPropagationP95Seconds": 120,
+    "maximumPropagationGaps": 0,
+    "maximumSafetyIncidents": 0
+  },
+  "evidence": {
+    "authenticatedBrowserRequired": true,
+    "screenshotOrTraceRequired": true,
+    "actionReceiptRequired": true,
+    "destinationProofRequired": true
+  }
+}

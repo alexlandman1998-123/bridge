@@ -1,0 +1,31 @@
+{
+  "phase": 6,
+  "version": "attorney-practical-release-candidate-phase6-v1",
+  "status": "BLOCKED",
+  "releaseAuthorized": false,
+  "candidateFingerprint": null,
+  "blockerCount": 3,
+  "blockers": [
+    {
+      "code": "PHASE0_ACCEPTANCE_INVALID",
+      "remedy": "Use the accepted Phase 0 release bar and exact approval."
+    },
+    {
+      "code": "PHASE5_NOT_STABILIZED",
+      "remedy": "Complete the clean practical staging soak."
+    },
+    {
+      "code": "PHASE5_EVIDENCE_MISMATCH",
+      "remedy": "Use the exact stabilized Phase 5 evidence."
+    }
+  ],
+  "summary": {
+    "releaseMode": "controlled",
+    "maximumPilotOrganisations": 3,
+    "maximumRollbackMinutes": 15,
+    "monitoredDestinations": 6,
+    "productionMutated": false,
+    "deployed": false
+  },
+  "reportFingerprint": "799fe3c9896066d1a571a13c517294b8e8def5879c099d7981c37c2cbbb7a317"
+}

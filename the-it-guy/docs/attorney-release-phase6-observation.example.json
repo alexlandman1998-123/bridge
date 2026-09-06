@@ -1,0 +1,21 @@
+{
+  "version": "attorney-release-phase6-observation-v2",
+  "sourceFingerprint": "COPY_FROM_PHASE5_CONTROLLED_BATCH_LEDGER",
+  "projectRef": "STAGING_PROJECT_REF",
+  "startedAt": "2026-09-05T12:00:00.000Z",
+  "observedAt": "2026-09-05T12:00:00.000Z",
+  "observationHours": 0,
+  "cohortSize": 1,
+  "totalActions": 0,
+  "actionsByRole": { "transfer_attorney": 0, "bond_attorney": 0, "cancellation_attorney": 0 },
+  "successfulActionRate": 0,
+  "propagationP95Seconds": 0,
+  "currentGapCount": 0,
+  "securityIncidents": 0,
+  "visibilityBreaches": 0,
+  "dataIntegrityFailures": 0,
+  "unexpectedPermissionAllows": 0,
+  "unresolvedCriticalIncidents": 0,
+  "incidentReview": { "reviewedBy": "", "approvalReference": "", "reviewedAt": "" },
+  "observationFingerprint": "GENERATED_BY_OBSERVER"
+}

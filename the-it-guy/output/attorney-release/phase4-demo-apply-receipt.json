@@ -1,0 +1,88 @@
+{
+  "version": "attorney-propagation-reconciliation-phase3-v1",
+  "mode": "apply",
+  "environment": "staging",
+  "projectRef": "vaszuxjeoajeuhlcnzzf",
+  "manifestFingerprint": "31595b9da0ec00380309c6f36152cc6cef66571cc518d4f420f20ed1b7222a2d",
+  "scope": "seeded-demo",
+  "batchLimit": 10,
+  "targetCount": 5,
+  "beforeGlobal": {
+    "status": "warning",
+    "gapCount": 143,
+    "counts": {
+      "missingBaseline": 10,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 251,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 133,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "afterGlobal": {
+    "status": "warning",
+    "gapCount": 129,
+    "counts": {
+      "missingBaseline": 5,
+      "staleProfessional": 0,
+      "activeTransactions": 254,
+      "sharedProgressRows": 265,
+      "staleClientVisible": 0,
+      "missingLaneProgress": 124,
+      "failedEmailNotifications": 0,
+      "exhaustedEmailNotifications": 0
+    }
+  },
+  "results": [
+    {
+      "recordKey": "0f2188a63ccd0efe",
+      "matterClass": "demo",
+      "beforeGapCount": 4,
+      "afterGapCount": 0,
+      "repaired": 4,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "6b46bb5abf14c5dd",
+      "matterClass": "demo",
+      "beforeGapCount": 3,
+      "afterGapCount": 0,
+      "repaired": 3,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "aad15f819f0d31ca",
+      "matterClass": "demo",
+      "beforeGapCount": 2,
+      "afterGapCount": 0,
+      "repaired": 2,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "b58eff14fe559f0c",
+      "matterClass": "demo",
+      "beforeGapCount": 3,
+      "afterGapCount": 0,
+      "repaired": 3,
+      "idempotentCandidate": true
+    },
+    {
+      "recordKey": "d7ea318a5c034db7",
+      "matterClass": "demo",
+      "beforeGapCount": 2,
+      "afterGapCount": 0,
+      "repaired": 2,
+      "idempotentCandidate": true
+    }
+  ],
+  "controls": {
+    "transactionSpecificRpcOnly": true,
+    "clientVisibleMutationAllowed": false,
+    "rawTransactionIdsIncluded": false,
+    "maximumBatchSize": 10
+  },
+  "receiptFingerprint": "19098efab6af6ece7fbbdd4de3b0a7a41ee15e8a61a8b9e6ea0140598eb33640",
+  "createdAt": "2026-09-05T18:22:34.408Z"
+}

@@ -157,6 +157,26 @@ function firstScenarioValue(sources = [], paths = []) {
   return ''
 }
 
+function resolveDataRequirementFromSources(requirement = {}, sources = []) {
+  const paths = mergeUniqueValues(
+    requirement.factKey,
+    requirement.fields || [],
+    requirement.id,
+  )
+  const value = firstScenarioValue(sources, paths)
+  const complete = value !== null && value !== undefined && (typeof value === 'boolean' || typeof value === 'number' || text(value) !== '')
+  return {
+    ...requirement,
+    value: complete ? value : null,
+    complete,
+    missing: requirement.required !== false && !complete,
+    sourceField: complete ? paths.find((path) => {
+      const candidate = firstScenarioValue(sources, [path])
+      return candidate !== null && candidate !== undefined && (typeof candidate === 'boolean' || typeof candidate === 'number' || text(candidate) !== '')
+    }) || '' : '',
+  }
+}
+
 function normalizeScenarioBoolean(value) {
   if (typeof value === 'boolean') return value
   if (typeof value === 'number') return value > 0
@@ -2038,12 +2058,15 @@ export function buildTransferWorkspaceViewModel({
 } = {}) {
   const lane = workflow?.lane || null
   const permissions = lane?.permissions || {}
+  const scenarioSources = buildTransferScenarioSources({ workflow, lane, facts: workflow?.facts || {} })
   const scenario = buildTransferScenarioProfile({ workflow, lane, facts: workflow?.facts || {} })
   const tasks = buildWorkflowTasks({ workflowKey, lane, workflow, documents, scenario }).map((task) => {
     const laneDataRequirements = Array.isArray(lane?.dataRequirements) ? lane.dataRequirements : []
     const dataRequirements = (task.requiredData || []).map((requirement) => {
       const runtimeRequirement = laneDataRequirements.find((item) => item.id === requirement.id)
-      return runtimeRequirement ? { ...requirement, ...runtimeRequirement } : { ...requirement, complete: false, missing: requirement.required !== false }
+      return runtimeRequirement
+        ? { ...requirement, ...runtimeRequirement }
+        : resolveDataRequirementFromSources(requirement, scenarioSources)
     })
     const relatedDocuments = task.derivedCompletion?.relatedDocuments?.length
       ? task.derivedCompletion.relatedDocuments

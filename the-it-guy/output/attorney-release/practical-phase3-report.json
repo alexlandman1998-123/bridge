@@ -1,0 +1,109 @@
+{
+  "phase": 3,
+  "version": "attorney-practical-ui-quality-phase3-v1",
+  "status": "BLOCKED",
+  "executionAuthorized": false,
+  "matrix": [
+    {
+      "id": "transfer_attorney:desktop",
+      "role": "transfer_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_review_document",
+        "confirm_lodgement_or_registration"
+      ]
+    },
+    {
+      "id": "transfer_attorney:mobile",
+      "role": "transfer_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_review_document",
+        "confirm_lodgement_or_registration"
+      ]
+    },
+    {
+      "id": "bond_attorney:desktop",
+      "role": "bond_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "update_guarantee_or_conditions",
+        "schedule_or_confirm_signing"
+      ]
+    },
+    {
+      "id": "bond_attorney:mobile",
+      "role": "bond_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "update_guarantee_or_conditions",
+        "schedule_or_confirm_signing"
+      ]
+    },
+    {
+      "id": "cancellation_attorney:desktop",
+      "role": "cancellation_attorney",
+      "viewport": "desktop",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_capture_figures",
+        "confirm_lodgement_or_closeout"
+      ]
+    },
+    {
+      "id": "cancellation_attorney:mobile",
+      "role": "cancellation_attorney",
+      "viewport": "mobile",
+      "requiredActions": [
+        "open_assigned_matter",
+        "progress_stage",
+        "add_internal_note",
+        "request_or_capture_figures",
+        "confirm_lodgement_or_closeout"
+      ]
+    }
+  ],
+  "blockerCount": 4,
+  "blockers": [
+    {
+      "code": "PHASE1_NOT_PASSED",
+      "remedy": "Pass all authenticated role and viewport walkthroughs before UI certification."
+    },
+    {
+      "code": "PHASE1_EVIDENCE_MISMATCH",
+      "remedy": "Use the exact passed Phase 1 evidence for UI certification."
+    },
+    {
+      "code": "PHASE2_NOT_PASSED",
+      "remedy": "Pass cross-module propagation proof before UI certification."
+    },
+    {
+      "code": "PHASE2_EVIDENCE_MISMATCH",
+      "remedy": "Use the exact passed Phase 2 evidence for UI certification."
+    }
+  ],
+  "evidenceFingerprint": null,
+  "summary": {
+    "requiredAudits": 6,
+    "requiredTouchpointChecks": 30,
+    "automatedAccessibilityRequired": true,
+    "humanVisualReviewRequired": true,
+    "stagingOnly": true,
+    "productionMutated": false
+  },
+  "reportFingerprint": "c5c0f8e89a4c95cc997f791ddd484468c8073048d3da9290672ff4e506a1509a"
+}

@@ -9,11 +9,16 @@ export const ATTORNEY_PERMISSION_KEYS = Object.freeze([
   'can_view_assigned_matters',
   'can_view_transfer_matters',
   'can_view_bond_matters',
+  'can_view_cancellation_matters',
   'can_create_attorney_assignments',
   'can_update_attorney_assignments',
   'can_remove_attorney_assignments',
   'can_edit_transfer_workflow',
   'can_edit_bond_workflow',
+  'can_edit_cancellation_workflow',
+  'can_nominate_attorney_firms',
+  'can_manage_attorney_assignments',
+  'can_act_on_behalf_of_attorney',
   'can_request_documents',
   'can_review_documents',
   'can_upload_documents',
@@ -110,12 +115,14 @@ export const ATTORNEY_FIRM_ROLE_CATALOG = Object.freeze({
     authorityLevel: 'management',
     permissions: [
       'can_view_firm_dashboard', 'can_view_all_firm_matters', 'can_view_transfer_matters',
-      'can_view_bond_matters', 'can_create_attorney_assignments', 'can_update_attorney_assignments',
+      'can_view_bond_matters', 'can_view_cancellation_matters', 'can_create_attorney_assignments', 'can_update_attorney_assignments',
       'can_remove_attorney_assignments', 'can_request_documents', 'can_review_documents',
       'can_upload_documents', 'can_reject_documents', 'can_mark_documents_complete',
       'can_comment_shared', 'can_comment_internal', 'can_view_internal_comments',
       'can_manage_signing_appointments', 'can_generate_otp', 'can_export_reports',
       'can_view_client_visible_updates', 'can_publish_client_visible_updates',
+      'can_edit_transfer_workflow', 'can_edit_bond_workflow', 'can_edit_cancellation_workflow',
+      'can_nominate_attorney_firms', 'can_manage_attorney_assignments', 'can_act_on_behalf_of_attorney',
     ],
     allowedDepartments: ['management'],
     practiceQualifications: ['transfer', 'bond', 'cancellation'],
@@ -131,7 +138,9 @@ export const ATTORNEY_FIRM_ROLE_CATALOG = Object.freeze({
     description: 'Runs transfer and cancellation matters assigned to them.',
     authorityLevel: 'practitioner',
     permissions: [
-      'can_view_assigned_matters', 'can_view_transfer_matters', 'can_edit_transfer_workflow',
+      'can_view_assigned_matters', 'can_view_transfer_matters', 'can_view_cancellation_matters',
+      'can_edit_transfer_workflow', 'can_edit_cancellation_workflow', 'can_nominate_attorney_firms',
+      'can_act_on_behalf_of_attorney',
       'can_request_documents', 'can_review_documents', 'can_upload_documents',
       'can_reject_documents', 'can_mark_documents_complete', 'can_comment_shared',
       'can_comment_internal', 'can_view_internal_comments', 'can_manage_signing_appointments',
@@ -264,7 +273,7 @@ export function normalizeAttorneyFirmRole(value, fallback = '') {
 export function normalizeAttorneyProfessionalRole(value, fallback = 'viewer') {
   const normalized = String(value || '').trim().toLowerCase()
   if (ATTORNEY_PROFESSIONAL_ROLE_VALUES.includes(normalized)) return normalized
-  if (normalized === 'transfer_attorney' || normalized === 'bond_attorney') return 'attorney_conveyancer'
+  if (normalized === 'transfer_attorney' || normalized === 'bond_attorney' || normalized === 'cancellation_attorney') return 'attorney_conveyancer'
   return fallback
 }
 
@@ -347,16 +356,26 @@ export function getAttorneyProfessionalProfilePermissions(profile = {}) {
     return getAttorneyRolePermissions(professionalProfile.professionalRole)
   }
 
-  const compatibilityRoles = new Set()
-  if (professionalProfile.practiceQualifications.includes('transfer')) compatibilityRoles.add('transfer_attorney')
-  if (professionalProfile.practiceQualifications.includes('cancellation')) compatibilityRoles.add('transfer_attorney')
-  if (professionalProfile.practiceQualifications.includes('bond')) compatibilityRoles.add('bond_attorney')
-  if (!compatibilityRoles.size) return NO_ACCESS
+  const qualifications = new Set(professionalProfile.practiceQualifications)
+  if (!qualifications.size) return NO_ACCESS
 
-  return Object.freeze(Object.fromEntries(ATTORNEY_PERMISSION_KEYS.map((permissionKey) => [
-    permissionKey,
-    [...compatibilityRoles].some((role) => Boolean(getAttorneyRolePermissions(role)[permissionKey])),
-  ])))
+  const commonPractitionerPermissions = new Set([
+    'can_view_assigned_matters', 'can_request_documents', 'can_review_documents',
+    'can_upload_documents', 'can_reject_documents', 'can_mark_documents_complete',
+    'can_comment_shared', 'can_comment_internal', 'can_view_internal_comments',
+    'can_manage_signing_appointments', 'can_view_client_visible_updates',
+    'can_publish_client_visible_updates',
+  ])
+  const qualificationPermissions = {
+    transfer: ['can_view_transfer_matters', 'can_edit_transfer_workflow', 'can_generate_otp', 'can_nominate_attorney_firms', 'can_act_on_behalf_of_attorney'],
+    bond: ['can_view_bond_matters', 'can_edit_bond_workflow'],
+    cancellation: ['can_view_cancellation_matters', 'can_edit_cancellation_workflow'],
+  }
+  for (const qualification of qualifications) {
+    for (const permission of qualificationPermissions[qualification] || []) commonPractitionerPermissions.add(permission)
+  }
+
+  return buildPermissionRecord(commonPractitionerPermissions)
 }
 
 export function hasAttorneyProfessionalPermission(profile, permissionKey) {

@@ -1,0 +1,25 @@
+{
+  "version": "attorney-practical-release-candidate-phase6-v1",
+  "sourceEnvironment": "staging",
+  "contractFingerprint": "COPY_FROM_PHASE0_REPORT",
+  "phase5EvidenceFingerprint": "COPY_FROM_PHASE5_REPORT",
+  "codeRevision": "GIT_COMMIT",
+  "buildArtifactHash": "SHA256_BUILD_ARTIFACT",
+  "buildEvidencePath": "output/attorney-release/build.txt",
+  "preparedBy": "Release engineer",
+  "preparedAt": "2026-09-07T12:00:00.000Z",
+  "cumulativeTestsPassed": true,
+  "productionBuildPassed": true,
+  "environmentSafety": {
+    "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+    "productionProjectRef": "isdowlnollckzvltkasn",
+    "productionTargetConfirmed": true,
+    "secretsSeparated": true,
+    "productionBackupVerified": true,
+    "migrationPlanStatus": "none"
+  },
+  "rollback": {},
+  "rollout": {},
+  "monitoring": {},
+  "support": {}
+}

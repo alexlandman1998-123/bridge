@@ -1,0 +1,29 @@
+{
+  "phase": 5,
+  "version": "attorney-practical-staging-soak-phase5-v1",
+  "status": "BLOCKED",
+  "executionAuthorized": false,
+  "blockerCount": 2,
+  "blockers": [
+    {
+      "code": "PHASE4_NOT_PASSED",
+      "remedy": "Pass remediation and regression before starting the soak."
+    },
+    {
+      "code": "PHASE4_EVIDENCE_MISMATCH",
+      "remedy": "Use the exact passed Phase 4 evidence."
+    }
+  ],
+  "metrics": null,
+  "evidenceFingerprint": null,
+  "summary": {
+    "minimumHours": 24,
+    "minimumActions": 30,
+    "minimumActionsPerRole": 5,
+    "minimumSuccessRate": 0.99,
+    "maximumPropagationP95Seconds": 120,
+    "stagingOnly": true,
+    "productionMutated": false
+  },
+  "reportFingerprint": "8c5a26e976f301be0d1d156bf07bec302d8076c5e013ee7714d53ba27d63cf9f"
+}

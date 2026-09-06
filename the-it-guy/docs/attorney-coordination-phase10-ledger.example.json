@@ -1,0 +1,19 @@
+{
+  "version": "attorney-coordination-closeout-v1",
+  "planFingerprint": "replace-phase9-plan-fingerprint",
+  "executedBy": "Named release operator",
+  "startedAt": "replace-with-ISO-timestamp",
+  "completedAt": "replace-after-all-wave-observations",
+  "waves": [],
+  "finalOrganisationIds": [],
+  "targetPopulationCovered": false,
+  "targetPopulationEvidence": "replace-with-evidence",
+  "orphanActiveDelegations": 0,
+  "delegationRegisterReviewed": false,
+  "monitoringActive": false,
+  "supportHandoffComplete": false,
+  "securityOwnershipComplete": false,
+  "dataOwnershipComplete": false,
+  "rollbackStillAvailable": false,
+  "flagStillDefaultOff": true
+}
