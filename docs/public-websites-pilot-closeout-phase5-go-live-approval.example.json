@@ -1,0 +1,17 @@
+{
+  "contract": "public-websites-pilot-closeout-phase5-go-live-approval-v1",
+  "organisationId": "00000000-0000-4000-8000-000000000000",
+  "targetHostname": "www.example-agency.co.za",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "candidateDeploymentUrl": "https://example-agency-candidate.vercel.app",
+  "rollbackDeploymentUrl": "https://example-agency-rollback.vercel.app",
+  "phase4EvidenceFingerprint": "0000000000000000000000000000000000000000000000000000000000000000",
+  "clientApproved": false,
+  "clientApproverName": "Replace with the Kingstons approver",
+  "clientApproverRole": "Replace with the approver's role",
+  "approvedAt": "2026-09-06T12:00:00.000Z",
+  "approvalReference": "Replace with the client approval reference",
+  "emailDnsChangesAllowed": false,
+  "nameserverChangesAllowed": false,
+  "confirmation": "REPLACE_WITH_REQUIRED_CONFIRMATION"
+}
