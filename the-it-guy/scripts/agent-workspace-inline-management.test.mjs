@@ -24,8 +24,9 @@ function assertWorkspaceNotContains(needle, label) {
   }
 }
 
-assertContains('AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openPlaceholder(\'commission\')}', 'inline commission edit card action')
-assertContains('AgentManagementCard title="Profile & Permissions" actionLabel="Edit" onAction={() => openPlaceholder(\'profile\')}', 'inline profile permissions edit card action')
+assertContains('AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openManagementModal(\'commission\')}', 'inline commission edit card action')
+assertContains('AgentManagementCard title="Profile & Permissions" actionLabel="Edit" onAction={() => openManagementModal(\'profile\')}', 'inline profile permissions edit card action')
+assertWorkspaceNotContains('openPlaceholder', 'legacy placeholder modal launcher')
 assertContains("? 'Edit Commission'", 'commission modal title')
 assertContains("? 'Edit Permissions'", 'permissions modal title')
 assertContains('handleSaveCommissionAssignment', 'commission save handler')

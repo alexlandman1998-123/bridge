@@ -31,6 +31,15 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import AppointmentDashboardSection from '../components/appointments/dashboard/AppointmentDashboardSection'
 import AgentTransactionsTable from '../components/AgentTransactionsTable'
 import PartnerBusinessDistributionPanel from '../components/dashboard/PartnerBusinessDistributionPanel'
+import {
+  AgentManagementCard,
+  AgentWorkspaceKpiCard,
+  DetailInfoRow,
+  EmptyWorkspaceState,
+  LockedAgentFilterChip,
+  PrincipalAgentTabShell,
+  WorkspaceCard,
+} from '../components/agents/AgentWorkspaceUi'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
@@ -2698,7 +2707,7 @@ function AttentionAgentsPanel({ rows = [], onView }) {
           <h2 className="truncate text-sm font-semibold text-[#10243a]">Agents Requiring Attention</h2>
           <p className="mt-0.5 truncate text-xs text-[#6d8299]">Operational watchlist across your visible branches.</p>
         </div>
-        <button type="button" className="shrink-0 text-xs font-semibold text-[#1769d1]">View watchlist</button>
+        <span className="shrink-0 text-xs font-semibold text-[#60758d]">{rows.length} flagged</span>
       </div>
       <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
         {rows.length ? (
@@ -2715,15 +2724,15 @@ function AttentionAgentsPanel({ rows = [], onView }) {
               {rows.map((row) => {
                 const performance = row.agent?.performance || {}
                 return (
-                  <tr key={row.id} className="cursor-pointer hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
+                  <tr key={row.id} className="hover:bg-[#f8fbff]">
                     <td className="px-2 py-3">
-                      <div className="flex min-w-0 items-center gap-2">
+                      <button type="button" className="flex min-w-0 items-center gap-2 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1769d1] focus-visible:ring-offset-2" onClick={() => onView(row.agent)} aria-label={`Open ${row.name || 'agent'} workspace`}>
                         <AgentAvatar agent={row} className="h-8 w-8 bg-[#eef5ff] text-xs font-semibold text-[#1769d1]" />
                         <div className="min-w-0">
                           <p className="truncate font-semibold text-[#10243a]">{row.name}</p>
                           <p className="truncate text-xs text-[#6d8299]">{row.primaryReason}</p>
                         </div>
-                      </div>
+                      </button>
                     </td>
                     <td className="truncate px-2 py-3 font-semibold text-[#10243a]">{formatCompactCurrency(performance.pipelineValue)}</td>
                     <td className="px-2 py-3 text-[#60758d]">{formatRelativeActivity(performance.lastActivityAt)}</td>
@@ -3104,7 +3113,7 @@ function AgentPerformanceTable({
               const pendingInvite = row.statusKey === AGENT_INVITE_STATUS.PENDING_INVITE || row.agent?.isPendingInvite
               const activity = formatCompactActivity(performance.lastActivityAt)
               return (
-                <tr key={`${row.id}-${row.branchId || 'branch'}-performance-row`} className="cursor-pointer hover:bg-[#f8fbff]" onClick={() => onView(row.agent)}>
+                <tr key={`${row.id}-${row.branchId || 'branch'}-performance-row`} className="hover:bg-[#f8fbff]">
                   <td className="px-4 py-4">
                     <button type="button" className="flex min-w-0 items-center gap-3 text-left" onClick={(event) => { event.stopPropagation(); onView(row.agent) }}>
                       <AgentAvatar agent={row} className="h-9 w-9 border border-[#d7e2ef] bg-[#f8fbff] text-xs font-semibold text-[#245076]" />
@@ -3708,35 +3717,6 @@ function AgentPerformanceIntelligencePanel({ intelligence, onLeaderboard }) {
   )
 }
 
-function DetailInfoRow({ label, value }) {
-  return (
-    <div className="grid min-w-0 grid-cols-[minmax(86px,0.42fr)_minmax(0,1fr)] gap-3 border-b border-[#edf2f7] py-2.5 last:border-0 sm:grid-cols-[118px_minmax(0,1fr)]">
-      <span className="min-w-0 truncate text-xs font-semibold text-[#6f839a]">{label}</span>
-      <span className="min-w-0 truncate text-sm font-semibold text-[#20364d]" title={String(value || '—')}>{value || '—'}</span>
-    </div>
-  )
-}
-
-function AgentManagementCard({ title, actionLabel, onAction, children, className = '' }) {
-  return (
-    <article className={`min-w-0 overflow-hidden rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm ${className}`}>
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3 border-b border-[#edf2f7] pb-3">
-        <h3 className="min-w-0 text-base font-semibold tracking-[-0.025em] text-[#10243a]">{title}</h3>
-        {actionLabel && onAction ? (
-          <button type="button" onClick={onAction} className="shrink-0 text-xs font-semibold text-[#1769d1] hover:text-[#0f4f9f]">
-            {actionLabel}
-          </button>
-        ) : actionLabel ? (
-          <span className="shrink-0 rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#60758d]">
-            {actionLabel}
-          </span>
-        ) : null}
-      </div>
-      <div className="mt-3">{children}</div>
-    </article>
-  )
-}
-
 const COMMISSION_TARGET_PERIOD_LABELS = {
   monthly: 'Monthly',
   quarterly: 'Quarterly',
@@ -3859,25 +3839,6 @@ function AgentCommissionStructureSummary({ summary, statusLabel = 'Active', load
   )
 }
 
-function PrincipalAgentTabShell({ title, description, actionLabel, onAction, children }) {
-  return (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold tracking-[-0.03em] text-[#10243a]">{title}</h2>
-          <p className="mt-1 text-sm text-[#61778f]">{description}</p>
-        </div>
-        {actionLabel ? (
-          <button type="button" onClick={onAction} className="inline-flex min-h-10 shrink-0 items-center rounded-xl border border-[#d9e3ef] bg-white px-4 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc]">
-            {actionLabel}
-          </button>
-        ) : null}
-      </div>
-      <div className="mt-5">{children}</div>
-    </section>
-  )
-}
-
 function StatusBadge({ agent }) {
   const statusMeta = getAgentStatusMeta(agent)
   return (
@@ -3973,18 +3934,6 @@ function MonthSummaryMetric({ label, value }) {
   )
 }
 
-function WorkspaceCard({ title, actionLabel = '', children, className = '' }) {
-  return (
-    <article className={`min-w-0 overflow-hidden rounded-2xl border border-[#dde6f1] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)] sm:p-5 ${className}`}>
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <h3 className="min-w-0 truncate text-[0.72rem] font-semibold uppercase tracking-[0.14em] text-[#6b7f97]">{title}</h3>
-        {actionLabel ? <span className="shrink-0 text-xs font-semibold text-[#1769d1]">{actionLabel}</span> : null}
-      </div>
-      <div className="mt-4">{children}</div>
-    </article>
-  )
-}
-
 function DealsByStageCard({ stages }) {
   const maxValue = Math.max(1, ...stages.map((item) => Number(item.count) || 0))
   const total = stages.reduce((sum, item) => sum + (Number(item.count) || 0), 0)
@@ -4054,40 +4003,6 @@ function FinancialPerformanceCard({ rows }) {
         ))}
       </div>
     </WorkspaceCard>
-  )
-}
-
-function AgentWorkspaceKpiCard({ label, value, helper = '', icon = Grid2X2, tone = 'bg-[#edf8f0] text-[#16894f]' }) {
-  return (
-    <article className="min-w-0 rounded-2xl border border-[#dfe7f1] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="truncate text-[0.74rem] font-semibold text-[#526981]" title={label}>{label}</p>
-          <p className="mt-2 truncate text-[1.45rem] font-semibold tracking-[-0.035em] text-[#10243a]" title={String(value ?? '—')}>{value ?? '—'}</p>
-          {helper ? <p className="mt-1 truncate text-xs font-semibold text-[#60758d]" title={helper}>{helper}</p> : null}
-        </div>
-        <span className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${tone}`}>
-          {createElement(icon, { size: 18 })}
-        </span>
-      </div>
-    </article>
-  )
-}
-
-function LockedAgentFilterChip({ label }) {
-  return (
-    <span className="inline-flex max-w-full items-center gap-2 rounded-full border border-[#cfe3d7] bg-[#f2fbf5] px-3 py-1 text-xs font-semibold text-[#16894f]">
-      <ShieldCheck size={13} />
-      <span className="min-w-0 truncate">Agent: {label}</span>
-    </span>
-  )
-}
-
-function EmptyWorkspaceState({ children }) {
-  return (
-    <div className="rounded-2xl border border-dashed border-[#d8e2ee] bg-[#fbfcfe] px-5 py-6 text-sm text-[#647a92]">
-      {children}
-    </div>
   )
 }
 
@@ -4207,7 +4122,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const [activeTab, setActiveTab] = useState('overview')
   const [editMenuOpen, setEditMenuOpen] = useState(false)
   const [modalMode, setModalMode] = useState('')
-  const [pendingAction, setPendingAction] = useState(null)
   const [actionNotice, setActionNotice] = useState('')
   const profileAvatarInputRef = useRef(null)
   const [profileForm, setProfileForm] = useState(() => buildAgentProfileForm(agent))
@@ -4442,13 +4356,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const draftCompanyTargetAmount = Number(commissionForm.companyTargetAmount || 0)
   const draftCompanyTargetPeriod = commissionForm.companyTargetPeriod || commissionSummary?.companyTargetPeriod || 'monthly'
 
-  const confirmDescriptions = {
-    deactivate: `Deactivate ${agent.name || 'this agent'} so they can no longer work as an active agent in this organisation.`,
-    archive: `Archive ${agent.name || 'this agent'} from the active agent directory. Records will remain available for reporting.`,
-    remove: `Remove ${agent.name || 'this agent'} from this organisation. This should only be used when access must be revoked.`,
-  }
-
-  function openPlaceholder(mode) {
+  function openManagementModal(mode) {
     setEditMenuOpen(false)
     setModalMode(mode)
   }
@@ -4617,13 +4525,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     }
   }
 
-  function handleConfirmedAction() {
-    if (!pendingAction) return
-    const label = pendingAction === 'remove' ? 'Remove agent' : pendingAction === 'archive' ? 'Archive agent' : 'Deactivate agent'
-    setActionNotice(`${label} requires the connected account workflow. Nothing was changed yet.`)
-    setPendingAction(null)
-  }
-
   const agentTasks = tasks.filter((row) => rowMatchesAgentContext(agent, row))
   const buyerLeadRows = (agent.pipelineRows || []).filter((row) => getLeadType(row) === 'Buyer')
   const sellerLeadRows = (agent.pipelineRows || []).filter((row) => getLeadType(row) === 'Seller')
@@ -4675,7 +4576,10 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       setActiveTab(key)
       return
     }
-    openPlaceholder(key)
+    if (['profile', 'commission', 'permissions'].includes(key)) {
+      openManagementModal(key)
+      return
+    }
   }
 
   function openTransaction(row) {
@@ -4695,7 +4599,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     ['profile', 'Edit Profile', Edit3],
     ['commission', 'Commission', DollarSign],
     ['permissions', 'Permissions', ShieldCheck],
-    ['deactivate', 'Deactivate Agent', Archive],
   ]
 
   return (
@@ -4747,7 +4650,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               <button
                 type="button"
                 className="hidden min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] md:inline-flex 2xl:px-4"
-                onClick={() => openPlaceholder('message')}
+                disabled
+                title="Unavailable — messaging is not connected for agent management yet"
               >
                 <MessageCircle size={16} />
                 Message
@@ -4756,7 +4660,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             <button
               type="button"
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#0f2742] shadow-sm transition hover:bg-[#f7fafc] 2xl:px-4"
-              onClick={() => openPlaceholder('call')}
+              disabled
+              title="Unavailable — calling is not connected for agent management yet"
             >
               <Phone size={16} />
               Call
@@ -4782,8 +4687,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                     <button
                       key={key}
                       type="button"
-                      className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold hover:bg-[#f6f9fc] ${key === 'deactivate' ? 'text-[#b42318]' : 'text-[#1f3448]'}`}
-                      onClick={() => (key === 'deactivate' ? (setEditMenuOpen(false), setPendingAction('deactivate')) : handleWorkspaceAction(key))}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm font-semibold text-[#1f3448] hover:bg-[#f6f9fc]"
+                      onClick={() => handleWorkspaceAction(key)}
                     >
                       {createElement(icon, { size: 15 })}
                       {label}
@@ -4926,7 +4831,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       ) : null}
 
       {effectiveActiveTab === 'deals' ? (
-        <PrincipalAgentTabShell title="Deals" description="Active, closed and lost deals assigned to this agent." actionLabel="Assign Deal" onAction={() => openPlaceholder('assign-deal')}>
+        <PrincipalAgentTabShell title="Deals" description="Active, closed and lost deals assigned to this agent." actionLabel="Assign Deal" actionUnavailableReason="Deal assignment is not connected in this workspace yet">
           <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] gap-4">
             {[{ title: 'Active Deals', rows: activeDeals }, { title: 'Closed Deals', rows: completedDeals }, { title: 'Cancelled / Lost', rows: cancelledDeals }].map((group) => (
               <article key={group.title} className="min-w-0 rounded-xl border border-[#e4ebf5] bg-[#fbfcfe] p-4">
@@ -4959,7 +4864,6 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             isPrincipalView
             compactLayout
             onRowClick={openTransaction}
-            onCreateTransaction={() => openPlaceholder('assign-deal')}
             onOpenPipeline={() => navigate('/pipeline')}
           />
         </section>
@@ -4968,7 +4872,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       {effectiveActiveTab === 'listings' ? (
         <section className="min-w-0 space-y-4">
           <LockedAgentFilterChip label={agentDisplayName} />
-          <PrincipalAgentTabShell title="Listings" description="Listings assigned to this agent, with principal-level assignment context." actionLabel="Assign Listing" onAction={() => openPlaceholder('assign-listing')}>
+          <PrincipalAgentTabShell title="Listings" description="Listings assigned to this agent, with principal-level assignment context." actionLabel="Assign Listing" actionUnavailableReason="Listing assignment is not connected in this workspace yet">
             {allListings.length ? (
               <div className="overflow-x-auto rounded-2xl border border-[#e2eaf3]">
                 <table className="min-w-[980px] w-full text-left text-sm">
@@ -4986,8 +4890,12 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                   </thead>
                   <tbody className="divide-y divide-[#e8eef5] bg-white text-[#22384c]">
                     {allListings.map((listing) => (
-                      <tr key={listing.id} className="cursor-pointer hover:bg-[#fbfcfe]" onClick={() => navigate(listing.id ? `/agent/listings/${listing.id}` : '/listings')}>
-                        <td className="px-4 py-3 font-semibold text-[#10243a]">{listing.title || listing.listingTitle || 'Listing'}</td>
+                      <tr key={listing.id} className="hover:bg-[#fbfcfe]">
+                        <td className="px-4 py-3 font-semibold text-[#10243a]">
+                          <button type="button" className="rounded-lg text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1769d1] focus-visible:ring-offset-2" onClick={() => navigate(listing.id ? `/agent/listings/${listing.id}` : '/listings')} aria-label={`Open ${listing.title || listing.listingTitle || 'listing'}`}>
+                            {listing.title || listing.listingTitle || 'Listing'}
+                          </button>
+                        </td>
                         <td className="px-4 py-3">{listing.developmentName || listing.suburb || listing.address || 'Property pending'}</td>
                         <td className="px-4 py-3">{listing.status || 'Active'}</td>
                         <td className="px-4 py-3">{listing.mandateStatus || listing.mandateType || '—'}</td>
@@ -5106,14 +5014,14 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                   ))}
                 </div>
               </AgentManagementCard>
-              <AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openPlaceholder('commission')}>
+              <AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openManagementModal('commission')}>
                 <AgentCommissionStructureSummary
                   summary={commissionSummary}
                   statusLabel={getAgentStatusMeta(agent).label}
                   loading={commissionSummaryLoading}
                 />
               </AgentManagementCard>
-              <AgentManagementCard title="Profile & Permissions" actionLabel="Edit" onAction={() => openPlaceholder('profile')}>
+              <AgentManagementCard title="Profile & Permissions" actionLabel="Edit" onAction={() => openManagementModal('profile')}>
                 <div className="space-y-1">
                   {[...contactRows.slice(0, 4), ...permissionRows.slice(0, 4), ...teamAllocationRows.slice(0, 3)].map(([label, value]) => (
                     <DetailInfoRow key={label} label={label} value={value} />
@@ -5187,7 +5095,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       {effectiveActiveTab === 'settings' ? (
         <PrincipalAgentTabShell title="Settings" description="Profile, permissions, sales commission structure, notifications and account controls.">
           <div className="grid min-w-0 grid-cols-[repeat(auto-fit,minmax(min(100%,300px),1fr))] gap-4">
-            <AgentManagementCard title="Profile" actionLabel="Edit" onAction={() => openPlaceholder('profile')}>
+            <AgentManagementCard title="Profile" actionLabel="Edit" onAction={() => openManagementModal('profile')}>
               <div className="space-y-1">
                 {contactRows.map(([label, value]) => (
                   <DetailInfoRow key={label} label={label} value={value} />
@@ -5195,7 +5103,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               </div>
             </AgentManagementCard>
 
-            <AgentManagementCard title="Permissions" actionLabel="Edit" onAction={() => openPlaceholder('permissions')}>
+            <AgentManagementCard title="Permissions" actionLabel="Edit" onAction={() => openManagementModal('permissions')}>
               <div className="space-y-1">
                 {permissionRows.map(([label, value]) => (
                   <DetailInfoRow key={label} label={label} value={value} />
@@ -5203,7 +5111,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               </div>
             </AgentManagementCard>
 
-            <AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openPlaceholder('commission')}>
+            <AgentManagementCard title="Sales Commission Structure" actionLabel="Edit" onAction={() => openManagementModal('commission')}>
               <AgentCommissionStructureSummary
                 summary={commissionSummary}
                 statusLabel={getAgentStatusMeta(agent).label}
@@ -5215,7 +5123,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               <DetailInfoRow label="Email Alerts" value={agent.email ? 'Enabled via user profile' : 'No email on profile'} />
               <DetailInfoRow label="Mobile Alerts" value={agent.phone ? 'Enabled via user profile' : 'No mobile number on profile'} />
               <DetailInfoRow label="Last Login" value={formatDateTime(agent.lastActiveAt)} />
-              <button type="button" className="mt-3 truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('notification-preferences')}>Notification preferences</button>
+              <button type="button" disabled title="Unavailable — notification preferences are not connected yet" className="mt-3 truncate rounded-xl border border-[#e1e7ee] bg-[#f7f9fb] px-4 py-2 text-left text-sm font-semibold text-[#8392a5]">Notification preferences — unavailable</button>
             </AgentManagementCard>
 
             <AgentManagementCard title="Account Settings">
@@ -5226,8 +5134,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               <DetailInfoRow label="Activated" value={formatDateTime(agent.activatedAt)} />
               <div className="mt-4 grid gap-2">
                 <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => setActiveTab('calendar')}>Open calendar view</button>
-                <button type="button" className="truncate rounded-xl border border-[#f2c9c5] bg-[#fff8f7] px-4 py-2 text-left text-sm font-semibold text-[#b42318]" onClick={() => setPendingAction('deactivate')}>Deactivate agent</button>
-                <button type="button" className="truncate rounded-xl border border-[#f2c9c5] bg-[#fff8f7] px-4 py-2 text-left text-sm font-semibold text-[#b42318]" onClick={() => setPendingAction('remove')}>Remove agent</button>
+                <button type="button" disabled title="Unavailable — account deactivation is not connected yet" className="truncate rounded-xl border border-[#eadbd9] bg-[#fbf8f8] px-4 py-2 text-left text-sm font-semibold text-[#9c7773]">Deactivate agent — unavailable</button>
+                <button type="button" disabled title="Unavailable — organisation removal is not connected yet" className="truncate rounded-xl border border-[#eadbd9] bg-[#fbf8f8] px-4 py-2 text-left text-sm font-semibold text-[#9c7773]">Remove agent — unavailable</button>
               </div>
             </AgentManagementCard>
 
@@ -5241,9 +5149,9 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
             <AgentManagementCard title="Administrative Controls">
               <div className="grid gap-2">
-                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('team')}>Manage team allocation</button>
-                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('profile')}>Edit profile and branch</button>
-                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openPlaceholder('notification-preferences')}>Notification preferences</button>
+                <button type="button" disabled title="Unavailable — team allocation is not connected yet" className="truncate rounded-xl border border-[#e1e7ee] bg-[#f7f9fb] px-4 py-2 text-left text-sm font-semibold text-[#8392a5]">Manage team allocation — unavailable</button>
+                <button type="button" className="truncate rounded-xl border border-[#d9e3ef] bg-white px-4 py-2 text-left text-sm font-semibold text-[#20364d]" onClick={() => openManagementModal('profile')}>Edit profile and branch</button>
+                <button type="button" disabled title="Unavailable — notification preferences are not connected yet" className="truncate rounded-xl border border-[#e1e7ee] bg-[#f7f9fb] px-4 py-2 text-left text-sm font-semibold text-[#8392a5]">Notification preferences — unavailable</button>
               </div>
             </AgentManagementCard>
           </div>
@@ -5251,29 +5159,23 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
       ) : null}
 
       <Modal
-        open={Boolean(modalMode)}
+        open={['commission', 'permissions', 'profile'].includes(modalMode)}
         onClose={() => setModalMode('')}
         title={
           modalMode === 'commission'
             ? 'Edit Commission'
             : modalMode === 'permissions'
               ? 'Edit Permissions'
-              : modalMode === 'team'
-                ? 'Manage Team'
-                : modalMode === 'profile'
-                  ? 'Edit Agent Profile'
-                  : 'Agent Action'
+              : 'Edit Agent Profile'
         }
         subtitle={
           modalMode === 'commission'
             ? 'Assign the structure, split override, effective date and company target for this agent.'
             : modalMode === 'permissions'
               ? 'Update the agent role and review the workspace access it grants.'
-              : modalMode === 'profile'
-                ? 'Update the saved profile photo, contact details and workspace access.'
-            : 'This management surface is ready for the connected workflow.'
+              : 'Update the saved profile photo, contact details and workspace access.'
         }
-        className={modalMode === 'commission' || modalMode === 'permissions' || modalMode === 'profile' ? 'max-w-2xl' : 'max-w-xl'}
+        className="max-w-2xl"
         footer={
           modalMode === 'commission' ? (
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -5309,11 +5211,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 {profileSaving ? 'Saving…' : 'Save Profile'}
               </Button>
             </div>
-          ) : (
-            <div className="flex justify-end">
-              <Button type="button" variant="secondary" onClick={() => setModalMode('')}>Close</Button>
-            </div>
-          )
+          ) : null
         }
       >
         {modalMode === 'commission' ? (
@@ -5330,7 +5228,7 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
                 <p className="mt-2 text-sm leading-6 text-[#60758d]">
                   Create a sales commission structure in Settings before assigning a plan to this agent. Once one exists, this same panel will save the plan, split, effective date and target here.
                 </p>
-                <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/settings/commission-structures')}>
+                <Button type="button" variant="secondary" className="mt-4" onClick={() => navigate('/agency/commission')}>
                   Manage commission structures
                 </Button>
               </div>
@@ -5728,23 +5626,9 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
               </AgentManagementCard>
             </div>
           </div>
-        ) : (
-          <div className="rounded-2xl border border-[#dfe7f1] bg-[#fbfcfe] p-4 text-sm leading-6 text-[#526981]">
-            <p>This action is intentionally staged as a safe management placeholder for now. It will connect to the existing workflow once the backing service is ready.</p>
-          </div>
-        )}
+        ) : null}
       </Modal>
 
-      <ConfirmDialog
-        open={Boolean(pendingAction)}
-        title={pendingAction === 'remove' ? 'Remove Agent?' : pendingAction === 'archive' ? 'Archive Agent?' : 'Deactivate Agent?'}
-        description={confirmDescriptions[pendingAction] || 'Confirm this agent action.'}
-        confirmLabel={pendingAction === 'remove' ? 'Confirm Remove' : pendingAction === 'archive' ? 'Confirm Archive' : 'Confirm Deactivate'}
-        cancelLabel="Cancel"
-        variant="destructive"
-        onCancel={() => setPendingAction(null)}
-        onConfirm={handleConfirmedAction}
-      />
     </section>
   )
 }
@@ -7253,7 +7137,7 @@ export function AgentsPage() {
             showOrganisationSelect={organisationOptions.length > 1}
             onManageCommissionStructures={() => {
               setInviteModalOpen(false)
-              navigate('/settings/commission-structures')
+              navigate('/agency/commission')
             }}
           />
 

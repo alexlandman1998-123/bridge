@@ -1,4 +1,4 @@
-import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../../../lib/api'
+import { fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../../../domains/reporting/api.js'
 import { listAgencyCrmLeadContacts } from '../../../lib/agencyCrmRepository'
 import { listAppointmentsAsync } from '../../../lib/agencyPipelineService'
 import { listCanvassingWorkspace } from '../../../lib/canvassingRepository'

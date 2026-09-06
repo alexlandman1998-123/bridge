@@ -1,0 +1,15 @@
+{
+  "contract": "arch9-agent-scale-phase8-pilot-observation-config-v1",
+  "maximumEvidenceAgeHours": 24,
+  "minimumObservationHours": 24,
+  "minimumSessions": 100,
+  "minimumCalendarRouteSamples": 40,
+  "maximumTechnicalErrorRatePercent": 0.5,
+  "maximumFailedRequestRatePercent": 1,
+  "maximumCalendarCoreReadyP95Ms": 2500,
+  "maximumCrossOrganisationLeakageCount": 0,
+  "maximumUnexpectedRlsDenialCount": 0,
+  "maximumCriticalIncidentCount": 0,
+  "maximumUnresolvedHighIncidentCount": 0,
+  "maximumRollbackDrillMinutes": 15
+}

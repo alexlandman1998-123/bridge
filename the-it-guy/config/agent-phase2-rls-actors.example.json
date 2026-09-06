@@ -1,0 +1,12 @@
+{
+  "contract": "arch9-agent-phase2-rls-actors-v2",
+  "deniedOrganisationIdEnv": "AGENT_RLS_DENIED_ORG_ID",
+  "actors": [
+    { "name": "agent", "emailEnv": "AGENT_RLS_AGENT_EMAIL", "passwordEnv": "AGENT_RLS_AGENT_PASSWORD", "organisationIdEnv": "AGENT_RLS_AGENT_ORG_ID", "expected": "assigned" },
+    { "name": "principal", "emailEnv": "AGENT_RLS_PRINCIPAL_EMAIL", "passwordEnv": "AGENT_RLS_PRINCIPAL_PASSWORD", "organisationIdEnv": "AGENT_RLS_PRINCIPAL_ORG_ID", "expected": "organisation" },
+    { "name": "branch_manager", "emailEnv": "AGENT_RLS_BRANCH_MANAGER_EMAIL", "passwordEnv": "AGENT_RLS_BRANCH_MANAGER_PASSWORD", "organisationIdEnv": "AGENT_RLS_BRANCH_MANAGER_ORG_ID", "branchIdEnv": "AGENT_RLS_BRANCH_ID", "deniedBranchIdEnv": "AGENT_RLS_DENIED_BRANCH_ID", "expected": "branch" },
+    { "name": "restricted_agent", "emailEnv": "AGENT_RLS_RESTRICTED_EMAIL", "passwordEnv": "AGENT_RLS_RESTRICTED_PASSWORD", "organisationIdEnv": "AGENT_RLS_RESTRICTED_ORG_ID", "expected": "assigned" },
+    { "name": "inactive_agent", "emailEnv": "AGENT_RLS_INACTIVE_EMAIL", "passwordEnv": "AGENT_RLS_INACTIVE_PASSWORD", "organisationIdEnv": "AGENT_RLS_INACTIVE_ORG_ID", "expected": "none" },
+    { "name": "multi_membership_agent", "emailEnv": "AGENT_RLS_MULTI_EMAIL", "passwordEnv": "AGENT_RLS_MULTI_PASSWORD", "organisationIdEnv": "AGENT_RLS_MULTI_ACTIVE_ORG_ID", "expected": "active_organisation" }
+  ]
+}

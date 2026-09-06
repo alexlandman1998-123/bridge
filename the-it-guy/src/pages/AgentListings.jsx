@@ -11,12 +11,12 @@ import {
   DOCUMENT_START_ENTRY_POINTS,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
+import { fetchTransactionsByParticipantSummary } from '../domains/reporting/api.js'
 import { useWorkspace } from '../context/WorkspaceContext'
 import {
   fetchAssignedDevelopmentIdsForRole,
   fetchDevelopmentOptions,
   fetchUnitsForTransactionSetup,
-  fetchTransactionsByParticipantSummary,
 } from '../lib/api'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'

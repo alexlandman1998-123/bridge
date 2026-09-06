@@ -224,6 +224,19 @@ function isServerSourceError(error) {
   return status >= 500
 }
 
+function isPermissionSourceError(error) {
+  const code = normalizeText(error?.code).toUpperCase()
+  const status = Number(error?.status || error?.statusCode || 0)
+  const message = normalizeText(error?.message).toLowerCase()
+  return (
+    code === '42501' ||
+    status === 401 ||
+    status === 403 ||
+    message.includes('permission denied') ||
+    message.includes('row-level security')
+  )
+}
+
 function getMissingColumnName(error) {
   const message = normalizeText(error?.message)
   if (!message) return ''
@@ -298,7 +311,7 @@ async function safeSelect(table, selectVariants, { agencyId = '', agencyColumn =
         fields = nextFields
         continue
       }
-      if (tolerateServerErrors && isServerSourceError(error)) {
+      if (tolerateServerErrors && (isServerSourceError(error) || isPermissionSourceError(error))) {
         recordPrincipalDashboardSourceDegradation(sourceHealth, table, error)
         logUnavailableDashboardSource('[PrincipalDashboard] Source unavailable; using empty result.', table, error)
         return []
@@ -334,7 +347,7 @@ async function safeSelectByIds(table, selectVariants, ids = [], { idColumn = 'tr
         fields = nextFields
         continue
       }
-      if (tolerateServerErrors && isServerSourceError(error)) {
+      if (tolerateServerErrors && (isServerSourceError(error) || isPermissionSourceError(error))) {
         recordPrincipalDashboardSourceDegradation(sourceHealth, table, error)
         logUnavailableDashboardSource('[PrincipalDashboard] Scoped source unavailable; using empty result.', table, error)
         return []

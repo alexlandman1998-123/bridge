@@ -1,5 +1,6 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
+import { dirname } from 'node:path'
 
 const require = createRequire(import.meta.url)
 const { createClient } = require('@supabase/supabase-js')
@@ -19,6 +20,9 @@ const METRIC_MAP = Object.freeze({
   'agent_canvassing.route.shell_ready': { surface: 'canvassing', checkpoint: 'shell_ready', budgetMs: 1500 },
   'agent_canvassing.route.core_ready': { surface: 'canvassing', checkpoint: 'core_ready', budgetMs: 2500 },
   'agent_canvassing.route.settled': { surface: 'canvassing', checkpoint: 'settled', budgetMs: 5000 },
+  'agent_calendar.route.shell_ready': { surface: 'calendar', checkpoint: 'shell_ready', budgetMs: 1500 },
+  'agent_calendar.route.core_ready': { surface: 'calendar', checkpoint: 'core_ready', budgetMs: 2500 },
+  'agent_calendar.route.settled': { surface: 'calendar', checkpoint: 'settled', budgetMs: 5000, requestCountBudget: 8, duplicateRequestCountBudget: 0, slowRequestCountBudget: 0, transferredBytesBudget: 400000 },
   'transaction_workspace.core_ready': { surface: 'transaction_detail', checkpoint: 'core_ready', budgetMs: 4000 },
   'transaction_workspace.full_ready': { surface: 'transaction_detail', checkpoint: 'settled', budgetMs: 8000 },
   'buyer_leads.core.ready': { surface: 'lead_detail', checkpoint: 'core_ready', budgetMs: 4000 },
@@ -77,16 +81,20 @@ export function buildAgentPerformanceBaselineReport(metrics = [], {
     if (!config) continue
     const temperature = normalizeTemperature(metric?.metadata)
     const key = `${config.surface}:${temperature}:${config.checkpoint}`
-    if (!groups.has(key)) groups.set(key, { ...config, temperature, durations: [], requestCounts: [], slowRequestCounts: [] })
+    if (!groups.has(key)) groups.set(key, { ...config, temperature, durations: [], requestCounts: [], duplicateRequestCounts: [], slowRequestCounts: [], transferredBytes: [] })
     const group = groups.get(key)
     group.durations.push(Number(metric?.duration_ms))
     const requestCount = Number(metric?.metadata?.requestCount ?? metric?.metadata?.supabaseRequestCount)
     const slowRequestCount = Number(metric?.metadata?.slowRequestCount)
+    const duplicateRequestCount = Number(metric?.metadata?.duplicateRequestCount)
+    const transferredBytes = Number(metric?.metadata?.transferredBytes)
     if (Number.isFinite(requestCount)) group.requestCounts.push(requestCount)
     if (Number.isFinite(slowRequestCount)) group.slowRequestCounts.push(slowRequestCount)
+    if (Number.isFinite(duplicateRequestCount)) group.duplicateRequestCounts.push(duplicateRequestCount)
+    if (Number.isFinite(transferredBytes)) group.transferredBytes.push(transferredBytes)
   }
 
-  const requiredSurfaces = ['clients', 'listings', 'canvassing', 'transaction_detail', 'lead_detail']
+  const requiredSurfaces = ['clients', 'listings', 'canvassing', 'calendar', 'transaction_detail', 'lead_detail']
   const rows = []
   for (const surface of requiredSurfaces) {
     for (const temperature of ['cold', 'warm']) {
@@ -96,6 +104,16 @@ export function buildAgentPerformanceBaselineReport(metrics = [], {
         const p50Ms = percentile(group?.durations || [], 0.5)
         const p95Ms = percentile(group?.durations || [], 0.95)
         const budgetMs = group?.budgetMs || (checkpoint === 'core_ready' ? 4000 : 8000)
+        const requestCountP95 = percentile(group?.requestCounts || [], 0.95)
+        const duplicateRequestCountP95 = percentile(group?.duplicateRequestCounts || [], 0.95)
+        const slowRequestCountP95 = percentile(group?.slowRequestCounts || [], 0.95)
+        const transferredBytesP95 = percentile(group?.transferredBytes || [], 0.95)
+        const resourceBudgetFailed = [
+          [requestCountP95, group?.requestCountBudget],
+          [duplicateRequestCountP95, group?.duplicateRequestCountBudget],
+          [slowRequestCountP95, group?.slowRequestCountBudget],
+          [transferredBytesP95, group?.transferredBytesBudget],
+        ].some(([value, budget]) => Number.isFinite(value) && Number.isFinite(budget) && value > budget)
         rows.push({
           surface,
           temperature,
@@ -104,10 +122,16 @@ export function buildAgentPerformanceBaselineReport(metrics = [], {
           p50Ms,
           p95Ms,
           budgetMs,
-          requestCountP95: percentile(group?.requestCounts || [], 0.95),
-          slowRequestCountP95: percentile(group?.slowRequestCounts || [], 0.95),
+          requestCountP95,
+          requestCountBudget: group?.requestCountBudget ?? null,
+          duplicateRequestCountP95,
+          duplicateRequestCountBudget: group?.duplicateRequestCountBudget ?? null,
+          slowRequestCountP95,
+          slowRequestCountBudget: group?.slowRequestCountBudget ?? null,
+          transferredBytesP95,
+          transferredBytesBudget: group?.transferredBytesBudget ?? null,
           coverage: sampleCount >= minimumSamples ? 'COMPLETE' : 'INSUFFICIENT',
-          status: p95Ms === null ? 'NO_DATA' : p95Ms <= budgetMs ? 'PASS' : 'FAIL',
+          status: p95Ms === null ? 'NO_DATA' : p95Ms <= budgetMs && !resourceBudgetFailed ? 'PASS' : 'FAIL',
         })
       }
     }
@@ -127,8 +151,8 @@ export function buildAgentPerformanceBaselineReport(metrics = [], {
 }
 
 export function renderAgentPerformanceBaselineMarkdown(report) {
-  const table = report.rows.map((row) => `| ${row.surface} | ${row.temperature} | ${row.checkpoint} | ${row.sampleCount} | ${row.p50Ms ?? '—'} | ${row.p95Ms ?? '—'} | ${row.budgetMs} | ${row.requestCountP95 ?? '—'} | ${row.slowRequestCountP95 ?? '—'} | ${row.status} |`).join('\n')
-  return `# Agent performance baseline\n\nGenerated: ${report.generatedAt}\n\nStatus: **${report.status}**\n\nWindow: ${report.windowHours} hours. A complete baseline requires ${report.minimumSamples} cold and ${report.minimumSamples} warm samples per checkpoint.\n\n| Surface | Temperature | Checkpoint | Samples | p50 ms | p95 ms | Budget ms | Requests p95 | Slow requests p95 | Status |\n| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n${table}\n\n## Interpretation\n\n- Core ready is the point where the primary record or list can be used.\n- Settled includes secondary hydration and captures request counts and the slowest requests.\n- INSUFFICIENT_DATA is expected immediately after instrumentation ships; it is not treated as a performance pass.\n- Optimisation decisions should use p95 only after coverage is complete.\n`
+  const table = report.rows.map((row) => `| ${row.surface} | ${row.temperature} | ${row.checkpoint} | ${row.sampleCount} | ${row.p50Ms ?? '—'} | ${row.p95Ms ?? '—'} | ${row.budgetMs} | ${row.requestCountP95 ?? '—'} | ${row.duplicateRequestCountP95 ?? '—'} | ${row.slowRequestCountP95 ?? '—'} | ${row.transferredBytesP95 ?? '—'} | ${row.status} |`).join('\n')
+  return `# Agent performance baseline\n\nGenerated: ${report.generatedAt}\n\nStatus: **${report.status}**\n\nWindow: ${report.windowHours} hours. A complete baseline requires ${report.minimumSamples} cold and ${report.minimumSamples} warm samples per checkpoint.\n\n| Surface | Temperature | Checkpoint | Samples | p50 ms | p95 ms | Budget ms | Requests p95 | Duplicates p95 | Slow requests p95 | Bytes p95 | Status |\n| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |\n${table}\n\n## Interpretation\n\n- Core ready is the point where the primary record or list can be used.\n- Settled includes secondary hydration and captures request counts, duplicate requests, transfer bytes, and the slowest requests.\n- INSUFFICIENT_DATA is expected immediately after instrumentation ships; it is not treated as a performance pass.\n- Optimisation decisions should use p95 only after coverage is complete.\n`
 }
 
 async function loadMetrics(options) {
@@ -159,8 +183,14 @@ async function main() {
   const report = buildAgentPerformanceBaselineReport(metrics, options)
   const json = `${JSON.stringify(report, null, 2)}\n`
   const markdown = renderAgentPerformanceBaselineMarkdown(report)
-  if (options.output) await writeFile(options.output, json)
-  if (options.markdown) await writeFile(options.markdown, markdown)
+  if (options.output) {
+    await mkdir(dirname(options.output), { recursive: true })
+    await writeFile(options.output, json)
+  }
+  if (options.markdown) {
+    await mkdir(dirname(options.markdown), { recursive: true })
+    await writeFile(options.markdown, markdown)
+  }
   console.log(json.trim())
   if (options.failOnInsufficient && report.status !== 'PASS') process.exitCode = 1
 }

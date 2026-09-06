@@ -1,0 +1,12 @@
+{
+  "contract": "arch9-agent-scale-phase5-performance-budgets-v1",
+  "minimumSamplesPerTemperature": 20,
+  "calendar": {
+    "coreReadyP95Ms": 2500,
+    "settledP95Ms": 5000,
+    "requestCountP95": 8,
+    "duplicateRequestCountP95": 0,
+    "slowRequestCountP95": 0,
+    "transferredBytesP95": 400000
+  }
+}

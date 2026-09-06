@@ -151,6 +151,12 @@ try {
   assert.ok(summaryCall, 'one nested transaction summary query should hydrate all related rows')
   assert.deepEqual(summaryCall.filters.find((filter) => filter.operation === 'in' && filter.column === 'id')?.values, ['tx-a'])
   assert.equal(summaryCall.filters.some((filter) => filter.column === 'organisation_id' && filter.value === 'org-a'), true)
+  const participantCall = calls.find((call) => call.table === 'transaction_participants' && call.selection.includes('transaction:transactions'))
+  assert.match(
+    participantCall?.selection || '',
+    /transaction:transactions!transaction_participants_transaction_id_fkey!inner/,
+    'the participant transaction embed must name its FK because transactions has a reverse participant FK',
+  )
 
   const callCount = calls.length
   await fetchTransactionsByParticipantSummary(options)

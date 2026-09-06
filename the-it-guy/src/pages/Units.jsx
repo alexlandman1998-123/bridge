@@ -1966,7 +1966,7 @@ function Units() {
         <LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />
       ) : null}
 
-      {!showInitialTransactionsLoading && isSupabaseConfigured ? (
+      {!error && !showInitialTransactionsLoading && isSupabaseConfigured ? (
         <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />}>
           {isBondRole ? (
           <BondApplicationsTable

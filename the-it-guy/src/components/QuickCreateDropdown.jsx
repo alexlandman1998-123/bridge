@@ -964,6 +964,7 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
   const [agentOptions, setAgentOptions] = useState([])
   const [agentOptionsLoading, setAgentOptionsLoading] = useState(false)
   const containerRef = useRef(null)
+  const previousLocationRef = useRef(`${location.pathname}${location.search}`)
   const dismissableRefs = useMemo(() => [containerRef], [])
   const dismissMenu = useCallback(() => setOpen(false), [])
 
@@ -995,7 +996,11 @@ function QuickCreateDropdown({ className = '', initialOpen = false }) {
   })
 
   useEffect(() => {
-    dismissMenu()
+    const nextLocation = `${location.pathname}${location.search}`
+    if (previousLocationRef.current !== nextLocation) {
+      dismissMenu()
+      previousLocationRef.current = nextLocation
+    }
   }, [dismissMenu, location.pathname, location.search])
 
   useEffect(() => {

@@ -10,11 +10,11 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { fetchTransactionsByParticipantSummary } from '../lib/transactionsListApi'
 
-let legacyClientProfileApiPromise = null
+let reportingApiPromise = null
 
-function loadLegacyClientProfileApi() {
-  legacyClientProfileApiPromise ||= import('../lib/api')
-  return legacyClientProfileApiPromise
+function loadReportingApi() {
+  reportingApiPromise ||= import('../domains/reporting/api.js')
+  return reportingApiPromise
 }
 
 function formatRelativeTime(value) {
@@ -256,7 +256,7 @@ function ClientProfile() {
       setError('')
       let transactionRows = []
       if (role === 'developer') {
-        const { fetchDashboardOverview } = await loadLegacyClientProfileApi()
+        const { fetchDashboardOverview } = await loadReportingApi()
         const overview = await fetchDashboardOverview({ developmentId: null })
         transactionRows = overview?.rows || []
       } else if ((role === 'agent' || role === 'attorney' || role === 'bond_originator') && profile?.id) {

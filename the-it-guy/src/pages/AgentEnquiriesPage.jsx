@@ -227,8 +227,8 @@ function EnquiryFilters({ filters, setFilters, onRefresh, loading }) {
           <option value="unresolved_listing">Unresolved listing</option>
           <option value="has_error">Has error</option>
         </select>
-        <input type="date" value={filters.createdFrom} onChange={(event) => setFilters((previous) => ({ ...previous, createdFrom: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
-        <input type="date" value={filters.createdTo} onChange={(event) => setFilters((previous) => ({ ...previous, createdTo: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
+        <input aria-label="Enquiries created from" type="date" value={filters.createdFrom} onChange={(event) => setFilters((previous) => ({ ...previous, createdFrom: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
+        <input aria-label="Enquiries created to" type="date" value={filters.createdTo} onChange={(event) => setFilters((previous) => ({ ...previous, createdTo: event.target.value }))} className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {[

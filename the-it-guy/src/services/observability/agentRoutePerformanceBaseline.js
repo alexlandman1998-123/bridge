@@ -6,6 +6,7 @@ export const AGENT_ROUTE_BASELINE_SURFACES = Object.freeze({
   clients: Object.freeze({ route: '/clients', coreBudgetMs: 2500, settledBudgetMs: 5000 }),
   listings: Object.freeze({ route: '/listings', coreBudgetMs: 2500, settledBudgetMs: 5000 }),
   canvassing: Object.freeze({ route: '/pipeline/canvassing', coreBudgetMs: 2500, settledBudgetMs: 5000 }),
+  calendar: Object.freeze({ route: '/pipeline/calendar', coreBudgetMs: 2500, settledBudgetMs: 5000 }),
 })
 
 function now(performanceApi) {

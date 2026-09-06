@@ -1,0 +1,51 @@
+{
+  "contract": "arch9-agent-scale-phase2-action-matrix-v1",
+  "safeScenarios": [
+    {
+      "name": "quick_create_opens",
+      "route": "/dashboard",
+      "steps": [{ "action": "clickTestId", "value": "quick-create-button" }],
+      "expect": { "roleVisible": "menu" }
+    },
+    {
+      "name": "quick_create_lead_opens_dialog",
+      "route": "/dashboard",
+      "steps": [
+        { "action": "clickTestId", "value": "quick-create-button" },
+        { "action": "clickTestId", "value": "quick-create-lead" }
+      ],
+      "expect": { "roleVisible": "dialog" }
+    },
+    {
+      "name": "transactions_navigation_survives_reload",
+      "route": "/dashboard",
+      "steps": [{ "action": "clickLink", "value": "Transactions" }],
+      "expect": { "path": "/transactions", "survivesReload": true }
+    },
+    {
+      "name": "pipeline_leads_navigation_survives_reload",
+      "route": "/dashboard",
+      "steps": [
+        { "action": "clickButton", "value": "Pipeline" },
+        { "action": "clickLink", "value": "Leads" }
+      ],
+      "expect": { "path": "/pipeline/leads", "survivesReload": true }
+    },
+    {
+      "name": "settings_navigation_survives_reload",
+      "route": "/dashboard",
+      "steps": [{ "action": "clickLink", "value": "Settings" }],
+      "expect": { "path": "/settings", "survivesReload": true }
+    },
+    {
+      "name": "enquiries_search_accepts_input",
+      "route": "/pipeline/enquiries",
+      "steps": [{ "action": "fillPlaceholder", "value": "Search name, phone, email, reference, listing", "text": "phase-2-check" }],
+      "expect": { "inputValue": "phase-2-check" }
+    }
+  ],
+  "allowedPlaceholders": [],
+  "mutationLabels": [
+    "add", "archive", "assign", "create", "delete", "download", "edit", "export", "import", "invite", "message", "publish", "remove", "retry", "save", "send", "submit", "upload"
+  ]
+}

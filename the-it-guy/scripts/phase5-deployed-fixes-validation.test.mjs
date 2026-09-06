@@ -27,7 +27,7 @@ const passing = evaluateAgentProductionDeployment({
     clients: 'agent_clients.route.core_ready data-performance-settled',
     listings: 'coreFieldsOnly',
     canvassing: 'coreFieldsOnly',
-    leadDetail: 'routeCoreOnly',
+    leadDetail: 'routeCoreOnly agent-calendar-ready agent_calendar.route.settled',
     transactionDetail: 'fetchTransactionRouteCoreById',
   },
 })
@@ -50,6 +50,7 @@ assert.equal(stale.status, 'FAIL')
 assert.deepEqual(
   stale.failedChecks.map((check) => check.id),
   [
+    'calendar_scale_instrumented',
     'broken_global_search_removed',
     'desktop_notification_dead_end_removed',
     'agent_reports_retired',

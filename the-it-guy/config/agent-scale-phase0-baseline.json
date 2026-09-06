@@ -1,0 +1,49 @@
+{
+  "contract": "arch9-agent-scale-phase0-baseline-v1",
+  "capturedAt": "2026-09-06T07:22:17.988Z",
+  "sourceCommit": "e4c81870b57778c8f781fffb7eb6655da5bec702",
+  "browserEvidence": {
+    "source": "test-results/agent-rerun/agent-acceptance.json",
+    "sha256": "2974cbeee067dcd31fa93b9accfbdff3d4b8bf345da0698f8c958537000a48a4",
+    "role": "agent",
+    "environment": "local-dev-bypass",
+    "screenCount": 12,
+    "maximumFeedbackMs": 331,
+    "maximumCoreReadyMs": 2569,
+    "slowestScreen": "Calendar",
+    "routes": [
+      "/dashboard",
+      "/pipeline/leads",
+      "/pipeline/enquiries",
+      "/pipeline/canvassing",
+      "/pipeline/calendar",
+      "/transactions",
+      "/listings",
+      "/clients",
+      "/agency/partners",
+      "/marketing",
+      "/auctions",
+      "/settings"
+    ]
+  },
+  "bundleBaseline": {
+    "entryJavaScriptGzipBytes": 121647,
+    "globalCssGzipBytes": 146923,
+    "legacyApiGzipBytes": 318922,
+    "clientsRouteBytes": 48923,
+    "clientsStaticDependencyCount": 62,
+    "clientsLoadsLegacyApi": false
+  },
+  "releaseBudgets": {
+    "maximumFeedbackMs": 1500,
+    "maximumCoreReadyMs": 3000,
+    "entryJavaScriptGzipBytes": 133120,
+    "globalCssGzipBytes": 153600,
+    "legacyApiGzipBytes": 332800
+  },
+  "limitations": [
+    "Local development bypass does not prove authenticated RLS behaviour.",
+    "Principal and branch-manager browser evidence remains required before scale release.",
+    "API architecture is explicitly outside this phase and belongs to a separate brief."
+  ]
+}

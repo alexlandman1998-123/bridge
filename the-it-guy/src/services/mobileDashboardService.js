@@ -1,6 +1,6 @@
 import { getAgentDemoTransactionRowsFromStorage } from '../lib/agentDemoTransactionStorage.js'
 import { resolveMobileRoleCategory } from '../config/mobileShell'
-import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../lib/api'
+import { fetchDashboardOverview, fetchTransactionsByParticipantSummary, fetchTransactionsListSummary } from '../domains/reporting/api.js'
 import {
   getDashboardPipelineValue,
   getScopedDashboardTransactions,

@@ -1,0 +1,9 @@
+{
+  "contract": "arch9-agent-phase7-pilot-boundary-config-v2",
+  "maximumEvidenceAgeHours": 24,
+  "maximumPilotOrganisations": 1,
+  "maximumRollbackMinutes": 15,
+  "requireCleanSource": true,
+  "requireHttpsOrigin": true,
+  "forbiddenOriginHosts": ["localhost", "127.0.0.1", "0.0.0.0"]
+}

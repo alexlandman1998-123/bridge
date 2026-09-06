@@ -79,7 +79,12 @@ async function resolveIdentity(client, userId, identityContext = {}) {
 
 async function participantTransactionIds(client, { identityColumn, identityValue, roleType, organisationId }) {
   if (!identityColumn || !identityValue) return []
-  const relation = organisationId ? ', transaction:transactions!inner(organisation_id)' : ''
+  // transactions also points back to transaction_participants through
+  // primary_buyer_participant_id. Name the participant-owned FK explicitly so
+  // PostgREST does not reject the embed as ambiguous.
+  const relation = organisationId
+    ? ', transaction:transactions!transaction_participants_transaction_id_fkey!inner(organisation_id)'
+    : ''
   const run = async (includeStatus = true) => {
     let query = client
       .from('transaction_participants')

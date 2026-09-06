@@ -196,7 +196,6 @@ export default function AgentLeadsPage() {
     includeSellerProcessShadowIntegration,
     sellerProcessProfile: sellerProcessProfileResolution.profile,
     organisationSettings,
-    sellerProcessProfile: KINGSTONS_SELLER_PROCESS_PROFILE,
     currentMembership: workspaceContext.currentMembership,
   }
   void hasKingstonsSellerProcess

@@ -739,7 +739,7 @@ function BridgeCommandCenterDashboard({
         <OperationalCard
           title="Top Performing Agents"
           footer={(
-            <button type="button" onClick={() => goTo('/agents')} className="inline-flex w-full items-center justify-center gap-2 text-sm font-semibold text-[#0f4f9f]">
+            <button type="button" onClick={() => goTo('/agency/agents')} className="inline-flex w-full items-center justify-center gap-2 text-sm font-semibold text-[#0f4f9f]">
               View leaderboard
               <ArrowRight size={15} />
             </button>

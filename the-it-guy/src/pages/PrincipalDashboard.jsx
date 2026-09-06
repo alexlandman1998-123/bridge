@@ -1011,7 +1011,7 @@ function AgentSnapshotPanel({ rows = [] }) {
           <h2 className="text-[1.05rem] font-semibold text-[#101828]">Agent Snapshot</h2>
           <p className="mt-1 text-sm text-[#667085]">Pipeline ownership and conversion signals.</p>
         </div>
-        <button type="button" onClick={() => navigate('/agents')} className="h-9 shrink-0 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
+        <button type="button" onClick={() => navigate('/agency/agents')} className="h-9 shrink-0 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
           View agents
         </button>
       </div>
@@ -1021,7 +1021,7 @@ function AgentSnapshotPanel({ rows = [] }) {
           <button
             key={`${agent.agentId || agent.agentName}-${index}`}
             type="button"
-            onClick={() => agent.agentId ? navigate(`/agents/${agent.agentId}`) : navigate('/agents')}
+            onClick={() => agent.agentId ? navigate(`/agency/agents/${agent.agentId}`) : navigate('/agency/agents')}
             className="grid h-full min-h-[76px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
           >
             <div className="min-w-0">
@@ -1071,7 +1071,7 @@ function TopPerformersThisMonthPanel({ rows = [] }) {
             <button
               key={`${agent.agentId || agent.agentName}-top-${index}`}
               type="button"
-              onClick={() => agent.agentId ? navigate(`/agents/${agent.agentId}`) : navigate('/agency/agents')}
+              onClick={() => agent.agentId ? navigate(`/agency/agents/${agent.agentId}`) : navigate('/agency/agents')}
               className="grid h-full min-h-[76px] grid-cols-[34px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[#e3ebf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#bfd0e4] hover:bg-white"
             >
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#fff7e8] text-xs font-semibold text-[#a16207]">{index + 1}</span>
@@ -1145,7 +1145,7 @@ function AgentPerformanceCoachingTable({ rows = [] }) {
           <h2 className="text-[1.08rem] font-semibold text-[#101828]">Agent Performance & Coaching</h2>
           <p className="mt-1 text-sm text-[#667085]">Principal view of ownership, conversion, and intervention points.</p>
         </div>
-        <button type="button" onClick={() => navigate('/agents')} className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
+        <button type="button" onClick={() => navigate('/agency/agents')} className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">
           View agents
         </button>
       </div>
@@ -1167,14 +1167,18 @@ function AgentPerformanceCoachingTable({ rows = [] }) {
             {rows.length ? rows.map((agent, index) => (
               <tr
                 key={`${agent.agentId || agent.agentName}-${index}`}
-                onClick={() => agent.agentId ? navigate(`/agents/${agent.agentId}`) : navigate('/agents')}
-                className="cursor-pointer border-b border-[#edf2f7] last:border-0 hover:bg-[#f8fafc]"
+                className="border-b border-[#edf2f7] last:border-0 hover:bg-[#f8fafc]"
               >
                 <td className="py-3">
-                  <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1769d1] focus-visible:ring-offset-2"
+                    onClick={() => agent.agentId ? navigate(`/agency/agents/${agent.agentId}`) : navigate('/agency/agents')}
+                    aria-label={`Open ${agent.agentName || 'agent'} workspace`}
+                  >
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#edf5ff] text-xs font-semibold text-[#1769d1]">{agent.agentName.slice(0, 2).toUpperCase()}</span>
                     <span className="font-semibold text-[#101828]">{agent.agentName}</span>
-                  </div>
+                  </button>
                 </td>
                 <td className="py-3 text-[#344054]">{formatCurrency(agent.pipelineValue, { compact: true })}</td>
                 <td className="py-3 text-[#344054]">{formatCount(agent.activeDeals)}</td>
@@ -1814,7 +1818,7 @@ function AgentPerformanceTable({ rows }) {
     <section className={`${dashboardCardClass} ${dashboardCardPadding} flex h-full min-h-[340px] flex-col`}>
       <div className="flex items-center justify-between gap-3">
         <h2 className="text-[1.05rem] font-semibold text-[#101828]">Agent Performance</h2>
-        <button type="button" onClick={() => navigate('/agents')} className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">View all agents</button>
+        <button type="button" onClick={() => navigate('/agency/agents')} className="h-9 rounded-xl border border-[#d9e3ef] bg-white px-3 text-xs font-semibold text-[#24364b] shadow-sm">View all agents</button>
       </div>
       <div className="mt-4 flex-1 overflow-x-auto">
         <table className="min-w-[720px] w-full text-left text-sm">
@@ -1830,12 +1834,18 @@ function AgentPerformanceTable({ rows }) {
           </thead>
           <tbody>
             {rows.length ? rows.map((agent, index) => (
-              <tr key={`${agent.agentId || agent.agentName}-${index}`} onClick={() => agent.agentId ? navigate(`/agents/${agent.agentId}`) : null} className="cursor-pointer border-b border-[#edf2f7] last:border-0 hover:bg-[#f8fafc]">
+              <tr key={`${agent.agentId || agent.agentName}-${index}`} className="border-b border-[#edf2f7] last:border-0 hover:bg-[#f8fafc]">
                 <td className="py-3">
-                  <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="flex items-center gap-3 rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1769d1] focus-visible:ring-offset-2"
+                    onClick={() => agent.agentId ? navigate(`/agency/agents/${agent.agentId}`) : null}
+                    disabled={!agent.agentId}
+                    aria-label={`Open ${agent.agentName || 'agent'} workspace`}
+                  >
                     <span className="grid h-8 w-8 place-items-center rounded-full bg-[#edf5ff] text-xs font-semibold text-[#1769d1]">{agent.agentName.slice(0, 2).toUpperCase()}</span>
                     <span className="font-medium text-[#101828]">{agent.agentName}</span>
-                  </div>
+                  </button>
                 </td>
                 <td className="py-3 font-medium text-[#101828]">{formatCurrency(agent.pipelineValue, { compact: true })}</td>
                 <td className="py-3 text-[#344054]">{formatCount(agent.activeDeals)}</td>
@@ -2303,6 +2313,13 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
   const dashboardHasLoadedRef = useRef(false)
   const dashboardLoadSequenceRef = useRef(0)
   const dashboardRefreshTimerRef = useRef(null)
+
+  useEffect(() => () => {
+    // Invalidate in-flight reads before their catch/finally handlers run after
+    // route navigation. A stale request must not log an application failure or
+    // attempt to update an unmounted dashboard.
+    dashboardLoadSequenceRef.current += 1
+  }, [])
   const profileCanViewAllTransactions = useMemo(
     () =>
       canAccessPrincipalExperience({
@@ -2545,6 +2562,24 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
               <button
                 type="button"
                 onClick={() => retryWorkspaceBootstrap?.()}
+                className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold"
+              >
+                Retry
+              </button>
+            </div>
+          </section>
+        ) : null}
+
+        {!error && data?.meta?.sourceDegraded ? (
+          <section className="rounded-[18px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-2">
+                <AlertTriangle size={16} />
+                Some dashboard information is unavailable for your current access level. Available information is shown below.
+              </span>
+              <button
+                type="button"
+                onClick={() => void loadDashboard({ forceRefresh: true })}
                 className="rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold"
               >
                 Retry

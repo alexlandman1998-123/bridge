@@ -58,13 +58,13 @@ import {
 import { TRANSACTION_SCOPE_OPTIONS, filterRowsByTransactionScope, getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import { normalizeFinanceType } from '../core/transactions/financeType'
-import { useWorkspace } from '../context/WorkspaceContext'
-import { useOrganisation } from '../context/OrganisationContext'
 import {
   fetchDashboardOverview,
   fetchTransactionsByParticipantSummary,
   fetchTransactionsListSummary,
-} from '../lib/api/dashboardApi'
+} from '../domains/reporting/api.js'
+import { useWorkspace } from '../context/WorkspaceContext'
+import { useOrganisation } from '../context/OrganisationContext'
 import { getAgentModuleSharedData } from '../lib/agentDataService'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../lib/canvassingRepository'
 import {

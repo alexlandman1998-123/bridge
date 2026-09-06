@@ -215,6 +215,7 @@ import {
 } from '../../services/pipelineOperationalTelemetryService'
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import { createBuyerLeadsPerformanceBaseline } from '../../services/observability/buyerLeadsPerformanceBaseline'
+import { createAgentRoutePerformanceBaseline } from '../../services/observability/agentRoutePerformanceBaseline'
 import { readBuyerLeadWorkspaceChunkTrace } from '../../services/observability/buyerLeadWorkspaceChunkTrace'
 import {
   LEAD_WORKSPACE_LOAD_STAGES,
@@ -11523,11 +11524,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   sellerLeadsRenderCountRef.current += 1
   const sellerLeadsPerformanceBaselineRef = useRef(null)
   const buyerLeadsPerformanceBaselineRef = useRef(null)
+  const calendarPerformanceBaselineRef = useRef(null)
   if (!sellerLeadsPerformanceBaselineRef.current) {
     sellerLeadsPerformanceBaselineRef.current = createSellerLeadsPerformanceBaseline({ route: location.pathname })
   }
   if (!buyerLeadsPerformanceBaselineRef.current) {
     buyerLeadsPerformanceBaselineRef.current = createBuyerLeadsPerformanceBaseline({ route: location.pathname })
+  }
+  if (!calendarPerformanceBaselineRef.current && initialViewMode === 'calendar') {
+    calendarPerformanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'calendar', route: location.pathname })
   }
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -11647,8 +11652,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const routeLeadHydrationRef = useRef('')
   const routeLeadWorkspaceSnapshotRef = useRef(null)
   const hasCompletedContextLoadRef = useRef(false)
+  const skipNextCalendarRangeReloadRef = useRef(false)
   const isCalendarMode = initialViewMode === 'calendar'
   const isOverviewMode = initialViewMode === 'overview'
+  const recordCalendarPerformance = useCallback((checkpoint, metadata = {}) => {
+    if (!isCalendarMode) return
+    void calendarPerformanceBaselineRef.current?.recordCheckpoint({
+      checkpoint,
+      userId: normalizeText(profile?.id),
+      workspaceId: normalizeText(organisationId),
+      metadata,
+    })
+  }, [isCalendarMode, organisationId, profile?.id])
+
+  useEffect(() => {
+    recordCalendarPerformance('shell_ready')
+  }, [recordCalendarPerformance])
+
+  useEffect(() => {
+    if (!isCalendarMode || loading || !organisationId) return undefined
+    const metadata = {
+      appointmentCount: records.appointments.length,
+      agentCount: users.length,
+    }
+    recordCalendarPerformance('core_ready', metadata)
+    const timerId = window.setTimeout(() => recordCalendarPerformance('settled', metadata), 0)
+    return () => window.clearTimeout(timerId)
+  }, [isCalendarMode, loading, organisationId, recordCalendarPerformance, records.appointments.length, users.length])
   const [leadTypeView, setLeadTypeView] = useState('buyer')
   const [pipelineViewMode, setPipelineViewMode] = useState('table')
   const [draggingPipelineCardId, setDraggingPipelineCardId] = useState('')
@@ -12398,6 +12428,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   useEffect(() => {
     if (!organisationId || !isCalendarMode) return
+    if (skipNextCalendarRangeReloadRef.current) {
+      skipNextCalendarRangeReloadRef.current = false
+      return
+    }
     scheduleRecordsReload(organisationId, 0)
   }, [calendarCursorDate, calendarView, isCalendarMode, organisationId, scheduleRecordsReload])
 
@@ -12527,6 +12561,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       const fallbackMembershipRole = role === 'agent' ? 'agent' : 'viewer'
       const resolvedMembershipRole = normalizeText(context?.membershipRole || contextMembershipRole || fallbackMembershipRole) || fallbackMembershipRole
 
+      skipNextCalendarRangeReloadRef.current = isCalendarMode
       setOrganisationId(effectiveOrgId)
       setOrganisationName(
         normalizeText(
@@ -31175,7 +31210,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       )
     }
     return (
-      <section className="rounded-[20px] border border-[#dde4ee] bg-white p-6">
+      <section className="rounded-[20px] border border-[#dde4ee] bg-white p-6" data-testid={isCalendarMode ? 'agent-calendar-loading' : undefined} aria-busy={isCalendarMode ? 'true' : undefined}>
         <LoadingSkeleton lines={10} />
       </section>
     )
@@ -31508,7 +31543,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ) : null}
 
       {isCalendarMode ? (
-        <section className="space-y-4">
+        <section className="space-y-4" data-testid="agent-calendar-ready" aria-busy="false">
           <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>

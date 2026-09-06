@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 
 const DEFAULT_ORIGIN = 'https://app.arch9.co.za'
 
@@ -7,10 +9,11 @@ function normalizeOrigin(value = DEFAULT_ORIGIN) {
 }
 
 function parseArgs(argv = process.argv.slice(2)) {
-  const options = { origin: DEFAULT_ORIGIN, failOnMismatch: false }
+  const options = { origin: DEFAULT_ORIGIN, failOnMismatch: false, output: '' }
   for (const arg of argv) {
     if (arg.startsWith('--origin=')) options.origin = normalizeOrigin(arg.split('=').slice(1).join('='))
     if (arg === '--fail-on-mismatch') options.failOnMismatch = true
+    if (arg.startsWith('--output=')) options.output = arg.split('=').slice(1).join('=').trim()
   }
   return options
 }
@@ -38,6 +41,12 @@ export function evaluateAgentProductionDeployment({ assets = [], sources = {} } 
   const transactionDetail = sources.transactionDetail || ''
 
   const checks = [
+    {
+      id: 'calendar_scale_instrumented',
+      passed: leadDetail.includes('agent-calendar-ready') && (leadDetail.includes('agent_calendar.route.settled') || leadDetail.includes('agentRoutePerformanceBaseline-')),
+      evidence: 'Calendar exposes the Phase 5 ready marker and settled route telemetry.',
+      failureEvidence: 'The deployed Calendar chunk is missing Phase 5 readiness or settled telemetry.',
+    },
     {
       id: 'broken_global_search_removed',
       passed: ![
@@ -122,6 +131,7 @@ async function fetchText(url) {
 export async function validateAgentProductionDeployment({ origin = DEFAULT_ORIGIN } = {}) {
   const normalizedOrigin = normalizeOrigin(origin)
   const html = await fetchText(`${normalizedOrigin}/`)
+  const releaseManifest = JSON.parse(await fetchText(`${normalizedOrigin}/release-manifest.json`))
   const htmlAssets = extractJavaScriptAssets(html)
   const entryAsset = findSingleAsset(htmlAssets, 'index')
   const entry = await fetchText(`${normalizedOrigin}/${entryAsset}`)
@@ -145,6 +155,7 @@ export async function validateAgentProductionDeployment({ origin = DEFAULT_ORIGI
     ...report,
     origin: normalizedOrigin,
     checkedAt: new Date().toISOString(),
+    releaseId: String(releaseManifest?.releaseId || ''),
     deployment: { entryAsset, ...assetMap },
   }
 }
@@ -152,6 +163,11 @@ export async function validateAgentProductionDeployment({ origin = DEFAULT_ORIGI
 async function main() {
   const options = parseArgs()
   const report = await validateAgentProductionDeployment(options)
+  if (options.output) {
+    const outputPath = path.resolve(options.output)
+    await mkdir(path.dirname(outputPath), { recursive: true })
+    await writeFile(outputPath, `${JSON.stringify(report, null, 2)}\n`)
+  }
   console.log(JSON.stringify(report, null, 2))
   if (options.failOnMismatch && report.status !== 'PASS') process.exitCode = 1
 }

@@ -1,0 +1,39 @@
+{
+  "contract": "arch9-agent-phase0-screen-matrix-v1",
+  "requiredStates": ["loading", "ready", "empty", "permission_denied", "error", "retrying"],
+  "roles": {
+    "agent": "Own and explicitly assigned operational records only.",
+    "principal": "Organisation-wide records and management surfaces.",
+    "branch_manager": "Records scoped to managed branches.",
+    "restricted_agent": "Shell access with explicit permission states for restricted data.",
+    "inactive_agent": "No professional data access.",
+    "multi_membership_agent": "Only the actively selected organisation and workspace."
+  },
+  "screens": [
+    { "name": "Dashboard", "route": "/dashboard", "readyText": "Dashboard", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Pipeline overview", "route": "/pipeline/overview", "readyText": "Agency Pipeline Overview", "roles": ["principal", "branch_manager"] },
+    { "name": "Leads", "route": "/pipeline/leads", "readyText": "NEW LEADS", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Enquiries", "route": "/pipeline/enquiries", "readyText": "Enquiries", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Canvassing", "route": "/pipeline/canvassing", "readyText": "PROSPECTS", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Calendar", "route": "/pipeline/calendar", "readyText": "Calendar", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Transactions", "route": "/transactions", "readyText": "Transactions", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Listings", "route": "/listings", "readyText": "Listings", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Clients", "route": "/clients", "readyText": "TOTAL CLIENTS", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Branches", "route": "/agency/branches", "readyText": "Branches", "roles": ["principal", "branch_manager"] },
+    { "name": "Agents", "route": "/agency/agents", "readyText": "Agent Directory", "roles": ["principal", "branch_manager"] },
+    { "name": "Commission", "route": "/agency/commission", "readyText": "Commission", "roles": ["principal"] },
+    { "name": "Analytics", "route": "/agency/analytics", "readyText": "Principal Analytics Dashboard", "roles": ["principal"] },
+    { "name": "Governance", "route": "/agency/governance", "readyText": "Agency Governance", "roles": ["principal"] },
+    { "name": "Partners", "route": "/agency/partners", "readyText": "Third parties", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Marketing", "route": "/marketing", "readyText": "QUICK ACTIONS", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Auctions", "route": "/auctions", "readyText": "Active Auctions", "roles": ["agent", "principal", "branch_manager"] },
+    { "name": "Settings", "route": "/settings", "readyText": "Settings", "roles": ["agent", "principal", "branch_manager", "restricted_agent"] }
+  ],
+  "performanceBudgetsMs": {
+    "routeFeedback": 200,
+    "listCoreReadyP95": 2500,
+    "detailCoreReadyP95": 4000,
+    "secondarySettledP95": 6000,
+    "primaryMenuOpen": 500
+  }
+}

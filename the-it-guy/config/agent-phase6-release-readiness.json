@@ -1,0 +1,15 @@
+{
+  "contract": "arch9-agent-phase6-release-readiness-config-v2",
+  "maximumEvidenceAgeHours": 72,
+  "minimumPerformanceSamples": 20,
+  "requiredRlsActors": ["agent", "principal", "branch_manager", "restricted_agent", "inactive_agent", "multi_membership_agent"],
+  "requiredBrowserRoles": ["agent", "principal", "branch_manager"],
+  "requiredBrowserRoutes": ["/pipeline/calendar"],
+  "requiredPerformanceSurfaces": ["clients", "listings", "canvassing", "calendar", "transaction_detail", "lead_detail"],
+  "calendarSettledBudgets": {
+    "requestCountP95": 8,
+    "duplicateRequestCountP95": 0,
+    "slowRequestCountP95": 0,
+    "transferredBytesP95": 400000
+  }
+}

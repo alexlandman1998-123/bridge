@@ -1,0 +1,16 @@
+{
+  "contract": "arch9-agent-scale-phase4-decomposition-budgets-v1",
+  "sourceLineBudgets": {
+    "src/pages/Agents.jsx": 7600,
+    "src/pages/AgentListingDetail.jsx": 14500,
+    "src/pages/agency/AgencyPipelinePage.jsx": 41200,
+    "src/pages/AttorneyTransactionDetail.jsx": 25300,
+    "src/index.css": 12200
+  },
+  "routeChunkByteBudgets": {
+    "Agents": 265000,
+    "AgentListingDetail": 460000,
+    "AgencyPipelinePage": 990000,
+    "AttorneyTransactionDetail": 1070000
+  }
+}
