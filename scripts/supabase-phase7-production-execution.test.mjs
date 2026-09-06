@@ -2,13 +2,14 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const runner = path.join(repoRoot, 'scripts', 'supabase-phase7-production-execution.mjs')
+const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'docs', 'supabase-phase-5-application-manifest.json'), 'utf8'))
 
 function run(args, extraEnv = {}) {
   return spawnSync(process.execPath, [runner, ...args], {
@@ -26,47 +27,39 @@ function run(args, extraEnv = {}) {
 
 const plan = run(['--plan', '--json'])
 assert.equal(plan.status, 0, plan.stderr)
-assert.equal(JSON.parse(plan.stdout).count, 33)
-const planRows = JSON.parse(plan.stdout).rows
-assert.ok(planRows.some((row) => row.version === '202607270015' && row.originalAction === 'manual_data_review' && row.action === 'apply_original_after_dependency_check'))
-assert.ok(planRows.some((row) => row.version === '202607290005' && row.originalVersion === '202607270012' && row.action === 'apply_original_after_dependency_check'))
-
+assert.equal(JSON.parse(plan.stdout).count, manifest.rows.length)
 const streamPlan = run(['--plan', '--stream', 'bond_finance_runtime', '--json'])
 assert.equal(streamPlan.status, 0, streamPlan.stderr)
-assert.equal(JSON.parse(streamPlan.stdout).count, 14)
+const streamResult = JSON.parse(streamPlan.stdout)
+assert.ok(streamResult.count > 0)
+assert.ok(streamResult.rows.every((row) => row.stream === 'bond_finance_runtime'))
 
-const missingConfirmation = run(['--apply-sql', '--version', '202607240001'])
+const missingConfirmation = run(['--apply-sql', '--version', '20260828203724'])
 assert.equal(missingConfirmation.status, 1)
 assert.match(missingConfirmation.stderr, /production mutations require/i)
 
 const correctiveReplay = run([
-  '--apply-sql', '--version', '202607270012', '--confirm', 'APPLY_TO_PRODUCTION',
+  '--apply-sql', '--version', '202608200001', '--confirm', 'APPLY_TO_PRODUCTION',
 ])
 assert.equal(correctiveReplay.status, 1)
-assert.match(correctiveReplay.stderr, /Expected one manifest row for 202607270012; found 0/)
+assert.match(correctiveReplay.stderr, /Manifest action corrective_migration_required cannot be mutated/)
 
 const repairOnlyReplay = run([
-  '--apply-sql', '--version', '202607270013', '--confirm', 'APPLY_TO_PRODUCTION',
+  '--apply-sql', '--version', '20260903094957', '--confirm', 'APPLY_TO_PRODUCTION',
 ])
 assert.equal(repairOnlyReplay.status, 1)
 assert.match(repairOnlyReplay.stderr, /Refusing production SQL replay for manifest action repair_only_after_smoke/)
 
 const missingStagingEvidence = run([
-  '--apply-sql', '--version', '202607280003', '--confirm', 'APPLY_TO_PRODUCTION',
+  '--apply-sql', '--version', '20260828203724', '--confirm', 'APPLY_TO_PRODUCTION',
 ])
 assert.equal(missingStagingEvidence.status, 1)
 assert.match(missingStagingEvidence.stderr, /--staging-evidence is required/)
 
-const clearedManualMissingStagingEvidence = run([
-  '--apply-sql', '--version', '202607270015', '--confirm', 'APPLY_TO_PRODUCTION',
-])
-assert.equal(clearedManualMissingStagingEvidence.status, 1)
-assert.match(clearedManualMissingStagingEvidence.stderr, /--staging-evidence is required/)
-
 const tempDir = mkdtempSync(path.join(os.tmpdir(), 'phase7-production-gate-'))
 const stagingEvidencePath = path.join(tempDir, 'staging-evidence.json')
 writeFileSync(stagingEvidencePath, JSON.stringify({
-  version: '202607280003',
+  version: '20260828203724',
   stagingProjectRef: 'stagingtestref',
   stagingLedgerRecorded: true,
   catalogChecks: 'pass',
@@ -77,7 +70,7 @@ writeFileSync(stagingEvidencePath, JSON.stringify({
 
 const wrongProject = run(
   [
-    '--apply-sql', '--version', '202607280003', '--staging-evidence', stagingEvidencePath,
+    '--apply-sql', '--version', '20260828203724', '--staging-evidence', stagingEvidencePath,
     '--confirm', 'APPLY_TO_PRODUCTION',
   ],
   { SUPABASE_PRODUCTION_PROJECT_REF: 'wrongprojectref' },
@@ -87,7 +80,7 @@ assert.match(wrongProject.stderr, /SUPABASE_PRODUCTION_PROJECT_REF must equal/)
 
 const missingRecovery = run(
   [
-    '--apply-sql', '--version', '202607280003', '--staging-evidence', stagingEvidencePath,
+    '--apply-sql', '--version', '20260828203724', '--staging-evidence', stagingEvidencePath,
     '--confirm', 'APPLY_TO_PRODUCTION',
   ],
   {

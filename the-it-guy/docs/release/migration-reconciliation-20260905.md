@@ -79,3 +79,33 @@ The following release-candidate migrations are local-only in the linked producti
 ### Authoritative decision
 
 Preserve the recovered migration filenames and SQL as committed. Treat the six local-only migrations above as an ordered release candidate, not as an apply plan. First reconcile the 81 remote-only production versions into source control, repeat the clean-database migration run on a Docker-capable host, and verify the candidate against Arch9 Staging before scheduling production promotion.
+
+## Post-main migration reconciliation — 6 September 2026
+
+After Phases 0–9 brought local and remote `main` into alignment, the guarded
+Supabase reconciliation chain was rerun against linked production project
+`isdowlnollckzvltkasn` using Supabase CLI `2.114.0`.
+
+| Reconciliation result | Count |
+| --- | ---: |
+| Migration files | 928 |
+| Matched ledger rows | 832 |
+| Raw local-only rows | 113 |
+| Raw remote-only rows | 81 |
+| Reviewed split-version rows | 18 |
+| Pure local-only rows | 95 |
+| Pure remote-only rows | 63 |
+
+Phase 1 confirmed all onboarding-critical migrations are recorded and their
+required live objects are ready. Phase 5 produced `MODULE_AUDIT_READY`; Phase 6
+produced `SPLIT_BASELINE_READY` and excludes the 18 known split-version rows
+from repair batches. The Phase 7 canonical-document candidate is already
+recorded, so its repair plan returned `NOOP_ALREADY_REPAIRED` and performed no
+ledger mutation.
+
+The refreshed Phase 8 plan returns `LOCAL_CLOSEOUT_NOT_READY`. The Phase 0
+broad-push freeze therefore remains active. No `db push`, `db reset`, migration
+repair, schema apply, or data-changing SQL was run. The next safe work is to
+review the smallest all-live pure-local module batch with its behavior smoke
+tests and separately import/classify the 63 pure remote-only versions before
+any ledger repair is approved.

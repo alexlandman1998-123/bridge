@@ -1,6 +1,6 @@
 # Supabase Migration Phase 7 Canonical Ledger Repair Report
 
-Generated: 2026-07-12T20:27:06.901Z
+Generated: 2026-09-06T15:41:09.013Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -11,27 +11,27 @@ Phase 7 is a single-candidate ledger repair for the canonical document verificat
 
 | Field | Value |
 | --- | --- |
-| Status | REPAIRED |
-| Recommendation | Phase 7 repaired the canonical-document pilot ledger row. Refresh Phase 5 before choosing the next pure-local batch. |
-| Apply mode | yes |
+| Status | NOOP_ALREADY_REPAIRED |
+| Recommendation | No repair needed; the Phase 7 candidate is already recorded applied. |
+| Apply mode | no |
 | Candidate version | 202607120003 |
 | Candidate module | canonical_documents |
-| Local migration files | 336 |
+| Local migration files | 928 |
 | Duplicate local timestamps | 0 |
-| Before ledger state | pure local-only |
+| Before ledger state | recorded applied |
 | After ledger state | recorded applied |
 | Evidence ready | yes |
 | Object checks | 1/1 |
-| Matched rows before | 240 |
-| Matched rows after | 241 |
-| Pure local-only rows before | 79 |
-| Pure local-only rows after | 78 |
+| Matched rows before | 832 |
+| Matched rows after | 832 |
+| Pure local-only rows before | 95 |
+| Pure local-only rows after | 95 |
 
 ## Candidate Matrix
 
 | Version | Module | Migration | Local File | Before | After | Evidence Keys |
 | --- | --- | --- | --- | --- | --- | --- |
-| 202607120003 | canonical_documents | canonical document verification snapshot RPC | present | pure local-only | recorded applied | canonical_document_verification_snapshot_function, canonical_document_verification_snapshot_signature, canonical_document_verification_snapshot_bounded_call |
+| 202607120003 | canonical_documents | canonical document verification snapshot RPC | present | recorded applied | recorded applied | canonical_document_verification_snapshot_function, canonical_document_verification_snapshot_signature, canonical_document_verification_snapshot_bounded_call |
 
 ## Evidence Gate
 
@@ -39,7 +39,7 @@ Phase 7 is a single-candidate ledger repair for the canonical document verificat
 | --- | --- | --- |
 | Local migration file | PASS | supabase/migrations/202607120003_canonical_document_verification_snapshot_scoped.sql |
 | Duplicate timestamps | PASS | none |
-| Pure local-only ledger state | PASS | pure local-only |
+| Pure local-only ledger state | PASS | already recorded applied |
 | Required live evidence | PASS | all required evidence keys ready |
 | Static object evidence | PASS | all static objects live |
 
@@ -63,8 +63,8 @@ Phase 7 is a single-candidate ledger repair for the canonical document verificat
 | Command | Status | Notes |
 | --- | --- | --- |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
-| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase7-canonical-evidence-95507.sql --output-format json | ok | Initialising login role... |
-| npx supabase migration repair --linked --status applied 202607120003 | ok | Initialising login role... Connecting to remote database... Repaired migration history: [202607120003] => applied |
+| npx supabase db query --linked --file /var/folders/r_/zbzvf7r10897f7jqjfy4sfvh0000gn/T/supabase-phase7-canonical-evidence-57288.sql --output-format json | ok | Initialising login role... |
+| migration repair not run | skipped | plan mode |
 | npx supabase migration list --linked --output-format json | ok | Initialising login role... Connecting to remote database... |
 
 ## Next Step

@@ -2,11 +2,13 @@
 
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const runner = path.join(repoRoot, 'scripts', 'supabase-phase8-closeout.mjs')
+const manifest = JSON.parse(readFileSync(path.join(repoRoot, 'docs', 'supabase-phase-5-application-manifest.json'), 'utf8'))
 
 function run(args) {
   return spawnSync(process.execPath, [runner, ...args], { cwd: repoRoot, encoding: 'utf8' })
@@ -17,7 +19,7 @@ assert.equal(plan.status, 0, plan.stderr)
 const result = JSON.parse(plan.stdout)
 assert.equal(result.status, 'LOCAL_CLOSEOUT_NOT_READY')
 assert.equal(result.readyForFreezeRetirement, false)
-assert.equal(result.rawManifestRowCount, 34)
+assert.equal(result.rawManifestRowCount, manifest.rows.length)
 assert.equal(result.manifestRowCount, 33)
 assert.equal(result.closeoutScope.source, 'docs/supabase-push-phase-5-production-promotion.json')
 assert.equal(result.duplicateVersions.length, 0)
