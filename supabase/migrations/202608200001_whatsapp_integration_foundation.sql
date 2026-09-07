@@ -183,7 +183,8 @@ alter table public.communication_deliveries
   add column if not exists recipient_phone text,
   add column if not exists read_at timestamptz;
 
-drop constraint if exists communication_deliveries_status_check on public.communication_deliveries;
+alter table public.communication_deliveries
+  drop constraint if exists communication_deliveries_status_check;
 alter table public.communication_deliveries
   add constraint communication_deliveries_status_check
     check (status in ('prepared', 'queued', 'sent', 'delivered', 'read', 'failed', 'skipped'));

@@ -111,7 +111,7 @@ language sql
 volatile
 set search_path = public
 as $$
-  select lower(encode(gen_random_bytes(32), 'hex'));
+  select lower(encode(extensions.gen_random_bytes(32), 'hex'));
 $$;
 
 create or replace function public.arch9_admin_start_agency_onboarding(

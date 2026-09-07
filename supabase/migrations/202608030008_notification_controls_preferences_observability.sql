@@ -19,7 +19,7 @@ create table if not exists public.notification_recipient_preferences (
   quiet_hours_end_hour integer not null default 8,
   quiet_hours_timezone text not null default 'Africa/Johannesburg',
   muted_until timestamptz,
-  unsubscribe_token text not null default encode(gen_random_bytes(24), 'hex'),
+  unsubscribe_token text not null default encode(extensions.gen_random_bytes(24), 'hex'),
   source text not null default 'account_settings',
   metadata_json jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
@@ -50,7 +50,7 @@ alter table public.notification_recipient_preferences
   add column if not exists quiet_hours_end_hour integer not null default 8,
   add column if not exists quiet_hours_timezone text not null default 'Africa/Johannesburg',
   add column if not exists muted_until timestamptz,
-  add column if not exists unsubscribe_token text not null default encode(gen_random_bytes(24), 'hex'),
+  add column if not exists unsubscribe_token text not null default encode(extensions.gen_random_bytes(24), 'hex'),
   add column if not exists source text not null default 'account_settings',
   add column if not exists metadata_json jsonb not null default '{}'::jsonb;
 

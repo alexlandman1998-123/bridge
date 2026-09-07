@@ -22,10 +22,10 @@ select
   values.event_key,
   values.internal_key,
   values.provider_template_name,
-  coalesce(values.language_code, 'en_US'),
+  'en_US',
   coalesce(values.status, 'disabled'),
   coalesce(values.is_default, false),
-  coalesce(values.source, 'whatsapp_seed'),
+  'whatsapp_seed',
   jsonb_build_object('origin', '202608200002_whatsapp_template_seed')
 from (
   values
