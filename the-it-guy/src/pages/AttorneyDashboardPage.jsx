@@ -2,7 +2,6 @@ import {
   AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
-  ChevronRight,
   CircleDollarSign,
   CalendarDays,
   FileCheck2,
@@ -92,6 +91,11 @@ function formatCurrency(value) {
     return `R${Math.round(amount / 1000)}k`
   }
   return `R${formatNumber(amount)}`
+}
+
+function formatMatterValue(value) {
+  const amount = Number(value || 0)
+  return amount > 0 ? formatCurrency(amount) : 'Not captured'
 }
 
 function clampPercentage(value) {
@@ -308,39 +312,6 @@ function formatProfessionalRole(role = '') {
 
 function ActiveMatterStrip({ lanes = {} }) {
   const rows = getActiveMatterRows(lanes)
-  const railRef = useRef(null)
-  const [canScrollNext, setCanScrollNext] = useState(false)
-
-  useEffect(() => {
-    const rail = railRef.current
-    if (!rail) return undefined
-
-    const updateOverflow = () => {
-      setCanScrollNext(rail.scrollWidth - rail.clientWidth - rail.scrollLeft > 4)
-    }
-    updateOverflow()
-    rail.addEventListener('scroll', updateOverflow, { passive: true })
-    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateOverflow)
-    observer?.observe(rail)
-    return () => {
-      rail.removeEventListener('scroll', updateOverflow)
-      observer?.disconnect()
-    }
-  }, [rows.length])
-
-  const scrollNext = () => {
-    const rail = railRef.current
-    if (!rail) return
-    rail.scrollBy({ left: Math.min(rail.clientWidth * 0.8, 340), behavior: 'smooth' })
-  }
-
-  const handleWheel = (event) => {
-    const rail = railRef.current
-    if (!rail || !event.deltaY || event.deltaX) return
-    if (rail.scrollWidth <= rail.clientWidth) return
-    event.preventDefault()
-    rail.scrollLeft += event.deltaY
-  }
 
   return (
     <section className={`${surfaceClass} overflow-hidden`} aria-labelledby="active-matters-heading">
@@ -351,27 +322,22 @@ function ActiveMatterStrip({ lanes = {} }) {
         </Link>
       </header>
       {rows.length ? (
-        <div className="relative">
-          <div
-            ref={railRef}
-            onWheel={handleWheel}
-            className="flex snap-x snap-proximity gap-4 overflow-x-auto overflow-y-hidden px-5 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          >
+        <div className="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-3">
             {rows.map((matter) => {
               const progress = clampPercentage(matter.progress || 0)
               const progressTone = getMatterProgressTone(matter.riskTone)
               const roleLabel = (matter.roleLabels || []).join(' / ') || matter.matterType || 'Matter'
               const statusLabel = matter.statusLabel || 'In Progress'
               const propertyLabel = ['property pending', 'property address pending', 'property details pending'].includes(normalizeText(matter.propertyAddress).toLowerCase())
-                ? `${matter.matterType || 'Property'} matter`
-                : matter.propertyAddress || `${matter.matterType || 'Property'} matter`
+                ? 'Property details pending'
+                : matter.propertyAddress || 'Property details pending'
 
               return (
                 <Link
                   key={matter.id}
                   to={matter.href || '/attorney/matters'}
                   state={{ matterPreview: getMatterPreview(matter) }}
-                  className="group flex min-h-[268px] w-[88vw] shrink-0 snap-start flex-col rounded-2xl border border-slate-200 border-l-4 border-l-[#00614f] bg-[#f7faf9] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition duration-200 hover:-translate-y-px hover:border-[#a8cbbf] hover:bg-[#f4f8f6] hover:shadow-[0_10px_22px_rgba(15,23,42,0.075)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:w-[335px]"
+                  className="group flex min-h-[268px] min-w-0 flex-col rounded-2xl border border-slate-200 border-l-4 border-l-[#00614f] bg-[#f7faf9] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition duration-200 hover:-translate-y-px hover:border-[#a8cbbf] hover:bg-[#f4f8f6] hover:shadow-[0_10px_22px_rgba(15,23,42,0.075)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
                 >
                   <header className="flex items-start justify-between gap-3">
                     <span className="min-w-0">
@@ -390,7 +356,7 @@ function ActiveMatterStrip({ lanes = {} }) {
 
                   <section className="mt-4 grid grid-cols-2 divide-x divide-slate-200">
                     <span className="min-w-0 pr-4">
-                      <strong className="block truncate text-sm font-semibold text-slate-950">{formatCurrency(matter.value || matter.purchasePrice)}</strong>
+                      <strong className="block truncate text-sm font-semibold text-slate-950">{formatMatterValue(matter.value || matter.purchasePrice)}</strong>
                       <span className="mt-1 block text-[11px] font-medium text-slate-500">Value</span>
                     </span>
                     <span className="min-w-0 pl-4">
@@ -411,17 +377,6 @@ function ActiveMatterStrip({ lanes = {} }) {
                 </Link>
               )
             })}
-          </div>
-          {canScrollNext ? (
-            <button
-              type="button"
-              onClick={scrollNext}
-              className="absolute right-3 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-[0_5px_15px_rgba(15,23,42,0.12)] transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
-              aria-label="Scroll active matters forward"
-            >
-              <ChevronRight size={20} />
-            </button>
-          ) : null}
         </div>
       ) : (
         <div className="flex min-h-[86px] items-center px-5 py-4">
