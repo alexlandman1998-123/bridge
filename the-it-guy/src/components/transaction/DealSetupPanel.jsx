@@ -40,6 +40,7 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
       setDraft(result.setup)
       setIsDirty(false)
       setRefreshToken((value) => value + 1)
+      window.dispatchEvent(new CustomEvent('deal-setup:updated', { detail: { transactionId } }))
       await onSaved?.(result)
     } catch (saveError) { setError(saveError.message || 'Deal Setup could not be saved.') } finally { setBusy(false) }
   }

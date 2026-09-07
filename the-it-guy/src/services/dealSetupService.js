@@ -4,6 +4,8 @@ import { buildDealSetupReadiness } from '../core/transactions/dealSetupReadiness
 import { auditDealSetupCompatibility as auditDealSetupCompatibilityModel } from '../core/transactions/dealSetupCompatibilityAudit.js'
 import { supabase } from '../lib/supabaseClient.js'
 import { listTransactionBuyerParties } from './buyerProfileReuseService.js'
+import { resolveTransactionDocumentRequirements } from './documents/transactionCanonicalDocumentRequirementService.js'
+import { syncCanonicalRequiredDocumentsForTransactionContext } from './documents/documentRequestCanonicalTransactionSyncService.js'
 
 const text = (value) => String(value || '').trim()
 
@@ -39,6 +41,36 @@ export async function getDealSetupReadiness({ transactionId, client = supabase }
   return buildDealSetupReadiness({ setup: deal.setup, requirements: requirements.requirements })
 }
 
+// The documents workspace and partner handoffs must be recalculated from the
+// saved Deal Setup rather than from older onboarding snapshots.
+export async function syncDealSetupDownstream({ transactionId, client = supabase } = {}) {
+  const deal = await loadCanonicalDealSetup({ transactionId, client })
+  const { setup, transaction } = deal
+  const formData = {
+    purchaser_type: setup.terms.purchaserType || null,
+    purchase_finance_type: setup.finance.type || null,
+    reservation_required: setup.terms.reservationRequired === true,
+    reservation_amount: setup.terms.reservationAmount,
+    cash_amount: setup.finance.cashAmount,
+    bond_amount: setup.finance.bondAmount,
+  }
+  const documentResolution = await resolveTransactionDocumentRequirements({
+    transactionId,
+    transaction,
+    formData,
+    client,
+    writeLegacyProjection: true,
+  })
+  const documentRequestSync = await syncCanonicalRequiredDocumentsForTransactionContext({
+    client,
+    transactionId,
+    transaction,
+    onboardingFormData: formData,
+    audience: 'auto',
+  })
+  return { deal, documentResolution, documentRequestSync }
+}
+
 // Deliberately read-only. Phase 8 reports legacy gaps before a separately
 // authorised migration/backfill writes to production transactions.
 export async function auditDealSetupCompatibility({ transactionId, client = supabase } = {}) {
@@ -64,5 +96,6 @@ export async function saveCanonicalDealTerms({ transactionId, terms = {}, financ
   }
   const result = await client.from('transactions').update(payload).eq('id', text(transactionId)).select('id').single()
   if (result.error) throw result.error
-  return loadCanonicalDealSetup({ transactionId, client })
+  const downstream = await syncDealSetupDownstream({ transactionId, client })
+  return { ...downstream.deal, downstream }
 }

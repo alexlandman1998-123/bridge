@@ -118,6 +118,18 @@ export async function listBuyerProfileTransactions({ buyerId, client = supabase 
   return result.data || []
 }
 
+export async function listReusableBuyerProfileTransactionIds({ buyerId, client = supabase } = {}) {
+  const normalizedBuyerId = text(buyerId)
+  if (!normalizedBuyerId) throw new Error('Buyer is required.')
+  const db = requireClient(client)
+  const result = await db.from('transaction_participants')
+    .select('transaction_id')
+    .eq('buyer_party_id', normalizedBuyerId)
+    .is('removed_at', null)
+  if (result.error) throw result.error
+  return [...new Set((result.data || []).map((row) => text(row.transaction_id)).filter(Boolean))]
+}
+
 export async function saveReusableBuyerProfile({ buyerId, profileData, actorUserId = null, client = supabase } = {}) {
   const normalizedBuyerId = text(buyerId)
   if (!normalizedBuyerId) throw new Error('Buyer is required.')

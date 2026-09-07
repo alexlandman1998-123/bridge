@@ -10,6 +10,7 @@ import {
   setTransactionPrimaryBuyerParty,
   updateTransactionBuyerParty,
 } from '../../services/buyerProfileReuseService'
+import { syncDealSetupDownstream } from '../../services/dealSetupService'
 
 const displayName = (party = {}) => party.participant_name || party.participant_email || 'Client / Buyer'
 const BUYER_PROFILE_FIELDS = {
@@ -59,9 +60,11 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
   const normalizedPurchaserType = BUYER_PROFILE_FIELDS[purchaserType] ? purchaserType : 'individual'
   const profileFields = BUYER_PROFILE_FIELDS[normalizedPurchaserType]
 
-  async function refresh() {
+  async function refresh({ syncDownstream = true } = {}) {
+    if (syncDownstream) await syncDealSetupDownstream({ transactionId })
     const rows = await listTransactionBuyerParties({ transactionId })
     setParties(rows)
+    if (syncDownstream) window.dispatchEvent(new CustomEvent('deal-setup:updated', { detail: { transactionId } }))
     await onUpdated?.()
   }
 

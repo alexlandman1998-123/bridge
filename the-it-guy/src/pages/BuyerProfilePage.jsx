@@ -8,9 +8,11 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   getReusableBuyerProfile,
   listBuyerProfileTransactions,
+  listReusableBuyerProfileTransactionIds,
   saveBuyerProfileIdentity,
   saveReusableBuyerProfile,
 } from '../services/buyerProfileReuseService'
+import { syncDealSetupDownstream } from '../services/dealSetupService'
 
 const profileFieldsByPurchaserType = {
   individual: [
@@ -98,6 +100,9 @@ export default function BuyerProfilePage() {
         saveBuyerProfileIdentity({ buyerId: buyer.id, name: buyer.name, email: buyer.email, phone: buyer.phone }),
         saveReusableBuyerProfile({ buyerId: buyer.id, profileData }),
       ])
+      const linkedTransactionIds = await listReusableBuyerProfileTransactionIds({ buyerId: buyer.id })
+      await Promise.all(linkedTransactionIds.map((transactionId) => syncDealSetupDownstream({ transactionId })))
+      window.dispatchEvent(new CustomEvent('buyer-profile:updated', { detail: { buyerId: buyer.id } }))
       setBuyer(savedBuyer)
       setProfileData(savedProfile.profile_data || {})
       setNotice('Reusable buyer profile saved. Future transactions can reference this information without re-entry.')
