@@ -10,6 +10,7 @@ create index if not exists rental_application_documents_application_idx on publi
 alter table public.rental_application_documents enable row level security;
 revoke all on public.rental_application_documents from anon, authenticated;
 grant select, insert, update on public.rental_application_documents to authenticated;
+drop policy if exists rental_application_documents_staff_scope on public.rental_application_documents;
 create policy rental_application_documents_staff_scope on public.rental_application_documents for all to authenticated using (exists (select 1 from public.rental_applications application join public.rental_vacancies vacancy on vacancy.id = application.vacancy_id join public.rental_properties property on property.id = vacancy.property_id where application.id = application_id and public.rental_branch_access(property.organisation_id, property.branch_id))) with check (exists (select 1 from public.rental_applications application join public.rental_vacancies vacancy on vacancy.id = application.vacancy_id join public.rental_properties property on property.id = vacancy.property_id where application.id = application_id and public.rental_branch_access(property.organisation_id, property.branch_id)));
 insert into storage.buckets(id,name,public) values ('rental-application-documents','rental-application-documents',false) on conflict(id) do nothing;
 commit;
