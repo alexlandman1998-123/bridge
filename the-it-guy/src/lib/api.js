@@ -8,6 +8,7 @@ import {
 import { resolveClientPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { updateDocumentClientVisibilityRecord } from '../domains/documents/api.js'
 import { hydrateMatterPropertyContext } from '../services/matterPropertyContext'
+import { reuseBuyerProfileForTransaction } from '../services/buyerProfileReuseService.js'
 export { generateMandateDocumentFromTemplate } from './generateMandateDocument'
 import {
   CANONICAL_TRANSACTION_STAGES,
@@ -18420,6 +18421,16 @@ export function invalidateDevelopmentOptionsCache() {
   developmentOptionsInFlight = null
 }
 
+// Transaction mutations must evict every lightweight shell that can otherwise
+// outlive the canonical lifecycle update. Call this before re-reading a matter
+// after workflow, finance, or lifecycle changes.
+export function invalidateTransactionWorkspaceCoreCache(transactionId) {
+  const normalizedTransactionId = String(transactionId || '').trim()
+  if (!normalizedTransactionId) return
+  unitWorkspaceShellCache.delete(normalizedTransactionId)
+  transactionRouteCoreCache.delete(normalizedTransactionId)
+}
+
 async function fetchDevelopmentIdsForOrganisation(client, organisationId = '') {
   const normalizedOrganisationId = String(organisationId || '').trim()
   if (!normalizedOrganisationId) return []
@@ -30252,8 +30263,10 @@ function normalizeWizardBuyerParty(party = {}, index = 0, fallbackPurchaserType 
       party.passport_number,
   )
   const isPrimary = party.primary === true || party.isPrimary === true || party.is_primary === true || role === 'primary_purchaser'
+  const buyerId = normalizeNullableUuid(party.buyerId || party.buyer_id || party.buyerProfileId || party.buyer_profile_id)
+  const ownershipPercentage = normalizeOptionalNumber(party.ownershipPercentage || party.ownership_percentage)
 
-  if (![fullName, email, phone, identityNumber].some(Boolean)) {
+  if (![fullName, email, phone, identityNumber, buyerId].some(Boolean)) {
     return null
   }
 
@@ -30274,6 +30287,10 @@ function normalizeWizardBuyerParty(party = {}, index = 0, fallbackPurchaserType 
     phone,
     identityNumber,
     identity_number: identityNumber,
+    buyerId,
+    buyer_id: buyerId,
+    ownershipPercentage: ownershipPercentage !== null && ownershipPercentage >= 0 && ownershipPercentage <= 100 ? ownershipPercentage : null,
+    ownership_percentage: ownershipPercentage !== null && ownershipPercentage >= 0 && ownershipPercentage <= 100 ? ownershipPercentage : null,
     signatory: party.signatory !== false,
     isPrimary,
     is_primary: isPrimary,
@@ -30299,6 +30316,7 @@ function resolveWizardBuyerParties(setup = {}, purchaserType = 'individual') {
         lastName: setup.buyerLastName,
         email: setup.buyerEmail,
         phone: setup.buyerPhone,
+        buyerProfileId: setup.buyerProfileId || setup.buyer_profile_id,
         signatory: true,
         primary: true,
       },
@@ -30314,6 +30332,85 @@ function resolveWizardBuyerParties(setup = {}, purchaserType = 'individual') {
     ...party,
     sequence: index + 1,
   }))
+}
+
+async function persistWizardBuyerParticipants(client, { transactionId, buyerParties = [], primaryBuyer = null, organisationId = null, actorUserId = null }) {
+  if (!transactionId || !buyerParties.length) return []
+
+  const participants = []
+  for (const [index, party] of buyerParties.entries()) {
+    let buyerParty = party.buyerId ? null : party.isPrimary ? primaryBuyer : null
+    if (party.buyerId) {
+      const selected = await client.from('buyers').select('id, name, email, phone').eq('id', party.buyerId).maybeSingle()
+      if (selected.error) throw selected.error
+      buyerParty = selected.data
+    }
+    if (!buyerParty) {
+      buyerParty = await findOrCreateBuyer(client, {
+        name: party.name || party.email || party.phone || `Buyer party ${index + 1}`,
+        phone: party.phone,
+        email: party.email,
+        organisationId,
+      })
+    }
+
+    const payload = {
+      transaction_id: transactionId,
+      buyer_party_id: buyerParty.id,
+      participant_name: buyerParty.name || party.name,
+      participant_email: buyerParty.email || party.email || null,
+      participant_phone: buyerParty.phone || party.phone || null,
+      role_type: 'buyer',
+      legal_role: 'none',
+      transaction_role: 'buyer',
+      status: 'active',
+      buyer_party_role: party.isPrimary ? 'primary_buyer' : 'additional_buyer',
+      buyer_party_position: index,
+      is_primary_buyer: Boolean(party.isPrimary),
+      buyer_profile_status: 'draft',
+      buyer_onboarding_status: 'not_started',
+      buyer_portal_invite_status: 'not_sent',
+      buyer_source: party.buyerId ? 'reusable_buyer_profile' : 'transaction_wizard',
+      ownership_percentage: party.ownershipPercentage,
+      signing_required: party.signatory !== false,
+      buyer_metadata: {
+        modelVersion: 'transaction_buyers_phase3_v1',
+        partyRole: party.role,
+        purchaserType: party.purchaserType,
+        identityNumber: party.identityNumber || null,
+        reusedBuyerProfile: Boolean(party.buyerId),
+      },
+      updated_at: new Date().toISOString(),
+    }
+    const existing = await client
+      .from('transaction_participants')
+      .select('id')
+      .eq('transaction_id', transactionId)
+      .eq('transaction_role', 'buyer')
+      .eq('buyer_party_id', buyerParty.id)
+      .maybeSingle()
+    if (existing.error) throw existing.error
+    const result = existing.data?.id
+      ? await client.from('transaction_participants').update(payload).eq('id', existing.data.id).select('id').single()
+      : await client.from('transaction_participants').insert(payload).select('id').single()
+    if (result.error) throw result.error
+    const participant = { ...payload, id: result.data?.id || existing.data?.id, buyerPartyId: buyerParty.id }
+    participants.push(participant)
+
+    if (party.buyerId) {
+      await reuseBuyerProfileForTransaction({ transactionId, buyerId: buyerParty.id, actorUserId, client })
+    }
+  }
+
+  const primary = participants.find((participant) => participant.is_primary_buyer)
+  if (primary?.id) {
+    const update = await client
+      .from('transactions')
+      .update({ primary_buyer_participant_id: primary.id, buyer_parties_model_version: 'transaction_buyers_phase3_v1' })
+      .eq('id', transactionId)
+    if (update.error) throw update.error
+  }
+  return participants
 }
 
 function normalizeWizardHandoffChecklist(input = {}) {
@@ -30787,8 +30884,19 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   }
 
   let buyer = null
+  const selectedBuyerProfileId = normalizeNullableUuid(setup?.buyerProfileId || setup?.buyer_profile_id)
+  if (selectedBuyerProfileId) {
+    const selectedBuyer = await client
+      .from('buyers')
+      .select('id, name, phone, email')
+      .eq('id', selectedBuyerProfileId)
+      .maybeSingle()
+    if (selectedBuyer.error) throw selectedBuyer.error
+    if (!selectedBuyer.data) throw new Error('The selected buyer profile is no longer available.')
+    buyer = selectedBuyer.data
+  }
   const hasBuyerSeed = Boolean(setup?.buyerName?.trim() || setup?.buyerEmail?.trim() || setup?.buyerPhone?.trim())
-  if (hasBuyerSeed) {
+  if (!buyer && hasBuyerSeed) {
     buyer = await findOrCreateBuyer(client, {
       name: setup.buyerName,
       phone: setup.buyerPhone,
@@ -31380,6 +31488,17 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       buyer,
     })
     participantRows = participantsResult.participants || []
+    const buyerPartyRows = await persistWizardBuyerParticipants(client, {
+      transactionId: transaction.id,
+      buyerParties,
+      primaryBuyer: buyer,
+      organisationId: resolvedOrganisationId,
+      actorUserId,
+    })
+    if (buyerPartyRows.length) {
+      const participantIds = new Set(participantRows.map((item) => item.id).filter(Boolean))
+      participantRows = [...participantRows, ...buyerPartyRows.filter((item) => item.id && !participantIds.has(item.id))]
+    }
     await logTransactionEventIfPossible(client, {
       transactionId: transaction.id,
       eventType: 'ParticipantAssigned',
@@ -35283,7 +35402,7 @@ export async function fetchTransactionCoreById(transactionId) {
 // long-lived columns form the route contract; richer metadata is hydrated after
 // the workspace is already interactive.
 const TRANSACTION_ROUTE_CORE_SELECT =
-  'id, development_id, unit_id, listing_id, buyer_id, transaction_type, property_type, property_tenure, property_address_line_1, property_address_line_2, suburb, city, province, property_description, purchase_price, sales_price, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at'
+  'id, development_id, unit_id, listing_id, buyer_id, transaction_type, property_type, property_tenure, property_address_line_1, property_address_line_2, suburb, city, province, property_description, purchase_price, sales_price, finance_type, lifecycle_state, current_main_stage, current_sub_stage_summary, current_detailed_stage, operational_state, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
 export async function fetchTransactionRouteCoreById(transactionId) {
   if (!transactionId) return null

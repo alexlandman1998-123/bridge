@@ -100,6 +100,14 @@ function getLifecycleStageOrder(transaction = {}) {
   ]
 }
 
+function getCanonicalLifecycleProgressPercent(stageOrder = [], currentStage = '', { completed = false } = {}) {
+  if (completed) return 100
+  const currentIndex = stageOrder.indexOf(currentStage)
+  return stageOrder.length > 1
+    ? Math.round((Math.max(currentIndex, 0) / (stageOrder.length - 1)) * 100)
+    : 0
+}
+
 function toTitleLabel(value = '') {
   return normalizeText(value)
     .replace(/_/g, ' ')
@@ -257,7 +265,7 @@ export function buildTransactionLifecycleSummaryFromRollup(rollup = {}, options 
     transactionId: normalizeText(rollup.transactionId || options.transactionId),
     currentStage,
     status: lifecycleStatus,
-    progressPercent: Number.isFinite(Number(rollup.progressPercent)) ? Number(rollup.progressPercent) : 0,
+    progressPercent: getCanonicalLifecycleProgressPercent(stageOrder, currentStage, { completed: isComplete }),
     stages: stageOrder.map((stage, index) => {
       const blocked = Array.isArray(blockersByStage[stage]) && blockersByStage[stage].length > 0
       let state = 'upcoming'
@@ -380,10 +388,7 @@ export function buildTransactionLifecycleSummary({
     transactionId: normalizeText(transaction?.id || transaction?.transaction_id || transaction?.transactionId),
     currentStage: adjustedStage,
     status: lifecycleStatus,
-    progressPercent:
-      stageOrder.length > 1
-        ? Math.round((Math.max(currentIndex, 0) / (stageOrder.length - 1)) * 100)
-        : 0,
+    progressPercent: getCanonicalLifecycleProgressPercent(stageOrder, adjustedStage, { completed: lifecycleStatus === 'completed' }),
     stages: stageOrder.map((stage, index) => ({
       key: stage,
       label: TRANSACTION_LIFECYCLE_STAGE_LABELS[stage],

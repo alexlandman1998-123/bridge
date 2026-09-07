@@ -388,6 +388,7 @@ async function publishAttorneySharedProgress(client, {
   status,
   sourceType,
   sourceId,
+  visibility = null,
 }) {
   const definition = getAttorneyStageDefinition(stepKey, laneKey)?.sharedProgress
   if (!definition) return null
@@ -396,7 +397,7 @@ async function publishAttorneySharedProgress(client, {
     definition,
     transactionId,
     status,
-    visibility: definition.defaultVisibility,
+    visibility: normalizeVisibility(visibility || definition.defaultVisibility),
     safeExplanation: getSafeAttorneyProgressExplanation(status),
     expectedNextStep: getNextAttorneyStageLabel(laneKey, stepKey),
     sourceType,
@@ -1738,6 +1739,7 @@ export async function updateAttorneyWorkflowLaneStage({
     status: nextLaneStatus,
     sourceType: 'attorney_workflow_lane',
     sourceId: lane.id,
+    visibility,
   })
 
   const actionKey = normalizedLaneKey === 'bond'
@@ -1777,7 +1779,22 @@ export async function updateAttorneyWorkflowLaneStage({
     optionalUntilMigrated: true,
   })
 
-  return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+  const operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+  const canonicalTransaction = operations?.transaction || await fetchTransaction(client, normalizedTransactionId)
+  return {
+    ...operations,
+    canonicalMatter: {
+      id: canonicalTransaction.id,
+      lifecycleState: canonicalTransaction.lifecycle_state || null,
+      currentMainStage: canonicalTransaction.current_main_stage || null,
+      currentSubStageSummary: canonicalTransaction.current_sub_stage_summary || null,
+      currentDetailedStage: canonicalTransaction.current_detailed_stage || null,
+      operationalState: canonicalTransaction.operational_state || null,
+      stage: canonicalTransaction.stage || null,
+      updatedAt: canonicalTransaction.updated_at || nowIso || null,
+      workflowMutation: null,
+    },
+  }
 }
 
 export async function updateAttorneyWorkflowStepStatus({
@@ -1866,9 +1883,25 @@ export async function updateAttorneyWorkflowStepStatus({
     status: normalizedStatus,
     sourceType: 'attorney_workflow_step',
     sourceId: stepResult.data.id,
+    visibility: normalizedVisibility,
   })
 
-  return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+  const operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+  const canonicalTransaction = operations?.transaction || await fetchTransaction(client, normalizedTransactionId)
+  return {
+    ...operations,
+    canonicalMatter: {
+      id: canonicalTransaction.id,
+      lifecycleState: canonicalTransaction.lifecycle_state || null,
+      currentMainStage: canonicalTransaction.current_main_stage || null,
+      currentSubStageSummary: canonicalTransaction.current_sub_stage_summary || null,
+      currentDetailedStage: canonicalTransaction.current_detailed_stage || null,
+      operationalState: canonicalTransaction.operational_state || null,
+      stage: canonicalTransaction.stage || null,
+      updatedAt: canonicalTransaction.updated_at || atomicUpdate.data?.updatedAt || null,
+      workflowMutation: atomicUpdate.data || null,
+    },
+  }
 }
 
 export async function getAttorneyUpdateOptionsForTransaction(transactionId, attorneyRole = 'transfer_attorney') {

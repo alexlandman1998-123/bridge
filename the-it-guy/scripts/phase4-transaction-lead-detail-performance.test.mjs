@@ -9,7 +9,7 @@ const buyerLoader = await readFile(new URL('../src/pages/agency/buyerLeadWorkspa
 
 assert.match(
   transactionApi,
-  /const TRANSACTION_ROUTE_CORE_SELECT\s*=\s*\n\s*'id, development_id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at'/,
+  /const TRANSACTION_ROUTE_CORE_SELECT\s*=\s*\n\s*'id, development_id, unit_id,[^']*lifecycle_state, current_main_stage, current_sub_stage_summary, current_detailed_stage,[^']*stage, attorney, bond_originator, next_action, updated_at, created_at'/,
   'Transaction first paint must use the stable route-core projection.',
 )
 assert.match(
@@ -21,6 +21,13 @@ assert.match(
   transactionFacade,
   /'fetchTransactionRouteCoreById'/,
   'The lazy transaction API facade must expose route-core loading.',
+)
+assert.match(transactionApi, /export function invalidateTransactionWorkspaceCoreCache\(transactionId\)/)
+assert.match(transactionFacade, /'invalidateTransactionWorkspaceCoreCache'/)
+assert.match(
+  transactionPage,
+  /invalidateTransactionWorkspaceCoreCache\(transaction\.id\)[\s\S]*?fetchTransactionRouteCoreById\(transaction\.id\)[\s\S]*?refreshTransactionDatasets\(\['workflow', 'activity'\]/,
+  'Workflow changes must rehydrate the canonical transaction projection before dependent workspace datasets.',
 )
 
 const transactionCoreIndex = transactionPage.indexOf('await fetchTransactionRouteCoreById(transactionId)')

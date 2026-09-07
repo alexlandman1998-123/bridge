@@ -108,6 +108,7 @@ import {
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
 import { buildTransferWorkspaceViewModel } from '../services/attorneyWorkflow/transferWorkspaceViewModel.js'
 import { buildLegalTaskWorkbenchModel } from '../core/transactions/legalTaskWorkbenchModel.js'
+import { getCanonicalLegalWorkflowProgressPercent } from '../core/transactions/legalWorkflowProgress.js'
 import { recordLegalWorkspaceUxEvent } from '../services/legalWorkspaceUxTelemetryService.js'
 import { getAttorneyStageDefinitionsForLane, normalizeAttorneyStageKey } from '../constants/attorneyWorkflowStages.js'
 import {
@@ -137,6 +138,7 @@ import {
   getTransactionFinanceWorkflow,
   getOrCreateTransactionOnboarding,
   getRegistrationBlockers,
+  invalidateTransactionWorkspaceCoreCache,
   markTransactionCompleted,
   markTransactionRegistered,
   recordTransactionPreApprovalOutcome,
@@ -3892,16 +3894,11 @@ function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null
   })
 }
 
-function getLegalWorkflowProgressPercent(steps = []) {
-  if (!steps.length) return 0
-  const completed = steps.filter((step) => step.displayStatus === 'completed').length
-  const hasCurrent = steps.some((step) => step.isCurrent && step.displayStatus !== 'completed')
-  return Math.max(0, Math.min(100, Math.round(((completed + (hasCurrent ? 0.5 : 0)) / steps.length) * 100)))
-}
-
 function getConditionalLegalWorkflowProgress({ workflowKey = 'transfer', lane = null, facts = {}, fallback = 0 } = {}) {
   const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane, facts })
-  return steps.length ? getLegalWorkflowProgressPercent(steps) : Number(fallback || 0)
+  return steps.length
+    ? getCanonicalLegalWorkflowProgressPercent({ lane, steps })
+    : Math.max(0, Math.min(100, Number(fallback || 0)))
 }
 
 function legalProgressIcon(status) {
@@ -4018,7 +4015,7 @@ function LegalWorkflowProgressBar({
   const facts = diagnostics?.facts || {}
   const workflowKey = workflow.accentKey || workflow.key || 'transfer'
   const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane: workflow.lane, facts })
-  const progress = getLegalWorkflowProgressPercent(steps)
+  const progress = getCanonicalLegalWorkflowProgressPercent({ lane: workflow.lane, steps })
   const reasonChips = workflow.reasonChips?.length ? workflow.reasonChips : buildLegalWorkflowReasonChips(facts, workflowKey)
   const activeIndex = steps.findIndex((item) => item.isCurrent)
   const phaseGroups = buildLegalWorkflowProgressPhases(steps, workflowKey)
@@ -6895,7 +6892,7 @@ function ArchlineMatterHeader({
             </div>
           </div>
 
-          <div className="relative mt-10 grid min-h-[280px] gap-7 md:mt-12 md:min-h-[300px] xl:grid-cols-1 xl:items-stretch">
+          <div className="relative mt-10 grid min-h-[280px] gap-7 md:absolute md:inset-x-6 md:bottom-5 md:mt-0 md:min-h-0 xl:grid-cols-1 xl:items-stretch">
             <div className="archline-matter-header-media hidden min-h-[230px] overflow-hidden rounded-[20px] border border-[rgba(7,30,26,0.07)] bg-[linear-gradient(145deg,#f4f9f7,#edf5f2)] shadow-[0_18px_42px_rgba(7,30,26,0.07)] xl:min-h-[300px]">
               {propertyImageUrl ? (
                 <img src={propertyImageUrl} alt={propertyPrimary} className="h-full w-full object-cover" />
@@ -6912,7 +6909,7 @@ function ArchlineMatterHeader({
               )}
             </div>
 
-            <div className="flex min-w-0 flex-col justify-between gap-6 pb-8 pt-3 md:pb-10 md:pt-5">
+            <div className="flex min-w-0 flex-col justify-between gap-6 pb-8 pt-3 md:pb-0 md:pt-0">
               <div className="min-w-0">
                 <span className="block min-w-0 text-[0.72rem] font-semibold uppercase leading-5 tracking-[0.14em] text-white/70">{reference || 'Matter reference pending'}</span>
                 <div className="mt-3 flex min-w-0 items-start gap-4">
@@ -8202,6 +8199,7 @@ function ArchlineTransferWorkspace({
       linkedDocumentKey: '',
       requiresReason: ['blocked', 'waiting'].includes(action?.status),
       requiresNote: Boolean(action?.requiresNote),
+      visibility: 'professional_shared',
       workPacket: action?.command?.draft?.workPacket || action?.command?.workPacket || null,
     })
   }
@@ -8219,6 +8217,7 @@ function ArchlineTransferWorkspace({
       linkedDocumentKey: '',
       requiresReason: false,
       requiresNote: false,
+      visibility: 'professional_shared',
       workPacket: null,
     })
   }
@@ -8322,15 +8321,15 @@ function ArchlineTransferWorkspace({
     handleTaskWorkAction(workAction)
   }
 
-  async function saveTaskProgress() {
-    if (!selectedTask || !canUpdateSteps || selectedTask.displayStatus === 'completed') return
+  async function markTaskInProgress() {
+    if (!selectedTask || !canUpdateSteps || !['not_started', 'blocked', 'waiting'].includes(selectedTask.displayStatus)) return
     const saved = await onUpdateStep?.(
       selectedTask,
-      selectedTask.displayStatus === 'not_started' ? 'in_progress' : selectedTask.displayStatus,
-      'Draft progress saved from the Work tab.',
+      'in_progress',
+      'Task marked in progress from the Work tab.',
     )
     onUxEvent?.({
-      eventName: 'task_draft_saved',
+      eventName: 'task_marked_in_progress',
       lane: workflowKey,
       taskType: taskWorkbenchModel.taskType,
       status: selectedTask.displayStatus,
@@ -8441,7 +8440,13 @@ function ArchlineTransferWorkspace({
     event.preventDefault()
     if (!statusDraft.task) return
     const nextTaskKey = statusDraft.status === 'completed' ? viewModel.nextActionableTask?.key : ''
-    const updateSucceeded = await onUpdateStep?.(statusDraft.task, statusDraft.status, buildStatusDraftNote(), statusDraft.workPacket || null)
+    const updateSucceeded = await onUpdateStep?.(
+      statusDraft.task,
+      statusDraft.status,
+      buildStatusDraftNote(),
+      statusDraft.workPacket || null,
+      statusDraft.visibility || 'professional_shared',
+    )
     onUxEvent?.({
       eventName: 'task_status_updated',
       lane: workflowKey,
@@ -8472,7 +8477,7 @@ function ArchlineTransferWorkspace({
         onRunAction={handleTaskWorkbenchAction}
         onOpenDocuments={() => onOpenDocuments?.(selectedTask, selectedDocuments)}
         onAddNote={() => onAddNote?.(selectedTask)}
-        onSaveProgress={saveTaskProgress}
+        onMarkInProgress={markTaskInProgress}
         statusDraft={statusDraft}
         onStatusDraftChange={setStatusDraft}
         onSubmitStatusDraft={submitStatusDraft}
@@ -16474,6 +16479,32 @@ function AttorneyTransactionDetail() {
               : 'activity'
     return refreshTransactionDatasets([dataset], { reason })
   }, [refreshTransactionDatasets, workspaceMenu])
+
+  // The transaction route shell is the canonical snapshot used by the header,
+  // lifecycle summary, and matter cards. Dataset refreshes intentionally avoid
+  // reloading it, so a workflow mutation must refresh this separately.
+  const refreshCanonicalTransactionSnapshot = useCallback(async ({
+    requestedTransactionId = transactionId,
+    refreshRollup = true,
+  } = {}) => {
+    const normalizedTransactionId = String(requestedTransactionId || '').trim()
+    if (!normalizedTransactionId) return null
+
+    invalidateTransactionWorkspaceCoreCache(normalizedTransactionId)
+    const coreDetail = await fetchTransactionRouteCoreById(normalizedTransactionId)
+    if (coreDetail) {
+      setData((previous) => previous ? {
+        ...previous,
+        ...coreDetail,
+        transaction: { ...(previous.transaction || {}), ...(coreDetail.transaction || {}) },
+        __coreHydrated: true,
+      } : coreDetail)
+    }
+    if (refreshRollup && USE_TRANSACTION_ROLLUP_OVERVIEW) {
+      await requestTransactionRollup(normalizedTransactionId, { force: true })
+    }
+    return coreDetail
+  }, [requestTransactionRollup, transactionId])
   backgroundRefreshHandlerRef.current = refreshActiveWorkspaceDataset
 
   useEffect(() => {
@@ -16648,7 +16679,16 @@ function AttorneyTransactionDetail() {
     includeNotifications: true,
     pollingIntervalMs: workspaceRole === 'agent' ? 15_000 : 30_000,
     onRefresh: async ({ reason = 'unknown' } = {}) => {
-      await refreshActiveWorkspaceDataset({ reason: `live:${reason}` })
+      // A refresh signal represents an atomic transaction mutation. Reload the
+      // canonical route snapshot first, then refresh workflow/activity and the
+      // currently visible panel so every role sees the same lifecycle state.
+      await refreshCanonicalTransactionSnapshot({
+        requestedTransactionId: transaction?.id || transactionId,
+      })
+      await Promise.all([
+        refreshTransactionDatasets(['workflow', 'activity'], { reason: `live:${reason}` }),
+        refreshActiveWorkspaceDataset({ reason: `live:${reason}:active` }),
+      ])
     },
   })
 
@@ -18400,7 +18440,36 @@ function AttorneyTransactionDetail() {
       const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id)
       setWorkflowOperations(operations)
     }
-    void refreshTransactionDatasets(['workflow', 'activity'], { reason: 'workflow_mutation' })
+    if (!transaction?.id) return
+
+    const canonicalMatter = nextOperations?.canonicalMatter || null
+    if (canonicalMatter?.id === transaction.id) {
+      setData((previous) => previous ? {
+        ...previous,
+        transaction: {
+          ...(previous.transaction || {}),
+          lifecycle_state: canonicalMatter.lifecycleState || previous.transaction?.lifecycle_state,
+          current_main_stage: canonicalMatter.currentMainStage || previous.transaction?.current_main_stage,
+          current_sub_stage_summary: canonicalMatter.currentSubStageSummary || previous.transaction?.current_sub_stage_summary,
+          current_detailed_stage: canonicalMatter.currentDetailedStage || previous.transaction?.current_detailed_stage,
+          operational_state: canonicalMatter.operationalState || previous.transaction?.operational_state,
+          stage: canonicalMatter.stage || previous.transaction?.stage,
+          updated_at: canonicalMatter.updatedAt || previous.transaction?.updated_at,
+        },
+      } : previous)
+    }
+
+    await refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id })
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('itg:transaction-updated', {
+        detail: {
+          transactionId: transaction.id,
+          source: 'attorney_workflow_atomic_update',
+          mutation: canonicalMatter?.workflowMutation || null,
+        },
+      }))
+    }
+    await refreshTransactionDatasets(['workflow', 'activity'], { reason: 'workflow_mutation' })
   }
 
   async function handleResendProgressNotification(delivery) {
@@ -20259,13 +20328,14 @@ function AttorneyTransactionDetail() {
     () => buildAttorneyDailyActionQueueItems(legalWorkflowModels),
     [legalWorkflowModels],
   )
-  async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note, workPacket = null) {
+  async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note, workPacket = null, visibility = 'professional_shared') {
     const lane = workflow?.lane || null
     if (!lane) return false
     const draft = buildWorkflowInlineStepDraft(lane, step, status)
     return submitWorkflowStepUpdate({
       ...draft,
       note: typeof note === 'string' ? note : draft.note,
+      visibility,
       workPacket,
     })
   }
@@ -22320,7 +22390,7 @@ function AttorneyTransactionDetail() {
               parties={archlinePartyItems}
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
-              onUpdateStep={(step, status, note, workPacket) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket)}
+              onUpdateStep={(step, status, note, workPacket, visibility) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket, visibility)}
               onUploadDocument={(task, documents = []) => {
                 const targetDocument = (documents || []).find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
                 if (targetDocument?.requirement || targetDocument?.requiredDocument) {

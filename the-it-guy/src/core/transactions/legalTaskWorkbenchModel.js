@@ -107,10 +107,28 @@ function resolveRequirementAction(requirement = {}, actions = []) {
   const haystack = `${requirement.id || ''} ${requirement.label || ''} ${requirement.description || ''} ${(requirement.fields || []).join(' ')}`.toLowerCase()
   const available = actions.filter((action) => !action.disabled)
   const pick = (...ids) => available.find((action) => ids.includes(action.id)) || actions.find((action) => ids.includes(action.id)) || null
-  if (/document|agreement|otp|fica|guarantee|title deed|certificate/.test(haystack)) return pick('upload_document', 'request_document', 'open_documents')
-  if (/finance|bond|loan|bank|guarantee/.test(haystack)) return pick('capture_data', 'open_finance')
-  if (/buyer|seller|party|authority|contact|transaction type/.test(haystack)) return pick('capture_data', 'open_parties', 'open_matter')
-  return pick('capture_data', 'open_matter', 'add_note')
+  const present = (action) => {
+    if (!action) return null
+    const labels = {
+      capture_data: 'Capture details',
+      upload_document: 'Upload document',
+      request_document: 'Request document',
+      open_documents: 'Review documents',
+      open_finance: 'Open finance details',
+      open_parties: 'Open party details',
+      open_matter: 'Open matter details',
+      add_note: 'Add a note',
+    }
+    return {
+      ...action,
+      label: labels[action.id] || action.label,
+      description: action.description || `Resolve ${text(requirement.label || 'this requirement')} before completing the task.`,
+    }
+  }
+  if (/document|agreement|otp|fica|guarantee|title deed|certificate/.test(haystack)) return present(pick('upload_document', 'request_document', 'open_documents'))
+  if (/finance|bond|loan|bank|guarantee/.test(haystack)) return present(pick('capture_data', 'open_finance'))
+  if (/buyer|seller|party|authority|contact|transaction type/.test(haystack)) return present(pick('capture_data', 'open_parties', 'open_matter'))
+  return present(pick('capture_data', 'open_matter', 'add_note'))
 }
 
 export function buildLegalTaskWorkbenchModel({
@@ -147,9 +165,10 @@ export function buildLegalTaskWorkbenchModel({
   const attentionItems = buildAttentionItems(task)
   const canComplete = Boolean(task.completionReadiness?.canComplete)
   const completeAction = normalizedStatusActions.find((action) => action.id === 'mark_complete') || null
+  const canMarkInProgress = ['not_started', 'blocked', 'waiting'].includes(task.displayStatus)
   const visibilityPolicy = task.operationalContract?.visibilityPolicy || {}
   const clientAudience = visibilityPolicy.clientAudience || []
-  const clientUpdateVisible = visibilityPolicy.clientVisibleAllowed !== false && visibilityPolicy.defaultVisibility === 'client_visible' && clientAudience.length > 0
+  const clientUpdateAvailable = visibilityPolicy.clientVisibleAllowed !== false && clientAudience.length > 0
   const operationalHealth = buildLegalWorkflowOperationalHealthModel({ tasks: workflowTasks })
   const showOwner = Boolean(task.ownerLabel) && ['blocked', 'waiting', 'delayed'].includes(task.displayStatus)
   const requirementActions = Object.fromEntries(
@@ -175,10 +194,12 @@ export function buildLegalTaskWorkbenchModel({
     primaryAction,
     secondaryActions,
     completeAction,
+    canMarkInProgress,
+    markInProgressLabel: task.displayStatus === 'not_started' ? 'Start task' : 'Resume task',
     canComplete,
     completionMessage: canComplete
-      ? 'Required evidence is present. This task can be completed.'
-      : task.completionReadiness?.warnings?.[0] || 'Complete the outstanding requirements before closing this task.',
+      ? 'All requirements are complete. Completing this task will advance the matter to its next stage.'
+      : task.completionReadiness?.warnings?.[0] || 'Resolve the outstanding requirements to unlock matter progression.',
     outstandingRequirements,
     requirementActions,
     uploadAction,
@@ -190,11 +211,9 @@ export function buildLegalTaskWorkbenchModel({
     activity: taskContext.activityFeed || [],
     audience: task.operationalContract?.visibilityPolicy?.clientAudience || [],
     clientUpdate: {
-      visible: clientUpdateVisible,
+      available: clientUpdateAvailable,
       audience: clientAudience,
-      label: clientUpdateVisible
-        ? `Visible in ${clientAudience.map((audience) => audience === 'buyer' ? 'Buyer' : audience === 'seller' ? 'Seller' : audience).join(' and ')} transaction progress`
-        : 'Attorney workspace only',
+      audienceLabel: clientAudience.map((audience) => audience === 'buyer' ? 'Buyer' : audience === 'seller' ? 'Seller' : audience).join(' and '),
     },
     operationalHealth,
   }

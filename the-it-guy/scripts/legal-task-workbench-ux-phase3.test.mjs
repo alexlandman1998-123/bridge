@@ -13,7 +13,7 @@ const task = {
   operationalContract: {
     taskType: 'review_evidence',
     primaryAction: { id: 'review_document' },
-    visibilityPolicy: { clientAudience: [] },
+    visibilityPolicy: { clientVisibleAllowed: true, clientAudience: ['buyer', 'seller'] },
   },
 }
 const workActions = [
@@ -30,11 +30,15 @@ const statusActions = [
 const model = buildLegalTaskWorkbenchModel({ task, workActions, statusActions })
 assert.equal(model.primaryAction.id, 'open_documents')
 assert.ok(model.secondaryActions.length <= 2, 'the task workbench should expose at most two secondary actions')
+assert.equal(model.clientUpdate.available, true, 'client publication must be opt-in capable, not the default workflow visibility')
 
 const componentSource = readFileSync(new URL('../src/components/attorney/workflow/LegalTaskWorkbench.jsx', import.meta.url), 'utf8')
-assert.match(componentSource, />Objective</)
 assert.match(componentSource, /legal-task-outstanding-heading/)
-assert.match(componentSource, /Complete task/)
+assert.match(componentSource, /Complete & advance matter/)
+assert.match(componentSource, /Matter progression is locked/)
+assert.match(componentSource, /model\.canMarkInProgress/)
+assert.match(componentSource, /Share a client-safe completion update/)
+assert.match(componentSource, /visibility === 'client_visible'/)
 
 const pageSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
 assert.match(pageSource, /legalTaskReturnContext/)
@@ -42,5 +46,9 @@ assert.match(pageSource, /openTaskLinkedWorkspace/)
 assert.match(pageSource, /returnToLegalTask/)
 assert.match(pageSource, /Return to task/)
 assert.match(pageSource, /workflowDetailKey: activeLegalWorkflowDetailKey/)
+assert.match(pageSource, /function markTaskInProgress\(\)/)
+assert.match(pageSource, /Task marked in progress from the Work tab\./)
+assert.match(pageSource, /visibility: 'professional_shared'/)
+assert.match(pageSource, /handleArchlineLegalWorkflowStepUpdate\(workflow, step, status, note, workPacket = null, visibility = 'professional_shared'\)/)
 
 console.log('Legal task workbench UX Phase 3 checks passed.')

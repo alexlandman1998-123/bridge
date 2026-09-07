@@ -67,6 +67,6 @@ test('holds the rollup timeline at reservation deposit until it is paid', () => 
   assert.equal(summary.currentStage, 'reservation_deposit_paid')
   assert.equal(summary.stages[1].label, 'Reservation Deposit Paid')
   assert.equal(summary.stages[1].state, 'blocked')
+  assert.equal(summary.progressPercent, 20)
   assert.deepEqual(summary.blockersByStage.reservation_deposit_paid, ['Reservation deposit is not paid.'])
 })
-
