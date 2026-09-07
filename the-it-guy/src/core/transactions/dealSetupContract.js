@@ -11,7 +11,9 @@ export function buildDealSetup({ transaction = {}, buyerParties = [] } = {}) {
     transactionId: text(transaction.id),
     property: Object.freeze({ developmentId: text(transaction.development_id), unitId: text(transaction.unit_id), address: text(transaction.property_address_line_1), sellerName: text(transaction.seller_name) }),
     buyers: Object.freeze(parties),
-    primaryBuyerId: text(primary?.buyer_party_id || transaction.buyer_id),
+    // A manually captured buyer may not yet have a reusable buyers-table
+    // profile. Their participant record is still a valid primary buyer.
+    primaryBuyerId: text(primary?.buyer_party_id || primary?.id || transaction.buyer_id),
     terms: Object.freeze({ purchaserType: text(transaction.purchaser_type), purchasePrice: number(transaction.purchase_price ?? transaction.sales_price), depositAmount: number(transaction.deposit_amount), reservationRequired: Boolean(transaction.reservation_required), reservationAmount: number(transaction.reservation_amount) }),
     finance: Object.freeze({ type: text(transaction.finance_type), managedBy: text(transaction.finance_managed_by), cashAmount: number(transaction.cash_amount), bondAmount: number(transaction.bond_amount), bank: text(transaction.bank), bondOriginator: text(transaction.bond_originator) }),
   })
