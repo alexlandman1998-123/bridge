@@ -1,6 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "npm run build && node scripts/agent-bundle-budget.mjs && node scripts/operational-script-deployment-audit.mjs && node scripts/agent-schema-compatibility-contract.test.mjs",
+  "regions": ["cpt1"],
   "functions": {
     "api/cron/document-request-canonical-automation.js": {
       "includeFiles": "{the-it-guy/scripts/document-request-canonical-phase14-portal-verification.mjs,the-it-guy/scripts/document-request-canonical-phase15-operational-rollout.mjs,the-it-guy/scripts/document-request-canonical-phase16-automation.mjs,the-it-guy/src/**}",
