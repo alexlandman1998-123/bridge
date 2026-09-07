@@ -69,6 +69,41 @@ assert.equal(v55Client.apiVersion, 'v55')
 assert.equal(calls[1].url, 'https://api.property24.com/listing/v55/countries')
 assert.equal(calls[1].options.headers['P24-UserGroupId'], '40067')
 
+let transientAttempts = 0
+const retryClient = createProperty24Client({
+  baseUrl: 'https://api.property24.com',
+  username: 'user@example.test',
+  password: 'secret',
+  apiVersion: 'v55',
+  transientRetryDelayMs: 0,
+  fetchImpl: async () => {
+    transientAttempts += 1
+    if (transientAttempts === 1) {
+      return {
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        headers: { get: () => 'application/json' },
+        json: async () => ({ message: 'Temporary gateway error' }),
+        text: async () => '',
+      }
+    }
+    return {
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      headers: { get: () => 'application/json' },
+      json: async () => ({ leads: [] }),
+      text: async () => '',
+    }
+  },
+})
+await retryClient.fetchListingLeadsForListing(116565928, {
+  startDate: '2026-08-01T00:00:00.000Z',
+  endDate: '2026-09-01T00:00:00.000Z',
+})
+assert.equal(transientAttempts, 2, 'a transient Property24 GET is retried once')
+
 const redacted = createRedactedProperty24Payload({
   photos: [{ bytes: 'base64-image-data', mimeContentType: 'image/jpeg', caption: 'Front' }],
 })

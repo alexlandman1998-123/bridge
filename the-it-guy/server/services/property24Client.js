@@ -1,5 +1,7 @@
 export const PROPERTY24_EXDEV_BASE_URL = 'https://api.exdev.property24-test.com'
 export const PROPERTY24_DEFAULT_TIMEOUT_MS = 25000
+const TRANSIENT_GET_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504])
+const PROPERTY24_DEFAULT_TRANSIENT_RETRY_DELAY_MS = 600
 
 export class Property24HttpError extends Error {
   constructor(message, details = {}) {
@@ -49,6 +51,10 @@ export function appendProperty24Query(url, params = {}) {
     }
   }
   return url
+}
+
+function waitForProperty24Retry(delayMs) {
+  return new Promise((resolve) => setTimeout(resolve, delayMs))
 }
 
 export function summarizeProperty24Payload(payload, sampleLimit = 3) {
@@ -109,6 +115,7 @@ export function createProperty24Client({
   userGroupId,
   apiVersion = 'v53',
   timeoutMs = PROPERTY24_DEFAULT_TIMEOUT_MS,
+  transientRetryDelayMs = PROPERTY24_DEFAULT_TRANSIENT_RETRY_DELAY_MS,
   fetchImpl = globalThis.fetch,
 } = {}) {
   if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required.')
@@ -121,56 +128,68 @@ export function createProperty24Client({
     const normalizedPath = normalizeProperty24Text(path)
     if (!normalizedPath.startsWith('/')) throw new Error(`Property24 path must start with "/": ${normalizedPath}`)
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     const startedAt = Date.now()
     const url = appendProperty24Query(new URL(`${normalizedBaseUrl}${normalizedPath}`), params)
 
-    try {
-      const response = await fetchImpl(url, {
-        method,
-        headers: {
-          Accept: 'application/json',
-          Authorization: authorization,
-          ...(normalizedUserGroupId ? { 'P24-UserGroupId': normalizedUserGroupId } : {}),
-          ...(body ? { 'Content-Type': 'application/json' } : {}),
-          ...headers,
-        },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      })
-      const contentType = response.headers?.get?.('content-type') || ''
-      const responseBody = contentType.includes('json')
-        ? await response.json().catch(() => null)
-        : await response.text().catch(() => '')
+    // Property24 can occasionally return a short-lived gateway error. Retry a
+    // read once, but never retry publishes, status changes, or agent writes.
+    const attempts = method.toUpperCase() === 'GET' ? 2 : 1
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), timeoutMs)
+      try {
+        const response = await fetchImpl(url, {
+          method,
+          headers: {
+            Accept: 'application/json',
+            Authorization: authorization,
+            ...(normalizedUserGroupId ? { 'P24-UserGroupId': normalizedUserGroupId } : {}),
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+            ...headers,
+          },
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        })
+        const contentType = response.headers?.get?.('content-type') || ''
+        const responseBody = contentType.includes('json')
+          ? await response.json().catch(() => null)
+          : await response.text().catch(() => '')
 
-      if (!response.ok) {
-        throw new Property24HttpError(`Property24 ${method} ${normalizedPath} failed with ${response.status}.`, {
+        if (!response.ok) {
+          const error = new Property24HttpError(`Property24 ${method} ${normalizedPath} failed with ${response.status}.`, {
+            status: response.status,
+            statusText: response.statusText,
+            method,
+            path: normalizedPath,
+            responseBody,
+          })
+          if (attempt < attempts && TRANSIENT_GET_STATUSES.has(response.status)) {
+            await waitForProperty24Retry(Math.max(0, Number(transientRetryDelayMs) || 0))
+            continue
+          }
+          throw error
+        }
+
+        return {
+          ok: true,
           status: response.status,
-          statusText: response.statusText,
-          method,
-          path: normalizedPath,
-          responseBody,
-        })
+          durationMs: Date.now() - startedAt,
+          data: responseBody,
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') {
+          throw new Property24HttpError(`Property24 ${method} ${normalizedPath} timed out after ${timeoutMs}ms.`, {
+            method,
+            path: normalizedPath,
+          })
+        }
+        throw error
+      } finally {
+        clearTimeout(timeout)
       }
-
-      return {
-        ok: true,
-        status: response.status,
-        durationMs: Date.now() - startedAt,
-        data: responseBody,
-      }
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new Property24HttpError(`Property24 ${method} ${normalizedPath} timed out after ${timeoutMs}ms.`, {
-          method,
-          path: normalizedPath,
-        })
-      }
-      throw error
-    } finally {
-      clearTimeout(timeout)
     }
+
+    throw new Error(`Property24 ${method} ${normalizedPath} exhausted all attempts.`)
   }
 
   const listingPath = (suffix) => `/listing/${normalizedApiVersion}${suffix}`
