@@ -34,6 +34,40 @@ export async function listReusableBuyerProfiles({ organisationId = null, limit =
   return result.data || []
 }
 
+export async function createReusableBuyerProfile({ name, email = '', phone = '', organisationId, client = supabase } = {}) {
+  const db = requireClient(client)
+  const normalizedName = text(name)
+  const normalizedEmail = text(email).toLowerCase() || null
+  const normalizedPhone = text(phone) || null
+  const normalizedOrganisationId = text(organisationId)
+  if (!normalizedName) throw new Error('Buyer full name is required.')
+  if (!normalizedOrganisationId) throw new Error('An organisation is required to create a buyer profile.')
+
+  let existing = null
+  if (normalizedEmail) {
+    const result = await db.from('buyers').select('id, organisation_id, name, email, phone')
+      .eq('organisation_id', normalizedOrganisationId).ilike('email', normalizedEmail).limit(1).maybeSingle()
+    if (result.error) throw result.error
+    existing = result.data || null
+  }
+  if (!existing && normalizedPhone) {
+    const result = await db.from('buyers').select('id, organisation_id, name, email, phone')
+      .eq('organisation_id', normalizedOrganisationId).eq('phone', normalizedPhone).limit(1).maybeSingle()
+    if (result.error) throw result.error
+    existing = result.data || null
+  }
+  if (existing) return { buyer: existing, created: false }
+
+  const result = await db.from('buyers').insert({
+    organisation_id: normalizedOrganisationId,
+    name: normalizedName,
+    email: normalizedEmail,
+    phone: normalizedPhone,
+  }).select('id, organisation_id, name, email, phone').single()
+  if (result.error) throw result.error
+  return { buyer: result.data, created: true }
+}
+
 export async function getReusableBuyerProfile({ buyerId, client = supabase } = {}) {
   const normalizedBuyerId = text(buyerId)
   if (!normalizedBuyerId) throw new Error('Buyer is required.')

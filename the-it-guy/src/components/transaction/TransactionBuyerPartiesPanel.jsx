@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Button from '../ui/Button'
 import {
+  createReusableBuyerProfile,
   linkReusableBuyerProfileToTransaction,
   listReusableBuyerProfiles,
   listTransactionBuyerParties,
@@ -20,6 +21,8 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
   const [parties, setParties] = useState([])
   const [profiles, setProfiles] = useState([])
   const [selectedProfile, setSelectedProfile] = useState('')
+  const [showCreateBuyer, setShowCreateBuyer] = useState(false)
+  const [newBuyer, setNewBuyer] = useState({ name: '', email: '', phone: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const primaryBuyer = useMemo(() => parties.find((party) => party.is_primary_buyer) || null, [parties])
@@ -57,6 +60,24 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
     catch (saveError) { setError(saveError.message || 'Buyer profile could not be linked.') } finally { setBusy(false) }
   }
 
+  async function createAndAddBuyer() {
+    setBusy(true); setError('')
+    try {
+      const result = await createReusableBuyerProfile({ ...newBuyer, organisationId })
+      await linkReusableBuyerProfileToTransaction({ transactionId, buyerId: result.buyer.id, isPrimary: !primaryBuyer })
+      const emptyPlaceholder = parties.find((party) =>
+        !party.buyer_party_id &&
+        displayName(party) === 'Client / Buyer' &&
+        !party.participant_email &&
+        !party.participant_phone,
+      )
+      if (emptyPlaceholder) await removeTransactionBuyerParty({ transactionId, participantId: emptyPlaceholder.id })
+      setNewBuyer({ name: '', email: '', phone: '' })
+      setShowCreateBuyer(false)
+      await refresh()
+    } catch (saveError) { setError(saveError.message || 'Buyer profile could not be created.') } finally { setBusy(false) }
+  }
+
   async function remove(party) {
     if (!window.confirm(`Remove ${displayName(party)} from this transaction? Their reusable profile and documents will be retained.`)) return
     setBusy(true); setError('')
@@ -91,6 +112,6 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
       </article>)}
       {!parties.length ? <p className="rounded-control bg-surfaceAlt px-4 py-3 text-sm text-textMuted">Add a buyer profile to begin.</p> : null}
     </div>
-    {canEdit ? <div className="mt-5 flex flex-wrap gap-2 border-t border-borderSoft pt-4"><select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)} className="min-w-[16rem] flex-1 rounded-control border border-borderDefault bg-surface px-3 py-2 text-sm"><option value="">Add an existing buyer profile…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.email ? ` — ${profile.email}` : ''}</option>)}</select><Button type="button" disabled={!selectedProfile || busy} onClick={addProfile}>{primaryBuyer ? 'Add buyer' : 'Add as primary buyer'}</Button></div> : null}
+    {canEdit ? <div className="mt-5 border-t border-borderSoft pt-4"><div className="flex flex-wrap gap-2"><select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)} className="min-w-[16rem] flex-1 rounded-control border border-borderDefault bg-surface px-3 py-2 text-sm"><option value="">Add an existing buyer profile…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.email ? ` — ${profile.email}` : ''}</option>)}</select><Button type="button" disabled={!selectedProfile || busy} onClick={addProfile}>{primaryBuyer ? 'Add buyer' : 'Add as primary buyer'}</Button><Button type="button" variant="secondary" disabled={busy} onClick={() => setShowCreateBuyer((current) => !current)}>{showCreateBuyer ? 'Cancel' : 'Create new buyer'}</Button></div>{showCreateBuyer ? <div className="mt-4 rounded-control border border-borderSoft bg-surfaceAlt p-4"><div><h4 className="font-semibold text-textStrong">Create reusable buyer profile</h4><p className="mt-1 text-sm text-textMuted">This profile can be reused on future transactions. You can complete FICA later.</p></div><div className="mt-4 grid gap-3 md:grid-cols-3"><label className="text-sm font-medium text-textMuted">Full name<input autoComplete="name" disabled={busy} value={newBuyer.name} onChange={(event) => setNewBuyer((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" placeholder="Buyer name" /></label><label className="text-sm font-medium text-textMuted">Email<input autoComplete="email" disabled={busy} type="email" value={newBuyer.email} onChange={(event) => setNewBuyer((current) => ({ ...current, email: event.target.value }))} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" placeholder="Optional" /></label><label className="text-sm font-medium text-textMuted">Mobile number<input autoComplete="tel" disabled={busy} type="tel" value={newBuyer.phone} onChange={(event) => setNewBuyer((current) => ({ ...current, phone: event.target.value }))} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" placeholder="Optional" /></label></div><div className="mt-4 flex justify-end"><Button type="button" disabled={!newBuyer.name.trim() || busy} onClick={createAndAddBuyer}>{busy ? 'Creating…' : primaryBuyer ? 'Create and add buyer' : 'Create as primary buyer'}</Button></div></div> : null}</div> : null}
   </section>
 }
