@@ -6,13 +6,13 @@ const demoSite: ResolvedSite = {
   organisationId: '00000000-0000-0000-0000-000000000001',
   publishedRevisionId: '00000000-0000-0000-0000-000000000002',
   templateKey: 'home-seekers-v1',
-  name: 'PropData Demo Realty',
+  name: 'Arch9 Demo Realty',
   status: 'published',
   primaryColor: '#125b50',
   secondaryColor: '#e7bc71',
   accentColor: '#e7bc71',
   phone: '+27 12 000 0000',
-  email: 'hello@example.propdata.co.za',
+  email: 'hello@example.arch9.co.za',
   preview: true,
   properties: [
     { id: 'demo-1', reference: 'PDP-001', title: 'Contemporary family home', transactionType: 'sale', propertyType: 'House', suburb: 'Waterkloof', province: 'Gauteng', price: 4850000, bedrooms: 4, bathrooms: 3, parkingBays: 2, floorSize: 315, description: 'A calm, contemporary family home with generous rooms and a garden designed for long summer afternoons.', features: ['Open-plan living', 'Study', 'Swimming pool', 'Secure garden'], amenities: ['Close to schools', 'Easy highway access'], media: [] },
@@ -24,7 +24,7 @@ const demoSite: ResolvedSite = {
 const demoPages: PublicPage[] = [
   {
     id: '00000000-0000-0000-0000-000000000010', slug: '', kind: 'home', title: 'Home',
-    seoTitle: 'PropData Demo Realty | Property for sale and to rent', seoDescription: 'Explore property for sale and to rent with PropData Demo Realty.',
+    seoTitle: 'Arch9 Demo Realty | Property for sale and to rent', seoDescription: 'Explore property for sale and to rent with Arch9 Demo Realty.',
     blocks: [
       { type: 'hero', eyebrow: 'PROPERTY, SIMPLIFIED', heading: 'Find the place that feels like home.', body: 'Beautifully presented property, knowledgeable people and a simpler way to move.' },
       { type: 'property_collection', heading: 'Featured properties', maxItems: 3 },
@@ -35,7 +35,7 @@ const demoPages: PublicPage[] = [
   },
   {
     id: '00000000-0000-0000-0000-000000000011', slug: 'spring-viewing', kind: 'campaign', title: 'Spring viewing collection',
-    seoTitle: 'Spring viewing collection | PropData Demo Realty', seoDescription: 'A curated collection of homes to view this spring.',
+    seoTitle: 'Spring viewing collection | Arch9 Demo Realty', seoDescription: 'A curated collection of homes to view this spring.',
     blocks: [
       { type: 'hero', eyebrow: 'SPRING COLLECTION', heading: 'Find a home made for a fresh start.', body: 'Explore a considered selection of properties and arrange a private viewing with our local team.', ctaLabel: 'Browse homes', ctaHref: '/properties?type=sale' },
       { type: 'property_collection', heading: 'Homes to view this spring', maxItems: 3, transactionType: 'sale' },
@@ -136,17 +136,23 @@ function filterProperties(properties: PublicProperty[], query: Record<string, st
   const search = (query.q || '').trim().toLowerCase()
   const type = (query.type || '').toLowerCase()
   const propertyType = (query.propertyType || '').trim().toLowerCase()
-  const minPrice = Number(query.minPrice || 0)
-  const maxPrice = Number(query.maxPrice || 0)
+  const area = (query.area || '').trim().toLowerCase()
+  const priceRange = String(query.priceRange || '')
+  const [rangeStart, rangeEnd] = priceRange.split('-')
+  const minPrice = rangeStart === 'under' ? 0 : Number(query.minPrice || rangeStart || 0)
+  const maxPrice = rangeStart === 'under' ? Number(rangeEnd || 0) : rangeEnd === 'plus' ? 0 : Number(query.maxPrice || rangeEnd || 0)
   const bedrooms = Number(query.bedrooms || 0)
+  const featuredOnly = query.availability === 'featured'
   return properties.filter((property) => {
     const matchingSearch = !search || [property.title, property.suburb, property.province, property.propertyType].join(' ').toLowerCase().includes(search)
     const matchingType = !type || property.transactionType === type
     const matchingPropertyType = !propertyType || property.propertyType.toLowerCase() === propertyType
+    const matchingArea = !area || property.suburb.toLowerCase() === area
     const matchingMin = !minPrice || (property.price || 0) >= minPrice
     const matchingMax = !maxPrice || (property.price || 0) <= maxPrice
     const matchingBedrooms = !bedrooms || (property.bedrooms || 0) >= bedrooms
-    return matchingSearch && matchingType && matchingPropertyType && matchingMin && matchingMax && matchingBedrooms
+    const matchingFeatured = !featuredOnly || property.isShowcase === true
+    return matchingSearch && matchingType && matchingPropertyType && matchingArea && matchingMin && matchingMax && matchingBedrooms && matchingFeatured
   })
 }
 
@@ -312,7 +318,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
     organisationId: site.organisation_id,
     publishedRevisionId: site.published_revision_id,
     templateKey: site.template_key === 'home-seekers-v1' ? 'home-seekers-v1' : 'property-standard-v1',
-    name: String(brand.name || 'PropData Property'),
+    name: String(brand.name || 'Property'),
     status: site.status,
     primaryColor: String(brand.primaryColor || '#125b50'),
     secondaryColor: String(brand.secondaryColor || '#e7bc71'),
@@ -324,6 +330,13 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
     email: brand.email ? String(brand.email) : undefined,
     website: brand.website ? String(brand.website) : undefined,
     whatsappNumber: brand.whatsappNumber ? String(brand.whatsappNumber) : undefined,
+    tagline: brand.tagline ? String(brand.tagline) : undefined,
+    contactImageUrl: brand.contactImageUrl ? String(brand.contactImageUrl) : undefined,
+    privacyPolicyUrl: brand.privacyPolicyUrl ? String(brand.privacyPolicyUrl) : undefined,
+    termsUrl: brand.termsUrl ? String(brand.termsUrl) : undefined,
+    socialLinks: brand.socialLinks && typeof brand.socialLinks === 'object' && !Array.isArray(brand.socialLinks)
+      ? Object.fromEntries(Object.entries(brand.socialLinks as Record<string, unknown>).filter(([key, value]) => ['instagram', 'facebook', 'linkedin'].includes(key) && typeof value === 'string' && value.startsWith('https://'))) as ResolvedSite['socialLinks']
+      : undefined,
     preview: domain.domain_kind === 'preview',
     properties: previewProperties,
   }

@@ -8,7 +8,11 @@ const server = await createServer({
 })
 
 try {
-  const { buildWorkspaceResolution, WORKSPACE_RESOLUTION_STATUSES } = await server.ssrLoadModule('/src/services/workspaceResolutionService.js')
+  const {
+    buildWorkspaceResolution,
+    mergeAttorneyFirmBrandingRows,
+    WORKSPACE_RESOLUTION_STATUSES,
+  } = await server.ssrLoadModule('/src/services/workspaceResolutionService.js')
 
   const profile = {
     id: 'user-1',
@@ -158,6 +162,38 @@ try {
     name: 'Young Law Fixture',
     logo_url: 'https://example.test/young-law-logo.png',
   }
+
+  const brandingOnlyFirm = mergeAttorneyFirmBrandingRows(
+    [{ ...attorneyFirm, logo_url: null }],
+    [{
+      firm_id: attorneyFirm.id,
+      logo_url: 'https://example.test/young-law-branding-logo.png',
+      logo_bucket: 'organisation-branding',
+      logo_path: 'attorney-firms/user-1/branding/logo.png',
+    }],
+  )
+  assert.equal(brandingOnlyFirm[0].logo_url, 'https://example.test/young-law-branding-logo.png')
+  assert.equal(brandingOnlyFirm[0].logo_bucket, 'organisation-branding')
+  assert.equal(brandingOnlyFirm[0].logo_path, 'attorney-firms/user-1/branding/logo.png')
+
+  const brandingOnlyWorkspaceResolution = buildWorkspaceResolution({
+    user,
+    profile: attorneyProfile,
+    attorneyFirmRows: [{ ...attorneyFirm, logo_url: null }],
+    attorneyFirmBrandingRows: [{
+      firm_id: attorneyFirm.id,
+      logo_url: 'https://example.test/young-law-branding-logo.png',
+    }],
+    attorneyMembershipRows: [{
+      id: 'branding-only-attorney-membership',
+      firm_id: attorneyFirm.id,
+      user_id: user.id,
+      status: 'active',
+      role: 'firm_admin',
+    }],
+    requestedWorkspaceId: attorneyFirm.id,
+  })
+  assert.equal(brandingOnlyWorkspaceResolution.currentWorkspace.logoUrl, 'https://example.test/young-law-branding-logo.png')
 
   function resolveDuplicateAttorneyMemberships({ organisationMembershipId, attorneyMembershipId }) {
     return buildWorkspaceResolution({

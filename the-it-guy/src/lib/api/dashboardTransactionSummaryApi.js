@@ -224,6 +224,76 @@ async function fetchDashboardDevelopmentProfileImages(client, developmentIds = [
   )
 }
 
+function isDashboardDevelopmentImageDocument(document = {}) {
+  const type = normalizeTextValue(document?.document_type).toLowerCase()
+  const mimeType = normalizeTextValue(document?.mime_type).toLowerCase()
+  const fileUrl = normalizeTextValue(document?.file_url)
+  const path = normalizeTextValue(document?.storage_path)
+  const fileName = `${fileUrl} ${path}`.toLowerCase()
+
+  if (mimeType.startsWith('image/')) return true
+  if (['marketing', 'image', 'gallery', 'hero', 'cover', 'logo'].includes(type)) return true
+  return /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/i.test(fileName)
+}
+
+async function resolveDashboardDevelopmentDocumentUrl(client, document = {}) {
+  const bucket = normalizeTextValue(document?.storage_bucket) || 'documents'
+  const path = normalizeTextValue(document?.storage_path)
+  const storedUrl = normalizeTextValue(document?.file_url)
+
+  // Development media is private. Prefer a fresh signed URL so an old URL
+  // saved on the document cannot cause all dashboard cards to fall back.
+  if (path && client?.storage?.from) {
+    try {
+      const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24)
+      if (!error && normalizeTextValue(data?.signedUrl)) return normalizeTextValue(data.signedUrl)
+    } catch {
+      // The document record remains the source of truth; use its existing
+      // URL when storage signing is unavailable to this dashboard actor.
+    }
+  }
+
+  return storedUrl
+}
+
+async function fetchDashboardDevelopmentDocumentImages(client, developmentIds = []) {
+  const ids = [...new Set((developmentIds || []).filter(Boolean))]
+  if (!ids.length) return new Map()
+
+  let query = await client
+    .from('development_documents')
+    .select('development_id, document_type, file_url, storage_bucket, storage_path, mime_type, approval_status, archived_at, uploaded_at, created_at')
+    .in('development_id', ids)
+    .order('uploaded_at', { ascending: false })
+  if (query.error && isMissingColumnError(query.error)) {
+    query = await client
+      .from('development_documents')
+      .select('development_id, document_type, file_url, storage_bucket, storage_path, mime_type, created_at')
+      .in('development_id', ids)
+      .order('created_at', { ascending: false })
+  }
+  if (query.error) {
+    if (isMissingTableError(query.error, 'development_documents') || isPermissionDeniedError(query.error)) return new Map()
+    throw query.error
+  }
+
+  const candidatesByDevelopmentId = new Map()
+  for (const document of query.data || []) {
+    const developmentId = normalizeTextValue(document?.development_id)
+    const approvalStatus = normalizeTextValue(document?.approval_status).toLowerCase()
+    if (!developmentId || document?.archived_at || approvalStatus === 'rejected' || !isDashboardDevelopmentImageDocument(document)) continue
+    if (!candidatesByDevelopmentId.has(developmentId)) candidatesByDevelopmentId.set(developmentId, document)
+  }
+
+  const imageEntries = await Promise.all(
+    [...candidatesByDevelopmentId.entries()].map(async ([developmentId, document]) => [
+      developmentId,
+      await resolveDashboardDevelopmentDocumentUrl(client, document),
+    ]),
+  )
+  return new Map(imageEntries.filter(([developmentId, imageUrl]) => developmentId && imageUrl))
+}
+
 async function fetchTransactionSummaryUnits(client, unitIds = []) {
   const ids = [...new Set((unitIds || []).filter(Boolean))]
   if (!ids.length) return { data: [], error: null }
@@ -1983,10 +2053,13 @@ async function fetchTransactionSummaryRowsByIds(
     if (unit?.development_id) linkedDevelopmentIds.add(unit.development_id)
   }
 
-  const developmentProfileImagesById = await fetchDashboardDevelopmentProfileImages(client, [...linkedDevelopmentIds])
+  const allDevelopmentIds = [...linkedDevelopmentIds]
+  const [developmentProfileImagesById, developmentDocumentImagesById] = await Promise.all([
+    fetchDashboardDevelopmentProfileImages(client, allDevelopmentIds),
+    fetchDashboardDevelopmentDocumentImages(client, allDevelopmentIds),
+  ])
 
   let developmentsById = {}
-  const allDevelopmentIds = [...linkedDevelopmentIds]
   if (allDevelopmentIds.length) {
     const developmentsQuery = await client.from('developments').select('id, name, location').in('id', allDevelopmentIds)
     if (developmentsQuery.error && !isMissingSchemaError(developmentsQuery.error)) throw developmentsQuery.error
@@ -2001,7 +2074,10 @@ async function fetchTransactionSummaryRowsByIds(
       const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
       const developmentId = transaction?.development_id || unit?.development_id || null
       const developmentBase = developmentId ? developmentsById[developmentId] || null : null
-      const developmentImageUrl = developmentProfileImagesById.get(String(developmentId || '')) || ''
+      const developmentImageUrl =
+        developmentProfileImagesById.get(String(developmentId || '')) ||
+        developmentDocumentImagesById.get(String(developmentId || '')) ||
+        ''
       const development = developmentBase && developmentImageUrl
         ? { ...developmentBase, cover_image_url: developmentImageUrl }
         : developmentBase
@@ -2240,8 +2316,11 @@ export async function fetchTransactionsListSummary({
   for (const unit of unitsQuery.data || []) {
     if (unit?.development_id) linkedDevelopmentIds.add(unit.development_id)
   }
-  const developmentProfileImagesById = await fetchDashboardDevelopmentProfileImages(client, [...linkedDevelopmentIds])
   const allDevelopmentIds = [...linkedDevelopmentIds]
+  const [developmentProfileImagesById, developmentDocumentImagesById] = await Promise.all([
+    fetchDashboardDevelopmentProfileImages(client, allDevelopmentIds),
+    fetchDashboardDevelopmentDocumentImages(client, allDevelopmentIds),
+  ])
   const developmentsQuery = allDevelopmentIds.length
     ? await client.from('developments').select('id, name, location').in('id', allDevelopmentIds)
     : { data: [], error: null }
@@ -2264,7 +2343,10 @@ export async function fetchTransactionsListSummary({
     const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
     const developmentIdFromRow = transaction?.development_id || unit?.development_id || null
     const developmentBase = developmentIdFromRow ? developmentsById[developmentIdFromRow] || null : null
-    const developmentImageUrl = developmentProfileImagesById.get(String(developmentIdFromRow || '')) || ''
+    const developmentImageUrl =
+      developmentProfileImagesById.get(String(developmentIdFromRow || '')) ||
+      developmentDocumentImagesById.get(String(developmentIdFromRow || '')) ||
+      ''
     const development = developmentBase && developmentImageUrl
       ? { ...developmentBase, cover_image_url: developmentImageUrl }
       : developmentBase

@@ -246,13 +246,12 @@ function preloadTransactionWorkspaceTab(tabId = '') {
 }
 
 const ATTORNEY_WORKSPACE_TABS = [
-  { id: 'today', label: 'Today' },
-  { id: 'overview', label: 'Full overview' },
+  { id: 'overview', label: 'Overview' },
   { id: 'parties', label: 'Parties' },
   { id: 'stakeholders', label: 'Roleplayers' },
   { id: 'documents', label: 'Documents' },
   { id: 'finance', label: 'Finance' },
-  { id: 'transfer', label: 'Transfer' },
+  { id: 'transfer', label: 'Work' },
   { id: 'tasks', label: 'Tasks' },
   { id: 'activity', label: 'Communications' },
 ]
@@ -1364,8 +1363,8 @@ function normalizeRichTextToPlainText(value) {
     .trim()
 }
 
-function buildPropertyAddress(transaction, onboardingFormData = {}) {
-  const canonicalAddress = resolvePortalPropertyLabel({ transaction, onboardingFormData }, { fallback: '' })
+function buildPropertyAddress(transaction, onboardingFormData = {}, unit = {}, development = {}) {
+  const canonicalAddress = resolvePortalPropertyLabel({ transaction, onboardingFormData, unit, development }, { fallback: '' })
   return canonicalAddress || [
     transaction?.property_address_line_1,
     transaction?.property_address_line_2,
@@ -1376,6 +1375,47 @@ function buildPropertyAddress(transaction, onboardingFormData = {}) {
   ]
     .filter(Boolean)
     .join(', ')
+}
+
+function resolveDevelopmentCoverImage(development = {}) {
+  const profile = development?.profile || development?.developmentProfile || {}
+  const marketing = profile?.marketingContent || profile?.marketing_content || {}
+  const mediaLibrary = marketing?.mediaLibrary || marketing?.media_library || {}
+  const imageLinks = Array.isArray(profile?.imageLinks)
+    ? profile.imageLinks
+    : Array.isArray(profile?.image_links)
+      ? profile.image_links
+      : []
+
+  return [
+    // The developer's selected Cover Image is the canonical matter image.
+    mediaLibrary?.heroImageUrl,
+    mediaLibrary?.hero_image_url,
+    development?.primary_image_url,
+    development?.primaryImageUrl,
+    development?.cover_image_url,
+    development?.coverImageUrl,
+    development?.hero_image_url,
+    development?.heroImageUrl,
+    ...imageLinks,
+  ].find((value) => String(value || '').trim()) || ''
+}
+
+function resolveMatterPropertyType(transaction = {}, unit = {}) {
+  return [
+    // Tenure is the legal property type attorneys need to see. A marketing
+    // category such as "Residential" is only a fallback.
+    transaction?.property_tenure,
+    transaction?.propertyTenure,
+    unit?.property_title_type,
+    unit?.propertyTitleType,
+    unit?.property_structure_type,
+    unit?.propertyStructureType,
+    transaction?.property_type,
+    transaction?.propertyType,
+    unit?.property_type,
+    unit?.propertyType,
+  ].find((value) => String(value || '').trim()) || ''
 }
 
 function getAttorneyDocumentGroupKey(category) {
@@ -15756,7 +15796,7 @@ function AttorneyTransactionDetail() {
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
   const [matterAccessKey, setMatterAccessKey] = useState(() => (workspaceRole !== 'attorney' ? currentMatterAccessKey : ''))
   const [saving, setSaving] = useState(false)
-  const [workspaceMenu, setWorkspaceMenu] = useState('today')
+  const [workspaceMenu, setWorkspaceMenu] = useState('overview')
   const [localLegalWorkflowDetailKey, setLocalLegalWorkflowDetailKey] = useState('')
   const [legalTaskReturnContext, setLegalTaskReturnContext] = useState(null)
   const [discussionBody, setDiscussionBody] = useState('')
@@ -16813,7 +16853,7 @@ function AttorneyTransactionDetail() {
   const activeWorkspaceMenu = availableWorkspaceTabs.some((tab) => tab.id === requestedWorkspaceMenu) || (workspaceRole === 'bond_originator' && BOND_ORIGINATOR_HIDDEN_WORKSPACE_TABS.has(requestedWorkspaceMenu))
     ? requestedWorkspaceMenu
     : workspaceRole === 'attorney'
-      ? 'today'
+      ? 'overview'
       : 'overview'
   useEffect(() => {
     if (activeWorkspaceMenu !== 'documents' || documentDataHydrated) return
@@ -16827,7 +16867,7 @@ function AttorneyTransactionDetail() {
         ? 'finance'
         : ['stakeholders', 'parties'].includes(activeWorkspaceMenu)
           ? 'partners'
-          : ['today', 'tasks', 'transfer'].includes(activeWorkspaceMenu)
+          : ['today', 'overview', 'tasks', 'transfer'].includes(activeWorkspaceMenu)
             ? 'workflow'
             : ''
     const fullDatasetFields = {
@@ -17364,9 +17404,18 @@ function AttorneyTransactionDetail() {
     transactionLiveState.lastRefreshAt,
     workspaceOrganisationId,
   ])
-  const displayPurchasePriceValue = hasCapturedFinancials ? Number(transaction?.purchase_price || transaction?.sales_price || 0) : 0
+  // A developer unit's price is the source of truth until the final OTP value
+  // has been copied to the transaction. Do not hide it merely because finance
+  // onboarding has not started yet.
+  const displayPurchasePriceValue = Number(
+    transaction?.purchase_price ||
+      transaction?.sales_price ||
+      unit?.price ||
+      unit?.list_price ||
+      0,
+  ) || 0
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
-  const propertyAddress = buildPropertyAddress(transaction, data?.onboardingFormData)
+  const propertyAddress = buildPropertyAddress(transaction, data?.onboardingFormData, unit, development)
   const propertyImageUrl = [
     transaction?.propertyImageUrl,
     transaction?.property_image_url,
@@ -17378,6 +17427,7 @@ function AttorneyTransactionDetail() {
     unit?.image_url,
     unit?.thumbnail_url,
     unit?.cover_image_url,
+    resolveDevelopmentCoverImage(development),
     development?.heroImageUrl,
     development?.hero_image_url,
     development?.cover_image_url,
@@ -19975,12 +20025,14 @@ function AttorneyTransactionDetail() {
     setWorkspaceMenu('activity')
   }, [legalWorkflowModels])
   const archlineWorkspaceTabs = useMemo(() => [
+    { id: 'overview', label: 'Overview' },
     { id: 'transfer', label: 'Work' },
     { id: 'documents', label: 'Documents' },
     { id: 'activity', label: 'History' },
     { id: 'roleplayers', label: 'Parties' },
   ], [])
   const archlineActiveWorkspaceTab = useMemo(() => {
+    if (['today', 'overview'].includes(activeWorkspaceMenu)) return 'overview'
     if (activeWorkspaceMenu === 'documents') return 'documents'
     if (activeWorkspaceMenu === 'activity') return 'activity'
     if (activeWorkspaceMenu === 'stakeholders') return 'roleplayers'
@@ -22011,8 +22063,8 @@ function AttorneyTransactionDetail() {
             reference={workspaceReference}
             statusLabel={displayedLifecycleLabel}
             property={propertyAddress || matterHeadline}
-            propertyType={transaction?.property_type || transaction?.propertyType || routingDiagnostics?.facts?.propertyTenure
-              ? toTitle(transaction?.property_type || transaction?.propertyType || routingDiagnostics?.facts?.propertyTenure)
+            propertyType={resolveMatterPropertyType(transaction, unit) || routingDiagnostics?.facts?.propertyTenure
+              ? toTitle(resolveMatterPropertyType(transaction, unit) || routingDiagnostics?.facts?.propertyTenure)
               : '—'}
             propertyImageUrl={propertyImageUrl}
             purchasePrice={formatCurrencyValue(displayPurchasePriceValue, '—')}
@@ -22024,7 +22076,7 @@ function AttorneyTransactionDetail() {
               ? workspaceMenuTabs.map((tab) => ({ id: tab.id, label: tab.label }))
               : archlineWorkspaceTabs}
             activeTab={isTransactionOperatorView ? activeWorkspaceMenu : archlineActiveWorkspaceTab}
-            workspaceLabel={isDeveloperTransactionView || isAgentTransactionView ? '' : 'Legal Matter Workspace'}
+            workspaceLabel=""
             saleRouteBadge={transactionSaleRouteBadge}
             shareLabel={isTransactionOperatorView ? 'Share Portal' : 'Share Portal'}
             moreActionsLabel={isTransactionOperatorView ? 'Activity' : 'More Actions'}

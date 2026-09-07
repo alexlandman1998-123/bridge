@@ -87,6 +87,12 @@
       "regex": "^/sitemap\\.xml(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/sitemap\\.xml(?:/)?$"
+    },
+    {
+      "page": "/valuation",
+      "regex": "^/valuation(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/valuation(?:/)?$"
     }
   ],
   "dataRoutes": [],

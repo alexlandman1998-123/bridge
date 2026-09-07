@@ -251,6 +251,41 @@ function normalizeAttorneyFirmRow(row = null) {
   }
 }
 
+function normalizeAttorneyFirmBrandingRow(row = null) {
+  if (!row?.firm_id) return null
+  return {
+    firmId: normalizeText(row.firm_id),
+    logoUrl: normalizeText(row.logo_url),
+    logoBucket: normalizeText(row.logo_bucket),
+    logoPath: normalizeText(row.logo_path),
+    primaryColour: normalizeText(row.primary_colour),
+    secondaryColour: normalizeText(row.secondary_colour),
+  }
+}
+
+export function mergeAttorneyFirmBrandingRows(attorneyFirmRows = [], attorneyFirmBrandingRows = []) {
+  const brandingByFirmId = new Map(
+    attorneyFirmBrandingRows
+      .map(normalizeAttorneyFirmBrandingRow)
+      .filter(Boolean)
+      .map((branding) => [branding.firmId, branding]),
+  )
+
+  return attorneyFirmRows.map((firm) => {
+    const branding = brandingByFirmId.get(normalizeText(firm?.id))
+    if (!branding) return firm
+
+    return {
+      ...firm,
+      logo_url: branding.logoUrl || firm.logo_url || null,
+      logo_bucket: branding.logoBucket || firm.logo_bucket || null,
+      logo_path: branding.logoPath || firm.logo_path || null,
+      primary_colour: branding.primaryColour || firm.primary_colour || null,
+      secondary_colour: branding.secondaryColour || firm.secondary_colour || null,
+    }
+  })
+}
+
 function createMembershipRecord({
   id,
   source,
@@ -684,6 +719,7 @@ export function buildWorkspaceResolution({
   workspaceUnitRows = [],
   attorneyMembershipRows = [],
   attorneyFirmRows = [],
+  attorneyFirmBrandingRows = [],
   requestedWorkspaceId = '',
   storedWorkspaceId = '',
 } = {}) {
@@ -696,7 +732,10 @@ export function buildWorkspaceResolution({
     const unit = row?.raw ? row : normalizeWorkspaceUnitRow(row)
     return [unit?.id, unit]
   }).filter(([id]) => id))
-  const firmById = new Map((attorneyFirmRows || []).map((row) => [row.id, normalizeAttorneyFirmRow(row)]))
+  const firmById = new Map(
+    mergeAttorneyFirmBrandingRows(attorneyFirmRows || [], attorneyFirmBrandingRows || [])
+      .map((row) => [row.id, normalizeAttorneyFirmRow(row)]),
+  )
   const firmByOrganisationId = new Map(
     Array.from(firmById.values())
       .filter((firm) => firm?.organisationId)
@@ -1394,6 +1433,50 @@ async function fetchAttorneyFirmRows(client, firmIds = [], options = {}) {
   return query.data || []
 }
 
+async function fetchAttorneyFirmBrandingRows(client, firmIds = [], options = {}) {
+  const ids = Array.from(new Set(firmIds.map((id) => normalizeText(id)).filter(Boolean)))
+  if (!ids.length) return []
+
+  const runQuery = (columns) =>
+    withWorkspaceQueryTimeout(
+      client
+        .from('attorney_firm_branding')
+        .select(columns)
+        .in('firm_id', ids),
+      {
+        label: 'workspace.attorneyFirmBranding.fetch',
+        timeoutMs: options.timeoutMs,
+        metadata: { table: 'attorney_firm_branding', count: ids.length },
+      },
+    )
+
+  let query = await runQuery('firm_id, logo_url, logo_bucket, logo_path, primary_colour, secondary_colour')
+  if (query.error && (isMissingColumnError(query.error, 'logo_bucket') || isMissingColumnError(query.error, 'logo_path'))) {
+    query = await runQuery('firm_id, logo_url, primary_colour, secondary_colour')
+  }
+
+  if (query.error) {
+    if (isMissingTableError(query.error, 'attorney_firm_branding')) return []
+    console.warn('[WORKSPACE_RESOLUTION] attorney branding could not be loaded; using firm branding fallback.', query.error)
+    return []
+  }
+
+  const rows = query.data || []
+  return Promise.all(rows.map(async (row) => {
+    const bucket = normalizeText(row.logo_bucket)
+    const path = normalizeText(row.logo_path)
+    if (!bucket || !path || !client.storage?.from) return row
+
+    try {
+      const signed = await client.storage.from(bucket).createSignedUrl(path, 60 * 60 * 12)
+      const signedUrl = normalizeText(signed?.data?.signedUrl)
+      return signedUrl ? { ...row, logo_url: signedUrl } : row
+    } catch {
+      return row
+    }
+  }))
+}
+
 export async function resolveCurrentWorkspace(userId, options = {}) {
   const client = requireClient(options.client)
   const safeUserId = normalizeText(userId)
@@ -1490,6 +1573,16 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
     workspaceUnitRows = await fetchWorkspaceUnitRows(client, organisationMembershipRows, { timeoutMs: optionalQueryTimeoutMs })
   }
 
+  const attorneyFirmBrandingRows = await fetchAttorneyFirmBrandingRows(
+    client,
+    [
+      ...attorneyFirmRows.map((row) => row?.id),
+      ...attorneyMembershipRows.map((row) => row?.firm_id),
+      profile?.primaryAttorneyFirmId,
+    ],
+    { timeoutMs: optionalQueryTimeoutMs },
+  )
+
   const resolution = buildWorkspaceResolution({
     user,
     profile,
@@ -1498,6 +1591,7 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
     workspaceUnitRows,
     attorneyMembershipRows,
     attorneyFirmRows,
+    attorneyFirmBrandingRows,
     requestedWorkspaceId: options.requestedWorkspaceId,
     storedWorkspaceId: preference.workspaceId,
   })

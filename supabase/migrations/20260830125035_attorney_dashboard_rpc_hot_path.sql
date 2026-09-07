@@ -81,8 +81,14 @@ begin
       mr.*,
       t.id,
       t.buyer_id,
+      t.listing_id,
+      t.development_id,
+      t.unit_id,
       t.matter_number,
       t.transaction_reference,
+      t.transaction_type,
+      t.property_type,
+      t.property_tenure,
       t.stage,
       t.current_main_stage,
       t.current_sub_stage_summary,
@@ -116,10 +122,26 @@ begin
       t.originating_partner_organisation_id,
       t.referral_source_organisation_id,
       t.created_at,
-      t.updated_at
+      t.updated_at,
+      u.unit_number,
+      u.price as unit_price,
+      d.name as development_name,
+      d.location as development_address,
+      listing.title as listing_title,
+      listing.formatted_address as listing_formatted_address,
+      listing.street_address as listing_street_address,
+      listing.address_line_1 as listing_address_line_1
     from matter_roles mr
     join public.transactions t on t.id = mr.transaction_id
+    left join public.units u on u.id = t.unit_id
+    left join public.developments d on d.id = coalesce(t.development_id, u.development_id)
+    left join public.private_listings listing on listing.id = t.listing_id
     where t.is_active = true
+      and lower(coalesce(t.lifecycle_state, 'active')) not in ('archived', 'cancelled', 'deleted')
+      and lower(coalesce(t.stage, '')) <> 'available'
+      and lower(coalesce(t.current_main_stage, '')) not in ('avail', 'available')
+      and lower(coalesce(t.next_action, '')) not like 'transaction deleted%'
+      and lower(coalesce(t.next_action, '')) not like 'transaction reset to available%'
   ),
   scoped_matters as (
     select *

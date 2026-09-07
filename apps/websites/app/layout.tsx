@@ -5,8 +5,8 @@ import './styles.css'
 import './brand.css'
 
 export const metadata: Metadata = {
-  title: 'PropData Websites',
-  description: 'A mobile-first property website powered by PropData.',
+  title: 'Arch9 Websites',
+  description: 'A mobile-first property website platform.',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

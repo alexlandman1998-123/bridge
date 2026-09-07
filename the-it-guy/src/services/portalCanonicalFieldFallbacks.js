@@ -171,6 +171,7 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
   const transaction = isPlainObject(row.transaction) ? row.transaction : {}
   const unit = isPlainObject(row.unit) ? row.unit : {}
   const development = isPlainObject(row.development) ? row.development : {}
+  const listing = isPlainObject(row.listing) ? row.listing : {}
   const payload = isPlainObject(row.workDeliveryPayload)
     ? row.workDeliveryPayload
     : isPlainObject(row.work_delivery_payload)
@@ -179,6 +180,30 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
   const canonicalAddress = resolvePortalCanonicalText('property_address', [row, transaction, payload], { packetType: 'otp' })
   const canonicalSuburb = resolvePortalCanonicalText('property_suburb', [row, transaction, payload], { packetType: 'otp' })
   const canonicalCity = resolvePortalCanonicalText('property_city', [row, transaction, payload], { packetType: 'otp' })
+  const propertyTenure = firstText(
+    transaction.property_tenure,
+    transaction.propertyTenure,
+    unit.property_tenure,
+    unit.propertyTenure,
+    unit.property_title_type,
+    unit.propertyTitleType,
+  ).toLowerCase()
+  const unitLabel = firstText(unit.unit_label, unit.unitLabel, unit.unit_number, unit.unitNumber)
+  const schemeName = firstText(
+    development.scheme_name,
+    development.schemeName,
+    development.development_name,
+    development.developmentName,
+    development.name,
+  )
+
+  // Conveyancing identity is tenure-specific. A sectional title must never be
+  // reduced to the development or street address when the scheme and unit are
+  // available.
+  if (propertyTenure.includes('sectional') && schemeName && unitLabel) {
+    return `${schemeName} · Unit ${unitLabel}`
+  }
+
   const directProperty = firstText(
     row?.property?.display_address,
     row?.property?.displayAddress,
@@ -189,6 +214,12 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
     row?.propertyAddress,
     row?.property_address,
     row?.address,
+    listing.formatted_address,
+    listing.formattedAddress,
+    listing.street_address,
+    listing.streetAddress,
+    listing.address_line_1,
+    listing.addressLine1,
     transaction.property_name,
     transaction.propertyName,
     transaction.property_address_line_1,
@@ -200,7 +231,21 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
     canonicalAddress,
     [canonicalSuburb, canonicalCity].filter(Boolean).join(', '),
   )
-  if (directProperty) return directProperty
+  const erfNumber = firstText(
+    transaction.erf_number,
+    transaction.erfNumber,
+    transaction.erf,
+    unit.erf_number,
+    unit.erfNumber,
+    unit.erf,
+    listing.erf_number,
+    listing.erfNumber,
+  )
+  if (directProperty) {
+    return propertyTenure.includes('full_title') || propertyTenure.includes('freehold')
+      ? `${directProperty}${erfNumber ? ` · Erf ${erfNumber}` : ''}`
+      : directProperty
+  }
 
   // Unit-created transactions inherit their address from the development.
   // Never reduce an otherwise identifiable development matter to a generic
@@ -215,7 +260,6 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
     development.addressLine1,
     development.location,
   )
-  const unitLabel = firstText(unit.unit_label, unit.unitLabel, unit.unit_number, unit.unitNumber)
   const developmentName = firstText(development.development_name, development.developmentName, development.name)
   if (developmentAddress && unitLabel) return `${developmentAddress} · Unit ${unitLabel}`
   if (developmentAddress) return developmentAddress

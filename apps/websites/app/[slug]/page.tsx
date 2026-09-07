@@ -29,7 +29,7 @@ export default async function PublicPage({ params }: Props) {
   return <main className={templateClassName(site.templateKey)} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
     {site.preview && <div className="preview-banner">Preview site — not yet connected to a client domain</div>}
     <SiteHeader site={site} enquiryHref={page.kind === 'contact' || page.kind === 'valuation' || page.kind === 'campaign' ? '#enquire' : '/contact'} />
-    <ContentBlocks page={page} properties={properties} templateKey={site.templateKey} />
+    <ContentBlocks page={page} properties={properties} site={site} templateKey={site.templateKey} />
     <SiteFooter site={site} />
   </main>
 }

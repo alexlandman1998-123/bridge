@@ -37,6 +37,11 @@ export type ResolvedSite = {
   email?: string
   website?: string
   whatsappNumber?: string
+  tagline?: string
+  contactImageUrl?: string
+  privacyPolicyUrl?: string
+  termsUrl?: string
+  socialLinks?: Partial<Record<'instagram' | 'facebook' | 'linkedin', string>>
   preview: boolean
   properties: PublicProperty[]
 }

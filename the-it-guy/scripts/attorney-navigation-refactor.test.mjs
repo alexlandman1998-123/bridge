@@ -59,7 +59,9 @@ assert.doesNotMatch(
 for (const copy of ['All Matters', 'Active Matters', 'Transfer Matters', 'Bond Matters', 'Cancellation Matters', 'lockedMatterType', 'quickFilters']) {
   assert.match(matterWorkspaceServiceSource, new RegExp(copy), `Matter workspace service should define ${copy}`)
 }
-assert.match(mattersSource, /workspace\.view\?\.title/, 'Matter workspace header should render route-specific view metadata')
+assert.doesNotMatch(mattersSource, /workspace\.view\?\.title/, 'Matter workspace should not render a route-specific header')
+assert.doesNotMatch(mattersSource, /workspace\.view\?\.description/, 'Matter workspace should not render route-specific header copy')
+assert.match(mattersSource, /viewKey === 'all'[\s\S]*?workspace\.kpis\.map/, 'Matter KPI cards should render only on All Matters')
 assert.match(mattersSource, /itemLabel=\{workspace\.view\?\.itemLabel/, 'Matter workspace pagination should use route-specific item labels')
 assert.match(matterWorkspaceServiceSource, /summary:\s*buildSummary\(viewRows/, 'Matter workspace summary should be scoped to the active route view')
 assert.match(matterWorkspaceServiceSource, /kpis:\s*buildKpis\(viewRows/, 'Matter workspace KPIs should be scoped to the active route view')

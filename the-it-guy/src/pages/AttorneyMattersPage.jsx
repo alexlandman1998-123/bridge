@@ -2095,20 +2095,13 @@ function AttorneyMattersPage() {
   }
 
   return (
-    <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-3">
+    <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-2">
       <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
-        <section className="flex flex-col gap-3 pt-2 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{workspace.view?.title || 'All Matters'}</h1>
-            {workspace.view?.description ? (
-              <p className="mt-1 max-w-2xl text-sm font-medium leading-6 text-slate-600">{workspace.view.description}</p>
-            ) : null}
-          </div>
-        </section>
-
-        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {workspace.kpis.map((item) => <KpiCard key={item.key} item={item} />)}
-        </section>
+        {viewKey === 'all' ? (
+          <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {workspace.kpis.map((item) => <KpiCard key={item.key} item={item} />)}
+          </section>
+        ) : null}
 
         {!usesIncomingQueue && viewKey !== 'needs_attention' ? <LegalPortfolioPriorityQueue model={legalPriorityQueue} onOpenMatter={handleOpenMatter} /> : null}
 

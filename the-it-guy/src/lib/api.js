@@ -246,7 +246,7 @@ import {
 } from '../services/transactionOperationalChecklistService'
 import { bondPerfLog, createPerfTimer } from './performanceTrace'
 import { resolveLegalDocumentRequirements } from '../services/attorneyWorkflow/attorneyDocumentRequirementsResolver'
-import { normalizePropertyCategory, PROPERTY_CATEGORIES } from './propertyTaxonomy'
+import { normalizePropertyCategory, normalizePropertyStructureType, PROPERTY_CATEGORIES } from './propertyTaxonomy'
 import { getSuggestedRescheduleSlots } from './appointmentAvailabilityEngine'
 import { resolveTransactionParticipantShape } from '../services/roleResolutionService'
 import { assertWorkspaceEntitlementLimit } from '../services/workspaceEntitlementsService'
@@ -30734,6 +30734,10 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   })
   const transactionType = saleProfile.transactionType || normalizeStoredTransactionType(setup?.transactionType, 'developer_sale')
   const propertyType = normalizeTransactionPropertyType(setup?.propertyType)
+  const propertyTenure = normalizePropertyStructureType(
+    setup?.propertyTenure || setup?.property_tenure || setup?.propertyTitleType || setup?.property_title_type,
+    { fallback: transactionType === 'developer_sale' ? 'sectional_title' : null },
+  )
 
   assertTransactionCreationInput({
     setup,
@@ -31019,7 +31023,8 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
         sourceContext.agencyOrganisationId ||
         sourceContext.agency_organisation_id,
     ),
-    property_type: transactionType === 'private_property' ? propertyType : null,
+    property_type: propertyType,
+    property_tenure: propertyTenure,
     property_address_line_1: normalizeNullableText(setup.propertyAddressLine1),
     property_address_line_2: normalizeNullableText(setup.propertyAddressLine2),
     suburb: normalizeNullableText(setup.suburb),
@@ -35195,25 +35200,31 @@ export async function fetchTransactionsByParticipant({ userId, roleType = null }
 }
 
 async function buildTransactionWorkspaceShellFromTransaction(client, transaction, { cacheKey, timer = null } = {}) {
-  const [buyerQuery, developmentQuery] = await Promise.all([
+  const [buyerQuery, developmentQuery, developmentProfile] = await Promise.all([
     transaction?.buyer_id
       ? client.from('buyers').select('id, name, phone, email').eq('id', transaction.buyer_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     transaction?.development_id
       ? client.from('developments').select('id, name, location').eq('id', transaction.development_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    transaction?.development_id
+      ? fetchDevelopmentProfile(client, transaction.development_id)
+      : Promise.resolve(null),
   ])
   timer?.mark('transaction_shell_relations_ready')
   if (buyerQuery.error && !isMissingSchemaError(buyerQuery.error)) throw buyerQuery.error
   if (developmentQuery.error && !isMissingSchemaError(developmentQuery.error)) throw developmentQuery.error
 
   const buyer = buyerQuery.data || null
+  const development = developmentQuery.data
+    ? { ...developmentQuery.data, profile: developmentProfile || null }
+    : null
   const stage = normalizeStage(transaction.stage, transaction.stage || 'Transfer in Progress')
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
   const attorneyStage = resolveAttorneyOperationalStageKey({ transaction })
   const shell = {
     unit: null,
-    development: developmentQuery.data || null,
+    development,
     transaction,
     buyer,
     documents: [], clientPortalLinks: [], clientIssues: [], alterationRequests: [], serviceReviews: [],
@@ -35263,7 +35274,7 @@ export async function fetchTransactionCoreById(transactionId) {
 // long-lived columns form the route contract; richer metadata is hydrated after
 // the workspace is already interactive.
 const TRANSACTION_ROUTE_CORE_SELECT =
-  'id, development_id, unit_id, buyer_id, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at'
+  'id, development_id, unit_id, listing_id, buyer_id, transaction_type, property_type, property_tenure, property_address_line_1, property_address_line_2, suburb, city, province, property_description, purchase_price, sales_price, finance_type, stage, attorney, bond_originator, next_action, updated_at, created_at'
 
 export async function fetchTransactionRouteCoreById(transactionId) {
   if (!transactionId) return null

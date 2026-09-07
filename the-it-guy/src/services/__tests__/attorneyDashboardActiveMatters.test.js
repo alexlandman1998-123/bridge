@@ -49,4 +49,26 @@ describe('attorney dashboard active matter cards', () => {
     expect(card.assignedStaff).toBe('Unassigned')
     expect(card.statusLabel).toBe('Awaiting Bank')
   })
+
+  it('uses the linked scheme and unit instead of attorney-assignment metadata', () => {
+    const card = mapMatterToActiveMatterCard({
+      summary: {
+        transactionId: 'matter-3',
+        roles: new Set(['transfer']),
+        transaction: {
+          id: 'matter-3',
+          property_tenure: 'sectional_title',
+          development_name: 'Junoah Estate',
+          unit_number: '12B',
+        },
+      },
+      primaryUnit: {
+        transactionId: 'matter-3',
+        // This is assignment metadata, not the property unit.
+        unit_number: 'assignment-row',
+      },
+    })
+
+    expect(card.propertyAddress).toBe('Junoah Estate · Unit 12B')
+  })
 })

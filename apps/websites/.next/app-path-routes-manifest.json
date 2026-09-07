@@ -8,5 +8,6 @@
   "/properties/page": "/properties",
   "/robots.txt/route": "/robots.txt",
   "/sandbox/page": "/sandbox",
-  "/sitemap.xml/route": "/sitemap.xml"
+  "/sitemap.xml/route": "/sitemap.xml",
+  "/valuation/page": "/valuation"
 }

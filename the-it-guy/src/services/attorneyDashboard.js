@@ -159,6 +159,16 @@ function resolveMatterIssueFlags(transaction = {}) {
   }
 }
 
+function isActiveDashboardMatter(transaction = {}) {
+  const lifecycle = toLower(transaction.lifecycle_state)
+  const stage = toLower(transaction.stage)
+  const mainStage = toLower(transaction.current_main_stage)
+  const nextAction = toLower(transaction.next_action)
+  if (['archived', 'cancelled', 'deleted'].includes(lifecycle)) return false
+  if (stage === 'available' || ['avail', 'available'].includes(mainStage)) return false
+  return !nextAction.startsWith('transaction deleted') && !nextAction.startsWith('transaction reset to available')
+}
+
 function resolveAttentionIssue(flags = {}) {
   if (flags.delayed) return 'Delayed matter'
   if (flags.awaitingFica) return 'Awaiting FICA'
@@ -642,9 +652,9 @@ function resolveMatterCardContext({ transaction = {}, matter = {}, statusLabel =
 }
 
 function resolveMatterCardValue(transaction = {}, laneKey = 'transfer') {
-  if (laneKey === 'bond') return Number(transaction.bond_amount || transaction.purchase_price || transaction.sales_price || 0) || 0
+  if (laneKey === 'bond') return Number(transaction.bond_amount || transaction.purchase_price || transaction.sales_price || transaction.unit_price || 0) || 0
   if (laneKey === 'cancellation') return Number(transaction.estimated_settlement_amount || transaction.bond_amount || 0) || 0
-  return Number(transaction.purchase_price || transaction.sales_price || 0) || 0
+  return Number(transaction.purchase_price || transaction.sales_price || transaction.unit_price || 0) || 0
 }
 
 export function mapMatterToActiveMatterCard({ summary = {}, primaryUnit = {}, memberProfilesById = {}, organisationsById = {} } = {}) {
@@ -659,7 +669,38 @@ export function mapMatterToActiveMatterCard({ summary = {}, primaryUnit = {}, me
   const buyer = primaryUnit.buyer || {}
   const reference = getMatterReference(transaction, summary.transactionId || primaryUnit.transactionId)
   const currentStage = transaction.current_sub_stage_summary || transaction.current_main_stage || transaction.stage || 'Stage pending'
-  const identityRow = { ...transaction, transaction, buyer, unit: primaryUnit }
+  // `primaryUnit` describes the attorney assignment. Property identity must
+  // come from the transaction's linked listing/unit/development instead.
+  const propertyUnit = transaction.property_unit || transaction.propertyUnit || {
+    id: transaction.unit_id,
+    unit_number: transaction.unit_number,
+    unit_label: transaction.unit_label,
+    erf_number: transaction.erf_number,
+  }
+  const propertyDevelopment = transaction.property_development || transaction.propertyDevelopment || {
+    id: transaction.development_id,
+    name: transaction.development_name,
+    development_name: transaction.development_name,
+    scheme_name: transaction.scheme_name,
+    formatted_address: transaction.development_formatted_address,
+    address: transaction.development_address,
+  }
+  const propertyListing = transaction.property_listing || transaction.propertyListing || {
+    id: transaction.listing_id,
+    formatted_address: transaction.listing_formatted_address,
+    street_address: transaction.listing_street_address,
+    address_line_1: transaction.listing_address_line_1,
+    title: transaction.listing_title,
+    erf_number: transaction.listing_erf_number,
+  }
+  const identityRow = {
+    ...transaction,
+    transaction,
+    buyer,
+    unit: propertyUnit,
+    development: propertyDevelopment,
+    listing: propertyListing,
+  }
   const propertyAddress = resolvePortalPropertyLabel(identityRow, { fallback: 'Property address pending' })
   const buyerName = resolvePortalBuyerName(identityRow, { fallback: buyer.email || 'Client pending' })
   const sellerName = resolvePortalSellerName(identityRow, { fallback: 'Seller pending' })
@@ -1205,10 +1246,15 @@ function mapDashboardSnapshotKpis(kpis = {}) {
 }
 
 function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } = {}) {
-  const transactions = Array.isArray(snapshot.matters) ? snapshot.matters : []
+  const allTransactions = Array.isArray(snapshot.matters) ? snapshot.matters : []
+  const transactions = allTransactions.filter(isActiveDashboardMatter)
   const members = Array.isArray(snapshot.members) ? snapshot.members : []
   const departments = Array.isArray(snapshot.departments) ? snapshot.departments : []
   const kpis = mapDashboardSnapshotKpis(snapshot.kpis)
+  const excludedTransactions = allTransactions.length - transactions.length
+  if (excludedTransactions > 0) {
+    kpis.activeMatters = Math.max(0, kpis.activeMatters - excludedTransactions)
+  }
   const memberProfilesById = members.reduce((byId, member) => {
     if (member?.userId) byId[member.userId] = { id: member.userId, fullName: member.fullName || 'Team Member', email: '' }
     return byId

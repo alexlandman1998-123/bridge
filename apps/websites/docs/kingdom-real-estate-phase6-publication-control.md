@@ -12,7 +12,7 @@ Define the controlled, reversible path for publishing Kingdom Real Estate's firs
 | Draft revision | Revision 1 (`8e290784-5c3d-4d77-9c64-7240581eae91`) |
 | Template | Home Seekers v1 |
 | Core pages | Home, About, Contact and Valuation validated |
-| Managed preview hostname | `kingdom-real-estate-13c6b79f.sites.propdata.co.za` |
+| Managed preview hostname | `kingdom-real-estate-13c6b79f.sites.arch9.co.za` |
 | Client custom domains | None |
 | Public revision | None — the website remains a draft |
 
