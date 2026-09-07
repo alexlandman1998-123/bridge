@@ -34,7 +34,7 @@ export async function listReusableBuyerProfiles({ organisationId = null, limit =
   return result.data || []
 }
 
-export async function createReusableBuyerProfile({ name, email = '', phone = '', organisationId, client = supabase } = {}) {
+export async function createReusableBuyerProfile({ name, email = '', phone = '', organisationId, profileData = {}, client = supabase } = {}) {
   const db = requireClient(client)
   const normalizedName = text(name)
   const normalizedEmail = text(email).toLowerCase() || null
@@ -65,7 +65,8 @@ export async function createReusableBuyerProfile({ name, email = '', phone = '',
     phone: normalizedPhone,
   }).select('id, organisation_id, name, email, phone').single()
   if (result.error) throw result.error
-  return { buyer: result.data, created: true }
+  const profile = await saveReusableBuyerProfile({ buyerId: result.data.id, profileData, client: db })
+  return { buyer: result.data, profile, created: true }
 }
 
 export async function getReusableBuyerProfile({ buyerId, client = supabase } = {}) {
