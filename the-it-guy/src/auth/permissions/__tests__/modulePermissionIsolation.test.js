@@ -151,16 +151,16 @@ try {
   const developerContext = context({ appRole: 'developer', workspaceType: 'developer_company', workspaceRole: 'owner' })
   const developerKeys = visibleKeys(filterNavigationItems(getRoleNavItems('developer'), developerContext))
   assert.equal(developerKeys.includes('developer_leads'), true)
-  assert.equal(developerKeys.includes('developer_pipeline'), false)
+  assert.equal(developerKeys.includes('agency_pipeline'), true)
   assert.equal(developerKeys.includes('developments'), true)
   assert.equal(developerKeys.includes('listings'), true)
   assert.equal(developerKeys.includes('developer_partners'), true)
   assert.equal(developerKeys.includes('developer_agencies'), true)
   assert.equal(developerKeys.includes('developer_snags'), false)
-  assert.equal(developerKeys.includes('agency_pipeline'), false)
   assert.equal(can(PERMISSIONS.viewSalesPipeline, developerContext), true)
   assert.equal(can(PERMISSIONS.viewListings, developerContext), true)
-  assert.equal(can(PERMISSIONS.viewLeads, developerContext), false)
+  assert.equal(can(PERMISSIONS.viewLeads, developerContext), true)
+  assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/leads'), developerContext).ok, true)
 
   const clientKeys = visibleKeys(filterNavigationItems(getRoleNavItems('client'), {
     appRole: 'client',
@@ -173,7 +173,7 @@ try {
   assert.equal(clientKeys.includes('developer_snags'), false)
 
   assert.equal(getRouteAccessRequirement('/pipeline'), null)
-  assert.equal(getRouteAccessRequirement('/pipeline/leads')?.workspaceType, 'agency')
+  assert.equal(Array.isArray(getRouteAccessRequirement('/pipeline/leads')?.anyOf), true)
   assert.equal(getRouteAccessRequirement('/pipeline/canvassing')?.permission, PERMISSIONS.createLeads)
   assert.equal(getRouteAccessRequirement('/agency/partners')?.permission, PERMISSIONS.partnersViewNetwork)
   assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/listings/developments'), developerContext).ok, true)

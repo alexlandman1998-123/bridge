@@ -3257,7 +3257,7 @@ function AppRoutes() {
                 path="/pipeline/leads"
                 element={
                   <SalesWorkspaceGuard>
-                    <RoleRoute allowedRoles={['agent']}>
+                    <RoleRoute allowedRoles={['agent', 'developer']}>
                       <Suspense fallback={<LeadsRouteShell />}>
                         <AgencyLeadListRoutePage />
                       </Suspense>
@@ -3281,7 +3281,7 @@ function AppRoutes() {
                 path="/pipeline/leads/:leadId"
                 element={
                   <SalesWorkspaceGuard>
-                    <RoleRoute allowedRoles={['agent']}>
+                    <RoleRoute allowedRoles={['agent', 'developer']}>
                       <Suspense fallback={<LeadWorkspaceRouteLoadingShell loadStage="route_chunk_loading" />}>
                         <AgencyLeadWorkspaceRoutePage />
                       </Suspense>

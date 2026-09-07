@@ -185,6 +185,13 @@ const DEVELOPER_PERMISSIONS = [
   PERMISSIONS.deleteDevelopments,
   PERMISSIONS.manageUnits,
   PERMISSIONS.viewSalesPipeline,
+  // Developers operating their own agency CRM use the same canonical lead
+  // records as agency teams. Keep that access explicit rather than mirroring
+  // Property24 enquiries into a second lead store.
+  PERMISSIONS.viewLeads,
+  PERMISSIONS.createLeads,
+  PERMISSIONS.editLeads,
+  PERMISSIONS.assignLeads,
   PERMISSIONS.manageDeveloperTransactions,
   PERMISSIONS.viewListings,
   PERMISSIONS.createListings,
@@ -551,7 +558,13 @@ export const routePermissionRules = Object.freeze([
   { prefix: '/agents/reporting', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewReports },
   { prefix: '/pipeline/calendar', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.manageAppointments },
   { prefix: '/pipeline/canvassing', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.createLeads },
-  { prefix: '/pipeline/leads', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
+  {
+    prefix: '/pipeline/leads',
+    anyOf: [
+      { appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
+      { appRole: APP_ROLES.developer, workspaceType: WORKSPACE_TYPES.developerCompany, permission: PERMISSIONS.viewLeads },
+    ],
+  },
   { prefix: '/pipeline/enquiries', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
   { prefix: '/pipeline/overview', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewLeads },
   { prefix: '/agent/rentals/dashboard', appRole: APP_ROLES.agent, workspaceType: WORKSPACE_TYPES.agency, permission: PERMISSIONS.viewAgencyDashboard },
