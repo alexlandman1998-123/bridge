@@ -59,7 +59,6 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import TransactionBuyerPartiesPanel from '../components/transaction/TransactionBuyerPartiesPanel'
 import DealSetupPanel from '../components/transaction/DealSetupPanel'
-import DealSetupDocumentRequirementsPanel from '../components/transaction/DealSetupDocumentRequirementsPanel'
 import AttorneyDealSetupHandoffPanel from '../components/attorney/AttorneyDealSetupHandoffPanel'
 import BondDealSetupHandoffPanel from '../components/bond/BondDealSetupHandoffPanel'
 import LegalTaskWorkbench from '../components/attorney/workflow/LegalTaskWorkbench.jsx'
@@ -22431,7 +22430,6 @@ function AttorneyTransactionDetail() {
 
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-4">
-            <DealSetupDocumentRequirementsPanel transactionId={transaction?.id} />
             <ArchlineDocumentsWorkspace
               loading={!documentDataHydrated && documentWorkspaceLoad.status !== 'error'}
               error={!documentDataHydrated ? documentWorkspaceLoad.error : ''}
