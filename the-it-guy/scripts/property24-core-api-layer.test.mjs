@@ -34,7 +34,7 @@ const fakeFetch = async (url, options) => {
     status: 200,
     statusText: 'OK',
     headers: { get: () => 'application/json' },
-    json: async () => ({ leads: [{ listingNumber: 123, contactName: 'Alex' }], nextAfter: '2026-08-20T10:00:00' }),
+    json: async () => ({ leads: [{ listingNumber: 100314793, contactName: 'Alex' }, { listingNumber: 123, contactName: 'Other listing' }], nextAfter: '2026-08-20T10:00:00' }),
     text: async () => '',
   }
 }
@@ -52,9 +52,10 @@ const leadResult = await fetchProperty24ListingLeads({
   endDate: '2026-08-20T00:00:00',
 })
 
-assert.equal(calls[0].url, 'https://api.exdev.property24-test.com/listing/v53/listings/100314793/leads?startDate=2026-08-01T00%3A00%3A00&endDate=2026-08-20T00%3A00%3A00')
+assert.equal(calls[0].url, 'https://api.exdev.property24-test.com/listing/v53/listings/leads?after=2026-08-01T00%3A00%3A00')
 assert.equal(leadResult.summary.count, 1)
 assert.equal(leadResult.summary.nextAfter, '2026-08-20T10:00:00')
+assert.equal(leadResult.data.leads[0].listingNumber, 100314793)
 
 const v55Client = createProperty24Client({
   baseUrl: 'https://api.property24.com',
