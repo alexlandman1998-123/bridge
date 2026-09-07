@@ -103,6 +103,16 @@ function sortRequirements(items = []) {
   })
 }
 
+function resolveRequirementAction(requirement = {}, actions = []) {
+  const haystack = `${requirement.id || ''} ${requirement.label || ''} ${requirement.description || ''} ${(requirement.fields || []).join(' ')}`.toLowerCase()
+  const available = actions.filter((action) => !action.disabled)
+  const pick = (...ids) => available.find((action) => ids.includes(action.id)) || actions.find((action) => ids.includes(action.id)) || null
+  if (/document|agreement|otp|fica|guarantee|title deed|certificate/.test(haystack)) return pick('upload_document', 'request_document', 'open_documents')
+  if (/finance|bond|loan|bank|guarantee/.test(haystack)) return pick('capture_data', 'open_finance')
+  if (/buyer|seller|party|authority|contact|transaction type/.test(haystack)) return pick('capture_data', 'open_parties', 'open_matter')
+  return pick('capture_data', 'open_matter', 'add_note')
+}
+
 export function buildLegalTaskWorkbenchModel({
   task = null,
   taskContext = {},
@@ -142,6 +152,10 @@ export function buildLegalTaskWorkbenchModel({
   const clientUpdateVisible = visibilityPolicy.clientVisibleAllowed !== false && visibilityPolicy.defaultVisibility === 'client_visible' && clientAudience.length > 0
   const operationalHealth = buildLegalWorkflowOperationalHealthModel({ tasks: workflowTasks })
   const showOwner = Boolean(task.ownerLabel) && ['blocked', 'waiting', 'delayed'].includes(task.displayStatus)
+  const requirementActions = Object.fromEntries(
+    outstandingRequirements.map((requirement) => [requirement.id, resolveRequirementAction(requirement, normalizedWorkActions)]).filter(([, action]) => action),
+  )
+  const uploadAction = normalizedWorkActions.find((action) => action.id === 'upload_document') || null
 
   return {
     empty: false,
@@ -166,6 +180,8 @@ export function buildLegalTaskWorkbenchModel({
       ? 'Required evidence is present. This task can be completed.'
       : task.completionReadiness?.warnings?.[0] || 'Complete the outstanding requirements before closing this task.',
     outstandingRequirements,
+    requirementActions,
+    uploadAction,
     completedRequirements,
     confirmationRequirements,
     attentionItems,

@@ -44,6 +44,19 @@ function firstText(...values) {
   return ''
 }
 
+function isGenericMatterLabel(value) {
+  const label = normalizeText(value).toLowerCase().replace(/\s+/g, ' ')
+  return !label || label === 'matter' || label === 'property' || /^(transfer|bond|cancellation|registration) matter$/.test(label)
+}
+
+function firstPropertyText(...values) {
+  for (const value of values) {
+    const text = normalizeText(value)
+    if (text && !isPendingPlaceholder(text) && !isGenericMatterLabel(text)) return text
+  }
+  return ''
+}
+
 function addSource(target, source, seen = new WeakSet()) {
   if (!isPlainObject(source)) return
   if (seen.has(source)) return
@@ -188,6 +201,14 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
     unit.property_title_type,
     unit.propertyTitleType,
   ).toLowerCase()
+  const propertyType = firstText(
+    transaction.property_type,
+    transaction.propertyType,
+    unit.property_type,
+    unit.propertyType,
+    unit.property_title_type,
+    unit.propertyTitleType,
+  ).toLowerCase()
   const unitLabel = firstText(unit.unit_label, unit.unitLabel, unit.unit_number, unit.unitNumber)
   const schemeName = firstText(
     development.scheme_name,
@@ -200,11 +221,11 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
   // Conveyancing identity is tenure-specific. A sectional title must never be
   // reduced to the development or street address when the scheme and unit are
   // available.
-  if (propertyTenure.includes('sectional') && schemeName && unitLabel) {
-    return `${schemeName} · Unit ${unitLabel}`
+  if ((propertyTenure.includes('sectional') || propertyType.includes('sectional')) && schemeName && unitLabel) {
+    return `Unit ${unitLabel} | ${schemeName}`
   }
 
-  const directProperty = firstText(
+  const directProperty = firstPropertyText(
     row?.property?.display_address,
     row?.property?.displayAddress,
     row?.property?.address,
@@ -261,6 +282,7 @@ export function resolvePortalPropertyLabel(row = {}, { fallback = 'Property pend
     development.location,
   )
   const developmentName = firstText(development.development_name, development.developmentName, development.name)
+  if ((propertyTenure.includes('sectional') || propertyType.includes('sectional')) && developmentName && unitLabel) return `Unit ${unitLabel} | ${developmentName}`
   if (developmentAddress && unitLabel) return `${developmentAddress} · Unit ${unitLabel}`
   if (developmentAddress) return developmentAddress
   if (developmentName && unitLabel) return `${developmentName} · Unit ${unitLabel}`

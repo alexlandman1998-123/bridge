@@ -510,6 +510,13 @@ function mapOrganisation(row = {}) {
     contactEmails: normalizeArray(
       [row.contact_email, row.contactEmail, settings.contactEmail, settings.contact_email, settings.email, settings.inviteEmail].filter(Boolean),
     ),
+    // Principal details are optional profile metadata. They are deliberately
+    // read from the published organisation settings rather than inferred from
+    // a transaction participant, which may be private to a specific matter.
+    principalName: normalizeText(settings.principalName || settings.principal_name || settings.ownerName || settings.owner_name || settings.primaryContactName || settings.primary_contact_name),
+    principalEmail: normalizeText(settings.principalEmail || settings.principal_email || settings.ownerEmail || settings.owner_email || settings.primaryContactEmail || settings.primary_contact_email),
+    ownerName: normalizeText(settings.ownerName || settings.owner_name),
+    ownerEmail: normalizeText(settings.ownerEmail || settings.owner_email),
     transactionStats: {
       activeTransactions: Number(settings.activeTransactions || settings.active_transaction_count || 0),
       registrations: Number(settings.registrations || settings.registration_count || 0),
@@ -664,6 +671,39 @@ function enrichRelationships(relationships, organisations) {
   return relationships.map((relationship) => ({
     ...relationship,
     partner: organisationsById.get(relationship.counterpartOrganisationId || relationship.partnerOrganisationId) || null,
+  }))
+}
+
+async function fetchSharedMatterCounts(partnerOrganisationIds = []) {
+  const ids = [...new Set(partnerOrganisationIds.map(normalizeNullableUuid).filter(Boolean))]
+  if (!ids.length || !supabase) return new Map()
+  try {
+    const result = await supabase
+      .from('transaction_partner_assignments')
+      .select('transaction_id, partner_organisation_id, assignment_status')
+      .in('partner_organisation_id', ids)
+    if (result.error) throw result.error
+    const matterIdsByPartner = new Map()
+    for (const row of result.data || []) {
+      if (normalizeLower(row.assignment_status) === 'cancelled') continue
+      const partnerId = normalizeText(row.partner_organisation_id)
+      const transactionId = normalizeText(row.transaction_id)
+      if (!partnerId || !transactionId) continue
+      if (!matterIdsByPartner.has(partnerId)) matterIdsByPartner.set(partnerId, new Set())
+      matterIdsByPartner.get(partnerId).add(transactionId)
+    }
+    return new Map([...matterIdsByPartner.entries()].map(([partnerId, matterIds]) => [partnerId, matterIds.size]))
+  } catch (error) {
+    // Assignment visibility is RLS-protected and older environments may not
+    // have the table. A missing count is never treated as a relationship error.
+    return new Map()
+  }
+}
+
+function withSharedMatterCounts(relationships = [], counts = new Map()) {
+  return relationships.map((relationship) => ({
+    ...relationship,
+    sharedMatterCount: counts.get(normalizeText(relationship.counterpartOrganisationId || relationship.partnerOrganisationId)) || 0,
   }))
 }
 
@@ -1180,15 +1220,17 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
       organisations,
     )
     const referrals = referralRows.map(mapReferral)
+    const sharedMatterCounts = await fetchSharedMatterCounts(relationships.map((relationship) => relationship.counterpartOrganisationId || relationship.partnerOrganisationId))
+    const relationshipsWithMatterCounts = withSharedMatterCounts(relationships, sharedMatterCounts)
 
     return {
       source: 'supabase',
       accessContext: { ...accessContext, organisationId: scopedOrganisationId },
       organisations,
-      relationships,
+      relationships: relationshipsWithMatterCounts,
       invitations,
       referrals,
-      metrics: buildMetrics({ relationships, referrals }),
+      metrics: buildMetrics({ relationships: relationshipsWithMatterCounts, referrals }),
       directoryHydrated: includeDirectory,
     }
   } catch (error) {

@@ -1115,13 +1115,13 @@ function MatterFilters({ workspace, searchTerm, filters, onSearchChange, onFilte
 }
 
 function MatterPropertyCell({ row, preview }) {
-  // An address is not mandatory when a matter is first created. Do not present
-  // an internal data fallback as if it were the matter's title.
+  // A matter is identified by its property, never by the workflow name. The
+  // resolver selects an address for freehold and Unit | Scheme for sectional.
   const address = firstText(
+    resolvePortalPropertyLabel(row, { fallback: '' }),
     row.propertyAddress === 'Property pending' || row.propertyAddress === 'Property details pending' ? '' : row.propertyAddress,
     row.property === 'Property pending' ? '' : row.property,
-    `${row.matterType || 'Property'} matter`,
-  )
+  ) || 'Property pending'
   const location = firstText(row.propertyArea, [row.development, row.unit ? `Unit ${row.unit}` : '', row.phase].filter(Boolean).join(' / '))
 
   return (

@@ -1,6 +1,7 @@
 import {
   ArrowUpRight,
   BadgeCheck,
+  BriefcaseBusiness,
   Building2,
   CheckCircle2,
   ChevronRight,
@@ -183,6 +184,28 @@ function normalizeText(value = '') {
 
 function normalizeLower(value = '') {
   return normalizeText(value).toLowerCase()
+}
+
+function partnerNetworkIdentity(relationship = {}) {
+  const partner = relationship?.partner || {}
+  const name = normalizeLower(partner.name)
+  const type = normalizeLower(partner.type || relationship.partnerType)
+  // A relationship can be written by both the connection and invitation paths.
+  // Prefer a stable organisation id, but collapse equivalent named organisations
+  // for presentation until duplicate source records are reconciled.
+  return name ? `profile:${name}:${type}` : `unresolved:${normalizeText(relationship.counterpartOrganisationId || relationship.partnerOrganisationId || relationship.id)}`
+}
+
+function dedupePartnerNetworkRelationships(relationships = []) {
+  const rowsByIdentity = new Map()
+  for (const relationship of relationships) {
+    const identity = partnerNetworkIdentity(relationship)
+    const current = rowsByIdentity.get(identity)
+    if (!current || new Date(relationship.updatedAt || relationship.acceptedAt || relationship.createdAt || 0) > new Date(current.updatedAt || current.acceptedAt || current.createdAt || 0)) {
+      rowsByIdentity.set(identity, relationship)
+    }
+  }
+  return [...rowsByIdentity.values()]
 }
 
 function resolvePartnersActiveTab(tabValue = '', isBondPartnersRoute = false) {
@@ -1275,47 +1298,45 @@ function PartnerOrganisationProfilePage({
 function AttorneyNetworkPartnerCard({ relationship, referralCount = 0, onViewProfile, onReferBusiness }) {
   const partner = relationship?.partner || {}
   const serviceTags = collectPartnerActiveAreas(partner).slice(0, 3)
-  const contactName = normalizeText(partner.primaryContactName || partner.primary_contact_name || partner.contactName || partner.contact_name)
-  const contactEmail = normalizeText(partner.contactEmails?.[0] || partner.contactEmail || partner.contact_email)
+  const contactName = normalizeText(partner.principalName || partner.ownerName || partner.primaryContactName || partner.primary_contact_name || partner.contactName || partner.contact_name)
+  const contactEmail = normalizeText(partner.principalEmail || partner.ownerEmail || partner.primaryContactEmail || partner.contactEmails?.[0] || partner.contactEmail || partner.contact_email)
   const location = [partner.city, partner.province].filter(Boolean).join(', ')
-  const description = getPartnerProfileContent(partner).aboutCompany || buildPartnerOverviewCopy(partner)
   const sharedMatterCount = Number(relationship?.sharedMatterCount || relationship?.shared_matter_count || 0)
+  const resolvedPartner = Boolean(partner?.id)
 
   return (
-    <article className="flex min-h-[318px] flex-col rounded-xl border border-[#dce7e3] bg-white p-4 shadow-[0_8px_20px_rgba(15,48,42,0.04)]">
+    <article className="flex min-h-[316px] flex-col rounded-xl border border-[#dce7e3] bg-white p-4 shadow-[0_8px_20px_rgba(15,48,42,0.04)]">
       <div className="flex items-start gap-3">
         <PartnerLogo partner={partner} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <h3 className="truncate text-base font-semibold tracking-[-0.015em] text-[#10243a]">{partner.name || 'Partner organisation'}</h3>
-              <p className="mt-0.5 text-sm text-[#66758a]">{getPartnerTypeLabel(partner.type)}{location ? ` · ${location}` : ''}</p>
+              <h3 className="truncate text-base font-semibold tracking-[-0.015em] text-[#10243a]">{partner.name || 'Unresolved partner connection'}</h3>
+              <p className="mt-0.5 text-sm text-[#66758a]">{resolvedPartner ? `${getPartnerTypeLabel(partner.type)}${location ? ` · ${location}` : ''}` : 'Organisation record is unavailable to this workspace'}</p>
             </div>
             <StatusBadge className="border-[#d8eee3] bg-[#eef9f3] text-[#17613d]">Connected</StatusBadge>
           </div>
         </div>
       </div>
-      {description ? <p className="mt-3 line-clamp-2 text-sm leading-5 text-[#66758a]">{description}</p> : null}
       {serviceTags.length ? (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {serviceTags.map((tag) => <span key={tag} className="rounded-md bg-[#f1f4f6] px-2 py-1 text-[0.7rem] font-medium text-[#5d6c80]">{tag}</span>)}
         </div>
       ) : null}
-      {(contactName || contactEmail) ? (
-        <div className="mt-4 flex items-center gap-2 border-t border-[#edf1f3] pt-3">
+      <div className="mt-4 flex min-h-[52px] items-center gap-2 border-t border-[#edf1f3] pt-3">
+        {(contactName || contactEmail) ? <>
           <OrganisationAvatar organisation={{ name: contactName || contactEmail }} size="sm" />
           <div className="min-w-0">
+            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#718198]">Owner / principal</p>
             {contactName ? <p className="truncate text-sm font-semibold text-[#24364a]">{contactName}</p> : null}
             {contactEmail ? <p className="truncate text-xs text-[#718198]">{contactEmail}</p> : null}
           </div>
-        </div>
-      ) : null}
-      {(sharedMatterCount > 0 || referralCount > 0) ? (
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-[#6c7c90]">
-          {sharedMatterCount > 0 ? <span>{formatNumber(sharedMatterCount)} shared matters</span> : null}
-          {referralCount > 0 ? <span>{formatNumber(referralCount)} referrals</span> : null}
-        </div>
-      ) : null}
+        </> : <p className="text-xs text-[#718198]">Owner / principal details have not been shared.</p>}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs font-medium text-[#6c7c90]">
+        <span className="inline-flex items-center gap-1.5"><BriefcaseBusiness size={14} />{formatNumber(sharedMatterCount)} shared matters</span>
+        <span className="inline-flex items-center gap-1.5"><ArrowUpRight size={14} />{formatNumber(referralCount)} referrals</span>
+      </div>
       <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
         <button type="button" onClick={onViewProfile} className="inline-flex h-10 items-center justify-center rounded-lg border border-[#1f6253] bg-white px-3 text-sm font-semibold text-[#16483e] transition hover:bg-[#f3faf6]">View profile</button>
         <button type="button" onClick={onReferBusiness} className="inline-flex h-10 items-center justify-center rounded-lg bg-[#0e433a] px-3 text-sm font-semibold text-white transition hover:bg-[#123e36]">Refer business</button>
@@ -1409,7 +1430,7 @@ function AttorneyNetworkWorkspace({
   return (
     <section className="space-y-4 px-4 pt-5 sm:px-6 lg:px-8">
       <div className="flex flex-col gap-3 border-b border-[#dce7e3] pb-3 lg:flex-row lg:items-center lg:justify-between">
-        <nav className="flex min-w-0 gap-5 overflow-x-auto" aria-label="Partner network views">
+        <nav className="flex min-w-0 flex-wrap gap-x-5 gap-y-2" aria-label="Partner network views">
           {[
             { key: 'connected', label: 'My network', count: networkCount },
             { key: 'discover', label: 'Discover' },
@@ -2667,7 +2688,7 @@ export default function PartnersPage() {
 
   const relationships = useMemo(() => snapshot?.relationships || [], [snapshot?.relationships])
   const connectedRelationships = useMemo(
-    () => filterPartnerRelationshipsByScope(relationships, accessContext).filter((item) => item.relationshipStatus === 'accepted'),
+    () => dedupePartnerNetworkRelationships(filterPartnerRelationshipsByScope(relationships, accessContext).filter((item) => item.relationshipStatus === 'accepted')),
     [accessContext, relationships],
   )
 

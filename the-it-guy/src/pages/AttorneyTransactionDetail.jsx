@@ -6859,7 +6859,7 @@ function ArchlineMatterHeader({
   return (
     <header className="archline-matter-header no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
       <div className="mx-auto max-w-[1680px] space-y-5">
-        <section className="relative isolate min-h-[340px] overflow-hidden rounded-[24px] border border-black/10 bg-[linear-gradient(135deg,#092f29,#142132_58%,#38574e)] px-4 py-4 text-white shadow-[0_20px_48px_rgba(15,23,42,0.15)] md:min-h-[350px] md:px-6 md:py-5">
+        <section className="relative isolate min-h-[385px] overflow-hidden rounded-[24px] border border-black/10 bg-[linear-gradient(135deg,#092f29,#142132_58%,#38574e)] px-4 py-4 text-white shadow-[0_20px_48px_rgba(15,23,42,0.15)] md:min-h-[405px] md:px-6 md:py-5">
           {propertyImageUrl ? <img src={propertyImageUrl} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover object-[68%_center]" /> : null}
           <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(3,8,9,0.88)_0%,rgba(6,13,14,0.68)_46%,rgba(8,16,16,0.45)_100%)]" />
           <div className="archline-matter-header-topbar flex flex-wrap items-start justify-between gap-3">
@@ -6895,7 +6895,7 @@ function ArchlineMatterHeader({
             </div>
           </div>
 
-          <div className="relative mt-5 grid min-h-[255px] gap-7 xl:grid-cols-1 xl:items-stretch">
+          <div className="relative mt-10 grid min-h-[280px] gap-7 md:mt-12 md:min-h-[300px] xl:grid-cols-1 xl:items-stretch">
             <div className="archline-matter-header-media hidden min-h-[230px] overflow-hidden rounded-[20px] border border-[rgba(7,30,26,0.07)] bg-[linear-gradient(145deg,#f4f9f7,#edf5f2)] shadow-[0_18px_42px_rgba(7,30,26,0.07)] xl:min-h-[300px]">
               {propertyImageUrl ? (
                 <img src={propertyImageUrl} alt={propertyPrimary} className="h-full w-full object-cover" />
@@ -6912,7 +6912,7 @@ function ArchlineMatterHeader({
               )}
             </div>
 
-            <div className="flex min-w-0 flex-col justify-between gap-6 py-1">
+            <div className="flex min-w-0 flex-col justify-between gap-6 pb-8 pt-3 md:pb-10 md:pt-5">
               <div className="min-w-0">
                 <span className="block min-w-0 text-[0.72rem] font-semibold uppercase leading-5 tracking-[0.14em] text-white/70">{reference || 'Matter reference pending'}</span>
                 <div className="mt-3 flex min-w-0 items-start gap-4">
@@ -6956,25 +6956,6 @@ function ArchlineMatterHeader({
                 </div>
               </div>
 
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="flex min-w-0 flex-wrap items-center gap-2.5">
-                  {chips.length ? chips.map((chip) => {
-                    const Icon = chip.icon || FileText
-                    return (
-                      <span key={chip.key || chip.label} className="inline-flex min-h-8 min-w-0 items-center gap-2 rounded-lg border border-white/20 bg-black/20 px-3 py-1.5 text-xs font-semibold leading-4 text-white/85">
-                        <Icon size={14} className="shrink-0" />
-                        <span className="min-w-0">{chip.label}</span>
-                      </span>
-                    )
-                  }) : null}
-                </div>
-                <button type="button" className="inline-flex h-10 min-w-0 items-center justify-between gap-2 self-start rounded-lg border border-white/25 bg-black/20 px-3 text-left text-sm font-semibold text-white backdrop-blur-sm transition hover:bg-white/15 sm:self-end" onClick={onViewProperty}>
-                  <span className="min-w-0">
-                    <span className="block">View property</span>
-                  </span>
-                  <ExternalLink size={16} className="shrink-0" />
-                </button>
-              </div>
             </div>
           </div>
         </section>
@@ -8341,6 +8322,23 @@ function ArchlineTransferWorkspace({
     handleTaskWorkAction(workAction)
   }
 
+  async function saveTaskProgress() {
+    if (!selectedTask || !canUpdateSteps || selectedTask.displayStatus === 'completed') return
+    const saved = await onUpdateStep?.(
+      selectedTask,
+      selectedTask.displayStatus === 'not_started' ? 'in_progress' : selectedTask.displayStatus,
+      'Draft progress saved from the Work tab.',
+    )
+    onUxEvent?.({
+      eventName: 'task_draft_saved',
+      lane: workflowKey,
+      taskType: taskWorkbenchModel.taskType,
+      status: selectedTask.displayStatus,
+      placement: 'sticky_action_bar',
+      outcome: saved === false ? 'failure' : 'success',
+    })
+  }
+
   function handleCommandQueueItem(item = {}) {
     if (item.command && item.workflowAction && typeof onExecuteCommand === 'function') {
       onExecuteCommand(item.workflowAction, item.command)
@@ -8474,6 +8472,7 @@ function ArchlineTransferWorkspace({
         onRunAction={handleTaskWorkbenchAction}
         onOpenDocuments={() => onOpenDocuments?.(selectedTask, selectedDocuments)}
         onAddNote={() => onAddNote?.(selectedTask)}
+        onSaveProgress={saveTaskProgress}
         statusDraft={statusDraft}
         onStatusDraftChange={setStatusDraft}
         onSubmitStatusDraft={submitStatusDraft}

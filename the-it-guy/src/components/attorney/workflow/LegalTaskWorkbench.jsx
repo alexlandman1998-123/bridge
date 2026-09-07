@@ -2,10 +2,11 @@ import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
-  ChevronDown,
   ChevronRight,
   Circle,
   FileText,
+  Paperclip,
+  Save,
   MessageSquarePlus,
   UserRound,
 } from 'lucide-react'
@@ -56,10 +57,19 @@ function statusTone(status = '') {
   return 'border-slate-200 bg-slate-50 text-slate-700'
 }
 
-function RequirementRow({ item }) {
+function requirementStatus(item = {}) {
+  if (item.complete) return 'Approved'
+  if (item.statusLabel) return item.statusLabel
+  if (item.status) return String(item.status).replaceAll('_', ' ')
+  return item.required === false ? 'Not applicable' : 'Required'
+}
+
+function RequirementRow({ item, action = null, saving = false, onRunAction }) {
   const complete = Boolean(item.complete)
+  const status = requirementStatus(item)
   return (
-    <li className="flex min-w-0 items-start gap-3 py-3">
+    <li className="flex min-w-0 flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center">
+      <div className="flex min-w-0 flex-1 items-start gap-3">
       <span className={`mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full border ${complete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white text-slate-400'}`}>
         {complete ? <CheckCircle2 size={14} /> : <Circle size={10} />}
       </span>
@@ -67,9 +77,17 @@ function RequirementRow({ item }) {
         <strong className="block text-sm font-semibold leading-5 text-slate-950">{item.label}</strong>
         {item.description ? <span className="mt-1 block text-xs leading-5 text-slate-500">{item.description}</span> : null}
       </span>
-      <span className={`shrink-0 text-xs font-semibold ${complete ? 'text-emerald-700' : item.required === false ? 'text-slate-500' : 'text-amber-700'}`}>
-        {complete ? 'Complete' : item.required === false ? 'Optional' : 'Required'}
-      </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-3 self-end sm:self-auto">
+        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${complete ? 'bg-emerald-50 text-emerald-700' : item.required === false ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-800'}`}>
+          {status}
+        </span>
+        {!complete && action ? (
+          <Button type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => onRunAction?.(action, 'requirement')}>
+            {action.label}
+          </Button>
+        ) : null}
+      </div>
     </li>
   )
 }
@@ -86,8 +104,7 @@ function Disclosure({ title, count = null, children, defaultOpen = false }) {
   )
 }
 
-function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = '', workflowLabel = 'Legal workflow', operationalHealth = null, onSelectTask }) {
-  const [showFullWorkflow, setShowFullWorkflow] = useState(false)
+function PhaseNavigator({ phases = [], selectedPhaseKey = '', workflowLabel = 'Legal workflow', operationalHealth = null, onSelectTask }) {
   const selectedPhase = phases.find((phase) => phase.key === selectedPhaseKey) || phases[0] || null
   const phaseExceptions = useMemo(() => {
     const grouped = new Map()
@@ -102,23 +119,18 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
     }
     return grouped
   }, [operationalHealth?.exceptions])
-  const visiblePhases = showFullWorkflow
-    ? phases
-    : phases.filter((phase) => phase.key === selectedPhase?.key || phaseExceptions.has(phase.key))
-
   return (
-    <aside className="min-h-0 max-h-[52dvh] md:max-h-[58dvh] xl:max-h-none">
-      <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.04)]">
+    <aside className="min-h-0 xl:sticky xl:top-24 xl:self-start">
+      <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.04)]">
         <div className="shrink-0 border-b border-slate-200 px-4 py-4">
-          <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">{workflowLabel}</span>
           <div className="mt-1 flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-950">{showFullWorkflow ? 'Full workflow' : 'Current checkpoint'}</h2>
-            <span className="text-xs font-medium text-slate-500">{selectedPhase?.completed || 0} of {selectedPhase?.total || 0}</span>
+            <h2 className="text-base font-semibold text-slate-950">{workflowLabel}</h2>
+            <span className="text-xs font-medium text-slate-500">{Math.max(1, phases.findIndex((phase) => phase.key === selectedPhase?.key) + 1)} of {phases.length}</span>
           </div>
         </div>
-        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3" aria-label={`${workflowLabel} checkpoints`}>
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3" aria-label={`${workflowLabel} stages`}>
           <ol className="space-y-1">
-            {visiblePhases.map((phase) => {
+            {phases.map((phase) => {
               const active = phase.key === selectedPhase?.key
               const phaseIndex = phases.findIndex((item) => item.key === phase.key)
               const exception = phaseExceptions.get(phase.key)
@@ -127,7 +139,7 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
                   <button
                     type="button"
                     className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition ${active ? 'bg-emerald-50 text-emerald-950 ring-1 ring-emerald-200' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
-                    onClick={() => onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.[0]?.key)}
+                    onClick={() => onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => task.displayStatus !== 'completed')?.key || phase.tasks?.[0]?.key)}
                     aria-current={active ? 'step' : undefined}
                   >
                     <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${phase.status === 'completed' ? 'bg-emerald-700 text-white' : active ? 'bg-white text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
@@ -150,39 +162,6 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
               )
             })}
           </ol>
-          {selectedPhase?.tasks?.length ? (
-            <div className="mt-4 border-t border-slate-200 pt-4">
-              <span className="px-2 text-xs font-semibold uppercase tracking-[0.08em] text-slate-400">This checkpoint</span>
-              <div className="mt-2 space-y-1">
-                {selectedPhase.tasks.map((task) => {
-                  const active = task.key === selectedTaskKey
-                  return (
-                    <button
-                      key={task.key}
-                      type="button"
-                      className={`flex min-h-11 w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition ${active ? 'bg-slate-950 text-white' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
-                      onClick={() => onSelectTask?.(task.key)}
-                      aria-current={active ? 'step' : undefined}
-                    >
-                      <span className={`mt-1 size-2 shrink-0 rounded-full ${task.displayStatus === 'completed' ? 'bg-emerald-400' : task.displayStatus === 'blocked' ? 'bg-red-400' : task.displayStatus === 'waiting' ? 'bg-amber-400' : active ? 'bg-white' : 'bg-slate-300'}`} />
-                      <span className="min-w-0 leading-5">{task.label}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ) : null}
-          {phases.length > 1 ? (
-            <button
-              type="button"
-              className="mt-4 flex min-h-10 w-full items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
-              aria-expanded={showFullWorkflow}
-              onClick={() => setShowFullWorkflow((current) => !current)}
-            >
-              {showFullWorkflow ? 'Show current checkpoint' : `View full workflow (${phases.length})`}
-              <ChevronDown size={15} className={`transition ${showFullWorkflow ? 'rotate-180' : ''}`} />
-            </button>
-          ) : null}
         </nav>
       </section>
     </aside>
@@ -199,6 +178,7 @@ export default function LegalTaskWorkbench({
   onRunAction,
   onOpenDocuments,
   onAddNote,
+  onSaveProgress,
   statusDraft = null,
   onStatusDraftChange,
   onSubmitStatusDraft,
@@ -228,8 +208,6 @@ export default function LegalTaskWorkbench({
 
   if (!model || model.empty) return null
   const taskCopy = TASK_TYPE_COPY[model.taskType] || TASK_TYPE_COPY.confirm_milestone
-  const primaryAction = model.primaryAction
-  const completeActionIsPrimary = primaryAction?.id === model.completeAction?.id
   const dueDateLabel = formatDueDate(model.dueDate)
   const completionHelpId = `legal-task-completion-help-${model.taskKey}`
 
@@ -260,10 +238,9 @@ export default function LegalTaskWorkbench({
 
   return (
     <>
-      <section className="archline-transfer-workspace grid gap-4 xl:sticky xl:top-24 xl:h-[calc(100dvh-120px)] xl:grid-cols-[minmax(280px,330px)_minmax(0,1fr)] xl:overflow-hidden">
+      <section className="archline-transfer-workspace grid gap-4 bg-slate-50 p-5 sm:p-6 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
       <PhaseNavigator
         phases={phases}
-        selectedTaskKey={selectedTaskKey}
         selectedPhaseKey={selectedPhaseKey}
         workflowLabel={model.workflowLabel}
         operationalHealth={model.operationalHealth}
@@ -271,22 +248,19 @@ export default function LegalTaskWorkbench({
       />
 
       <main
-        className="min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.04)]"
+        className="min-h-[620px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_14px_36px_rgba(15,23,42,0.04)] xl:h-[calc(100dvh-144px)]"
         aria-busy={saving}
       >
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <header className="shrink-0 border-b border-slate-200 px-5 py-5 lg:px-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="min-w-0 max-w-3xl">
-                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Current legal task</span>
+                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Stage {phases.findIndex((phase) => phase.key === selectedPhaseKey) + 1} · {model.phaseLabel}</span>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <h2 className="min-w-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-slate-950">{model.taskLabel}</h2>
                   <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(model.status)}`}>{model.statusLabel}</span>
                 </div>
-                <div className="mt-3 max-w-2xl">
-                  <span className="block text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-slate-400">Objective</span>
-                  <p className="mt-1 text-sm leading-6 text-slate-600">{model.taskDescription}</p>
-                </div>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">{model.taskDescription}</p>
               </div>
               {dueDateLabel || model.showOwner ? (
                 <div className="grid shrink-0 gap-1 text-xs text-slate-500 sm:text-right">
@@ -302,59 +276,15 @@ export default function LegalTaskWorkbench({
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-5 lg:px-6">
-            {model.attentionItems.length ? (
-              <section className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4" aria-label="Task attention required">
-                <div className="flex items-start gap-3">
-                  <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-700" />
-                  <div className="min-w-0">
-                    <h3 className="text-sm font-semibold text-amber-950">Attention required</h3>
-                    <ul className="mt-2 space-y-2">
-                      {model.attentionItems.map((item) => (
-                        <li key={item.id} className="text-sm leading-5 text-amber-900">
-                          <strong>{item.label}</strong>{item.description ? <span className="block text-xs text-amber-800">{item.description}</span> : null}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              </section>
-            ) : null}
-
-            {primaryAction ? (
-              <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 lg:p-5">
-                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-emerald-700">Next action</span>
-                <h3 className="mt-2 text-lg font-semibold text-emerald-950">{primaryAction.label}</h3>
-                <p className="mt-1 max-w-2xl text-sm leading-6 text-emerald-800">{primaryAction.description || model.completionMessage}</p>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="mt-4"
-                  disabled={saving || primaryAction.disabled}
-                  aria-describedby={primaryAction.disabled ? completionHelpId : undefined}
-                  onClick={() => runAction(primaryAction, 'primary')}
-                >
-                  {primaryAction.source === 'status' ? <CheckCircle2 size={15} /> : <ChevronRight size={15} />}
-                  {primaryAction.label}
-                </Button>
-                {primaryAction.disabled ? (
-                  <p id={completionHelpId} className="mt-3 text-sm font-medium leading-5 text-emerald-900">
-                    <span className="font-semibold">Before you can complete this task:</span>{' '}
-                    {model.completionMessage || primaryAction.description}
-                  </p>
-                ) : null}
-              </section>
-            ) : null}
-
-            <section className="mt-5" aria-labelledby="legal-task-outstanding-heading">
+            <section aria-labelledby="legal-task-outstanding-heading">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h3 id="legal-task-outstanding-heading" className="text-sm font-semibold text-slate-950">{taskCopy.heading}</h3>
+                  <h3 id="legal-task-outstanding-heading" className="text-base font-semibold text-slate-950">{model.outstandingRequirements.length} requirement{model.outstandingRequirements.length === 1 ? '' : 's'} to complete this task</h3>
                   <p className="mt-1 text-sm text-slate-500">{taskCopy.helper}</p>
                 </div>
-                <span className="text-xs font-semibold text-slate-500">{model.outstandingRequirements.length} outstanding</span>
               </div>
-              <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200 px-4">
-                {model.outstandingRequirements.map((item) => <RequirementRow key={item.id} item={item} />)}
+              <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-200">
+                {model.outstandingRequirements.map((item) => <RequirementRow key={item.id} item={item} action={model.requirementActions?.[item.id]} saving={saving} onRunAction={runAction} />)}
                 {!model.outstandingRequirements.length ? (
                   <li className="flex items-center gap-3 py-5 text-sm text-emerald-700">
                     <CheckCircle2 size={18} /> All required items are present.
@@ -367,14 +297,14 @@ export default function LegalTaskWorkbench({
               {model.confirmationRequirements.length ? (
                 <Disclosure title="Checks confirmed on completion" count={model.confirmationRequirements.length}>
                   <ul className="divide-y divide-slate-100">
-                    {model.confirmationRequirements.map((item) => <RequirementRow key={item.id} item={{ ...item, required: false }} />)}
+                    {model.confirmationRequirements.map((item) => <RequirementRow key={item.id} item={{ ...item, required: false }} saving={saving} />)}
                   </ul>
                 </Disclosure>
               ) : null}
               {model.completedRequirements.length ? (
                 <Disclosure title="Completed requirements" count={model.completedRequirements.length}>
                   <ul className="divide-y divide-slate-100">
-                    {model.completedRequirements.map((item) => <RequirementRow key={item.id} item={item} />)}
+                    {model.completedRequirements.map((item) => <RequirementRow key={item.id} item={item} saving={saving} />)}
                   </ul>
                 </Disclosure>
               ) : null}
@@ -394,7 +324,7 @@ export default function LegalTaskWorkbench({
                   </div>
                 ) : <p className="text-sm text-slate-500">No documents are linked to this task.</p>}
               </Disclosure>
-              <Disclosure title="Notes and activity" count={model.notes.length + model.activity.length}>
+              {(model.notes.length || model.activity.length) ? <Disclosure title="Notes" count={model.notes.length + model.activity.length}>
                 <div className="space-y-3">
                   {[...model.notes, ...model.activity].slice(0, 4).map((item, index) => (
                     <article key={item.id || index} className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-700">
@@ -405,28 +335,21 @@ export default function LegalTaskWorkbench({
                   {!model.notes.length && !model.activity.length ? <p className="text-sm text-slate-500">No task activity has been recorded.</p> : null}
                   <Button type="button" variant="ghost" size="sm" onClick={() => runUtilityAction('add_note', onAddNote)}><MessageSquarePlus size={15} /> Add note</Button>
                 </div>
-              </Disclosure>
+              </Disclosure> : null}
             </section>
           </div>
 
           <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-4 lg:px-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex min-w-0 flex-wrap gap-2">
-                {model.secondaryActions.map((action) => (
-                  <Button
-                    key={`${action.source}:${action.id}`}
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={saving || action.disabled}
-                    title={action.disabled ? action.description : ''}
-                    onClick={() => runAction(action, 'secondary')}
-                  >
-                    {action.label}
-                  </Button>
-                ))}
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={onSaveProgress}>
+                  <Save size={15} /> Save progress
+                </Button>
+                {model.uploadAction ? <Button type="button" variant="ghost" size="sm" disabled={saving || model.uploadAction.disabled} onClick={() => runAction(model.uploadAction, 'secondary')}>
+                  <Paperclip size={15} /> Upload document
+                </Button> : null}
               </div>
-              {!completeActionIsPrimary && model.completeAction ? (
+              {model.completeAction ? (
                 <Button
                   type="button"
                   size="sm"
@@ -438,7 +361,7 @@ export default function LegalTaskWorkbench({
                 </Button>
               ) : null}
             </div>
-            {!model.canComplete && !primaryAction?.disabled ? (
+            {!model.canComplete ? (
               <p id={completionHelpId} className="mt-2 text-sm leading-5 text-slate-600">
                 <span className="font-semibold text-slate-800">Before you can complete this task:</span>{' '}
                 {model.completionMessage}
