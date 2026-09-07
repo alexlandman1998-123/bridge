@@ -242,6 +242,52 @@ export async function updateTransactionBuyerParty({ transactionId, participantId
   return result.data
 }
 
+export async function setTransactionPrimaryBuyerParty({ transactionId, participantId, client = supabase } = {}) {
+  const db = requireClient(client)
+  const transaction = text(transactionId)
+  const participant = text(participantId)
+  if (!transaction || !participant) throw new Error('Transaction buyer party is required.')
+
+  const current = await db.from('transaction_participants')
+    .select('id, buyer_party_id, participant_name')
+    .eq('transaction_id', transaction)
+    .eq('id', participant)
+    .eq('transaction_role', 'buyer')
+    .is('removed_at', null)
+    .single()
+  if (current.error) throw current.error
+
+  const reset = await db.from('transaction_participants')
+    .update({ is_primary_buyer: false, buyer_party_role: 'additional_buyer', updated_at: new Date().toISOString() })
+    .eq('transaction_id', transaction)
+    .eq('transaction_role', 'buyer')
+    .is('removed_at', null)
+  if (reset.error) throw reset.error
+
+  const primary = await db.from('transaction_participants')
+    .update({ is_primary_buyer: true, buyer_party_role: 'primary_buyer', updated_at: new Date().toISOString() })
+    .eq('id', participant)
+    .select('id, buyer_party_id, participant_name')
+    .single()
+  if (primary.error) throw primary.error
+
+  const transactionPatch = {
+    primary_buyer_participant_id: primary.data.id,
+    buyer_parties_model_version: 'transaction_buyers_phase4_v1',
+    updated_at: new Date().toISOString(),
+  }
+  if (primary.data.buyer_party_id) transactionPatch.buyer_id = primary.data.buyer_party_id
+  const transactionUpdate = await db.from('transactions').update(transactionPatch).eq('id', transaction)
+  if (transactionUpdate.error) throw transactionUpdate.error
+
+  await recordBuyerPartyEvent(db, transaction, 'BuyerPartyPrimaryAssigned', {
+    participantId: primary.data.id,
+    buyerId: primary.data.buyer_party_id || null,
+    buyerName: primary.data.participant_name || null,
+  })
+  return primary.data
+}
+
 export async function linkReusableBuyerProfileToTransaction({ transactionId, buyerId, isPrimary = false, partyRole = 'co_purchaser', ownershipPercentage = null, signingRequired = true, client = supabase } = {}) {
   const db = requireClient(client)
   const transaction = text(transactionId)
