@@ -49,6 +49,19 @@ assert(
 )
 
 assert(
+  source.includes('const deletedListingIdsRef = useRef(readDeletedListingIds())') &&
+    source.includes('const getCurrentDeletedListingIds = useCallback') &&
+    source.includes('getCurrentDeletedListingIds(locallyDeletedIds)'),
+  'late listing hydration responses must resolve the current delete tombstones before publishing cards.',
+)
+
+assert(
+  source.includes('...getListingIdentityKeys(remoteDelete?.listing || {})') &&
+    source.includes('const currentDeletedIds = syncDeletedListingIds(deletedIds)'),
+  'the delete path must tombstone canonical server identities before a reload can rehydrate stale data.',
+)
+
+assert(
   source.includes("addListingIdentityKey(keys, 'address', getListingAddressFingerprint(row))") &&
     source.includes("addListingIdentityKey(keys, 'ref', row.listingReference || row.listing_reference || row.listingCode || row.listing_code)") &&
     source.includes("addListingIdentityKey(keys, 'place', row.googlePlaceId || row.google_place_id || row.placeId || row.place_id)"),

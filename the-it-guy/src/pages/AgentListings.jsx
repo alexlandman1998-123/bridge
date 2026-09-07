@@ -3487,6 +3487,24 @@ function AgentListings({ initialTab = null } = {}) {
   const [branchOptions, setBranchOptions] = useState([])
   const [privateListings, setPrivateListings] = useState([])
   const [deletedListingIds, setDeletedListingIds] = useState(() => readDeletedListingIds())
+  // A load can start before a user deletes a listing, then resolve after the
+  // delete. Keep tombstones in a ref as well as state so that late responses
+  // are always filtered against the current set rather than a stale closure.
+  const deletedListingIdsRef = useRef(readDeletedListingIds())
+  const getCurrentDeletedListingIds = useCallback((additionalIds = null) => {
+    const currentIds = new Set([
+      ...deletedListingIdsRef.current,
+      ...readDeletedListingIds(),
+      ...(additionalIds instanceof Set ? Array.from(additionalIds) : Array.isArray(additionalIds) ? additionalIds : []),
+    ].map((value) => String(value || '').trim()).filter(Boolean))
+    deletedListingIdsRef.current = currentIds
+    return currentIds
+  }, [])
+  const syncDeletedListingIds = useCallback((additionalIds = null) => {
+    const currentIds = getCurrentDeletedListingIds(additionalIds)
+    setDeletedListingIds(currentIds)
+    return currentIds
+  }, [getCurrentDeletedListingIds])
   const [organisationId, setOrganisationId] = useState('')
   const [deletingListingId, setDeletingListingId] = useState('')
   const [openListingMenuId, setOpenListingMenuId] = useState('')
@@ -3573,11 +3591,7 @@ function AgentListings({ initialTab = null } = {}) {
       let assignedIds = []
       let userRows = []
       let branchRows = []
-      const locallyDeletedIds = new Set([
-        ...readDeletedListingIds(),
-        ...(deletedIdsOverride instanceof Set ? Array.from(deletedIdsOverride) : []),
-      ].map((value) => String(value || '').trim()).filter(Boolean))
-      setDeletedListingIds(locallyDeletedIds)
+      const locallyDeletedIds = syncDeletedListingIds(deletedIdsOverride)
       const runtimeListings = readAgentPrivateListings()
       let dbPrivateListings = []
       let resolvedOrganisationId = ''
@@ -3623,7 +3637,7 @@ function AgentListings({ initialTab = null } = {}) {
         setAssignedDevelopmentIds(Array.isArray(assignedIds) ? assignedIds : [])
         setOrganisationUsers(userRows)
         setOrganisationId(resolvedOrganisationId)
-        setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, locallyDeletedIds))
+        setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, getCurrentDeletedListingIds(locallyDeletedIds)))
         if (showLoading) setLoading(false)
         corePublished = true
 
@@ -3684,7 +3698,7 @@ function AgentListings({ initialTab = null } = {}) {
       setOrganisationUsers(userRows)
       setBranchOptions(branchRows)
       setOrganisationId(resolvedOrganisationId)
-      setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, locallyDeletedIds))
+      setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, getCurrentDeletedListingIds(locallyDeletedIds)))
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
       if (!corePublished) {
@@ -3695,17 +3709,13 @@ function AgentListings({ initialTab = null } = {}) {
         setOrganisationUsers([])
         setBranchOptions([])
       }
-      const locallyDeletedIds = new Set([
-        ...readDeletedListingIds(),
-        ...(deletedIdsOverride instanceof Set ? Array.from(deletedIdsOverride) : []),
-      ].map((value) => String(value || '').trim()).filter(Boolean))
-      setDeletedListingIds(locallyDeletedIds)
-      if (!corePublished) setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), locallyDeletedIds))
+      const locallyDeletedIds = syncDeletedListingIds(deletedIdsOverride)
+      if (!corePublished) setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), getCurrentDeletedListingIds(locallyDeletedIds)))
     } finally {
       if (showLoading) setLoading(false)
       setSupportingDataLoading(false)
     }
-  }, [agencyWorkflowMode, currentMembership, isDeveloperWorkspace, profile, selectedWorkspaceOrganisationId, workspaceRole])
+  }, [agencyWorkflowMode, currentMembership, getCurrentDeletedListingIds, isDeveloperWorkspace, profile, selectedWorkspaceOrganisationId, syncDeletedListingIds, workspaceRole])
 
   useEffect(() => {
     let cancelled = false
@@ -6275,12 +6285,20 @@ function AgentListings({ initialTab = null } = {}) {
         }
       }
 
-      const localDelete = deleteAgentPrivateListingCascade(card?.listingRecord || remoteDelete?.listing || listingId)
-      const deletedIds = new Set([...listingIdentityKeys, ...(localDelete.deletedIds || [])].map((value) => String(value || '').trim()).filter(Boolean))
+      const deletionRecord = {
+        ...(card?.listingRecord || {}),
+        ...(remoteDelete?.listing || {}),
+      }
+      const localDelete = deleteAgentPrivateListingCascade(Object.keys(deletionRecord).length ? deletionRecord : listingId)
+      const deletedIds = new Set([
+        ...listingIdentityKeys,
+        ...getListingIdentityKeys(remoteDelete?.listing || {}),
+        ...(localDelete.deletedIds || []),
+      ].map((value) => String(value || '').trim()).filter(Boolean))
       rememberDeletedListingIds(deletedIds)
-      setDeletedListingIds((previous) => new Set([...previous, ...deletedIds]))
-      setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, deletedIds)))
-      await loadData({ showLoading: false, deletedIdsOverride: deletedIds })
+      const currentDeletedIds = syncDeletedListingIds(deletedIds)
+      setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, currentDeletedIds)))
+      await loadData({ showLoading: false, deletedIdsOverride: currentDeletedIds })
       setWorkflowMessage(`"${listingTitle}" was permanently deleted.`)
     } catch (deleteError) {
       setError(deleteError?.message || 'Unable to delete this listing.')
