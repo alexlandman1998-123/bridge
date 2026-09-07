@@ -39,6 +39,7 @@ import {
   PARTNER_TYPES,
   fetchPartnersSnapshot,
   fetchDiscoverablePartnerDirectory,
+  createPartnerReferral,
   resendPartnerInvitation,
   revokePartnerInvitation,
 } from '../lib/partnersRepository'
@@ -189,6 +190,11 @@ function resolvePartnersActiveTab(tabValue = '', isBondPartnersRoute = false) {
   if (normalized === 'invites') return 'invitations'
   if (['connected', 'preferred', 'invitations', 'discover'].includes(normalized)) return normalized
   return isBondPartnersRoute ? 'connected' : 'preferred'
+}
+
+function isAttorneyPartnerWorkspaceType(value = '') {
+  const normalized = normalizeLower(value).replace(/\s+/g, '_')
+  return normalized === 'attorney' || normalized === 'attorney_firm'
 }
 
 function createThirdPartyDraft(partnerType = 'transfer_attorney') {
@@ -1266,6 +1272,186 @@ function PartnerOrganisationProfilePage({
   )
 }
 
+function AttorneyNetworkPartnerCard({ relationship, referralCount = 0, onViewProfile, onReferBusiness }) {
+  const partner = relationship?.partner || {}
+  const serviceTags = collectPartnerActiveAreas(partner).slice(0, 3)
+  const contactName = normalizeText(partner.primaryContactName || partner.primary_contact_name || partner.contactName || partner.contact_name)
+  const contactEmail = normalizeText(partner.contactEmails?.[0] || partner.contactEmail || partner.contact_email)
+  const location = [partner.city, partner.province].filter(Boolean).join(', ')
+  const description = getPartnerProfileContent(partner).aboutCompany || buildPartnerOverviewCopy(partner)
+  const sharedMatterCount = Number(relationship?.sharedMatterCount || relationship?.shared_matter_count || 0)
+
+  return (
+    <article className="flex min-h-[318px] flex-col rounded-xl border border-[#dce7e3] bg-white p-4 shadow-[0_8px_20px_rgba(15,48,42,0.04)]">
+      <div className="flex items-start gap-3">
+        <PartnerLogo partner={partner} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-semibold tracking-[-0.015em] text-[#10243a]">{partner.name || 'Partner organisation'}</h3>
+              <p className="mt-0.5 text-sm text-[#66758a]">{getPartnerTypeLabel(partner.type)}{location ? ` · ${location}` : ''}</p>
+            </div>
+            <StatusBadge className="border-[#d8eee3] bg-[#eef9f3] text-[#17613d]">Connected</StatusBadge>
+          </div>
+        </div>
+      </div>
+      {description ? <p className="mt-3 line-clamp-2 text-sm leading-5 text-[#66758a]">{description}</p> : null}
+      {serviceTags.length ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {serviceTags.map((tag) => <span key={tag} className="rounded-md bg-[#f1f4f6] px-2 py-1 text-[0.7rem] font-medium text-[#5d6c80]">{tag}</span>)}
+        </div>
+      ) : null}
+      {(contactName || contactEmail) ? (
+        <div className="mt-4 flex items-center gap-2 border-t border-[#edf1f3] pt-3">
+          <OrganisationAvatar organisation={{ name: contactName || contactEmail }} size="sm" />
+          <div className="min-w-0">
+            {contactName ? <p className="truncate text-sm font-semibold text-[#24364a]">{contactName}</p> : null}
+            {contactEmail ? <p className="truncate text-xs text-[#718198]">{contactEmail}</p> : null}
+          </div>
+        </div>
+      ) : null}
+      {(sharedMatterCount > 0 || referralCount > 0) ? (
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs font-medium text-[#6c7c90]">
+          {sharedMatterCount > 0 ? <span>{formatNumber(sharedMatterCount)} shared matters</span> : null}
+          {referralCount > 0 ? <span>{formatNumber(referralCount)} referrals</span> : null}
+        </div>
+      ) : null}
+      <div className="mt-auto grid grid-cols-2 gap-2 pt-4">
+        <button type="button" onClick={onViewProfile} className="inline-flex h-10 items-center justify-center rounded-lg border border-[#1f6253] bg-white px-3 text-sm font-semibold text-[#16483e] transition hover:bg-[#f3faf6]">View profile</button>
+        <button type="button" onClick={onReferBusiness} className="inline-flex h-10 items-center justify-center rounded-lg bg-[#0e433a] px-3 text-sm font-semibold text-white transition hover:bg-[#123e36]">Refer business</button>
+      </div>
+    </article>
+  )
+}
+
+function AttorneyPartnerProfileDrawer({ isOpen, onClose, ...profileProps }) {
+  if (!isOpen) return null
+  return (
+    <div className="fixed inset-0 z-40 flex justify-end bg-[#10243a]/30" role="presentation" onMouseDown={onClose}>
+      <aside className="h-full w-full max-w-xl overflow-y-auto bg-[#f7faf8] p-4 shadow-[-18px_0_40px_rgba(15,23,42,0.16)] sm:p-5" role="dialog" aria-modal="true" aria-label="Partner profile" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="mb-3 flex justify-end">
+          <button type="button" onClick={onClose} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#d9e4df] bg-white text-[#35546c] hover:bg-[#f4f8f6]" aria-label="Close partner profile"><X size={16} /></button>
+        </div>
+        <ProfilePanel isOpen {...profileProps} />
+      </aside>
+    </div>
+  )
+}
+
+function PartnerReferralModal({ isOpen, partner, saving = false, onClose, onSubmit }) {
+  const [referralType, setReferralType] = useState('Transfer')
+  const [clientName, setClientName] = useState('')
+  const [clientEmail, setClientEmail] = useState('')
+  const [context, setContext] = useState('')
+  const [matterId, setMatterId] = useState('')
+
+  useEffect(() => {
+    if (!isOpen) return
+    setReferralType('Transfer')
+    setClientName('')
+    setClientEmail('')
+    setContext('')
+    setMatterId('')
+  }, [isOpen, partner?.id])
+
+  if (!isOpen || !partner) return null
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#10243a]/45 p-4">
+      <form onSubmit={(event) => { event.preventDefault(); onSubmit?.({ referralType, clientName, clientEmail, context, matterId }) }} className="w-full max-w-lg rounded-xl border border-[#d9e4df] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.2)]">
+        <div className="flex items-start justify-between gap-3">
+          <div><h2 className="text-lg font-semibold text-[#10243a]">Refer business</h2><p className="mt-1 text-sm text-[#66758a]">Share only the client and matter details you select with {partner.name}.</p></div>
+          <button type="button" onClick={onClose} disabled={saving} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#d9e4df]" aria-label="Close referral form"><X size={16} /></button>
+        </div>
+        <div className="mt-5 grid gap-3">
+          <select value={referralType} onChange={(event) => setReferralType(event.target.value)} className="h-10 rounded-lg border border-[#d7e2de] bg-white px-3 text-sm"><option>Transfer</option><option>Bond registration</option><option>Cancellation</option><option>Other</option></select>
+          <input required value={clientName} onChange={(event) => setClientName(event.target.value)} placeholder="Client name" className="h-10 rounded-lg border border-[#d7e2de] px-3 text-sm" />
+          <input type="email" value={clientEmail} onChange={(event) => setClientEmail(event.target.value)} placeholder="Client email (optional)" className="h-10 rounded-lg border border-[#d7e2de] px-3 text-sm" />
+          <input value={matterId} onChange={(event) => setMatterId(event.target.value)} placeholder="Matter ID to link (optional)" className="h-10 rounded-lg border border-[#d7e2de] px-3 text-sm" />
+          <textarea required value={context} onChange={(event) => setContext(event.target.value)} placeholder="Context for the recipient" className="min-h-[92px] rounded-lg border border-[#d7e2de] px-3 py-2 text-sm" />
+        </div>
+        <div className="mt-5 flex justify-end gap-2"><button type="button" onClick={onClose} disabled={saving} className="h-10 rounded-lg border border-[#d7e2de] px-4 text-sm font-semibold text-[#35546c]">Cancel</button><button type="submit" disabled={saving} className="h-10 rounded-lg bg-[#0e433a] px-4 text-sm font-semibold text-white disabled:opacity-60">{saving ? 'Sending…' : 'Send referral'}</button></div>
+      </form>
+    </div>
+  )
+}
+
+function AttorneyNetworkWorkspace({
+  activeTab,
+  networkCount,
+  pendingReceivedCount,
+  filters,
+  onFiltersChange,
+  onTabChange,
+  onInvite,
+  networkRelationships,
+  discoverablePartners,
+  referralCountByOrganisationId,
+  onViewProfile,
+  onReferBusiness,
+  onConnect,
+  connectingPartnerIds,
+  pendingSentConnectionPartnerIds,
+  requestsView,
+  onRequestsViewChange,
+  requestInvitations,
+  organisationId,
+  invitationAction,
+  onAccept,
+  onDecline,
+  onResend,
+  onRevoke,
+  onDelete,
+}) {
+  const isDiscover = activeTab === 'discover'
+  const isRequests = activeTab === 'invitations'
+  const visiblePartners = isDiscover ? discoverablePartners : networkRelationships
+  const suggestedPartners = activeTab === 'connected' ? discoverablePartners.slice(0, 3) : []
+  return (
+    <section className="space-y-4 px-4 pt-5 sm:px-6 lg:px-8">
+      <div className="flex flex-col gap-3 border-b border-[#dce7e3] pb-3 lg:flex-row lg:items-center lg:justify-between">
+        <nav className="flex min-w-0 gap-5 overflow-x-auto" aria-label="Partner network views">
+          {[
+            { key: 'connected', label: 'My network', count: networkCount },
+            { key: 'discover', label: 'Discover' },
+            { key: 'invitations', label: 'Requests', count: pendingReceivedCount },
+          ].map((tab) => <button key={tab.key} type="button" onClick={() => onTabChange(tab.key)} className={`relative shrink-0 pb-2 text-sm font-semibold transition ${activeTab === tab.key ? 'text-[#0e433a]' : 'text-[#66758a] hover:text-[#24364a]'}`}>
+            {tab.label}{tab.count ? <span className={`ml-2 rounded-full px-2 py-0.5 text-xs ${activeTab === tab.key ? 'bg-[#dcefe6] text-[#17613d]' : 'bg-[#f4ecee] text-[#c13d4a]'}`}>{formatNumber(tab.count)}</span> : null}
+            {activeTab === tab.key ? <span className="absolute inset-x-0 -bottom-0.5 h-0.5 rounded-full bg-[#2a9a71]" /> : null}
+          </button>)}
+        </nav>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={onInvite} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-[#1f6253] bg-white px-4 text-sm font-semibold text-[#16483e] hover:bg-[#f3faf6]"><InviteIcon size={16} />Invite partner</button>
+          <button type="button" onClick={() => onTabChange('discover')} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-[#0e433a] px-4 text-sm font-semibold text-white hover:bg-[#123e36]"><Search size={16} />Explore partners</button>
+        </div>
+      </div>
+
+      {!isRequests ? <div className="flex flex-col gap-2 lg:flex-row">
+        <label className="relative min-w-0 flex-1"><Search size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#718198]" /><input value={filters.query} onChange={(event) => onFiltersChange({ ...filters, query: event.target.value })} placeholder="Search your network" className="h-10 w-full rounded-lg border border-[#d9e4df] bg-white pl-9 pr-3 text-sm outline-none focus:border-[#238465] focus:ring-4 focus:ring-[#238465]/10" /></label>
+        <div className="flex flex-wrap gap-2">
+          {[['', 'All'], ['attorney_firm', 'Attorneys'], ['agency', 'Agencies'], ['developer_company', 'Developers']].map(([value, label]) => <button key={label} type="button" onClick={() => onFiltersChange({ ...filters, type: value })} className={`h-10 rounded-full px-4 text-sm font-semibold ${filters.type === value ? 'bg-[#e2f2e9] text-[#17613d]' : 'border border-[#e0e7e4] bg-white text-[#66758a] hover:bg-[#f7faf8]'}`}>{label}</button>)}
+          <select value={filters.province} onChange={(event) => onFiltersChange({ ...filters, province: event.target.value })} className="h-10 rounded-lg border border-[#d9e4df] bg-white px-3 text-sm text-[#52677f]"><option value="">All locations</option>{PARTNER_PROVINCES.map((province) => <option key={province} value={province}>{province}</option>)}</select>
+        </div>
+      </div> : null}
+
+      {isRequests ? <section className="space-y-4">
+        <div className="inline-flex rounded-lg border border-[#dce7e3] bg-white p-1"><button type="button" onClick={() => onRequestsViewChange('received')} className={`h-8 rounded-md px-3 text-sm font-semibold ${requestsView === 'received' ? 'bg-[#e2f2e9] text-[#17613d]' : 'text-[#66758a]'}`}>Received</button><button type="button" onClick={() => onRequestsViewChange('sent')} className={`h-8 rounded-md px-3 text-sm font-semibold ${requestsView === 'sent' ? 'bg-[#e2f2e9] text-[#17613d]' : 'text-[#66758a]'}`}>Sent</button></div>
+        <div className="space-y-3">{requestInvitations.map((invitation) => <PartnerInvitationCard key={invitation.id} invitation={invitation} organisationId={organisationId} invitationAction={invitationAction} onAccept={onAccept} onDecline={onDecline} onResend={onResend} onRevoke={onRevoke} onDelete={onDelete} />)}</div>
+        {!requestInvitations.length ? <div className="rounded-xl border border-dashed border-[#cfded8] bg-white p-8 text-center text-sm text-[#66758a]">No {requestsView} connection requests.</div> : null}
+      </section> : <>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {visiblePartners.map((item) => {
+            const relationship = isDiscover ? null : item
+            const partner = isDiscover ? item : item.partner
+            return relationship ? <AttorneyNetworkPartnerCard key={relationship.id} relationship={relationship} referralCount={referralCountByOrganisationId.get(partner?.id) || 0} onViewProfile={() => onViewProfile(relationship)} onReferBusiness={() => onReferBusiness(relationship)} /> : <PartnerCard key={partner.id} partner={partner} onProfileClick={() => onViewProfile(null, partner)} action={() => onConnect(partner)} actionDisabled={connectingPartnerIds.has(partner.id) || pendingSentConnectionPartnerIds.has(partner.id)} actionLabel={pendingSentConnectionPartnerIds.has(partner.id) ? 'Request sent' : connectingPartnerIds.has(partner.id) ? 'Sending…' : 'Connect'} />
+          })}
+        </div>
+        {!visiblePartners.length ? <div className="rounded-xl border border-dashed border-[#cfded8] bg-white p-8 text-center text-sm text-[#66758a]">{isDiscover ? 'No organisations match these filters.' : 'No connected partners match these filters.'}</div> : null}
+        {suggestedPartners.length ? <section className="border-t border-[#dce7e3] pt-5"><h2 className="text-lg font-semibold tracking-[-0.02em] text-[#10243a]">Suggested partners</h2><div className="mt-3 grid gap-3 md:grid-cols-3">{suggestedPartners.map((partner) => <div key={partner.id} className="flex items-center gap-3 rounded-xl border border-[#dce7e3] bg-white p-3"><PartnerLogo partner={partner} size="sm" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-[#24364a]">{partner.name}</p><p className="truncate text-xs text-[#718198]">{partner.city || partner.province || getPartnerTypeLabel(partner.type)}</p></div><button type="button" onClick={() => onConnect(partner)} className="h-8 rounded-lg border border-[#1f6253] px-3 text-xs font-semibold text-[#16483e]">Connect</button></div>)}</div></section> : null}
+      </>}
+    </section>
+  )
+}
+
 function PartnerCard({
   partner,
   relationship,
@@ -2284,8 +2470,9 @@ export default function PartnersPage() {
   const profileQueryId = useMemo(() => normalizeText(new URLSearchParams(location.search).get('profile')), [location.search])
   const tabQuery = useMemo(() => normalizeText(new URLSearchParams(location.search).get('tab')), [location.search])
   const isBondPartnersRoute = location.pathname.startsWith('/bond/partners')
+  const isAttorneyNetworkWorkspace = !isBondPartnersRoute && !partnerId && isAttorneyPartnerWorkspaceType(resolvedWorkspaceType)
 
-  const [activeTab, setActiveTab] = useState(() => resolvePartnersActiveTab(tabQuery, isBondPartnersRoute))
+  const [activeTab, setActiveTab] = useState(() => isAttorneyNetworkWorkspace ? (tabQuery === 'discover' ? 'discover' : tabQuery === 'requests' || tabQuery === 'invitations' ? 'invitations' : 'connected') : resolvePartnersActiveTab(tabQuery, isBondPartnersRoute))
   const [selectedPartnerId, setSelectedPartnerId] = useState(() => profileQueryId || partnerId)
   const [profilePanelOpen, setProfilePanelOpen] = useState(() => Boolean(profileQueryId || partnerId))
   const [snapshot, setSnapshot] = useState(null)
@@ -2345,6 +2532,10 @@ export default function PartnersPage() {
   const [invitationAction, setInvitationAction] = useState({ id: '', type: '' })
   const [invitationConfirmation, setInvitationConfirmation] = useState({ type: '', invitation: null })
   const [deletedInvitationIds, setDeletedInvitationIds] = useState(() => new Set())
+  const [attorneyNetworkFilters, setAttorneyNetworkFilters] = useState({ query: '', type: '', province: '' })
+  const [attorneyRequestsView, setAttorneyRequestsView] = useState('received')
+  const [referralPartnerRelationship, setReferralPartnerRelationship] = useState(null)
+  const [referralSaving, setReferralSaving] = useState(false)
 
   const accessContext = useMemo(
     () => ({
@@ -2460,8 +2651,8 @@ export default function PartnersPage() {
   useEffect(() => {
     if (lastTabSearchRef.current === location.search) return
     lastTabSearchRef.current = location.search
-    setActiveTab(resolvePartnersActiveTab(tabQuery, isBondPartnersRoute))
-  }, [isBondPartnersRoute, location.search, tabQuery])
+    setActiveTab(isAttorneyNetworkWorkspace ? (tabQuery === 'discover' ? 'discover' : tabQuery === 'requests' || tabQuery === 'invitations' ? 'invitations' : 'connected') : resolvePartnersActiveTab(tabQuery, isBondPartnersRoute))
+  }, [isAttorneyNetworkWorkspace, isBondPartnersRoute, location.search, tabQuery])
 
   useEffect(() => {
     if (activeTab !== 'discover' && !isInviteModalOpen) return
@@ -2615,6 +2806,16 @@ export default function PartnersPage() {
       }),
     [connectedRelationships, directoryFilters, preferredRoutingRuleByPartnerOrgId],
   )
+  const attorneyNetworkRelationships = useMemo(() => {
+    const query = normalizeLower(attorneyNetworkFilters.query)
+    return connectedRelationships.filter((relationship) => {
+      const partner = relationship.partner || {}
+      if (query && ![partner.name, partner.city, partner.province, ...(partner.specialties || []), ...(partner.activeAreas || [])].join(' ').toLowerCase().includes(query)) return false
+      if (attorneyNetworkFilters.type && partner.type !== attorneyNetworkFilters.type) return false
+      if (attorneyNetworkFilters.province && normalizeLower(partner.province) !== normalizeLower(attorneyNetworkFilters.province)) return false
+      return true
+    })
+  }, [attorneyNetworkFilters, connectedRelationships])
 
   const invitations = useMemo(() => {
     const rows = snapshot?.invitations || []
@@ -2674,6 +2875,27 @@ export default function PartnersPage() {
       { total: 0, pending: 0, received: 0, sent: 0 },
     )
   }, [invitations, organisationId])
+  const pendingIncomingInvitationCount = useMemo(
+    () => invitations.filter((invitation) => normalizeLower(invitation.toOrganisationId) === normalizeLower(organisationId) && (normalizeLower(invitation.status) || 'pending') === 'pending').length,
+    [invitations, organisationId],
+  )
+  const attorneyRequestInvitations = useMemo(() => {
+    const currentOrganisationId = normalizeLower(organisationId)
+    return invitations.filter((invitation) => {
+      const received = normalizeLower(invitation.toOrganisationId) === currentOrganisationId
+      return attorneyRequestsView === 'received' ? received : !received
+    })
+  }, [attorneyRequestsView, invitations, organisationId])
+  const referralCountByOrganisationId = useMemo(() => {
+    const counts = new Map()
+    ;(snapshot?.referrals || []).forEach((referral) => {
+      const partnerOrganisationId = normalizeText(referral.referringOrganisationId) === normalizeText(organisationId)
+        ? normalizeText(referral.referredOrganisationId)
+        : normalizeText(referral.referringOrganisationId)
+      if (partnerOrganisationId) counts.set(partnerOrganisationId, (counts.get(partnerOrganisationId) || 0) + 1)
+    })
+    return counts
+  }, [organisationId, snapshot?.referrals])
   const hasInvitationFilters = useMemo(
     () =>
       invitationFilters.direction !== DEFAULT_INVITATION_FILTERS.direction ||
@@ -3206,12 +3428,57 @@ export default function PartnersPage() {
       return
     }
 
+    if (isAttorneyNetworkWorkspace) {
+      setSelectedPartnerId(partnerOrganisationId)
+      setProfilePanelOpen(true)
+      return
+    }
+
     if (isBondPartnersRoute && isUuidLike(relationship?.id)) {
       navigate(`/bond/partners/${relationship.id}`)
       return
     }
 
     navigate(`/partners/${partnerOrganisationId}`)
+  }
+
+  function openConnectionRequest(partner) {
+    if (!partner?.id) return
+    setSelectedInviteOrganisationId(partner.id)
+    setInviteOrganisationQuery(partner.name || '')
+    setInviteType(partner.type || 'agency')
+    setInviteEmail('')
+    setInviteNote('')
+    setIsInviteModalOpen(true)
+  }
+
+  async function handleSendPartnerReferral(form = {}) {
+    const relationship = referralPartnerRelationship
+    const partnerOrganisationId = normalizeText(relationship?.partner?.id || relationship?.counterpartOrganisationId || relationship?.partnerOrganisationId)
+    if (!relationship?.id || !partnerOrganisationId || referralSaving) return
+    try {
+      setReferralSaving(true)
+      setError('')
+      setMessage('')
+      await createPartnerReferral({
+        referringOrganisationId: organisationId,
+        referredOrganisationId: partnerOrganisationId,
+        relationshipId: relationship.id,
+        transactionId: form.matterId,
+        referralType: form.referralType,
+        clientName: form.clientName,
+        clientEmail: form.clientEmail,
+        context: form.context,
+        createdBy: profile?.id || '',
+      })
+      setReferralPartnerRelationship(null)
+      setMessage(`Referral sent to ${relationship.partner?.name || 'partner organisation'}.`)
+      await loadSnapshot()
+    } catch (referralError) {
+      setError(referralError?.message || 'Unable to send partner referral.')
+    } finally {
+      setReferralSaving(false)
+    }
   }
 
   async function handleAcceptInvitation(invitation) {
@@ -3672,6 +3939,28 @@ export default function PartnersPage() {
         }}
         onConfirm={confirmInvitationAction}
       />
+      <PartnerReferralModal
+        isOpen={Boolean(referralPartnerRelationship)}
+        partner={referralPartnerRelationship?.partner || null}
+        saving={referralSaving}
+        onClose={() => { if (!referralSaving) setReferralPartnerRelationship(null) }}
+        onSubmit={handleSendPartnerReferral}
+      />
+      {isAttorneyNetworkWorkspace ? (
+        <AttorneyPartnerProfileDrawer
+          isOpen={profilePanelOpen}
+          onClose={() => setProfilePanelOpen(false)}
+          partner={selectedPartner}
+          relationship={selectedRelationship}
+          people={selectedPartnerPeople}
+          peopleLoading={Boolean(selectedPartnerPeopleMeta?.loading)}
+          peopleMessage={selectedPartnerPeopleMeta?.message || ''}
+          routingRulesByRole={selectedPartnerRoutingRulesByRole}
+          routingSelectionValues={routingSelectionValues}
+          routingSavingRoleKeys={savingRoutingRoleKeys}
+          onSelectRoutingPreference={selectedRelationship ? (roleType, targetUserId) => saveOperationalRoutingPreference(selectedRelationship, roleType, targetUserId) : null}
+        />
+      ) : null}
 
       {snapshot?.source === 'demo' || error || message ? (
         <div className="mb-5 space-y-3">
@@ -3685,7 +3974,7 @@ export default function PartnersPage() {
         </div>
       ) : null}
 
-      {isSimplifiedThirdPartyWorkspace ? (
+      {isAttorneyNetworkWorkspace ? null : isSimplifiedThirdPartyWorkspace ? (
         <section className="space-y-4">
           <div className="flex flex-col gap-4 border-b border-[#dce6f0] bg-white px-5 py-5 md:flex-row md:items-end md:justify-between">
             <div className="max-w-3xl">
@@ -3784,7 +4073,39 @@ export default function PartnersPage() {
         </>
       )}
 
-      {shouldShowPartnersBlockingLoader ? (
+      {isAttorneyNetworkWorkspace ? (
+        loading ? (
+          <section className="px-4 py-8 text-sm font-semibold text-[#66758a] sm:px-6 lg:px-8">Loading partner network…</section>
+        ) : (
+          <AttorneyNetworkWorkspace
+            activeTab={activeTab}
+            networkCount={connectedRelationships.length}
+            pendingReceivedCount={pendingIncomingInvitationCount}
+            filters={attorneyNetworkFilters}
+            onFiltersChange={setAttorneyNetworkFilters}
+            onTabChange={setActiveTab}
+            onInvite={() => setIsInviteModalOpen(true)}
+            networkRelationships={attorneyNetworkRelationships}
+            discoverablePartners={discoverablePartners}
+            referralCountByOrganisationId={referralCountByOrganisationId}
+            onViewProfile={handleOpenPartnerProfile}
+            onReferBusiness={setReferralPartnerRelationship}
+            onConnect={openConnectionRequest}
+            connectingPartnerIds={connectingPartnerIds}
+            pendingSentConnectionPartnerIds={pendingSentConnectionPartnerIds}
+            requestsView={attorneyRequestsView}
+            onRequestsViewChange={setAttorneyRequestsView}
+            requestInvitations={attorneyRequestInvitations}
+            organisationId={organisationId}
+            invitationAction={invitationAction}
+            onAccept={handleAcceptInvitation}
+            onDecline={handleDeclineInvitation}
+            onResend={handleResendInvitation}
+            onRevoke={handleRevokeInvitation}
+            onDelete={handleDeleteInvitation}
+          />
+        )
+      ) : shouldShowPartnersBlockingLoader ? (
         <section className="mt-5 rounded-[8px] border border-[#dbe5f0] bg-white p-8 text-sm font-semibold text-[#60758d]">
           {isSimplifiedThirdPartyWorkspace ? 'Loading third parties...' : 'Loading partner network...'}
         </section>

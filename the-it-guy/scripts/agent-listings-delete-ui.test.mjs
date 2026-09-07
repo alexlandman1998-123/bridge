@@ -76,8 +76,30 @@ assert(
 )
 
 assert(
-  serviceSource.includes('isMissingTableError(error, tableName) || isMissingColumnError(error, columnName) || isPermissionDeniedError(error)'),
-  'private listing related-row cleanup should skip inaccessible child tables so the parent listing can still be archived or deleted.',
+  serviceSource.includes('isMissingTableError(error, tableName) || isMissingColumnError(error, columnName)') &&
+    !serviceSource.includes('isMissingTableError(error, tableName) || isMissingColumnError(error, columnName) || isPermissionDeniedError(error)'),
+  'private listing cleanup must not hide a row-level-security failure as a recoverable schema issue.',
+)
+
+const deletePrivateListingSource = serviceSource.match(
+  /export async function deletePrivateListing\([\s\S]*?\n}\n\nexport async function updatePrivateListingOnboardingFormData/,
+)?.[0] || ''
+
+assert(
+  !deletePrivateListingSource.includes('archivePrivateListingDeleteFallback') &&
+    !deletePrivateListingSource.includes('deletePrivateListingRelatedRows'),
+  'permanent deletion must issue the canonical parent-row delete directly and must never silently substitute an archive.',
+)
+
+assert(
+  deletePrivateListingSource.includes("throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')"),
+  'a denied deletion must explain the RLS rule instead of reporting a false success.',
+)
+
+assert(
+  deletePrivateListingSource.includes("constraintText.includes('website_production_dark_launches')") &&
+    deletePrivateListingSource.includes("Retire that launch before permanently deleting the listing."),
+  'a published website launch must explain its deletion guard instead of being silently archived.',
 )
 
 assert(

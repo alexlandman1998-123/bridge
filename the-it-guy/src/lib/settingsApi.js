@@ -1991,7 +1991,12 @@ function buildAtomicAgencyOnboardingPayload({ mergedDraft = {}, context = {}, us
     },
     owner: {
       user_id: user?.id || context.profile?.id || '',
-      workspace_role: 'principal',
+      // Principal is an operational agency title; the person creating the
+      // workspace must be the primary organisation owner.
+      workspace_role: 'owner',
+      organisation_role: 'owner',
+      membership_role: 'owner',
+      is_primary_owner: true,
       first_name: principalFirstName,
       last_name: principalLastName,
       full_name: principalName,
@@ -3427,7 +3432,7 @@ export async function completeAgencyOnboarding(input = {}) {
 
   const rpcName = isPrincipalClaimCompletion
     ? 'bridge_complete_principal_claim_onboarding'
-    : 'bridge_complete_workspace_onboarding'
+    : 'bridge_complete_workspace_onboarding_v3'
   const rpcPayload = isPrincipalClaimCompletion
     ? {
         ...payload,
@@ -6276,6 +6281,71 @@ export async function getOrganisationOwnershipRemediationReport(organisationId =
   }
 
   return Array.isArray(data) ? data : []
+}
+
+export async function getOrganisationPermissionIntegrityReport(organisationId = null) {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_organisation_permission_integrity_report', {
+    p_organisation_id: organisationId || null,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_organisation_permission_integrity_report')) {
+      throw new Error('Permission-integrity audit is not installed yet. Apply the Phase 1 audit migration.')
+    }
+    throw error
+  }
+
+  return data || {}
+}
+
+export async function getOrganisationOwnershipHealthReport(organisationId) {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_organisation_ownership_health', {
+    p_organisation_id: organisationId || null,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_organisation_ownership_health')) {
+      throw new Error('Server ownership health is not installed yet. Apply the Phase 5 ownership-health migration.')
+    }
+    throw error
+  }
+
+  return data || null
+}
+
+export async function getOrganisationOwnershipManualReviewQueue() {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_organisation_ownership_manual_review_queue')
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_organisation_ownership_manual_review_queue')) {
+      throw new Error('Ownership manual-review queue is not installed yet. Apply the Phase 6 migration.')
+    }
+    throw error
+  }
+
+  return Array.isArray(data) ? data : []
+}
+
+export async function applySafeOrganisationPermissionIntegrityRepair(organisationId) {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_apply_safe_organisation_permission_integrity_repair', {
+    p_organisation_id: organisationId || null,
+    p_apply: true,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_apply_safe_organisation_permission_integrity_repair')) {
+      throw new Error('Permission-integrity repair is not installed yet. Apply the Phase 2 repair migration.')
+    }
+    throw error
+  }
+
+  organisationUsersCache = null
+  clearOrganisationRuntimeCache()
+  return data || {}
 }
 
 export async function applySafeOrganisationOwnershipRemediation(organisationId) {

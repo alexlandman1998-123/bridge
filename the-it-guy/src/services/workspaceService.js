@@ -82,7 +82,9 @@ function mapOwnerRole(intent) {
   if (contract?.workspaceType === WORKSPACE_TYPES.bondOriginator && contract?.workspaceRole) return contract.workspaceRole
   const workspaceType = normalizeWorkspaceType(intent?.workspace_type, inferWorkspaceTypeFromAppRole(intent?.app_role))
   const intended = normalizeOrgRole(intent?.intended_org_role, { appRole: intent?.app_role, workspaceType })
-  if (workspaceType === WORKSPACE_TYPES.agency) return intended === ORG_ROLES.owner ? ORG_ROLES.owner : ORG_ROLES.principal
+  // The workspace creator is always the primary organisation owner. Agency
+  // principals can still be assigned later, but they are not ownership aliases.
+  if (workspaceType === WORKSPACE_TYPES.agency) return ORG_ROLES.owner
   if (workspaceType === WORKSPACE_TYPES.developerCompany) return [ORG_ROLES.director, ORG_ROLES.owner].includes(intended) ? intended : ORG_ROLES.owner
   if (workspaceType === WORKSPACE_TYPES.bondOriginator) return [ORG_ROLES.director, ORG_ROLES.manager, ORG_ROLES.owner].includes(intended) ? intended : ORG_ROLES.owner
   if (workspaceType === WORKSPACE_TYPES.attorneyFirm) return [ORG_ROLES.partner, ORG_ROLES.director, ORG_ROLES.owner].includes(intended) ? intended : ORG_ROLES.owner
@@ -370,10 +372,10 @@ async function createOrganisationWorkspaceFromIntent(intent, user, form = {}) {
     type: payload.workspace_type,
   })
   if (duplicate?.id) throw createDuplicateOrganizationError(duplicate)
-  const rpcResult = await client.rpc('bridge_complete_workspace_onboarding', { payload })
+  const rpcResult = await client.rpc('bridge_complete_workspace_onboarding_v3', { payload })
   if (rpcResult.error) {
-    if (isMissingSchemaError(rpcResult.error, 'bridge_complete_workspace_onboarding')) {
-      throw new Error('Atomic workspace onboarding is not installed. Apply the Priority 2 onboarding migration before setup.')
+    if (isMissingSchemaError(rpcResult.error, 'bridge_complete_workspace_onboarding_v3')) {
+      throw new Error('Primary-owner workspace onboarding is not installed. Apply the Phase 3 onboarding migration before setup.')
     }
     throw rpcResult.error
   }

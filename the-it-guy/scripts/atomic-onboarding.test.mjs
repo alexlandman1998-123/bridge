@@ -86,7 +86,7 @@ const completionFunctionMatch = settingsApi.match(/export async function complet
 assert(completionFunctionMatch, 'Expected completeAgencyOnboarding function in settingsApi.js')
 const completionFunction = completionFunctionMatch[0]
 
-assertIncludes(completionFunction, "client.rpc('bridge_complete_workspace_onboarding'", 'client completion calls RPC')
+assertIncludes(completionFunction, "client.rpc('bridge_complete_workspace_onboarding_v3'", 'client completion calls primary-owner RPC')
 assertIncludes(completionFunction, 'resolveCurrentWorkspace(user.id', 'post-completion workspace resolution')
 assert(!completionFunction.includes(".from('organisations')"), 'completeAgencyOnboarding must not write organisations client-side')
 assert(!completionFunction.includes(".from('organisation_users')"), 'completeAgencyOnboarding must not write memberships client-side')
@@ -97,7 +97,7 @@ assertIncludes(settingsApi, 'buildAtomicAgencyOnboardingPayload', 'atomic payloa
 assertIncludes(workspaceService, "client.rpc('bridge_repair_workspace_onboarding'", 'workspace repair calls repair RPC')
 assertIncludes(workspaceService, 'resolveCurrentWorkspace(userId', 'repair verifies workspace resolution')
 assertIncludes(workspaceService, 'buildAtomicWorkspaceOnboardingPayload', 'generic atomic workspace payload builder')
-assertIncludes(workspaceService, "client.rpc('bridge_complete_workspace_onboarding'", 'generic organisation setup calls atomic RPC')
+assertIncludes(workspaceService, "client.rpc('bridge_complete_workspace_onboarding_v3'", 'generic organisation setup calls primary-owner RPC')
 assertIncludes(workspaceService, 'inferWorkspaceKindFromWorkspaceType', 'workspace kind inference import')
 assertIncludes(workspaceService, 'workspace_kind: workspaceKind', 'generic payload writes normalized workspace kind')
 assertIncludes(workspaceResolutionService, 'workspace_kind', 'workspace resolution loads workspace kind')

@@ -1202,6 +1202,52 @@ export async function fetchPartnersSnapshot({ organisationId = '', workspaceType
   }
 }
 
+export async function createPartnerReferral({
+  referringOrganisationId = '',
+  referredOrganisationId = '',
+  relationshipId = '',
+  transactionId = '',
+  referralType = '',
+  clientName = '',
+  clientEmail = '',
+  context = '',
+  createdBy = '',
+} = {}) {
+  const sourceOrganisationId = normalizeNullableUuid(referringOrganisationId)
+  const destinationOrganisationId = normalizeNullableUuid(referredOrganisationId)
+  if (!sourceOrganisationId || !destinationOrganisationId) {
+    throw new Error('Choose a connected organisation before sending a referral.')
+  }
+  if (sourceOrganisationId === destinationOrganisationId) {
+    throw new Error('You cannot refer business to your own organisation.')
+  }
+  if (!isSupabaseConfigured || !supabase) {
+    throw new Error('Partner referrals are unavailable until the database connection is configured.')
+  }
+
+  const { data, error } = await supabase
+    .from('partner_referrals')
+    .insert({
+      referring_organisation_id: sourceOrganisationId,
+      referred_organisation_id: destinationOrganisationId,
+      relationship_id: normalizeNullableUuid(relationshipId),
+      transaction_id: normalizeNullableUuid(transactionId),
+      referral_status: 'sent',
+      notes: normalizeText(context) || null,
+      metadata: {
+        referralType: normalizeText(referralType) || null,
+        clientName: normalizeText(clientName) || null,
+        clientEmail: normalizeText(clientEmail) || null,
+      },
+      created_by: normalizeNullableUuid(createdBy),
+    })
+    .select('id, referring_organisation_id, referred_organisation_id, relationship_id, transaction_id, referral_status, referral_date, referral_value, notes, metadata')
+    .single()
+
+  if (error) throw error
+  return mapReferral(data || {})
+}
+
 export function filterDiscoverablePartners(organisations = [], filters = {}) {
   const type = normalizeText(filters.type)
   const province = normalizeText(filters.province)

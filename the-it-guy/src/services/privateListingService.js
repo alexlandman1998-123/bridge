@@ -1661,7 +1661,7 @@ function isMissingPrivateListingActivityError(error) {
 }
 
 function isRecoverableDeleteSchemaError(error, tableName = '', columnName = '') {
-  return isMissingTableError(error, tableName) || isMissingColumnError(error, columnName) || isPermissionDeniedError(error)
+  return isMissingTableError(error, tableName) || isMissingColumnError(error, columnName)
 }
 
 async function deleteRowsByColumn(client, tableName, columnName, value) {
@@ -6093,16 +6093,6 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
     }
   }
 
-  try {
-    await deletePrivateListingRelatedRows(client, existing.data, normalizedId)
-  } catch (cleanupError) {
-    return archivePrivateListingDeleteFallback(client, normalizedId, {
-      organisationId: normalizedOrgId,
-      reason: 'related_row_cleanup_failed',
-      originalError: cleanupError,
-    })
-  }
-
   let hardDeleteQuery = client
     .from('private_listings')
     .delete()
@@ -6120,19 +6110,22 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
     if (isMissingTableError(result.error, 'private_listings')) {
       throw new Error('Private listings table is unavailable in this Supabase project.')
     }
-    return archivePrivateListingDeleteFallback(client, normalizedId, {
-      organisationId: normalizedOrgId,
-      reason: 'hard_delete_failed',
-      originalError: result.error,
-    })
+    if (isPermissionDeniedError(result.error)) {
+      throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')
+    }
+    if (String(result.error?.code || '') === '23503') {
+      const constraintText = [result.error?.message, result.error?.details, result.error?.hint]
+        .map((value) => String(value || '').toLowerCase())
+        .join(' ')
+      if (constraintText.includes('website_production_dark_launches')) {
+        throw new Error('This listing is linked to a website launch. Retire that launch before permanently deleting the listing.')
+      }
+      throw new Error('This listing still has linked records and cannot be permanently deleted. Unpublish or retire its linked workflow first.')
+    }
+    throw result.error
   }
 
   if (!result.data?.id) {
-    const archived = await archivePrivateListingDeleteFallback(client, normalizedId, {
-      organisationId: normalizedOrgId,
-      reason: 'hard_delete_returned_no_row',
-    })
-    if (archived?.deleted) return archived
     throw new Error('Could not delete listing. It may already be removed or you may not have permission.')
   }
 

@@ -8,10 +8,14 @@ import { PERMISSIONS } from '../../auth/permissions/permissionRegistry'
 import { isPlatformAdmin } from '../../auth/permissions/permissionResolver'
 import {
   assignOrganisationUserCommissionProfile,
+  applySafeOrganisationPermissionIntegrityRepair,
   applySafeOrganisationOwnershipRemediation,
   deactivateOrganisationUser,
   fetchOrganisationSettings,
   getOrganisationOwnershipRemediationReport,
+  getOrganisationPermissionIntegrityReport,
+  getOrganisationOwnershipHealthReport,
+  getOrganisationOwnershipManualReviewQueue,
   getOrganisationOwnershipReleaseReadiness,
   grantOrganisationOwnership,
   listOrganisationCommissionStructures,
@@ -329,7 +333,12 @@ export default function SettingsUsersPage() {
   const [ownershipTransferTarget, setOwnershipTransferTarget] = useState(null)
   const [transferringOwnership, setTransferringOwnership] = useState(false)
   const [ownershipRemediationReport, setOwnershipRemediationReport] = useState([])
+  const [ownershipManualReviewQueue, setOwnershipManualReviewQueue] = useState([])
+  const [serverOwnershipHealth, setServerOwnershipHealth] = useState(null)
   const [ownershipReleaseReadiness, setOwnershipReleaseReadiness] = useState(null)
+  const [permissionIntegrityAudit, setPermissionIntegrityAudit] = useState(null)
+  const [permissionIntegrityRepairTarget, setPermissionIntegrityRepairTarget] = useState(null)
+  const [applyingPermissionIntegrityRepair, setApplyingPermissionIntegrityRepair] = useState(false)
   const [loadingOwnershipRemediation, setLoadingOwnershipRemediation] = useState(false)
   const [ownershipRemediationTarget, setOwnershipRemediationTarget] = useState(null)
   const [applyingOwnershipRemediation, setApplyingOwnershipRemediation] = useState(false)
@@ -348,7 +357,10 @@ export default function SettingsUsersPage() {
       organisationMembership?.branch_id ||
       '',
   }), [membershipRole, organisationMembership, organisationMembershipRole, profile, workspaceRole])
-  const ownershipHealth = useMemo(() => getOrganisationOwnershipHealth(users), [users])
+  const ownershipHealth = useMemo(
+    () => serverOwnershipHealth || getOrganisationOwnershipHealth(users),
+    [serverOwnershipHealth, users],
+  )
   const canManageOwnershipRemediation = isPlatformAdmin({
     appRole: role,
     profile,
@@ -377,19 +389,28 @@ export default function SettingsUsersPage() {
   const loadOwnershipRemediationReport = useCallback(async () => {
     if (!canManageOwnershipRemediation) {
       setOwnershipRemediationReport([])
+      setOwnershipManualReviewQueue([])
+      setPermissionIntegrityAudit(null)
       return
     }
     try {
       setLoadingOwnershipRemediation(true)
-      const [report, readiness] = await Promise.all([
+      const [report, readiness, integrityAudit, manualReviewQueue] = await Promise.all([
         getOrganisationOwnershipRemediationReport(),
         getOrganisationOwnershipReleaseReadiness().catch((readinessError) => ({
           status: 'unavailable',
           error: readinessError.message,
         })),
+        getOrganisationPermissionIntegrityReport().catch((integrityError) => ({
+          unavailable: true,
+          error: integrityError.message,
+        })),
+        getOrganisationOwnershipManualReviewQueue().catch(() => []),
       ])
       setOwnershipRemediationReport(report)
       setOwnershipReleaseReadiness(readiness)
+      setPermissionIntegrityAudit(integrityAudit)
+      setOwnershipManualReviewQueue(manualReviewQueue)
     } catch (loadError) {
       setError(loadError.message)
     } finally {
@@ -425,7 +446,7 @@ export default function SettingsUsersPage() {
   const loadUsers = useCallback(async () => {
     try {
       setLoading(true)
-      const [response, context, structureRows, profileRows, principalClaimInvites, commercialRequests, commercialManagement] = await Promise.all([
+      const [response, context, structureRows, profileRows, principalClaimInvites, commercialRequests, commercialManagement, ownershipHealthReport] = await Promise.all([
         listOrganisationUsers(),
         fetchOrganisationSettings(),
         listOrganisationCommissionStructures(),
@@ -433,8 +454,10 @@ export default function SettingsUsersPage() {
         canEdit ? listWorkspaceUserInvites({ includeInactive: true }).catch(() => []) : Promise.resolve([]),
         listCommercialAccessRequests({ status: 'pending' }).catch(() => []),
         listCommercialAccessManagementState().catch(() => ({ organisationModuleStatus: null, users: [], auditEvents: [] })),
+        getOrganisationOwnershipHealthReport(currentWorkspace?.id).catch(() => null),
       ])
       setUsers(response)
+      setServerOwnershipHealth(ownershipHealthReport)
       const nextOrganisationBusinessWorkspaceIds = resolveOrganisationBusinessWorkspaces({
         currentWorkspace: context?.organisation,
         currentMembership: context?.membership,
@@ -461,7 +484,7 @@ export default function SettingsUsersPage() {
     } finally {
       setLoading(false)
     }
-  }, [canEdit, resolvedWorkspaceType, role])
+  }, [canEdit, currentWorkspace?.id, resolvedWorkspaceType, role])
 
   useEffect(() => {
     void loadUsers()
@@ -651,6 +674,27 @@ export default function SettingsUsersPage() {
       setError(saveError.message)
     } finally {
       setApplyingOwnershipRemediation(false)
+    }
+  }
+
+  async function handleApplyPermissionIntegrityRepair() {
+    const target = permissionIntegrityRepairTarget
+    if (!canManageOwnershipRemediation || !target?.organisationId) return
+    try {
+      setApplyingPermissionIntegrityRepair(true)
+      setError('')
+      setMessage('')
+      const result = await applySafeOrganisationPermissionIntegrityRepair(target.organisationId)
+      const repairedCount = Array.isArray(result?.repaired) ? result.repaired.length : 0
+      setPermissionIntegrityRepairTarget(null)
+      await Promise.all([loadUsers(), loadOwnershipRemediationReport()])
+      setMessage(repairedCount
+        ? `Permission-integrity repair completed for ${target.organisationName || 'the selected organisation'}.`
+        : `No safe role-field repair was available for ${target.organisationName || 'the selected organisation'}; review conflicting roles manually.`)
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setApplyingPermissionIntegrityRepair(false)
     }
   }
 
@@ -1210,6 +1254,36 @@ export default function SettingsUsersPage() {
               The Phase 7 release gate is unavailable. {ownershipReleaseReadiness.error}
             </SettingsBanner>
           ) : null}
+          {!loadingOwnershipRemediation && permissionIntegrityAudit?.unavailable ? (
+            <SettingsBanner tone="warning">
+              Permission-integrity audit is unavailable. {permissionIntegrityAudit.error}
+            </SettingsBanner>
+          ) : null}
+          {!loadingOwnershipRemediation && permissionIntegrityAudit?.summary ? (
+            <div className="space-y-3">
+              <SettingsBanner tone={
+                permissionIntegrityAudit.summary.roleFieldConflictCount ||
+                permissionIntegrityAudit.summary.invalidPrimaryOwnerCount ||
+                permissionIntegrityAudit.summary.duplicateActiveMembershipGroupCount
+                  ? 'warning'
+                  : 'success'
+              }>
+                Permission-integrity audit: {permissionIntegrityAudit.summary.roleFieldIncompleteCount || 0} incomplete role record{permissionIntegrityAudit.summary.roleFieldIncompleteCount === 1 ? '' : 's'}, {permissionIntegrityAudit.summary.roleFieldConflictCount || 0} conflicting role record{permissionIntegrityAudit.summary.roleFieldConflictCount === 1 ? '' : 's'}, and {permissionIntegrityAudit.summary.duplicateActiveMembershipGroupCount || 0} duplicate active-membership group{permissionIntegrityAudit.summary.duplicateActiveMembershipGroupCount === 1 ? '' : 's'}.
+              </SettingsBanner>
+              {(permissionIntegrityAudit.organisations || [])
+                .filter((entry) => entry.roleFieldIncompleteCount > 0 && !entry.roleFieldConflictCount && !entry.invalidPrimaryOwnerCount && !entry.duplicateActiveMembershipGroupCount)
+                .map((entry) => (
+                  <div key={entry.organisationId} className="flex flex-col gap-3 rounded-xl border border-[#e4ebf3] bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="text-sm text-[#51657b]">
+                      {entry.organisationName || entry.organisationId}: {entry.roleFieldIncompleteCount} safe role-field repair{entry.roleFieldIncompleteCount === 1 ? '' : 's'} available.
+                    </span>
+                    <Button type="button" variant="secondary" disabled={applyingPermissionIntegrityRepair} onClick={() => setPermissionIntegrityRepairTarget(entry)}>
+                      Apply safe role repair
+                    </Button>
+                  </div>
+                ))}
+            </div>
+          ) : null}
           {!loadingOwnershipRemediation && !ownershipRemediationReport.length ? (
             <SettingsEmptyState
               title="No organisations found"
@@ -1221,6 +1295,7 @@ export default function SettingsUsersPage() {
               {ownershipRemediationReport.map((entry) => {
                 const canApplySafeRepair = entry.resolution === 'safe_repair'
                 const isReady = entry.resolution === 'ready'
+                const manualReview = ownershipManualReviewQueue.find((item) => item.organisationId === entry.organisationId)
                 return (
                   <div key={entry.organisationId} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="space-y-1">
@@ -1245,7 +1320,14 @@ export default function SettingsUsersPage() {
                         Apply safe repair
                       </Button>
                     ) : (
-                      <span className="text-sm text-[#7b8da6]">{isReady ? 'No action needed' : 'Manual review required'}</span>
+                      <div className="space-y-1 text-sm text-[#7b8da6]">
+                        <span>{isReady ? 'No action needed' : 'Manual review required'}</span>
+                        {!isReady && manualReview?.members?.length ? (
+                          <p className="max-w-md text-xs text-[#51657b]">
+                            Review: {manualReview.members.map((member) => `${member.memberName} (${member.effectiveRole}${member.isPrimaryOwner ? ', primary' : ''})`).join(' · ')}
+                          </p>
+                        ) : null}
+                      </div>
                     )}
                   </div>
                 )
@@ -1573,6 +1655,16 @@ export default function SettingsUsersPage() {
         confirming={applyingOwnershipRemediation}
         onConfirm={handleApplyOwnershipRemediation}
         onCancel={() => setOwnershipRemediationTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(permissionIntegrityRepairTarget)}
+        title="Apply safe role-field repair?"
+        description={`This will complete only missing role mirrors in ${permissionIntegrityRepairTarget?.organisationName || 'the selected organisation'}. It will not change a member's effective role, resolve conflicting roles, or alter ownership.`}
+        confirmLabel="Apply safe role repair"
+        confirming={applyingPermissionIntegrityRepair}
+        onConfirm={handleApplyPermissionIntegrityRepair}
+        onCancel={() => setPermissionIntegrityRepairTarget(null)}
       />
     </div>
   )

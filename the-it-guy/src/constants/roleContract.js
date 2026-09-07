@@ -37,9 +37,9 @@ export const ROLE_CONTRACTS = Object.freeze({
     defaultWorkspaceKind: WORKSPACE_TYPES.agency,
     intendedOrgRole: ORG_ROLES.principal,
     systemRole: SYSTEM_ROLES.professional,
-    membershipRole: ORG_ROLES.principal,
-    workspaceRole: ORG_ROLES.principal,
-    organisationRole: ORG_ROLES.principal,
+    // `principal` remains the agency's operating title; the account that
+    // creates the workspace is its actual organisation owner.
+    ...PROFESSIONAL_OWNER,
     branchScope: BRANCH_SCOPES.allBranches,
     isPrimaryOwner: true,
   }),
