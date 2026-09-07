@@ -389,8 +389,11 @@ function buildBranchViewModel(branch = {}, related = {}) {
   const listings = Array.isArray(related.listings) ? related.listings : []
   const leads = Array.isArray(related.leads) ? related.leads : []
 
-  const activeMembers = members.filter((member) => normalizeLower(member?.status) === 'active')
   const headcount = buildRoleHeadcount(members)
+  const activeMemberRows = members.filter((member) => normalizeLower(member?.status) === 'active')
+  const activeMembers = headcount.activeOperationalUsers
+  const activeSalesAgents = headcount.activeAgents
+  const activeOperationalTeam = headcount.activeAgents + headcount.activePrincipals + headcount.activeManagers
   const branchTransactions = transactions.filter((row) => getTransactionBranchId(row) === normalizeText(branch?.id))
   const branchListings = listings.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
   const branchLeads = leads.filter((row) => normalizeText(row?.branch_id) === normalizeText(branch?.id))
@@ -414,7 +417,7 @@ function buildBranchViewModel(branch = {}, related = {}) {
   const closedDeals = branchTransactions.length ? registeredTransactions : 0
   const conversionRate = branchLeads.length ? Math.round((closedDeals / branchLeads.length) * 100) : 0
 
-  const principalMember = activeMembers.find((member) =>
+  const principalMember = activeMemberRows.find((member) =>
     ['principal', 'owner', 'admin_staff', 'branch_manager'].includes(resolveWorkspaceRole(member, { workspaceType: WORKSPACE_TYPES.agency })),
   )
 
@@ -455,13 +458,19 @@ function buildBranchViewModel(branch = {}, related = {}) {
     listings: branchListings,
     leads: branchLeads,
     kpis: {
-      activeAgents: headcount.activeAgents,
+      // `activeAgents` remains a compatibility alias for the precise sales
+      // role count. Consumers that need the whole branch team must use
+      // `activeOperationalTeam` instead.
+      activeAgents: activeSalesAgents,
+      activeSalesAgents,
       activePrincipals: headcount.activePrincipals,
       activeManagers: headcount.activeManagers,
       activeSupportUsers: headcount.activeSupportUsers,
       activeOperationalUsers: headcount.activeOperationalUsers,
-      activeProductionUsers: headcount.activeAgents + headcount.activePrincipals + headcount.activeManagers,
-      activeMembers: activeMembers.length,
+      activeProductionUsers: activeOperationalTeam,
+      activeOperationalTeam,
+      activeMembers,
+      declaredAgentCapacity: toNumber(branch?.agent_count),
       activeListings: activeListingRows.length,
       activeTransactions: activeTransactions.length,
       pipelineValue,
@@ -746,7 +755,7 @@ function getDaysSince(date) {
 
 function getBranchProductionUsers(branch = {}) {
   const kpis = branch.kpis || {}
-  return toNumber(kpis.activeProductionUsers || (toNumber(kpis.activeAgents) + toNumber(kpis.activePrincipals) + toNumber(kpis.activeManagers)))
+  return toNumber(kpis.activeOperationalTeam || kpis.activeProductionUsers || (toNumber(kpis.activeSalesAgents || kpis.activeAgents) + toNumber(kpis.activePrincipals) + toNumber(kpis.activeManagers)))
 }
 
 function getBranchHealthOverview(branch = {}) {
@@ -922,7 +931,11 @@ function buildOverviewBranchRows(branches = [], window = {}) {
 
       return {
         ...branch,
-        activeAgents: getBranchProductionUsers(branch),
+        activeAgents: toNumber(branch?.kpis?.activeSalesAgents || branch?.kpis?.activeAgents),
+        activeSalesAgents: toNumber(branch?.kpis?.activeSalesAgents || branch?.kpis?.activeAgents),
+        activeOperationalTeam: getBranchProductionUsers(branch),
+        activeMembers: toNumber(branch?.kpis?.activeMembers),
+        declaredAgentCapacity: toNumber(branch?.kpis?.declaredAgentCapacity),
         activeListings: toNumber(branch?.kpis?.activeListings),
         activeTransactions: toNumber(branch?.kpis?.activeTransactions),
         pipelineValue: toNumber(branch?.kpis?.pipelineValue),
@@ -954,14 +967,17 @@ export function buildAgencyBranchOverview(branches = [], { period = 'this_month'
   const members = branchRows.flatMap((branch) => branch.members || [])
   const companyPipeline = branchRows.reduce((sum, branch) => sum + toNumber(branch.pipelineValue), 0)
   const projectedCommission = branchRows.reduce((sum, branch) => sum + toNumber(branch.projectedCommission), 0)
-  const activeAgents = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeAgents), 0)
+  const activeSalesAgents = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeSalesAgents), 0)
+  const activeOperationalTeam = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeOperationalTeam), 0)
   const activeTransactions = branchRows.reduce((sum, branch) => sum + toNumber(branch.activeTransactions), 0)
   const hasProjectedCommissionData = branchRows.some((branch) => branch.hasProjectedCommissionData)
 
   return {
     totals: {
       branches: activeBranchRows.length,
-      agents: activeAgents,
+      agents: activeSalesAgents,
+      salesAgents: activeSalesAgents,
+      operationalTeam: activeOperationalTeam,
       companyPipeline,
       activeTransactions,
       projectedCommission,
@@ -974,10 +990,10 @@ export function buildAgencyBranchOverview(branches = [], { period = 'this_month'
       transactions: buildPeriodMetric(transactions, window, () => 1),
       listings: buildPeriodMetric(listings, window, () => 1),
       agents: {
-        value: activeAgents,
-        previousValue: activeAgents,
+        value: activeSalesAgents,
+        previousValue: activeSalesAgents,
         changePercent: null,
-        sparkline: buildSparkline(members, window, () => 1, activeAgents),
+        sparkline: buildSparkline(members, window, () => 1, activeSalesAgents),
       },
     },
     branches: branchRows,
@@ -1003,6 +1019,11 @@ export async function getBranchTransactions(branchId) {
 export async function getBranchListings(branchId) {
   const branch = await getBranch(branchId)
   return branch?.listings || []
+}
+
+export const __agencyBranchServiceTestUtils = {
+  buildAgencyBranchOverview,
+  buildBranchViewModel,
 }
 
 export async function inviteBranchMember(payload = {}) {

@@ -85,6 +85,46 @@ export function isOrganisationOwnerMembership(membership = null) {
   return resolveOrganisationMembershipRole(membership) === 'owner'
 }
 
+export function isPrimaryOrganisationOwnerMembership(membership = null) {
+  return isOrganisationOwnerMembership(membership) && Boolean(
+    membership?.isPrimaryOwner ?? membership?.is_primary_owner,
+  )
+}
+
+export function getOrganisationOwnershipHealth(memberships = []) {
+  const rows = Array.isArray(memberships) ? memberships : []
+  const activeMembers = rows.filter(isActiveMembership)
+  const activeOwners = activeMembers.filter(isOrganisationOwnerMembership)
+  const allPrimaryMembers = rows.filter((membership) => Boolean(
+    membership?.isPrimaryOwner ?? membership?.is_primary_owner,
+  ))
+  const activePrimaryMembers = activeMembers.filter((membership) => Boolean(
+    membership?.isPrimaryOwner ?? membership?.is_primary_owner,
+  ))
+  const activePrimaryOwners = activePrimaryMembers.filter(isOrganisationOwnerMembership)
+  const issues = []
+
+  if (!activeOwners.length) issues.push('no_active_owner')
+  if (!activePrimaryMembers.length) {
+    issues.push(allPrimaryMembers.length ? 'primary_owner_is_not_active' : 'no_primary_owner')
+  }
+  if (activePrimaryMembers.length > 1) issues.push('multiple_primary_owners')
+  if (activePrimaryMembers.some((membership) => !isOrganisationOwnerMembership(membership))) {
+    issues.push('primary_owner_role_mismatch')
+  }
+  if (activePrimaryOwners.length !== 1 && !issues.includes('multiple_primary_owners')) {
+    issues.push('invalid_primary_owner')
+  }
+
+  return {
+    status: issues.length ? 'recovery_required' : 'healthy',
+    issues,
+    activeOwnerCount: activeOwners.length,
+    activePrimaryOwnerCount: activePrimaryOwners.length,
+    primaryOwner: activePrimaryOwners[0] || null,
+  }
+}
+
 export function getOrganisationMembershipWorkspaceId(membership = null) {
   return getMembershipWorkspaceId(membership)
 }

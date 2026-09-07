@@ -2337,7 +2337,7 @@ async function getAuthenticatedUser() {
 async function findActiveMembershipByUserId(client, userId) {
   const membershipQuery = await client
     .from('organisation_users')
-    .select('id, organisation_id, role, workspace_role, organisation_role, organization_role, status, membership_status, email, branch_id, primary_branch_id, branch_scope')
+    .select('id, organisation_id, role, workspace_role, organisation_role, organization_role, status, membership_status, is_primary_owner, email, branch_id, primary_branch_id, branch_scope')
     .eq('user_id', userId)
     .order('updated_at', { ascending: false })
     .limit(10)
@@ -2350,6 +2350,7 @@ async function findActiveMembershipByUserId(client, userId) {
       isMissingColumnError(membershipQuery.error, 'workspace_role') ||
       isMissingColumnError(membershipQuery.error, 'organization_role') ||
       isMissingColumnError(membershipQuery.error, 'membership_status')
+      || isMissingColumnError(membershipQuery.error, 'is_primary_owner')
     ) {
       const fallbackQuery = await client
         .from('organisation_users')
@@ -5446,6 +5447,7 @@ function normalizeOrganisationUserRow(row) {
     role,
     status,
     membershipStatus: status,
+    isPrimaryOwner: Boolean(row?.is_primary_owner ?? row?.isPrimaryOwner),
     workspaceRole: normalizeText(row?.workspace_role) || role,
     organisationRole: normalizeText(row?.organisation_role || row?.organization_role) || role,
     attorneyProfessionalRole: isAttorneyWorkspace ? attorneyProfile.professionalRole : '',
@@ -5613,8 +5615,8 @@ export async function listOrganisationUsers() {
       ]
     }
 
-    const canonicalSelectColumns = 'id, organisation_id, user_id, branch_id, department_id, team_id, workspace_unit_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, module_context, module_metadata, invited_at, accepted_at, last_active_at, attorney_professional_role, attorney_practice_qualifications, attorney_compatibility_role'
-    const selectColumns = 'id, organisation_id, user_id, branch_id, department_id, team_id, workspace_unit_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, scope_metadata, module_context, module_metadata, invited_at, accepted_at, last_active_at'
+    const canonicalSelectColumns = 'id, organisation_id, user_id, branch_id, department_id, team_id, workspace_unit_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, is_primary_owner, scope_metadata, module_context, module_metadata, invited_at, accepted_at, last_active_at, attorney_professional_role, attorney_practice_qualifications, attorney_compatibility_role'
+    const selectColumns = 'id, organisation_id, user_id, branch_id, department_id, team_id, workspace_unit_id, first_name, last_name, email, role, workspace_role, workspace_type, organisation_role, organization_role, job_title, status, membership_status, is_primary_owner, scope_metadata, module_context, module_metadata, invited_at, accepted_at, last_active_at'
     const legacySelectColumns = 'id, organisation_id, user_id, branch_id, first_name, last_name, email, role, workspace_role, organisation_role, organization_role, status, membership_status, scope_metadata, invited_at, accepted_at, last_active_at'
     let usersQuery = await client
       .from('organisation_users')
@@ -5641,6 +5643,7 @@ export async function listOrganisationUsers() {
       isMissingColumnError(usersQuery.error, 'department_id') ||
       isMissingColumnError(usersQuery.error, 'team_id') ||
       isMissingColumnError(usersQuery.error, 'workspace_unit_id')
+      || isMissingColumnError(usersQuery.error, 'is_primary_owner')
     )) {
       usersQuery = await client
         .from('organisation_users')
@@ -5903,7 +5906,7 @@ export async function updateOrganisationUserRole(userRowId, role) {
 
   const previousRole = existing.data.workspace_role || existing.data.organisation_role || existing.data.role
   if (!isOwnerOrganisationUserRow(existing.data) && normalizeAgencyAuthorityRole(nextRole) === 'owner') {
-    throw new Error('Owner role changes must use the ownership transfer flow.')
+    throw new Error('Owner role changes must use the organisation ownership controls.')
   }
   const transitionType = classifyRoleTransition(previousRole, nextRole)
   assertAgencyAuthority(
@@ -6187,8 +6190,11 @@ export async function updateOrganisationUserBusinessWorkspaces(userRowId, busine
 export async function transferOrganisationOwnership(targetMembershipId) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
-  if (normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner') {
-    throw new Error('Only the organisation owner can transfer ownership.')
+  if (
+    normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner' ||
+    !(context.membership?.is_primary_owner ?? context.membership?.isPrimaryOwner)
+  ) {
+    throw new Error('Only the primary organisation owner can reassign primary ownership.')
   }
 
   const { data, error } = await client.rpc('bridge_transfer_organisation_ownership', {
@@ -6197,7 +6203,7 @@ export async function transferOrganisationOwnership(targetMembershipId) {
 
   if (error) {
     if (isMissingRpcError(error, 'bridge_transfer_organisation_ownership')) {
-      throw new Error('Ownership transfer is not installed yet. Apply the Phase 3.3 settings migration.')
+      throw new Error('Primary ownership reassignment is not installed yet. Apply the ownership contract migration.')
     }
     throw error
   }
@@ -6218,6 +6224,91 @@ export async function transferOrganisationOwnership(targetMembershipId) {
   organisationUsersCache = null
   clearOrganisationRuntimeCache()
   return { organisationId: data?.organisationId || context.organisation.id, previousOwner, newOwner }
+}
+
+export async function grantOrganisationOwnership(targetMembershipId) {
+  const client = requireClient()
+  const context = await ensureOrganisationContext(client)
+  if (
+    normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner' ||
+    !(context.membership?.is_primary_owner ?? context.membership?.isPrimaryOwner)
+  ) {
+    throw new Error('Only the primary organisation owner can grant owner access.')
+  }
+
+  const { data, error } = await client.rpc('bridge_grant_organisation_owner', {
+    p_target_membership_id: targetMembershipId,
+    p_make_primary: false,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_grant_organisation_owner')) {
+      throw new Error('Owner access controls are not installed yet. Apply the ownership contract migration.')
+    }
+    throw error
+  }
+
+  const owner = normalizeOrganisationUserRow(data?.owner)
+  void recordSecurityAuditEvent({
+    userId: context.profile?.id,
+    workspaceId: context.organisation.id,
+    action: 'organisation_owner_granted',
+    targetType: 'organisation_user',
+    targetId: targetMembershipId,
+    metadata: { ownerMembershipId: owner.id },
+  })
+  organisationUsersCache = null
+  clearOrganisationRuntimeCache()
+  return { organisationId: data?.organisationId || context.organisation.id, owner }
+}
+
+export async function getOrganisationOwnershipRemediationReport(organisationId = null) {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_organisation_ownership_remediation_report', {
+    p_organisation_id: organisationId || null,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_organisation_ownership_remediation_report')) {
+      throw new Error('Ownership remediation is not installed yet. Apply the ownership remediation migration.')
+    }
+    throw error
+  }
+
+  return Array.isArray(data) ? data : []
+}
+
+export async function applySafeOrganisationOwnershipRemediation(organisationId) {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_apply_safe_organisation_ownership_remediation', {
+    p_organisation_id: organisationId || null,
+    p_apply: true,
+  })
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_apply_safe_organisation_ownership_remediation')) {
+      throw new Error('Ownership remediation is not installed yet. Apply the ownership remediation migration.')
+    }
+    throw error
+  }
+
+  organisationUsersCache = null
+  clearOrganisationRuntimeCache()
+  return data || {}
+}
+
+export async function getOrganisationOwnershipReleaseReadiness() {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_organisation_ownership_release_readiness')
+
+  if (error) {
+    if (isMissingRpcError(error, 'bridge_organisation_ownership_release_readiness')) {
+      throw new Error('Ownership release readiness is not installed yet. Apply the Phase 7 ownership release-gate migration.')
+    }
+    throw error
+  }
+
+  return data || {}
 }
 
 export async function deactivateOrganisationUser(userRowId) {

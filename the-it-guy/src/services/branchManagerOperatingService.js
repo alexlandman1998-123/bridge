@@ -63,7 +63,8 @@ export const BRANCH_MANAGER_GOVERNANCE_RULES = Object.freeze([
 
 export function calculateBranchHealth(branch = {}) {
   const kpis = branch.kpis || {}
-  const activeAgents = toNumber(kpis.activeAgents)
+  const activeSalesAgents = toNumber(kpis.activeSalesAgents || kpis.activeAgents)
+  const activeOperationalTeam = toNumber(kpis.activeOperationalTeam || kpis.activeProductionUsers || (activeSalesAgents + toNumber(kpis.activePrincipals) + toNumber(kpis.activeManagers)))
   const activeListings = toNumber(kpis.activeListings)
   const activeTransactions = toNumber(kpis.activeTransactions)
   const pipelineValue = toNumber(kpis.pipelineValue)
@@ -74,7 +75,7 @@ export function calculateBranchHealth(branch = {}) {
   const score = clampScore(
     (isActive ? 12 : 0) +
       (hasManager ? 12 : 0) +
-      Math.min(activeAgents, 8) * 5 +
+      Math.min(activeOperationalTeam, 8) * 5 +
       Math.min(activeListings, 12) * 2 +
       Math.min(activeTransactions, 10) * 2.5 +
       Math.min(conversionRate, 35) * 0.45 +
@@ -107,7 +108,8 @@ export function calculateBranchHealth(branch = {}) {
     breakdown: {
       isActive,
       hasManager,
-      activeAgents,
+      activeSalesAgents,
+      activeOperationalTeam,
       activeListings,
       activeTransactions,
       pipelineValue,
@@ -127,8 +129,10 @@ export function getBranchAttentionItems(branch = {}) {
   if (!health.breakdown.hasManager) {
     items.push({ severity: 'critical', label: 'No branch manager assigned', action: 'Assign manager' })
   }
-  if (toNumber(kpis.activeAgents) === 0) {
-    items.push({ severity: 'critical', label: 'No active agents', action: 'Invite or assign agents' })
+  if (toNumber(health.breakdown.activeOperationalTeam) === 0) {
+    items.push({ severity: 'critical', label: 'No active branch team', action: 'Invite or assign a branch member' })
+  } else if (toNumber(health.breakdown.activeSalesAgents) === 0) {
+    items.push({ severity: 'warning', label: 'No active sales agents', action: 'Review role assignments or invite an agent' })
   }
   if (toNumber(kpis.activeListings) === 0) {
     items.push({ severity: 'warning', label: 'No active listings', action: 'Review listing pipeline' })
@@ -178,13 +182,14 @@ export function buildBranchCommandCentreModel(branches = [], actor = {}) {
 
   const activeBranches = normalizedBranches.filter((branch) => branch.isActive !== false)
   const totals = normalizedBranches.reduce((accumulator, branch) => {
-    accumulator.agents += toNumber(branch.kpis?.activeAgents)
+    accumulator.agents += toNumber(branch.kpis?.activeSalesAgents || branch.kpis?.activeAgents)
+    accumulator.operationalTeam += toNumber(branch.kpis?.activeOperationalTeam || branch.kpis?.activeProductionUsers)
     accumulator.listings += toNumber(branch.kpis?.activeListings)
     accumulator.transactions += toNumber(branch.kpis?.activeTransactions)
     accumulator.pipelineValue += toNumber(branch.kpis?.pipelineValue)
     accumulator.leads += Array.isArray(branch.leads) ? branch.leads.filter((lead) => isActiveStatus(lead.status || lead.stage)).length : 0
     return accumulator
-  }, { agents: 0, listings: 0, transactions: 0, pipelineValue: 0, leads: 0 })
+  }, { agents: 0, operationalTeam: 0, listings: 0, transactions: 0, pipelineValue: 0, leads: 0 })
 
   const averageHealth = normalizedBranches.length
     ? clampScore(normalizedBranches.reduce((sum, branch) => sum + branch.health.score, 0) / normalizedBranches.length)

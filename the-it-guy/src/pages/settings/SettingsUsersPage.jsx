@@ -5,10 +5,15 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { PERMISSIONS } from '../../auth/permissions/permissionRegistry'
+import { isPlatformAdmin } from '../../auth/permissions/permissionResolver'
 import {
   assignOrganisationUserCommissionProfile,
+  applySafeOrganisationOwnershipRemediation,
   deactivateOrganisationUser,
   fetchOrganisationSettings,
+  getOrganisationOwnershipRemediationReport,
+  getOrganisationOwnershipReleaseReadiness,
+  grantOrganisationOwnership,
   listOrganisationCommissionStructures,
   listOrganisationUserCommissionProfiles,
   listOrganisationUsers,
@@ -37,6 +42,7 @@ import {
   normalizeAgencyAuthorityRole,
 } from '../../services/agencyAuthorityService'
 import { getWorkspaceAdministratorLabel, normalizeOrganisationMembershipRole } from '../../lib/organisationAccess'
+import { getOrganisationOwnershipHealth } from '../../lib/organisationMembershipResolution'
 import {
   BUSINESS_WORKSPACES,
   BUSINESS_WORKSPACE_OPTIONS,
@@ -276,6 +282,7 @@ export default function SettingsUsersPage() {
     role,
     currentWorkspace,
     isOrganisationOwner,
+    isPrimaryOrganisationOwner,
     organisationMembership,
     organisationMembershipRole,
     workspaceRole,
@@ -321,6 +328,11 @@ export default function SettingsUsersPage() {
   const [deactivatingUser, setDeactivatingUser] = useState(false)
   const [ownershipTransferTarget, setOwnershipTransferTarget] = useState(null)
   const [transferringOwnership, setTransferringOwnership] = useState(false)
+  const [ownershipRemediationReport, setOwnershipRemediationReport] = useState([])
+  const [ownershipReleaseReadiness, setOwnershipReleaseReadiness] = useState(null)
+  const [loadingOwnershipRemediation, setLoadingOwnershipRemediation] = useState(false)
+  const [ownershipRemediationTarget, setOwnershipRemediationTarget] = useState(null)
+  const [applyingOwnershipRemediation, setApplyingOwnershipRemediation] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const authorityActor = useMemo(() => ({
@@ -336,6 +348,12 @@ export default function SettingsUsersPage() {
       organisationMembership?.branch_id ||
       '',
   }), [membershipRole, organisationMembership, organisationMembershipRole, profile, workspaceRole])
+  const ownershipHealth = useMemo(() => getOrganisationOwnershipHealth(users), [users])
+  const canManageOwnershipRemediation = isPlatformAdmin({
+    appRole: role,
+    profile,
+    currentMembership: organisationMembership,
+  })
   const usesAgencyGovernance = useMemo(() => {
     const type = String(currentWorkspace?.type || workspaceType || '').trim().toLowerCase()
     return !type || ['agency', 'residential'].includes(type)
@@ -355,6 +373,33 @@ export default function SettingsUsersPage() {
     usesAgencyGovernance &&
       organisationBusinessWorkspaceIds.length > 1,
   )
+
+  const loadOwnershipRemediationReport = useCallback(async () => {
+    if (!canManageOwnershipRemediation) {
+      setOwnershipRemediationReport([])
+      return
+    }
+    try {
+      setLoadingOwnershipRemediation(true)
+      const [report, readiness] = await Promise.all([
+        getOrganisationOwnershipRemediationReport(),
+        getOrganisationOwnershipReleaseReadiness().catch((readinessError) => ({
+          status: 'unavailable',
+          error: readinessError.message,
+        })),
+      ])
+      setOwnershipRemediationReport(report)
+      setOwnershipReleaseReadiness(readiness)
+    } catch (loadError) {
+      setError(loadError.message)
+    } finally {
+      setLoadingOwnershipRemediation(false)
+    }
+  }, [canManageOwnershipRemediation])
+
+  useEffect(() => {
+    void loadOwnershipRemediationReport()
+  }, [loadOwnershipRemediationReport])
 
   const commissionStructureById = useMemo(
     () => new Map((commissionStructures || []).map((item) => [String(item.id || ''), item])),
@@ -561,22 +606,51 @@ export default function SettingsUsersPage() {
     }
   }
 
-  async function handleOwnershipTransfer() {
-    if (!isOrganisationOwner || !ownershipTransferTarget?.id) return
-    const targetName = ownershipTransferTarget.fullName || ownershipTransferTarget.email || 'the selected member'
+  async function handleOwnershipChange() {
+    if (!isPrimaryOrganisationOwner || !ownershipTransferTarget?.user?.id) return
+    const isPrimaryReassignment = ownershipTransferTarget.action === 'make_primary'
+    const targetUser = ownershipTransferTarget.user
+    const targetName = targetUser.fullName || targetUser.email || 'the selected member'
     try {
       setTransferringOwnership(true)
       setError('')
       setMessage('')
-      await transferOrganisationOwnership(ownershipTransferTarget.id)
+      if (isPrimaryReassignment) {
+        await transferOrganisationOwnership(targetUser.id)
+      } else {
+        await grantOrganisationOwnership(targetUser.id)
+      }
       setOwnershipTransferTarget(null)
       await loadUsers()
       retryWorkspaceBootstrap?.()
-      setMessage(`Ownership transferred to ${targetName}. Your access has been changed to the workspace's senior management role.`)
+      setMessage(isPrimaryReassignment
+        ? `${targetName} is now the primary owner. You remain an organisation owner.`
+        : `${targetName} has been granted organisation owner access.`)
     } catch (saveError) {
       setError(saveError.message)
     } finally {
       setTransferringOwnership(false)
+    }
+  }
+
+  async function handleApplyOwnershipRemediation() {
+    const target = ownershipRemediationTarget
+    if (!canManageOwnershipRemediation || !target?.organisationId) return
+    try {
+      setApplyingOwnershipRemediation(true)
+      setError('')
+      setMessage('')
+      const result = await applySafeOrganisationOwnershipRemediation(target.organisationId)
+      const repairedCount = Array.isArray(result?.repaired) ? result.repaired.length : 0
+      setOwnershipRemediationTarget(null)
+      await Promise.all([loadUsers(), loadOwnershipRemediationReport()])
+      setMessage(repairedCount
+        ? `Ownership remediation completed for ${target.organisationName || 'the selected organisation'}.`
+        : `No safe ownership remediation was applied for ${target.organisationName || 'the selected organisation'}; refresh the report and review it manually.`)
+    } catch (saveError) {
+      setError(saveError.message)
+    } finally {
+      setApplyingOwnershipRemediation(false)
     }
   }
 
@@ -1115,8 +1189,86 @@ export default function SettingsUsersPage() {
         </SettingsSectionCard>
       ) : null}
 
+      {canManageOwnershipRemediation ? (
+        <SettingsSectionCard
+          title="Organisation ownership remediation"
+          description="Platform-admin review queue. Only unambiguous legacy principal-to-owner repairs can be applied here; all other findings remain manual review."
+        >
+          {loadingOwnershipRemediation ? <SettingsLoadingState label="Loading ownership remediation report…" compact /> : null}
+          {!loadingOwnershipRemediation && ownershipReleaseReadiness?.status === 'ready_for_unique_primary_enforcement' ? (
+            <SettingsBanner tone="success">
+              Release gate passed: all {ownershipReleaseReadiness.organisationCount || 0} organisations have one valid active primary owner. A separately approved uniqueness-enforcement migration may now be scheduled.
+            </SettingsBanner>
+          ) : null}
+          {!loadingOwnershipRemediation && ownershipReleaseReadiness?.status === 'remediation_required' ? (
+            <SettingsBanner tone="warning">
+              Release gate is blocked by {ownershipReleaseReadiness.blockerCount || 0} organisation{ownershipReleaseReadiness.blockerCount === 1 ? '' : 's'}. Resolve every blocker before scheduling uniqueness enforcement.
+            </SettingsBanner>
+          ) : null}
+          {!loadingOwnershipRemediation && ownershipReleaseReadiness?.status === 'unavailable' ? (
+            <SettingsBanner tone="warning">
+              The Phase 7 release gate is unavailable. {ownershipReleaseReadiness.error}
+            </SettingsBanner>
+          ) : null}
+          {!loadingOwnershipRemediation && !ownershipRemediationReport.length ? (
+            <SettingsEmptyState
+              title="No organisations found"
+              description="There are no organisation ownership records available for remediation review."
+            />
+          ) : null}
+          {!loadingOwnershipRemediation && ownershipRemediationReport.length ? (
+            <div className="divide-y divide-[#e9eff5] overflow-hidden rounded-2xl border border-[#e4ebf3] bg-white">
+              {ownershipRemediationReport.map((entry) => {
+                const canApplySafeRepair = entry.resolution === 'safe_repair'
+                const isReady = entry.resolution === 'ready'
+                return (
+                  <div key={entry.organisationId} className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-[#162334]">{entry.organisationName || entry.organisationId}</p>
+                      <p className="text-sm text-[#51657b]">
+                        {entry.activeOwnerCount} active owners · {entry.activePrimaryCount} active primary records · {entry.activeMemberCount} active members
+                      </p>
+                      <span className={[
+                        'inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em]',
+                        isReady ? 'border-[#cde8dc] bg-[#f2fbf5] text-[#1f7a45]' : canApplySafeRepair ? 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]' : 'border-[#f1c5c5] bg-[#fff5f5] text-[#b42318]',
+                      ].join(' ')}>
+                        {String(entry.resolution || 'manual_review').replaceAll('_', ' ')}
+                      </span>
+                    </div>
+                    {canApplySafeRepair ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={applyingOwnershipRemediation}
+                        onClick={() => setOwnershipRemediationTarget(entry)}
+                      >
+                        Apply safe repair
+                      </Button>
+                    ) : (
+                      <span className="text-sm text-[#7b8da6]">{isReady ? 'No action needed' : 'Manual review required'}</span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ) : null}
+        </SettingsSectionCard>
+      ) : null}
+
       <SettingsSectionCard title="Users" description="Manage role access for the current organisation workspace.">
         {loading ? <SettingsLoadingState label="Loading users…" compact /> : null}
+
+        {!loading && users.length && ownershipHealth.status === 'recovery_required' ? (
+          <SettingsBanner tone="error">
+            Ownership recovery is required: {ownershipHealth.issues.map((issue) => issue.replaceAll('_', ' ')).join(', ')}. A platform administrator must run the ownership remediation before owner controls can be used.
+          </SettingsBanner>
+        ) : null}
+
+        {!loading && users.length && ownershipHealth.status === 'healthy' ? (
+          <SettingsBanner tone="success">
+            Ownership health is valid: {ownershipHealth.activeOwnerCount} active {ownershipHealth.activeOwnerCount === 1 ? 'owner' : 'owners'}, including one primary owner.
+          </SettingsBanner>
+        ) : null}
 
         {!loading && !users.length ? (
           <SettingsEmptyState
@@ -1162,12 +1314,20 @@ export default function SettingsUsersPage() {
                 const isCurrentUser = Boolean(
                   userRow.userId && String(userRow.userId) === String(profile?.id || organisationMembership?.userId || organisationMembership?.user_id || ''),
                 )
-                const canReceiveOwnership = Boolean(
-                  isOrganisationOwner &&
+                const canGrantOwnership = Boolean(
+                  isPrimaryOrganisationOwner &&
                   !isCurrentUser &&
                   userRow.userId &&
                   userRow.status === 'active' &&
                   userRow.role !== 'owner',
+                )
+                const canReceivePrimaryOwnership = Boolean(
+                  isPrimaryOrganisationOwner &&
+                  !isCurrentUser &&
+                  userRow.userId &&
+                  userRow.status === 'active' &&
+                  userRow.role === 'owner' &&
+                  !userRow.isPrimaryOwner,
                 )
                 const canDeactivateUser = Boolean(
                   canEdit &&
@@ -1217,6 +1377,15 @@ export default function SettingsUsersPage() {
                     ) : (
                       <span className="text-sm capitalize text-[#51657b]">{userRow.role.replaceAll('_', ' ')}</span>
                     )}
+                    {userRow.isPrimaryOwner ? (
+                      <span className="inline-flex rounded-full border border-[#cde8dc] bg-[#f2fbf5] px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#1f7a45]">
+                        Primary owner
+                      </span>
+                    ) : userRow.role === 'owner' ? (
+                      <span className="inline-flex rounded-full border border-[#d7e3ef] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#51657b]">
+                        Organisation owner
+                      </span>
+                    ) : null}
                     <RolePermissionSummary role={userRow.role} workspaceType={resolvedWorkspaceType} />
                   </div>
                   <div className="space-y-1">
@@ -1330,14 +1499,24 @@ export default function SettingsUsersPage() {
                   </div>
                   <div className="space-y-2">
                     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Actions</span>
-                    {canReceiveOwnership ? (
+                    {canGrantOwnership ? (
                       <Button
                         type="button"
                         variant="secondary"
                         disabled={transferringOwnership}
-                        onClick={() => setOwnershipTransferTarget(userRow)}
+                        onClick={() => setOwnershipTransferTarget({ action: 'grant', user: userRow })}
                       >
-                        Transfer ownership
+                        Grant owner
+                      </Button>
+                    ) : null}
+                    {canReceivePrimaryOwnership ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={transferringOwnership}
+                        onClick={() => setOwnershipTransferTarget({ action: 'make_primary', user: userRow })}
+                      >
+                        Make primary owner
                       </Button>
                     ) : null}
                     {canDeactivateUser ? (
@@ -1349,7 +1528,7 @@ export default function SettingsUsersPage() {
                       >
                         Deactivate
                       </Button>
-                    ) : !canReceiveOwnership && !canDeactivateUser ? (
+                    ) : !canGrantOwnership && !canReceivePrimaryOwnership && !canDeactivateUser ? (
                       <span className="text-sm text-[#8da0b6]">—</span>
                     ) : null}
                   </div>
@@ -1376,13 +1555,24 @@ export default function SettingsUsersPage() {
 
       <ConfirmDialog
         open={Boolean(ownershipTransferTarget)}
-        title="Transfer organisation ownership?"
-        description={`This gives ${ownershipTransferTarget?.fullName || ownershipTransferTarget?.email || 'this member'} full control of users, billing, roles, and workspace settings. You will move to the senior management role for this workspace. This cannot be reversed from the normal role dropdown.`}
-        confirmLabel="Transfer ownership"
+        title={ownershipTransferTarget?.action === 'make_primary' ? 'Make this owner primary?' : 'Grant organisation owner access?'}
+        description={ownershipTransferTarget?.action === 'make_primary'
+          ? `${ownershipTransferTarget?.user?.fullName || ownershipTransferTarget?.user?.email || 'This owner'} will become the primary owner. You will remain an organisation owner, and the other owners will keep their access.`
+          : `${ownershipTransferTarget?.user?.fullName || ownershipTransferTarget?.user?.email || 'This member'} will become an additional organisation owner. The current primary owner will not change.`}
+        confirmLabel={ownershipTransferTarget?.action === 'make_primary' ? 'Make primary owner' : 'Grant owner'}
         confirming={transferringOwnership}
-        variant="destructive"
-        onConfirm={handleOwnershipTransfer}
+        onConfirm={handleOwnershipChange}
         onCancel={() => setOwnershipTransferTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(ownershipRemediationTarget)}
+        title="Apply safe ownership repair?"
+        description={`This will promote the one active primary principal in ${ownershipRemediationTarget?.organisationName || 'the selected organisation'} to owner. It is only available where the server has verified that no other active owner or primary record exists.`}
+        confirmLabel="Apply safe repair"
+        confirming={applyingOwnershipRemediation}
+        onConfirm={handleApplyOwnershipRemediation}
+        onCancel={() => setOwnershipRemediationTarget(null)}
       />
     </div>
   )

@@ -1818,6 +1818,7 @@ function OrganizationProfilePage({ organizationId }) {
                                 disabled={busyMemberId === member.id}
                               >
                                 <option value="owner">Owner</option>
+                                <option value="principal">Principal</option>
                                 <option value="admin">Admin</option>
                                 <option value="member">Member</option>
                               </select>

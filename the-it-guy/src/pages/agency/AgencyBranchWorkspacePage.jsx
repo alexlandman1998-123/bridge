@@ -859,7 +859,10 @@ export default function AgencyBranchWorkspacePage() {
   const monthlyPerformance = Math.max(0, Math.round(revenueSecured / 1000))
   const branchName = branch?.name || 'Branch Workspace'
   const branchLocation = normalizeText(branch?.location) || [branch?.city, branch?.province].map(normalizeText).filter(Boolean).join(', ') || 'Location pending'
-  const activeAgents = Number(branch?.kpis?.activeAgents ?? leaderboard.length ?? 0)
+  const activeSalesAgents = Number(branch?.kpis?.activeSalesAgents ?? branch?.kpis?.activeAgents ?? leaderboard.length ?? 0)
+  const activeOperationalTeam = Number(branch?.kpis?.activeOperationalTeam ?? branch?.kpis?.activeProductionUsers ?? activeSalesAgents)
+  const activeMembers = Number(branch?.kpis?.activeMembers ?? activeOperationalTeam)
+  const declaredAgentCapacity = Number(branch?.kpis?.declaredAgentCapacity ?? 0)
   const listingCount = Number(branch?.kpis?.activeListings ?? branchListings.length)
   const conversionRate = Number(branch?.kpis?.conversionRate || closedRate || 0)
 
@@ -984,7 +987,8 @@ export default function AgencyBranchWorkspacePage() {
                     <MapPin size={14} />
                     {branchLocation}
                   </span>
-                  <span>{activeAgents} agents</span>
+                  <span>{activeOperationalTeam} team members</span>
+                  <span>{activeSalesAgents} sales agents</span>
                   <span>{activeDeals} active deals</span>
                 </div>
               </div>
@@ -1007,8 +1011,10 @@ export default function AgencyBranchWorkspacePage() {
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-6">
-        <KpiCard label="Agents" value={activeAgents} helper="Active branch users" icon={Users} tone="blue" />
+      <section className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 2xl:grid-cols-4">
+        <KpiCard label="Sales Agents" value={activeSalesAgents} helper="Active agent roles" icon={Users} tone="blue" />
+        <KpiCard label="Team" value={activeOperationalTeam} helper={`${activeMembers} active members`} icon={Users} tone="slate" />
+        <KpiCard label="Declared Capacity" value={declaredAgentCapacity} helper="Onboarding estimate" icon={Users} tone="slate" />
         <KpiCard label="Listings" value={listingCount} helper="Live inventory" icon={Building2} tone="slate" />
         <KpiCard label="Active Deals" value={activeDeals} helper={`${branchTransactions.length} total tracked`} icon={ArrowRightLeft} tone="gold" />
         <KpiCard label="Revenue Secured" value={formatCurrency(revenueSecured)} helper="Estimated commission value" icon={Banknote} tone="green" />

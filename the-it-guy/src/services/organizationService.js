@@ -33,10 +33,10 @@ export const ORGANIZATION_ROLE_LABELS = Object.freeze({
   owner: 'Owner',
   admin: 'Admin',
   member: 'Member',
-  principal: 'Owner',
-  super_admin: 'Owner',
-  director: 'Owner',
-  partner: 'Owner',
+  principal: 'Principal',
+  super_admin: 'Super admin',
+  director: 'Director',
+  partner: 'Partner',
   viewer: 'Member',
 })
 
@@ -170,7 +170,7 @@ export function getOrganizationTypeLabel(value) {
 
 export function normalizeOrganizationRole(value) {
   const normalized = normalizeLower(value).replace(/[\s-]+/g, '_')
-  if (['owner', 'principal', 'super_admin', 'director', 'partner'].includes(normalized)) return 'owner'
+  if (['owner', 'principal', 'super_admin', 'director', 'partner'].includes(normalized)) return normalized
   if (['admin', 'administrator', 'manager'].includes(normalized)) return 'admin'
   return 'member'
 }

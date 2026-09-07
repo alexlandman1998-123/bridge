@@ -220,7 +220,8 @@ export default function BranchCommandCentrePage() {
 
       <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
         <KpiTile label="Health Score" value={model.averageHealth} helper={isBranchScoped ? 'Your branch' : `${model.activeBranches.length} active branches`} icon={CircleGauge} tone={selectedBranch?.health?.tone || 'blue'} />
-        <KpiTile label="Agents" value={model.totals.agents} helper="Active branch agents" icon={Users} tone="blue" />
+        <KpiTile label="Sales Agents" value={model.totals.agents} helper="Active agent-role memberships" icon={Users} tone="blue" />
+        <KpiTile label="Operational Team" value={model.totals.operationalTeam} helper="Agents, principals and managers" icon={Users} tone="slate" />
         <KpiTile label="Leads" value={model.totals.leads} helper="Open branch pipeline" icon={ClipboardList} tone="gold" />
         <KpiTile label="Listings" value={model.totals.listings} helper="Active inventory" icon={Building2} tone="slate" />
         <KpiTile label="Pipeline" value={formatCurrency(model.totals.pipelineValue)} helper={`${model.totals.transactions} active transactions`} icon={BriefcaseBusiness} tone="green" />

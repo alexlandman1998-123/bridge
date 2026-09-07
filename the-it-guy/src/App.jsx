@@ -3869,7 +3869,7 @@ function AppRoutes() {
                 <Route
                   path="roles"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator', 'platform_admin', 'internal_admin', 'admin']}>
                       <PermissionGate capability="manage_users">
                         <SettingsUsersPage />
                       </PermissionGate>
@@ -3879,7 +3879,7 @@ function AppRoutes() {
                 <Route
                   path="users"
                   element={
-                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator', 'platform_admin', 'internal_admin', 'admin']}>
                       <PermissionGate capability="manage_users">
                         <SettingsUsersPage />
                       </PermissionGate>

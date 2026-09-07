@@ -21,6 +21,7 @@ import {
 import { RENTAL_CAPABILITIES, canUseRentalCapability } from '../modules/rentals/shared/permissions/rentalCapabilities'
 import {
   isOrganisationOwnerMembership,
+  isPrimaryOrganisationOwnerMembership,
   resolveActiveOrganisationMembership,
   resolveOrganisationMembershipRole,
 } from '../lib/organisationMembershipResolution'
@@ -232,6 +233,7 @@ export function WorkspaceProvider({ children }) {
   )
   const organisationMembershipRole = resolveOrganisationMembershipRole(organisationMembership)
   const isOrganisationOwner = isOrganisationOwnerMembership(organisationMembership)
+  const isPrimaryOrganisationOwner = isPrimaryOrganisationOwnerMembership(organisationMembership)
   const isAgentBaseRole = baseRole === 'agent'
   const [agencyWorkflowMode, setAgencyWorkflowModeState] = useState(DEFAULT_AGENCY_WORKFLOW_MODE)
   const [businessWorkspacePreferenceState, setBusinessWorkspacePreferenceState] = useState({
@@ -537,6 +539,7 @@ export function WorkspaceProvider({ children }) {
       organisationMembership,
       organisationMembershipRole,
       isOrganisationOwner,
+      isPrimaryOrganisationOwner,
       currentWorkspace: authState.currentWorkspace,
       workspaceType: authState.workspaceType,
       workspaceRole: authState.workspaceRole,
@@ -566,6 +569,7 @@ export function WorkspaceProvider({ children }) {
       organisationMembership,
       organisationMembershipRole,
       isOrganisationOwner,
+      isPrimaryOrganisationOwner,
       authState.currentWorkspace,
       authState.memberships,
       authState.pendingMemberships,

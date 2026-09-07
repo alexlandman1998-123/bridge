@@ -28,7 +28,7 @@ try {
   }
 
   {
-    assert.equal(normalizeOrganizationRole('principal'), 'owner')
+    assert.equal(normalizeOrganizationRole('principal'), 'principal')
     assert.equal(normalizeOrganizationRole('administrator'), 'admin')
     assert.equal(normalizeOrganizationRole('conveyancer'), 'member')
   }

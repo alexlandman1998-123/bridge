@@ -48,7 +48,7 @@ const SORT_OPTIONS = [
   { value: 'pipeline', label: 'Pipeline Value' },
   { value: 'transactions', label: 'Transactions' },
   { value: 'listings', label: 'Listings' },
-  { value: 'agents', label: 'Agents' },
+  { value: 'agents', label: 'Sales Agents' },
   { value: 'health', label: 'Health' },
   { value: 'name', label: 'A-Z' },
 ]
@@ -57,6 +57,8 @@ const EMPTY_OVERVIEW = {
   totals: {
     branches: 0,
     agents: 0,
+    salesAgents: 0,
+    operationalTeam: 0,
     companyPipeline: 0,
     activeTransactions: 0,
     projectedCommission: 0,
@@ -319,7 +321,8 @@ function BranchTable({ rows, onView, onManageAgents, onDelete }) {
             <th className="px-4 py-3">Pipeline Value</th>
             <th className="px-4 py-3">Transactions</th>
             <th className="px-4 py-3">Listings</th>
-            <th className="px-4 py-3">Agents</th>
+            <th className="px-4 py-3">Sales Agents</th>
+            <th className="px-4 py-3">Team</th>
             <th className="px-4 py-3">Health</th>
             <th className="px-4 py-3">Trend</th>
             <th className="px-4 py-3 text-right">Actions</th>
@@ -345,6 +348,7 @@ function BranchTable({ rows, onView, onManageAgents, onDelete }) {
               <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeTransactions)}</td>
               <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeListings)}</td>
               <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeAgents)}</td>
+              <td className="px-4 py-4 text-[#1f3448] tabular-nums">{formatNumber(branch.activeOperationalTeam)}</td>
               <td className="px-4 py-4">
                 <StatusBadge tone={branch.health?.tone}>{branch.health?.label || 'Watch'}</StatusBadge>
               </td>
@@ -400,7 +404,8 @@ function BranchMobileCards({ rows, onView, onManageAgents, onDelete }) {
           <div className="mt-4 grid grid-cols-2 gap-2">
             <MobileMetric label="Pipeline" value={formatCompactCurrency(branch.pipelineValue)} />
             <MobileMetric label="Transactions" value={formatNumber(branch.activeTransactions)} />
-            <MobileMetric label="Agents" value={formatNumber(branch.activeAgents)} />
+            <MobileMetric label="Sales Agents" value={formatNumber(branch.activeAgents)} />
+            <MobileMetric label="Team" value={formatNumber(branch.activeOperationalTeam)} />
             <MobileMetric label="Listings" value={formatNumber(branch.activeListings)} />
           </div>
           <Button size="sm" className="mt-4 w-full" onClick={() => onView(branch.id)}>View Branch <ArrowRight size={15} /></Button>
@@ -830,7 +835,8 @@ export default function AgencyBranchesPage() {
         <>
           <section className="grid grid-cols-2 gap-3 xl:grid-cols-6" aria-label="Company branch metrics">
             <KpiCard label="Branches" value={formatNumber(totals.branches)} helper="Active branches" icon={Building2} tone="blue" sparkline={periodMetrics.listings?.sparkline} />
-            <KpiCard label="Agents" value={formatNumber(totals.agents)} helper="Branch-linked agents" icon={Users} tone="green" sparkline={periodMetrics.agents?.sparkline} />
+            <KpiCard label="Sales Agents" value={formatNumber(totals.salesAgents ?? totals.agents)} helper="Live agent-role memberships" icon={Users} tone="green" sparkline={periodMetrics.agents?.sparkline} />
+            <KpiCard label="Operational Team" value={formatNumber(totals.operationalTeam)} helper="Agents, principals and managers" icon={Users} tone="blue" sparkline={periodMetrics.agents?.sparkline} />
             <KpiCard label="Company Pipeline" value={formatCompactCurrency(totals.companyPipeline)} helper="Open listings and transactions" icon={LineChart} tone="gold" sparkline={periodMetrics.pipeline?.sparkline} />
             <KpiCard label="Active Transactions" value={formatNumber(totals.activeTransactions)} helper="Open branch transactions" icon={ArrowRightLeft} tone="blue" sparkline={periodMetrics.transactions?.sparkline} />
             <KpiCard label="Projected Commission" value={projectedCommissionValue} helper={totals.hasProjectedCommissionData ? 'Estimated commission' : 'No data yet'} icon={Banknote} tone={totals.hasProjectedCommissionData ? 'green' : 'slate'} sparkline={periodMetrics.pipeline?.sparkline} />
@@ -859,7 +865,7 @@ export default function AgencyBranchesPage() {
               <PerformanceMetric label="Pipeline Value" value={formatCompactCurrency(periodMetrics.pipeline?.value)} changePercent={periodMetrics.pipeline?.changePercent} sparkline={periodMetrics.pipeline?.sparkline} tone="gold" />
               <PerformanceMetric label="Transactions" value={formatNumber(periodMetrics.transactions?.value)} changePercent={periodMetrics.transactions?.changePercent} sparkline={periodMetrics.transactions?.sparkline} tone="green" />
               <PerformanceMetric label="Listings" value={formatNumber(periodMetrics.listings?.value)} changePercent={periodMetrics.listings?.changePercent} sparkline={periodMetrics.listings?.sparkline} tone="blue" />
-              <PerformanceMetric label="Agents" value={formatNumber(periodMetrics.agents?.value)} changePercent={periodMetrics.agents?.changePercent} sparkline={periodMetrics.agents?.sparkline} tone="slate" />
+              <PerformanceMetric label="Sales Agents" value={formatNumber(periodMetrics.agents?.value)} changePercent={periodMetrics.agents?.changePercent} sparkline={periodMetrics.agents?.sparkline} tone="slate" />
             </div>
           </section>
 
