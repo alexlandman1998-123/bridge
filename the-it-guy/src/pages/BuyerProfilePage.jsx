@@ -8,7 +8,7 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   getReusableBuyerProfile,
   listBuyerProfileTransactions,
-  saveBuyerIdentity,
+  saveBuyerProfileIdentity,
   saveReusableBuyerProfile,
 } from '../services/buyerProfileReuseService'
 
@@ -65,7 +65,7 @@ export default function BuyerProfilePage() {
       setSaving(true)
       setError('')
       const [savedBuyer, savedProfile] = await Promise.all([
-        saveBuyerIdentity({ buyerId: buyer.id, name: buyer.name, email: buyer.email, phone: buyer.phone }),
+        saveBuyerProfileIdentity({ buyerId: buyer.id, name: buyer.name, email: buyer.email, phone: buyer.phone }),
         saveReusableBuyerProfile({ buyerId: buyer.id, profileData }),
       ])
       setBuyer(savedBuyer)
