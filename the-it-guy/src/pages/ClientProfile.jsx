@@ -38,6 +38,10 @@ function getInitials(name) {
   return parts.map((item) => item[0]?.toUpperCase() || '').join('') || 'CL'
 }
 
+function isUuidLike(value) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+}
+
 function getMatterPath({ role, transactionId, unitId, fallbackSearch = '' }) {
   if (role === 'bond_originator' && transactionId) {
     return `/bond/files/${transactionId}`
@@ -414,6 +418,11 @@ function ClientProfile() {
               </>
             ) : null}
           </div>
+          {client.source === 'buyer' && isUuidLike(client.sourceRecordId) ? (
+            <Button className="mt-6 w-full" variant="secondary" onClick={() => navigate(`/buyers/${client.sourceRecordId}`)}>
+              Open reusable buyer profile
+            </Button>
+          ) : null}
         </aside>
 
         <div className="space-y-5">

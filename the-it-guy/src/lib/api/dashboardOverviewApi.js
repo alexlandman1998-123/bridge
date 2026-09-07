@@ -100,6 +100,50 @@ async function fetchDashboardDevelopmentProfiles(client, developmentIds = []) {
   return new Map((query.data || []).map((profile) => [String(profile.development_id), profile]))
 }
 
+function isDashboardImageDocument(document = {}) {
+  const type = String(document?.document_type || '').trim().toLowerCase()
+  const mimeType = String(document?.mime_type || '').trim().toLowerCase()
+  const fileName = `${document?.file_url || ''} ${document?.storage_path || ''}`.toLowerCase()
+  return mimeType.startsWith('image/') || ['marketing', 'image', 'gallery', 'hero', 'cover'].includes(type) || /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/.test(fileName)
+}
+
+async function resolveDashboardDocumentImageUrl(client, document = {}) {
+  const bucket = String(document?.storage_bucket || 'documents').trim() || 'documents'
+  const path = String(document?.storage_path || '').trim()
+  if (path && client?.storage?.from) {
+    try {
+      const signed = await client.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24)
+      if (!signed?.error && signed?.data?.signedUrl) return String(signed.data.signedUrl).trim()
+    } catch {
+      // Keep the stored URL as a fallback when signing is unavailable.
+    }
+  }
+  return String(document?.file_url || '').trim()
+}
+
+async function fetchDashboardDevelopmentDocumentImages(client, developmentIds = []) {
+  if (!developmentIds.length) return new Map()
+  const query = await client
+    .from('development_documents')
+    .select('development_id, document_type, file_url, storage_bucket, storage_path, mime_type, approval_status, archived_at, uploaded_at, created_at')
+    .in('development_id', developmentIds)
+    .order('uploaded_at', { ascending: false })
+  if (query.error) {
+    if (isMissingTableError(query.error, 'development_documents') || isPermissionDeniedError(query.error)) return new Map()
+    return new Map()
+  }
+
+  const images = new Map()
+  for (const document of query.data || []) {
+    if (document?.archived_at || String(document?.approval_status || '').trim().toLowerCase() === 'rejected' || !isDashboardImageDocument(document)) continue
+    if (!images.has(String(document.development_id))) {
+      const imageUrl = await resolveDashboardDocumentImageUrl(client, document)
+      if (imageUrl) images.set(String(document.development_id), imageUrl)
+    }
+  }
+  return images
+}
+
 export function requireClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_KEY to .env.')
@@ -1328,12 +1372,25 @@ export async function fetchDashboardOverview({
     : allowedDevelopmentIds
       ? [...allowedDevelopmentIds]
       : [...new Set(units.map((unit) => unit?.development_id).filter(Boolean))]
-  const developmentProfilesById = await fetchDashboardDevelopmentProfiles(client, dashboardDevelopmentIds)
+  const [developmentProfilesById, developmentDocumentImagesById] = await Promise.all([
+    fetchDashboardDevelopmentProfiles(client, dashboardDevelopmentIds),
+    fetchDashboardDevelopmentDocumentImages(client, dashboardDevelopmentIds),
+  ])
+  const developmentImageFor = (developmentId) => {
+    const id = String(developmentId || '')
+    return firstDashboardDevelopmentImage(developmentProfilesById.get(id) || {}) || developmentDocumentImagesById.get(id) || ''
+  }
+  const rowsWithDevelopmentImages = rows.map((row) => {
+    const developmentId = row?.development?.id || row?.development_id || row?.unit?.development_id
+    const imageUrl = developmentImageFor(developmentId)
+    if (!imageUrl || !row?.development) return row
+    return { ...row, development: { ...row.development, cover_image_url: imageUrl } }
+  })
   const hydratedDevelopmentSummaries = developmentSummaries.map((summary) => {
     const profile = developmentProfilesById.get(String(summary.id)) || {}
     return {
       ...summary,
-      coverImageUrl: firstDashboardDevelopmentImage(profile),
+      coverImageUrl: firstDashboardDevelopmentImage(profile) || developmentDocumentImagesById.get(String(summary.id)) || '',
       location: profile.location || summary.location || null,
       phase: profile.status || summary.phase || null,
     }
@@ -1341,11 +1398,11 @@ export async function fetchDashboardOverview({
   // The unit hydration above already selects the current transaction for each
   // unit. Use that canonical view for dashboard headline metrics instead of
   // counting historical/replaced transaction rows from backfill attempts.
-  const transactionRows = rows.filter((row) => row?.transaction?.id)
-  const metrics = buildDashboardMetrics(rows, hydratedDevelopmentSummaries.length)
+  const transactionRows = rowsWithDevelopmentImages.filter((row) => row?.transaction?.id)
+  const metrics = buildDashboardMetrics(rowsWithDevelopmentImages, hydratedDevelopmentSummaries.length)
 
   return {
-    rows,
+    rows: rowsWithDevelopmentImages,
     transactionRows,
     metrics: {
       ...metrics,

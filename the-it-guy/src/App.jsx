@@ -330,6 +330,7 @@ const ClientPortal = lazy(() => import('./pages/ClientPortal'))
 const BondApplicationPortal = lazy(() => import('./pages/BondApplicationPortal'))
 const ProspectBuyerDemo = lazy(() => import('./pages/ProspectBuyerDemo'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
+const BuyerProfilePage = lazy(() => import('./pages/BuyerProfilePage'))
 const Clients = lazy(() => import('./pages/Clients'))
 const ConveyancerDevelopments = lazy(() => import('./pages/ConveyancerDevelopments'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
@@ -2928,6 +2929,14 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <ClientProfile />
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/buyers/:buyerId"
+                element={
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
+                    <BuyerProfilePage />
                   </RoleRoute>
                 }
               />

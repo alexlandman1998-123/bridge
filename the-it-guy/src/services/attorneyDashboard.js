@@ -1288,6 +1288,16 @@ function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } 
   const uniqueMatters = matterRoleSummaries
     .map((summary) => summary.units?.[0])
     .filter(Boolean)
+  // The compact dashboard RPC can omit monetary columns from individual
+  // matters. Use the hydrated transaction value when its aggregate reports
+  // zero, rather than presenting a false zero-value pipeline to the firm.
+  const hydratedRevenuePipeline = uniqueMatters.reduce(
+    (total, matter) => total + getTransactionValue(matter.transaction),
+    0,
+  )
+  if (!Number(kpis.revenuePipelineValue || 0) && hydratedRevenuePipeline > 0) {
+    kpis.revenuePipelineValue = hydratedRevenuePipeline
+  }
   const departmentsById = departments.reduce((byId, department) => ({ ...byId, [department.id]: department }), {})
   const assignmentByUserId = matterUnits.reduce((byUserId, matter) => {
     ;[matter.primaryAttorneyId, matter.secretaryId, matter.adminHandlerId].filter(Boolean).forEach((userId) => {

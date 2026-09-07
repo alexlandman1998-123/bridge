@@ -50,6 +50,14 @@ test('active developer transactions use readiness next actions', () => {
   assert.equal(rows[0].readinessTone, 'warning')
 })
 
+test('active developer transactions retain the property image for dashboard cards', () => {
+  const rows = selectActiveTransactions([
+    developmentRow({ unit: { cover_image_url: 'https://example.test/unit-cover.jpg' } }),
+  ])
+
+  assert.equal(rows[0].imageUrl, 'https://example.test/unit-cover.jpg')
+})
+
 test('developer bottlenecks use readiness next actions', () => {
   const bottlenecks = selectBottlenecks([developmentRow()], { DEP: 1 })
 

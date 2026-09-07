@@ -1,4 +1,5 @@
 const text = (value = '') => String(value || '').trim()
+const hasCapturedAmount = (value) => Number(value || 0) > 0
 
 function isSchemaCompatibilityError(error) {
   const code = text(error?.code).toUpperCase()
@@ -48,24 +49,40 @@ export async function hydrateMatterPropertyContext(client, transactions = []) {
   // RPC snapshots intentionally keep their payload small. When a snapshot has
   // only a transaction id, resolve the relationship keys before loading the
   // source property records.
-  const transactionIdsNeedingLinks = rows
-    .filter((row) => !text(row.development_id || row.developmentId || row.unit_id || row.unitId))
+  const transactionIdsNeedingCoreFields = rows
+    .filter((row) => (
+      !text(row.development_id || row.developmentId || row.unit_id || row.unitId) ||
+      !hasCapturedAmount(row.purchase_price || row.purchasePrice || row.sales_price || row.salesPrice || row.bond_amount || row.bondAmount)
+    ))
     .map((row) => text(row.id || row.transaction_id || row.transactionId))
     .filter(Boolean)
-  if (transactionIdsNeedingLinks.length) {
-    const links = await fetchRows(
+  if (transactionIdsNeedingCoreFields.length) {
+    const coreRows = await fetchRows(
       client,
       'transactions',
-      'id, development_id, unit_id',
-      [...new Set(transactionIdsNeedingLinks)],
+      'id, development_id, unit_id, purchase_price, sales_price, bond_amount, deposit_amount',
+      [...new Set(transactionIdsNeedingCoreFields)],
+      'id, development_id, unit_id, purchase_price, sales_price',
     )
-    const linksByTransactionId = new Map(links.map((link) => [text(link.id), link]))
+    const coreByTransactionId = new Map(coreRows.map((row) => [text(row.id), row]))
     rows = rows.map((row) => {
-      const link = linksByTransactionId.get(text(row.id || row.transaction_id || row.transactionId))
-      return link ? {
+      const core = coreByTransactionId.get(text(row.id || row.transaction_id || row.transactionId))
+      return core ? {
         ...row,
-        development_id: row.development_id || row.developmentId || link.development_id || null,
-        unit_id: row.unit_id || row.unitId || link.unit_id || null,
+        development_id: row.development_id || row.developmentId || core.development_id || null,
+        unit_id: row.unit_id || row.unitId || core.unit_id || null,
+        ...(!hasCapturedAmount(row.purchase_price || row.purchasePrice) && hasCapturedAmount(core.purchase_price)
+          ? { purchase_price: core.purchase_price }
+          : {}),
+        ...(!hasCapturedAmount(row.sales_price || row.salesPrice) && hasCapturedAmount(core.sales_price)
+          ? { sales_price: core.sales_price }
+          : {}),
+        ...(!hasCapturedAmount(row.bond_amount || row.bondAmount) && hasCapturedAmount(core.bond_amount)
+          ? { bond_amount: core.bond_amount }
+          : {}),
+        ...(!hasCapturedAmount(row.deposit_amount || row.depositAmount) && hasCapturedAmount(core.deposit_amount)
+          ? { deposit_amount: core.deposit_amount }
+          : {}),
       } : row
     })
   }

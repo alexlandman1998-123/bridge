@@ -138,6 +138,11 @@ try {
   assert.equal(overview.rows[0].unit.id, 'unit-1')
   assert.equal(overview.rows[0].development.id, 'dev-1')
   assert.equal(
+    overview.rows[0].development.cover_image_url,
+    'https://example.test/fast-development-hero.jpg',
+    'dashboard transaction rows should carry the development image used by active-transaction cards',
+  )
+  assert.equal(
     overview.developmentSummaries[0].coverImageUrl,
     'https://example.test/fast-development-hero.jpg',
     'dashboard development cards should use the configured marketing hero when image_links is empty',

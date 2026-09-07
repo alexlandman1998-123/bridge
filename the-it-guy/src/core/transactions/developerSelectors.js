@@ -78,6 +78,36 @@ function getDeveloperNextAction(row = {}, fallback = 'No next action set') {
   return String(readiness?.nextAction?.title || row?.report?.nextStep || row?.transaction?.next_action || fallback).trim() || fallback
 }
 
+function getPropertyImage(row = {}) {
+  const candidates = [
+    row?.transaction?.property_image_url,
+    row?.transaction?.listing_image_url,
+    row?.transaction?.primary_image_url,
+    row?.transaction?.cover_image_url,
+    row?.transaction?.hero_image_url,
+    row?.transaction?.image_url,
+    row?.transaction?.thumbnail_url,
+    row?.unit?.cover_image_url,
+    row?.unit?.primary_image_url,
+    row?.unit?.image_url,
+    row?.unit?.thumbnail_url,
+    row?.unit?.gallery_images,
+    row?.development?.cover_image_url,
+    row?.development?.hero_image_url,
+    row?.development?.image_url,
+  ]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+    if (Array.isArray(candidate)) {
+      const first = candidate.find((item) => typeof item === 'string' ? item.trim() : item?.url)
+      if (typeof first === 'string') return first.trim()
+      if (first?.url) return String(first.url).trim()
+    }
+    if (candidate?.url) return String(candidate.url).trim()
+  }
+  return ''
+}
+
 function formatSource(value) {
   const source = String(value || '').trim()
   if (!source) {
@@ -555,6 +585,7 @@ export function selectActiveTransactions(rows = []) {
         '',
       ).trim()
       const propertyIdentifier = propertyAddressLine1 || (row?.unit?.unit_number ? `Unit ${row.unit.unit_number}` : 'Unit')
+      const propertyImage = getPropertyImage(row)
 
       return {
         id: row?.transaction?.id || row?.unit?.id || `${row?.development?.id || 'dev'}-${row?.unit?.unit_number || 'unit'}`,
@@ -585,6 +616,8 @@ export function selectActiveTransactions(rows = []) {
         bondOriginatorEmail,
         assignedAgentName,
         propertyIdentifier,
+        propertyImage,
+        imageUrl: propertyImage,
         uploadedCount,
         totalRequired,
         missingCount,

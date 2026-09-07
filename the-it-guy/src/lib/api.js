@@ -9826,6 +9826,8 @@ const TRANSACTION_PARTICIPANT_FULL_SELECT = `
   buyer_portal_link_id,
   buyer_source,
   buyer_metadata,
+  ownership_percentage,
+  signing_required,
   can_view,
   can_comment,
   can_upload_documents,

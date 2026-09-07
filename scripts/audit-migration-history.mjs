@@ -225,10 +225,92 @@ function removeSqlComments(value) {
 }
 
 function normalizeSql(value = '') {
-  return removeSqlComments(String(value))
-    .replace(/\s+/g, ' ')
-    .trim()
-    .replace(/;\s*$/, '')
+  const sql = removeSqlComments(String(value))
+  let result = ''
+  let index = 0
+  let state = 'normal'
+  let dollarTag = null
+  let pendingWhitespace = false
+
+  const append = (character) => {
+    const operators = '=<>+-*/:'
+    if (
+      pendingWhitespace &&
+      result &&
+      !'(),;'.includes(character) &&
+      !'(),'.includes(result.at(-1)) &&
+      !operators.includes(character) &&
+      !operators.includes(result.at(-1))
+    ) result += ' '
+    result += character
+    pendingWhitespace = false
+  }
+
+  while (index < sql.length) {
+    const character = sql[index]
+    const next = sql[index + 1]
+    if (state === 'singleQuote') {
+      append(character)
+      if (character === "'" && next === "'") {
+        append(next)
+        index += 2
+      } else {
+        if (character === "'") state = 'normal'
+        index += 1
+      }
+      continue
+    }
+    if (state === 'doubleQuote') {
+      append(character)
+      if (character === '"' && next === '"') {
+        append(next)
+        index += 2
+      } else {
+        if (character === '"') state = 'normal'
+        index += 1
+      }
+      continue
+    }
+    if (state === 'dollarQuote') {
+      if (sql.startsWith(dollarTag, index)) {
+        for (const tagCharacter of dollarTag) append(tagCharacter)
+        index += dollarTag.length
+        state = 'normal'
+      } else {
+        append(character)
+        index += 1
+      }
+      continue
+    }
+
+    if (/\s/.test(character)) {
+      pendingWhitespace = true
+      index += 1
+    } else if (character === "'") {
+      append(character)
+      state = 'singleQuote'
+      index += 1
+    } else if (character === '"') {
+      append(character)
+      state = 'doubleQuote'
+      index += 1
+    } else if (character === '$') {
+      const dollarMatch = sql.slice(index).match(/^\$[A-Za-z_][A-Za-z0-9_]*\$|^\$\$/)
+      if (dollarMatch) {
+        dollarTag = dollarMatch[0]
+        for (const tagCharacter of dollarTag) append(tagCharacter)
+        state = 'dollarQuote'
+        index += dollarTag.length
+      } else {
+        append(character)
+        index += 1
+      }
+    } else {
+      append(character)
+      index += 1
+    }
+  }
+  return result.trim().replace(/;$/, '')
 }
 
 const localMigrations = getLocalMigrations()

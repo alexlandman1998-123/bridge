@@ -57,6 +57,11 @@ import ConfirmDialog from '../components/ui/ConfirmDialog'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
+import TransactionBuyerPartiesPanel from '../components/transaction/TransactionBuyerPartiesPanel'
+import DealSetupPanel from '../components/transaction/DealSetupPanel'
+import DealSetupDocumentRequirementsPanel from '../components/transaction/DealSetupDocumentRequirementsPanel'
+import AttorneyDealSetupHandoffPanel from '../components/attorney/AttorneyDealSetupHandoffPanel'
+import BondDealSetupHandoffPanel from '../components/bond/BondDealSetupHandoffPanel'
 import LegalTaskWorkbench from '../components/attorney/workflow/LegalTaskWorkbench.jsx'
 import {
   buildBondHybridFinanceStageSteps,
@@ -261,6 +266,7 @@ const ATTORNEY_WORKSPACE_TABS = [
 
 const AGENT_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
+  { id: 'deal_setup', label: 'Deal Setup' },
   { id: 'documents', label: 'Documents' },
   { id: 'finance', label: 'Finance' },
   { id: 'transfer', label: 'Conveyancing' },
@@ -22301,6 +22307,8 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {workspaceRole === 'bond_originator' && activeWorkspaceMenu === 'overview' ? (
+          <section className="space-y-4">
+          <BondDealSetupHandoffPanel transactionId={transaction?.id} />
           <BondConsultantOverviewWorkspace
             journeyModel={agentOverviewJourneyModel}
             consultantAction={bondConsultantWorkspaceAction}
@@ -22319,9 +22327,12 @@ function AttorneyTransactionDetail() {
             onOpenActivity={() => openWorkspaceMenu('activity')}
             onOpenContacts={() => openWorkspaceMenu('activity')}
           />
+          </section>
         ) : null}
 
         {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
+          <section className="space-y-4">
+          <AttorneyDealSetupHandoffPanel transactionId={transaction?.id} />
           <ArchlineOverviewWorkspace
             lifecycleProgress={displayedLifecycleProgress}
             overviewNextActions={overviewNextActions}
@@ -22339,6 +22350,7 @@ function AttorneyTransactionDetail() {
             onOpenWorkspace={openWorkspaceMenu}
             onRunTask={handleArchlineTaskCommand}
           />
+          </section>
         ) : null}
 
         {isTransactionOperatorView && activeWorkspaceMenu === 'transfer' ? (
@@ -22419,6 +22431,7 @@ function AttorneyTransactionDetail() {
 
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-4">
+            <DealSetupDocumentRequirementsPanel transactionId={transaction?.id} />
             <ArchlineDocumentsWorkspace
               loading={!documentDataHydrated && documentWorkspaceLoad.status !== 'error'}
               error={!documentDataHydrated ? documentWorkspaceLoad.error : ''}
@@ -22637,6 +22650,7 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {isTransactionOperatorView && activeWorkspaceMenu === 'parties' ? (
+          <>
           <ArchlinePartiesWorkspace
             transaction={transaction}
             buyerDisplayName={buyerDisplayName}
@@ -22663,6 +22677,16 @@ function AttorneyTransactionDetail() {
             onBuyerPortal={() => handleOverviewActionTarget('buyer_portal')}
             onSellerPortal={sellerPartyLabels.isDeveloperSale ? handleRequestDeveloperDocuments : () => handleOverviewActionTarget('seller_portal')}
           />
+          <TransactionBuyerPartiesPanel
+            transactionId={transaction?.id}
+            organisationId={transaction?.organisation_id || workspaceOrganisationId}
+            canEdit={isTransactionOperatorView || workspaceRole === 'attorney'}
+          />
+          </>
+        ) : null}
+
+        {isTransactionOperatorView && activeWorkspaceMenu === 'deal_setup' ? (
+          <DealSetupPanel transactionId={transaction?.id} organisationId={transaction?.organisation_id || workspaceOrganisationId} canEdit onSaved={() => refreshCanonicalTransactionSnapshot()} />
         ) : null}
 
         {!isTransactionOperatorView && workspaceRole !== 'attorney' && workspaceRole !== 'bond_originator' && activeWorkspaceMenu === 'today' ? (

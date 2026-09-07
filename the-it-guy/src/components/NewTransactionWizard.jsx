@@ -48,6 +48,7 @@ import {
 import { listTransactionPartnerConnectionOptions } from '../services/partnerNetworkService'
 import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import { getPurchaserTypeLabel } from '../lib/purchaserPersonas'
+import { listReusableBuyerProfiles } from '../services/buyerProfileReuseService'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -140,6 +141,8 @@ function createBuyerPartyDraft(purchaserType = 'individual') {
     email: '',
     phone: '',
     identityNumber: '',
+    buyerProfileId: '',
+    ownershipPercentage: '',
     signatory: true,
   }
 }
@@ -155,7 +158,7 @@ function getBuyerCaptureLabels(purchaserType) {
       lastName: 'Authorised Representative',
       email: 'Representative Email',
       phone: 'Representative Phone',
-      hint: 'Phase 3 stores the primary company/CC buyer against the current buyer fields. Phase 4 will split full party records.',
+      hint: 'Use a saved buyer profile to reuse its captured inputs and FICA documents in this matter.',
     }
   }
   if (purchaserType === 'trust') {
@@ -164,7 +167,7 @@ function getBuyerCaptureLabels(purchaserType) {
       lastName: 'Authorised Trustee',
       email: 'Trustee Email',
       phone: 'Trustee Phone',
-      hint: 'Phase 3 stores the primary trust buyer against the current buyer fields. Phase 4 will split trustees and additional parties.',
+      hint: 'Use a saved buyer profile to reuse its captured inputs and FICA documents in this matter.',
     }
   }
   return {
@@ -210,6 +213,8 @@ function createInitialForm(initialDevelopmentId = '', initialUnitId = '') {
       buyerLastName: '',
       buyerPhone: '',
       buyerEmail: '',
+      buyerProfileId: '',
+      buyerOwnershipPercentage: '',
       buyerParties: [],
       sellerName: '',
       sellerPhone: '',
@@ -704,6 +709,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     transfer_attorney: false,
     bond_originator: false,
   })
+  const [buyerProfileOptions, setBuyerProfileOptions] = useState([])
+  const [loadingBuyerProfiles, setLoadingBuyerProfiles] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -765,6 +772,26 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
 
     void loadDevelopments()
   }, [developerOrganisationId, initialDevelopmentId, initialUnitId, isDeveloperTransactionWorkspace, open])
+
+  useEffect(() => {
+    if (!open || !isSupabaseConfigured) return
+    let active = true
+    async function loadBuyerProfiles() {
+      try {
+        setLoadingBuyerProfiles(true)
+        const rows = await listReusableBuyerProfiles({ organisationId: developerOrganisationId || null })
+        if (active) setBuyerProfileOptions(rows)
+      } catch (error) {
+        // The wizard remains usable if the Phase 1 tables/RLS are not yet live.
+        if (active) setBuyerProfileOptions([])
+        console.warn('[NewTransactionWizard] reusable buyer profiles unavailable', error)
+      } finally {
+        if (active) setLoadingBuyerProfiles(false)
+      }
+    }
+    void loadBuyerProfiles()
+    return () => { active = false }
+  }, [developerOrganisationId, open])
 
   useEffect(() => {
     if (!open || !isDeveloperTransactionWorkspace) return
@@ -1567,6 +1594,42 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
     }))
   }
 
+  function selectPrimaryBuyerProfile(buyerId) {
+    const selected = buyerProfileOptions.find((buyer) => buyer.id === buyerId)
+    const nameParts = String(selected?.name || '').trim().split(/\s+/).filter(Boolean)
+    setForm((previous) => ({
+      ...previous,
+      setup: {
+        ...previous.setup,
+        buyerProfileId: buyerId,
+        buyerFirstName: nameParts.length > 1 ? nameParts.slice(0, -1).join(' ') : nameParts[0] || previous.setup.buyerFirstName,
+        buyerLastName: nameParts.length > 1 ? nameParts[nameParts.length - 1] : '',
+        buyerEmail: selected?.email || '',
+        buyerPhone: selected?.phone || '',
+      },
+    }))
+  }
+
+  function selectAdditionalBuyerProfile(index, buyerId) {
+    const selected = buyerProfileOptions.find((buyer) => buyer.id === buyerId)
+    updateBuyerParty(index, 'buyerProfileId', buyerId)
+    if (selected) {
+      setForm((previous) => ({
+        ...previous,
+        setup: {
+          ...previous.setup,
+          buyerParties: previous.setup.buyerParties.map((party, partyIndex) => partyIndex === index ? {
+            ...party,
+            buyerProfileId: buyerId,
+            name: selected.name || party.name,
+            email: selected.email || party.email,
+            phone: selected.phone || party.phone,
+          } : party),
+        },
+      }))
+    }
+  }
+
   function removeBuyerParty(index) {
     setForm((previous) => ({
       ...previous,
@@ -1590,6 +1653,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         lastName: form.setup.buyerLastName,
         email: form.setup.buyerEmail,
         phone: form.setup.buyerPhone,
+        buyerProfileId: form.setup.buyerProfileId,
+        ownershipPercentage: form.setup.buyerOwnershipPercentage,
         signatory: true,
         primary: true,
       })
@@ -1606,6 +1671,8 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
         email: party.email,
         phone: party.phone,
         identityNumber: party.identityNumber,
+        buyerProfileId: party.buyerProfileId,
+        ownershipPercentage: party.ownershipPercentage,
         signatory: Boolean(party.signatory),
         primary: false,
       })
@@ -2731,6 +2798,21 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                     ) : null}
                   </div>
 
+                  <Field label="Reuse saved buyer profile">
+                    <select value={form.setup.buyerProfileId} onChange={(event) => selectPrimaryBuyerProfile(event.target.value)}>
+                      <option value="">Create / capture a new buyer</option>
+                      {buyerProfileOptions.map((buyer) => (
+                        <option key={buyer.id} value={buyer.id}>
+                          {buyer.name}{buyer.email ? ` — ${buyer.email}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-xs text-[#70839a]">
+                      {loadingBuyerProfiles ? 'Loading reusable buyer profiles…' : 'Selecting a profile reuses its captured inputs and FICA source documents.'}
+                    </p>
+                  </Field>
+                  <div className="hidden md:block" aria-hidden="true" />
+
                   <Field
                     label={form.setup.allowIncomplete ? `${buyerCaptureLabels.firstName} (optional)` : buyerCaptureLabels.firstName}
                     error={errors.buyerFirstName}
@@ -2775,6 +2857,17 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                     />
                   </Field>
 
+                  <Field label="Primary ownership % (if applicable)">
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={form.setup.buyerOwnershipPercentage || ''}
+                      onChange={(event) => setSetupField('buyerOwnershipPercentage', event.target.value)}
+                    />
+                  </Field>
+
                   <div className="md:col-span-2 rounded-[18px] border border-[#dce5ef] bg-[#fbfdff] p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
@@ -2816,6 +2909,19 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                                   ))}
                                 </select>
                               </Field>
+                              <Field label="Reuse saved buyer profile">
+                                <select
+                                  value={party.buyerProfileId || ''}
+                                  onChange={(event) => selectAdditionalBuyerProfile(index, event.target.value)}
+                                >
+                                  <option value="">Create / capture a new buyer</option>
+                                  {buyerProfileOptions.map((buyer) => (
+                                    <option key={buyer.id} value={buyer.id}>
+                                      {buyer.name}{buyer.email ? ` — ${buyer.email}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              </Field>
                               <Field label="Full Name / Entity Contact">
                                 <input value={party.name} onChange={(event) => updateBuyerParty(index, 'name', event.target.value)} />
                               </Field>
@@ -2827,6 +2933,16 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                               </Field>
                               <Field label="ID / Registration Number">
                                 <input value={party.identityNumber} onChange={(event) => updateBuyerParty(index, 'identityNumber', event.target.value)} />
+                              </Field>
+                              <Field label="Ownership % (if applicable)">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  step="0.01"
+                                  value={party.ownershipPercentage || ''}
+                                  onChange={(event) => updateBuyerParty(index, 'ownershipPercentage', event.target.value)}
+                                />
                               </Field>
                               <label className="mt-7 flex items-center gap-2 text-sm font-semibold text-[#40546b]">
                                 <input
