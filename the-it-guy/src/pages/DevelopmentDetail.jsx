@@ -224,6 +224,14 @@ const DEVELOPMENT_STATUS_OPTIONS = [
   { value: 'archived', label: 'Archived' }
 ]
 
+function normalizeDevelopmentStatus(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  // Planning was a legacy profile default. It is not an operational state in
+  // this workspace: a configured development is available to its team.
+  if (['planning', 'planned', 'in_planning'].includes(normalized)) return 'active'
+  return DEVELOPMENT_STATUS_OPTIONS.some((option) => option.value === normalized) ? normalized : 'active'
+}
+
 const MARKETING_LISTING_STATUS_OPTIONS = [
   { value: 'draft', label: 'Draft' },
   { value: 'coming_soon', label: 'Coming Soon' },
@@ -1864,7 +1872,7 @@ function buildDetailsForm(data) {
     province: profile.province || development.province || '',
     country: profile.country || development.country || 'South Africa',
     address: profile.address || profile.streetAddress || profile.formattedAddress || development.address || development.street_address || development.formatted_address || '',
-    status: profile.status || development.status || 'active',
+    status: normalizeDevelopmentStatus(profile.status || development.status || 'active'),
     developerCompany: profile.developerCompany || development.developer_company || '',
     totalUnitsExpected: development.total_units_expected ?? development.planned_units ?? data?.stats?.totalUnits ?? 0,
     launchDate: normalizeDateInput(profile.launchDate || development.launch_date),

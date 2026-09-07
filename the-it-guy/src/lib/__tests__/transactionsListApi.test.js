@@ -86,6 +86,15 @@ const transactions = [
 
 const datasets = {
   transactions,
+  development_documents: [
+    {
+      development_id: 'dev-a',
+      document_type: 'marketing',
+      file_url: 'https://example.test/development-a.jpg',
+      mime_type: 'image/jpeg',
+      uploaded_at: '2026-08-29T12:00:00.000Z',
+    },
+  ],
   transaction_participants: [
     { transaction_id: 'tx-a', user_id: 'user-a', participant_email: 'agent@example.test', role_type: 'agent', status: 'active', removed_at: null },
     { transaction_id: 'tx-b', user_id: 'user-a', participant_email: 'agent@example.test', role_type: 'agent', status: 'active', removed_at: null },
@@ -144,8 +153,9 @@ try {
   assert.equal(rows[0].buyer.name, 'Buyer A')
   assert.equal(rows[0].unit.id, 'unit-a')
   assert.equal(rows[0].development.id, 'dev-a')
+  assert.equal(rows[0].development.cover_image_url, 'https://example.test/development-a.jpg')
   assert.equal(calls.some((call) => call.table === 'profiles'), false, 'existing auth identity should be reused')
-  assert.equal(calls.some((call) => ['buyers', 'units', 'developments'].includes(call.table)), false, 'related summary data must not use follow-up queries')
+  assert.equal(calls.some((call) => call.table === 'buyers'), false, 'the buyer summary must remain embedded in the transaction query')
 
   const summaryCall = calls.find((call) => call.table === 'transactions' && call.selection.includes('buyer:buyers'))
   assert.ok(summaryCall, 'one nested transaction summary query should hydrate all related rows')

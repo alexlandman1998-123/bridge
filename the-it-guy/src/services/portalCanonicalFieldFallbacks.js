@@ -17,6 +17,7 @@ const PENDING_PLACEHOLDER_KEYS = new Set([
   'seller_details_pending',
   'property',
   'property_pending',
+  'property_details_pending',
   'address_pending',
   'not_assigned',
   'not_captured',

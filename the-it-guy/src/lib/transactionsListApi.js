@@ -1,6 +1,7 @@
 import { CANONICAL_TRANSACTION_STAGES, MAIN_PROCESS_STAGES, getMainStageFromDetailedStage, normalizeStageLabel } from '../core/transactions/stageConfig'
 import { financeTypeMatchesFilter } from '../core/transactions/financeType'
 import { supabase } from './supabaseClient'
+import { hydrateMatterPropertyContext } from '../services/matterPropertyContext'
 
 const SELECT = 'id, organisation_id, owner_user_id, matter_number, transaction_reference, transaction_type, property_type, development_id, unit_id, buyer_id, property_address_line_1, suburb, city, property_description, sales_price, purchase_price, finance_type, purchaser_type, stage, current_main_stage, current_sub_stage_summary, assigned_agent, assigned_agent_email, attorney, assigned_attorney_email, bond_originator, assigned_bond_originator_email, bank, next_action, expected_transfer_date, finance_status, attorney_stage, risk_status, operational_state, missing_documents_count, uploaded_documents_count, total_required_documents, updated_at, created_at, is_active'
 const FALLBACK_SELECT = 'id, organisation_id, development_id, unit_id, buyer_id, finance_type, purchaser_type, purchase_price, sales_price, stage, attorney, bond_originator, next_action, updated_at, created_at'
@@ -17,6 +18,135 @@ const comparable = (value) => text(value).toLowerCase()
 const missingSchema = (error) => ['42P01', '42703', 'PGRST200', 'PGRST204', 'PGRST205'].includes(text(error?.code).toUpperCase()) || comparable(error?.message).includes('does not exist') || comparable(error?.message).includes('schema cache')
 const missingColumn = (error, column) => missingSchema(error) && comparable(error?.message).includes(comparable(column))
 const one = (value) => Array.isArray(value) ? value[0] || null : value || null
+
+function firstImageUrl(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return text(value)
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const url = firstImageUrl(item)
+      if (url) return url
+    }
+    return ''
+  }
+  if (typeof value === 'object') {
+    return firstImageUrl(
+      value.url || value.src || value.imageUrl || value.image_url || value.coverImageUrl ||
+      value.cover_image_url || value.heroImageUrl || value.hero_image_url || value.fileUrl || value.file_url,
+    )
+  }
+  return ''
+}
+
+function isImageDocument(document = {}) {
+  const type = comparable(document.document_type)
+  const mimeType = comparable(document.mime_type)
+  const fileName = `${text(document.file_url)} ${text(document.storage_path)}`.toLowerCase()
+  return mimeType.startsWith('image/') || ['marketing', 'image', 'gallery', 'hero', 'cover'].includes(type) || /\.(avif|gif|jpe?g|png|webp)(?:[?#]|$)/.test(fileName)
+}
+
+async function resolveDocumentImageUrl(client, document = {}) {
+  const bucket = text(document.storage_bucket) || 'documents'
+  const path = text(document.storage_path)
+  if (path && client?.storage?.from) {
+    try {
+      const result = await client.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24)
+      const signedUrl = text(result?.data?.signedUrl)
+      if (!result?.error && signedUrl) return signedUrl
+    } catch {
+      // A saved public URL remains a valid fallback for clients without storage signing.
+    }
+  }
+  return text(document.file_url)
+}
+
+async function hydrateSummaryMedia(client, rows = []) {
+  const transactionIds = [...new Set(rows.map((row) => row?.transaction?.id).filter(Boolean))]
+  const unitIds = [...new Set(rows.map((row) => row?.unit?.id).filter(Boolean))]
+  const developmentIds = [...new Set(rows.map((row) => row?.development?.id || row?.unit?.development_id).filter(Boolean))]
+  if (!transactionIds.length && !unitIds.length && !developmentIds.length) return rows
+
+  const [transactionResult, unitResult, profileResult, documentResult] = await Promise.all([
+    transactionIds.length
+      ? client.from('transactions').select('id, property_image_url, listing_image_url, primary_image_url, cover_image_url, hero_image_url, image_url, thumbnail_url').in('id', transactionIds)
+      : Promise.resolve({ data: [], error: null }),
+    unitIds.length
+      ? client.from('units').select('id, image_url, thumbnail_url, cover_image_url, primary_image_url, gallery_images').in('id', unitIds)
+      : Promise.resolve({ data: [], error: null }),
+    developmentIds.length
+      ? client.from('development_profiles').select('development_id, image_links, marketing_content').in('development_id', developmentIds)
+      : Promise.resolve({ data: [], error: null }),
+    developmentIds.length
+      ? client.from('development_documents').select('development_id, document_type, file_url, storage_bucket, storage_path, mime_type, approval_status, archived_at, uploaded_at, created_at').in('development_id', developmentIds).order('uploaded_at', { ascending: false })
+      : Promise.resolve({ data: [], error: null }),
+  ])
+
+  // Image metadata is optional on older installs. A missing column/table must not make
+  // the transactions list fail; it simply leaves that source out of the fallback chain.
+  const transactionImages = new Map((transactionResult.error ? [] : transactionResult.data || []).map((item) => [item.id, item]))
+  const unitImages = new Map((unitResult.error ? [] : unitResult.data || []).map((item) => [item.id, item]))
+  const developmentImages = new Map()
+  if (!profileResult.error) {
+    for (const profile of profileResult.data || []) {
+      const media = profile?.marketing_content || {}
+      const library = media?.mediaLibrary || media?.media_library || {}
+      const url = firstImageUrl([
+        library.heroImageUrl,
+        library.hero_image_url,
+        library.coverImageUrl,
+        library.cover_image_url,
+        library.galleryImageUrls,
+        library.gallery_image_urls,
+        profile?.image_links,
+      ])
+      if (url) developmentImages.set(profile.development_id, url)
+    }
+  }
+  if (!documentResult.error) {
+    for (const document of documentResult.data || []) {
+      if (document?.archived_at || comparable(document?.approval_status) === 'rejected' || !isImageDocument(document)) continue
+      if (!developmentImages.has(document.development_id)) {
+        const url = await resolveDocumentImageUrl(client, document)
+        if (url) developmentImages.set(document.development_id, url)
+      }
+    }
+  }
+
+  return rows.map((row) => {
+    const transaction = { ...row.transaction, ...(transactionImages.get(row?.transaction?.id) || {}) }
+    const unit = row.unit ? { ...row.unit, ...(unitImages.get(row.unit.id) || {}) } : null
+    const developmentId = row?.development?.id || unit?.development_id
+    const developmentImage = developmentImages.get(developmentId)
+    const development = row.development && developmentImage
+      ? { ...row.development, cover_image_url: developmentImage }
+      : row.development
+    return { ...row, transaction, unit, development }
+  })
+}
+
+async function hydrateSummaryPropertyContext(client, rows = []) {
+  const sourceRows = Array.isArray(rows) ? rows : []
+  const contextualTransactions = sourceRows
+    .filter((row) => row?.transaction)
+    .map((row) => ({
+      ...row.transaction,
+      property_unit: row.unit || row.transaction.property_unit || null,
+      property_development: row.development || row.transaction.property_development || null,
+    }))
+  const hydratedByTransactionId = new Map(
+    (await hydrateMatterPropertyContext(client, contextualTransactions))
+      .map((transaction) => [text(transaction.id), transaction]),
+  )
+  return sourceRows.map((row) => {
+    const transaction = hydratedByTransactionId.get(text(row?.transaction?.id)) || row.transaction
+    return {
+      ...row,
+      transaction,
+      unit: transaction?.property_unit || transaction?.propertyUnit || row.unit || null,
+      development: transaction?.property_development || transaction?.propertyDevelopment || row.development || null,
+    }
+  })
+}
 
 function stageFor(stage, status = 'Available') {
   const primary = normalizeStageLabel(stage)
@@ -226,7 +356,8 @@ async function transactionRows(client, {
     result = await fallback
   }
   if (result.error) throw result.error
-  return normalizeSummaryRows((result.data || []).filter((row) => row?.is_active !== false))
+  const rows = normalizeSummaryRows((result.data || []).filter((row) => row?.is_active !== false))
+  return hydrateSummaryPropertyContext(client, await hydrateSummaryMedia(client, rows))
 }
 
 function filtered(rows, { stage = 'all', financeType = 'all', activeTransactionsOnly = true } = {}) {

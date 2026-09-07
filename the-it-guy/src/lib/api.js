@@ -7,6 +7,7 @@ import {
 } from '../services/observability/compatibilityFallbackTelemetry.js'
 import { resolveClientPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { updateDocumentClientVisibilityRecord } from '../domains/documents/api.js'
+import { hydrateMatterPropertyContext } from '../services/matterPropertyContext'
 export { generateMandateDocumentFromTemplate } from './generateMandateDocument'
 import {
   CANONICAL_TRANSACTION_STAGES,
@@ -953,7 +954,7 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
   longitude: null,
   googlePlaceId: '',
   description: '',
-  status: 'Planning',
+  status: 'active',
   developerCompany: '',
   launchDate: '',
   expectedCompletionDate: '',
@@ -1030,6 +1031,12 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
       publicVisibility: false,
     },
   },
+}
+
+function normalizeDevelopmentProfileStatus(value = '') {
+  const normalized = String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  if (['planning', 'planned', 'in_planning'].includes(normalized)) return 'active'
+  return ['draft', 'active', 'completed', 'archived'].includes(normalized) ? normalized : 'active'
 }
 
 const DEFAULT_DEVELOPMENT_FINANCIALS = {
@@ -20602,7 +20609,7 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
     longitude: normalizeOptionalNumber(input.longitude),
     google_place_id: normalizeNullableText(input.googlePlaceId || input.placeId),
     description: normalizeNullableText(input.description),
-    status: normalizeNullableText(input.status) || 'Planning',
+    status: normalizeDevelopmentProfileStatus(input.status),
     developer_company: normalizeNullableText(input.developerCompany),
     total_units_expected: Math.trunc(normalizeOptionalNumber(input.totalUnitsExpected ?? input.plannedUnits) ?? 0),
     launch_date: normalizeOptionalDate(input.launchDate),
@@ -20660,7 +20667,7 @@ export async function saveDevelopmentDetails(developmentId, input = {}, { allowN
     longitude: normalizeOptionalNumber(input.longitude),
     google_place_id: normalizeNullableText(input.googlePlaceId || input.placeId),
     description: normalizeNullableText(input.description),
-    status: normalizeNullableText(input.status) || 'Planning',
+    status: normalizeDevelopmentProfileStatus(input.status),
     developer_company: normalizeNullableText(input.developerCompany),
     launch_date: normalizeOptionalDate(input.launchDate),
     expected_completion_date: normalizeOptionalDate(input.expectedCompletionDate),
@@ -35200,6 +35207,8 @@ export async function fetchTransactionsByParticipant({ userId, roleType = null }
 }
 
 async function buildTransactionWorkspaceShellFromTransaction(client, transaction, { cacheKey, timer = null } = {}) {
+  const [hydratedTransaction] = await hydrateMatterPropertyContext(client, [transaction])
+  transaction = hydratedTransaction || transaction
   const [buyerQuery, developmentQuery, developmentProfile] = await Promise.all([
     transaction?.buyer_id
       ? client.from('buyers').select('id, name, phone, email').eq('id', transaction.buyer_id).maybeSingle()
@@ -35216,14 +35225,14 @@ async function buildTransactionWorkspaceShellFromTransaction(client, transaction
   if (developmentQuery.error && !isMissingSchemaError(developmentQuery.error)) throw developmentQuery.error
 
   const buyer = buyerQuery.data || null
-  const development = developmentQuery.data
-    ? { ...developmentQuery.data, profile: developmentProfile || null }
-    : null
+  const development = transaction.property_development || transaction.propertyDevelopment || (developmentQuery.data
+    ? { ...developmentQuery.data, profile: developmentProfile || null, developmentProfile: developmentProfile || null }
+    : null)
   const stage = normalizeStage(transaction.stage, transaction.stage || 'Transfer in Progress')
   const mainStage = normalizeMainStage(transaction.current_main_stage, stage)
   const attorneyStage = resolveAttorneyOperationalStageKey({ transaction })
   const shell = {
-    unit: null,
+    unit: transaction.property_unit || transaction.propertyUnit || null,
     development,
     transaction,
     buyer,
@@ -35673,7 +35682,8 @@ export async function fetchTransactionById(transactionId, options = {}) {
 
   const context = options.hydrationContext || await resolveTransactionWorkspaceReadContext(transactionId)
   if (!context) return null
-  const { client, transaction, canonicalTransactionId } = context
+  const { client, canonicalTransactionId } = context
+  const [transaction] = await hydrateMatterPropertyContext(client, [context.transaction])
 
   try {
   if (transaction.listing_id) {
@@ -35945,7 +35955,8 @@ export async function fetchTransactionById(transactionId, options = {}) {
   })
 
   return {
-    unit: unitQuery.data || null,
+    unit: unitQuery.data || transaction.property_unit || transaction.propertyUnit || null,
+    development: transaction.property_development || transaction.propertyDevelopment || null,
     transaction: transaction || null,
     buyer: buyerQuery.data || null,
     documents,

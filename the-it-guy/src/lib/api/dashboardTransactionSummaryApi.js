@@ -27,6 +27,7 @@ import {
   requireClient,
   selectWithoutKnownMissingColumns,
 } from './dashboardOverviewApi.js'
+import { hydrateMatterPropertyContext } from '../../services/matterPropertyContext.js'
 
 const TRANSACTION_ACCESS_LEVEL_VALUES = ['private', 'shared', 'restricted']
 const STAKEHOLDER_STATUS_VALUES = ['draft', 'invited', 'active', 'removed']
@@ -2069,11 +2070,16 @@ async function fetchTransactionSummaryRowsByIds(
     }, {})
   }
 
+  const hydratedTransactionsById = new Map(
+    (await hydrateMatterPropertyContext(client, transactionRows)).map((transaction) => [String(transaction.id || ''), transaction]),
+  )
+
   const rows = transactionRows
-    .map((transaction) => {
-      const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
+    .map((sourceTransaction) => {
+      const transaction = hydratedTransactionsById.get(String(sourceTransaction.id || '')) || sourceTransaction
+      const unit = transaction.property_unit || transaction.propertyUnit || (transaction?.unit_id ? unitsById[transaction.unit_id] || null : null)
       const developmentId = transaction?.development_id || unit?.development_id || null
-      const developmentBase = developmentId ? developmentsById[developmentId] || null : null
+      const developmentBase = transaction.property_development || transaction.propertyDevelopment || (developmentId ? developmentsById[developmentId] || null : null)
       const developmentImageUrl =
         developmentProfileImagesById.get(String(developmentId || '')) ||
         developmentDocumentImagesById.get(String(developmentId || '')) ||
@@ -2339,10 +2345,15 @@ export async function fetchTransactionsListSummary({
     return accumulator
   }, {})
 
-  let rows = transactionRows.map((transaction) => {
-    const unit = transaction?.unit_id ? unitsById[transaction.unit_id] || null : null
+  const hydratedTransactionsById = new Map(
+    (await hydrateMatterPropertyContext(client, transactionRows)).map((transaction) => [String(transaction.id || ''), transaction]),
+  )
+
+  let rows = transactionRows.map((sourceTransaction) => {
+    const transaction = hydratedTransactionsById.get(String(sourceTransaction.id || '')) || sourceTransaction
+    const unit = transaction.property_unit || transaction.propertyUnit || (transaction?.unit_id ? unitsById[transaction.unit_id] || null : null)
     const developmentIdFromRow = transaction?.development_id || unit?.development_id || null
-    const developmentBase = developmentIdFromRow ? developmentsById[developmentIdFromRow] || null : null
+    const developmentBase = transaction.property_development || transaction.propertyDevelopment || (developmentIdFromRow ? developmentsById[developmentIdFromRow] || null : null)
     const developmentImageUrl =
       developmentProfileImagesById.get(String(developmentIdFromRow || '')) ||
       developmentDocumentImagesById.get(String(developmentIdFromRow || '')) ||

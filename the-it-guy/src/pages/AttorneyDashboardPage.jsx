@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
+  ChevronRight,
   CircleDollarSign,
   CalendarDays,
   FileCheck2,
@@ -312,6 +313,24 @@ function formatProfessionalRole(role = '') {
 
 function ActiveMatterStrip({ lanes = {} }) {
   const rows = getActiveMatterRows(lanes)
+  const railRef = useRef(null)
+  const [canScrollNext, setCanScrollNext] = useState(false)
+
+  useEffect(() => {
+    const rail = railRef.current
+    if (!rail) return undefined
+    const updateOverflow = () => setCanScrollNext(rail.scrollWidth - rail.clientWidth - rail.scrollLeft > 4)
+    updateOverflow()
+    rail.addEventListener('scroll', updateOverflow, { passive: true })
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateOverflow)
+    observer?.observe(rail)
+    return () => {
+      rail.removeEventListener('scroll', updateOverflow)
+      observer?.disconnect()
+    }
+  }, [rows.length])
+
+  const scrollNext = () => railRef.current?.scrollBy({ left: Math.min(railRef.current.clientWidth * 0.8, 340), behavior: 'smooth' })
 
   return (
     <section className={`${surfaceClass} overflow-hidden`} aria-labelledby="active-matters-heading">
@@ -322,7 +341,8 @@ function ActiveMatterStrip({ lanes = {} }) {
         </Link>
       </header>
       {rows.length ? (
-        <div className="grid gap-4 px-5 py-5 md:grid-cols-2 xl:grid-cols-3">
+        <div className="relative">
+          <div ref={railRef} className="flex snap-x snap-proximity gap-4 overflow-x-auto overflow-y-hidden px-5 py-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {rows.map((matter) => {
               const progress = clampPercentage(matter.progress || 0)
               const progressTone = getMatterProgressTone(matter.riskTone)
@@ -337,7 +357,7 @@ function ActiveMatterStrip({ lanes = {} }) {
                   key={matter.id}
                   to={matter.href || '/attorney/matters'}
                   state={{ matterPreview: getMatterPreview(matter) }}
-                  className="group flex min-h-[268px] min-w-0 flex-col rounded-2xl border border-slate-200 border-l-4 border-l-[#00614f] bg-[#f7faf9] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition duration-200 hover:-translate-y-px hover:border-[#a8cbbf] hover:bg-[#f4f8f6] hover:shadow-[0_10px_22px_rgba(15,23,42,0.075)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+                  className="group flex min-h-[268px] w-[88vw] shrink-0 snap-start flex-col rounded-2xl border border-slate-200 border-l-4 border-l-[#00614f] bg-[#f7faf9] p-5 shadow-[0_2px_8px_rgba(15,23,42,0.025)] transition duration-200 hover:-translate-y-px hover:border-[#a8cbbf] hover:bg-[#f4f8f6] hover:shadow-[0_10px_22px_rgba(15,23,42,0.075)] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:w-[335px]"
                 >
                   <header className="flex items-start justify-between gap-3">
                     <span className="min-w-0">
@@ -377,6 +397,8 @@ function ActiveMatterStrip({ lanes = {} }) {
                 </Link>
               )
             })}
+          </div>
+          {canScrollNext ? <button type="button" onClick={scrollNext} className="absolute right-3 top-1/2 inline-flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-800 shadow-[0_5px_15px_rgba(15,23,42,0.12)] transition hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500" aria-label="Scroll active matters forward"><ChevronRight size={20} /></button> : null}
         </div>
       ) : (
         <div className="flex min-h-[86px] items-center px-5 py-4">

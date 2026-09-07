@@ -27,6 +27,7 @@ import {
 } from '../constants/attorneyWorkflowStages.js'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { hydratePropertyLabelsFromListings } from './attorneyMatterListSnapshotService'
+import { hydrateMatterPropertyContext } from './matterPropertyContext'
 import { getAttorneyMatterWorkspace } from './attorneyMatterWorkspace'
 import {
   COMPATIBILITY_FALLBACK_IDS,
@@ -180,7 +181,7 @@ function resolveAttentionIssue(flags = {}) {
 
 async function fetchTransactionsForDashboard(client) {
   const primarySelect =
-    'id, organisation_id, buyer_id, matter_number, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_has_existing_bond, current_bond_bank, purchase_price, sales_price, bond_amount, deposit_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, originating_partner_organisation_id, referral_source_organisation_id, partner_relationship_id'
+    'id, organisation_id, buyer_id, development_id, unit_id, matter_number, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_has_existing_bond, current_bond_bank, purchase_price, sales_price, bond_amount, deposit_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, originating_partner_organisation_id, referral_source_organisation_id, partner_relationship_id'
 
   let query = await client
     .from('transactions')
@@ -218,7 +219,7 @@ async function fetchTransactionsForDashboard(client) {
     throw query.error
   }
 
-  return query.data || []
+  return hydrateMatterPropertyContext(client, query.data || [])
 }
 
 async function fetchBuyerMap(client, buyerIds = []) {
@@ -657,7 +658,7 @@ function resolveMatterCardValue(transaction = {}, laneKey = 'transfer') {
   return Number(transaction.purchase_price || transaction.sales_price || transaction.unit_price || 0) || 0
 }
 
-export function mapMatterToActiveMatterCard({ summary = {}, primaryUnit = {}, memberProfilesById = {}, organisationsById = {} } = {}) {
+export function mapMatterToActiveMatterCard({ summary = {}, primaryUnit = {}, memberProfilesById = {}, organisationsById = {}, firmName = '' } = {}) {
   const transaction = summary.transaction || primaryUnit.transaction || {}
   const laneKey = summary.roles?.has('transfer')
     ? 'transfer'
@@ -727,7 +728,9 @@ export function mapMatterToActiveMatterCard({ summary = {}, primaryUnit = {}, me
     linkedReference: reference,
     currentStage,
     progress: resolveMatterCardWorkflowProgress(transaction, laneKey),
-    assignedStaff: assignedProfile?.fullName || transaction.assigned_attorney_email || 'Unassigned',
+    // The dashboard is already scoped to the attorney firm. An individual
+    // handler can be pending, but the matter is never unassigned from the firm.
+    assignedStaff: assignedProfile?.fullName || transaction.assigned_attorney_email || transaction.attorney || firmName || 'Attorney team',
     referralPartnerName: referralOrganisation.name || '',
     referralPartnerLogoUrl: referralOrganisation.logoUrl || '',
     referralLabel: transaction.referral_source_organisation_id ? 'Nominated partner' : 'Referred by',
@@ -743,7 +746,7 @@ export function mapMatterToActiveMatterCard({ summary = {}, primaryUnit = {}, me
   }
 }
 
-function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}, memberProfilesById = {}, organisationsById = {} } = {}) {
+function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}, memberProfilesById = {}, organisationsById = {}, firmName = '' } = {}) {
   const lanes = {
     transfer: [],
     bond: [],
@@ -757,6 +760,7 @@ function buildOperationalMatterLanes({ matterRoleSummaries = [], buyersById = {}
       primaryUnit: { ...primaryUnit, buyer: buyersById[(summary.transaction || primaryUnit.transaction || {}).buyer_id] || {} },
       memberProfilesById,
       organisationsById,
+      firmName,
     })
 
     if (summary.roles.has('transfer')) lanes.transfer.push(card)
@@ -1321,6 +1325,7 @@ function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } 
     buyersById: {},
     memberProfilesById,
     organisationsById: {},
+    firmName: snapshot?.firm?.name || '',
   })
   const todayCalendar = (Array.isArray(snapshot.appointments) ? snapshot.appointments : [])
     .map((appointment) => ({
@@ -1601,7 +1606,10 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
       matters: snapshotResult.data?.matters?.length || 0,
       members: snapshotResult.data?.members?.length || 0,
     })
-    return buildAttorneyDashboardFromSnapshot(snapshotResult.data || {}, { roleView })
+    return buildAttorneyDashboardFromSnapshot({
+      ...(snapshotResult.data || {}),
+      matters: await hydrateMatterPropertyContext(client, snapshotResult.data?.matters || []),
+    }, { roleView })
   }
   // The matter-list snapshot is the canonical, assignment-first source used by
   // the Matters workspace. Prefer it whenever the dashboard snapshot is empty
@@ -1625,10 +1633,11 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
       rows: matterListSnapshot.rows.length,
       dashboardSnapshotAvailable: !snapshotResult.error,
     })
-    return buildAttorneyDashboardFromSnapshot(
-      buildDashboardSnapshotFromMatterListSnapshot(matterListSnapshot, resolvedFirm),
-      { roleView },
-    )
+    const compatibilitySnapshot = buildDashboardSnapshotFromMatterListSnapshot(matterListSnapshot, resolvedFirm)
+    return buildAttorneyDashboardFromSnapshot({
+      ...compatibilitySnapshot,
+      matters: await hydrateMatterPropertyContext(client, compatibilitySnapshot.matters),
+    }, { roleView })
   }
   const operationalWorkspaceSnapshot = await getOperationalWorkspaceCompatibilitySnapshot(resolvedFirm.id, currentUserId)
   if (operationalWorkspaceSnapshot) {
@@ -1644,10 +1653,11 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     timer.mark('snapshot:operational-workspace-compatibility', {
       rows: operationalWorkspaceSnapshot.rows.length,
     })
-    return buildAttorneyDashboardFromSnapshot(
-      buildDashboardSnapshotFromMatterListSnapshot(operationalWorkspaceSnapshot, resolvedFirm),
-      { roleView },
-    )
+    const compatibilitySnapshot = buildDashboardSnapshotFromMatterListSnapshot(operationalWorkspaceSnapshot, resolvedFirm)
+    return buildAttorneyDashboardFromSnapshot({
+      ...compatibilitySnapshot,
+      matters: await hydrateMatterPropertyContext(client, compatibilitySnapshot.matters),
+    }, { roleView })
   }
   if (snapshotResult.error && !isMissingDashboardSnapshotRpc(snapshotResult.error)) {
     throw snapshotResult.error
@@ -2027,6 +2037,7 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     buyersById,
     memberProfilesById,
     organisationsById,
+    firmName: resolvedFirm.name,
   })
   const businessIntelligence = buildBusinessIntelligence({
     uniqueMatters,
