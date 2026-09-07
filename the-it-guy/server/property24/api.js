@@ -672,7 +672,11 @@ async function defaultFetchListingLeads({ supabase, property24, config } = {}) {
     ),
   ])
   if (listingResult.error && listingResult.error.code !== 'PGRST116') throw listingResult.error
-  const listingNumber = config.listingNumber || sync?.listing_number
+  // Migrated live listings can have their Property24 reference on the canonical
+  // listing before (or independently of) an environment-specific sync row.
+  // Lead checks must use that established reference rather than treating the
+  // listing as unpublished.
+  const listingNumber = config.listingNumber || sync?.listing_number || listingResult.data?.property24_reference
   if (!listingNumber) {
     const error = new Error('This listing has no Property24 listing number yet.')
     error.code = 'property24_listing_number_missing'
