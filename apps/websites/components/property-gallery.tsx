@@ -1,7 +1,8 @@
 import Image from 'next/image'
 import type { PublicProperty } from '@/lib/types'
 
-function isSupabaseImage(url: string): boolean {
+function isWebsiteImage(url: string): boolean {
+  if (url.startsWith('/')) return true
   try { return new URL(url).hostname.endsWith('.supabase.co') } catch { return false }
 }
 
@@ -11,13 +12,13 @@ export function PropertyGallery({ property }: { property: PublicProperty }) {
   const secondary = images.slice(1, 3)
   return <div className="gallery">
     <div className="gallery-main">
-      {primary && isSupabaseImage(primary.url)
+      {primary && isWebsiteImage(primary.url)
         ? <Image src={primary.url} alt={primary.caption || property.title} fill priority sizes="(max-width: 780px) 100vw, 66vw" />
         : <><span>{property.propertyType}</span><strong>{primary ? primary.caption || 'Property image' : 'Gallery ready for listing media'}</strong></>}
     </div>
     <div className="gallery-side">
       {secondary.map((media) => <div className="gallery-thumbnail" key={media.url}>
-        {isSupabaseImage(media.url)
+        {isWebsiteImage(media.url)
           ? <Image src={media.url} alt={media.caption || property.title} fill sizes="(max-width: 780px) 50vw, 25vw" />
           : <span>{media.caption || media.type}</span>}
       </div>)}

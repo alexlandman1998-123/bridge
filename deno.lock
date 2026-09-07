@@ -697,6 +697,7 @@
     "packageJson": {
       "dependencies": [
         "npm:@supabase/supabase-js@^2.98.0",
+        "npm:pg@8.16.3",
         "npm:vite@^8.0.3"
       ]
     }

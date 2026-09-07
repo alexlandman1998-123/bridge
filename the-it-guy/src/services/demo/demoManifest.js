@@ -125,12 +125,45 @@ const ORIPROP_DEMO_PROFILE = Object.freeze({
   }),
 })
 
+const LWP_PROPERTIES_DEMO_PROFILE = Object.freeze({
+  id: 'lwp-properties',
+  name: 'LWP Properties',
+  type: 'agency',
+  demoOnly: true,
+  workspaceId: 'lwp-properties',
+  businessLines: Object.freeze(['sales', 'rentals']),
+  profile: Object.freeze({
+    id: 'lwp-properties-principal',
+    email: 'lwp.principal.demo@arch9.co.za',
+    fullName: 'LWP Demo Principal',
+    firstName: 'LWP',
+    lastName: 'Demo',
+    companyName: 'LWP Properties',
+    role: 'agent',
+    systemRole: 'professional',
+    onboardingCompleted: true,
+  }),
+  seedData: Object.freeze({
+    seedKey: 'lwp-properties-demo-seed-v1',
+    sourceScripts: Object.freeze([
+      'scripts/agencyDemoBootstrap.mjs',
+      'scripts/seed-agency-demo-transactions.mjs',
+      'scripts/seed-agency-demo-listing-images.mjs',
+    ]),
+    branches: HOME_SEEKERS_DEMO_PROFILE.seedData.branches,
+    listings: HOME_SEEKERS_DEMO_PROFILE.seedData.listings,
+    team: HOME_SEEKERS_DEMO_PROFILE.seedData.team,
+    clients: HOME_SEEKERS_DEMO_PROFILE.seedData.clients,
+    demoScenarios: HOME_SEEKERS_DEMO_PROFILE.seedData.demoScenarios,
+  }),
+})
+
 export const DEMO_ENVIRONMENT_DOMAINS = Object.freeze({
   'home-seekers': Object.freeze(['homeseekers.demo.local', 'home-seekers.demo.local']),
   oriprop: Object.freeze(['oriprop.demo.local']),
 })
 
-export const DEMO_ACCOUNTS = Object.freeze([HOME_SEEKERS_DEMO_PROFILE, ORIPROP_DEMO_PROFILE])
+export const DEMO_ACCOUNTS = Object.freeze([HOME_SEEKERS_DEMO_PROFILE, ORIPROP_DEMO_PROFILE, LWP_PROPERTIES_DEMO_PROFILE])
 
 export const DEMO_SEED_MANIFEST = Object.freeze([
   Object.freeze({

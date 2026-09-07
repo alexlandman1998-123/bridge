@@ -7,5 +7,6 @@
   "/properties/[slug]/page": "/properties/[slug]",
   "/properties/page": "/properties",
   "/robots.txt/route": "/robots.txt",
+  "/sandbox/page": "/sandbox",
   "/sitemap.xml/route": "/sitemap.xml"
 }

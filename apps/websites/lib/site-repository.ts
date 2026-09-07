@@ -1,10 +1,11 @@
 import { getServerSupabase } from '@/lib/supabase-server'
-import type { PublicPage, PublicProperty, ResolvedSite, WebsiteBlock } from '@/lib/types'
+import type { PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
 
 const demoSite: ResolvedSite = {
   id: '00000000-0000-0000-0000-000000000001',
   organisationId: '00000000-0000-0000-0000-000000000001',
   publishedRevisionId: '00000000-0000-0000-0000-000000000002',
+  templateKey: 'home-seekers-v1',
   name: 'PropData Demo Realty',
   status: 'published',
   primaryColor: '#125b50',
@@ -41,6 +42,27 @@ const demoPages: PublicPage[] = [
       { type: 'benefits', heading: 'A more considered move', items: [{ title: 'Local guidance', body: 'Clear advice from people who know the area.' }, { title: 'Private viewings', body: 'Arrange a time that works around your day.' }, { title: 'One connected team', body: 'Your enquiry reaches the agency CRM directly.' }] },
       { type: 'lead_form', heading: 'Arrange a viewing', body: 'Tell us what you would like to see and we will be in touch.', purpose: 'campaign_enquiry' },
     ],
+  },
+]
+
+// Showcase inventory is deliberately limited to preview domains. It makes an
+// empty pilot feel like a real estate website while CRM-published listings
+// remain the source of truth and automatically take precedence.
+const homeSeekersShowcaseProperties: PublicProperty[] = [
+  {
+    id: 'kingdom-showcase-house', reference: 'KINGDOM-DEMO-001', title: 'Contemporary family residence', transactionType: 'sale', propertyType: 'House', suburb: 'Waterkloof Ridge', province: 'Gauteng', price: 8950000, bedrooms: 4, bathrooms: 4, parkingBays: 3,
+    description: 'A considered family residence with generous entertaining spaces, a landscaped garden and a pool.', features: ['Swimming pool', 'Entertaining terrace', 'Study', 'Staff suite'], amenities: ['Close to leading schools', 'Secure access'], isShowcase: true,
+    media: [{ type: 'image', url: '/images/kingdom-showcase-house-v1.png', caption: 'Kingdom showcase property', order: 0 }],
+  },
+  {
+    id: 'kingdom-showcase-apartment', reference: 'KINGDOM-DEMO-002', title: 'Leafy terrace apartment', transactionType: 'sale', propertyType: 'Apartment', suburb: 'Brooklyn', province: 'Gauteng', price: 3250000, bedrooms: 2, bathrooms: 2, parkingBays: 2,
+    description: 'An elegant apartment with a generous covered terrace and seamless indoor-outdoor living.', features: ['Covered terrace', 'Fibre ready', 'Two secure bays', '24-hour security'], amenities: ['Walkable to cafés', 'Easy access to the city'], isShowcase: true,
+    media: [{ type: 'image', url: '/images/kingdom-showcase-apartment-v1.png', caption: 'Kingdom showcase property', order: 0 }],
+  },
+  {
+    id: 'kingdom-showcase-lynnwood', reference: 'KINGDOM-DEMO-003', title: 'Architectural garden home', transactionType: 'sale', propertyType: 'House', suburb: 'Lynnwood', province: 'Gauteng', price: 4850000, bedrooms: 3, bathrooms: 2, parkingBays: 2,
+    description: 'A warm contemporary home with textured stone, landscaped grounds and flexible family living.', features: ['Landscaped garden', 'Open-plan living', 'Double garage', 'Security'], amenities: ['Close to schools', 'Easy access to the city'], isShowcase: true,
+    media: [{ type: 'image', url: '/images/kingdom-showcase-lynnwood-v1.png', caption: 'Kingdom showcase property', order: 0 }],
   },
 ]
 
@@ -113,16 +135,18 @@ function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'
 function filterProperties(properties: PublicProperty[], query: Record<string, string | undefined> = {}): PublicProperty[] {
   const search = (query.q || '').trim().toLowerCase()
   const type = (query.type || '').toLowerCase()
+  const propertyType = (query.propertyType || '').trim().toLowerCase()
   const minPrice = Number(query.minPrice || 0)
   const maxPrice = Number(query.maxPrice || 0)
   const bedrooms = Number(query.bedrooms || 0)
   return properties.filter((property) => {
     const matchingSearch = !search || [property.title, property.suburb, property.province, property.propertyType].join(' ').toLowerCase().includes(search)
     const matchingType = !type || property.transactionType === type
+    const matchingPropertyType = !propertyType || property.propertyType.toLowerCase() === propertyType
     const matchingMin = !minPrice || (property.price || 0) >= minPrice
     const matchingMax = !maxPrice || (property.price || 0) <= maxPrice
     const matchingBedrooms = !bedrooms || (property.bedrooms || 0) >= bedrooms
-    return matchingSearch && matchingType && matchingMin && matchingMax && matchingBedrooms
+    return matchingSearch && matchingType && matchingPropertyType && matchingMin && matchingMax && matchingBedrooms
   })
 }
 
@@ -178,7 +202,11 @@ export async function getPublicProperties(site: ResolvedSite, query: Record<stri
   if (site.preview && site.id === demoSite.id) return filterProperties(site.properties, query)
   const supabase = getServerSupabase()
   const listings = await getPublishedWebsiteListings(supabase, site)
-  return filterProperties(listings.map(({ row, media }) => mapProperty(row, media)), query)
+  const publishedProperties = listings.map(({ row, media }) => mapProperty(row, media))
+  const properties = publishedProperties.length || !site.preview || site.templateKey !== 'home-seekers-v1'
+    ? publishedProperties
+    : homeSeekersShowcaseProperties
+  return filterProperties(properties, query)
 }
 
 export async function getPublicProperty(site: ResolvedSite, slug: string): Promise<PublicProperty | null> {
@@ -214,7 +242,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
   const supabase = getServerSupabase()
   const { data: domain, error: domainError } = await supabase
     .from('website_domains')
-    .select('website_site_id, domain_kind, website_sites!inner(id, organisation_id, status, published_revision_id)')
+    .select('website_site_id, domain_kind, website_sites!inner(id, organisation_id, status, published_revision_id, template_key)')
     .eq('hostname', hostname)
     .eq('status', 'active')
     .maybeSingle()
@@ -222,7 +250,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
   if (domainError) throw domainError
   if (!domain?.website_sites || Array.isArray(domain.website_sites)) return null
 
-  const site = domain.website_sites as { id: string; organisation_id: string; status: ResolvedSite['status']; published_revision_id: string | null }
+  const site = domain.website_sites as { id: string; organisation_id: string; status: ResolvedSite['status']; published_revision_id: string | null; template_key: WebsiteTemplateKey }
   if (site.status !== 'published' || !site.published_revision_id) return null
 
   const runtimeEnvironment = websiteRuntimeEnvironment()
@@ -275,10 +303,15 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
 
   const brand = (revisionResult.data?.brand_json || {}) as Record<string, unknown>
   const properties = await getPublishedWebsiteListings(supabase, { id: site.id, organisationId: site.organisation_id }, 12)
+  const publishedProperties = properties.map(({ row, media }) => mapProperty(row, media))
+  const previewProperties = publishedProperties.length || domain.domain_kind !== 'preview' || site.template_key !== 'home-seekers-v1'
+    ? publishedProperties
+    : homeSeekersShowcaseProperties
   return {
     id: site.id,
     organisationId: site.organisation_id,
     publishedRevisionId: site.published_revision_id,
+    templateKey: site.template_key === 'home-seekers-v1' ? 'home-seekers-v1' : 'property-standard-v1',
     name: String(brand.name || 'PropData Property'),
     status: site.status,
     primaryColor: String(brand.primaryColor || '#125b50'),
@@ -292,6 +325,6 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
     website: brand.website ? String(brand.website) : undefined,
     whatsappNumber: brand.whatsappNumber ? String(brand.whatsappNumber) : undefined,
     preview: domain.domain_kind === 'preview',
-    properties: properties.map(({ row, media }) => mapProperty(row, media)),
+    properties: previewProperties,
   }
 }

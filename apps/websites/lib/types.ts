@@ -14,13 +14,17 @@ export type PublicProperty = {
   description?: string
   features: string[]
   amenities: string[]
+  isShowcase?: boolean
   media: Array<{ type: 'image' | 'floor_plan' | 'video' | 'virtual_tour'; url: string; caption?: string; order: number }>
 }
+
+export type WebsiteTemplateKey = 'property-standard-v1' | 'home-seekers-v1'
 
 export type ResolvedSite = {
   id: string
   organisationId: string
   publishedRevisionId: string
+  templateKey: WebsiteTemplateKey
   name: string
   status: 'draft' | 'published' | 'suspended'
   primaryColor: string

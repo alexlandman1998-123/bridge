@@ -77,6 +77,12 @@
       "namedRegex": "^/robots\\.txt(?:/)?$"
     },
     {
+      "page": "/sandbox",
+      "regex": "^/sandbox(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/sandbox(?:/)?$"
+    },
+    {
       "page": "/sitemap.xml",
       "regex": "^/sitemap\\.xml(?:/)?$",
       "routeKeys": {},

@@ -36,6 +36,7 @@ import {
 } from '../lib/signupIntent'
 import {
   clearSupabaseLocalAuthState,
+  invokeEdgeFunction,
   isSupabaseConfigured,
   isUnsupportedJwtAlgorithmError,
   supabase,
@@ -48,6 +49,34 @@ const PENDING_ORG_INVITE_MODULE_STORAGE_KEY = 'itg:pending-org-invite-module'
 const PENDING_ORG_INVITE_ROLE_STORAGE_KEY = 'itg:pending-org-invite-role'
 const AUTH_REQUEST_TIMEOUT_MS = 15000
 const FOUNDER_LOGIN_TARGET_TIMEOUT_MS = 3000
+
+async function notifyAgencySignup({ intent, user, fullName, phone }) {
+  if (intent?.workspace_type !== 'agency' || !user?.id) return
+
+  try {
+    const { data, error } = await invokeEdgeFunction('send-email', {
+      body: {
+        type: 'agency_signup_notification',
+        authUserId: user.id,
+        email: user.email || intent.email,
+        fullName,
+        phone,
+        appRole: intent.app_role,
+        intendedOrgRole: intent.intended_org_role,
+        onboardingPath: intent.onboarding_path,
+        workspaceAction: intent.workspace_action,
+        source: intent.source,
+        signedUpAt: new Date().toISOString(),
+      },
+    })
+    if (error || data?.error) {
+      console.warn('[AUTH] agency signup notification was not sent', error || data)
+    }
+  } catch (error) {
+    // A notification must never prevent an agency from creating its account.
+    console.warn('[AUTH] agency signup notification request failed', error)
+  }
+}
 
 function getRedirectPath(location) {
   const nextPath = new URLSearchParams(location.search).get('next')
@@ -729,6 +758,12 @@ function Auth({ onDevBypass = null }) {
           user: data.user,
           email: email.trim(),
           status: data?.session ? 'ready_for_onboarding' : 'pending_email_verification',
+        })
+        await notifyAgencySignup({
+          intent: intentWithEmail,
+          user: data.user,
+          fullName: fullName.trim(),
+          phone: phone.trim(),
         })
       }
 

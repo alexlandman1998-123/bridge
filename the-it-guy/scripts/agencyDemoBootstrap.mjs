@@ -572,8 +572,20 @@ export async function ensureAgencyDemoWorkspace(client, {
     branch_id: branchId,
   }))
 
+  const existingOrganisationQuery = await client
+    .from('organisations')
+    .select('id')
+    .eq('id', organisationId)
+    .maybeSingle()
+  if (existingOrganisationQuery.error) throw existingOrganisationQuery.error
+
   await upsertRow(client, definitions, 'profiles', profilePayload, 'id')
-  await upsertRow(client, definitions, 'organisations', organisationPayload, 'id')
+  // Preserve a real organisation's identity and contact details when seeding
+  // its workspace. The seed data belongs to the organisation; its branding
+  // must not be replaced by the demo fixture.
+  if (!existingOrganisationQuery.data?.id) {
+    await upsertRow(client, definitions, 'organisations', organisationPayload, 'id')
+  }
   await upsertRow(client, definitions, 'organisation_settings', organisationSettingsPayload, 'organisation_id')
   await upsertRow(client, definitions, 'organisation_branches', branchPayload, 'id')
   await upsertRow(client, definitions, 'organisation_users', membershipPayload, 'organisation_id,email')

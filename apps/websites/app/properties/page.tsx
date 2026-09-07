@@ -3,10 +3,11 @@ import { notFound } from 'next/navigation'
 import { PropertyCard } from '@/components/property-card'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { getPublicProperties, resolveSite } from '@/lib/site-repository'
+import { templateClassName } from '@/lib/site-templates'
 
 export const dynamic = 'force-dynamic'
 
-type Props = { searchParams: Promise<{ q?: string; type?: string; bedrooms?: string; minPrice?: string; maxPrice?: string }> }
+type Props = { searchParams: Promise<{ q?: string; type?: string; propertyType?: string; bedrooms?: string; minPrice?: string; maxPrice?: string }> }
 
 export default async function PropertiesPage({ searchParams }: Props) {
   const [requestHeaders, query] = await Promise.all([headers(), searchParams])
@@ -15,7 +16,7 @@ export default async function PropertiesPage({ searchParams }: Props) {
   const properties = await getPublicProperties(site, query)
 
   return (
-    <main style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
+    <main className={templateClassName(site.templateKey)} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
       <SiteHeader site={site} />
       <section className="results-hero">
         <p className="eyebrow">PROPERTY SEARCH</p>
@@ -23,6 +24,7 @@ export default async function PropertiesPage({ searchParams }: Props) {
         <form className="filters" action="/properties">
           <input name="q" defaultValue={query.q} placeholder="Area, suburb or property type" />
           <select name="type" defaultValue={query.type || ''}><option value="">Buy or rent</option><option value="sale">For sale</option><option value="rental">To rent</option></select>
+          <select name="propertyType" defaultValue={query.propertyType || ''}><option value="">Any property type</option><option value="House">House</option><option value="Apartment">Apartment</option><option value="Townhouse">Townhouse</option><option value="Land">Land</option></select>
           <select name="bedrooms" defaultValue={query.bedrooms || ''}><option value="">Any bedrooms</option><option value="1">1+ bedrooms</option><option value="2">2+ bedrooms</option><option value="3">3+ bedrooms</option><option value="4">4+ bedrooms</option></select>
           <button type="submit">Apply filters</button>
         </form>

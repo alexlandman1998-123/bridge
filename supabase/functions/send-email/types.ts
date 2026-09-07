@@ -1160,6 +1160,27 @@ export type SendAgencyOnboardingPayload = {
   planSummary?: string;
 };
 
+export type SendAgencySignupNotificationPayload = {
+  type: "agency_signup_notification";
+  authUserId?: string;
+  auth_user_id?: string;
+  email?: string;
+  fullName?: string;
+  full_name?: string;
+  phone?: string;
+  appRole?: string;
+  app_role?: string;
+  intendedOrgRole?: string;
+  intended_org_role?: string;
+  onboardingPath?: string;
+  onboarding_path?: string;
+  workspaceAction?: string;
+  workspace_action?: string;
+  source?: string;
+  signedUpAt?: string;
+  signed_up_at?: string;
+};
+
 export type SendSellerOnboardingSubmittedPayload = {
   type: "seller_onboarding_submitted";
   to?: string;

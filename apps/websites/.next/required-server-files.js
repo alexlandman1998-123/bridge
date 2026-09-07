@@ -67,7 +67,7 @@ self.__SERVER_FILES_MANIFEST={
       "remotePatterns": [
         {
           "protocol": "https",
-          "hostname": "*.supabase.co"
+          "hostname": "**"
         }
       ],
       "qualities": [

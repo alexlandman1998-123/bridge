@@ -7,6 +7,7 @@ import { PropertyGallery } from '@/components/property-gallery'
 import { PropertyCard } from '@/components/property-card'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { getPublicProperties, getPublicProperty, resolveSite } from '@/lib/site-repository'
+import { templateClassName } from '@/lib/site-templates'
 
 export const dynamic = 'force-dynamic'
 type Props = { params: Promise<{ slug: string }> }
@@ -33,7 +34,7 @@ export default async function PropertyPage({ params }: Props) {
   const similar = (await getPublicProperties(site, { type: property.transactionType })).filter((item) => item.id !== property.id).slice(0, 3)
 
   return (
-    <main className="property-page" style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
+    <main className={`property-page ${templateClassName(site.templateKey)}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
       <SiteHeader site={site} enquiryHref="#enquire" />
       <section className="property-hero">
         <Link className="back-link" href="/properties">← All properties</Link>

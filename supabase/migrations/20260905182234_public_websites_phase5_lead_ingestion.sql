@@ -284,6 +284,7 @@ begin
     and nullif(trim(member.email), '') is not null
     and member.role in ('principal', 'admin', 'branch_manager', 'super_admin')
   order by case member.role when 'principal' then 0 when 'admin' then 1 when 'branch_manager' then 2 else 3 end,
+           member.is_primary_owner desc,
            member.updated_at desc
   limit 1;
 

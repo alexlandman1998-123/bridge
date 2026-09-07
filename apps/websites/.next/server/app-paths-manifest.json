@@ -7,5 +7,6 @@
   "/properties/[slug]/page": "app/properties/[slug]/page.js",
   "/properties/page": "app/properties/page.js",
   "/robots.txt/route": "app/robots.txt/route.js",
+  "/sandbox/page": "app/sandbox/page.js",
   "/sitemap.xml/route": "app/sitemap.xml/route.js"
 }

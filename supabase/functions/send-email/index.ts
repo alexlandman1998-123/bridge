@@ -30,6 +30,7 @@ import { handleBondOriginatorBuyerIntroEmail } from "./handlers/bondOriginatorBu
 import { handleCommercialAccessNotificationEmail } from "./handlers/commercialAccessNotification.ts";
 import { handleCommercialLandlordOnboardingEmail } from "./handlers/commercialLandlordOnboarding.ts";
 import { handleAgencyOnboardingEmail } from "./handlers/agencyOnboarding.ts";
+import { handleAgencySignupNotificationEmail } from "./handlers/agencySignupNotification.ts";
 import { handleOfferDecisionNotificationEmail } from "./handlers/offerDecisionNotification.ts";
 import { handleOrganisationPartnerInvitationEmail } from "./handlers/organisationPartnerInvitation.ts";
 import { handleSellerOfferReviewEmail } from "./handlers/sellerOfferReview.ts";
@@ -55,6 +56,7 @@ import type {
   SendArch9LaunchInternalNotificationPayload,
   SendAttorneyQuotePayload,
   SendAgencyOnboardingPayload,
+  SendAgencySignupNotificationPayload,
   SendBondAttorneyLegalNotificationPayload,
   SendBondIntakeNotificationPayload,
   SendBondOriginatorBuyerIntroPayload,
@@ -682,6 +684,16 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    if (["agency_signup_notification"].includes(type)) {
+      console.log("[send-email] routing template", {
+        route: "agency_signup_notification",
+        authUserId: normalizeText(payload.authUserId ?? payload.auth_user_id) || null,
+      });
+      return await handleAgencySignupNotificationEmail(
+        payload as SendAgencySignupNotificationPayload,
+      );
+    }
+
     if (
       [
         "organisation_partner_invitation",
@@ -1277,6 +1289,7 @@ Deno.serve(async (req: Request) => {
           "arch9_launch_internal_notification",
           "arch9_training_request",
           "public_demo_enquiry",
+          "agency_signup_notification",
           "legacy_test",
         ],
       });
@@ -1442,6 +1455,7 @@ Deno.serve(async (req: Request) => {
         "arch9_launch_internal_notification",
         "arch9_training_request",
         "public_demo_enquiry",
+        "agency_signup_notification",
         "legacy_test",
       ],
     });
