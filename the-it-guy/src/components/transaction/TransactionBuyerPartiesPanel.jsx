@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Button from '../ui/Button'
 import {
   createReusableBuyerProfile,
@@ -46,6 +47,7 @@ const buyerStatus = (party = {}) => {
 }
 
 export default function TransactionBuyerPartiesPanel({ transactionId, organisationId = '', purchaserType = 'individual', canEdit = false, onUpdated }) {
+  const navigate = useNavigate()
   const [parties, setParties] = useState([])
   const [profiles, setProfiles] = useState([])
   const [selectedProfile, setSelectedProfile] = useState('')
@@ -139,6 +141,7 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
           <div><h4 className="font-semibold text-textStrong">{displayName(party)}</h4><p className="mt-1 text-sm text-textMuted">{party.participant_email || party.participant_phone || 'Contact details still needed'}</p><p className="mt-2 text-xs text-textMuted">{buyerStatus(party)}{party.signing_required === false ? ' · Signature not required' : ' · Signature required'}</p></div>
           <div className="flex flex-wrap gap-2">
             {party.is_primary_buyer ? <span className="rounded-full bg-successSoft px-3 py-1.5 text-xs font-semibold text-success">Primary buyer</span> : canEdit ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => assignPrimary(party)}>Make primary</Button> : null}
+            {party.buyer_party_id ? <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/buyers/${party.buyer_party_id}`)}>Edit profile</Button> : null}
             {canEdit && !party.is_primary_buyer ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => remove(party)}>Remove</Button> : null}
           </div>
         </div>

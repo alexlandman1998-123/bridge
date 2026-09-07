@@ -12,10 +12,38 @@ import {
   saveReusableBuyerProfile,
 } from '../services/buyerProfileReuseService'
 
-const profileFields = [
-  ['physical_address', 'Physical address'],
-  ['identity_number', 'ID / passport number'],
-  ['marital_status', 'Marital status'],
+const profileFieldsByPurchaserType = {
+  individual: [
+    ['identity_number', 'ID / passport number'],
+    ['tax_number', 'Income tax number'],
+    ['physical_address', 'Physical address'],
+  ],
+  married_coc: [
+    ['identity_number', 'Primary buyer ID / passport number'],
+    ['tax_number', 'Primary buyer income tax number'],
+    ['spouse_full_name', 'Spouse full name'],
+    ['spouse_identity_number', 'Spouse ID / passport number'],
+    ['marital_regime', 'Marriage regime'],
+    ['physical_address', 'Physical address'],
+  ],
+  company: [
+    ['company_registration_number', 'Company / CC registration number'],
+    ['tax_number', 'Income tax number'],
+    ['vat_number', 'VAT number'],
+    ['authorised_signatory_name', 'Authorised signatory name'],
+    ['authorised_signatory_identity_number', 'Authorised signatory ID / passport number'],
+    ['physical_address', 'Registered address'],
+  ],
+  trust: [
+    ['master_reference_number', 'Master’s Office reference number'],
+    ['tax_number', 'Trust income tax number'],
+    ['primary_trustee_name', 'Primary trustee name'],
+    ['primary_trustee_identity_number', 'Primary trustee ID / passport number'],
+    ['physical_address', 'Registered address'],
+  ],
+}
+
+const supplementaryProfileFields = [
   ['employment_type', 'Employment type'],
   ['employer', 'Employer'],
   ['gross_monthly_income', 'Gross monthly income'],
@@ -35,6 +63,8 @@ export default function BuyerProfilePage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const purchaserType = profileFieldsByPurchaserType[profileData.purchaser_type] ? profileData.purchaser_type : 'individual'
+  const profileFields = [...profileFieldsByPurchaserType[purchaserType], ...supplementaryProfileFields]
 
   const load = useCallback(async () => {
     if (!isSupabaseConfigured) return
@@ -95,7 +125,7 @@ export default function BuyerProfilePage() {
 
       <form className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]" onSubmit={saveProfile}>
         <div className="rounded-[24px] border border-[#dce6f2] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <div className="mb-5 flex items-center justify-between"><div><h2 className="text-lg font-semibold text-[#142132]">Reusable details</h2><p className="mt-1 text-sm text-[#60758d]">Changes become the profile source for future transactions.</p></div><ShieldCheck className="text-[#21865a]" size={22} /></div>
+          <div className="mb-5 flex items-center justify-between"><div><h2 className="text-lg font-semibold text-[#142132]">Reusable details</h2><p className="mt-1 text-sm text-[#60758d]">Changes update the shared buyer record for every linked transaction. This profile is set up as {purchaserType.replace('_', ' ')}.</p></div><ShieldCheck className="text-[#21865a]" size={22} /></div>
           <div className="grid gap-4 md:grid-cols-2"><Field label="Full name"><input value={buyer?.name || ''} onChange={(event) => setBuyer((current) => ({ ...current, name: event.target.value }))} /></Field><Field label="Email"><input type="email" value={buyer?.email || ''} onChange={(event) => setBuyer((current) => ({ ...current, email: event.target.value }))} /></Field><Field label="Phone"><input value={buyer?.phone || ''} onChange={(event) => setBuyer((current) => ({ ...current, phone: event.target.value }))} /></Field>{profileFields.map(([key, label]) => <Field key={key} label={label}><input value={profileData?.[key] || ''} onChange={(event) => setProfileData((current) => ({ ...current, [key]: event.target.value }))} /></Field>)}</div>
           <div className="mt-6 flex justify-end"><Button type="submit" disabled={saving}><Save size={16} />{saving ? 'Saving…' : 'Save reusable profile'}</Button></div>
         </div>

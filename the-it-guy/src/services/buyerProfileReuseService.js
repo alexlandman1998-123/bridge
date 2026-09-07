@@ -89,12 +89,20 @@ export async function saveBuyerProfileIdentity({ buyerId, name, email, phone, cl
   const normalizedBuyerId = text(buyerId)
   if (!normalizedBuyerId) throw new Error('Buyer is required.')
   const db = requireClient(client)
-  const result = await db.from('buyers').update({
+  const identity = {
     name: text(name) || 'Client / Buyer',
     email: text(email).toLowerCase() || null,
     phone: text(phone) || null,
-  }).eq('id', normalizedBuyerId).select('id, organisation_id, name, email, phone').single()
+  }
+  const result = await db.from('buyers').update(identity).eq('id', normalizedBuyerId).select('id, organisation_id, name, email, phone').single()
   if (result.error) throw result.error
+  const participantResult = await db.from('transaction_participants').update({
+    participant_name: identity.name,
+    participant_email: identity.email,
+    participant_phone: identity.phone,
+    updated_at: new Date().toISOString(),
+  }).eq('buyer_party_id', normalizedBuyerId)
+  if (participantResult.error) throw participantResult.error
   return result.data
 }
 
