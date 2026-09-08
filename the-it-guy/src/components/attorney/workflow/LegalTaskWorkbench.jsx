@@ -104,7 +104,7 @@ function Disclosure({ title, count = null, children, defaultOpen = false }) {
   )
 }
 
-function PhaseNavigator({ phases = [], selectedPhaseKey = '', workflowLabel = 'Legal workflow', operationalHealth = null, onSelectTask }) {
+function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = '', workflowLabel = 'Legal workflow', operationalHealth = null, onSelectTask }) {
   const selectedPhase = phases.find((phase) => phase.key === selectedPhaseKey) || phases[0] || null
   const phaseExceptions = useMemo(() => {
     const grouped = new Map()
@@ -147,7 +147,7 @@ function PhaseNavigator({ phases = [], selectedPhaseKey = '', workflowLabel = 'L
                     </span>
                     <span className="min-w-0 flex-1">
                       <strong className="block text-sm font-semibold leading-5">{phase.label}</strong>
-                      <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} of {phase.total} complete</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} / {phase.total} tasks complete</span>
                     </span>
                     {exception ? (
                       <span
@@ -158,6 +158,29 @@ function PhaseNavigator({ phases = [], selectedPhaseKey = '', workflowLabel = 'L
                       </span>
                     ) : null}
                   </button>
+                  {active && phase.tasks?.length ? (
+                    <ol className="mt-1.5 space-y-1 border-l border-slate-200 pl-3" aria-label={`${phase.label} tasks`}>
+                      {phase.tasks.map((task) => {
+                        const taskActive = task.key === selectedTaskKey
+                        const taskComplete = task.displayStatus === 'completed'
+                        return (
+                          <li key={task.key}>
+                            <button
+                              type="button"
+                              className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition ${taskActive ? 'bg-emerald-50 font-semibold text-emerald-900' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                              aria-current={taskActive ? 'step' : undefined}
+                              onClick={() => onSelectTask?.(task.key)}
+                            >
+                              <span className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full border ${taskComplete ? 'border-emerald-600 bg-emerald-600 text-white' : task.displayStatus === 'in_progress' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-300 bg-white text-slate-400'}`}>
+                                {taskComplete ? <CheckCircle2 size={10} /> : <Circle size={7} />}
+                              </span>
+                              <span className="min-w-0 flex-1 truncate">{task.label}</span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ol>
+                  ) : null}
                 </li>
               )
             })}
@@ -241,6 +264,7 @@ export default function LegalTaskWorkbench({
       <section className="archline-transfer-workspace grid items-start gap-5 rounded-[26px] border border-slate-200/90 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.045)] sm:p-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
       <PhaseNavigator
         phases={phases}
+        selectedTaskKey={selectedTaskKey}
         selectedPhaseKey={selectedPhaseKey}
         workflowLabel={model.workflowLabel}
         operationalHealth={model.operationalHealth}
@@ -279,8 +303,8 @@ export default function LegalTaskWorkbench({
             <section aria-labelledby="legal-task-outstanding-heading">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h3 id="legal-task-outstanding-heading" className="text-base font-semibold text-slate-950">{model.outstandingRequirements.length} requirement{model.outstandingRequirements.length === 1 ? '' : 's'} to complete this task</h3>
-                  <p className="mt-1 text-sm text-slate-500">{taskCopy.helper} Completing the task advances the matter journey.</p>
+                  <h3 id="legal-task-outstanding-heading" className="text-base font-semibold text-slate-950">{model.outstandingRequirements.length} item{model.outstandingRequirements.length === 1 ? '' : 's'} to review</h3>
+                  <p className="mt-1 text-sm text-slate-500">{taskCopy.helper} Capture or request what is relevant, then complete the task when your professional judgement says it is ready.</p>
                 </div>
               </div>
               <ul className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -356,16 +380,16 @@ export default function LegalTaskWorkbench({
                   type="button"
                   size="sm"
                   disabled={saving || !model.canComplete || model.completeAction.disabled}
-                  aria-describedby={!model.canComplete ? completionHelpId : undefined}
+                  aria-describedby={!model.requirementsSatisfied ? completionHelpId : undefined}
                   onClick={() => runAction(model.completeAction, 'completion')}
                 >
                   <CheckCircle2 size={15} /> Complete & advance matter
                 </Button>
               ) : null}
             </div>
-            {!model.canComplete ? (
+            {!model.requirementsSatisfied ? (
               <p id={completionHelpId} className="mt-3 rounded-lg border border-amber-100 bg-amber-50/70 px-3 py-2 text-sm leading-5 text-slate-700">
-                <span className="font-semibold text-slate-900">Matter progression is locked:</span>{' '}
+                <span className="font-semibold text-slate-900">Outstanding items are advisory:</span>{' '}
                 {model.completionMessage}
               </p>
             ) : null}
@@ -437,7 +461,7 @@ export default function LegalTaskWorkbench({
               rows={4}
               value={statusDraft?.note || ''}
               onChange={(event) => onStatusDraftChange?.({ ...statusDraft, note: event.target.value })}
-              placeholder={statusDraft?.visibility === 'client_visible' ? 'Write a clear, client-safe completion update.' : 'Record the outcome or next follow-up.'}
+              placeholder={statusDraft?.visibility === 'client_visible' ? 'Write a clear, client-safe completion update.' : statusDraft?.requiresNote ? 'Explain why this task is ready to complete despite the outstanding items.' : 'Record the outcome or next follow-up.'}
             />
           </label>
           {['blocked', 'waiting'].includes(statusDraft?.status) ? (

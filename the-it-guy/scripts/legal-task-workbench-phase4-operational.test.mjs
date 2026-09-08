@@ -49,8 +49,12 @@ const missingWorkbench = buildLegalTaskWorkbenchModel({
 assert.equal(missingWorkbench.primaryAction.id, 'capture_data')
 assert.ok(missingWorkbench.outstandingRequirements.some((item) => item.id === 'data:bond_bank'))
 assert.ok(missingWorkbench.confirmationRequirements.length > 0)
-assert.equal(missingWorkbench.canComplete, false)
-assert.equal(missingWorkbench.clientUpdate.visible, false)
+assert.equal(missingWorkbench.canComplete, true)
+assert.equal(missingWorkbench.requirementsSatisfied, false)
+assert.equal(missingWorkbench.completeAction.requiresNote, true)
+assert.match(missingWorkbench.completionMessage, /guidance/i)
+assert.equal(missingWorkbench.requirementActions['data:bond_bank'].requirementLabel, 'Bond Bank')
+assert.equal(missingWorkbench.clientUpdate.available, false)
 
 const capturedDataModel = buildTransferWorkspaceViewModel({
   workflowKey: 'bond',
@@ -73,6 +77,8 @@ const capturedWorkbench = buildLegalTaskWorkbenchModel({
 })
 assert.equal(capturedWorkbench.primaryAction.id, 'mark_complete')
 assert.equal(capturedWorkbench.canComplete, true)
+assert.equal(capturedWorkbench.requirementsSatisfied, true)
+assert.equal(capturedWorkbench.completeAction.requiresNote, false)
 
 const clientVisibleModel = buildTransferWorkspaceViewModel({
   workflowKey: 'transfer',
@@ -95,7 +101,7 @@ const clientWorkbench = buildLegalTaskWorkbenchModel({
   workActions: clientVisibleModel.selectedTaskContext.workActions,
   statusActions: clientVisibleModel.availableActions.primary,
 })
-assert.equal(clientWorkbench.clientUpdate.visible, true)
+assert.equal(clientWorkbench.clientUpdate.available, true)
 assert.ok(clientWorkbench.clientUpdate.audience.includes('buyer'))
 assert.ok(clientWorkbench.clientUpdate.audience.includes('seller'))
 
@@ -103,10 +109,13 @@ const pageSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.
 assert.match(pageSource, /action\.id === 'capture_data'/)
 assert.match(pageSource, /action\.target === 'finance'/)
 assert.match(pageSource, /action\.target === 'parties'/)
+assert.match(pageSource, /onCaptureDetails/)
+assert.match(pageSource, /action\.requirement \|\| null/)
 
 const componentSource = readFileSync(new URL('../src/components/attorney/workflow/LegalTaskWorkbench.jsx', import.meta.url), 'utf8')
 assert.match(componentSource, /Checks confirmed on completion/)
-assert.match(componentSource, /Keep the status note clear and client-safe/)
+assert.match(componentSource, /Share a client-safe completion update/)
+assert.match(componentSource, /Outstanding items are advisory/)
 
 const laneServiceSource = readFileSync(new URL('../src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', import.meta.url), 'utf8')
 assert.match(laneServiceSource, /buildAttorneyTaskMutationPacket\(operationalContract/)

@@ -1215,8 +1215,13 @@ function buildAvailableActions(task = null, permissions = {}) {
           id: 'mark_complete',
           label: 'Mark Complete',
           status: 'completed',
-          disabled: task.completionReadiness?.canComplete === false,
-          reason: task.completionReadiness?.warnings?.[0] || '',
+          // Evidence is surfaced as guidance in the Work tab. Attorneys retain
+          // authority to complete a task and record their professional reason.
+          disabled: false,
+          requiresNote: task.completionReadiness?.canComplete === false,
+          reason: task.completionReadiness?.canComplete === false
+            ? 'Outstanding items will be recorded with the completion note.'
+            : '',
           command: buildTransferStatusActionCommand(task, 'completed'),
         }
       : null,

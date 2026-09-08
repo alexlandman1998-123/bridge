@@ -1491,7 +1491,12 @@ function buildLegalWorkflowStageCatalog(laneKey) {
     key: definition.key,
     label: definition.label,
     description: definition.description,
-    appliesWhen: definition.key === 'guarantees_received' ? ({ facts }) => !facts?.isCashDeal : undefined,
+    // This has to mirror the Work task set. Cash matters have no guarantee
+    // lifecycle; keeping those stages in the header made the two trackers
+    // disagree even though they were looking at the same attorney lane.
+    appliesWhen: ['guarantees_requested', 'guarantees_received', 'transfer_guarantees_accepted'].includes(definition.key)
+      ? ({ facts }) => !facts?.isCashDeal
+      : undefined,
   }))
 }
 
@@ -8014,6 +8019,7 @@ function ArchlineTransferWorkspace({
   onOpenParties,
   onOpenFinance,
   onOpenMatter,
+  onCaptureDetails,
   onExecuteCommand,
   onUxEvent,
 }) {
@@ -8240,6 +8246,7 @@ function ArchlineTransferWorkspace({
   function canRunTaskWorkAction(action = {}) {
     if (action.disabled) return false
     if (action.id === 'capture_data') {
+      if (typeof onCaptureDetails === 'function') return true
       if (action.target === 'finance') return typeof onOpenFinance === 'function'
       if (action.target === 'parties') return typeof onOpenParties === 'function'
       if (action.target === 'matter') return typeof onOpenMatter === 'function'
@@ -8264,7 +8271,9 @@ function ArchlineTransferWorkspace({
   function handleTaskWorkAction(action = {}) {
     if (!selectedTask || !canRunTaskWorkAction(action)) return
     if (action.id === 'capture_data') {
-      if (action.target === 'finance') {
+      if (typeof onCaptureDetails === 'function') {
+        onCaptureDetails(selectedTask, action.requirement || null)
+      } else if (action.target === 'finance') {
         onOpenFinance?.(selectedTask)
       } else if (action.target === 'parties') {
         onOpenParties?.(selectedTask)
@@ -8276,15 +8285,15 @@ function ArchlineTransferWorkspace({
       return
     }
     if (action.id === 'request_document') {
-      if (action.command && typeof onExecuteCommand === 'function') {
+      if (!action.requirement && action.command && typeof onExecuteCommand === 'function') {
         onExecuteCommand(action.workflowAction, action.command)
         return
       }
-      onRequestDocument?.(selectedTask, selectedDocuments)
+      onRequestDocument?.(selectedTask, selectedDocuments, action.requirement || null)
       return
     }
     if (action.id === 'upload_document') {
-      onUploadDocument?.(selectedTask, selectedDocuments)
+      onUploadDocument?.(selectedTask, selectedDocuments, action.requirement || null)
       return
     }
     if (action.id === 'open_documents') {
@@ -8322,7 +8331,10 @@ function ArchlineTransferWorkspace({
       openStatusDraft(selectedTask, statusAction)
       return
     }
-    const workAction = taskWorkActions.find((item) => item.id === action.id) || action
+    const matchingAction = taskWorkActions.find((item) => item.id === action.id) || {}
+    // Requirement-specific actions carry the document/data context. Keep that
+    // context while retaining the canonical command attached to the task action.
+    const workAction = { ...matchingAction, ...action, command: matchingAction.command || action.command }
     handleTaskWorkAction(workAction)
   }
 
@@ -20356,17 +20368,18 @@ function AttorneyTransactionDetail() {
     })
   }
 
-  function handleLegalTaskDocumentRequest(task, documents = []) {
+  function handleLegalTaskDocumentRequest(task, documents = [], requirement = null) {
     const missingDocument = (documents || []).find((document) => document?.missing || document?.ready === false) || null
-    const documentLabel = missingDocument?.displayName || missingDocument?.label || missingDocument?.name || task?.label || 'the required document'
+    const documentLabel = requirement?.label || missingDocument?.displayName || missingDocument?.label || missingDocument?.name || task?.label || 'the required document'
     openConveyancingDocumentRequest({
       ...(missingDocument || {}),
+      ...(requirement || {}),
       label: documentLabel,
       displayName: documentLabel,
       requestedFrom: missingDocument?.requiredFrom || missingDocument?.required_from || missingDocument?.requiredParty || '',
       visibility: missingDocument?.visibilityDefault || task?.defaultVisibility || 'client_visible',
       notes: `Please provide ${documentLabel} for ${task?.label || 'this legal task'}.`,
-      blocksStage: task?.completionReadiness?.canComplete === false,
+      blocksStage: false,
     })
   }
 
@@ -22342,24 +22355,24 @@ function AttorneyTransactionDetail() {
 
         {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
           <section className="space-y-4">
-          <AttorneyDealSetupHandoffPanel transactionId={transaction?.id} />
-          <ArchlineOverviewWorkspace
-            lifecycleProgress={displayedLifecycleProgress}
-            overviewNextActions={overviewNextActions}
-            contactRows={transactionContactRows}
-            requiredDocuments={requiredDocumentRows}
-            documentHealthSummary={documentHealthSummary}
-            activityFeed={overviewConversationEntries}
-            keyDates={archlineKeyDates}
-            financialRows={archlineFinancialRows}
-            taskItems={archlineTaskQueueItems}
-            workflows={legalWorkflowModels}
-            matterHealth={matterHealth}
-            canEditHealth={canEditRoutingProfile}
-            onSaveMatterHealth={saveCurrentMatterHealth}
-            onOpenWorkspace={openWorkspaceMenu}
-            onRunTask={handleArchlineTaskCommand}
-          />
+            <ArchlineOverviewWorkspace
+              lifecycleProgress={displayedLifecycleProgress}
+              overviewNextActions={overviewNextActions}
+              contactRows={transactionContactRows}
+              requiredDocuments={requiredDocumentRows}
+              documentHealthSummary={documentHealthSummary}
+              activityFeed={overviewConversationEntries}
+              keyDates={archlineKeyDates}
+              financialRows={archlineFinancialRows}
+              taskItems={archlineTaskQueueItems}
+              workflows={legalWorkflowModels}
+              matterHealth={matterHealth}
+              canEditHealth={canEditRoutingProfile}
+              onSaveMatterHealth={saveCurrentMatterHealth}
+              onOpenWorkspace={openWorkspaceMenu}
+              onRunTask={handleArchlineTaskCommand}
+            />
+            <AttorneyDealSetupHandoffPanel transactionId={transaction?.id} />
           </section>
         ) : null}
 
@@ -22413,16 +22426,27 @@ function AttorneyTransactionDetail() {
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
               onUpdateStep={(step, status, note, workPacket, visibility) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket, visibility)}
-              onUploadDocument={(task, documents = []) => {
+              onUploadDocument={(task, documents = [], requirement = null) => {
                 const targetDocument = (documents || []).find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
-                if (targetDocument?.requirement || targetDocument?.requiredDocument) {
-                  openDocumentUploadModal({ requirement: targetDocument.requirement || targetDocument.requiredDocument })
+                const targetRequirement = requirement || targetDocument?.requirement || targetDocument?.requiredDocument || null
+                if (targetRequirement) {
+                  openDocumentUploadModal({ requirement: targetRequirement })
                 } else {
                   openDocumentUploadModal({ category: archlineActiveLegalTaskWorkflowKey })
                 }
               }}
               onRequestDocument={handleLegalTaskDocumentRequest}
               onAddNote={handleQuickAddWorkflowNote}
+              onCaptureDetails={(task) => {
+                setLegalTaskReturnContext({
+                  taskKey: task?.key || '',
+                  taskLabel: task?.label || 'current legal task',
+                  workflowKey: archlineActiveLegalTaskWorkflowKey,
+                  workflowDetailKey: activeLegalWorkflowDetailKey,
+                })
+                setRoutingProfileError('')
+                setRoutingProfileModalOpen(true)
+              }}
               onOpenDocuments={(task) => openTaskLinkedWorkspace('documents', task)}
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
               onOpenFinance={(task) => openTaskLinkedWorkspace('finance', task)}

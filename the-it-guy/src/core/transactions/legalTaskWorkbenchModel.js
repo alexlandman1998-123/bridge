@@ -121,6 +121,9 @@ function resolveRequirementAction(requirement = {}, actions = []) {
     }
     return {
       ...action,
+      requirementId: requirement.id || '',
+      requirementLabel: text(requirement.label || 'this requirement'),
+      requirement,
       label: labels[action.id] || action.label,
       description: action.description || `Resolve ${text(requirement.label || 'this requirement')} before completing the task.`,
     }
@@ -163,8 +166,19 @@ export function buildLegalTaskWorkbenchModel({
   const outstandingRequirements = requirements.filter((item) => !item.complete)
   const completedRequirements = requirements.filter((item) => item.complete)
   const attentionItems = buildAttentionItems(task)
-  const canComplete = Boolean(task.completionReadiness?.canComplete)
-  const completeAction = normalizedStatusActions.find((action) => action.id === 'mark_complete') || null
+  const requirementsSatisfied = Boolean(task.completionReadiness?.canComplete)
+  const completionAction = normalizedStatusActions.find((action) => action.id === 'mark_complete') || null
+  // Requirements inform the attorney's judgement; they must not trap an authorised
+  // attorney in a workflow stage. An incomplete checklist therefore records an
+  // explicit completion note instead of disabling the lifecycle transition.
+  const completeAction = completionAction
+    ? {
+        ...completionAction,
+        requiresNote: Boolean(completionAction.requiresNote || !requirementsSatisfied),
+        completionOverrideRequired: !requirementsSatisfied,
+      }
+    : null
+  const canComplete = Boolean(completeAction && !completeAction.disabled)
   const canMarkInProgress = ['not_started', 'blocked', 'waiting'].includes(task.displayStatus)
   const visibilityPolicy = task.operationalContract?.visibilityPolicy || {}
   const clientAudience = visibilityPolicy.clientAudience || []
@@ -197,9 +211,10 @@ export function buildLegalTaskWorkbenchModel({
     canMarkInProgress,
     markInProgressLabel: task.displayStatus === 'not_started' ? 'Start task' : 'Resume task',
     canComplete,
-    completionMessage: canComplete
+    requirementsSatisfied,
+    completionMessage: requirementsSatisfied
       ? 'All requirements are complete. Completing this task will advance the matter to its next stage.'
-      : task.completionReadiness?.warnings?.[0] || 'Resolve the outstanding requirements to unlock matter progression.',
+      : 'Outstanding items are guidance for this task. You can still complete and advance the matter; record the reason in the completion note.',
     outstandingRequirements,
     requirementActions,
     uploadAction,
