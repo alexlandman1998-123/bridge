@@ -14,6 +14,8 @@ export const TRANSACTION_SYNC_CERTIFICATION_ROLES = Object.freeze([
   'bond_originator',
   'attorney',
 ])
+const ATTORNEY_WORKFLOW_PLAN_EVENT = 'AttorneyWorkflowPlanReconciled'
+const ATTORNEY_WORKFLOW_PLAN_PROFESSIONAL_ROLES = Object.freeze(['agent', 'bond_originator', 'attorney'])
 
 function normalizedAudience(row = {}) {
   return (Array.isArray(row.audience_json) ? row.audience_json : [])
@@ -46,6 +48,7 @@ export function buildTransactionSyncCanaryCertification({
   phase5Assessment,
   roleModels = {},
   activityRows = [],
+  requireAttorneyWorkflowPlanPropagation = false,
 } = {}) {
   const issues = []
   if (phase5Assessment?.status !== 'healthy') {
@@ -73,6 +76,30 @@ export function buildTransactionSyncCanaryCertification({
       const allowedAgentOverride = role === 'agent' && activity.eventType === 'AgentWorkflowOverrideApplied'
       if (activity.visibility === 'internal' && !allowedAgentOverride) {
         addIssue(issues, 'professional_internal_leak', { role, activityId: activity.id })
+      }
+    }
+  }
+
+  if (requireAttorneyWorkflowPlanPropagation) {
+    const planActivities = activityRows.filter(
+      (activity) => activity?.canonical_event_type === ATTORNEY_WORKFLOW_PLAN_EVENT,
+    )
+    if (!planActivities.length) {
+      addIssue(issues, 'attorney_workflow_plan_activity_missing')
+    }
+    for (const activity of planActivities) {
+      const visiblePlanRoles = Object.entries(roleModels)
+        .filter(([, model]) => (model?.activity || []).some((item) => item.id === activity.id))
+        .map(([role]) => role)
+      for (const role of ATTORNEY_WORKFLOW_PLAN_PROFESSIONAL_ROLES) {
+        if (!visiblePlanRoles.includes(role)) {
+          addIssue(issues, 'attorney_workflow_plan_professional_projection_missing', { role, activityId: activity.id })
+        }
+      }
+      for (const role of ['buyer', 'seller']) {
+        if (visiblePlanRoles.includes(role)) {
+          addIssue(issues, 'attorney_workflow_plan_client_visibility_leak', { role, activityId: activity.id })
+        }
       }
     }
   }
@@ -126,6 +153,7 @@ export function buildTransactionSyncCanaryCertification({
     stages: Object.fromEntries(TRANSACTION_SYNC_CERTIFICATION_ROLES.map((role) => [role, roleModels[role]?.stage || null])),
     laneFingerprints: Object.fromEntries(TRANSACTION_SYNC_CERTIFICATION_ROLES.map((role) => [role, laneFingerprint(roleModels[role])])),
     activityIds: Object.fromEntries(TRANSACTION_SYNC_CERTIFICATION_ROLES.map((role) => [role, [...(visibleIdsByRole[role] || [])].sort()])),
+    requiresAttorneyWorkflowPlanPropagation: requireAttorneyWorkflowPlanPropagation,
     issueCodes: issues.map((issue) => issue.code).sort(),
   })
   const evidenceHash = createHash('sha256').update(JSON.stringify(evidence)).digest('hex')
@@ -202,6 +230,7 @@ export async function runTransactionSyncPhase7CanaryCertification(client, option
     phase5Assessment,
     roleModels,
     activityRows: activityRows || [],
+    requireAttorneyWorkflowPlanPropagation: options.requireAttorneyWorkflowPlanPropagation === true,
   })
 
   let certificationRunId = null

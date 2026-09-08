@@ -7,7 +7,7 @@ const REQUIRED_OUTPUT_KEYS = Object.freeze([
   'audit_record',
 ])
 
-const EXPECTED_ACTION_COUNT = 29
+const EXPECTED_ACTION_COUNT = 30
 const DEFAULT_LATENCY_SLO_MS = 2_000
 const DEFAULT_STUCK_AFTER_MS = 120_000
 

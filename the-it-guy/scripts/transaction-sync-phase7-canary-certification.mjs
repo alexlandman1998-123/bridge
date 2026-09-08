@@ -9,11 +9,13 @@ export function parsePhase7Args(argv = []) {
     transactionId: '',
     receiptLimit: 1000,
     includeDemo: false,
+    requireAttorneyWorkflowPlanPropagation: false,
     reason: 'Phase 7 end-to-end transaction sync canary certification.',
   }
   for (const arg of argv) {
     if (arg === '--certify') options.certify = true
     else if (arg === '--include-demo') options.includeDemo = true
+    else if (arg === '--require-attorney-workflow-plan-propagation') options.requireAttorneyWorkflowPlanPropagation = true
     else if (arg === '--confirm-canary-certification') options.confirmCanaryCertification = true
     else if (arg === '--confirm-production') options.confirmProduction = true
     else if (arg.startsWith('--environment=')) options.environment = arg.slice(14).trim().toLowerCase()
@@ -70,4 +72,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exitCode = 1
   })
 }
-

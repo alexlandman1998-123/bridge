@@ -22,7 +22,7 @@ const output = {
 function fixture(overrides = {}) {
   return {
     transaction: { id: 'tx-1' },
-    actionCatalogCount: 29,
+    actionCatalogCount: 30,
     rollup: { transaction_id: 'tx-1' },
     lanes: [{ id: 'lane-1' }],
     receipts: [{
@@ -123,4 +123,3 @@ test('Phase 5 assurance is read-only and audits every canonical durability surfa
   ]) assert.match(source, new RegExp(`from\\('${table}'\\)`))
   assert.doesNotMatch(source, /\.insert\(|\.update\(|\.upsert\(|\.delete\(|\.rpc\(/)
 })
-

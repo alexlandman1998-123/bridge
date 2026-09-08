@@ -61,6 +61,63 @@ test('agent sees its own exact override but not attorney-internal notes', () => 
   assert.equal(agentActivity.includes('attorney-note'), false)
 })
 
+test('plan reconciliation is certified for professionals and excluded from client portals', () => {
+  const planActivity = {
+    id: 'workflow-plan',
+    canonical_event_type: 'AttorneyWorkflowPlanReconciled',
+    lane_key: 'transfer',
+    visibility: 'professional_shared',
+    audience_json: ['agent', 'bond_originator', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney'],
+    title: 'Matter workflow plan updated',
+    description: 'The confirmed matter profile has been applied to the legal workflow.',
+    payload_json: { matterProfileRevision: 2 },
+    occurred_at: '2026-09-08T10:05:00Z',
+  }
+  const certification = buildTransactionSyncCanaryCertification({
+    transactionId: 'tx-1',
+    phase5Assessment: { status: 'healthy' },
+    roleModels: roleModels([...activities, planActivity]),
+    activityRows: [...activities, planActivity],
+    requireAttorneyWorkflowPlanPropagation: true,
+  })
+
+  assert.equal(certification.certified, true)
+  assert.equal(roleModels([...activities, planActivity]).buyer.activity.some((item) => item.id === 'workflow-plan'), false)
+  assert.equal(roleModels([...activities, planActivity]).seller.activity.some((item) => item.id === 'workflow-plan'), false)
+})
+
+test('plan-propagation certification fails if the professional event is absent or leaked', () => {
+  const absent = buildTransactionSyncCanaryCertification({
+    transactionId: 'tx-1',
+    phase5Assessment: { status: 'healthy' },
+    roleModels: roleModels(),
+    activityRows: activities,
+    requireAttorneyWorkflowPlanPropagation: true,
+  })
+  assert.equal(absent.issues.some((issue) => issue.code === 'attorney_workflow_plan_activity_missing'), true)
+
+  const leaked = {
+    id: 'workflow-plan-leaked',
+    canonical_event_type: 'AttorneyWorkflowPlanReconciled',
+    lane_key: 'transfer',
+    visibility: 'client_visible',
+    audience_json: ['buyer', 'agent', 'bond_originator', 'transfer_attorney'],
+    title: 'Matter workflow plan updated',
+    description: 'The confirmed matter profile has been applied to the legal workflow.',
+    payload_json: {},
+    occurred_at: '2026-09-08T10:06:00Z',
+  }
+  const certification = buildTransactionSyncCanaryCertification({
+    transactionId: 'tx-1',
+    phase5Assessment: { status: 'healthy' },
+    roleModels: roleModels([...activities, leaked]),
+    activityRows: [...activities, leaked],
+    requireAttorneyWorkflowPlanPropagation: true,
+  })
+  const codes = new Set(certification.issues.map((issue) => issue.code))
+  assert.equal(codes.has('attorney_workflow_plan_client_visibility_leak'), true)
+})
+
 test('canary fails closed on client payload leakage and role drift', () => {
   const unsafe = activities.map((row) => row.id === 'buyer' ? { ...row, payload_json: { private: true } } : row)
   const models = roleModels(unsafe, {
@@ -108,6 +165,10 @@ test('certification write requires explicit canary, project, and production conf
   assert.throws(() => assertPhase7Target({ ...certify, confirmCanaryCertification: false }, 'project-a'), /confirm-canary-certification/)
   assert.throws(() => assertPhase7Target(certify, 'project-b'), /confirm-project-ref=project-b/)
   assert.throws(() => assertPhase7Target({ ...certify, environment: 'production' }, 'project-a'), /confirm-production/)
+  assert.equal(
+    parsePhase7Args(['--environment=staging', '--transaction-id=tx-1', '--require-attorney-workflow-plan-propagation']).requireAttorneyWorkflowPlanPropagation,
+    true,
+  )
 })
 
 test('runtime certification always consumes Phase 5 and writes only when requested', async () => {
@@ -117,4 +178,3 @@ test('runtime certification always consumes Phase 5 and writes only when request
   assert.match(source, /if \(options\.certify === true\)/)
   assert.match(source, /transaction_sync_certification_runs/)
 })
-
