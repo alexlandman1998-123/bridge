@@ -4,7 +4,10 @@ import { buildDealSetupReadiness } from '../core/transactions/dealSetupReadiness
 import { auditDealSetupCompatibility as auditDealSetupCompatibilityModel } from '../core/transactions/dealSetupCompatibilityAudit.js'
 import { supabase } from '../lib/supabaseClient.js'
 import { listTransactionBuyerParties } from './buyerProfileReuseService.js'
-import { resolveTransactionDocumentRequirements } from './documents/transactionCanonicalDocumentRequirementService.js'
+import {
+  resolveTransactionDocumentRequirements,
+  TRANSACTION_CANONICAL_PERSISTENCE_MODES,
+} from './documents/transactionCanonicalDocumentRequirementService.js'
 import { syncCanonicalRequiredDocumentsForTransactionContext } from './documents/documentRequestCanonicalTransactionSyncService.js'
 
 const text = (value) => String(value || '').trim()
@@ -69,6 +72,10 @@ export async function syncDealSetupDownstream({ transactionId, client = supabase
     formData,
     client,
     writeLegacyProjection: true,
+    // Canonical requirement tables are intentionally service-role-only.
+    // Browser-originated Deal Setup saves must use the authorised RPC rather
+    // than attempting direct inserts/updates under the user's RLS role.
+    persistenceMode: TRANSACTION_CANONICAL_PERSISTENCE_MODES.creationRpc,
   })
   const documentRequestSync = await syncCanonicalRequiredDocumentsForTransactionContext({
     client,
