@@ -262,3 +262,18 @@ their live contracts were verified:
 
 Website, rental, commercial, analytics, and messaging migrations remain
 outside this release train and have not been replayed or ledger-repaired.
+
+## Phase 5 verification — 2026-09-08
+
+| Contract | Result |
+| --- | --- |
+| Deal Setup → attorney handoff RPC | present |
+| Attorney workflow refresh trigger | present |
+| Transaction document-requirement sync RPC | present and executable by `authenticated` |
+| Direct authenticated insert to canonical requirement instances | denied by design |
+| `buyer_profile_data` and `transaction_participants` | present |
+
+The transaction/attorney/document release train is complete at the database
+contract level. The remaining 77 unapplied local migrations are explicitly
+outside this train and remain queued for separate module releases; this report
+does not treat that broader historical debt as closed.
