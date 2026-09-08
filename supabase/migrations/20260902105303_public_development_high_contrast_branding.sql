@@ -49,10 +49,10 @@ as $$
         to_jsonb(branding)->>'logo_icon_url',
         org.logo_url
       ),
-      'logoHighContrastUrl', branding.logo_high_contrast_url,
-      'logoLightUrl', coalesce(branding.logo_light_url, org.logo_url),
-      'logoDarkUrl', branding.logo_dark_url,
-      'logoIconUrl', branding.logo_icon_url,
+      'logoHighContrastUrl', to_jsonb(branding)->>'logo_high_contrast_url',
+      'logoLightUrl', coalesce(to_jsonb(branding)->>'logo_light_url', org.logo_url),
+      'logoDarkUrl', to_jsonb(branding)->>'logo_dark_url',
+      'logoIconUrl', to_jsonb(branding)->>'logo_icon_url',
       'primaryColour', branding.primary_brand_color,
       'secondaryColour', branding.secondary_brand_color,
       'accentColour', branding.accent_brand_color
