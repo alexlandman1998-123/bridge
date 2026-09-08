@@ -232,3 +232,19 @@ remove drift. A migration is eligible for ledger reconciliation only when its
 full live contract (tables, columns, constraints, functions, grants, RLS, and
 required reference rows) has been checked. Missing behavior is promoted as a
 new idempotent corrective migration in its own release train.
+
+## Phase 2 implementation — 2026-09-08
+
+The following history entries were reconciled only after their live contracts
+were verified:
+
+| Version | Basis |
+| --- | --- |
+| `20260907193000` | Buyer-party columns, defaults, nullability, and ownership constraint match production. |
+| `20260907194208` | `transactions.current_detailed_stage` exists with the expected nullable text contract. |
+
+The missing attorney refresh behavior was not ledger-repaired. It was promoted
+as a new production migration: `20260908121455_transaction_attorney_refresh_contract_repair`.
+It creates the refresh function and trigger and seeds the
+`ATTORNEY_WORKFLOW_PLAN_RECONCILED` catalog action idempotently. Production
+verification confirmed all three objects after application.
