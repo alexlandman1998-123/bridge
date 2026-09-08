@@ -107,6 +107,7 @@ import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
 import {
   addAttorneyTransactionUpdate,
   getAttorneyWorkflowOperationsForTransaction,
+  reconcileAttorneyWorkflowPlanForTransaction,
   requestAttorneyWorkflowLaneDocument,
   updateAttorneyWorkflowStepStatus,
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
@@ -18606,8 +18607,9 @@ function AttorneyTransactionDetail() {
       if (nextDetail) {
         setData(nextDetail)
       }
+      const nextOperations = await reconcileAttorneyWorkflowPlanForTransaction(transaction.id)
       setRoutingProfileModalOpen(false)
-      await refreshWorkflowAfterChange()
+      await refreshWorkflowAfterChange(nextOperations)
     } catch (routingError) {
       setRoutingProfileError(routingError?.message || 'Unable to update routing profile.')
     } finally {

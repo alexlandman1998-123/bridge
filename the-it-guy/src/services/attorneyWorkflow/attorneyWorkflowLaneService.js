@@ -1018,6 +1018,15 @@ async function ensureCanonicalLaneSteps(client, laneRows = [], stepsBySubprocess
   return upsertLaneStepRows(client, stepRows)
 }
 
+function isMatterPlanReconciliationUnavailable(error) {
+  const message = `${error?.message || ''} ${error?.details || ''}`.toLowerCase()
+  return (
+    error?.code === 'PGRST202' ||
+    error?.code === '42883' ||
+    (message.includes('bridge_reconcile_attorney_lane_progress_with_matter_plan') && message.includes('not found'))
+  )
+}
+
 export async function getAttorneyWorkflowOperationsForTransaction(transactionId, { initialize = true } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client).catch(() => null)
@@ -1317,6 +1326,83 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
       viewReason: baselineContext?.viewReason || null,
     },
   }, matterScope)
+}
+
+/**
+ * Applies a confirmed matter plan to the existing legal workspace. It seeds
+ * newly applicable tasks, leaves retired tasks in the audit history, and
+ * recomputes every lane the current actor may operate. It is idempotent: a
+ * retry or refresh never marks work as complete or advances a task.
+ */
+export async function reconcileAttorneyWorkflowPlanForTransaction(transactionId, { source = 'routing_profile_update' } = {}) {
+  const client = requireClient()
+  const actor = await getAuthenticatedUser(client)
+  const normalizedTransactionId = String(transactionId || '').trim()
+  if (!normalizedTransactionId) throw new Error('Transaction id is required.')
+
+  let operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: true })
+  const plan = operations.workflowPlan || resolveMatterWorkflowPlan(operations.transaction?.routing_profile_json || {})
+  if (plan?.status !== 'active') return operations
+
+  const reconciledLanes = []
+  const skippedLanes = []
+  let lifecycleMutation = null
+  for (const lane of operations.lanes || []) {
+    const plannedSteps = getMatterWorkflowPlanStepKeys(plan, lane.laneKey)
+    if (!plannedSteps.length) continue
+    if (!lane.permissions?.canUpdateStage) {
+      skippedLanes.push({ laneKey: lane.laneKey, reason: 'not_authorised_for_lane' })
+      continue
+    }
+    const currentStep = (lane.steps || []).find((step) => step.status !== 'completed') || lane.steps?.at(-1)
+    const reconciliation = await client.rpc('bridge_reconcile_attorney_lane_progress_with_matter_plan', {
+      p_transaction_id: normalizedTransactionId,
+      p_lane_key: lane.laneKey,
+      p_step_key: currentStep?.stepKey || plannedSteps[0],
+      p_step_status: currentStep?.status || 'not_started',
+    })
+    if (reconciliation.error) {
+      if (isMatterPlanReconciliationUnavailable(reconciliation.error)) {
+        console.warn('[attorney-workflow] plan application awaits database migration', { transactionId: normalizedTransactionId })
+        skippedLanes.push({ laneKey: lane.laneKey, reason: 'database_migration_pending' })
+        break
+      }
+      throw reconciliation.error
+    }
+    reconciledLanes.push(lane.laneKey)
+    lifecycleMutation = reconciliation.data || lifecycleMutation
+  }
+
+  await insertTransactionEvent(client, {
+    transactionId: normalizedTransactionId,
+    eventType: 'AttorneyWorkflowPlanReconciled',
+    actorId: actor?.id || null,
+    visibility: 'internal',
+    eventData: {
+      source,
+      matterProfileRevision: plan.matterProfileRevision || 0,
+      matterProfileFingerprint: plan.matterProfileFingerprint || null,
+      reconciledLanes,
+      skippedLanes,
+    },
+  }).catch(() => null)
+
+  operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
+  const canonicalTransaction = operations?.transaction || await fetchTransaction(client, normalizedTransactionId)
+  return {
+    ...operations,
+    canonicalMatter: {
+      id: canonicalTransaction.id,
+      lifecycleState: canonicalTransaction.lifecycle_state || null,
+      currentMainStage: canonicalTransaction.current_main_stage || null,
+      currentSubStageSummary: canonicalTransaction.current_sub_stage_summary || null,
+      currentDetailedStage: canonicalTransaction.current_detailed_stage || null,
+      operationalState: canonicalTransaction.operational_state || null,
+      stage: canonicalTransaction.stage || null,
+      updatedAt: canonicalTransaction.updated_at || null,
+      workflowMutation: { planReconciliation: lifecycleMutation, reconciledLanes, skippedLanes },
+    },
+  }
 }
 
 async function assertCanUpdateLane({ user, transactionId, laneKey }) {
@@ -1896,12 +1982,7 @@ export async function updateAttorneyWorkflowStepStatus({
     p_step_status: normalizedStatus,
   })
   if (planReconciliation.error) {
-    const message = `${planReconciliation.error?.message || ''} ${planReconciliation.error?.details || ''}`.toLowerCase()
-    const migrationPending =
-      planReconciliation.error?.code === 'PGRST202' ||
-      planReconciliation.error?.code === '42883' ||
-      (message.includes('bridge_reconcile_attorney_lane_progress_with_matter_plan') && message.includes('not found'))
-    if (migrationPending) {
+    if (isMatterPlanReconciliationUnavailable(planReconciliation.error)) {
       console.warn('[attorney-workflow] plan progress reconciliation is pending database deployment', { transactionId: normalizedTransactionId })
     } else {
       throw planReconciliation.error

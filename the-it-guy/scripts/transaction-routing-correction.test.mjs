@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
 const pageSource = fs.readFileSync(path.join(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
+const workflowServiceSource = fs.readFileSync(path.join(root, 'src/services/attorneyWorkflow/attorneyWorkflowLaneService.js'), 'utf8')
 const packageSource = fs.readFileSync(path.join(root, 'package.json'), 'utf8')
 
 function assertHas(source, pattern, message) {
@@ -85,6 +86,21 @@ assertHas(
   pageSource,
   /Workflow plan impact/,
   'The confirmation UI should make plan changes visible before saving.',
+)
+assertHas(
+  workflowServiceSource,
+  /export async function reconcileAttorneyWorkflowPlanForTransaction/,
+  'A confirmed routing profile should have an idempotent workflow-plan application path.',
+)
+assertHas(
+  workflowServiceSource,
+  /eventType: 'AttorneyWorkflowPlanReconciled'/,
+  'Plan application should leave a durable operational audit event.',
+)
+assertHas(
+  pageSource,
+  /reconcileAttorneyWorkflowPlanForTransaction\(transaction\.id\)/,
+  'Saving a routing profile should apply the resulting plan before refreshing the matter.',
 )
 assertHas(
   packageSource,
