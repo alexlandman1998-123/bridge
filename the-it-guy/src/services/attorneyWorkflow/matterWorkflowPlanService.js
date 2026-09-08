@@ -125,6 +125,49 @@ export function getMatterWorkflowPlanStepKeys(plan = {}, laneKey = '') {
   return Array.isArray(lane?.stepKeys) ? lane.stepKeys : []
 }
 
+function getPlanStepMap(plan = {}) {
+  const steps = new Map()
+  for (const lane of Array.isArray(plan?.lanes) ? plan.lanes : []) {
+    const laneKey = normalizeLaneKey(lane?.laneKey)
+    if (!laneKey) continue
+    for (const stepKey of Array.isArray(lane?.stepKeys) ? lane.stepKeys : []) {
+      const key = normalizeText(stepKey)
+      if (key) steps.set(`${laneKey}:${key}`, { laneKey, stepKey: key })
+    }
+  }
+  return steps
+}
+
+/**
+ * Describes the operational effect of replacing one confirmed matter plan with
+ * another. It is deliberately derived from the plans, not the UI, so the
+ * confirmation screen, transaction event and workflow refresh agree exactly.
+ */
+export function diffMatterWorkflowPlans(previousPlan = {}, nextPlan = {}) {
+  const previousSteps = getPlanStepMap(previousPlan)
+  const nextSteps = getPlanStepMap(nextPlan)
+  const previousLanes = new Set(Array.isArray(previousPlan?.laneKeys) ? previousPlan.laneKeys : [])
+  const nextLanes = new Set(Array.isArray(nextPlan?.laneKeys) ? nextPlan.laneKeys : [])
+  const addedSteps = [...nextSteps.entries()]
+    .filter(([key]) => !previousSteps.has(key))
+    .map(([, step]) => step)
+  const removedSteps = [...previousSteps.entries()]
+    .filter(([key]) => !nextSteps.has(key))
+    .map(([, step]) => step)
+  const addedLanes = [...nextLanes].filter((laneKey) => !previousLanes.has(laneKey))
+  const removedLanes = [...previousLanes].filter((laneKey) => !nextLanes.has(laneKey))
+
+  return {
+    changed: Boolean(addedSteps.length || removedSteps.length || addedLanes.length || removedLanes.length),
+    addedLanes,
+    removedLanes,
+    addedSteps,
+    removedSteps,
+    previousTaskCount: previousSteps.size,
+    nextTaskCount: nextSteps.size,
+  }
+}
+
 export function filterStepsForMatterWorkflowPlan(steps = [], plan = {}, laneKey = '') {
   if (plan?.status !== 'active') return steps
   const allowedStepKeys = new Set(getMatterWorkflowPlanStepKeys(plan, laneKey))

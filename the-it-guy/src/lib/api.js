@@ -271,7 +271,11 @@ import { runCanonicalDocumentRequestRecalculationBatch } from '../services/docum
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
-import { buildMatterWorkflowPlan } from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
+import {
+  buildMatterWorkflowPlan,
+  diffMatterWorkflowPlans,
+  resolveMatterWorkflowPlan,
+} from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
 import { publishTransactionSharedProgress } from '../services/transactionSharedProgressService.js'
 import { getAgentTransactionSyncReadModel } from '../services/transactionSyncReadModelService.js'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
@@ -38836,6 +38840,10 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
     routingProfile,
     generatedAt: routingProfile.matterProfile?.confirmedAt || null,
   })
+  const workflowPlanImpact = diffMatterWorkflowPlans(
+    resolveMatterWorkflowPlan(transaction.routing_profile_json || {}),
+    workflowPlan,
+  )
   const persistedRoutingProfile = { ...routingProfile, workflowPlan }
   const resolvedFinanceType = routingProfile.financeType === 'hybrid' ? 'hybrid' : financeType
   const resolvedTransactionType =
@@ -38869,6 +38877,7 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
       updated_at: new Date().toISOString(),
     },
     routingProfile: persistedRoutingProfile,
+    workflowPlanImpact,
   }
 }
 
@@ -38934,7 +38943,7 @@ export async function saveTransactionRoutingProfile({
   const transaction = transactionQuery.data
   if (!transaction) throw new Error('Transaction not found.')
 
-  const { payload, routingProfile } = buildTransactionRoutingCorrectionPayload(transaction, {
+  const { payload, routingProfile, workflowPlanImpact } = buildTransactionRoutingCorrectionPayload(transaction, {
     financeType,
     transactionType,
     propertyType,
@@ -39011,6 +39020,7 @@ export async function saveTransactionRoutingProfile({
         matterProfileStatus: routingProfile.matterProfile?.status || null,
         matterProfileRevision: routingProfile.matterProfile?.revision || 0,
         matterProfileFingerprint: routingProfile.matterProfile?.factFingerprint || null,
+        workflowPlanImpact,
       },
       createdBy: actorProfile.userId || null,
       createdByRole: normalizedActorRole,
@@ -39032,6 +39042,7 @@ export async function saveTransactionRoutingProfile({
       missingFields: routingProfile.missingFields,
       matterProfileStatus: routingProfile.matterProfile?.status || null,
       matterProfileFingerprint: routingProfile.matterProfile?.factFingerprint || null,
+      workflowPlanImpact,
     },
   })
 

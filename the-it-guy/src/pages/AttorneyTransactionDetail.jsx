@@ -111,7 +111,13 @@ import {
   updateAttorneyWorkflowStepStatus,
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
 import { buildTransferWorkspaceViewModel } from '../services/attorneyWorkflow/transferWorkspaceViewModel.js'
-import { getMatterWorkflowPlanStepKeys } from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
+import {
+  buildMatterWorkflowPlan,
+  diffMatterWorkflowPlans,
+  getMatterWorkflowPlanStepKeys,
+  resolveMatterWorkflowPlan,
+} from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
+import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { buildLegalTaskWorkbenchModel } from '../core/transactions/legalTaskWorkbenchModel.js'
 import { getCanonicalLegalWorkflowProgressPercent } from '../core/transactions/legalWorkflowProgress.js'
 import { recordLegalWorkspaceUxEvent } from '../services/legalWorkspaceUxTelemetryService.js'
@@ -15281,6 +15287,13 @@ function buildRoutingProfileDraft(transaction = {}, diagnostics = {}) {
   }
 }
 
+function formatWorkflowPlanImpactItem({ laneKey = '', stepKey = '' } = {}) {
+  const readable = String(stepKey || laneKey || '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+  return laneKey && stepKey ? `${readable} · ${String(laneKey).replace(/\b\w/g, (letter) => letter.toUpperCase())}` : readable
+}
+
 function WorkflowDetailsDrawer({
   lane,
   open,
@@ -16822,6 +16835,34 @@ function AttorneyTransactionDetail() {
       : null),
     [requiredDocumentChecklist, transaction, transactionRollup?.availableActions],
   )
+  const routingProfileImpact = useMemo(() => {
+    if (!transaction) return null
+    const confirmedAt = routingDiagnostics?.profile?.matterProfile?.confirmedAt || new Date().toISOString()
+    const proposedProfile = resolveTransactionRoutingProfile({
+      transaction: {
+        ...transaction,
+        finance_type: routingProfileDraft.financeType === 'unknown' ? null : routingProfileDraft.financeType,
+        transaction_type: routingProfileDraft.transactionType === 'unknown' ? null : routingProfileDraft.transactionType,
+        property_type: routingProfileDraft.propertyType || null,
+        property_tenure: routingProfileDraft.propertyTenure === 'unknown' ? null : routingProfileDraft.propertyTenure,
+        purchaser_type: routingProfileDraft.purchaserType === 'unknown' ? null : routingProfileDraft.purchaserType,
+        seller_type: routingProfileDraft.sellerType === 'unknown' ? null : routingProfileDraft.sellerType,
+        seller_has_existing_bond: routingProfileDraft.sellerHasExistingBond === 'true',
+        cancellation_required: routingProfileDraft.cancellationRequired === 'true',
+        vat_treatment: routingProfileDraft.vatTreatment === 'unknown' ? null : routingProfileDraft.vatTreatment,
+      },
+      matterProfile: {
+        status: 'confirmed',
+        confirmedAt,
+        confirmedByRole: workspaceRole || 'attorney',
+        revision: Number(routingDiagnostics?.profile?.matterProfile?.revision || 0) + 1,
+      },
+    })
+    return diffMatterWorkflowPlans(
+      resolveMatterWorkflowPlan(transaction.routing_profile_json || {}),
+      buildMatterWorkflowPlan({ routingProfile: proposedProfile, generatedAt: confirmedAt }),
+    )
+  }, [routingDiagnostics?.profile?.matterProfile, routingProfileDraft, transaction, workspaceRole])
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
     for (const requirement of requiredDocumentChecklist) {
@@ -25181,6 +25222,39 @@ function AttorneyTransactionDetail() {
             <strong className="block text-[0.7rem] uppercase text-textStrong">What this controls</strong>
             Finance route, party FICA, property requirements, cancellation work, tax treatment, and the workflow template used in the next phase.
           </div>
+          {routingProfileImpact ? (
+            <div className={`rounded-[12px] border px-3 py-2.5 text-xs leading-5 ${
+              routingProfileImpact.changed
+                ? 'border-primary/25 bg-primarySoft text-textMuted'
+                : 'border-borderSoft bg-surfaceAlt text-textMuted'
+            }`}>
+              <strong className="block text-[0.7rem] uppercase text-textStrong">Workflow plan impact</strong>
+              {routingProfileImpact.changed ? (
+                <>
+                  <p className="mt-1">
+                    Saving this profile will adjust the active plan from {routingProfileImpact.previousTaskCount} to {routingProfileImpact.nextTaskCount} applicable tasks.
+                    Existing completed work is retained in the matter history.
+                  </p>
+                  <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                    {routingProfileImpact.addedLanes.length ? (
+                      <span><strong className="text-success">Adds lanes:</strong> {routingProfileImpact.addedLanes.map((laneKey) => formatWorkflowPlanImpactItem({ laneKey })).join(', ')}</span>
+                    ) : null}
+                    {routingProfileImpact.removedLanes.length ? (
+                      <span><strong className="text-warning">Retires lanes:</strong> {routingProfileImpact.removedLanes.map((laneKey) => formatWorkflowPlanImpactItem({ laneKey })).join(', ')}</span>
+                    ) : null}
+                    {routingProfileImpact.addedSteps.length ? (
+                      <span><strong className="text-success">Adds tasks:</strong> {routingProfileImpact.addedSteps.slice(0, 3).map(formatWorkflowPlanImpactItem).join(', ')}{routingProfileImpact.addedSteps.length > 3 ? ` +${routingProfileImpact.addedSteps.length - 3} more` : ''}</span>
+                    ) : null}
+                    {routingProfileImpact.removedSteps.length ? (
+                      <span><strong className="text-warning">Retires tasks:</strong> {routingProfileImpact.removedSteps.slice(0, 3).map(formatWorkflowPlanImpactItem).join(', ')}{routingProfileImpact.removedSteps.length > 3 ? ` +${routingProfileImpact.removedSteps.length - 3} more` : ''}</span>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <p className="mt-1">This confirmation keeps the current applicable workflow plan unchanged.</p>
+              )}
+            </div>
+          ) : null}
           <div className="grid gap-3 md:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-label font-semibold uppercase text-textMuted">Finance type</span>

@@ -4,6 +4,7 @@ import { resolveTransactionRoutingProfile } from '../src/services/transactionRou
 import {
   MATTER_WORKFLOW_PLAN_VERSION,
   buildMatterWorkflowPlan,
+  diffMatterWorkflowPlans,
   filterStepsForMatterWorkflowPlan,
   getMatterWorkflowPlanStepKeys,
   isMatterWorkflowPlanCurrent,
@@ -93,6 +94,49 @@ function confirmedProfile(transaction) {
   ], plan, 'transfer')
 
   assert.deepEqual(filtered.map((step) => step.step_key), ['rates_clearance_received'])
+}
+
+{
+  const cashPlan = buildMatterWorkflowPlan({
+    routingProfile: confirmedProfile({
+      id: 'plan-impact-cash',
+      finance_type: 'cash',
+      transaction_type: 'resale',
+      property_type: 'freehold house',
+      purchaser_type: 'individual',
+      seller_type: 'individual',
+      seller_has_existing_bond: false,
+      vat_treatment: 'transfer_duty',
+    }),
+  })
+  const bondPlan = buildMatterWorkflowPlan({
+    routingProfile: confirmedProfile({
+      id: 'plan-impact-bond',
+      finance_type: 'bond',
+      transaction_type: 'resale',
+      property_type: 'sectional title apartment',
+      purchaser_type: 'company',
+      seller_type: 'trust',
+      seller_has_existing_bond: true,
+      vat_treatment: 'transfer_duty',
+    }),
+  })
+  const impact = diffMatterWorkflowPlans(cashPlan, bondPlan)
+
+  assert.equal(impact.changed, true)
+  assert.deepEqual(impact.addedLanes, ['bond', 'cancellation'])
+  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'guarantees_requested'), true)
+  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'levy_clearance_requested'), true)
+  assert.equal(impact.nextTaskCount > impact.previousTaskCount, true)
+  assert.deepEqual(diffMatterWorkflowPlans(bondPlan, bondPlan), {
+    changed: false,
+    addedLanes: [],
+    removedLanes: [],
+    addedSteps: [],
+    removedSteps: [],
+    previousTaskCount: impact.nextTaskCount,
+    nextTaskCount: impact.nextTaskCount,
+  })
 }
 
 console.log('matter-workflow-plan tests passed')

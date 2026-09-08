@@ -45,6 +45,11 @@ assertHas(
   /reasonCode: 'routing_profile_updated'/,
   'Routing correction should trigger workflow recompute.',
 )
+assertHas(
+  apiSource,
+  /workflowPlanImpact,/,
+  'Routing correction should record the plan impact with the canonical update.',
+)
 
 assertHas(
   pageSource,
@@ -75,6 +80,11 @@ assertHas(
   pageSource,
   /canEditRoutingProfile/,
   'Routing correction should be role-gated in the UI.',
+)
+assertHas(
+  pageSource,
+  /Workflow plan impact/,
+  'The confirmation UI should make plan changes visible before saving.',
 )
 assertHas(
   packageSource,
