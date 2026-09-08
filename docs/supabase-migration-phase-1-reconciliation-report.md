@@ -248,3 +248,17 @@ as a new production migration: `20260908121455_transaction_attorney_refresh_cont
 It creates the refresh function and trigger and seeds the
 `ATTORNEY_WORKFLOW_PLAN_RECONCILED` catalog action idempotently. Production
 verification confirmed all three objects after application.
+
+## Phase 4 implementation — 2026-09-08
+
+The final transaction/attorney compatibility entries were reconciled after
+their live contracts were verified:
+
+| Version | Verified live contract |
+| --- | --- |
+| `20260907194623` | Buyer ownership/signing fields and `units.property_title_type` are present. |
+| `20260908064347` | Attorney lane reconciliation function exists, includes the active-plan guard, and grants authenticated execution. |
+| `20260908065905` | `ATTORNEY_WORKFLOW_PLAN_RECONCILED` exists in the action catalog with the expected professional visibility contract. |
+
+Website, rental, commercial, analytics, and messaging migrations remain
+outside this release train and have not been replayed or ledger-repaired.
