@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import {
+  MATTER_PROFILE_VERSION,
   TRANSACTION_ROUTING_PROFILE_VERSION,
   resolveTransactionRoutingProfile,
   resolveWorkflowKeysForRoutingProfile,
@@ -32,6 +33,52 @@ function assertIncludes(values, expected, message) {
   assert.equal(profile.vatTreatment, 'transfer_duty')
   assert.equal(profile.workflowTemplateKey, 'cash_freehold_resale')
   assert.deepEqual(profile.requiredWorkflowKeys, ['sales_otp', 'finance_cash', 'attorney_transfer', 'registration'])
+  assert.equal(profile.matterProfile.version, MATTER_PROFILE_VERSION)
+  assert.equal(profile.matterProfile.status, 'needs_confirmation')
+  assert.match(profile.matterProfile.factFingerprint, /^matter_profile:[a-f0-9]{8}$/)
+}
+
+{
+  const confirmed = resolveTransactionRoutingProfile({
+    transaction: {
+      id: 'confirmed-profile',
+      finance_type: 'bond',
+      transaction_type: 'resale',
+      property_type: 'freehold house',
+      purchaser_type: 'company',
+      seller_type: 'individual',
+      seller_has_existing_bond: false,
+      vat_treatment: 'transfer_duty',
+    },
+    matterProfile: {
+      status: 'confirmed',
+      confirmedAt: '2026-09-08T09:00:00.000Z',
+      confirmedByRole: 'attorney',
+      revision: 1,
+    },
+  })
+
+  assert.equal(confirmed.matterProfile.status, 'confirmed')
+  assert.equal(confirmed.matterProfile.revision, 1)
+  assert.equal(confirmed.matterProfile.confirmedByRole, 'attorney')
+
+  const changed = resolveTransactionRoutingProfile({
+    transaction: {
+      id: 'confirmed-profile',
+      finance_type: 'cash',
+      transaction_type: 'resale',
+      property_type: 'freehold house',
+      purchaser_type: 'company',
+      seller_type: 'individual',
+      seller_has_existing_bond: false,
+      vat_treatment: 'transfer_duty',
+      routing_profile_json: confirmed,
+    },
+  })
+
+  assert.equal(changed.matterProfile.status, 'needs_confirmation')
+  assert.equal(changed.matterProfile.confirmedAt, null)
+  assert.notEqual(changed.matterProfile.factFingerprint, confirmed.matterProfile.factFingerprint)
 }
 
 {

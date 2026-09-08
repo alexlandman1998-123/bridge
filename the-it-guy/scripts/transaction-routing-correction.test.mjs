@@ -19,7 +19,7 @@ assertHas(
 )
 assertHas(
   apiSource,
-  /resolveTransactionRoutingProfile\(\{ transaction: nextTransaction \}\)/,
+  /resolveTransactionRoutingProfile\(\{\s*transaction: nextTransaction,/,
   'Routing correction should regenerate the routing profile from corrected facts.',
 )
 for (const column of [
@@ -53,8 +53,13 @@ assertHas(
 )
 assertHas(
   pageSource,
-  /title="Edit Routing Profile"/,
-  'Attorney transaction page should render the routing correction modal.',
+  /title=\{routingDiagnostics\?\.status === 'needs_confirmation' \? 'Confirm Matter Profile' : 'Edit Matter Profile'\}/,
+  'Attorney transaction page should make profile confirmation explicit.',
+)
+assertHas(
+  apiSource,
+  /matterProfile: \{\s*status: 'confirmed'/,
+  'Saving routing facts should confirm the canonical matter profile.',
 )
 for (const field of [
   'financeType',

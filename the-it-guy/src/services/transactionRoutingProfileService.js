@@ -6,6 +6,18 @@ import {
 import { resolveMvpLaunchRolePlan } from '../core/transactions/mvpLaunchRoles.js'
 
 export const TRANSACTION_ROUTING_PROFILE_VERSION = 'transaction_routing_profile_v1'
+export const MATTER_PROFILE_VERSION = 'matter_profile_v1'
+
+const MATTER_PROFILE_FACT_KEYS = Object.freeze([
+  'financeType',
+  'transactionType',
+  'propertyTenure',
+  'buyerEntityType',
+  'sellerEntityType',
+  'sellerHasExistingBond',
+  'cancellationRequired',
+  'vatTreatment',
+])
 
 const FINANCE_WORKFLOW_BY_TYPE = Object.freeze({
   cash: 'finance_cash',
@@ -52,6 +64,81 @@ function firstValue(...values) {
     if (hasValue(value)) return value
   }
   return undefined
+}
+
+function parseJsonObject(value) {
+  if (!value) return {}
+  if (typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function readPersistedRoutingProfile(input = {}) {
+  const transaction = input.transaction || input.transactionRow || input.transaction_row || input || {}
+  return parseJsonObject(
+    input.routingProfile ||
+      input.routing_profile ||
+      input.routing_profile_json ||
+      transaction.routingProfile ||
+      transaction.routing_profile ||
+      transaction.routing_profile_json ||
+      transaction.routingProfileJson,
+  )
+}
+
+function stableMatterProfileFingerprint(facts = {}) {
+  const source = MATTER_PROFILE_FACT_KEYS
+    .map((key) => `${key}:${String(facts[key] ?? '')}`)
+    .join('|')
+  let hash = 2166136261
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `matter_profile:${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
+function buildMatterProfileMetadata(baseProfile, existingProfile = {}, requestedMetadata = {}) {
+  const existingMetadata = existingProfile?.matterProfile && typeof existingProfile.matterProfile === 'object'
+    ? existingProfile.matterProfile
+    : {}
+  const requested = requestedMetadata && typeof requestedMetadata === 'object' ? requestedMetadata : {}
+  const facts = Object.fromEntries(MATTER_PROFILE_FACT_KEYS.map((key) => [key, baseProfile[key]]))
+  const fingerprint = stableMatterProfileFingerprint(facts)
+  const missingFactKeys = [
+    baseProfile.financeType === 'unknown' ? 'finance_type' : '',
+    baseProfile.transactionType === 'unknown' ? 'transaction_type' : '',
+    baseProfile.propertyTenure === 'unknown' ? 'property_tenure' : '',
+    baseProfile.buyerEntityType === 'unknown' ? 'buyer_entity_type' : '',
+    baseProfile.sellerEntityType === 'unknown' ? 'seller_entity_type' : '',
+    (baseProfile.transactionType === 'commercial' || baseProfile.transactionType === 'development_sale') && baseProfile.vatTreatment === 'unknown'
+      ? 'vat_treatment'
+      : '',
+  ].filter(Boolean)
+  const confirmed = requested.status === 'confirmed'
+    ? true
+    : existingMetadata.status === 'confirmed' && existingMetadata.factFingerprint === fingerprint
+  const confirmedAt = confirmed
+    ? requested.confirmedAt || existingMetadata.confirmedAt || null
+    : null
+  const confirmedByRole = confirmed
+    ? requested.confirmedByRole || existingMetadata.confirmedByRole || null
+    : null
+
+  return {
+    version: MATTER_PROFILE_VERSION,
+    status: missingFactKeys.length ? 'needs_facts' : confirmed ? 'confirmed' : 'needs_confirmation',
+    factFingerprint: fingerprint,
+    confirmedAt,
+    confirmedByRole,
+    revision: Math.max(0, Number(requested.revision ?? existingMetadata.revision) || 0),
+    missingFactKeys,
+  }
 }
 
 function normalizeFinanceType(value) {
@@ -450,6 +537,7 @@ function buildWarnings({ facts, propertyTenure, vatTreatment, transactionType, c
 }
 
 export function resolveTransactionRoutingProfile(input = {}) {
+  const existingProfile = readPersistedRoutingProfile(input)
   const resolverInput = buildResolverInput(input || {})
   const facts = resolveTransactionFacts(resolverInput)
   const context = {
@@ -515,6 +603,11 @@ export function resolveTransactionRoutingProfile(input = {}) {
     rawFacts: facts,
     rawFieldSources: facts.rawFieldsUsed || {},
   }
+  const matterProfile = buildMatterProfileMetadata(
+    baseProfile,
+    existingProfile,
+    input.matterProfile || input.matter_profile || {},
+  )
   const workflowTemplateKey = resolveWorkflowTemplateKeyForRoutingProfile(baseProfile)
   const requiredWorkflowKeys = resolveWorkflowKeysForRoutingProfile(baseProfile)
   const requiredDocumentGroups = resolveRequiredDocumentGroupsForRoutingProfile(baseProfile)
@@ -531,11 +624,12 @@ export function resolveTransactionRoutingProfile(input = {}) {
 
   return {
     ...baseProfile,
+    matterProfile,
     workflowTemplateKey,
     requiredWorkflowKeys,
     requiredDocumentGroups,
     warnings: compactUnique([...diagnostics.warnings, ...launchScopeWarnings]),
-    missingFields: diagnostics.missingFields,
+    missingFields: compactUnique([...diagnostics.missingFields, ...matterProfile.missingFactKeys]),
     launchScope,
     launchRolePlan,
     sourceSnapshot: {

@@ -7,6 +7,7 @@ import {
   buildTransactionRoutingDiagnostics,
   getTransactionRoutingStatusLabel,
 } from '../src/services/transactionRoutingDiagnosticsService.js'
+import { resolveTransactionRoutingProfile } from '../src/services/transactionRoutingProfileService.js'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -15,30 +16,34 @@ function assertIncludes(values, expected, message) {
 }
 
 {
+  const canonicalProfile = resolveTransactionRoutingProfile({
+    transaction: {
+      id: 'bond-sectional',
+      finance_type: 'bond',
+      transaction_type: 'private_sale',
+      property_type: 'sectional title apartment',
+      purchaser_type: 'company',
+      seller_type: 'individual',
+      seller_has_existing_bond: true,
+      vat_treatment: 'transfer_duty',
+    },
+    matterProfile: {
+      status: 'confirmed',
+      confirmedAt: '2026-09-08T09:00:00.000Z',
+      confirmedByRole: 'attorney',
+      revision: 1,
+    },
+  })
   const diagnostics = buildTransactionRoutingDiagnostics({
     id: 'bond-sectional',
-    finance_type: 'cash',
+    finance_type: 'bond',
     transaction_type: 'private_sale',
-    property_type: 'freehold',
-    buyer_entity_type: 'individual',
-    seller_entity_type: 'individual',
-    routing_profile_json: {
-      version: 'transaction_routing_profile_v1',
-      financeType: 'bond',
-      transactionType: 'private_sale',
-      propertyTenure: 'sectional_title',
-      buyerEntityType: 'company',
-      sellerEntityType: 'individual',
-      sellerHasExistingBond: true,
-      cancellationRequired: true,
-      requiresTransferAttorney: true,
-      requiresBondAttorney: true,
-      requiresCancellationAttorney: true,
-      workflowTemplateKey: 'bond_sectional_title',
-      requiredWorkflowKeys: ['sales_otp', 'finance_bond', 'attorney_transfer', 'attorney_bond', 'seller_bond_cancellation', 'registration'],
-      requiredDocumentGroups: ['buyer_identity_fica', 'sectional_title_body_corporate', 'bond_originator', 'property_finance_existing_bond'],
-      missingFields: [],
-    },
+    property_type: 'sectional title apartment',
+    purchaser_type: 'company',
+    seller_type: 'individual',
+    seller_has_existing_bond: true,
+    vat_treatment: 'transfer_duty',
+    routing_profile_json: canonicalProfile,
   })
 
   assert.equal(diagnostics.source, 'persisted')
@@ -48,6 +53,22 @@ function assertIncludes(values, expected, message) {
   assert.equal(diagnostics.facts.requiresCancellationAttorney, true)
   assertIncludes(diagnostics.requiredWorkflowKeys, 'attorney_bond', 'Persisted bond route should surface attorney bond workflow.')
   assertIncludes(diagnostics.requiredWorkflowLabels, 'Seller bond cancellation', 'Cancellation route should have a human workflow label.')
+}
+
+{
+  const diagnostics = buildTransactionRoutingDiagnostics({
+    id: 'unconfirmed-route',
+    finance_type: 'cash',
+    transaction_type: 'resale',
+    property_type: 'freehold house',
+    purchaser_type: 'individual',
+    seller_type: 'individual',
+    seller_has_existing_bond: false,
+    vat_treatment: 'transfer_duty',
+  })
+
+  assert.equal(diagnostics.status, 'needs_confirmation')
+  assert.equal(getTransactionRoutingStatusLabel(diagnostics.status), 'Confirm matter profile')
 }
 
 {

@@ -38817,6 +38817,7 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
   }
   const routingProfile = resolveTransactionRoutingProfile({
     transaction: nextTransaction,
+    matterProfile: input.matterProfile,
   })
   const resolvedFinanceType = routingProfile.financeType === 'hybrid' ? 'hybrid' : financeType
   const resolvedTransactionType =
@@ -38915,6 +38916,7 @@ export async function saveTransactionRoutingProfile({
   const transaction = transactionQuery.data
   if (!transaction) throw new Error('Transaction not found.')
 
+  const priorMatterProfile = resolveTransactionRoutingProfile({ transaction }).matterProfile || {}
   const { payload, routingProfile } = buildTransactionRoutingCorrectionPayload(transaction, {
     financeType,
     transactionType,
@@ -38925,6 +38927,12 @@ export async function saveTransactionRoutingProfile({
     sellerHasExistingBond,
     cancellationRequired,
     vatTreatment,
+    matterProfile: {
+      status: 'confirmed',
+      confirmedAt: new Date().toISOString(),
+      confirmedByRole: normalizedActorRole,
+      revision: Math.max(0, Number(priorMatterProfile.revision) || 0) + 1,
+    },
   })
 
   const fallbackColumns = [
@@ -38983,6 +38991,9 @@ export async function saveTransactionRoutingProfile({
         workflowTemplateKey: routingProfile.workflowTemplateKey,
         requiredWorkflowKeys: routingProfile.requiredWorkflowKeys,
         missingFields: routingProfile.missingFields,
+        matterProfileStatus: routingProfile.matterProfile?.status || null,
+        matterProfileRevision: routingProfile.matterProfile?.revision || 0,
+        matterProfileFingerprint: routingProfile.matterProfile?.factFingerprint || null,
       },
       createdBy: actorProfile.userId || null,
       createdByRole: normalizedActorRole,
@@ -39002,6 +39013,8 @@ export async function saveTransactionRoutingProfile({
       routingProfileVersion: routingProfile.version,
       requiredWorkflowKeys: routingProfile.requiredWorkflowKeys,
       missingFields: routingProfile.missingFields,
+      matterProfileStatus: routingProfile.matterProfile?.status || null,
+      matterProfileFingerprint: routingProfile.matterProfile?.factFingerprint || null,
     },
   })
 

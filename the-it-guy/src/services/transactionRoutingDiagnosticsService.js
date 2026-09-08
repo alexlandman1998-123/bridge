@@ -123,7 +123,10 @@ function buildSingleTransactionSaleRouteAudit(transaction = {}, {
 export function buildTransactionRoutingDiagnostics(transaction = {}, options = {}) {
   const persistedProfile = readRoutingProfile(transaction)
   const hasPersistedProfile = hasUsableProfile(persistedProfile)
-  const profile = hasPersistedProfile ? persistedProfile : resolveTransactionRoutingProfile({ transaction })
+  // The saved profile is the canonical record. Re-resolve it against the current
+  // transaction fields so a later material fact change cannot leave a stale
+  // workflow route displayed as confirmed.
+  const profile = resolveTransactionRoutingProfile({ transaction })
   const facts = resolveTransactionFacts({
     ...transaction,
     routing_profile_json: profile,
@@ -163,7 +166,15 @@ export function buildTransactionRoutingDiagnostics(transaction = {}, options = {
   return {
     transactionId: transaction?.id || facts.transactionId || profile.transactionId || null,
     source: hasPersistedProfile ? 'persisted' : 'computed',
-    status: missingFields.length ? 'needs_attention' : hasPersistedProfile ? 'ready' : 'inferred',
+    status: missingFields.length
+      ? 'needs_attention'
+      : profile.matterProfile?.status === 'confirmed'
+        ? 'ready'
+        : profile.matterProfile?.status === 'needs_confirmation'
+          ? 'needs_confirmation'
+          : hasPersistedProfile
+            ? 'inferred'
+            : 'inferred',
     summary: summarizeTransactionRoutingProfile(profile) || `${labelFor(facts.financeType)} + ${labelFor(facts.transactionType)}`,
     profile,
     facts,
@@ -179,6 +190,7 @@ export function buildTransactionRoutingDiagnostics(transaction = {}, options = {
     missingFields,
     missingFieldLabels: missingFields.map(fieldLabel),
     warnings,
+    matterProfile: profile.matterProfile || null,
     decisions: [
       { key: 'finance_type', label: 'Finance', value: labelFor(facts.financeType) },
       { key: 'transaction_type', label: 'Transaction', value: labelFor(facts.transactionType) },
@@ -192,6 +204,7 @@ export function buildTransactionRoutingDiagnostics(transaction = {}, options = {
 export function getTransactionRoutingStatusLabel(status = '') {
   if (status === 'ready') return 'Routing ready'
   if (status === 'needs_attention') return 'Needs routing facts'
+  if (status === 'needs_confirmation') return 'Confirm matter profile'
   if (status === 'inferred') return 'Inferred routing'
   return 'Routing pending'
 }

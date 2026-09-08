@@ -15140,7 +15140,7 @@ function TransactionRoutingSummaryCard({ diagnostics = null, canEdit = false, on
       : 'border-borderDefault bg-mutedBg text-textMuted'
   const saleRouteAudit = diagnostics.saleRouteAudit || null
   return (
-    <OverviewSidePanel title="Routing Profile">
+    <OverviewSidePanel title="Matter Profile">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
         <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClasses}`}>
@@ -15152,7 +15152,7 @@ function TransactionRoutingSummaryCard({ diagnostics = null, canEdit = false, on
         </div>
         {canEdit ? (
           <Button type="button" variant="ghost" size="sm" onClick={onEdit}>
-            Edit
+            {diagnostics.status === 'needs_confirmation' ? 'Confirm' : 'Edit'}
           </Button>
         ) : null}
       </div>
@@ -15215,7 +15215,7 @@ function LegalWorkflowRoutingPanel({ diagnostics = null, workflows = [], canEdit
         </div>
         {canEdit ? (
           <Button type="button" variant="secondary" size="sm" onClick={onEdit}>
-            Edit Routing
+            {diagnostics.status === 'needs_confirmation' ? 'Confirm matter profile' : 'Edit matter profile'}
           </Button>
         ) : null}
       </div>
@@ -15245,6 +15245,12 @@ function LegalWorkflowRoutingPanel({ diagnostics = null, workflows = [], canEdit
         <div className="mt-4 rounded-[12px] border border-warning/25 bg-warningSoft px-3 py-2 text-xs leading-5 text-warning">
           <strong className="block text-[0.7rem] uppercase">Missing routing facts</strong>
           <span>{diagnostics.missingFieldLabels.join(', ')}</span>
+        </div>
+      ) : null}
+      {diagnostics.status === 'needs_confirmation' ? (
+        <div className="mt-4 rounded-[12px] border border-primary/20 bg-primarySoft px-3 py-2 text-xs leading-5 text-textMuted">
+          <strong className="block text-[0.7rem] uppercase text-textStrong">Confirmation required</strong>
+          Confirm these routing facts once the OTP is known. A material change will require the profile to be confirmed again before a future workflow plan is generated.
         </div>
       ) : null}
       <SaleRouteAuditSummary audit={saleRouteAudit} />
@@ -25130,8 +25136,8 @@ function AttorneyTransactionDetail() {
       <Modal
         open={routingProfileModalOpen}
         onClose={routingProfileSaving ? undefined : () => setRoutingProfileModalOpen(false)}
-        title="Edit Routing Profile"
-        subtitle="Update the facts that decide finance, transfer, bond, cancellation, and document routing."
+        title={routingDiagnostics?.status === 'needs_confirmation' ? 'Confirm Matter Profile' : 'Edit Matter Profile'}
+        subtitle="These are the canonical facts that determine the applicable legal workflow. Changing a material fact requires the profile to be confirmed again."
         className="max-w-2xl"
         footer={(
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
@@ -25144,7 +25150,11 @@ function AttorneyTransactionDetail() {
               Cancel
             </Button>
             <Button type="submit" form="transaction-routing-profile-form" disabled={routingProfileSaving}>
-              {routingProfileSaving ? 'Saving...' : 'Save Routing'}
+              {routingProfileSaving
+                ? 'Saving...'
+                : routingDiagnostics?.status === 'needs_confirmation'
+                  ? 'Confirm matter profile'
+                  : 'Save & reconfirm profile'}
             </Button>
           </div>
         )}
@@ -25155,6 +25165,10 @@ function AttorneyTransactionDetail() {
               {routingProfileError}
             </p>
           ) : null}
+          <div className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5 text-xs leading-5 text-textMuted">
+            <strong className="block text-[0.7rem] uppercase text-textStrong">What this controls</strong>
+            Finance route, party FICA, property requirements, cancellation work, tax treatment, and the workflow template used in the next phase.
+          </div>
           <div className="grid gap-3 md:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-label font-semibold uppercase text-textMuted">Finance type</span>
