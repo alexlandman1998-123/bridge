@@ -171,6 +171,7 @@ export function buildTransactionSyncCanaryCertification({
       rolesChecked: TRANSACTION_SYNC_CERTIFICATION_ROLES.length,
       canonicalActivityCount: activityRows.length,
       issueCount: issues.length,
+      requiresAttorneyWorkflowPlanPropagation: requireAttorneyWorkflowPlanPropagation,
     },
   }
 }

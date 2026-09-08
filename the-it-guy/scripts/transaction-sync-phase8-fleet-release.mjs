@@ -10,11 +10,13 @@ export function parsePhase8Args(argv = []) {
     receiptLimit: 1000,
     canaryMaxAgeHours: 24,
     includeDemo: false,
+    requireAttorneyWorkflowPlanPropagation: false,
     reason: 'Phase 8 complete-fleet transaction synchronization release gate.',
   }
   for (const arg of argv) {
     if (arg === '--record-release') options.recordRelease = true
     else if (arg === '--include-demo') options.includeDemo = true
+    else if (arg === '--require-attorney-workflow-plan-propagation') options.requireAttorneyWorkflowPlanPropagation = true
     else if (arg === '--confirm-fleet-release') options.confirmFleetRelease = true
     else if (arg === '--confirm-production') options.confirmProduction = true
     else if (arg.startsWith('--environment=')) options.environment = arg.slice(14).trim().toLowerCase()
@@ -66,4 +68,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     process.exitCode = 1
   })
 }
-

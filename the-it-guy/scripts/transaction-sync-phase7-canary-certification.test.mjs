@@ -82,6 +82,7 @@ test('plan reconciliation is certified for professionals and excluded from clien
   })
 
   assert.equal(certification.certified, true)
+  assert.equal(certification.summary.requiresAttorneyWorkflowPlanPropagation, true)
   assert.equal(roleModels([...activities, planActivity]).buyer.activity.some((item) => item.id === 'workflow-plan'), false)
   assert.equal(roleModels([...activities, planActivity]).seller.activity.some((item) => item.id === 'workflow-plan'), false)
 })

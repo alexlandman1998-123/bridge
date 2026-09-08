@@ -67,6 +67,30 @@ test('fleet gate fails closed for truncation, missing canary, failed certificati
   assert.deepEqual(incomplete.issueCodes, ['transaction_certification_failed'])
 })
 
+test('attorney-workflow fleet mode accepts only canaries that proved plan propagation', () => {
+  const input = {
+    environment: 'staging',
+    projectRef: 'projectref01',
+    fleet: { complete: true, snapshotAt: '2026-09-08T10:00:00.000Z', expectedRows: 1, transactions: [{ id: 'tx-1' }] },
+    certifications: [certification('tx-1')],
+    failures: [],
+    requireAttorneyWorkflowPlanPropagation: true,
+  }
+  const genericOnly = buildTransactionSyncFleetRelease({
+    ...input,
+    canaries: [{ id: 'generic-canary', summary_json: { requiresAttorneyWorkflowPlanPropagation: false } }],
+  })
+  assert.equal(genericOnly.releaseReady, false)
+  assert.equal(genericOnly.issueCodes.includes('attorney_workflow_plan_canary_missing'), true)
+
+  const scoped = buildTransactionSyncFleetRelease({
+    ...input,
+    canaries: [{ id: 'plan-canary', summary_json: { requiresAttorneyWorkflowPlanPropagation: true } }],
+  })
+  assert.equal(scoped.releaseReady, true)
+  assert.deepEqual(scoped.canaryRunIds, ['plan-canary'])
+})
+
 test('fleet evidence hash is stable regardless of certification ordering', () => {
   const input = {
     environment: 'staging',
@@ -96,6 +120,10 @@ test('recording a release requires explicit fleet, project, and production confi
   const plan = parsePhase8Args(['--environment=staging', '--page-size=25', '--canary-max-age-hours=48'])
   assert.equal(plan.pageSize, 25)
   assert.equal(plan.canaryMaxAgeHours, 48)
+  assert.equal(
+    parsePhase8Args(['--environment=staging', '--require-attorney-workflow-plan-propagation']).requireAttorneyWorkflowPlanPropagation,
+    true,
+  )
   assert.doesNotThrow(() => assertPhase8Target(plan, 'project-a'))
 
   const record = parsePhase8Args([
@@ -115,6 +143,7 @@ test('runtime exhausts pagination, consumes Phase 7, and writes only on explicit
   assert.match(source, /count: 'exact'/)
   assert.match(source, /uniqueIds\.size === expectedRows/)
   assert.match(source, /runTransactionSyncPhase7CanaryCertification/)
+  assert.match(source, /requireAttorneyWorkflowPlanPropagation/)
   assert.match(source, /transaction_sync_certification_runs/)
   assert.match(source, /if \(options\.recordRelease === true\)/)
   assert.match(source, /transaction_sync_fleet_release_runs/)

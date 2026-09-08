@@ -29,6 +29,13 @@ function isEligibleTransaction(row = {}, includeDemo = false) {
   return row.is_active !== false && !['archived', 'cancelled'].includes(lifecycle) && (includeDemo || row.is_demo_data !== true)
 }
 
+function hasActiveAttorneyWorkflowPlan(row = {}) {
+  const profile = row?.routing_profile_json && typeof row.routing_profile_json === 'object'
+    ? row.routing_profile_json
+    : {}
+  return profile?.workflowPlan?.status === 'active'
+}
+
 export async function fetchCompleteTransactionSyncFleet(client, options = {}) {
   const pageSize = Math.min(Math.max(Number(options.pageSize) || 50, 1), 250)
   const maxPages = Math.min(Math.max(Number(options.maxPages) || 10000, 1), 10000)
@@ -41,7 +48,7 @@ export async function fetchCompleteTransactionSyncFleet(client, options = {}) {
   while (page < maxPages) {
     const start = page * pageSize
     const result = await requiredQuery(client.from('transactions')
-      .select('id,lifecycle_state,is_active,is_demo_data,created_at', page === 0 ? { count: 'exact' } : {})
+      .select('id,lifecycle_state,is_active,is_demo_data,created_at,routing_profile_json', page === 0 ? { count: 'exact' } : {})
       .lte('created_at', snapshotAt)
       .order('created_at', { ascending: true })
       .order('id', { ascending: true })
@@ -62,7 +69,10 @@ export async function fetchCompleteTransactionSyncFleet(client, options = {}) {
         expectedRows,
         pagesRead: page,
         rowsRead,
-        transactions: rows.filter((row) => isEligibleTransaction(row, options.includeDemo === true)),
+        transactions: rows.filter((row) =>
+          isEligibleTransaction(row, options.includeDemo === true) &&
+          (options.requireAttorneyWorkflowPlanPropagation !== true || hasActiveAttorneyWorkflowPlan(row)),
+        ),
       }
     }
   }
@@ -72,7 +82,10 @@ export async function fetchCompleteTransactionSyncFleet(client, options = {}) {
     expectedRows,
     pagesRead: page,
     rowsRead,
-    transactions: rows.filter((row) => isEligibleTransaction(row, options.includeDemo === true)),
+    transactions: rows.filter((row) =>
+      isEligibleTransaction(row, options.includeDemo === true) &&
+      (options.requireAttorneyWorkflowPlanPropagation !== true || hasActiveAttorneyWorkflowPlan(row)),
+    ),
   }
 }
 
@@ -81,14 +94,17 @@ async function fetchRecentPassingCanaries(client, options) {
   const nowMs = options.now ? new Date(options.now).getTime() : Date.now()
   const cutoff = new Date(nowMs - maxAgeHours * 60 * 60 * 1000).toISOString()
   const result = await requiredQuery(client.from('transaction_sync_certification_runs')
-    .select('id,transaction_id,evidence_hash,canonical_version,created_at')
+    .select('id,transaction_id,evidence_hash,canonical_version,summary_json,created_at')
     .eq('environment', options.environment)
     .eq('project_ref', options.projectRef)
     .eq('status', 'passed')
     .gte('created_at', cutoff)
     .order('created_at', { ascending: false })
     .limit(100), 'passing canary certifications')
-  return result.data || []
+  return (result.data || []).filter((row) =>
+    options.requireAttorneyWorkflowPlanPropagation !== true ||
+    row?.summary_json?.requiresAttorneyWorkflowPlanPropagation === true,
+  )
 }
 
 export function buildTransactionSyncFleetRelease({
@@ -98,8 +114,12 @@ export function buildTransactionSyncFleetRelease({
   canaries = [],
   certifications = [],
   failures = [],
+  requireAttorneyWorkflowPlanPropagation = false,
 } = {}) {
   const issueCodes = []
+  const scopedCanaries = requireAttorneyWorkflowPlanPropagation
+    ? canaries.filter((row) => row?.summary_json?.requiresAttorneyWorkflowPlanPropagation === true)
+    : canaries
   const fleetTransactionIds = new Set((fleet?.transactions || []).map((row) => row.id).filter(Boolean))
   const passedTransactionIds = new Set(certifications
     .filter((row) => fleetTransactionIds.has(row.transactionId) && row.certification?.certified)
@@ -111,7 +131,11 @@ export function buildTransactionSyncFleetRelease({
     issueCodes.push('fleet_enumeration_truncated')
   }
   if (!activeCount) issueCodes.push('no_active_transactions')
-  if (!canaries.length) issueCodes.push('passing_canary_missing')
+  if (!scopedCanaries.length) issueCodes.push(
+    requireAttorneyWorkflowPlanPropagation
+      ? 'attorney_workflow_plan_canary_missing'
+      : 'passing_canary_missing',
+  )
   if (failures.length) issueCodes.push('certification_execution_failed')
   if (passedTransactionIds.size !== activeCount || certifications.some((row) => (
     !fleetTransactionIds.has(row.transactionId) || !row.certification?.certified
@@ -128,7 +152,8 @@ export function buildTransactionSyncFleetRelease({
     projectRef,
     fleetSnapshotAt: fleetSnapshotAt || null,
     enumeratedTransactionCount: enumeratedTransactionCount ?? 0,
-    canaryRunIds: canaries.map((row) => row.id).sort(),
+    canaryRunIds: scopedCanaries.map((row) => row.id).sort(),
+    requiresAttorneyWorkflowPlanPropagation: requireAttorneyWorkflowPlanPropagation,
     activeTransactionCount: activeCount,
     passedTransactionCount: passedCount,
     failedTransactionCount: failedCount,
@@ -174,6 +199,7 @@ export async function runTransactionSyncPhase8FleetRelease(client, options = {})
         receiptLimit: options.receiptLimit,
         includeDemo: options.includeDemo === true,
         certify: false,
+        requireAttorneyWorkflowPlanPropagation: options.requireAttorneyWorkflowPlanPropagation === true,
       })
       certifications.push({
         transactionId: transaction.id,
@@ -191,6 +217,7 @@ export async function runTransactionSyncPhase8FleetRelease(client, options = {})
     canaries,
     certifications,
     failures,
+    requireAttorneyWorkflowPlanPropagation: options.requireAttorneyWorkflowPlanPropagation === true,
   })
   let releaseRunId = null
   if (options.recordRelease === true) {
