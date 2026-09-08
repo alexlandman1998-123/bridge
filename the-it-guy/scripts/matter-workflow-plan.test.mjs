@@ -39,8 +39,9 @@ function confirmedProfile(transaction) {
   assert.equal(plan.version, MATTER_WORKFLOW_PLAN_VERSION)
   assert.equal(plan.status, 'active')
   assert.deepEqual(plan.laneKeys, ['transfer'])
-  assert.equal(transferStepKeys.includes('guarantees_requested'), false)
-  assert.equal(transferStepKeys.includes('levy_clearance_requested'), false)
+  // Applicability is an attorney decision, not an automatic deletion for cash/freehold.
+  assert.equal(transferStepKeys.includes('guarantees_requested'), true)
+  assert.equal(transferStepKeys.includes('levy_clearance_requested'), true)
   assert.equal(transferStepKeys.includes('rates_clearance_received'), true)
   assert.equal(isMatterWorkflowPlanCurrent({ ...plan, status: 'active' }, { ...profile, workflowPlan: plan }), true)
 }
@@ -71,8 +72,9 @@ function confirmedProfile(transaction) {
     transaction: { id: 'unconfirmed', finance_type: 'cash', property_type: 'house' },
   })
   const plan = buildMatterWorkflowPlan({ routingProfile: unconfirmedProfile })
-  assert.equal(plan.status, 'awaiting_matter_profile_confirmation')
-  assert.deepEqual(plan.lanes, [])
+  assert.equal(plan.status, 'active')
+  assert.equal(plan.provisional, true)
+  assert.deepEqual(plan.laneKeys, ['transfer'])
 }
 
 {
@@ -93,7 +95,7 @@ function confirmedProfile(transaction) {
     { step_key: 'levy_clearance_received', status: 'completed' },
   ], plan, 'transfer')
 
-  assert.deepEqual(filtered.map((step) => step.step_key), ['rates_clearance_received'])
+  assert.deepEqual(filtered.map((step) => step.step_key), ['rates_clearance_received', 'levy_clearance_requested', 'levy_clearance_received'])
 }
 
 {
@@ -125,8 +127,8 @@ function confirmedProfile(transaction) {
 
   assert.equal(impact.changed, true)
   assert.deepEqual(impact.addedLanes, ['bond', 'cancellation'])
-  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'guarantees_requested'), true)
-  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'levy_clearance_requested'), true)
+  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'guarantees_requested'), false)
+  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'levy_clearance_requested'), false)
   assert.equal(impact.nextTaskCount > impact.previousTaskCount, true)
   assert.deepEqual(diffMatterWorkflowPlans(bondPlan, bondPlan), {
     changed: false,

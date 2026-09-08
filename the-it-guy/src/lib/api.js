@@ -38805,6 +38805,7 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
     ) || sellerHasExistingBond
   const nextTransaction = {
     ...transaction,
+    routing_profile_json: { ...transaction.routing_profile_json, mvpProfile: input.mvpProfile || transaction.routing_profile_json?.mvpProfile || {} },
     finance_type: financeType === 'unknown' ? transaction.finance_type || null : financeType,
     transaction_type: nullableUnknown(input.transactionType ?? input.transaction_type ?? transaction.transaction_type),
     property_type: normalizeNullableText(input.propertyType ?? input.property_type ?? transaction.property_type),
@@ -38867,8 +38868,8 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
         routingProfile.sellerEntityType && routingProfile.sellerEntityType !== 'unknown'
           ? routingProfile.sellerEntityType
           : nextTransaction.seller_type || null,
-      seller_has_existing_bond: Boolean(routingProfile.sellerHasExistingBond),
-      existing_bond: Boolean(routingProfile.sellerHasExistingBond),
+      seller_has_existing_bond: input.mvpProfile?.sellerExistingBond === 'unknown' ? null : Boolean(routingProfile.sellerHasExistingBond),
+      existing_bond: input.mvpProfile?.sellerExistingBond === 'unknown' ? null : Boolean(routingProfile.sellerHasExistingBond),
       cancellation_required: Boolean(routingProfile.cancellationRequired),
       vat_treatment:
         routingProfile.vatTreatment && routingProfile.vatTreatment !== 'unknown' ? routingProfile.vatTreatment : null,
@@ -38892,10 +38893,14 @@ export async function saveTransactionRoutingProfile({
   sellerHasExistingBond,
   cancellationRequired,
   vatTreatment,
+  mvpProfile,
   reason = '',
   actorRole = null,
 } = {}) {
   if (!transactionId) throw new Error('Transaction is required.')
+  if ((mvpProfile?.bondWorkflow === 'exclude' || mvpProfile?.cancellationWorkflow === 'exclude') && !String(reason || '').trim()) {
+    throw new Error('Record a reason when excluding an attorney checklist.')
+  }
 
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
@@ -38953,6 +38958,7 @@ export async function saveTransactionRoutingProfile({
     sellerHasExistingBond,
     cancellationRequired,
     vatTreatment,
+    mvpProfile,
     matterProfile: {
       status: 'confirmed',
       confirmedAt: new Date().toISOString(),

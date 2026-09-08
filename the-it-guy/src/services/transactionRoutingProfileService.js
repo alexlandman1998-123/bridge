@@ -17,6 +17,12 @@ const MATTER_PROFILE_FACT_KEYS = Object.freeze([
   'sellerHasExistingBond',
   'cancellationRequired',
   'vatTreatment',
+  'buyerMaritalRegime',
+  'sellerMaritalRegime',
+  'paymentSecurity',
+  'hoaApplicable',
+  'bondWorkflow',
+  'cancellationWorkflow',
 ])
 
 const FINANCE_WORKFLOW_BY_TYPE = Object.freeze({
@@ -575,7 +581,15 @@ export function resolveTransactionRoutingProfile(input = {}) {
   const buyerSpouseConsentRequired = truthyFlag(resolverInput.buyer_spouse_consent_required)
   const sellerSpouseConsentRequired = truthyFlag(resolverInput.seller_spouse_consent_required)
 
+  const mvpProfile = parseJsonObject(context.transaction?.routing_profile_json)?.mvpProfile || {}
   const baseProfile = {
+    mvpProfile,
+    buyerMaritalRegime: mvpProfile.buyerMaritalRegime || 'unknown',
+    sellerMaritalRegime: mvpProfile.sellerMaritalRegime || 'unknown',
+    paymentSecurity: mvpProfile.paymentSecurity || 'unknown',
+    hoaApplicable: mvpProfile.hoaApplicable || 'unknown',
+    bondWorkflow: mvpProfile.bondWorkflow || 'auto',
+    cancellationWorkflow: mvpProfile.cancellationWorkflow || 'auto',
     version: TRANSACTION_ROUTING_PROFILE_VERSION,
     transactionId: facts.transactionId,
     financeType,
@@ -592,10 +606,10 @@ export function resolveTransactionRoutingProfile(input = {}) {
     buyerSpouseConsentRequired,
     sellerSpouseConsentRequired,
     foreignBuyer,
-    vatTreatment: vatTreatment === 'unknown' && transactionType !== 'commercial' && transactionType !== 'development_sale' ? 'transfer_duty' : vatTreatment,
+    vatTreatment,
     requiresTransferAttorney: true,
-    requiresBondAttorney: financeType === 'bond' || financeType === 'hybrid',
-    requiresCancellationAttorney: cancellationRequired,
+    requiresBondAttorney: mvpProfile.bondWorkflow === 'include' || (mvpProfile.bondWorkflow !== 'exclude' && (financeType === 'bond' || financeType === 'hybrid')),
+    requiresCancellationAttorney: mvpProfile.cancellationWorkflow === 'include' || (mvpProfile.cancellationWorkflow !== 'exclude' && cancellationRequired),
     isDevelopmentSale: transactionType === 'development_sale',
     isCommercialTransaction: transactionType === 'commercial',
     isSectionalTitle: propertyTenure === 'sectional_title',

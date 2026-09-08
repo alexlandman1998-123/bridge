@@ -21,10 +21,9 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
-import {
-  getAttorneyStageDefinitionsForLane,
-  normalizeAttorneyStageKey,
-} from '../constants/attorneyWorkflowStages.js'
+import { normalizeAttorneyStageKey } from '../constants/attorneyWorkflowStages.js'
+import { getApplicableAttorneyTaskDefinitions } from './attorneyWorkflow/matterWorkflowPlanService.js'
+import { getCanonicalLegalWorkflowProgressPercent } from '../core/transactions/legalWorkflowProgress.js'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { hydratePropertyLabelsFromListings } from './attorneyMatterListSnapshotService'
 import { hydrateMatterPropertyContext } from './matterPropertyContext'
@@ -179,6 +178,23 @@ function resolveAttentionIssue(flags = {}) {
   return ''
 }
 
+async function hydrateDashboardWorkflowState(client, rows = []) {
+  const ids = [...new Set(rows.map(row => row.id).filter(Boolean))]
+  const state = new Map()
+  for (let index = 0; index < ids.length; index += 100) {
+    const result = await client.from('transactions')
+      .select('id, finance_type, routing_profile_json, transaction_subprocesses(process_type, transaction_subprocess_steps(step_key, status))')
+      .in('id', ids.slice(index, index + 100))
+    if (result.error) throw result.error
+    for (const row of result.data || []) state.set(row.id, row)
+  }
+  return rows.map(row => ({ ...row,
+    finance_type: state.get(row.id)?.finance_type ?? row.finance_type,
+    routing_profile_json: state.get(row.id)?.routing_profile_json,
+    attorneyWorkflowLanes: state.get(row.id)?.transaction_subprocesses || [],
+  }))
+}
+
 async function fetchTransactionsForDashboard(client) {
   const primarySelect =
     'id, organisation_id, buyer_id, development_id, unit_id, matter_number, transaction_reference, title, stage, current_main_stage, current_sub_stage_summary, attorney, assigned_attorney_email, finance_type, onboarding_status, next_action, risk_status, operational_state, attorney_stage, updated_at, created_at, property_description, property_address_line_1, property_address_line_2, suburb, city, province, seller_name, seller_email, seller_has_existing_bond, current_bond_bank, purchase_price, sales_price, bond_amount, deposit_amount, expected_transfer_date, target_registration_date, registration_date, registered_at, lifecycle_state, last_meaningful_activity_at, originating_partner_organisation_id, referral_source_organisation_id, partner_relationship_id'
@@ -219,7 +235,7 @@ async function fetchTransactionsForDashboard(client) {
     throw query.error
   }
 
-  return hydrateMatterPropertyContext(client, query.data || [])
+  return hydrateMatterPropertyContext(client, await hydrateDashboardWorkflowState(client, query.data || []))
 }
 
 async function fetchBuyerMap(client, buyerIds = []) {
@@ -609,21 +625,13 @@ function riskToneFromMatter(matter = {}) {
 }
 
 function resolveMatterCardWorkflowProgress(transaction = {}, laneKey = 'transfer') {
-  const stages = getAttorneyStageDefinitionsForLane(laneKey)
-  if (!stages.length) return 0
-
-  const currentStageKey = [
-    transaction.attorney_stage,
-    transaction.attorneyStage,
-    transaction.current_sub_stage_summary,
-    transaction.current_main_stage,
-    transaction.stage,
-  ]
-    .map((candidate) => normalizeAttorneyStageKey(candidate, laneKey))
-    .find((candidate) => stages.some((stage) => stage.key === candidate))
-  const currentStageIndex = stages.findIndex((stage) => stage.key === currentStageKey)
-  if (currentStageIndex < 0) return 0
-  return Math.round(((currentStageIndex + 1) / stages.length) * 100)
+  const workflowPlan = transaction.routing_profile_json?.workflowPlan
+  const definitions = getApplicableAttorneyTaskDefinitions({ laneKey, workflowPlan, facts: { financeType: transaction.finance_type } })
+  const lane = transaction.attorneyWorkflowLanes?.find(item => item.process_type === laneKey)
+  const records = new Map((lane?.transaction_subprocess_steps || []).map(step => [normalizeAttorneyStageKey(step.step_key, laneKey), step]))
+  return getCanonicalLegalWorkflowProgressPercent({ workflowPlan, steps: definitions.map(task => ({
+    key: task.key, status: records.get(task.key)?.status || 'not_started',
+  })) })
 }
 
 function resolveMatterCardStatus({ transaction = {}, matter = {}, laneKey = 'transfer' } = {}) {
@@ -1194,10 +1202,12 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
     timer,
   })
     .then((data) => {
-      dashboardCache.set(cacheKey, {
-        data,
-        expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
-      })
+      if (dashboardInflight.get(cacheKey) === loadPromise) {
+        dashboardCache.set(cacheKey, {
+          data,
+          expiresAt: Date.now() + DASHBOARD_CACHE_TTL_MS,
+        })
+      }
       timer.end({
         outcome: 'loaded',
         activeMatters: data?.kpis?.activeMatters ?? null,
@@ -1211,7 +1221,7 @@ export async function getAttorneyManagementDashboardData(firmId = null, { roleVi
       throw error
     })
     .finally(() => {
-      dashboardInflight.delete(cacheKey)
+      if (dashboardInflight.get(cacheKey) === loadPromise) dashboardInflight.delete(cacheKey)
     })
 
   dashboardInflight.set(cacheKey, loadPromise)
@@ -1618,7 +1628,7 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     })
     return buildAttorneyDashboardFromSnapshot({
       ...(snapshotResult.data || {}),
-      matters: await hydrateMatterPropertyContext(client, snapshotResult.data?.matters || []),
+      matters: await hydrateMatterPropertyContext(client, await hydrateDashboardWorkflowState(client, snapshotResult.data?.matters || [])),
     }, { roleView })
   }
   // The matter-list snapshot is the canonical, assignment-first source used by
@@ -1646,7 +1656,7 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     const compatibilitySnapshot = buildDashboardSnapshotFromMatterListSnapshot(matterListSnapshot, resolvedFirm)
     return buildAttorneyDashboardFromSnapshot({
       ...compatibilitySnapshot,
-      matters: await hydrateMatterPropertyContext(client, compatibilitySnapshot.matters),
+      matters: await hydrateMatterPropertyContext(client, await hydrateDashboardWorkflowState(client, compatibilitySnapshot.matters)),
     }, { roleView })
   }
   const operationalWorkspaceSnapshot = await getOperationalWorkspaceCompatibilitySnapshot(resolvedFirm.id, currentUserId)

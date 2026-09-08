@@ -68,7 +68,7 @@ assert.ok(taskKeys(bond).includes('compliance_certificates_received'), 'complian
 assert.equal(phaseFor(bond, 'transfer_documents_prepared')?.key, 'documents_guarantees', 'transfer documents must be in Documents & Guarantees')
 
 const headerSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
-assert.match(headerSource, /transfer_guarantees_accepted/)
-assert.match(headerSource, /!facts\?\.isCashDeal/)
+assert.match(headerSource, /getApplicableAttorneyTaskDefinitions/)
+// Actual header/Work state equivalence is exercised in attorney-mvp-task-state.test.mjs.
 
 console.log(`Attorney workflow scenario alignment passed: ${cashTasks.length} cash tasks, ${bondTasks.length} bond tasks, with rates clearance and compliance mapped to Work.`)

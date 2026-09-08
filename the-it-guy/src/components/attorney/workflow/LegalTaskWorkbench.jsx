@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
 import Modal from '../../ui/Modal.jsx'
+import { isAttorneyTaskResolved } from '../../../core/transactions/attorneyTaskOutcomes.js'
 
 const TASK_TYPE_COPY = Object.freeze({
   capture_information: {
@@ -139,7 +140,7 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
                   <button
                     type="button"
                     className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-emerald-50 text-emerald-950 ring-1 ring-emerald-200' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
-                    onClick={() => onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => task.displayStatus !== 'completed')?.key || phase.tasks?.[0]?.key)}
+                    onClick={() => onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => !isAttorneyTaskResolved(task.status))?.key || phase.tasks?.[0]?.key)}
                     aria-current={active ? 'step' : undefined}
                   >
                     <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${phase.status === 'completed' ? 'bg-emerald-700 text-white' : active ? 'bg-white text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
@@ -147,7 +148,7 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
                     </span>
                     <span className="min-w-0 flex-1">
                       <strong className="block text-sm font-semibold leading-5">{phase.label}</strong>
-                      <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} / {phase.total} tasks complete</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} / {phase.total} applicable tasks complete{phase.notApplicable ? ` · ${phase.notApplicable} not applicable` : ''}</span>
                     </span>
                     {exception ? (
                       <span
@@ -162,7 +163,7 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
                     <ol className="mt-1.5 space-y-1 border-l border-slate-200 pl-3" aria-label={`${phase.label} tasks`}>
                       {phase.tasks.map((task) => {
                         const taskActive = task.key === selectedTaskKey
-                        const taskComplete = task.displayStatus === 'completed'
+                        const taskComplete = ['completed', 'completed_externally'].includes(task.displayStatus)
                         return (
                           <li key={task.key}>
                             <button
@@ -174,7 +175,7 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
                               <span className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full border ${taskComplete ? 'border-emerald-600 bg-emerald-600 text-white' : task.displayStatus === 'in_progress' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-300 bg-white text-slate-400'}`}>
                                 {taskComplete ? <CheckCircle2 size={10} /> : <Circle size={7} />}
                               </span>
-                              <span className="min-w-0 flex-1 truncate">{task.label}</span>
+                              <span className="min-w-0 flex-1 truncate">{task.label}{task.displayStatus === 'not_applicable' ? ' · N/A' : task.displayStatus === 'completed_externally' ? ' · external' : ''}</span>
                             </button>
                           </li>
                         )
@@ -197,6 +198,7 @@ export default function LegalTaskWorkbench({
   selectedTaskKey = '',
   selectedPhaseKey = '',
   saving = false,
+  error = '',
   onSelectTask,
   onRunAction,
   onOpenDocuments,
@@ -285,6 +287,9 @@ export default function LegalTaskWorkbench({
                   <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(model.status)}`}>{model.statusLabel}</span>
                 </div>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{model.taskDescription}</p>
+                {model.applicabilitySuggestion ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700"><strong>Profile suggestion:</strong> {model.applicabilitySuggestion} The attorney decides applicability.</p> : null}
+                <p className="mt-2 text-xs text-slate-500">Operational checklist only. Missing documents remain outstanding even when work is completed externally.</p>
+                {model.outcomeReason ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700"><strong>Recorded reason:</strong> {model.outcomeReason}</p> : null}
               </div>
               {dueDateLabel || model.showOwner ? (
                 <div className="grid shrink-0 gap-1 text-xs text-slate-500 sm:text-right">
@@ -364,6 +369,10 @@ export default function LegalTaskWorkbench({
           </div>
 
           <footer className="shrink-0 border-t border-slate-200 bg-slate-50/75 px-5 py-3.5 lg:px-6">
+            {error ? <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+            <div className="mb-3 flex flex-wrap gap-2" aria-label="Attorney task outcomes">
+              {(model.outcomeActions || []).map(action => <Button key={action.id} type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => runAction(action, 'outcome')}>{action.label}</Button>)}
+            </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {model.canMarkInProgress ? (
@@ -383,7 +392,7 @@ export default function LegalTaskWorkbench({
                   aria-describedby={!model.requirementsSatisfied ? completionHelpId : undefined}
                   onClick={() => runAction(model.completeAction, 'completion')}
                 >
-                  <CheckCircle2 size={15} /> Complete & advance matter
+                  <CheckCircle2 size={15} /> Complete task
                 </Button>
               ) : null}
             </div>
@@ -416,6 +425,7 @@ export default function LegalTaskWorkbench({
         )}
       >
         <form id="legal-task-workbench-status-form" className="space-y-4" aria-busy={saving} onSubmit={onSubmitStatusDraft}>
+          {error ? <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
           <div>
             <span className="text-xs font-medium text-slate-500">Task</span>
             <strong className="mt-1 block text-sm font-semibold text-slate-950">{statusDraft?.task?.label || model.taskLabel}</strong>
@@ -450,7 +460,7 @@ export default function LegalTaskWorkbench({
                 autoFocus
                 value={statusDraft?.reason || ''}
                 onChange={(event) => onStatusDraftChange?.({ ...statusDraft, reason: event.target.value })}
-                placeholder="What is preventing this task from progressing?"
+                placeholder={statusDraft?.status === 'not_applicable' ? 'Why does this task not apply?' : statusDraft?.status === 'completed_externally' ? 'What was done and where is the evidence held?' : 'What is preventing this task from progressing?'}
               />
             </label>
           ) : null}

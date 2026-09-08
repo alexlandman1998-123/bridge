@@ -111,16 +111,17 @@ import {
   requestAttorneyWorkflowLaneDocument,
   updateAttorneyWorkflowStepStatus,
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
-import { buildTransferWorkspaceViewModel } from '../services/attorneyWorkflow/transferWorkspaceViewModel.js'
+import { buildTransferWorkspaceViewModel, getLegalWorkspacePhases } from '../services/attorneyWorkflow/transferWorkspaceViewModel.js'
 import {
   buildMatterWorkflowPlan,
   diffMatterWorkflowPlans,
-  getMatterWorkflowPlanStepKeys,
+  getApplicableAttorneyTaskDefinitions,
   resolveMatterWorkflowPlan,
 } from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { buildLegalTaskWorkbenchModel } from '../core/transactions/legalTaskWorkbenchModel.js'
 import { getCanonicalLegalWorkflowProgressPercent } from '../core/transactions/legalWorkflowProgress.js'
+import { isAttorneyTaskResolved, isAttorneyTaskCompleted } from '../core/transactions/attorneyTaskOutcomes.js'
 import { recordLegalWorkspaceUxEvent } from '../services/legalWorkspaceUxTelemetryService.js'
 import { getAttorneyStageDefinitionsForLane, normalizeAttorneyStageKey } from '../constants/attorneyWorkflowStages.js'
 import {
@@ -1486,6 +1487,8 @@ function daysBetween(startValue, endValue = Date.now()) {
 }
 
 const WORKFLOW_STATUS_META = {
+  completed_externally: { label: 'Completed externally', dot: 'bg-teal-500', text: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200' },
+  not_applicable: { label: 'Not applicable', dot: 'bg-slate-400', text: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-200' },
   completed: { label: 'Completed', dot: 'bg-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200' },
   in_progress: { label: 'In Progress', dot: 'bg-blue-600', text: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200' },
   waiting: { label: 'Waiting', dot: 'bg-amber-500', text: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-200' },
@@ -1494,25 +1497,6 @@ const WORKFLOW_STATUS_META = {
   not_started: { label: 'Not Started', dot: 'bg-slate-300', text: 'text-slate-500', bg: 'bg-slate-50', border: 'border-slate-200' },
 }
 
-function buildLegalWorkflowStageCatalog(laneKey) {
-  return getAttorneyStageDefinitionsForLane(laneKey).map((definition) => ({
-    key: definition.key,
-    label: definition.label,
-    description: definition.description,
-    // This has to mirror the Work task set. Cash matters have no guarantee
-    // lifecycle; keeping those stages in the header made the two trackers
-    // disagree even though they were looking at the same attorney lane.
-    appliesWhen: ['guarantees_requested', 'guarantees_received', 'transfer_guarantees_accepted'].includes(definition.key)
-      ? ({ facts }) => !facts?.isCashDeal
-      : undefined,
-  }))
-}
-
-const LEGAL_WORKFLOW_STAGE_CATALOG = {
-  transfer: buildLegalWorkflowStageCatalog('transfer'),
-  bond: buildLegalWorkflowStageCatalog('bond'),
-  cancellation: buildLegalWorkflowStageCatalog('cancellation'),
-}
 
 const LEGAL_WORKFLOW_REASON_LABELS = {
   cash: 'Cash',
@@ -1717,7 +1701,7 @@ function getCurrentWorkflowStep(lane = {}) {
   return (
     steps.find((step) => step.stepKey === currentKey || step.step_key === currentKey) ||
     steps.find((step) => ['blocked', 'waiting', 'in_progress'].includes(normalizeWorkspaceStatus(step.status))) ||
-    steps.find((step) => normalizeWorkspaceStatus(step.status) !== 'completed') ||
+    steps.find((step) => !isAttorneyTaskResolved(normalizeWorkspaceStatus(step.status))) ||
     steps.at(-1) ||
     null
   )
@@ -3868,11 +3852,7 @@ function buildLegalWorkflowReasonChips(facts = {}, workflowKey = 'transfer') {
 }
 
 function getLegalWorkflowStageDefinitions(workflowKey = 'transfer', facts = {}, workflowPlan = null) {
-  const definitions = LEGAL_WORKFLOW_STAGE_CATALOG[workflowKey] || LEGAL_WORKFLOW_STAGE_CATALOG.transfer
-  const plannedStepKeys = getMatterWorkflowPlanStepKeys(workflowPlan, workflowKey)
-  return definitions
-    .filter((stage) => !plannedStepKeys.length || plannedStepKeys.includes(stage.key))
-    .filter((stage) => !stage.appliesWhen || stage.appliesWhen({ facts }))
+  return getApplicableAttorneyTaskDefinitions({ laneKey: workflowKey, workflowPlan, facts })
 }
 
 function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null, facts = {}, workflowPlan = null } = {}) {
@@ -3897,15 +3877,13 @@ function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null
   })
 
   if (currentIndex < 0) {
-    currentIndex = steps.findIndex((step) => !['completed'].includes(step.status))
+    currentIndex = steps.findIndex((step) => !isAttorneyTaskResolved(step.status))
   }
 
   return steps.map((step, index) => {
     let displayStatus = step.status
     if (!step.storedStep) {
-      displayStatus = index < currentIndex ? 'completed' : index === currentIndex ? 'in_progress' : 'not_started'
-    } else if (index === currentIndex && !['completed', 'blocked', 'waiting'].includes(displayStatus)) {
-      displayStatus = 'in_progress'
+      displayStatus = 'not_started'
     }
     return {
       ...step,
@@ -3928,38 +3906,14 @@ function legalProgressIcon(status) {
   return LockKeyhole
 }
 
-const LEGAL_WORKFLOW_PROGRESS_PHASES = {
-  transfer: [
-    { key: 'intake', label: 'Open File', match: ['instruction', 'matter_opened', 'otp', 'source', 'title_deed', 'ownership', 'existing_bond'] },
-    { key: 'parties', label: 'Parties & FICA', match: ['buyer_fica', 'seller_fica', 'entity_authority'] },
-    { key: 'clearances', label: 'Duty & Clearances', match: ['transfer_duty', 'rates_', 'levy_', 'clearance', 'compliance'] },
-    { key: 'signing', label: 'Docs, Signing & Guarantees', match: ['transfer_documents', 'signing', 'signed', 'guarantees'] },
-    { key: 'lodgement', label: 'Lodgement & Registration', match: ['lodgement', 'lodged', 'deeds', 'prep', 'registered'] },
-    { key: 'closeout', label: 'Close-Out', match: ['final_accounts', 'registration_letter', 'matter_closed', 'close'] },
-  ],
-  bond: [
-    { key: 'instruction', label: 'Instruction & Bank', match: ['instruction', 'bank_', 'reference', 'approval_letter', 'requirements', 'conditions'] },
-    { key: 'documents', label: 'Bond Documents', match: ['bond_documents', 'signing', 'signed'] },
-    { key: 'bank_ready', label: 'Bank Readiness', match: ['sent_to_bank', 'approval_to_lodge', 'guarantee', 'guarantees'] },
-    { key: 'lodgement', label: 'Lodgement & Registration', match: ['lodgement', 'lodged', 'registered'] },
-    { key: 'closeout', label: 'Close-Out', match: ['close', 'confirmation'] },
-  ],
-  cancellation: [
-    { key: 'instruction', label: 'Instruction & Bond Details', match: ['existing_bond', 'cancellation_bank', 'account', 'instruction', 'notice'] },
-    { key: 'figures', label: 'Figures & Release', match: ['figures', 'settlement', 'release', 'title_deed'] },
-    { key: 'readiness', label: 'Guarantees & Readiness', match: ['guarantee', 'guarantees', 'accepted', 'ready'] },
-    { key: 'lodgement', label: 'Lodgement', match: ['docs', 'documents', 'lodgement', 'lodged'] },
-    { key: 'closeout', label: 'Cancellation Registered', match: ['cancelled', 'registered', 'close'] },
-  ],
-}
 
 function getLegalWorkflowPhaseDefinitions(workflowKey = 'transfer') {
-  return LEGAL_WORKFLOW_PROGRESS_PHASES[workflowKey] || LEGAL_WORKFLOW_PROGRESS_PHASES.transfer
+  return getLegalWorkspacePhases(workflowKey)
 }
 
 function getLegalWorkflowPhaseStatus(steps = []) {
   if (!steps.length) return 'not_started'
-  if (steps.every((step) => step.displayStatus === 'completed')) return 'completed'
+  if (steps.every((step) => isAttorneyTaskResolved(step.status))) return 'completed'
   if (steps.some((step) => ['blocked', 'delayed'].includes(step.displayStatus))) return 'blocked'
   if (steps.some((step) => step.isCurrent || step.displayStatus === 'in_progress')) return 'in_progress'
   if (steps.some((step) => step.displayStatus === 'waiting')) return 'waiting'
@@ -3974,7 +3928,7 @@ function buildLegalWorkflowProgressPhases(steps = [], workflowKey = 'transfer') 
   steps.forEach((step) => {
     const key = String(step.key || '').toLowerCase()
     const phase =
-      phases.find((candidate) => candidate.match?.some((pattern) => key.includes(pattern))) ||
+      phases.find((candidate) => candidate.stageKeys?.includes(key)) ||
       phases[phases.length - 1]
     phase.steps.push(step)
   })
@@ -3982,12 +3936,12 @@ function buildLegalWorkflowProgressPhases(steps = [], workflowKey = 'transfer') 
   return phases
     .filter((phase) => phase.steps.length)
     .map((phase) => {
-      const completed = phase.steps.filter((step) => step.displayStatus === 'completed').length
+      const completed = phase.steps.filter((step) => isAttorneyTaskCompleted(step.status)).length
       const blocked = phase.steps.filter((step) => ['blocked', 'delayed'].includes(step.displayStatus)).length
       const waiting = phase.steps.filter((step) => step.displayStatus === 'waiting').length
       const active = phase.steps.filter((step) => step.isCurrent || step.displayStatus === 'in_progress').length
-      const total = phase.steps.length
-      const currentStep = phase.steps.find((step) => step.isCurrent) || phase.steps.find((step) => step.displayStatus !== 'completed') || phase.steps.at(-1)
+      const total = phase.steps.filter(step => step.status !== 'not_applicable').length
+      const currentStep = phase.steps.find((step) => step.isCurrent) || phase.steps.find((step) => !isAttorneyTaskResolved(step.status)) || phase.steps.at(-1)
       return {
         ...phase,
         completed,
@@ -4007,7 +3961,7 @@ function getLegalWorkflowFocusSteps(steps = [], activeIndex = -1) {
     step.isCurrent || ['blocked', 'delayed', 'waiting', 'in_progress'].includes(step.displayStatus),
   )
   const focusSteps = [...importantSteps]
-  const startIndex = activeIndex >= 0 ? activeIndex : steps.findIndex((step) => step.displayStatus !== 'completed')
+  const startIndex = activeIndex >= 0 ? activeIndex : steps.findIndex((step) => !isAttorneyTaskResolved(step.status))
 
   if (startIndex >= 0) {
     for (const step of steps.slice(startIndex)) {
@@ -4035,17 +3989,18 @@ function LegalWorkflowProgressBar({
   if (!workflow) return null
   const facts = diagnostics?.facts || {}
   const workflowKey = workflow.accentKey || workflow.key || 'transfer'
-  const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane: workflow.lane, facts })
-  const progress = getCanonicalLegalWorkflowProgressPercent({ lane: workflow.lane, steps })
+  const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane: workflow.lane, facts, workflowPlan: workflow.workflowPlan })
+  const progress = getCanonicalLegalWorkflowProgressPercent({ lane: workflow.lane, steps, workflowPlan: workflow.workflowPlan })
   const reasonChips = workflow.reasonChips?.length ? workflow.reasonChips : buildLegalWorkflowReasonChips(facts, workflowKey)
   const activeIndex = steps.findIndex((item) => item.isCurrent)
   const phaseGroups = buildLegalWorkflowProgressPhases(steps, workflowKey)
   const focusSteps = getLegalWorkflowFocusSteps(steps, activeIndex)
-  const completedCount = steps.filter((step) => step.displayStatus === 'completed').length
-  const openCount = Math.max(steps.length - completedCount, 0)
+  const completedCount = steps.filter((step) => isAttorneyTaskCompleted(step.status)).length
+  const applicableCount = steps.filter((step) => step.status !== 'not_applicable').length
+  const openCount = Math.max(applicableCount - completedCount, 0)
   const blockedCount = steps.filter((step) => ['blocked', 'delayed'].includes(step.displayStatus)).length
   const waitingCount = steps.filter((step) => step.displayStatus === 'waiting').length
-  const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => step.displayStatus !== 'completed') || steps.at(-1)
+  const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => !isAttorneyTaskResolved(step.status)) || steps.at(-1)
   const currentStatusMeta = WORKFLOW_STATUS_META[currentStep?.displayStatus] || WORKFLOW_STATUS_META.not_started
   const laneKey = workflow.lane?.laneKey || workflow.lane?.processType || workflowKey
 
@@ -4082,7 +4037,7 @@ function LegalWorkflowProgressBar({
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ['Completed', `${completedCount}/${steps.length}`, WORKFLOW_STATUS_META.completed],
+          ['Completed', `${completedCount}/${applicableCount}`, WORKFLOW_STATUS_META.completed],
           ['Current Focus', currentStep?.label || 'No active step', currentStatusMeta],
           ['Open Items', openCount, openCount ? WORKFLOW_STATUS_META.waiting : WORKFLOW_STATUS_META.completed],
           ['Blockers', blockedCount || waitingCount ? `${blockedCount} blocked / ${waitingCount} waiting` : 'Clear', blockedCount ? WORKFLOW_STATUS_META.blocked : waitingCount ? WORKFLOW_STATUS_META.waiting : WORKFLOW_STATUS_META.completed],
@@ -4157,7 +4112,7 @@ function LegalWorkflowProgressBar({
                       <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${meta.border} ${meta.bg} ${meta.text}`}>
                         {meta.label}
                       </span>
-                      {onQuickUpdateStep && step.displayStatus !== 'completed' ? (
+                      {onQuickUpdateStep && !isAttorneyTaskResolved(step.status) ? (
                         <Button type="button" size="sm" onClick={() => onQuickUpdateStep(step, 'completed')} disabled={saving}>
                           <CheckCircle2 size={14} />
                           Complete
@@ -4325,8 +4280,9 @@ function AgentConveyancingWorkflowRow({
     workflowKey,
     lane: workflow.lane,
     facts: routingDiagnostics?.facts || {},
+    workflowPlan: workflow.workflowPlan,
   })
-  const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => step.displayStatus !== 'completed') || steps.at(-1)
+  const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => !isAttorneyTaskResolved(step.status)) || steps.at(-1)
   const progressPercent = Math.max(0, Math.min(100, workflow.progressPercent || 0))
   const openItemsCount = metrics.missingData + metrics.missingDocuments + metrics.openSignatures + metrics.blockers
   const activityLabel = metrics.activityCount === 1 ? '1 update' : `${metrics.activityCount} updates`
@@ -4481,8 +4437,9 @@ function AgentConveyancingWorkspace({
       workflowKey,
       lane: activeWorkflow.lane,
       facts: routingDiagnostics?.facts || {},
+      workflowPlan: activeWorkflow.workflowPlan,
     })
-    const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => step.displayStatus !== 'completed') || steps.at(-1)
+    const currentStep = steps.find((step) => step.isCurrent) || steps.find((step) => !isAttorneyTaskResolved(step.status)) || steps.at(-1)
 
     return (
       <section className="space-y-5">
@@ -6867,13 +6824,7 @@ function ArchlineMatterHeader({
     facts: workflow?.facts || {},
     workflowPlan: workflow?.workflowPlan || null,
   })
-  const visibleWorkflowSteps = workflowSteps.length
-    ? workflowSteps
-    : [
-        { key: 'instruction', label: 'Instruction', displayStatus: 'completed' },
-        { key: 'documents', label: 'Documents', displayStatus: 'in_progress', isCurrent: true },
-        { key: 'registration', label: 'Registration', displayStatus: 'not_started' },
-      ]
+  const visibleWorkflowSteps = workflowSteps
 
   return (
     <header className="archline-matter-header no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
@@ -6984,10 +6935,10 @@ function ArchlineMatterHeader({
           <div className="overflow-x-auto px-1 pb-2">
             <div className="flex min-w-max items-start">
               {visibleWorkflowSteps.map((stage, index) => {
-                const completed = stage.displayStatus === 'completed'
+                const completed = isAttorneyTaskCompleted(stage.status)
                 const blocked = stage.displayStatus === 'blocked'
                 const current = stage.isCurrent || ['in_progress', 'waiting'].includes(stage.displayStatus)
-                const statusLabel = completed
+                const statusLabel = stage.status === 'not_applicable' ? 'Not applicable' : stage.status === 'completed_externally' ? 'Completed externally' : completed
                   ? formatDate(stage.completedAt, 'Completed')
                   : blocked
                     ? 'Blocked'
@@ -7730,17 +7681,18 @@ function ArchlineWorkflowWorkspace({
         storedStep: step,
       }))
     }
-    return buildLegalWorkflowProgressSteps({ workflowKey, lane: workflow?.lane, facts: workflow?.facts || {} })
+    return buildLegalWorkflowProgressSteps({ workflowKey, lane: workflow?.lane, facts: workflow?.facts || {}, workflowPlan: workflow?.workflowPlan })
   }, [workflow, workflowKey])
-  const completedCount = workflowSteps.filter((step) => step.displayStatus === 'completed').length
-  const currentStep = workflowSteps.find((step) => step.isCurrent || step.displayStatus === 'in_progress') || workflowSteps.find((step) => step.displayStatus !== 'completed') || workflowSteps[0]
-  const progress = workflowSteps.length ? Math.round((completedCount / workflowSteps.length) * 100) : 0
+  const completedCount = workflowSteps.filter((step) => isAttorneyTaskCompleted(step.status)).length
+  const applicableCount = workflowSteps.filter((step) => step.status !== 'not_applicable').length
+  const currentStep = workflowSteps.find((step) => step.isCurrent || step.displayStatus === 'in_progress') || workflowSteps.find((step) => !isAttorneyTaskResolved(step.status)) || workflowSteps[0]
+  const progress = applicableCount ? Math.round((completedCount / applicableCount) * 100) : 0
   const taskRows = workflowSteps.slice(0, 8)
   const visibleDocuments = documents.slice(0, 6)
 
   function openStatusDraft(step) {
     if (!canUpdateSteps) return
-    setStatusDraft({ open: true, step, status: step.displayStatus === 'completed' ? 'completed' : 'in_progress', note: step.comment || '' })
+    setStatusDraft({ open: true, step, status: isAttorneyTaskCompleted(step.status) ? 'completed' : 'in_progress', note: step.comment || '' })
   }
 
   function submitStatusDraft(event) {
@@ -7767,7 +7719,7 @@ function ArchlineWorkflowWorkspace({
                     onClick={() => openStatusDraft(step)}
                   >
                     <span className={`relative z-10 mt-0.5 inline-flex size-5 shrink-0 items-center justify-center rounded-full border bg-white ${meta.border} ${meta.text}`}>
-                      {step.displayStatus === 'completed' ? <CheckCircle2 size={13} /> : null}
+                      {isAttorneyTaskCompleted(step.status) ? <CheckCircle2 size={13} /> : null}
                     </span>
                     <span className="min-w-0">
                       <strong className="block text-sm font-semibold text-slate-950">{index + 1}. {step.label || getWorkflowStepLabel(step)}</strong>
@@ -7780,7 +7732,7 @@ function ArchlineWorkflowWorkspace({
           </ArchlinePanel>
 
           <ArchlinePanel title="Overall Progress" className="p-4">
-            <p className="text-sm text-slate-600">{completedCount} of {workflowSteps.length} stages complete</p>
+            <p className="text-sm text-slate-600">{completedCount} of {applicableCount} applicable tasks complete</p>
             <div className="mt-3 flex items-center gap-3">
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
                 <div className="h-full rounded-full bg-emerald-700" style={{ width: `${progress}%` }} />
@@ -7813,7 +7765,7 @@ function ArchlineWorkflowWorkspace({
               </div>
               <div className="min-w-0 lg:min-w-[180px]">
                 <span className="text-xs font-medium text-slate-500">Stage Progress</span>
-                <p className="mt-1 text-sm text-slate-700">{completedCount} / {workflowSteps.length} tasks completed</p>
+                <p className="mt-1 text-sm text-slate-700">{completedCount} / {applicableCount} applicable tasks completed</p>
                 <div className="mt-2 flex items-center gap-3">
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
                     <div className="h-full rounded-full bg-emerald-700" style={{ width: `${progress}%` }} />
@@ -8023,6 +7975,7 @@ function ArchlineTransferWorkspace({
   parties = [],
   activityFeed = [],
   saving = false,
+  workflowError = '',
   onUpdateStep,
   onUploadDocument,
   onRequestDocument,
@@ -8220,7 +8173,7 @@ function ArchlineTransferWorkspace({
       note: task.comment || '',
       followUpDate: '',
       linkedDocumentKey: '',
-      requiresReason: ['blocked', 'waiting'].includes(action?.status),
+      requiresReason: Boolean(action?.requiresReason || ['blocked', 'waiting'].includes(action?.status)),
       requiresNote: Boolean(action?.requiresNote),
       visibility: 'professional_shared',
       workPacket: action?.command?.draft?.workPacket || action?.command?.workPacket || null,
@@ -8502,6 +8455,7 @@ function ArchlineTransferWorkspace({
         selectedTaskKey={selectedTask.key}
         selectedPhaseKey={selectedTask.phaseKey}
         saving={saving}
+        error={workflowError}
         onSelectTask={setSelectedTaskKey}
         onRunAction={handleTaskWorkbenchAction}
         onOpenDocuments={() => onOpenDocuments?.(selectedTask, selectedDocuments)}
@@ -9177,7 +9131,7 @@ function ArchlineTransferWorkspace({
               <Field
                 value={statusDraft.reason}
                 onChange={(event) => setStatusDraft((previous) => ({ ...previous, reason: event.target.value }))}
-                placeholder={statusDraft.status === 'blocked' ? 'What is blocking this task?' : 'What are we waiting for?'}
+                placeholder={statusDraft.status === 'not_applicable' ? 'Why does this task not apply?' : statusDraft.status === 'completed_externally' ? 'What was completed and where is the evidence held?' : statusDraft.status === 'blocked' ? 'What is blocking this task?' : 'What are we waiting for?'}
               />
             </label>
           ) : null}
@@ -15273,15 +15227,16 @@ function LegalWorkflowRoutingPanel({ diagnostics = null, workflows = [], canEdit
 function buildRoutingProfileDraft(transaction = {}, diagnostics = {}) {
   const facts = diagnostics?.facts || {}
   const profile = diagnostics?.profile || {}
-  const boolString = (value) => (value ? 'true' : 'false')
+  const boolString = (value) => (value == null ? 'unknown' : value ? 'true' : 'false')
   return {
+    mvpProfile: { ...(transaction?.routing_profile_json?.mvpProfile || profile.mvpProfile || {}) },
     financeType: facts.financeType || profile.financeType || transaction?.finance_type || 'unknown',
     transactionType: facts.transactionType || profile.transactionType || transaction?.transaction_type || 'unknown',
     propertyType: transaction?.property_type || transaction?.propertyType || '',
     propertyTenure: facts.propertyTenure || profile.propertyTenure || transaction?.property_tenure || 'unknown',
     purchaserType: facts.buyerEntityType || profile.buyerEntityType || transaction?.purchaser_type || 'unknown',
     sellerType: facts.sellerEntityType || profile.sellerEntityType || transaction?.seller_type || 'unknown',
-    sellerHasExistingBond: boolString(facts.sellerHasExistingBond || profile.sellerHasExistingBond || transaction?.seller_has_existing_bond),
+    sellerHasExistingBond: transaction?.routing_profile_json?.mvpProfile?.sellerExistingBond || boolString(transaction?.seller_has_existing_bond),
     cancellationRequired: boolString(facts.cancellationRequired || profile.cancellationRequired || transaction?.cancellation_required),
     vatTreatment: facts.vatTreatment || profile.vatTreatment || transaction?.vat_treatment || 'unknown',
     reason: '',
@@ -16004,10 +15959,10 @@ function AttorneyTransactionDetail() {
     status: 'idle',
     error: '',
   })
-  const [_workspaceDatasetLoads, setWorkspaceDatasetLoads] = useState({})
+  const [workspaceDatasetLoads, setWorkspaceDatasetLoads] = useState({})
   const [workflowOperations, setWorkflowOperations] = useState(null)
   const [matterHealth, setMatterHealth] = useState(null)
-  const [, setWorkflowError] = useState('')
+  const [workflowError, setWorkflowError] = useState('')
   const [transactionRollup, setTransactionRollup] = useState(null)
   const [transactionRollupLoading, setTransactionRollupLoading] = useState(
     () => Boolean(USE_TRANSACTION_ROLLUP_OVERVIEW && transactionId),
@@ -16433,7 +16388,7 @@ function AttorneyTransactionDetail() {
     const promise = requestWorkspaceHydrationContext().then((hydrationContext) => dataset === 'workflow'
       ? Promise.all([
           loadTransactionWorkspaceDataset(dataset, requestedTransactionId, { hydrationContext }),
-          getAttorneyWorkflowOperationsForTransaction(requestedTransactionId, { initialize: false }).catch(() => null),
+          getAttorneyWorkflowOperationsForTransaction(requestedTransactionId, { initialize: false }),
         ]).then(([detail, operations]) => ({ detail, operations }))
       : loadTransactionWorkspaceDataset(dataset, requestedTransactionId, { hydrationContext }).then((detail) => ({ detail, operations: null })))
     workspaceDatasetRequestRef.current.set(requestKey, {
@@ -16455,6 +16410,7 @@ function AttorneyTransactionDetail() {
       }))
       if (result.operations) {
         setWorkflowOperations(result.operations)
+        setWorkflowError('')
       }
       workspaceDatasetRequestRef.current.set(requestKey, {
         ...latestRequest,
@@ -16842,6 +16798,7 @@ function AttorneyTransactionDetail() {
     const proposedProfile = resolveTransactionRoutingProfile({
       transaction: {
         ...transaction,
+        routing_profile_json: { ...transaction.routing_profile_json, mvpProfile: routingProfileDraft.mvpProfile },
         finance_type: routingProfileDraft.financeType === 'unknown' ? null : routingProfileDraft.financeType,
         transaction_type: routingProfileDraft.transactionType === 'unknown' ? null : routingProfileDraft.transactionType,
         property_type: routingProfileDraft.propertyType || null,
@@ -18601,6 +18558,7 @@ function AttorneyTransactionDetail() {
         sellerHasExistingBond: routingProfileDraft.sellerHasExistingBond === 'true',
         cancellationRequired: routingProfileDraft.cancellationRequired === 'true',
         vatTreatment: routingProfileDraft.vatTreatment,
+        mvpProfile: { ...routingProfileDraft.mvpProfile, sellerExistingBond: routingProfileDraft.sellerHasExistingBond },
         reason: routingProfileDraft.reason,
         actorRole: workspaceRole,
       })
@@ -19933,8 +19891,10 @@ function AttorneyTransactionDetail() {
     () => summarizeBondHybridFinanceWorkflow(transactionFinanceWorkflow || {}),
     [transactionFinanceWorkflow],
   )
-  const requiresBondRegistrationWorkflow = isBondOrHybridFinance
-  const requiresCancellationWorkflow = Boolean(
+  const requiresBondRegistrationWorkflow = workflowOperations?.workflowPlan?.status === 'active'
+    ? workflowOperations.workflowPlan.laneKeys.includes('bond')
+    : isBondOrHybridFinance
+  const requiresCancellationWorkflow = workflowOperations?.workflowPlan?.status === 'active' ? workflowOperations.workflowPlan.laneKeys.includes('cancellation') : Boolean(
     transaction?.seller_has_existing_bond || transaction?.transaction_requires_cancellation,
   )
   const roleplayerStripItems = [
@@ -20419,7 +20379,10 @@ function AttorneyTransactionDetail() {
   )
   async function handleArchlineLegalWorkflowStepUpdate(workflow, step, status, note, workPacket = null, visibility = 'professional_shared') {
     const lane = workflow?.lane || null
-    if (!lane) return false
+    if (!lane) {
+      setWorkflowError('The attorney workflow has not loaded. Retry loading Work before updating a task.')
+      return false
+    }
     const draft = buildWorkflowInlineStepDraft(lane, step, status)
     return submitWorkflowStepUpdate({
       ...draft,
@@ -22476,7 +22439,12 @@ function AttorneyTransactionDetail() {
               })}
             </div>
 
-            <ArchlineTransferWorkspace
+            {!archlineActiveLegalTaskWorkflow?.lane ? (
+              <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-slate-800">
+                <p>{workspaceDatasetLoads.workflow?.error || 'The attorney workflow is not available yet. Saved task progress cannot be displayed until it loads.'}</p>
+                <Button type="button" variant="secondary" className="mt-3" onClick={() => loadWorkspaceDataset('workflow', { force: true }).catch(() => {})}>Retry workflow</Button>
+              </div>
+            ) : <ArchlineTransferWorkspace
               key={archlineActiveLegalTaskWorkflowKey}
               workflow={archlineActiveLegalTaskWorkflow}
               workflowKey={archlineActiveLegalTaskWorkflowKey}
@@ -22486,6 +22454,7 @@ function AttorneyTransactionDetail() {
               parties={archlinePartyItems}
               activityFeed={overviewConversationEntries}
               saving={workflowSaving}
+              workflowError={workflowError}
               onUpdateStep={(step, status, note, workPacket, visibility) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket, visibility)}
               onUploadDocument={(task, documents = [], requirement = null) => {
                 const targetDocument = (documents || []).find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
@@ -22497,24 +22466,33 @@ function AttorneyTransactionDetail() {
                 }
               }}
               onRequestDocument={handleLegalTaskDocumentRequest}
-              onAddNote={handleQuickAddWorkflowNote}
-              onCaptureDetails={(task) => {
+              onAddNote={(task) => handleWorkflowActionCommand(archlineActiveLegalTaskWorkflow?.lane, { stageKey: task?.key, label: `Note: ${task?.label || 'legal task'}` })}
+              onCaptureDetails={(task, requirement) => {
                 setLegalTaskReturnContext({
                   taskKey: task?.key || '',
                   taskLabel: task?.label || 'current legal task',
                   workflowKey: archlineActiveLegalTaskWorkflowKey,
                   workflowDetailKey: activeLegalWorkflowDetailKey,
                 })
-                setRoutingProfileError('')
-                setRoutingProfileModalOpen(true)
+                const field = String(requirement?.id || '').replace(/^data:/, '')
+                const profileFields = ['finance_type', 'transaction_type', 'buyer_entity_type', 'seller_entity_type', 'property_tenure', 'seller_existing_bond_status', 'vat_treatment']
+                if (!field || profileFields.includes(field)) {
+                  openRoutingProfileModal()
+                } else if (/buyer|seller|party|marital|spouse|authority|signatory/.test(field)) {
+                  openTaskLinkedWorkspace('stakeholders', task)
+                } else if (/price|amount|bank|bond|finance|guarantee|rates|levy|payment|settlement|figures|duty/.test(field)) {
+                  openTaskLinkedWorkspace('finance', task)
+                } else {
+                  handleOpenDetailPanel('matter')
+                }
               }}
               onOpenDocuments={(task) => openTaskLinkedWorkspace('documents', task)}
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
               onOpenFinance={(task) => openTaskLinkedWorkspace('finance', task)}
-              onOpenMatter={(task) => openTaskLinkedWorkspace('overview', task)}
+              onOpenMatter={() => handleOpenDetailPanel('matter')}
               onExecuteCommand={(action, command) => handleWorkflowActionCommand(archlineActiveLegalTaskWorkflow?.lane, action, command)}
               onUxEvent={recordLegalWorkspaceUx}
-            />
+            />}
           </section>
         ) : null}
 
@@ -25222,7 +25200,24 @@ function AttorneyTransactionDetail() {
           ) : null}
           <div className="rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-2.5 text-xs leading-5 text-textMuted">
             <strong className="block text-[0.7rem] uppercase text-textStrong">What this controls</strong>
-            Finance route, party FICA, property requirements, cancellation work, tax treatment, and the workflow template used in the next phase.
+            These facts suggest tasks and documents. Unknown facts remain provisional. You can work ahead and record task applicability; this checklist does not certify legal compliance.
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {[
+              ['buyerMaritalRegime', 'Buyer marital regime', ['unknown', 'single', 'in_community', 'out_of_community', 'customary', 'foreign', 'other']],
+              ['sellerMaritalRegime', 'Seller marital regime', ['unknown', 'single', 'in_community', 'out_of_community', 'customary', 'foreign', 'other']],
+              ['paymentSecurity', 'Purchase-price security', ['unknown', 'guarantee', 'cleared_trust_funds', 'other']],
+              ['hoaApplicable', 'HOA requirements apply', ['unknown', 'yes', 'no']],
+              ['bondWorkflow', 'Bond-registration checklist', ['auto', 'include', 'exclude']],
+              ['cancellationWorkflow', 'Cancellation checklist', ['auto', 'include', 'exclude']],
+            ].map(([field, label, options]) => (
+              <label key={field} className="flex flex-col gap-1.5">
+                <span className="text-sm font-semibold">{label}</span>
+                <Field as="select" value={routingProfileDraft.mvpProfile?.[field] || options[0]} onChange={event => setRoutingProfileDraft(previous => ({ ...previous, mvpProfile: { ...previous.mvpProfile, [field]: event.target.value } }))}>
+                  {options.map(value => <option key={value} value={value}>{value === 'auto' ? 'Use profile suggestion' : value === 'unknown' ? 'Not yet confirmed' : toTitle(value)}</option>)}
+                </Field>
+              </label>
+            ))}
           </div>
           {routingProfileImpact ? (
             <div className={`rounded-[12px] border px-3 py-2.5 text-xs leading-5 ${
@@ -25339,6 +25334,7 @@ function AttorneyTransactionDetail() {
                   }))
                 }
               >
+                <option value="unknown">Not yet confirmed</option>
                 <option value="false">No</option>
                 <option value="true">Yes</option>
               </Field>

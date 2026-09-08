@@ -845,8 +845,10 @@ function AttorneyDashboardPage() {
 
   useEffect(() => {
     let active = true
+    let requestSequence = 0
 
     async function loadDashboard() {
+      const request = ++requestSequence
       const timer = createPerfTimer('attorney.page.dashboard', {
         firmId: attorneyFirmId || null,
         userId: currentUserId || null,
@@ -860,28 +862,32 @@ function AttorneyDashboardPage() {
         const nextData = await getAttorneyManagementDashboardData(attorneyFirmId || null, {
           roleView,
           userId: currentUserId || null,
+          force: true,
         })
         timer.mark('service:end', {
           hasFirm: Boolean(nextData?.firm?.id),
           activeMatters: nextData?.kpis?.activeMatters ?? null,
         })
-        if (!active) return
+        if (!active || request !== requestSequence) return
         setDashboard(nextData || EMPTY_DASHBOARD)
       } catch (loadError) {
         outcome = 'failed'
-        if (!active) return
+        if (!active || request !== requestSequence) return
         setError(loadError?.message || 'Unable to load attorney dashboard.')
         setDashboard(EMPTY_DASHBOARD)
       } finally {
         timer.end({ outcome })
-        if (active) setLoading(false)
+        if (active && request === requestSequence) setLoading(false)
       }
     }
 
     void loadDashboard()
+    const refresh = () => { void loadDashboard() }
+    window.addEventListener('itg:transaction-updated', refresh)
 
     return () => {
       active = false
+      window.removeEventListener('itg:transaction-updated', refresh)
     }
   }, [attorneyFirmId, currentUserId, roleView])
 

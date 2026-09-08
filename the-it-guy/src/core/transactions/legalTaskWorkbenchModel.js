@@ -128,7 +128,8 @@ function resolveRequirementAction(requirement = {}, actions = []) {
       description: action.description || `Resolve ${text(requirement.label || 'this requirement')} before completing the task.`,
     }
   }
-  if (/document|agreement|otp|fica|guarantee|title deed|certificate/.test(haystack)) return present(pick('upload_document', 'request_document', 'open_documents'))
+  if (requirement.type === 'document') return present(pick('upload_document', 'request_document', 'open_documents'))
+  if (requirement.type === 'data') return present(pick('capture_data', 'open_parties', 'open_finance', 'open_matter'))
   if (/finance|bond|loan|bank|guarantee/.test(haystack)) return present(pick('capture_data', 'open_finance'))
   if (/buyer|seller|party|authority|contact|transaction type/.test(haystack)) return present(pick('capture_data', 'open_parties', 'open_matter'))
   return present(pick('capture_data', 'open_matter', 'add_note'))
@@ -199,6 +200,8 @@ export function buildLegalTaskWorkbenchModel({
     taskType: task.operationalContract?.taskType || 'confirm_milestone',
     taskLabel: task.label,
     taskDescription: task.description,
+    applicabilitySuggestion: task.applicabilitySuggestion || '',
+    outcomeReason: ['completed_externally', 'not_applicable'].includes(task.status) ? text(task.comment) : '',
     status: task.displayStatus,
     statusLabel: task.statusLabel,
     phaseLabel: task.phaseLabel,
@@ -208,13 +211,14 @@ export function buildLegalTaskWorkbenchModel({
     primaryAction,
     secondaryActions,
     completeAction,
+    outcomeActions: normalizedStatusActions.filter(action => ['complete_externally', 'mark_not_applicable', 'reopen_task'].includes(action.id)),
     canMarkInProgress,
     markInProgressLabel: task.displayStatus === 'not_started' ? 'Start task' : 'Resume task',
     canComplete,
     requirementsSatisfied,
     completionMessage: requirementsSatisfied
-      ? 'All requirements are complete. Completing this task will advance the matter to its next stage.'
-      : 'Outstanding items are guidance for this task. You can still complete and advance the matter; record the reason in the completion note.',
+      ? 'Confirm this work was done. Checklist completion is not a legal-compliance or lodgement certification.'
+      : 'These requirements are guidance. You may work ahead. Confirm completed work, record work completed externally, or explain why a task is not applicable. Missing evidence stays visible.',
     outstandingRequirements,
     requirementActions,
     uploadAction,

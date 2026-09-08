@@ -3,8 +3,6 @@ import { lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import DevelopmentAvailabilityWorkspace from '../components/developments/DevelopmentAvailabilityWorkspace'
 import DevelopmentVisualAnalyticsPanel from '../components/developments/DevelopmentVisualAnalyticsPanel'
-import DevelopmentLaunchReadinessPanel from '../components/developments/DevelopmentLaunchReadinessPanel'
-import DevelopmentLaunchAssurancePanel from '../components/developments/DevelopmentLaunchAssurancePanel'
 import DevelopmentDemandIntelligencePanel from '../components/developments/DevelopmentDemandIntelligencePanel'
 import DevelopmentProductCatalogueModal from '../components/developments/DevelopmentProductCatalogueModal'
 import DevelopmentStructureSetupModal from '../components/developments/DevelopmentStructureSetupModal'
@@ -18,9 +16,6 @@ import { DEVELOPER_FUNNEL_STAGES, selectActiveTransactions, selectBottlenecks, s
 import { getReportNextAction } from '../core/transactions/reportNextAction'
 import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import { selectCurrentDevelopmentTransactionRows } from '../core/developments/developmentTransactionVisibility.js'
-import { buildDevelopmentLaunchReadiness } from '../core/developments/developmentLaunchReadiness'
-import { buildDevelopmentLaunchPacket, formatDevelopmentLaunchPacket } from '../core/developments/developmentLaunchPacket'
-import { buildDevelopmentLaunchAssurance } from '../core/developments/developmentLaunchAssurance'
 import { buildDevelopmentDemandIntelligence } from '../core/developments/developmentDemandIntelligence'
 import { extractSitePlanPdfTextAnchors, isPdfSitePlanFile, renderSitePlanPdfFirstPage, validateSitePlanFile } from '../core/developments/developmentSitePlanPdfRenderer'
 import { buildDevelopmentSitePlanSyndicationPayload } from '../core/developments/developmentSitePlanSyndication'
@@ -3365,41 +3360,6 @@ function DevelopmentDetail() {
   const reservationDepositAmount = getReservationDepositAmountValue(reservationSettingsForm)
   const reservationDepositSummary = getReservationDepositSummary(reservationSettingsForm)
   const reservationDepositConfigured = !reservationSettingsForm.enabledByDefault || validateReservationSettingsForm(reservationSettingsForm).length === 0
-  const launchReadiness = useMemo(
-    () =>
-      buildDevelopmentLaunchReadiness({
-        units: unitRows,
-        structureNodes: data?.structureNodes || [],
-        productCatalogue: data?.productCatalogue,
-        marketing: marketingForm,
-        reservationDepositConfigured,
-        linkedListings: linkedListingRows
-      }),
-    [data?.productCatalogue, data?.structureNodes, linkedListingRows, marketingForm, reservationDepositConfigured, unitRows]
-  )
-  const launchPacket = useMemo(
-    () =>
-      buildDevelopmentLaunchPacket({
-        development: data?.development,
-        readiness: launchReadiness,
-        units: unitRows,
-        structureNodes: data?.structureNodes || [],
-        productCatalogue: data?.productCatalogue,
-        listings: linkedListingRows
-      }),
-    [data?.development, data?.productCatalogue, data?.structureNodes, launchReadiness, linkedListingRows, unitRows]
-  )
-  const launchAssurance = useMemo(
-    () =>
-      buildDevelopmentLaunchAssurance({
-        units: unitRows,
-        structureNodes: data?.structureNodes || [],
-        productCatalogue: data?.productCatalogue,
-        listings: linkedListingRows,
-        publicVisibility: marketingForm.listingConfiguration.publicVisibility
-      }),
-    [data?.productCatalogue, data?.structureNodes, linkedListingRows, marketingForm.listingConfiguration.publicVisibility, unitRows]
-  )
   const demandIntelligence = useMemo(
     () =>
       buildDevelopmentDemandIntelligence({
@@ -3495,41 +3455,6 @@ function DevelopmentDetail() {
       setFeedback(`${label} copied.`)
     } catch {
       setError(`Could not copy ${label.toLowerCase()}.`)
-    }
-  }
-
-  async function handleCopyLaunchPacket() {
-    try {
-      await navigator.clipboard.writeText(formatDevelopmentLaunchPacket(launchPacket))
-      setError('')
-      setFeedback('Launch summary copied.')
-    } catch {
-      setError('Could not copy the launch summary.')
-    }
-  }
-
-  function handleDownloadLaunchPacket() {
-    try {
-      const blob = new Blob([JSON.stringify(launchPacket, null, 2)], {
-        type: 'application/json;charset=utf-8'
-      })
-      const objectUrl = window.URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      const name =
-        String(data?.development?.name || 'development')
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, '-')
-          .replace(/^-+|-+$/g, '') || 'development'
-      anchor.href = objectUrl
-      anchor.download = `${name}-launch-packet.json`
-      document.body.appendChild(anchor)
-      anchor.click()
-      document.body.removeChild(anchor)
-      window.URL.revokeObjectURL(objectUrl)
-      setError('')
-      setFeedback('Launch packet downloaded.')
-    } catch (downloadError) {
-      setError(downloadError?.message || 'Unable to download the launch packet.')
     }
   }
 
@@ -7678,10 +7603,6 @@ function DevelopmentDetail() {
               </article>
             </div>
 
-            <div className="grid gap-5 xl:grid-cols-2">
-              <DevelopmentLaunchReadinessPanel readiness={launchReadiness} onOpenArea={tab => setActiveTab(tab)} onCopyPacket={handleCopyLaunchPacket} onDownloadPacket={handleDownloadLaunchPacket} />
-              <DevelopmentLaunchAssurancePanel assurance={launchAssurance} onOpenArea={tab => setActiveTab(tab)} />
-            </div>
           </section>
         ) : null}
 

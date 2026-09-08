@@ -1,3 +1,5 @@
+import { summarizeAttorneyTaskOutcomes } from './attorneyTaskOutcomes.js'
+
 function clampPercent(value) {
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) return 0
@@ -13,13 +15,11 @@ export function getCanonicalLegalWorkflowProgressPercent({ lane = null, steps = 
   const normalizedSteps = Array.isArray(steps) ? steps : []
   if (hasActiveMatterPlan) {
     if (!normalizedSteps.length) return 0
-    const completed = normalizedSteps.filter((step) => step?.displayStatus === 'completed' || step?.status === 'completed').length
-    return clampPercent((completed / normalizedSteps.length) * 100)
+    return summarizeAttorneyTaskOutcomes(normalizedSteps).percent
   }
-  const persisted = Number(lane?.summary?.completionPercent)
-  if (Number.isFinite(persisted)) return clampPercent(persisted)
+  const persisted = lane?.summary?.completionPercent
+  if (!normalizedSteps.length && persisted != null && Number.isFinite(Number(persisted))) return clampPercent(persisted)
 
   if (!normalizedSteps.length) return 0
-  const completed = normalizedSteps.filter((step) => step?.displayStatus === 'completed' || step?.status === 'completed').length
-  return clampPercent((completed / normalizedSteps.length) * 100)
+  return summarizeAttorneyTaskOutcomes(normalizedSteps).percent
 }

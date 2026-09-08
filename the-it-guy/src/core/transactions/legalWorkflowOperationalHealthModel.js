@@ -1,3 +1,5 @@
+import { isAttorneyTaskResolved, summarizeAttorneyTaskOutcomes } from './attorneyTaskOutcomes.js'
+
 const ACTIVE_STATUSES = new Set(['in_progress', 'waiting', 'blocked', 'delayed'])
 
 function text(value = '') {
@@ -20,7 +22,9 @@ function severityRank(value = '') {
 }
 
 function buildTaskException(task = {}, nowMs, staleAfterDays) {
-  if (!task?.key || task.displayStatus === 'completed') return null
+  const status = task.status || task.displayStatus
+  if (!task?.key || status === 'not_applicable') return null
+  const resolved = isAttorneyTaskResolved(status)
   const reasons = []
   const dueAt = timestamp(task.dueDate)
   const updatedAt = timestamp(task.updatedAt)
@@ -29,7 +33,7 @@ function buildTaskException(task = {}, nowMs, staleAfterDays) {
   if (task.displayStatus === 'blocked') {
     reasons.push({ code: 'blocked', label: 'Blocked', severity: 'critical' })
   }
-  if (dueAt !== null && dueAt < nowMs) {
+  if (!resolved && dueAt !== null && dueAt < nowMs) {
     reasons.push({ code: 'overdue', label: 'Past due', severity: 'critical' })
   }
   if (ACTIVE_STATUSES.has(task.displayStatus) && updatedAt !== null && daysBetween(updatedAt, nowMs) >= staleAfterDays) {
@@ -84,8 +88,9 @@ export function buildLegalWorkflowOperationalHealthModel({ tasks = [], now = new
     missingDocuments: exceptions.filter((item) => item.reasons.some((reason) => reason.code === 'missing_documents')).length,
     followUpMissing: exceptions.filter((item) => item.reasons.some((reason) => reason.code === 'follow_up_missing')).length,
   }
-  const completed = (Array.isArray(tasks) ? tasks : []).filter((task) => task.displayStatus === 'completed').length
-  const totalTasks = Array.isArray(tasks) ? tasks.length : 0
+  const outcomes = summarizeAttorneyTaskOutcomes((Array.isArray(tasks) ? tasks : []).map(task => ({ status: task.status || task.displayStatus })))
+  const completed = outcomes.completed
+  const totalTasks = outcomes.total
   const status = counts.critical ? 'critical' : counts.attention ? 'attention' : 'clear'
 
   return {
@@ -103,4 +108,3 @@ export function buildLegalWorkflowOperationalHealthModel({ tasks = [], now = new
     staleAfterDays,
   }
 }
-

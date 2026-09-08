@@ -13,7 +13,8 @@ import {
   normalizeDocumentMaritalRegime,
   normalizeDocumentPartyEntityType,
 } from '../../core/documents/documentPartyClassification.js'
-import { getMatterWorkflowPlanStepKeys } from './matterWorkflowPlanService.js'
+import { getApplicableAttorneyTaskDefinitions, getAttorneyTaskSuggestion } from './matterWorkflowPlanService.js'
+import { isAttorneyTaskResolved, isAttorneyTaskCompleted, summarizeAttorneyTaskOutcomes } from '../../core/transactions/attorneyTaskOutcomes.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -33,7 +34,7 @@ const LEGAL_WORKSPACE_PHASES_BY_LANE = Object.freeze({
   ]),
 })
 
-function getLegalWorkspacePhases(workflowKey = 'transfer') {
+export function getLegalWorkspacePhases(workflowKey = 'transfer') {
   return LEGAL_WORKSPACE_PHASES_BY_LANE[key(workflowKey)] || TRANSFER_WORKSPACE_PHASES
 }
 
@@ -43,6 +44,8 @@ export const TRANSFER_WORKSPACE_PERSISTED_STEP_STATUSES = Object.freeze([
   'waiting',
   'blocked',
   'completed',
+  'completed_externally',
+  'not_applicable',
 ])
 
 const DISPLAY_STATUS_META = Object.freeze({
@@ -52,6 +55,8 @@ const DISPLAY_STATUS_META = Object.freeze({
   blocked: 'Blocked',
   delayed: 'Delayed',
   completed: 'Completed',
+  completed_externally: 'Completed externally',
+  not_applicable: 'Not applicable',
 })
 
 const UNSUPPORTED_ACTIONS = Object.freeze([
@@ -61,13 +66,6 @@ const UNSUPPORTED_ACTIONS = Object.freeze([
     status: 'delayed',
     disabled: true,
     reason: 'Workflow step persistence does not currently support delayed as a canonical status.',
-  },
-  {
-    id: 'mark_not_applicable',
-    label: 'Not Applicable',
-    status: 'not_applicable',
-    disabled: true,
-    reason: 'Workflow step persistence does not currently support not_applicable as a canonical status.',
   },
 ])
 
@@ -263,7 +261,7 @@ function getCurrentStepKey(lane = {}, workflowKey = 'transfer') {
 
   const current =
     steps.find((step) => ['blocked', 'waiting', 'in_progress'].includes(normalizePersistedStatus(step.status))) ||
-    steps.find((step) => normalizePersistedStatus(step.status) !== 'completed') ||
+    steps.find((step) => !isAttorneyTaskResolved(normalizePersistedStatus(step.status))) ||
     steps.at(-1)
 
   return getStoredStepKey(current, workflowKey)
@@ -406,6 +404,8 @@ function buildTransferScenarioSources({ workflow = null, lane = null, facts = {}
   return [
     facts,
     routingProfile,
+    routingProfile.mvpProfile || {},
+    workflow?.workflowPlan?.configuration || {},
     onboarding,
     workflow?.transaction || {},
     workflow || {},
@@ -457,7 +457,7 @@ function buildPartyScenarioProfile(role = 'buyer', sources = []) {
   const isIndividual = entityType === 'individual'
   const isKnownEntity = entityType !== 'unknown'
   const spouseConsentRequired = explicitSpouseConsent ?? (isIndividual && maritalRegime === 'in_community')
-  const maritalStatusKnown = !isIndividual || Boolean(maritalRegime)
+  const maritalStatusKnown = !isIndividual || Boolean(maritalRegime && maritalRegime !== 'unknown')
   const authorityRequired = isCompany || isTrust || (isIndividual && Boolean(maritalRegime) && maritalRegime !== 'single')
   const authorityLabel = isCompany
     ? 'Company authority'
@@ -593,7 +593,8 @@ function buildTransferScenarioProfile({ workflow = null, lane = null, facts = {}
     'guaranteesRequired',
     'guarantees_required',
   ]))
-  const requiresGuarantees = explicitGuaranteesRequired ?? (financeType === 'cash' ? false : financeType === 'unknown' ? true : ['bond', 'combination', 'hybrid', 'developer'].includes(financeType))
+  const paymentSecurity = firstScenarioValue(sources, ['paymentSecurity', 'mvpProfile.paymentSecurity'])
+  const requiresGuarantees = explicitGuaranteesRequired ?? (paymentSecurity !== 'cleared_trust_funds')
   const isCashDeal = facts?.isCashDeal === true || (financeType === 'cash' && requiresGuarantees === false)
   const sellerExistingBond = normalizeScenarioBoolean(firstScenarioValue(sources, [
     'sellerHasExistingBond',
@@ -789,7 +790,7 @@ function buildFicaTaskDerivedCompletion(taskKey = '', documents = []) {
 }
 
 function isTaskDueWithin(task = {}, days = 7, now = new Date()) {
-  if (!task.dueDate || task.displayStatus === 'completed') return false
+  if (!task.dueDate || isAttorneyTaskResolved(task.status)) return false
   const dueTime = new Date(task.dueDate).getTime()
   if (!Number.isFinite(dueTime)) return false
   const start = new Date(now).getTime()
@@ -798,16 +799,13 @@ function isTaskDueWithin(task = {}, days = 7, now = new Date()) {
 }
 
 function isTaskOverdue(task = {}, now = new Date()) {
-  if (!task.dueDate || task.displayStatus === 'completed') return false
+  if (!task.dueDate || isAttorneyTaskCompleted(task.status)) return false
   const dueTime = new Date(task.dueDate).getTime()
   return Number.isFinite(dueTime) && dueTime < new Date(now).getTime()
 }
 
 function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = null, documents = [], scenario = null } = {}) {
-  const plannedStepKeys = getMatterWorkflowPlanStepKeys(workflow?.workflowPlan, workflowKey)
-  const definitions = getAttorneyStageDefinitionsForLane(workflowKey)
-    .filter((definition) => !plannedStepKeys.length || plannedStepKeys.includes(definition.key))
-    .filter((definition) => workflowKey === 'transfer' && scenario?.finance?.requiresGuarantees === false ? !GUARANTEE_STAGE_KEYS.has(definition.key) : true)
+  const definitions = getApplicableAttorneyTaskDefinitions({ laneKey: workflowKey, workflowPlan: workflow?.workflowPlan, facts: workflow?.facts || {} })
     .map((definition) => applyTransferScenarioToTask(definition, scenario))
   const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
   const storedStepMap = new Map(
@@ -819,7 +817,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
   if (currentIndex < 0) {
     currentIndex = definitions.findIndex((definition) => {
       const storedStep = storedStepMap.get(definition.key)
-      return normalizePersistedStatus(storedStep?.status) !== 'completed'
+      return !isAttorneyTaskResolved(normalizePersistedStatus(storedStep?.status))
     })
   }
   if (currentIndex < 0 && definitions.length) currentIndex = definitions.length - 1
@@ -830,17 +828,12 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
     let displayStatus = normalizeDisplayStatus(storedStep?.status)
 
     if (!storedStep) {
-      displayStatus = index < currentIndex ? 'completed' : index === currentIndex ? 'in_progress' : 'not_started'
-    } else if (index === currentIndex && !['completed', 'blocked', 'waiting', 'delayed'].includes(displayStatus)) {
-      displayStatus = 'in_progress'
+      displayStatus = 'not_started'
     }
 
     const phase = findPhaseForTask(definition.key, workflowKey)
 
     const derivedCompletion = buildFicaTaskDerivedCompletion(definition.key, documents)
-    if (derivedCompletion?.complete && displayStatus !== 'completed') {
-      displayStatus = 'completed'
-    }
 
     return {
       id: storedStep?.id || definition.key,
@@ -848,6 +841,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
       stepKey: definition.key,
       label: definition.label,
       description: definition.description || '',
+      applicabilitySuggestion: getAttorneyTaskSuggestion(definition.key, { ...workflow?.facts, ...workflow?.workflowPlan?.configuration }),
       actionLabel: definition.actionLabel || definition.label,
       operationalContract: definition.operationalContract || null,
       phaseKey: phase.key,
@@ -882,16 +876,16 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
 function buildPhases(tasks = [], workflowKey = 'transfer') {
   return getLegalWorkspacePhases(workflowKey).map((phase, index) => {
     const phaseTasks = tasks.filter((task) => task.phaseKey === phase.key)
-    const completed = phaseTasks.filter((task) => task.displayStatus === 'completed').length
+    const completed = phaseTasks.filter((task) => isAttorneyTaskCompleted(task.status)).length
     const blocked = phaseTasks.filter((task) => task.displayStatus === 'blocked').length
     const waiting = phaseTasks.filter((task) => task.displayStatus === 'waiting').length
     const overdue = phaseTasks.filter((task) => task.isOverdue).length
     const missingDocuments = phaseTasks.filter((task) => task.missingDocumentCount > 0).length
     const active = phaseTasks.filter((task) => task.isCurrent || task.displayStatus === 'in_progress').length
-    const total = phaseTasks.length
-    const currentTask = phaseTasks.find((task) => task.isCurrent) || phaseTasks.find((task) => task.displayStatus !== 'completed') || phaseTasks.at(-1) || null
+    const total = phaseTasks.filter(task => task.status !== 'not_applicable').length
+    const currentTask = phaseTasks.find((task) => task.isCurrent) || phaseTasks.find((task) => !isAttorneyTaskResolved(task.status)) || phaseTasks.at(-1) || null
     const status = !total
-      ? 'not_started'
+      ? (phaseTasks.length ? 'not_applicable' : 'not_started')
       : completed === total
         ? 'completed'
         : blocked
@@ -907,6 +901,7 @@ function buildPhases(tasks = [], workflowKey = 'transfer') {
       sequence: index + 1,
       tasks: phaseTasks,
       completed,
+      notApplicable: phaseTasks.length - total,
       blocked,
       waiting,
       overdue,
@@ -920,7 +915,7 @@ function buildPhases(tasks = [], workflowKey = 'transfer') {
       currentTask,
       hasCurrentTask: phaseTasks.some((task) => task.isCurrent),
     }
-  }).filter((phase) => phase.total > 0)
+  }).filter((phase) => phase.tasks.length > 0)
 }
 
 function resolveSelectedTask(tasks = [], selectedTaskKey = '', workflowKey = 'transfer') {
@@ -934,7 +929,7 @@ function resolveSelectedTask(tasks = [], selectedTaskKey = '', workflowKey = 'tr
     tasks.find((task) => task.displayStatus === 'blocked') ||
     tasks.find((task) => task.displayStatus === 'waiting') ||
     tasks.find((task) => task.displayStatus === 'in_progress') ||
-    tasks.find((task) => task.displayStatus !== 'completed') ||
+    tasks.find((task) => !isAttorneyTaskResolved(task.status)) ||
     tasks[0] ||
     null
   )
@@ -944,8 +939,8 @@ function filterTasks(tasks = [], { search = '', status = '', phaseKey = '', atte
   const query = key(search)
   return tasks.filter((task) => {
     if (query && !task.searchText.includes(query)) return false
-    if (status === 'open' && task.displayStatus === 'completed') return false
-    else if (status === 'completed' && task.displayStatus !== 'completed') return false
+    if (status === 'open' && isAttorneyTaskCompleted(task.status)) return false
+    else if (status === 'completed' && !isAttorneyTaskResolved(task.status)) return false
     else if (status === 'blocked' && task.displayStatus !== 'blocked') return false
     else if (status === 'delayed' && task.displayStatus !== 'delayed') return false
     else if (status === 'overdue' && !task.isOverdue) return false
@@ -1035,7 +1030,7 @@ function buildDependencySummary(tasks = [], task = null) {
 
   const taskIndex = tasks.findIndex((item) => item.key === task.key)
   const earlierTasks = taskIndex > 0 ? tasks.slice(0, taskIndex) : []
-  const blockers = earlierTasks.filter((item) => item.displayStatus !== 'completed')
+  const blockers = earlierTasks.filter((item) => !isAttorneyTaskResolved(item.status))
   const advisory = blockers.length > 0
   return {
     status: advisory ? 'waiting' : 'completed',
@@ -1054,7 +1049,7 @@ function buildChecklistItems(task = null) {
     label,
     type: 'evidence',
     required: true,
-    complete: task.displayStatus === 'completed',
+    complete: task.status === 'completed',
     persisted: false,
   }))
   const dataItems = (task.dataRequirements || task.requiredData || []).map((requirement) => ({
@@ -1063,7 +1058,7 @@ function buildChecklistItems(task = null) {
     description: requirement.description || '',
     type: 'data',
     required: requirement.required !== false,
-    complete: Boolean(requirement.complete || task.displayStatus === 'completed'),
+    complete: Boolean(requirement.complete),
     persisted: Boolean(requirement.sourceField),
     value: requirement.value ?? null,
   }))
@@ -1213,7 +1208,18 @@ function buildAvailableActions(task = null, permissions = {}) {
   }
 
   const primary = [
-    task.displayStatus !== 'completed'
+    !isAttorneyTaskResolved(task.status) ? {
+      id: 'complete_externally', label: 'Completed externally', status: 'completed_externally',
+      disabled: false, requiresNote: false, requiresReason: true,
+    } : null,
+    task.status !== 'not_applicable' ? {
+      id: 'mark_not_applicable', label: 'Not applicable', status: 'not_applicable',
+      disabled: false, requiresNote: false, requiresReason: true,
+    } : null,
+    isAttorneyTaskResolved(task.status) ? {
+      id: 'reopen_task', label: 'Reopen task', status: 'not_started', disabled: false, requiresNote: true,
+    } : null,
+    !isAttorneyTaskResolved(task.status)
       ? {
           id: 'mark_complete',
           label: 'Mark Complete',
@@ -1497,7 +1503,7 @@ export function buildTransferTaskWorkActions(task = null, permissions = {}) {
       target: 'signing',
       disabled: !canAddNote,
       reason: canAddNote ? '' : 'You do not have permission to add signing updates on this lane.',
-      primary: task.displayStatus !== 'completed',
+      primary: !isAttorneyTaskResolved(task.status),
     })
   }
 
@@ -1546,7 +1552,7 @@ function buildTaskOutcomeSummary(task = null) {
     ? 'blocked'
     : completionBlocked
       ? 'waiting'
-      : task.displayStatus === 'completed'
+      : isAttorneyTaskCompleted(task.status)
         ? 'completed'
         : 'in_progress'
   const items = [
@@ -1692,7 +1698,7 @@ function buildTransferCommandQueue({ tasks = [], workActionsByTaskKey = {}, lane
   })
 
   tasks
-    .filter((task) => task.displayStatus !== 'completed')
+    .filter((task) => !isAttorneyTaskResolved(task.status))
     .forEach((task) => {
       const actions = workActionsByTaskKey[task.key] || []
       const requestAction = actions.find((action) => action.id === 'request_document' && task.missingDocumentCount > 0 && action.command)
@@ -1766,7 +1772,7 @@ function buildTransferCommandQueue({ tasks = [], workActionsByTaskKey = {}, lane
         })
       }
 
-      if (task.completionReadiness?.canComplete && task.displayStatus !== 'completed') {
+      if (task.completionReadiness?.canComplete && !isAttorneyTaskResolved(task.status)) {
         const command = buildTransferStatusActionCommand(task, 'completed')
         add({
           id: `task:${task.key}:complete_evidence`,
@@ -1892,7 +1898,7 @@ function buildTransferRolloutReadiness({ tasks = [], workActionsByTaskKey = {}, 
   const blockedBySequence = tasks.filter((task) => task.dependencySummary?.blocksWork === true)
   const evidenceControlledTasks = tasks.filter((task) => task.relatedDocuments?.length || task.requiredDocumentKeys?.length)
   const completionBlockedTasks = tasks.filter((task) => task.completionReadiness?.canComplete === false)
-  const completeReadyTasks = tasks.filter((task) => task.completionReadiness?.canComplete === true && task.displayStatus !== 'completed')
+  const completeReadyTasks = tasks.filter((task) => task.completionReadiness?.canComplete === true && !isAttorneyTaskResolved(task.status))
   const coverageItems = Array.isArray(scenario?.coverageItems) ? scenario.coverageItems : []
   const scenarioAttentionItems = coverageItems.filter((item) => item.status === 'attention')
   const blockers = [
@@ -2098,8 +2104,8 @@ export function buildTransferWorkspaceViewModel({
   const phases = buildPhases(tasks, workflowKey)
   const selectedTask = resolveSelectedTask(tasks, selectedTaskKey, workflowKey)
   const visibleTasks = filterTasks(tasks, { ...filters, search })
-  const completed = tasks.filter((task) => task.displayStatus === 'completed').length
-  const total = tasks.length
+  const completed = tasks.filter((task) => isAttorneyTaskCompleted(task.status)).length
+  const total = tasks.filter(task => task.status !== 'not_applicable').length
   const currentPhase = phases.find((phase) => phase.tasks.some((task) => task.key === selectedTask?.key)) || phases.find((phase) => phase.status === 'in_progress') || phases[0] || null
   const selectedRelatedDocuments = selectedTask ? selectedTask.relatedDocuments : []
   const selectedChecklistItems = buildChecklistItems(selectedTask)
@@ -2139,7 +2145,7 @@ export function buildTransferWorkspaceViewModel({
   })
   const selectedTaskIndex = tasks.findIndex((task) => task.key === selectedTask?.key)
   const nextActionableTask = selectedTaskIndex >= 0
-    ? tasks.slice(selectedTaskIndex + 1).find((task) => task.displayStatus !== 'completed') || null
+    ? tasks.slice(selectedTaskIndex + 1).find((task) => !isAttorneyTaskResolved(task.status)) || null
     : null
   const availableActions = buildAvailableActions(selectedTask, permissions)
   const rolloutReadiness = buildTransferRolloutReadiness({

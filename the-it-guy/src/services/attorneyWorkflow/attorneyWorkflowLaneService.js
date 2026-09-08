@@ -61,8 +61,10 @@ import {
 import {
   filterStepsForMatterWorkflowPlan,
   getMatterWorkflowPlanStepKeys,
+  getApplicableAttorneyTaskDefinitions,
   resolveMatterWorkflowPlan,
 } from './matterWorkflowPlanService.js'
+import { isAttorneyTaskResolved, isAttorneyTaskCompleted } from '../../core/transactions/attorneyTaskOutcomes.js'
 
 const LANE_META = {
   transfer: {
@@ -244,7 +246,13 @@ export function scopeAttorneyWorkflowOperations(operations = {}, matterScope = n
           assignedAttorneyRoles: scopedAssignedRoles,
           missingRequiredRoles: scopedMissingRoles,
           documentRequirements: filterScopedArray(operations.workflow.documentRequirements || [], visibleLaneKeys),
-          dataRequirements: filterScopedArray(operations.workflow.dataRequirements || [], visibleLaneKeys),
+          // The resolver returns requirements keyed by lane, not a flat list.
+          // Preserve that contract while excluding every inaccessible lane.
+          dataRequirements: Object.fromEntries(
+            Object.entries(operations.workflow.dataRequirements || {}).filter(([laneKey]) =>
+              visibleLaneKeys.has(safeNormalizeWorkflowLane(laneKey)),
+            ),
+          ),
           updateOptions: filterScopedArray(operations.workflow.updateOptions || [], visibleLaneKeys, { keepUnscoped: true }),
           signingRequirements: filterScopedArray(operations.workflow.signingRequirements || [], visibleLaneKeys),
         }
@@ -286,7 +294,7 @@ function normalizeStepStatus(value, fallback = 'not_started') {
   const normalized = String(value || '').trim().toLowerCase()
   if (normalized === 'complete') return 'completed'
   if (normalized === 'pending') return 'waiting'
-  return ['not_started', 'in_progress', 'waiting', 'blocked', 'completed'].includes(normalized) ? normalized : fallback
+  return ['not_started', 'in_progress', 'waiting', 'blocked', 'completed', 'completed_externally', 'not_applicable'].includes(normalized) ? normalized : fallback
 }
 
 function normalizeVisibility(value, fallback = 'internal') {
@@ -395,6 +403,9 @@ async function publishAttorneySharedProgress(client, {
   sourceId,
   visibility = null,
 }) {
+  // These outcomes are recorded atomically as explicitly labelled operational
+  // events; do not coerce them into the legacy client milestone vocabulary.
+  if (['not_applicable', 'completed_externally'].includes(status)) return null
   const definition = getAttorneyStageDefinition(stepKey, laneKey)?.sharedProgress
   if (!definition) return null
   return publishTransactionSharedProgress({
@@ -411,6 +422,8 @@ async function publishAttorneySharedProgress(client, {
 }
 
 const STEP_STATUS_RANK = {
+  completed_externally: 5,
+  not_applicable: 5,
   completed: 5,
   blocked: 4,
   in_progress: 3,
@@ -489,21 +502,23 @@ function getLaneKeyForAssignment(assignment = {}) {
 
 function summarizeSteps(steps = [], stages = []) {
   const ordered = [...steps].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
-  const completed = ordered.filter((step) => step.status === 'completed').length
+  const applicable = ordered.filter(step => step.status !== 'not_applicable')
+  const completed = applicable.filter(step => isAttorneyTaskCompleted(step.status)).length
   const blocked = ordered.find((step) => step.status === 'blocked') || null
   const waiting = ordered.find((step) => step.status === 'waiting') || null
   const inProgress = ordered.find((step) => step.status === 'in_progress') || null
-  const nextOpen = ordered.find((step) => step.status !== 'completed') || null
+  const nextOpen = ordered.find((step) => !isAttorneyTaskResolved(step.status)) || null
   const current = blocked || waiting || inProgress || nextOpen || ordered.at(-1) || null
   const currentStage = current?.step_key || stages[0] || null
   const finalStage = stages.at(-1)
-  const allComplete = Boolean(finalStage && ordered.length && ordered.every((step) => step.status === 'completed'))
+  const allComplete = Boolean(finalStage && ordered.length && ordered.every((step) => isAttorneyTaskResolved(step.status)))
   const status = allComplete ? 'completed' : blocked ? 'blocked' : waiting ? 'waiting' : completed || inProgress ? 'in_progress' : 'not_started'
 
   return {
-    totalSteps: ordered.length,
+    totalSteps: applicable.length,
+    notApplicableSteps: ordered.length - applicable.length,
     completedSteps: completed,
-    completionPercent: ordered.length ? Math.round((completed / ordered.length) * 100) : 0,
+    completionPercent: applicable.length ? Math.round((completed / applicable.length) * 100) : 0,
     currentStage,
     currentStageLabel: getStageLabel(currentStage),
     nextAction: allComplete ? 'Workflow complete' : current ? getStageLabel(current.step_key) : 'Start workflow',
@@ -604,15 +619,15 @@ function summarizeLaneDocuments(requirements = []) {
   }
 }
 
-function mapLaneRow(row, steps = [], assignment = null) {
+function mapLaneRow(row, steps = [], assignment = null, workflowPlan = null, facts = {}) {
   const laneKey = normalizeLaneKey(row.process_type)
-  const stages = getLaneStages(laneKey)
-  const normalizedSteps = dedupeStepRowsForLane(steps, laneKey, stages)
+  const stages = getApplicableAttorneyTaskDefinitions({ laneKey, workflowPlan, facts }).map(task => task.key)
+  const normalizedSteps = dedupeStepRowsForLane(steps, laneKey, stages).filter(step => stages.includes(normalizeAttorneyStageKey(step.step_key || step.stepKey, laneKey)))
   const mappedSteps = normalizedSteps.map((step) => mapStep(step, laneKey)).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0))
-  const summary = summarizeSteps(mappedSteps.map((step) => ({
-    step_key: step.stepKey,
-    status: step.status,
-    sort_order: step.sortOrder,
+  const summary = summarizeSteps(stages.map((stepKey, index) => ({
+    step_key: stepKey,
+    status: mappedSteps.find((step) => step.stepKey === stepKey)?.status || 'not_started',
+    sort_order: index + 1,
   })), stages)
   const currentStage = normalizeAttorneyStageKey(row.current_stage || summary.currentStage, laneKey)
   const laneStatus = normalizeLaneStatus(row.lane_status || row.status || summary.status)
@@ -1041,7 +1056,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     : []
   const workflow = resolveAttorneyWorkflowForTransaction(transaction, assignments)
   const legalDocuments = resolveLegalDocumentRequirements(transaction)
-  const requiredLaneKeys = Object.entries(workflow.lanes)
+  const requiredLaneKeys = workflowPlan?.status === 'active' ? workflowPlan.laneKeys : Object.entries(workflow.lanes)
     .filter(([, lane]) => lane.required)
     .map(([laneKey]) => laneKey)
   const assignmentLaneKeys = assignments.map(getLaneKeyForAssignment).filter(Boolean)
@@ -1185,6 +1200,8 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
         { ...row, process_type: laneKey },
         filterStepsForMatterWorkflowPlan(stepsBySubprocessId[row.id] || [], workflowPlan, laneKey),
         assignment,
+        workflowPlan,
+        workflow.facts,
       )
       const permissionContext = laneContexts[laneKey] || deniedLaneContext
       const laneDelegations = delegations.filter((item) => item.attorney_role === lane.attorneyRole)
@@ -1354,7 +1371,7 @@ export async function reconcileAttorneyWorkflowPlanForTransaction(transactionId,
       skippedLanes.push({ laneKey: lane.laneKey, reason: 'not_authorised_for_lane' })
       continue
     }
-    const currentStep = (lane.steps || []).find((step) => step.status !== 'completed') || lane.steps?.at(-1)
+    const currentStep = (lane.steps || []).find((step) => !isAttorneyTaskResolved(step.status)) || lane.steps?.at(-1)
     const reconciliation = await client.rpc('bridge_reconcile_attorney_lane_progress_with_matter_plan', {
       p_transaction_id: normalizedTransactionId,
       p_lane_key: lane.laneKey,
@@ -1712,213 +1729,12 @@ async function fetchLaneForUpdate(client, transactionId, laneKey) {
   return query.data
 }
 
-export async function updateAttorneyWorkflowLaneStage({
-  transactionId,
-  laneKey,
-  stageKey,
-  note = '',
-  laneStatus = 'in_progress',
-  visibility = 'internal',
-  idempotencyKey = '',
-} = {}) {
-  const client = requireClient()
-  const actor = await getAuthenticatedUser(client)
-  const normalizedTransactionId = String(transactionId || '').trim()
-  const normalizedLaneKey = normalizeLaneKey(laneKey)
-  const normalizedStageKey = normalizeAttorneyStageKey(stageKey, normalizedLaneKey)
-  const stages = getLaneStages(normalizedLaneKey)
-  const targetIndex = stages.indexOf(normalizedStageKey)
-  if (!normalizedTransactionId) throw new Error('Transaction id is required.')
-  if (targetIndex < 0) throw new Error('This stage does not belong to this attorney workflow.')
-
-  await assertCanUpdateLane({ user: actor, transactionId: normalizedTransactionId, laneKey: normalizedLaneKey })
-  const permissionContext = await getAttorneyLegalPermissionContext({
-    userId: actor.id,
-    transactionId: normalizedTransactionId,
-    attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
+export async function updateAttorneyWorkflowLaneStage({ transactionId, laneKey, stageKey, note = '', laneStatus = 'in_progress', visibility = 'internal' } = {}) {
+  // Legacy stage controls now update only the selected task. Working ahead must
+  // never complete earlier work or erase external/not-applicable outcomes.
+  return updateAttorneyWorkflowStepStatus({
+    transactionId, laneKey, stepKey: stageKey, status: laneStatus, note, visibility,
   })
-  assertCanPublishVisibility(permissionContext, visibility)
-  const lane = await fetchLaneForUpdate(client, normalizedTransactionId, normalizedLaneKey)
-  const currentStage = normalizeAttorneyStageKey(lane.current_stage || stages[0], normalizedLaneKey)
-  const currentIndex = stages.indexOf(currentStage)
-  const isRegression = currentIndex >= 0 && targetIndex < currentIndex
-  const normalizedNote = String(note || '').trim()
-  if (isRegression && !normalizedNote) {
-    throw new Error('Please provide a reason when moving a workflow backwards.')
-  }
-
-  if (!isRegression) {
-    const canonicalGate = await canAdvanceWorkflowStage({
-      contextType: 'transaction',
-      contextId: normalizedTransactionId,
-      targetStage: normalizedStageKey,
-      actorRole: permissionContext?.membershipRole || LANE_META[normalizedLaneKey].attorneyRole,
-      actorUserId: actor.id,
-      client,
-      metadata: {
-        lane_key: normalizedLaneKey,
-        source: 'attorney_workflow_lane_stage_update',
-      },
-    }).catch((error) => ({
-      allowed: true,
-      skipped: true,
-      error: error?.message || 'canonical_gate_evaluation_failed',
-    }))
-    if (canonicalGate?.allowed === false) {
-      throw new Error(canonicalGate.reason || 'Canonical document readiness is blocking this workflow stage.')
-    }
-  }
-
-  const finalStage = targetIndex === stages.length - 1
-  const nextLaneStatus = normalizeLaneStatus(finalStage ? 'completed' : laneStatus, 'in_progress')
-  const nowIso = new Date().toISOString()
-
-  const stepRows = stages.map((stage, index) => ({
-    subprocess_id: lane.id,
-    step_key: stage,
-    step_label: getStageLabel(stage, normalizedLaneKey),
-    status: finalStage || index < targetIndex ? 'completed' : index === targetIndex ? nextLaneStatus === 'blocked' ? 'blocked' : 'in_progress' : 'not_started',
-    completed_at: finalStage || index < targetIndex ? nowIso : null,
-    comment: index === targetIndex ? normalizedNote || null : null,
-    owner_type: 'attorney',
-    sort_order: index + 1,
-    visibility_scope: normalizeVisibility(visibility),
-    completed_by: finalStage || index < targetIndex ? actor.id : null,
-  }))
-
-  let stepUpdate = await client
-    .from('transaction_subprocess_steps')
-    .upsert(stepRows, { onConflict: 'subprocess_id,step_key' })
-
-  if (stepUpdate.error && (isMissingColumnError(stepUpdate.error, 'visibility_scope') || isMissingColumnError(stepUpdate.error, 'completed_by'))) {
-    const fallbackRows = stepRows.map((row) => {
-      const next = { ...row }
-      delete next.visibility_scope
-      delete next.completed_by
-      return next
-    })
-    stepUpdate = await client
-      .from('transaction_subprocess_steps')
-      .upsert(fallbackRows, { onConflict: 'subprocess_id,step_key' })
-  }
-  if (stepUpdate.error) throw stepUpdate.error
-
-  let laneUpdate = await client
-    .from('transaction_subprocesses')
-    .update({
-      current_stage: normalizedStageKey,
-      lane_status: nextLaneStatus,
-      status: nextLaneStatus,
-      completed_at: nextLaneStatus === 'completed' ? nowIso : null,
-      updated_by: actor.id,
-      updated_at: nowIso,
-    })
-    .eq('id', lane.id)
-
-  if (laneUpdate.error && (isMissingColumnError(laneUpdate.error, 'current_stage') || isMissingColumnError(laneUpdate.error, 'lane_status'))) {
-    laneUpdate = await client
-      .from('transaction_subprocesses')
-      .update({
-        status: nextLaneStatus,
-        updated_at: nowIso,
-      })
-      .eq('id', lane.id)
-  }
-  if (laneUpdate.error) throw laneUpdate.error
-
-  await client.from('transaction_attorney_lane_history').insert({
-    transaction_id: normalizedTransactionId,
-    subprocess_id: lane.id,
-    lane_key: normalizedLaneKey,
-    attorney_role: LANE_META[normalizedLaneKey].attorneyRole,
-    previous_stage: currentStage || null,
-    new_stage: normalizedStageKey,
-    previous_status: lane.lane_status || lane.status || null,
-    new_status: nextLaneStatus,
-    changed_by: actor.id,
-    note: normalizedNote || null,
-    visibility: normalizeVisibility(visibility),
-    source: 'attorney_workspace',
-    metadata: { regression: isRegression },
-  }).catch(() => null)
-
-  await insertTransactionEvent(client, {
-    transactionId: normalizedTransactionId,
-    eventType: nextLaneStatus === 'blocked' ? 'AttorneyLaneBlocked' : nextLaneStatus === 'completed' ? 'AttorneyLaneCompleted' : 'AttorneyLaneStageUpdated',
-    actorId: actor.id,
-    visibility: normalizeVisibility(visibility),
-    eventData: {
-      laneKey: normalizedLaneKey,
-      attorneyRole: LANE_META[normalizedLaneKey].attorneyRole,
-      previousStage: currentStage || null,
-      newStage: normalizedStageKey,
-      note: normalizedNote || null,
-    },
-  })
-
-  await publishAttorneySharedProgress(client, {
-    transactionId: normalizedTransactionId,
-    laneKey: normalizedLaneKey,
-    stepKey: normalizedStageKey,
-    status: nextLaneStatus,
-    sourceType: 'attorney_workflow_lane',
-    sourceId: lane.id,
-    visibility,
-  })
-
-  const actionKey = normalizedLaneKey === 'bond'
-    ? 'BOND_ATTORNEY_STAGE_UPDATED'
-    : normalizedLaneKey === 'cancellation'
-      ? 'CANCELLATION_ATTORNEY_STAGE_UPDATED'
-      : normalizedStageKey === 'registration_confirmed'
-        ? 'TRANSFER_REGISTRATION_CONFIRMED'
-        : 'TRANSFER_ATTORNEY_STAGE_UPDATED'
-  const professionalTitle = `${LANE_META[normalizedLaneKey].label}: ${getStageLabel(normalizedStageKey, normalizedLaneKey)}`
-  const professionalDescription = `${LANE_META[normalizedLaneKey].label} moved to ${getStageLabel(normalizedStageKey, normalizedLaneKey)}.`
-  await commitTransactionModuleAction({
-    client,
-    transactionId: normalizedTransactionId,
-    actionKey,
-    idempotencyKey: idempotencyKey || buildTransactionSyncIdempotencyKey({
-      transactionId: normalizedTransactionId,
-      actionKey,
-      sourceRecordId: lane.id,
-      revision: nowIso,
-    }),
-    sourceRecordId: lane.id,
-    visibility: normalizeVisibility(visibility),
-    audience: normalizeVisibility(visibility) === 'client_visible' ? ['buyer', 'seller'] : [
-      'agent', 'bond_originator', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney',
-    ],
-    professionalTitle,
-    professionalDescription,
-    clientTitle: 'Your transaction has progressed',
-    clientDescription: `Your transaction has moved to ${getStageLabel(normalizedStageKey, normalizedLaneKey)}.`,
-    eventData: {
-      laneKey: normalizedLaneKey,
-      previousStage: currentStage || null,
-      newStage: normalizedStageKey,
-      status: nextLaneStatus,
-    },
-    optionalUntilMigrated: true,
-  })
-
-  const operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
-  const canonicalTransaction = operations?.transaction || await fetchTransaction(client, normalizedTransactionId)
-  return {
-    ...operations,
-    canonicalMatter: {
-      id: canonicalTransaction.id,
-      lifecycleState: canonicalTransaction.lifecycle_state || null,
-      currentMainStage: canonicalTransaction.current_main_stage || null,
-      currentSubStageSummary: canonicalTransaction.current_sub_stage_summary || null,
-      currentDetailedStage: canonicalTransaction.current_detailed_stage || null,
-      operationalState: canonicalTransaction.operational_state || null,
-      stage: canonicalTransaction.stage || null,
-      updatedAt: canonicalTransaction.updated_at || nowIso || null,
-      workflowMutation: null,
-    },
-  }
 }
 
 export async function updateAttorneyWorkflowStepStatus({
@@ -1978,7 +1794,10 @@ export async function updateAttorneyWorkflowStepStatus({
   })
   assertCanPublishVisibility(permissionContext, normalizedVisibility)
 
-  const atomicUpdate = await client.rpc('bridge_update_attorney_workflow_step', {
+  if (['completed_externally', 'not_applicable'].includes(normalizedStatus) && !normalizedNote) {
+    throw new Error('Record a reason for this task outcome.')
+  }
+  const atomicUpdate = await client.rpc('bridge_update_attorney_workflow_step_v3', {
     p_transaction_id: normalizedTransactionId,
     p_lane_key: normalizedLaneKey,
     p_step_id: stepResult.data.id,
@@ -1998,20 +1817,6 @@ export async function updateAttorneyWorkflowStepStatus({
       throw new Error('Attorney workflow completion is temporarily unavailable until the Phase 1 database foundation is deployed.')
     }
     throw atomicUpdate.error
-  }
-
-  const planReconciliation = await client.rpc('bridge_reconcile_attorney_lane_progress_with_matter_plan', {
-    p_transaction_id: normalizedTransactionId,
-    p_lane_key: normalizedLaneKey,
-    p_step_key: resolvedStepKey,
-    p_step_status: normalizedStatus,
-  })
-  if (planReconciliation.error) {
-    if (isMatterPlanReconciliationUnavailable(planReconciliation.error)) {
-      console.warn('[attorney-workflow] plan progress reconciliation is pending database deployment', { transactionId: normalizedTransactionId })
-    } else {
-      throw planReconciliation.error
-    }
   }
 
   await publishAttorneySharedProgress(client, {
@@ -2039,7 +1844,6 @@ export async function updateAttorneyWorkflowStepStatus({
       updatedAt: canonicalTransaction.updated_at || atomicUpdate.data?.updatedAt || null,
       workflowMutation: {
         ...(atomicUpdate.data || {}),
-        planReconciliation: planReconciliation.data || null,
       },
     },
   }

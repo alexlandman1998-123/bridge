@@ -1,6 +1,6 @@
 import { getAttorneyStageDefinitionsForLane } from '../../constants/attorneyWorkflowStages.js'
 
-export const MATTER_WORKFLOW_PLAN_VERSION = 'attorney_matter_workflow_plan_v1'
+export const MATTER_WORKFLOW_PLAN_VERSION = 'attorney_matter_workflow_plan_v2'
 
 const LANE_KEYS = Object.freeze(['transfer', 'bond', 'cancellation'])
 const CASH_EXCLUDED_TRANSFER_STEPS = new Set([
@@ -12,6 +12,31 @@ const NON_LEVY_TRANSFER_STEPS = new Set([
   'levy_clearance_requested',
   'levy_clearance_received',
 ])
+
+// A confirmed plan is authoritative, including an intentionally absent lane.
+// Only provisional matters use the shared legacy finance filter.
+export function getApplicableAttorneyTaskDefinitions({ laneKey = 'transfer', workflowPlan = null, facts = {} } = {}) {
+  const definitions = getAttorneyStageDefinitionsForLane(laneKey)
+  if (workflowPlan?.status === 'active') {
+    const keys = getMatterWorkflowPlanStepKeys(workflowPlan, laneKey)
+    return definitions.filter((definition) => keys.includes(definition.key))
+  }
+  const cash = facts.financeType === 'cash' || facts.isCashDeal === true
+  return definitions.filter((definition) => !(laneKey === 'transfer' && cash && CASH_EXCLUDED_TRANSFER_STEPS.has(definition.key)))
+}
+
+export function getAttorneyTaskSuggestion(stepKey, profile = {}) {
+  if (CASH_EXCLUDED_TRANSFER_STEPS.has(stepKey)) {
+    if (profile.paymentSecurity === 'cleared_trust_funds') return 'Cleared trust funds selected. Review whether this guarantee task is not applicable under the payment arrangement.'
+    return 'Review the agreed purchase-price security. Cash funding alone does not establish whether a guarantee is needed.'
+  }
+  if (NON_LEVY_TRANSFER_STEPS.has(stepKey)) {
+    if (profile.propertyTenure === 'freehold' && profile.hoaApplicable === 'no') return 'Freehold with no HOA selected. Review whether this levy task is not applicable.'
+    return 'Confirm sectional-title or HOA clearance requirements for this property.'
+  }
+  if (stepKey === 'bank_conditions_outstanding') return 'If there are no outstanding bank conditions, record this task as not applicable with a reason.'
+  return ''
+}
 
 function normalizeText(value) {
   return String(value || '').trim()
@@ -37,11 +62,6 @@ function normalizeLaneKey(value) {
 function resolveTransferStepKeys(profile = {}) {
   return getAttorneyStageDefinitionsForLane('transfer')
     .map((definition) => definition.key)
-    .filter((stepKey) => {
-      if (profile.financeType === 'cash' && CASH_EXCLUDED_TRANSFER_STEPS.has(stepKey)) return false
-      if (!['sectional_title', 'estate_hoa'].includes(profile.propertyTenure) && NON_LEVY_TRANSFER_STEPS.has(stepKey)) return false
-      return true
-    })
 }
 
 function resolveLaneStepKeys(laneKey, profile = {}) {
@@ -61,7 +81,7 @@ export function buildMatterWorkflowPlan({ routingProfile = {}, generatedAt = nul
   const profile = parseJsonObject(routingProfile)
   const matterProfile = parseJsonObject(profile.matterProfile)
   const confirmed = matterProfile.status === 'confirmed'
-  const requiredLaneKeys = confirmed ? resolveRequiredLaneKeys(profile) : []
+  const requiredLaneKeys = resolveRequiredLaneKeys(profile)
   const lanes = requiredLaneKeys.map((laneKey) => {
     const stepKeys = resolveLaneStepKeys(laneKey, profile)
     return {
@@ -73,7 +93,8 @@ export function buildMatterWorkflowPlan({ routingProfile = {}, generatedAt = nul
 
   return {
     version: MATTER_WORKFLOW_PLAN_VERSION,
-    status: confirmed ? 'active' : 'awaiting_matter_profile_confirmation',
+    status: 'active',
+    provisional: !confirmed,
     templateKey: normalizeText(profile.workflowTemplateKey) || 'unrouted_matter',
     routingProfileVersion: normalizeText(profile.version) || null,
     matterProfileVersion: normalizeText(matterProfile.version) || null,
@@ -83,6 +104,7 @@ export function buildMatterWorkflowPlan({ routingProfile = {}, generatedAt = nul
     laneKeys: requiredLaneKeys,
     lanes,
     configuration: {
+      ...parseJsonObject(profile.mvpProfile),
       financeType: normalizeText(profile.financeType) || 'unknown',
       transactionType: normalizeText(profile.transactionType) || 'unknown',
       propertyTenure: normalizeText(profile.propertyTenure) || 'unknown',
@@ -103,7 +125,7 @@ export function isMatterWorkflowPlanCurrent(plan = {}, routingProfile = {}) {
   const profile = parseJsonObject(routingProfile)
   const matterProfile = parseJsonObject(profile.matterProfile)
   return (
-    plan?.version === MATTER_WORKFLOW_PLAN_VERSION &&
+    [MATTER_WORKFLOW_PLAN_VERSION, 'attorney_matter_workflow_plan_v1'].includes(plan?.version) &&
     plan?.status === 'active' &&
     matterProfile?.status === 'confirmed' &&
     normalizeText(plan.matterProfileFingerprint) === normalizeText(matterProfile.factFingerprint) &&
@@ -114,7 +136,7 @@ export function isMatterWorkflowPlanCurrent(plan = {}, routingProfile = {}) {
 export function resolveMatterWorkflowPlan(routingProfile = {}) {
   const profile = parseJsonObject(routingProfile)
   const storedPlan = readMatterWorkflowPlan(profile)
-  return isMatterWorkflowPlanCurrent(storedPlan, profile)
+  return storedPlan?.status === 'active'
     ? storedPlan
     : buildMatterWorkflowPlan({ routingProfile: profile })
 }

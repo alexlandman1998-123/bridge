@@ -15,6 +15,8 @@ export const ATTORNEY_TASK_STATUS_ACTIONS = Object.freeze({
   waiting: 'wait_for_party',
   blocked: 'block_task',
   completed: 'complete_task',
+  completed_externally: 'complete_externally',
+  not_applicable: 'mark_not_applicable',
 })
 
 const LANE_LABELS = Object.freeze({
@@ -122,6 +124,8 @@ function buildAllowedActions({ taskType, requiredInputs, requiredDocuments, acti
   actions.push({ id: 'mark_waiting', label: 'Mark waiting', mode: 'status_update', status: 'waiting', requiresNote: true })
   actions.push({ id: 'mark_blocked', label: 'Mark blocked', mode: 'status_update', status: 'blocked', requiresNote: true })
   actions.push({ id: 'mark_complete', label: actionLabel || 'Mark complete', mode: 'status_update', status: 'completed' })
+  actions.push({ id: 'complete_externally', label: 'Completed externally', mode: 'status_update', status: 'completed_externally', requiresNote: true })
+  actions.push({ id: 'mark_not_applicable', label: 'Not applicable', mode: 'status_update', status: 'not_applicable', requiresNote: true })
   return freezeRows(actions)
 }
 
@@ -232,6 +236,8 @@ export function createAttorneyTaskOperationalContract({
       waiting: `${normalizedLaneKey}_attorney_task_waiting`,
       blocked: `${normalizedLaneKey}_attorney_task_blocked`,
       completed: `${normalizedLaneKey}_attorney_task_completed`,
+      completed_externally: `${normalizedLaneKey}_attorney_task_completed_externally`,
+      not_applicable: `${normalizedLaneKey}_attorney_task_not_applicable`,
     }),
   }
 
