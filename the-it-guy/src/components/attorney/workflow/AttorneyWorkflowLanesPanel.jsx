@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { workflowActionLabel } from '../../../lib/workflowActionLabel.js'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, FileText, MessageSquarePlus, UploadCloud } from 'lucide-react'
 import {
@@ -603,7 +604,7 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                     <div className="mt-4">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-helper font-semibold text-textMuted">{lane.summary.completionPercent}% complete</span>
-                        <span className="text-helper text-textMuted">Next: {lane.summary.nextAction}</span>
+                        <span className="text-helper text-textMuted">Next: {workflowActionLabel(lane.summary.nextAction, 'Workflow review')}</span>
                       </div>
                       <div className="mt-2 h-2 rounded-full bg-[#e8edf4]">
                         <div className="h-2 rounded-full bg-[#244966]" style={{ width: `${Math.max(0, Math.min(100, lane.summary.completionPercent))}%` }} />

@@ -1,3 +1,4 @@
+import { workflowActionLabel, workflowTaskButtonLabel } from '../lib/workflowActionLabel.js'
 import {
   Activity,
   AlertTriangle,
@@ -1730,7 +1731,8 @@ function getWorkflowExplanation(lane = {}) {
   if (status === 'blocked') return 'Resolve the blocker or add a note so the team can move the matter forward.'
   if (status === 'waiting') return 'Capture who or what the workflow is waiting on, then follow up from the action drawer.'
   if (lane?.documentSummary?.missing) return `${lane.documentSummary.missing} required document item(s) still need attention.`
-  return lane?.summary?.nextAction ? `Next action: ${lane.summary.nextAction}` : 'Keep the lane moving by updating the active step or adding a workflow note.'
+  const nextActionLabel = workflowActionLabel(lane?.summary?.nextAction)
+  return nextActionLabel ? `Next action: ${nextActionLabel}` : 'Keep the lane moving by updating the active step or adding a workflow note.'
 }
 
 function getLaneUsability(lane = {}) {
@@ -7521,7 +7523,7 @@ function ArchlineOverviewWorkspace({
               </div>
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-5">
                 <Button type="button" size="sm" onClick={() => runTask(nextAction)}>
-                  {nextAction.action || nextAction.command?.label || 'Complete Action'}
+                  {workflowTaskButtonLabel(nextAction)}
                   <CheckCircle2 size={14} />
                 </Button>
                 <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('tasks')}>
@@ -19956,7 +19958,7 @@ function AttorneyTransactionDetail() {
         workflowPlan: workflowOperations?.workflowPlan || null,
       }),
       nextStep: transferWorkflowLane
-        ? (getCurrentWorkflowStep(transferWorkflowLane) ? getWorkflowStepLabel(getCurrentWorkflowStep(transferWorkflowLane)) : transferWorkflowLane?.summary?.nextAction || 'Workflow review')
+        ? (getCurrentWorkflowStep(transferWorkflowLane) ? getWorkflowStepLabel(getCurrentWorkflowStep(transferWorkflowLane)) : workflowActionLabel(transferWorkflowLane?.summary?.nextAction, 'Workflow review'))
         : 'Assign transfer attorney',
       assignedLabel: 'Assigned Attorney',
       assignedDisplay: transferAttorney?.organisationName || transferAttorney?.participantName || transferAttorney?.participantEmail || transaction?.attorney || 'Not assigned',
@@ -20004,7 +20006,7 @@ function AttorneyTransactionDetail() {
         ? (bondAttorneyWorkflowLane
             ? (getCurrentWorkflowStep(bondAttorneyWorkflowLane)
                 ? getWorkflowStepLabel(getCurrentWorkflowStep(bondAttorneyWorkflowLane))
-                : bondAttorneyWorkflowLane?.summary?.nextAction || 'Workflow review')
+                : workflowActionLabel(bondAttorneyWorkflowLane?.summary?.nextAction, 'Workflow review'))
             : getBondWorkflowNextStep(transactionFinanceWorkflow))
         : 'Not required',
       assignedLabel: 'Assigned Bond Attorney',
@@ -20053,7 +20055,7 @@ function AttorneyTransactionDetail() {
         ? (cancellationWorkflowLane
             ? (getCurrentWorkflowStep(cancellationWorkflowLane)
                 ? getWorkflowStepLabel(getCurrentWorkflowStep(cancellationWorkflowLane))
-                : cancellationWorkflowLane?.summary?.nextAction || 'Workflow review')
+                : workflowActionLabel(cancellationWorkflowLane?.summary?.nextAction, 'Workflow review'))
             : 'Assign cancellation attorney')
         : 'Not required',
       assignedLabel: 'Assigned Cancellation Attorney',
