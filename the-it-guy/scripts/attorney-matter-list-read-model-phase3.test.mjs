@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const sql = await readFile(
-  new URL('../../supabase/migrations/20260830132148_attorney_matter_list_read_model_phase3.sql', import.meta.url),
+  new URL('../../supabase/migrations/20260831125405_attorney_matter_list_read_model_phase3.sql', import.meta.url),
   'utf8',
 )
 const service = await readFile(

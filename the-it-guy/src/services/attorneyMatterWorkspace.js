@@ -593,6 +593,7 @@ function getPrimaryMatterTypeKey(matter = {}) {
 }
 
 function resolveStage(matter = {}) {
+  if (matter.workflowProgress?.canonical) return matter.workflowProgress
   const matterTypeKey = getPrimaryMatterTypeKey(matter)
   const steps = STAGE_CONFIGS[matterTypeKey] || STAGE_STEPS
   const signal = normalize(`${matter.currentStage || ''} ${matter.nextAction || ''} ${matter.lifecycleState || ''}`)
@@ -629,6 +630,7 @@ function resolveExpectedDue(matter = {}, stage = resolveStage(matter)) {
 }
 
 function resolveNextAction(matter = {}, { documentStatus = {} } = {}) {
+  if (matter.workflowProgress?.canonical) return matter.workflowProgress.nextAction
   const rawAction = String(matter.nextAction || '').trim()
   const stage = resolveStage(matter)
 
@@ -779,6 +781,7 @@ function normalizeMatterRow(matter = {}, { documentStatus = {}, currentUser = {}
       id: matter.assignedAttorneyId || '',
       name: assignedAttorneyName,
       initials: getInitials(assignedAttorneyName),
+      firmName: matter.assignedFirmName || '',
     },
     assignedAssistant: {
       id: matter.assignedSecretaryId || matter.assignedAdminHandlerId || '',
@@ -1133,6 +1136,10 @@ function normalizeSnapshotMatterRow(row = {}) {
     matterReference: row.matterNumber,
     matterType: row.matterType,
     currentStage: row.stage,
+    workflowProgress: row.workflowProgress,
+    assignedAttorneyId: row.assignedAttorneyId,
+    assignedAttorneyName: row.assignedAttorneyName,
+    assignedFirmName: row.assignedFirmName,
     nextAction: row.nextAction,
     nextActionDueAt: row.nextActionDueAt,
     expectedRegistrationDate: row.targetRegistrationDate,

@@ -294,6 +294,17 @@ function KpiCard({ item }) {
 }
 
 function StageProgress({ stage }) {
+  if (stage.canonical) return (
+    <div className="min-w-[150px]">
+      <p className="text-xs font-semibold text-[#00614f]">{stage.label}</p>
+      {stage.totalCount > 0 ? <>
+        <div className="mt-2 h-1.5 rounded-full bg-slate-100" role="progressbar" aria-label="Completed attorney tasks" aria-valuenow={stage.percent} aria-valuemin={0} aria-valuemax={100}>
+          <div className="h-full rounded-full bg-[#00614f]" style={{ width: `${stage.percent}%` }} />
+        </div>
+        <p className="mt-1 text-xs text-slate-500">{stage.completedCount} of {stage.totalCount} tasks completed</p>
+      </> : <p className="mt-1 text-xs text-slate-500">No applicable task progress available</p>}
+    </div>
+  )
   const completedCount = stage.completedCount || Math.min((stage.index || 0) + 1, stage.steps?.length || 0)
   const totalCount = stage.totalCount || stage.steps?.length || 0
 
@@ -347,8 +358,8 @@ function Assignee({ person }) {
         {isUnassigned ? 'UN' : person.initials}
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-slate-700">{isUnassigned ? 'Unassigned' : person.name}</span>
-        {isUnassigned ? <span className="block text-xs font-semibold text-[#00614f]">Assign</span> : null}
+        <span className="block truncate text-sm font-medium text-slate-700">{isUnassigned ? person?.firmName || 'Unassigned' : person.name}</span>
+        {isUnassigned ? <span className="block text-xs font-semibold text-[#00614f]">{person?.firmName ? 'Staff allocation pending' : 'Assign'}</span> : null}
       </span>
     </div>
   )
@@ -1727,7 +1738,9 @@ function AttorneyMattersPage() {
           // The paged RPC is being rolled out incrementally. When it omits the
           // linked property for every returned matter, use the established
           // assignment workspace which joins transactions to units/developments.
-          if (snapshot && !snapshotHasOnlyUnresolvedProperties) {
+          // V1 snapshots omit canonical task outcomes and staff allocation.
+          // Retain the authorized operational loader until that contract is upgraded.
+          if (snapshot?.contract === 'arch9-attorney-matter-list-snapshot-v2' && snapshot.rows?.every(row => row.workflowProgress?.canonical) && !snapshotHasOnlyUnresolvedProperties) {
             if (!active) return
             setMatterSnapshot(snapshot)
             setSource(null)

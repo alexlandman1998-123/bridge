@@ -1,4 +1,5 @@
 import { getAttorneyProfessionalProfilePermissions, getCurrentUserAttorneyMembership } from '../lib/attorneyPermissions'
+import { buildMatterListProgress, fetchMatterListProgress } from './attorneyMatterProgress.js'
 import { getFirmAttorneyAssignments, getUserAttorneyAssignments } from './transactionAttorneyAssignments'
 import { getAttorneyFirmById, getAttorneyFirmDepartments, getCurrentUserPrimaryAttorneyFirm } from './attorneyFirms'
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
@@ -271,7 +272,7 @@ function isDateWithinToday(value) {
   return timestamp >= start && timestamp <= end
 }
 
-async function fetchTransactions(client, ids = []) {
+export async function fetchAttorneyMatterTransactions(client, ids = []) {
   const transactionIds = [...new Set((ids || []).filter(Boolean))]
   if (!transactionIds.length) return []
 
@@ -280,12 +281,12 @@ async function fetchTransactions(client, ids = []) {
 
   let query = await client
     .from('transactions')
-    .select(primarySelect)
+    .select(`${primarySelect}, routing_profile_json, listing_id, property_tenure, property_type`)
     .in('id', transactionIds)
 
   if (
     query.error &&
-    (isMissingColumnError(query.error, 'current_main_stage') ||
+    (query.error.code === '42703' || query.error.code === 'PGRST204' || isMissingColumnError(query.error, 'current_main_stage') ||
       isMissingColumnError(query.error, 'matter_number') ||
       isMissingColumnError(query.error, 'assigned_attorney_email') ||
       isMissingColumnError(query.error, 'assigned_agent') ||
@@ -314,7 +315,9 @@ async function fetchTransactions(client, ids = []) {
   ) {
     query = await client
       .from('transactions')
-      .select('id, organisation_id, buyer_id, transaction_reference, stage, finance_type, risk_status, next_action, updated_at, created_at, attorney')
+      // Optional presentation columns vary by deployment. Keep all existing
+      // fields, especially unit/development/listing links and routing facts.
+      .select('*')
       .in('id', transactionIds)
   }
 
@@ -387,7 +390,7 @@ async function fetchDevelopmentsById(client, ids = []) {
 
   let query = await client
     .from('developments')
-    .select('id, name, development_name, code, formatted_address, address, street_address, address_line_1, location, hero_image_url, cover_image_url, image_url')
+    .select('*')
     .in('id', developmentIds)
 
   if (
@@ -1005,7 +1008,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
   const relevantAssignments = assignments.filter((assignment) => ['pending', 'active', 'paused'].includes(toLower(assignment.status)))
 
   const transactionIds = [...new Set(relevantAssignments.map((assignment) => assignment.transactionId).filter(Boolean))]
-  const transactions = await fetchTransactions(client, transactionIds)
+  const transactions = await fetchAttorneyMatterTransactions(client, transactionIds)
   timer.mark('transactions:loaded', {
     transactionIds: transactionIds.length,
     transactions: transactions.length,
@@ -1024,7 +1027,14 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
       ...Object.values(unitsById).map((unit) => unit.development_id).filter(Boolean),
     ]),
   ]
-  const developmentsById = await fetchDevelopmentsById(client, developmentIds)
+  const listingIds = [...new Set(transactions.map(t => t.listing_id).filter(Boolean))]
+  const [developmentsById, matterProgress, listingResult] = await Promise.all([
+    fetchDevelopmentsById(client, developmentIds),
+    fetchMatterListProgress(client, transactions),
+    listingIds.length ? client.from('private_listings').select('*').in('id', listingIds) : { data: [] },
+  ])
+  if (listingResult.error) throw listingResult.error
+  const listingsById = new Map((listingResult.data || []).map(row => [row.id, row]))
   timer.mark('propertyContext:loaded', {
     units: Object.keys(unitsById || {}).length,
     developments: Object.keys(developmentsById || {}).length,
@@ -1067,6 +1077,18 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
       const unit = unitsById[transaction.unit_id] || null
       const development = developmentsById[transaction.development_id || unit?.development_id] || null
       const flags = resolveMatterFlags(transaction)
+      const progressContext = matterProgress.get(transaction.id)
+      const laneKey = assignment.assignmentType === 'bond' ? 'bond' : assignment.assignmentType === 'cancellation' ? 'cancellation' : 'transfer'
+      const matchingLanes = (progressContext?.lanes || []).filter(lane => lane.process_type === laneKey || (laneKey === 'transfer' && lane.process_type === 'attorney'))
+      const lane = matchingLanes.find(item => item.attorney_assignment_id === assignment.id) || matchingLanes.find(item => !item.attorney_assignment_id)
+      const workflowProgress = buildMatterListProgress(transaction, laneKey, lane, progressContext?.steps.get(lane?.id) || [])
+      // Do not interpret "upload the signed OTP" as an outstanding signature.
+      const waitingTask = workflowProgress.status === 'waiting' ? workflowProgress.taskKey : ''
+      flags.awaitingSignatures = Boolean(waitingTask && /sign/.test(waitingTask))
+      flags.awaitingFica = Boolean(waitingTask && /fica/.test(waitingTask))
+      flags.guaranteesOutstanding = Boolean(waitingTask && /guarantee/.test(waitingTask))
+      flags.bankConditionsPending = waitingTask === 'bank_conditions_outstanding'
+      flags.delayed = workflowProgress.status === 'blocked' || ['blocked', 'delayed'].includes(toLower(transaction.risk_status))
       const matterType = resolveMatterType(transaction, assignment.assignmentType)
       const status = flags.delayed
         ? 'Needs Attention'
@@ -1082,6 +1104,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
         buyer: buyersById[transaction.buyer_id],
         unit,
         development,
+        listing: listingsById.get(transaction.listing_id),
       }
       const clientName = resolvePortalBuyerName(identityRow, {
         fallback: buyersById[transaction.buyer_id]?.email || `Buyer ${String(transaction.buyer_id || '').slice(0, 8)}`,
@@ -1143,14 +1166,16 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
         registrationDate: transaction.registration_date || transaction.registered_at || null,
         lifecycleState: transaction.lifecycle_state || null,
         matterType,
-        currentStage: buildStageLabel(transaction),
-        nextAction: transaction.next_action || '',
+        workflowProgress,
+        currentStage: workflowProgress.label,
+        nextAction: workflowProgress.nextAction,
         assignedRole: assignmentRole,
         assignedUserId: assignment.primaryAttorneyId || null,
         assignedAttorneyId: assignment.primaryAttorneyId || null,
         assignedSecretaryId: assignment.secretaryId || null,
         assignedAdminHandlerId: assignment.adminHandlerId || null,
         assignedAttorneyName: assignment.primaryAttorney?.name || assignment.firm?.name || null,
+        assignedFirmName: assignment.firm?.name || resolvedFirm.name || transaction.attorney || '',
         assignedSecretaryName: assignment.secretary?.name || null,
         assignedAdminHandlerName: assignment.adminHandler?.name || null,
         assignedAgentId: transaction.assigned_agent_id || null,
