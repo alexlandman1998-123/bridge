@@ -6,11 +6,13 @@ const sourcePath = path.join(root, 'src/pages/AgentListings.jsx')
 const storagePath = path.join(root, 'src/lib/agentListingStorage.js')
 const servicePath = path.join(root, 'src/services/privateListingService.js')
 const packagePath = path.join(root, 'package.json')
+const deletionMigrationPath = path.join(root, '..', 'supabase/migrations/20260908055855_agent_listing_deletion_rpc.sql')
 
 const source = fs.readFileSync(sourcePath, 'utf8')
 const storageSource = fs.readFileSync(storagePath, 'utf8')
 const serviceSource = fs.readFileSync(servicePath, 'utf8')
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
+const deletionMigration = fs.readFileSync(deletionMigrationPath, 'utf8')
 
 function assert(condition, message) {
   if (!condition) {
@@ -86,20 +88,37 @@ const deletePrivateListingSource = serviceSource.match(
 )?.[0] || ''
 
 assert(
+  deletePrivateListingSource.includes("client.rpc('delete_private_listing', { p_listing_id: normalizedId })") &&
+    !deletePrivateListingSource.includes(".from('private_listings')\n    .delete()"),
+  'permanent deletion must use the atomic database RPC rather than issuing a client-side parent-row delete.',
+)
+
+assert(
+  deletePrivateListingSource.includes("throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')") &&
+    deletePrivateListingSource.includes("throw new Error(result.data?.message || 'This listing cannot be permanently deleted until its linked workflows are resolved.')"),
+  'the client must explain permission denials and structured deletion blockers instead of reporting false success.',
+)
+
+assert(
   !deletePrivateListingSource.includes('archivePrivateListingDeleteFallback') &&
     !deletePrivateListingSource.includes('deletePrivateListingRelatedRows'),
-  'permanent deletion must issue the canonical parent-row delete directly and must never silently substitute an archive.',
+  'the client must not substitute an archive or attempt partial relationship cleanup outside the atomic database workflow.',
 )
 
 assert(
-  deletePrivateListingSource.includes("throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')"),
-  'a denied deletion must explain the RLS rule instead of reporting a false success.',
+  deletionMigration.includes('create or replace function public.delete_private_listing(p_listing_id uuid)') &&
+    deletionMigration.includes('security definer') &&
+    deletionMigration.includes('revoke all on function public.delete_private_listing(uuid) from public;') &&
+    deletionMigration.includes('grant execute on function public.delete_private_listing(uuid) to authenticated;'),
+  'the database delete RPC must be explicitly secured and callable only by authenticated users.',
 )
 
 assert(
-  deletePrivateListingSource.includes("constraintText.includes('website_production_dark_launches')") &&
-    deletePrivateListingSource.includes("Retire that launch before permanently deleting the listing."),
-  'a published website launch must explain its deletion guard instead of being silently archived.',
+  deletionMigration.includes("v_launch.status is distinct from 'rolled_back'") &&
+    deletionMigration.includes('set listing_id = null') &&
+    deletionMigration.includes('on delete set null') &&
+    deletionMigration.includes("when foreign_key_violation then"),
+  'an active website launch must block deletion, while a rolled-back launch keeps its audit record after unlinking.',
 )
 
 assert(

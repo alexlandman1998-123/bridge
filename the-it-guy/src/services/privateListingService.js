@@ -6065,75 +6065,20 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
 export async function deletePrivateListing(listingId, { organisationId = null } = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
-  const normalizedOrgId = normalizeUuid(organisationId)
   if (!normalizedId) throw new Error('Listing id is required.')
-
-  let existingQuery = client
-    .from('private_listings')
-    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title')
-    .eq('id', normalizedId)
-
-  if (normalizedOrgId) {
-    existingQuery = existingQuery.eq('organisation_id', normalizedOrgId)
-  }
-
-  const existing = await existingQuery.maybeSingle()
-  if (existing.error) {
-    if (isMissingTableError(existing.error, 'private_listings')) {
-      throw new Error('Private listings table is unavailable in this Supabase project.')
-    }
-    throw existing.error
-  }
-
-  if (!existing.data?.id) {
-    return {
-      deleted: true,
-      mode: 'already_removed',
-      listing: { id: normalizedId },
-    }
-  }
-
-  let hardDeleteQuery = client
-    .from('private_listings')
-    .delete()
-    .eq('id', normalizedId)
-
-  if (normalizedOrgId) {
-    hardDeleteQuery = hardDeleteQuery.eq('organisation_id', normalizedOrgId)
-  }
-
-  const result = await hardDeleteQuery
-    .select('id, organisation_id, seller_lead_id, originating_crm_lead_id, listing_reference, title')
-    .maybeSingle()
-
+  const result = await client.rpc('delete_private_listing', { p_listing_id: normalizedId })
   if (result.error) {
-    if (isMissingTableError(result.error, 'private_listings')) {
-      throw new Error('Private listings table is unavailable in this Supabase project.')
-    }
     if (isPermissionDeniedError(result.error)) {
       throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')
-    }
-    if (String(result.error?.code || '') === '23503') {
-      const constraintText = [result.error?.message, result.error?.details, result.error?.hint]
-        .map((value) => String(value || '').toLowerCase())
-        .join(' ')
-      if (constraintText.includes('website_production_dark_launches')) {
-        throw new Error('This listing is linked to a website launch. Retire that launch before permanently deleting the listing.')
-      }
-      throw new Error('This listing still has linked records and cannot be permanently deleted. Unpublish or retire its linked workflow first.')
     }
     throw result.error
   }
 
-  if (!result.data?.id) {
-    throw new Error('Could not delete listing. It may already be removed or you may not have permission.')
+  if (!result.data?.deleted) {
+    throw new Error(result.data?.message || 'This listing cannot be permanently deleted until its linked workflows are resolved.')
   }
 
-  return {
-    deleted: true,
-    mode: 'hard',
-    listing: result.data,
-  }
+  return result.data
 }
 
 export async function updatePrivateListingOnboardingFormData(listingId, formData = {}, options = {}) {
