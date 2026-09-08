@@ -129,6 +129,9 @@ import {
   getProspectDemoClientPortalWorkspaceData,
 } from '../services/clientPortalWorkspaceService'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
+import { MatterConversationAccess } from '../components/transaction/MatterConversation'
+import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
+import { selectStablePortalWorkspace } from '../core/transactions/stablePortalWorkspace.js'
 import { markRouteMilestone } from '../lib/performanceTrace'
 import {
   clearSellerPortalAccessToken,
@@ -8187,6 +8190,8 @@ function AttorneySaysCard({ update = null, fallbackStageLabel = '' }) {
 }
 
 function ClientLegalProgressCard({ model = null }) {
+  // The journey tracker now renders the actual shared legal tasks.
+  if (model?.sharedJourney) return null
   if (!model?.available || !model?.current) return null
   const current = model.current
   const recentItems = (model.items || []).slice(1, 3)
@@ -8590,6 +8595,11 @@ function ClientPortal() {
   })
   const portalContextsRef = useRef({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
   const portalLoadRequestRef = useRef(0)
+  const portalMessageRequestRef = useRef(null)
+  const portalLoadScopeRef = useRef('')
+  const portalDraftScopeRef = useRef('')
+  const portalDraftEditingRef = useRef({})
+  portalDraftEditingRef.current = { myDetailsEditingSection, myDetailsSavingSection, bondApplicationDirty }
   const [workspaceData, setWorkspaceData] = useState(null)
   const [matterAccountsState, setMatterAccountsState] = useState({
     accounts: [],
@@ -8612,6 +8622,7 @@ function ClientPortal() {
 
   const requestedWorkspace = useMemo(() => getPortalWorkspaceFromPath(location.pathname), [location.pathname])
   const portalDataWorkspace = requestedWorkspace === 'buyer_explicit' ? 'buyer' : requestedWorkspace
+  portalLoadScopeRef.current = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
   const isDemoRoute = useMemo(() => location.pathname.startsWith('/demo/'), [location.pathname])
   const isSellerPortalToken = useMemo(() => String(token || '').trim().toLowerCase().startsWith('seller-'), [token])
   const isDemoMode = isDemoRoute || Boolean(workspaceData?.permissions?.demoOnly)
@@ -8666,7 +8677,8 @@ function ClientPortal() {
   const loadPortal = useCallback(async ({ background = false, sellerPortalAccessTokenOverride = '' } = {}) => {
     const loadRequestId = portalLoadRequestRef.current + 1
     portalLoadRequestRef.current = loadRequestId
-    const isCurrentLoad = () => portalLoadRequestRef.current === loadRequestId
+    const loadScope = portalLoadScopeRef.current
+    const isCurrentLoad = () => portalLoadRequestRef.current === loadRequestId && portalLoadScopeRef.current === loadScope
 
     if (!token) {
       setError('Missing client portal token.')
@@ -8704,32 +8716,38 @@ function ClientPortal() {
               }),
           { phase: 'background', timeoutMs: CLIENT_PORTAL_BACKGROUND_LOAD_TIMEOUT_MS },
         )
-        if (!isCurrentLoad()) return
+        if (!isCurrentLoad()) return false
         portalContextsRef.current = {
           contexts: data?.portalContext?.contexts || [],
           hasBuyingContext: data?.portalContext?.hasBuyingContext !== false,
           hasSellingContext: Boolean(data?.portalContext?.hasSellingContext),
         }
-        setWorkspaceData(data)
+        setWorkspaceData((previous) => selectStablePortalWorkspace(previous, data))
         setPortal(data?.legacyPortalData || null)
         setSellerPortalAuth(null)
         console.log('[perf][client-portal] background refresh complete', {
-          token,
           durationMs: Date.now() - backgroundStartedAt,
         })
+        return true
       } catch (loadError) {
-        if (!isCurrentLoad()) return
+        if (!isCurrentLoad()) return false
         if (isSellerPortalAuthRequiredError(loadError)) {
           requireSellerReauthentication({
             portalAuth: loadError.portalAuth || { authRequired: true },
             sessionExpired: Boolean(loadError?.portalAuth?.sessionExpired),
           })
-          return
+          return false
         }
         console.warn('[client-portal] Background refresh skipped', {
-          token,
-          error: loadError,
+          message: 'Portal refresh failed; it will be retried.',
         })
+        if (['42501', 'PGRST301'].includes(loadError?.code)
+          || loadError?.message === 'Client portal link is invalid or inactive.') {
+          setPortal(null)
+          setWorkspaceData(null)
+          setError('This portal link is no longer available. Please request a new link.')
+        }
+        return false
       } finally {
         if (isCurrentLoad()) setHydratingPortal(false)
       }
@@ -8764,7 +8782,6 @@ function ClientPortal() {
       setLoading(false)
       markRouteMilestone('core_ready')
       console.log('[perf][client-portal] core data loaded', {
-        token,
         durationMs: Date.now() - startedAt,
       })
     } catch (coreError) {
@@ -8808,13 +8825,12 @@ function ClientPortal() {
         hasBuyingContext: fullData?.portalContext?.hasBuyingContext !== false,
         hasSellingContext: Boolean(fullData?.portalContext?.hasSellingContext),
       }
-      setWorkspaceData(fullData)
+      setWorkspaceData((previous) => selectStablePortalWorkspace(previous, fullData))
       setPortal(fullData?.legacyPortalData || null)
       setSellerPortalAuth(null)
       setDocumentActionError('')
       setError('')
       console.log('[perf][client-portal] full data loaded', {
-        token,
         durationMs: Date.now() - startedAt,
       })
       markRouteMilestone('interactive_ready')
@@ -9016,6 +9032,7 @@ function ClientPortal() {
 
   useEffect(() => {
     void loadPortal()
+    return () => { portalLoadRequestRef.current += 1 }
   }, [loadPortal])
 
   useEffect(() => {
@@ -9024,20 +9041,30 @@ function ClientPortal() {
 
   useTransactionLiveRefresh({
     transactionId: workspaceData?.transaction?.id || portal?.transaction?.id,
-    onRefresh: () => loadPortal({ background: true }),
+    onRefresh: () => hydratingPortal ? false : loadPortal({ background: true }),
+    enabled: !isDemoRoute && !loading && !sellerPortalAuth?.authRequired,
+    realtime: false,
+    scopeKey: `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`,
     includeNotifications: false,
-    pollingIntervalMs: portalDataWorkspace === 'seller' || isSellerPortalToken ? 15_000 : 30_000,
+    pollingIntervalMs: 15_000,
   })
 
   useEffect(() => {
+    const draftScope = `${portalLoadScopeRef.current}:${portal?.transaction?.id || ''}`
+    const changedScope = portalDraftScopeRef.current !== draftScope
+    portalDraftScopeRef.current = draftScope
     if (!portal) {
       setMyDetailsDraft({})
       setBondApplicationDraft(null)
       return
     }
-    setMyDetailsDraft(cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {}))
-    setMyDetailsEditingSection('')
-    setMyDetailsSavingSection('')
+    const editing = portalDraftEditingRef.current
+    if (changedScope || (!editing.myDetailsEditingSection && !editing.myDetailsSavingSection)) {
+      setMyDetailsDraft(cloneMyDetailsFormData(portal?.onboardingFormData?.formData || {}))
+      setMyDetailsEditingSection('')
+      setMyDetailsSavingSection('')
+    }
+    if (!changedScope && editing.bondApplicationDirty) return
     const nextBondApplicationDraft = buildBondApplicationPrefillDraft(portal).application
     setBondApplicationDraft(nextBondApplicationDraft)
     setBondApplicationDirty(false)
@@ -9799,10 +9826,17 @@ function ClientPortal() {
         setCommentDraft('')
         return
       }
+      if (!window.confirm('This message will be visible to the buyer, seller and professional team on this matter. Post it?')) return
+      portalMessageRequestRef.current = matterMessageRequest(portalMessageRequestRef.current, {
+        scope: portalLoadScopeRef.current, body: commentDraft, audience: 'everyone',
+      })
       await submitClientPortalComment({
         token,
         commentText: commentDraft,
+        sellerPortalAccessToken,
+        commandId: portalMessageRequestRef.current.commandId,
       })
+      portalMessageRequestRef.current = null
       setCommentDraft('')
       await loadPortal()
     } catch (submitError) {
@@ -13491,7 +13525,7 @@ function ClientPortal() {
     paths.reduce((total, path) => total + (Number(readBondField(path, 0)) || 0), 0)
 
   return (
-    <main
+    <MatterConversationAccess.Provider value={{ token, sellerSession: sellerPortalAccessToken }}><main
       className="min-h-screen bg-[#f3f6fb] text-[#142132]"
       data-buyer-portal-release={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.phase}
       data-buyer-portal-aligned={effectiveWorkspace === 'seller' ? undefined : buyerPortalCutoverReadiness.releaseLabel}
@@ -14185,7 +14219,7 @@ function ClientPortal() {
                       sellerComplianceSigning={sellerComplianceSigning}
                       sellerListingUrl={sellerListingUrl}
                       latestAttorneyUpdate={latestAttorneyUpdate}
-                      legalProgress={workspaceData?.legalProgress}
+                      legalProgress={{ ...workspaceData?.legalProgress, sharedJourney: workspaceData?.transactionJourneySnapshot?.legalJourney }}
                       commentDraft={commentDraft}
                       savingComment={saving}
                       onCommentDraftChange={setCommentDraft}
@@ -14282,7 +14316,7 @@ function ClientPortal() {
                   updates={latestJourneyFeedItems}
                   latestUpdatesSubtitle={latestUpdatesSubtitle}
                   latestAttorneyUpdate={latestAttorneyUpdate}
-                  legalProgress={workspaceData?.legalProgress}
+                  legalProgress={{ ...workspaceData?.legalProgress, sharedJourney: workspaceData?.transactionJourneySnapshot?.legalJourney }}
                   commentDraft={commentDraft}
                   saving={saving}
                   onCommentDraftChange={setCommentDraft}
@@ -17430,7 +17464,7 @@ function ClientPortal() {
 
         </div>
       </div>
-    </main>
+    </main></MatterConversationAccess.Provider>
   )
 }
 

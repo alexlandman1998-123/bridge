@@ -333,6 +333,22 @@ export default function TransactionStageWorkspace({
       ? { href: `mailto:${agentEmail}`, label: 'Message Agent' }
       : null
 
+  // A linked matter uses actual tasks, not the old stage-name/duration guesses.
+  if (journeyModel?.legalJourney) return (
+    <section className="space-y-5 pb-24 lg:pb-2">
+      <Link to={overviewPath} className="text-sm font-semibold text-emerald-800">Back to Overview</Link>
+      <TransactionJourneyTracker model={journeyModel} title="Your sale journey" subtitle="Shared transaction milestones and legal work." variant="detailed" audience="seller" />
+      {actionRequired ? <article className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+        <h2 className="font-semibold">{pendingAction.title}</h2>
+        <p className="mt-2 text-sm">{pendingAction.description}</p>
+        <WorkspaceAction action={{ href: pendingAction.href || documentsPath }} className="mt-3 inline-block font-semibold text-emerald-800">{pendingAction.label || 'Complete action'}</WorkspaceAction>
+      </article> : null}
+      {participants.length ? <section className="rounded-xl border border-slate-200 bg-white p-4" aria-label="Your transaction team">
+        {participants.map(participant => <ParticipantCard key={`${participant.role}-${participant.name}`} participant={participant} />)}
+      </section> : null}
+    </section>
+  )
+
   return (
     <section className="space-y-5 pb-24 lg:pb-2">
       <header className="flex flex-wrap items-start justify-between gap-3 px-0.5">

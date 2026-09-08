@@ -25,8 +25,8 @@ try {
   }
   const page = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
   const header = page.slice(page.indexOf('function ArchlineMatterHeader('), page.indexOf('function ArchlineMatterHeader(') + 26000)
-  assert.ok(header.includes('journeyModel.phases'))
+  assert.ok(header.includes('sharedJourneyHeaderPhases(sharedLegalJourney, workflowKey)'))
   assert.ok(header.includes('onSelectWorkflowPhase?.(stage, workflowKey)'))
   assert.ok(page.includes('focusRequest={journeyFocusRequest}'))
-  console.log('PASS: header phases share Work model across 9 lane/finance combinations; completion, reopen, N/A and navigation wiring checked.')
+  console.log('PASS: Work phase semantics across 9 lane/finance combinations; shared-snapshot header and navigation wiring checked.')
 } finally { await server.close() }

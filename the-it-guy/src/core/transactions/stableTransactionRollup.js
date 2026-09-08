@@ -44,14 +44,31 @@ export function selectStableTransactionRollup(previous, incoming, { transactionI
     return incoming
   }
 
+  const oldLegal = previous.transactionJourneySnapshot?.legalJourney
+  const newLegal = incoming.transactionJourneySnapshot?.legalJourney
+  if (oldLegal?.status === 'ready' && newLegal?.status === 'ready' &&
+      oldLegal.snapshot.transactionId === newLegal.snapshot.transactionId &&
+      oldLegal.snapshot.revision > newLegal.snapshot.revision) {
+    incoming = { ...incoming, transactionJourneySnapshot: {
+      ...incoming.transactionJourneySnapshot, legalJourney: oldLegal,
+    } }
+  }
+  // Legal revisions are independent of the older overall-rollup timestamp.
+  const previousWithNewerLegal = newLegal?.status === 'ready' &&
+    newLegal.snapshot.transactionId === previousTransactionId &&
+    (!oldLegal?.snapshot || newLegal.snapshot.revision > oldLegal.snapshot.revision)
+    ? { ...previous, transactionJourneySnapshot: {
+      ...previous.transactionJourneySnapshot, legalJourney: newLegal,
+    } } : previous
+
   if (hasCanonicalJourney(previous) && !hasCanonicalJourney(incoming)) {
-    return previous
+    return previousWithNewerLegal
   }
 
   const previousDerivedTime = getDerivedTime(previous)
   const incomingDerivedTime = getDerivedTime(incoming)
   if (previousDerivedTime && incomingDerivedTime && incomingDerivedTime < previousDerivedTime) {
-    return previous
+    return previousWithNewerLegal
   }
 
   return incoming

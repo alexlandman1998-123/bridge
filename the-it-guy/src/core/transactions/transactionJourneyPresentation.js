@@ -18,12 +18,13 @@ export function buildTransactionJourneyPresentation({
   fallbackSource = 'legacy',
 } = {}) {
   if (!isCanonicalSnapshot(snapshot)) {
-    return fallbackModel || buildBuyerJourneyPresentationModel({
+    const fallback = fallbackModel || buildBuyerJourneyPresentationModel({
       steps: fallbackSteps,
       currentStepId: fallbackCurrentStepId,
       progressPercent: fallbackProgressPercent,
       source: fallbackSource,
     })
+    return snapshot?.legalJourney ? { ...fallback, legalJourney: snapshot.legalJourney } : fallback
   }
 
   const workflowItem = snapshot.currentWorkflowItem || null
@@ -65,5 +66,6 @@ export function buildTransactionJourneyPresentation({
     currentWorkflowItem: workflowItem,
     derivedAt: snapshot.derivedAt || null,
     helperMessage: workflowItem?.summary || model.helperMessage,
+    legalJourney: snapshot.legalJourney || null,
   })
 }

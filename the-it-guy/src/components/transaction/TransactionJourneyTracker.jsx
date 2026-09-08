@@ -1,4 +1,5 @@
 import { AlertTriangle, CheckCircle2, Clock3, Flag } from 'lucide-react'
+import SharedLegalJourney from './SharedLegalJourney'
 
 function hexToRgba(hex, alpha = 1) {
   const normalized = String(hex || '#087955').replace('#', '')
@@ -23,6 +24,8 @@ export default function TransactionJourneyTracker({
   loading = false,
 }) {
   const primary = themeInput?.primary || '#087955'
+  const conversationAudience = ['attorney','agent','developer','developer-agent','bond-originator','buyer','buyer-overview','seller'].includes(audience)
+  const conversationRequiresPortal = ['buyer','buyer-overview','seller'].includes(audience)
   const steps = Array.isArray(model?.steps) ? model.steps : []
   const currentStep = model?.currentStep || steps.find((step) => step.isCurrent) || null
   const stepCount = Math.max(steps.length, 1)
@@ -76,7 +79,20 @@ export default function TransactionJourneyTracker({
     )
   }
 
+  // Once legal work exists, its phases/tasks replace the competing legacy rail.
+  // Overall/pre-legal milestones remain available only before a legal plan exists.
+  if (model?.legalJourney && (model.legalJourney.status !== 'ready' || model.legalJourney.snapshot.lanes.length > 0)) {
+    return <section data-transaction-journey="shared" data-journey-audience={audience} data-journey-source="shared-legal-journey" className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+        {action}
+      </div>
+      <SharedLegalJourney result={model.legalJourney} showConversation={conversationAudience} conversationRequiresPortal={conversationRequiresPortal} />
+    </section>
+  }
+
   return (
+    <div className="space-y-4">
     <section
       data-transaction-journey="shared"
       data-journey-audience={audience}
@@ -164,5 +180,7 @@ export default function TransactionJourneyTracker({
         {isDetailed && action ? <div className="mt-4 border-t border-[#d7e0ea] pt-4">{action}</div> : null}
       </div>
     </section>
+    {model?.legalJourney ? <SharedLegalJourney result={model.legalJourney} showConversation={conversationAudience} conversationRequiresPortal={conversationRequiresPortal} /> : null}
+    </div>
   )
 }

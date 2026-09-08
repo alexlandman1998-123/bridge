@@ -67,6 +67,13 @@ async function invokeProgressNotificationDispatch(client, body) {
   return { attempted: true, queued: false, ...(result.data || {}) }
 }
 
+// Delivery is best-effort after the database has committed the publication/jobs.
+export async function dispatchCommittedProgressNotifications(client, transactionId) {
+  return invokeProgressNotificationDispatch(client, {
+    type: 'transaction_progress_dispatch', transactionId, limit: 25,
+  }).catch((error) => ({ attempted: true, queued: true, error: error?.message || 'dispatch_failed' }))
+}
+
 export async function publishTransactionSharedProgress({
   client: providedClient = null,
   definition,

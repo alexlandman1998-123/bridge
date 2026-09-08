@@ -68,6 +68,9 @@ function requirementStatus(item = {}) {
 function RequirementRow({ item, action = null, saving = false, onRunAction }) {
   const complete = Boolean(item.complete)
   const status = requirementStatus(item)
+  const description = typeof item.description === 'string' ? item.description.trim() : ''
+  const showDescription = description && !/^[a-z\d]+(?:_[a-z\d]+)+$/i.test(description)
+    && description.toLowerCase() !== String(item.label || '').trim().toLowerCase()
   return (
     <li className="flex min-w-0 flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-slate-50/70 sm:flex-row sm:items-center">
       <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -76,7 +79,12 @@ function RequirementRow({ item, action = null, saving = false, onRunAction }) {
       </span>
       <span className="min-w-0 flex-1">
         <strong className="block text-sm font-semibold leading-5 text-slate-950">{item.label}</strong>
-        {item.description ? <span className="mt-1 block text-xs leading-5 text-slate-500">{item.description}</span> : null}
+        {showDescription ? (
+          <details className="mt-1 text-xs leading-5 text-slate-500">
+            <summary className="w-fit cursor-pointer focus-visible:outline-emerald-700">Details</summary>
+            <p className="mt-1">{description}</p>
+          </details>
+        ) : null}
       </span>
       </div>
       <div className="flex shrink-0 items-center gap-3 self-end sm:self-auto">
@@ -148,7 +156,7 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
                     </span>
                     <span className="min-w-0 flex-1">
                       <strong className="block text-sm font-semibold leading-5">{phase.label}</strong>
-                      <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} / {phase.total} applicable tasks complete{phase.notApplicable ? ` · ${phase.notApplicable} not applicable` : ''}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} / {phase.total} complete{phase.notApplicable ? ` · ${phase.notApplicable} N/A` : ''}</span>
                     </span>
                     {exception ? (
                       <span
@@ -263,7 +271,7 @@ export default function LegalTaskWorkbench({
 
   return (
     <>
-      <section className="archline-transfer-workspace grid items-start gap-5 rounded-[26px] border border-slate-200/90 bg-white p-3 shadow-[0_18px_50px_rgba(15,23,42,0.045)] sm:p-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
+      <section className="archline-transfer-workspace grid items-start gap-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
       <PhaseNavigator
         phases={phases}
         selectedTaskKey={selectedTaskKey}
@@ -286,9 +294,7 @@ export default function LegalTaskWorkbench({
                   <h2 className="min-w-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-slate-950">{model.taskLabel}</h2>
                   <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(model.status)}`}>{model.statusLabel}</span>
                 </div>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">{model.taskDescription}</p>
                 {model.applicabilitySuggestion ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700"><strong>Profile suggestion:</strong> {model.applicabilitySuggestion} The attorney decides applicability.</p> : null}
-                <p className="mt-2 text-xs text-slate-500">Operational checklist only. Missing documents remain outstanding even when work is completed externally.</p>
                 {model.outcomeReason ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700"><strong>Recorded reason:</strong> {model.outcomeReason}</p> : null}
               </div>
               {dueDateLabel || model.showOwner ? (
@@ -309,7 +315,6 @@ export default function LegalTaskWorkbench({
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <h3 id="legal-task-outstanding-heading" className="text-base font-semibold text-slate-950">{model.outstandingRequirements.length} item{model.outstandingRequirements.length === 1 ? '' : 's'} to review</h3>
-                  <p className="mt-1 text-sm text-slate-500">{taskCopy.helper} Capture or request what is relevant, then complete the task when your professional judgement says it is ready.</p>
                 </div>
               </div>
               <ul className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
@@ -322,16 +327,16 @@ export default function LegalTaskWorkbench({
               </ul>
             </section>
 
-            <section className="mt-4 rounded-xl border border-slate-200 bg-slate-50/45 px-4">
+            <section className="mt-4">
               {model.confirmationRequirements.length ? (
-                <Disclosure title="Checks confirmed on completion" count={model.confirmationRequirements.length}>
+                <Disclosure title="Checks" count={model.confirmationRequirements.length}>
                   <ul className="divide-y divide-slate-100">
                     {model.confirmationRequirements.map((item) => <RequirementRow key={item.id} item={{ ...item, required: false }} saving={saving} />)}
                   </ul>
                 </Disclosure>
               ) : null}
               {model.completedRequirements.length ? (
-                <Disclosure title="Completed requirements" count={model.completedRequirements.length}>
+                <Disclosure title="Completed" count={model.completedRequirements.length}>
                   <ul className="divide-y divide-slate-100">
                     {model.completedRequirements.map((item) => <RequirementRow key={item.id} item={item} saving={saving} />)}
                   </ul>
@@ -353,7 +358,7 @@ export default function LegalTaskWorkbench({
                   </div>
                 ) : <p className="text-sm text-slate-500">No documents are linked to this task.</p>}
               </Disclosure>
-              {(model.notes.length || model.activity.length) ? <Disclosure title="Notes" count={model.notes.length + model.activity.length}>
+              {(model.notes.length || model.activity.length) ? <Disclosure title="Activity" count={model.notes.length + model.activity.length}>
                 <div className="space-y-3">
                   {[...model.notes, ...model.activity].slice(0, 4).map((item, index) => (
                     <article key={item.id || index} className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-700">
@@ -365,14 +370,28 @@ export default function LegalTaskWorkbench({
                   <Button type="button" variant="ghost" size="sm" onClick={() => runUtilityAction('add_note', onAddNote)}><MessageSquarePlus size={15} /> Add note</Button>
                 </div>
               </Disclosure> : null}
+              <Disclosure key={model.taskKey} title="Task guidance">
+                <div className="space-y-2 text-sm leading-5 text-slate-600">
+                  {model.taskDescription ? <p>{model.taskDescription}</p> : null}
+                  <p>{taskCopy.helper}</p>
+                  <p>Complete work using your professional judgement. Missing documents remain outstanding, including when work is completed externally.</p>
+                  {!model.requirementsSatisfied && model.completionMessage ? <p>{model.completionMessage}</p> : null}
+                </div>
+              </Disclosure>
             </section>
           </div>
 
           <footer className="shrink-0 border-t border-slate-200 bg-slate-50/75 px-5 py-3.5 lg:px-6">
             {error ? <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
-            <div className="mb-3 flex flex-wrap gap-2" aria-label="Attorney task outcomes">
+            {(model.outcomeActions?.length || model.followUpActions?.length) ? <div className="mb-3 flex flex-wrap gap-2" aria-label="Attorney task outcomes">
               {(model.outcomeActions || []).map(action => <Button key={action.id} type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => runAction(action, 'outcome')}>{action.label}</Button>)}
-            </div>
+              {model.followUpActions?.length ? <details className="text-sm">
+                <summary className="cursor-pointer rounded-lg px-3 py-2 font-medium text-slate-600 focus-visible:outline-emerald-700">More status options</summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {model.followUpActions.map(action => <Button key={action.id} type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => runAction(action, 'outcome')}>{action.label}</Button>)}
+                </div>
+              </details> : null}
+            </div> : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {model.canMarkInProgress ? (
@@ -394,13 +413,16 @@ export default function LegalTaskWorkbench({
                 >
                   <CheckCircle2 size={15} /> Complete task
                 </Button>
+              ) : model.readOnly && !model.taskResolved ? (
+                <Button type="button" size="sm" disabled aria-describedby={`${completionHelpId}-access`}><CheckCircle2 size={15} /> Complete task</Button>
               ) : null}
             </div>
+            {model.readOnly ? <p id={`${completionHelpId}-access`} className="mt-2 text-xs text-slate-600">Read-only workflow. Task updates require access to this attorney lane.</p> : null}
             {!model.requirementsSatisfied ? (
-              <p id={completionHelpId} className="mt-3 rounded-lg border border-amber-100 bg-amber-50/70 px-3 py-2 text-sm leading-5 text-slate-700">
-                <span className="font-semibold text-slate-900">Outstanding items are advisory:</span>{' '}
-                {model.completionMessage}
-              </p>
+              <details className="mt-2 text-xs text-slate-600">
+                <summary id={completionHelpId} className="w-fit cursor-pointer focus-visible:outline-emerald-700">{model.outstandingRequirements.length ? `${model.outstandingRequirements.length} outstanding item${model.outstandingRequirements.length === 1 ? '' : 's'}` : 'Outstanding checks'}</summary>
+                <p className="mt-1">Missing evidence remains outstanding after completion. {model.completeAction?.requiresNote ? 'Add a completion note to explain the outstanding items.' : 'See Task guidance for details.'}</p>
+              </details>
             ) : null}
           </footer>
         </div>
@@ -419,7 +441,7 @@ export default function LegalTaskWorkbench({
               form="legal-task-workbench-status-form"
               disabled={saving || (statusDraft?.requiresReason && !statusDraft?.reason?.trim()) || (statusDraft?.requiresNote && !statusDraft?.note?.trim()) || (statusDraft?.visibility === 'client_visible' && !statusDraft?.note?.trim())}
             >
-              {saving ? 'Updating…' : 'Update status'}
+              {saving ? 'Updating…' : statusDraft?.actionLabel || 'Update status'}
             </Button>
           </div>
         )}
@@ -443,8 +465,8 @@ export default function LegalTaskWorkbench({
                   })}
                 />
                 <span>
-                  <strong className="block font-semibold text-slate-900">Share a client-safe completion update</strong>
-                  <span className="mt-1 block leading-5">Professionals are updated by default. Select this only to publish this completion to {model.clientUpdate.audienceLabel}; a client-safe note is required.</span>
+                  <strong className="block font-semibold text-slate-900">Also notify {model.clientUpdate.audienceLabel}</strong>
+                  <span className="mt-1 block leading-5">Requires a client-safe note. The professional team is updated automatically.</span>
                 </span>
               </label>
             ) : (

@@ -23,10 +23,10 @@ function formatDateTime(value) {
   return Number.isNaN(date.getTime()) ? 'Not set' : new Intl.DateTimeFormat('en-ZA', { dateStyle: 'medium', timeStyle: 'short' }).format(date)
 }
 
-export default function ActivityWorkspaceTab({ entries = [], groupedEntries = [], filters = [], activeFilter = 'all', onFilterChange, composer, onOpenWorkspace }) {
+export default function ActivityWorkspaceTab({ entries = [], groupedEntries = [], filters = [], activeFilter = 'all', onFilterChange, composer, onOpenWorkspace, compact = false }) {
   return (
     <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(330px,0.34fr)]">
-      <Panel title="Matter Activity" className="overflow-hidden">
+      <Panel title={compact ? 'History' : 'Matter Activity'} className="overflow-hidden">
         <div className="flex gap-2 overflow-x-auto border-t border-slate-200 px-4 py-4">
           {filters.map((filter) => (
             <button key={filter.key} type="button" className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-semibold ${activeFilter === filter.key ? 'border-emerald-700 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-600'}`} onClick={() => onFilterChange?.(filter.key)}>
@@ -42,7 +42,7 @@ export default function ActivityWorkspaceTab({ entries = [], groupedEntries = []
                 {group.items.map((entry) => {
                   const meta = entry.meta || FALLBACK_META
                   return (
-                    <article key={entry.id} className="rounded-lg border border-slate-200 bg-white p-4">
+                    <article key={entry.id} className={compact ? 'border-b border-slate-100 py-3 last:border-0' : 'rounded-lg border border-slate-200 bg-white p-4'}>
                       <div className="flex items-start gap-3">
                         <span className={`inline-flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 ${meta.icon}`}>{createElement(meta.Icon || Activity, { size: 16 })}</span>
                         <div className="min-w-0 flex-1">
@@ -50,7 +50,12 @@ export default function ActivityWorkspaceTab({ entries = [], groupedEntries = []
                             <div className="min-w-0"><strong className="block text-sm font-semibold text-slate-950">{entry.title}</strong><span className="mt-1 block text-xs text-slate-500">{entry.authorName} · {formatDateTime(entry.createdAt)}</span></div>
                             <span className={`rounded-lg border px-2 py-1 text-xs font-semibold ${meta.badge}`}>{entry.categoryLabel || meta.label}</span>
                           </div>
-                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{entry.body}</p>
+                          {compact ? (entry.body && entry.body !== entry.title ? (
+                            <details className="mt-2 text-sm text-slate-600">
+                              <summary className="w-fit cursor-pointer text-xs font-medium focus-visible:outline-emerald-700">View details</summary>
+                              <p className="mt-2 whitespace-pre-wrap leading-6">{entry.body}</p>
+                            </details>
+                          ) : null) : <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{entry.body}</p>}
                         </div>
                       </div>
                     </article>
@@ -64,7 +69,7 @@ export default function ActivityWorkspaceTab({ entries = [], groupedEntries = []
       </Panel>
       <aside className="space-y-4 xl:sticky xl:top-4 xl:self-start">
         {composer}
-        <Panel title="Quick Actions" className="p-4">
+        {compact ? null : <Panel title="Quick Actions" className="p-4">
           <div className="grid gap-2">
             {[
               ['Documents', FileText, 'documents'],
@@ -74,7 +79,7 @@ export default function ActivityWorkspaceTab({ entries = [], groupedEntries = []
               <Button key={label} type="button" variant="secondary" size="sm" className="justify-start" onClick={() => onOpenWorkspace?.(target)}>{createElement(Icon, { size: 14 })}{label}</Button>
             ))}
           </div>
-        </Panel>
+        </Panel>}
       </aside>
     </section>
   )

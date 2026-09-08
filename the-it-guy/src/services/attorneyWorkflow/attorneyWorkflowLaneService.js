@@ -47,8 +47,10 @@ import { commitTransactionModuleAction } from '../transactionSyncActionAdapters.
 import { getAttorneyTransactionSyncReadModel } from '../transactionSyncReadModelService.js'
 import {
   getTransactionProgressNotifications,
-  publishTransactionSharedProgress,
+  dispatchCommittedProgressNotifications,
 } from '../transactionSharedProgressService.js'
+import { commitSharedJourneyTask } from './sharedJourneyCommandService.js'
+import { fetchSharedMatterJourney, alignWorkStepsWithSharedJourney } from '../sharedMatterJourneyReader.js'
 import {
   buildAttorneyDelegationAttribution,
   getActiveAttorneyLaneDelegation,
@@ -380,45 +382,6 @@ function isMissingSchemaError(error) {
 
 function getLaneStages(laneKey) {
   return getAttorneyStageKeysForLane(laneKey)
-}
-
-function getNextAttorneyStageLabel(laneKey, stepKey) {
-  const stages = getLaneStages(laneKey)
-  const index = stages.indexOf(normalizeAttorneyStageKey(stepKey, laneKey))
-  return index >= 0 && index < stages.length - 1 ? getStageLabel(stages[index + 1], laneKey) : ''
-}
-
-function getSafeAttorneyProgressExplanation(status) {
-  if (status === 'blocked') return 'This step is blocked while the responsible team resolves the issue.'
-  if (status === 'waiting') return 'Awaiting action from the responsible party.'
-  return ''
-}
-
-async function publishAttorneySharedProgress(client, {
-  transactionId,
-  laneKey,
-  stepKey,
-  status,
-  sourceType,
-  sourceId,
-  visibility = null,
-}) {
-  // These outcomes are recorded atomically as explicitly labelled operational
-  // events; do not coerce them into the legacy client milestone vocabulary.
-  if (['not_applicable', 'completed_externally'].includes(status)) return null
-  const definition = getAttorneyStageDefinition(stepKey, laneKey)?.sharedProgress
-  if (!definition) return null
-  return publishTransactionSharedProgress({
-    client,
-    definition,
-    transactionId,
-    status,
-    visibility: normalizeVisibility(visibility || definition.defaultVisibility),
-    safeExplanation: getSafeAttorneyProgressExplanation(status),
-    expectedNextStep: getNextAttorneyStageLabel(laneKey, stepKey),
-    sourceType,
-    sourceId,
-  })
 }
 
 const STEP_STATUS_RANK = {
@@ -1167,6 +1130,13 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     }
   }
 
+  const sharedJourney = await fetchSharedMatterJourney(client, normalizedTransactionId)
+  steps = alignWorkStepsWithSharedJourney(steps, laneRows, sharedJourney, workflowPlan)
+  stepsBySubprocessId = steps.reduce((groups, step) => {
+    ;(groups[step.subprocess_id] ||= []).push(step)
+    return groups
+  }, {})
+
   const legalTimeline = buildTimelineFromSources({
     updates,
     history,
@@ -1316,6 +1286,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
 
   return scopeAttorneyWorkflowOperations({
     transaction,
+    sharedJourney,
     workflowPlan,
     workflow,
     legalDocuments,
@@ -1746,6 +1717,8 @@ export async function updateAttorneyWorkflowStepStatus({
   note = '',
   visibility = null,
   workPacket = null,
+  commandId = null,
+  expectedStepUpdatedAt = undefined,
 } = {}) {
   const client = requireClient()
   const actor = await getAuthenticatedUser(client)
@@ -1797,11 +1770,13 @@ export async function updateAttorneyWorkflowStepStatus({
   if (['completed_externally', 'not_applicable'].includes(normalizedStatus) && !normalizedNote) {
     throw new Error('Record a reason for this task outcome.')
   }
-  const atomicUpdate = await client.rpc('bridge_update_attorney_workflow_step_v3', {
+  const atomicUpdate = await commitSharedJourneyTask(client, {
     p_transaction_id: normalizedTransactionId,
     p_lane_key: normalizedLaneKey,
     p_step_id: stepResult.data.id,
     p_status: normalizedStatus,
+    p_command_id: commandId || globalThis.crypto.randomUUID(),
+    p_expected_step_updated_at: expectedStepUpdatedAt === undefined ? stepResult.data.updated_at : expectedStepUpdatedAt,
     p_note: normalizedNote,
     p_visibility: normalizedVisibility,
     p_work_packet: workPacketMetadata.workPacket || null,
@@ -1814,25 +1789,23 @@ export async function updateAttorneyWorkflowStepStatus({
       atomicUpdate.error?.code === '42883' ||
       (message.includes('bridge_update_attorney_workflow_step') && message.includes('not found'))
     if (missingAtomicFoundation) {
-      throw new Error('Attorney workflow completion is temporarily unavailable until the Phase 1 database foundation is deployed.')
+      throw new Error('Attorney workflow updates require the shared journey Phase 3 database migration.')
     }
     throw atomicUpdate.error
   }
 
-  await publishAttorneySharedProgress(client, {
-    transactionId: normalizedTransactionId,
-    laneKey: normalizedLaneKey,
-    stepKey: resolvedStepKey,
-    status: normalizedStatus,
-    sourceType: 'attorney_workflow_step',
-    sourceId: stepResult.data.id,
-    visibility: normalizedVisibility,
-  })
-
-  const operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
-  const canonicalTransaction = operations?.transaction || await fetchTransaction(client, normalizedTransactionId)
+  // Dispatch already-queued delivery only; no second publication/write RPC.
+  await dispatchCommittedProgressNotifications(client, normalizedTransactionId)
+  // The command has committed. A failed follow-up read is not a failed save.
+  const operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false }).catch(() => null)
+  const canonicalTransaction = operations?.transaction || {
+    id: normalizedTransactionId,
+    current_main_stage: atomicUpdate.data?.matterStage,
+    updated_at: atomicUpdate.data?.updatedAt,
+  }
   return {
     ...operations,
+    refreshRequired: !operations,
     canonicalMatter: {
       id: canonicalTransaction.id,
       lifecycleState: canonicalTransaction.lifecycle_state || null,

@@ -277,6 +277,8 @@ import {
   resolveMatterWorkflowPlan,
 } from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
 import { publishTransactionSharedProgress } from '../services/transactionSharedProgressService.js'
+import { fetchSharedMatterJourney, fetchSellerSharedMatterJourney } from '../services/sharedMatterJourneyReader.js'
+import { postMatterMessage, readMatterConversation } from '../services/matterConversationService.js'
 import { getAgentTransactionSyncReadModel } from '../services/transactionSyncReadModelService.js'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
 import {
@@ -40184,7 +40186,19 @@ async function loadSharedDiscussion(
       .slice(0, limit || 250)
   }
 
-  return filterDiscussionRowsByViewer(rows, viewer)
+  const legacyRows = filterDiscussionRowsByViewer(rows, viewer)
+  // Historical notes retain their existing audience rules. Do not republish or
+  // infer audiences for them. New professional history reads the linked stream.
+  if (viewer !== 'internal') return legacyRows
+  const conversation = await readMatterConversation({ transactionId, client }).catch(() => null)
+  const messages = (conversation?.items || []).filter(item => item.kind === 'message').map(item => ({
+    id: item.id, transactionId, authorName: item.authorName, authorRole: item.authorRole,
+    authorRoleLabel: item.authorRole, commentText: item.body, commentBody: item.body,
+    discussionType: 'operational', visibility: item.audience === 'everyone' ? 'client_visible'
+      : item.audience === 'private' ? 'internal' : 'shared',
+    createdAt: item.createdAt, updatedAt: item.createdAt, attachmentIds: [], isSystemGenerated: false,
+  }))
+  return [...messages, ...legacyRows].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)).slice(0, limit || 250)
 }
 
 export async function fetchTransactionDiscussion(transactionId, options = {}) {
@@ -40350,6 +40364,8 @@ export async function addTransactionDiscussionComment({
   relatedEntityId = null,
   attachmentIds = [],
   isSystemGenerated = false,
+  useMatterConversation = false,
+  messageCommandId = null,
   client: scopedClient = null,
 }) {
   const client = scopedClient || requireClient()
@@ -40377,6 +40393,15 @@ export async function addTransactionDiscussionComment({
     parsedDiscussion.visibility || 'shared',
   )
   const normalizedCommentBody = parsedDiscussion.body || normalizedText
+
+  if (useMatterConversation && !isSystemGenerated) {
+    const audience = ['client_visible','client_safe','buyer_visible'].includes(normalizedVisibilityScope)
+      ? (normalizedVisibilityScope === 'buyer_visible' ? 'buyer' : 'everyone')
+      : ['internal','internal_only'].includes(normalizedVisibilityScope) ? 'private' : 'professionals'
+    const posted = await postMatterMessage({ transactionId, client, commandId: messageCommandId || crypto.randomUUID(),
+      body: normalizedCommentBody, audience })
+    return { id: `message:${posted.id}`, transactionId, commentBody: normalizedCommentBody, commentText: normalizedCommentBody }
+  }
 
   const richPayload = {
     transaction_id: transactionId,
@@ -46114,7 +46139,13 @@ export async function updateAlterationRequestStatus(requestId, status) {
   return data
 }
 
-export async function submitClientPortalComment({ token, commentText }) {
+export async function submitClientPortalComment({ token, commentText, sellerPortalAccessToken = '', commandId = crypto.randomUUID() }) {
+  if (String(token || '').toLowerCase().startsWith('seller-')) {
+    const journey = await fetchSellerSharedMatterJourney(requireClient(), token, sellerPortalAccessToken)
+    if (!journey?.snapshot?.transactionId) throw new Error('A linked matter is required.')
+    return postMatterMessage({ transactionId: journey.snapshot.transactionId, token,
+      sellerSession: sellerPortalAccessToken, commandId, body: commentText, audience: 'everyone' })
+  }
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
 
@@ -46122,21 +46153,14 @@ export async function submitClientPortalComment({ token, commentText }) {
     throw new Error('Client portal link is missing a transaction.')
   }
 
-  const { transaction, buyer } = await resolveTransactionAndContext(client, link.transaction_id)
   const normalizedText = String(commentText || '').trim()
 
   if (!normalizedText) {
     throw new Error('Please enter a comment before posting.')
   }
 
-  return addTransactionDiscussionComment({
-    transactionId: transaction.id,
-    unitId: transaction.unit_id || link.unit_id || null,
-    authorName: buyer?.name || 'Client',
-    authorRole: 'client',
-    commentText: normalizedText,
-    client,
-  })
+  return postMatterMessage({ transactionId: link.transaction_id, token, commandId,
+    body: normalizedText, audience: 'everyone', client })
 }
 
 function normalizeClientPortalAppointmentAction(value = '') {
@@ -47166,7 +47190,11 @@ export async function fetchClientPortalByToken(token) {
   }
 }
 
-export async function fetchClientPortalJourneySnapshotByToken(token, actorRole = 'buyer') {
+export async function fetchClientPortalJourneySnapshotByToken(token, actorRole = 'buyer', options = {}) {
+  if (String(token || '').trim().toLowerCase().startsWith('seller-')) {
+    const legalJourney = await fetchSellerSharedMatterJourney(requireClient(), token, options.sellerPortalAccessToken)
+    return legalJourney ? { schemaVersion: 1, transactionId: legalJourney.snapshot.transactionId, milestones: [], legalJourney } : null
+  }
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
   if (!link?.transaction_id) return null
@@ -47176,7 +47204,9 @@ export async function fetchClientPortalJourneySnapshotByToken(token, actorRole =
     client,
     actorRole: normalizeRoleType(actorRole || 'buyer'),
     preferLegacy: true,
-  })
+  }).catch(() => null)
+  if (!rollup) return { schemaVersion: 1, transactionId: link.transaction_id, milestones: [],
+    legalJourney: await fetchSharedMatterJourney(client, link.transaction_id) }
   return rollup?.transactionJourneySnapshot || null
 }
 

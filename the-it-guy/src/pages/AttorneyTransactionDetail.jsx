@@ -48,6 +48,9 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
+import MatterConversation from '../components/transaction/MatterConversation'
+import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
+import { sharedJourneyHeaderPhases } from '../services/sharedMatterJourneyReader.js'
 import {
   BOND_APPLICATION_INTENTS,
   buildBondApplicationJourneyModel,
@@ -6765,6 +6768,7 @@ function ArchlineMatterHeader({
   instructionDate,
   matterChips = [],
   workflow = null,
+  sharedLegalJourney = null,
   tabs = [],
   activeTab,
   workspaceLabel = 'Legal Matter Workspace',
@@ -6824,10 +6828,7 @@ function ArchlineMatterHeader({
     : workflow?.detailKey === 'bond-registration'
       ? 'bond'
       : 'transfer')
-  const journeyModel = useMemo(() => buildTransferWorkspaceViewModel({
-    workflow, workflowKey, documents: workflowDocuments,
-  }), [workflow, workflowKey, workflowDocuments])
-  const visibleWorkflowSteps = workflow?.lane ? journeyModel.phases : []
+  const visibleWorkflowSteps = sharedJourneyHeaderPhases(sharedLegalJourney, workflowKey)
 
   return (
     <header className="archline-matter-header no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
@@ -6936,7 +6937,7 @@ function ArchlineMatterHeader({
         {showWorkflowProgress ? (
         <section className="rounded-[20px] border border-slate-200/80 bg-white px-4 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
           <p className="mb-4 text-xs font-semibold text-slate-600">{workflow?.title || 'Attorney work'} · Select a phase to open its tasks</p>
-          {!visibleWorkflowSteps.length ? <p className="text-sm text-slate-500">Workflow progress will appear when the work area is available.</p> : null}
+          {!visibleWorkflowSteps.length ? <p className="text-sm text-slate-500">{sharedLegalJourney?.status === 'ready' ? 'No applicable legal tasks in this lane.' : 'Legal journey unavailable. Refresh to try again.'}</p> : null}
           {workflow?.workflowPlan?.provisional ? <p className="mb-3 text-xs text-amber-700">Matter profile not confirmed. Review the buyer, seller and funding details in Work.</p> : null}
           <div className="overflow-x-auto px-1 pb-2">
             <div className="flex min-w-max items-start">
@@ -6972,7 +6973,7 @@ function ArchlineMatterHeader({
                         {stage.label || getWorkflowStepLabel(stage)}
                       </strong>
                       <span className="mt-1 block text-xs leading-4 text-[#60758d]">{statusLabel}</span>
-                      <span className="mt-1 block text-xs leading-4 text-[#60758d]">{stage.completed} of {stage.total} tasks completed{stage.notApplicable ? ` · ${stage.notApplicable} not applicable` : ''}</span>
+                      <span className="mt-1 block text-xs leading-4 text-[#60758d]">{stage.completed} / {stage.total} complete{stage.notApplicable ? ` · ${stage.notApplicable} N/A` : ''}</span>
                     </div>
                   </button>
                 )
@@ -7365,7 +7366,6 @@ function ArchlinePartiesWorkspace({
     <section className="archline-parties-workspace space-y-4">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-slate-950">Parties</h2>
-        <p className="mt-1 text-sm leading-5 text-slate-500">The primary parties involved in this transaction.</p>
       </div>
 
       <div className="grid gap-[18px] xl:grid-cols-2">
@@ -7504,8 +7504,8 @@ function ArchlineOverviewWorkspace({
 
   return (
     <section className="flex flex-col gap-5">
-      <div className="order-2 grid gap-4 xl:grid-cols-2">
-        <ArchlinePanel className="flex min-h-[230px] flex-col p-5">
+      <div className="order-1 grid gap-4 xl:grid-cols-2">
+        <ArchlinePanel className="flex flex-col p-5">
           <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#35546c]">Next Action</span>
           {nextAction ? (
             <>
@@ -7515,19 +7515,10 @@ function ArchlineOverviewWorkspace({
                 </span>
                 <div className="min-w-0">
                   <h3 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{nextAction.title || 'Review matter action'}</h3>
-                  <p className="mt-1 line-clamp-3 text-sm leading-6 text-[#60758d]">{nextAction.description || lifecycleProgress?.blockerReason || lifecycleProgress?.nextMilestone || 'Review the current workflow item and keep the matter moving.'}</p>
+                  {(nextAction.description || lifecycleProgress?.blockerReason) ? <p className="mt-1 text-sm leading-5 text-[#60758d]">{nextAction.description || lifecycleProgress?.blockerReason}</p> : null}
                 </div>
               </div>
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <div className="rounded-[12px] border border-slate-200 bg-white px-3 py-2">
-                  <span className="flex items-center gap-2 text-[0.68rem] font-semibold uppercase text-[#60758d]"><Clock3 size={13} /> Estimated Time</span>
-                  <strong className="mt-1 block text-sm text-[#142132]">3 min</strong>
-                </div>
-                <div className="rounded-[12px] border border-slate-200 bg-white px-3 py-2">
-                  <span className="text-[0.68rem] font-semibold uppercase text-[#60758d]">Priority</span>
-                  <strong className="mt-1 block text-sm text-[#142132]">{toTitle(nextAction.priority || 'medium')}</strong>
-                </div>
-              </div>
+              {nextAction.priority ? <p className="mt-3 text-xs text-[#60758d]">Priority: <strong>{toTitle(nextAction.priority)}</strong></p> : null}
               <div className="mt-auto flex flex-wrap items-center gap-2 pt-5">
                 <Button type="button" size="sm" onClick={() => runTask(nextAction)}>
                   {workflowTaskButtonLabel(nextAction)}
@@ -7535,14 +7526,13 @@ function ArchlineOverviewWorkspace({
                 </Button>
                 <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('tasks')}>
                   <Clock3 size={14} />
-                  Snooze
+                  View tasks
                 </Button>
               </div>
             </>
           ) : (
             <div className="mt-5 rounded-[14px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm leading-6 text-[#60758d]">
               <strong className="block text-[#142132]">No immediate action required.</strong>
-              The matter is currently waiting on the next workflow event.
             </div>
           )}
         </ArchlinePanel>
@@ -7572,11 +7562,11 @@ function ArchlineOverviewWorkspace({
         </ArchlinePanel>
       </div>
 
-      <ArchlinePanel className="order-1 p-5">
+      <ArchlinePanel className="order-2 p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">Matter health</h2>
-            <p className="mt-1 text-xs text-[#60758d]">{matterHealth?.updated_at ? `Last updated ${formatDateTime(matterHealth.updated_at)}` : 'Live matter status and key dates'}</p>
+            {matterHealth?.updated_at ? <p className="mt-1 text-xs text-[#60758d]">Last updated {formatDateTime(matterHealth.updated_at)}</p> : null}
           </div>
           {canEditHealth ? <Button type="button" variant="secondary" size="sm" onClick={() => { setHealthError(''); setHealthEditorOpen(true) }}><PenLine size={14} /> Edit health</Button> : null}
         </div>
@@ -7602,7 +7592,7 @@ function ArchlineOverviewWorkspace({
         </div>
       </ArchlinePanel>
 
-      <ArchlinePanel title="People on this matter" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('stakeholders')}>View all</Button>} className="order-3 p-5">
+      <ArchlinePanel title="Key contacts" action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('stakeholders')}>View all parties</Button>} className="order-3 p-5">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           {peopleRows.length ? peopleRows.map((row) => {
             const initials = String(row.contact || row.company || row.role || '?')
@@ -8094,6 +8084,7 @@ function ArchlineTransferWorkspace({
     taskContext: viewModel.selectedTaskContext,
     workActions: taskWorkActions,
     statusActions: primaryTaskActions,
+    canUpdateTask: canUpdateSteps,
     workflowLabel: viewModel.title,
     workflowTasks: viewModel.tasks,
   })
@@ -8312,7 +8303,9 @@ function ArchlineTransferWorkspace({
 
   function handleTaskWorkbenchAction(action = {}) {
     if (action.source === 'status') {
-      const statusAction = primaryTaskActions.find((item) => item.id === action.id) || action
+      const canonicalAction = primaryTaskActions.find((item) => item.id === action.id)
+      if (!canonicalAction || canonicalAction.disabled || action.disabled) return
+      const statusAction = { ...canonicalAction, ...action }
       openStatusDraft(selectedTask, statusAction)
       return
     }
@@ -8324,7 +8317,7 @@ function ArchlineTransferWorkspace({
   }
 
   async function markTaskInProgress() {
-    if (!selectedTask || !canUpdateSteps || !['not_started', 'blocked', 'waiting'].includes(selectedTask.displayStatus)) return
+    if (!selectedTask || !canUpdateSteps || !taskWorkbenchModel.canMarkInProgress) return
     const saved = await onUpdateStep?.(
       selectedTask,
       'in_progress',
@@ -8440,7 +8433,12 @@ function ArchlineTransferWorkspace({
 
   async function submitStatusDraft(event) {
     event.preventDefault()
-    if (!statusDraft.task) return
+    if (!statusDraft.task || saving || !canUpdateSteps) return
+    const allowedAction = primaryTaskActions.find(action => action.id === statusDraft.actionId && action.status === statusDraft.status)
+    if (!allowedAction || allowedAction.disabled || statusDraft.task.key !== selectedTask?.key) return
+    if (statusDraft.requiresReason && !statusDraft.reason?.trim()) return
+    if ((statusDraft.requiresNote || statusDraft.visibility === 'client_visible') && !statusDraft.note?.trim()) return
+    if (statusDraft.visibility === 'client_visible' && (statusDraft.status !== 'completed' || !taskWorkbenchModel.clientUpdate.available)) return
     const nextTaskKey = statusDraft.status === 'completed' ? viewModel.nextActionableTask?.key : ''
     const updateSucceeded = await onUpdateStep?.(
       statusDraft.task,
@@ -9558,7 +9556,7 @@ function ArchlineDocumentsWorkspace({
               <button
                 key={card.label}
                 type="button"
-                className="min-h-[112px] rounded-lg border border-slate-200 bg-white p-4 text-left shadow-[0_14px_30px_rgba(15,23,42,0.035)] transition hover:border-emerald-200 hover:bg-emerald-50/30"
+                className="rounded-lg border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-200 hover:bg-emerald-50/30"
                 onClick={() => onFilterChange?.(card.filter)}
               >
                 <div className="flex items-start gap-3">
@@ -9568,7 +9566,6 @@ function ArchlineDocumentsWorkspace({
                   <span className="min-w-0">
                     <strong className="block text-xl font-semibold leading-6 text-slate-950">{card.value}</strong>
                     <span className="mt-1 block text-xs font-semibold text-slate-950">{card.label}</span>
-                    <span className="mt-1 block text-xs leading-5 text-slate-500">{card.helper}</span>
                   </span>
                 </div>
               </button>
@@ -9613,7 +9610,6 @@ function ArchlineDocumentsWorkspace({
               <section key={party.key} className="min-w-0">
                 <div className="mb-3">
                   <h3 className="text-base font-semibold text-slate-950">{party.label}</h3>
-                  <p className="mt-1 text-sm text-slate-500">{party.description}</p>
                 </div>
                 <div className="space-y-2">
                   {party.categories.map((category) => {
@@ -15826,6 +15822,10 @@ function AttorneyTransactionDetail() {
   const { profile, role: workspaceRole, workspace, workspaceType, currentMembership } = useWorkspace()
   const attorneyPermissionState = useAttorneyPermissions()
   const currentMatterAccessKey = `${workspaceRole || 'unknown'}:${transactionId || ''}`
+  const liveMatterScopeRef = useRef(currentMatterAccessKey)
+  const discussionMessageRequestRef = useRef(null)
+  liveMatterScopeRef.current = currentMatterAccessKey
+  const canonicalRefreshSequenceRef = useRef(0)
   const navigationPreviewData = useMemo(
     () => buildMatterPreviewShell(location.state?.matterPreview, transactionId),
     [location.state?.matterPreview, transactionId],
@@ -16519,8 +16519,11 @@ function AttorneyTransactionDetail() {
     const normalizedTransactionId = String(requestedTransactionId || '').trim()
     if (!normalizedTransactionId) return null
 
+    const scope = liveMatterScopeRef.current
+    const sequence = ++canonicalRefreshSequenceRef.current
     invalidateTransactionWorkspaceCoreCache(normalizedTransactionId)
     const coreDetail = await fetchTransactionRouteCoreById(normalizedTransactionId)
+    if (liveMatterScopeRef.current !== scope || canonicalRefreshSequenceRef.current !== sequence) return null
     if (coreDetail) {
       setData((previous) => previous ? {
         ...previous,
@@ -16706,14 +16709,16 @@ function AttorneyTransactionDetail() {
     transactionId: transaction?.id || transactionId,
     enabled: Boolean(data?.__coreHydrated && !loading && (workspaceRole !== 'attorney' || matterAccessAllowed)),
     includeNotifications: true,
-    pollingIntervalMs: workspaceRole === 'agent' ? 15_000 : 30_000,
+    scopeKey: currentMatterAccessKey,
+    pollingIntervalMs: 15_000,
     onRefresh: async ({ reason = 'unknown' } = {}) => {
       // A refresh signal represents an atomic transaction mutation. Reload the
       // canonical route snapshot first, then refresh workflow/activity and the
       // currently visible panel so every role sees the same lifecycle state.
-      await refreshCanonicalTransactionSnapshot({
+      const refreshed = await refreshCanonicalTransactionSnapshot({
         requestedTransactionId: transaction?.id || transactionId,
       })
+      if (!refreshed || liveMatterScopeRef.current !== currentMatterAccessKey) return false
       await Promise.all([
         refreshTransactionDatasets(['workflow', 'activity'], { reason: `live:${reason}` }),
         refreshActiveWorkspaceDataset({ reason: `live:${reason}:active` }),
@@ -18492,9 +18497,9 @@ function AttorneyTransactionDetail() {
   )
 
   async function refreshWorkflowAfterChange(nextOperations = null) {
-    if (nextOperations) {
+    if (nextOperations && !nextOperations.refreshRequired) {
       setWorkflowOperations(nextOperations)
-    } else if (transaction?.id) {
+    } else if (!nextOperations && transaction?.id) {
       const operations = await getAttorneyWorkflowOperationsForTransaction(transaction.id)
       setWorkflowOperations(operations)
     }
@@ -18517,7 +18522,6 @@ function AttorneyTransactionDetail() {
       } : previous)
     }
 
-    await refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id })
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('itg:transaction-updated', {
         detail: {
@@ -18527,6 +18531,7 @@ function AttorneyTransactionDetail() {
         },
       }))
     }
+    await refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id })
     await refreshTransactionDatasets(['workflow', 'activity'], { reason: 'workflow_mutation' })
   }
 
@@ -18929,6 +18934,7 @@ function AttorneyTransactionDetail() {
         laneKey: draft.laneKey,
         stepId: draft.step?.id,
         stepKey: getWorkflowStepSubmitKey(draft.step),
+        expectedStepUpdatedAt: draft.step?.updatedAt ?? draft.step?.updated_at,
         status: draft.status,
         note: draft.note,
         visibility: draft.visibility || null,
@@ -18936,7 +18942,11 @@ function AttorneyTransactionDetail() {
       })
       setWorkflowStepDraft(null)
       setWorkflowInlineStepDraft(null)
-      await refreshWorkflowAfterChange(next)
+      try {
+        await refreshWorkflowAfterChange(next)
+      } catch {
+        setWorkflowError('Task saved. The workspace could not refresh; reload to see the latest progress.')
+      }
       return true
     } catch (stepError) {
       setWorkflowError(stepError?.message || 'Unable to update workflow step.')
@@ -22160,15 +22170,21 @@ function AttorneyTransactionDetail() {
           if (!confirmed) return
         }
 
-        const next = await addAttorneyTransactionUpdate({
-          transactionId: transaction.id,
-          laneKey: activeDiscussionLane.laneKey,
-          updateType: selectedDiscussionAction.updateType,
-          visibility: getAttorneyUpdateVisibility(discussionVisibility),
-          message: normalizedDiscussion,
+        discussionMessageRequestRef.current = matterMessageRequest(discussionMessageRequestRef.current, {
+          scope: currentMatterAccessKey, body: normalizedDiscussion, audience: discussionVisibility,
         })
+        await addTransactionDiscussionComment({
+          transactionId: transaction.id,
+          authorRole: workspaceRole,
+          updateType: selectedDiscussionAction.updateType,
+          visibilityScope: getDiscussionVisibilityScope(discussionVisibility),
+          commentText: normalizedDiscussion,
+          useMatterConversation: true,
+          messageCommandId: discussionMessageRequestRef.current.commandId,
+        })
+        discussionMessageRequestRef.current = null
         setDiscussionBody('')
-        await refreshWorkflowAfterChange(next)
+        await loadData()
         return
       }
 
@@ -22189,15 +22205,21 @@ function AttorneyTransactionDetail() {
         if (!confirmed) return
       }
 
+      discussionMessageRequestRef.current = matterMessageRequest(discussionMessageRequestRef.current, {
+        scope: currentMatterAccessKey, body: normalizedDiscussion, audience: discussionVisibility,
+      })
       await addTransactionDiscussionComment({
         transactionId: transaction.id,
         authorName: profile?.fullName || profile?.email || 'Arch9 Conveyancing',
         authorRole: workspaceRole || 'attorney',
         commentText: normalizedDiscussion,
+        useMatterConversation: true,
+        messageCommandId: discussionMessageRequestRef.current.commandId,
         updateType: discussionType,
         visibilityScope: getDiscussionVisibilityScope(discussionVisibility),
         unitId: unit?.id || null,
       })
+      discussionMessageRequestRef.current = null
       setDiscussionBody('')
       setDiscussionType('operational')
       setDiscussionVisibility('shared')
@@ -22266,6 +22288,7 @@ function AttorneyTransactionDetail() {
             instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, '—')}
             matterChips={archlineMatterChips}
             workflow={archlineActiveLegalTaskWorkflow}
+            sharedLegalJourney={transactionRollup?.transactionJourneySnapshot?.legalJourney}
             workflowKey={archlineActiveLegalTaskWorkflowKey}
             workflowDocuments={archlineActiveLegalTaskDocuments}
             onSelectWorkflowPhase={(phase, workflowKey) => {
@@ -22294,6 +22317,8 @@ function AttorneyTransactionDetail() {
               {onboardingActionMessage}
             </p>
           ) : null}
+          {workspaceRole === 'attorney' && ['overview', 'activity'].includes(activeWorkspaceMenu)
+            ? <MatterConversation transactionId={transaction?.id} revision={transactionRollup?.transactionJourneySnapshot?.legalJourney?.snapshot?.revision} /> : null}
         </div>
       ) : (
         <div className="space-y-4">
@@ -22619,7 +22644,7 @@ function AttorneyTransactionDetail() {
               </form>
             </Modal>
 
-            <Modal open={uploadDocumentModalOpen} onClose={() => setUploadDocumentModalOpen(false)} title="Upload Document" subtitle="Add a file to the canonical transaction document system." className="max-w-2xl">
+            <Modal open={uploadDocumentModalOpen} onClose={() => setUploadDocumentModalOpen(false)} title="Upload Document" className="max-w-2xl">
               <form onSubmit={handleUploadDocument} className="grid gap-4">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">File</span>
@@ -22696,6 +22721,7 @@ function AttorneyTransactionDetail() {
 
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'activity' ? (
           <ArchlineActivityWorkspace
+            compact={workspaceRole === 'attorney'}
             entries={filteredActivityFeed}
             groupedEntries={groupedActivityFeed}
             filters={ACTIVITY_FILTER_OPTIONS}

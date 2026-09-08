@@ -3306,9 +3306,10 @@ function UnitDetail() {
   const workflowPanelRef = useRef(null)
   const uploadDocumentFileInputRef = useRef(null)
   const loadRequestRef = useRef(0)
+  const discussionMessageRequestRef = useRef(null)
   const detailLoadedRef = useRef(false)
 
-  const loadDetail = useCallback(async () => {
+  const loadDetail = useCallback(async ({ background = false } = {}) => {
     const requestId = loadRequestRef.current + 1
     loadRequestRef.current = requestId
     const shouldShowBlockingLoad = !detailLoadedRef.current
@@ -3328,14 +3329,14 @@ function UnitDetail() {
         setDeferredLoading(true)
       }
       timer.mark('shell_query_start')
-      const shellData = await fetchUnitWorkspaceShell(unitId)
+      const shellData = background ? null : await fetchUnitWorkspaceShell(unitId)
       timer.mark('shell_query_end', {
         hasShell: Boolean(shellData),
         hasTransaction: Boolean(shellData?.transaction?.id),
       })
       if (requestId !== loadRequestRef.current) {
         timer.end({ staleRequest: true, phase: 'shell' })
-        return
+        return false
       }
 
       if (shellData) {
@@ -3355,7 +3356,7 @@ function UnitDetail() {
       })
       if (requestId !== loadRequestRef.current) {
         timer.end({ staleRequest: true, phase: 'full' })
-        return
+        return false
       }
 
       setDetail(data)
@@ -3364,7 +3365,7 @@ function UnitDetail() {
       setClientPortalLink(activePortalLink)
 
       const fallbackAssignedAgent = resolveDevelopmentWorkspaceAssignedAgent(data?.developmentSettings)
-      if (data?.transaction) {
+      if (data?.transaction && !background) {
         setStageForm({
           main_stage: data.mainStage || 'AVAIL',
           finance_type: normalizeFinanceType(data.transaction.finance_type || 'cash'),
@@ -3379,7 +3380,7 @@ function UnitDetail() {
           next_action: data.transaction.next_action || '',
         })
         setActingRole(data.activeViewerRole || 'developer')
-      } else if (data) {
+      } else if (data && !background) {
         setStageForm((previous) => ({
           ...previous,
           main_stage: data.mainStage || 'AVAIL',
@@ -3394,11 +3395,13 @@ function UnitDetail() {
         transactionId: data?.transaction?.id || null,
       })
       markRouteMilestone('interactive_ready')
+      return true
     } catch (loadError) {
       if (requestId === loadRequestRef.current) {
         setError(loadError.message)
       }
       timer.end({ error: loadError?.message || 'load_failed' })
+      return false
     } finally {
       if (requestId === loadRequestRef.current) {
         setLoading(false)
@@ -3413,13 +3416,16 @@ function UnitDetail() {
 
   useEffect(() => {
     void loadDetail()
+    return () => { loadRequestRef.current += 1 }
   }, [loadDetail])
 
   useTransactionLiveRefresh({
     transactionId: detail?.transaction?.id,
-    onRefresh: () => loadDetail(),
+    onRefresh: () => loadDetail({ background: true }),
+    scopeKey: unitId,
+    enabled: !loading,
     includeNotifications: true,
-    pollingIntervalMs: 45_000,
+    pollingIntervalMs: 15_000,
   })
 
   useEffect(() => {
@@ -4208,6 +4214,10 @@ function UnitDetail() {
       const prefixedDiscussion = normalizedDiscussion.match(/^\[[a-z_ ]+\]/i)
         ? normalizedDiscussion
         : `[${discussionType}] ${normalizedDiscussion}`
+      const requestKey = `${detail.transaction.id}:${prefixedDiscussion}`
+      if (discussionMessageRequestRef.current?.key !== requestKey) {
+        discussionMessageRequestRef.current = { key: requestKey, id: crypto.randomUUID() }
+      }
       await addTransactionDiscussionComment({
         transactionId: detail.transaction.id,
         authorName:
@@ -4215,12 +4225,15 @@ function UnitDetail() {
           TRANSACTION_ROLE_LABELS[actingRole],
         authorRole: actingRole,
         commentText: prefixedDiscussion,
+        useMatterConversation: true,
+        messageCommandId: discussionMessageRequestRef.current.id,
         unitId: detail.unit.id,
         developmentId: detail.transaction.development_id || detail.unit.development_id || detail.unit.development?.id || null,
         organisationId: detail.transaction.organisation_id || detail.unit.development?.organisation_id || null,
         visibilityScope: 'shared_transaction',
         updateType: discussionType,
       })
+      discussionMessageRequestRef.current = null
       setDiscussionBody('')
       await loadDetail()
     } catch (discussionError) {

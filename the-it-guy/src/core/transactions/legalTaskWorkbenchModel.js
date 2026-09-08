@@ -142,6 +142,7 @@ export function buildLegalTaskWorkbenchModel({
   statusActions = [],
   workflowLabel = '',
   workflowTasks = [],
+  canUpdateTask = true,
 } = {}) {
   if (!task) {
     return {
@@ -154,9 +155,9 @@ export function buildLegalTaskWorkbenchModel({
     }
   }
 
-  const primaryAction = choosePrimaryAction({ task, workActions, statusActions })
   const normalizedWorkActions = workActions.map((action) => normalizeAction(action, 'work'))
-  const normalizedStatusActions = statusActions.map((action) => normalizeAction(action, 'status'))
+  const normalizedStatusActions = statusActions.map((action) => normalizeAction({ ...action, disabled: action.disabled || !canUpdateTask }, 'status'))
+  const primaryAction = choosePrimaryAction({ task, workActions, statusActions: normalizedStatusActions })
   const secondaryActions = [...normalizedWorkActions, ...normalizedStatusActions]
     .filter((action) => action.id && action.id !== primaryAction?.id)
     .filter((action) => !['mark_complete'].includes(action.id))
@@ -180,7 +181,8 @@ export function buildLegalTaskWorkbenchModel({
       }
     : null
   const canComplete = Boolean(completeAction && !completeAction.disabled)
-  const canMarkInProgress = ['not_started', 'blocked', 'waiting'].includes(task.displayStatus)
+  const startAction = normalizedStatusActions.find(action => action.id === 'mark_in_progress') || null
+  const canMarkInProgress = ['not_started', 'blocked', 'waiting'].includes(task.displayStatus) && Boolean(startAction && !startAction.disabled)
   const visibilityPolicy = task.operationalContract?.visibilityPolicy || {}
   const clientAudience = visibilityPolicy.clientAudience || []
   const clientUpdateAvailable = visibilityPolicy.clientVisibleAllowed !== false && clientAudience.length > 0
@@ -212,6 +214,9 @@ export function buildLegalTaskWorkbenchModel({
     secondaryActions,
     completeAction,
     outcomeActions: normalizedStatusActions.filter(action => ['complete_externally', 'mark_not_applicable', 'reopen_task'].includes(action.id)),
+    followUpActions: ['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus) ? [] : normalizedStatusActions.filter(action => ['mark_blocked', 'mark_waiting'].includes(action.id)),
+    readOnly: !normalizedStatusActions.some(action => !action.disabled),
+    taskResolved: ['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus),
     canMarkInProgress,
     markInProgressLabel: task.displayStatus === 'not_started' ? 'Start task' : 'Resume task',
     canComplete,

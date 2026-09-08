@@ -1,188 +1,108 @@
 import { useEffect, useRef, useState } from 'react'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
-
-function createChannelName(transactionId) {
-  const suffix = Math.random().toString(36).slice(2, 9)
-  return `transaction-live-${String(transactionId || '').slice(0, 8)}-${suffix}`
-}
+import { createLiveRefreshQueue } from '../core/transactions/liveRefreshQueue'
 
 export default function useTransactionLiveRefresh({
-  transactionId,
-  onRefresh,
-  enabled = true,
-  includeNotifications = true,
-  pollingIntervalMs = 30_000,
-  debounceMs = 350,
+  transactionId, onRefresh, enabled = true, includeNotifications = true,
+  pollingIntervalMs = 30_000, debounceMs = 350, realtime = true, scopeKey = '',
 } = {}) {
   const refreshRef = useRef(onRefresh)
-  const lastVersionRef = useRef(null)
-  const [connectionState, setConnectionState] = useState('idle')
-  const [lastRefreshAt, setLastRefreshAt] = useState(null)
-  const [lastRefreshReason, setLastRefreshReason] = useState(null)
-  const [lastErrorAt, setLastErrorAt] = useState(null)
-  const [lastErrorMessage, setLastErrorMessage] = useState('')
-
+  const [status, setStatus] = useState({ connectionState: 'idle', lastRefreshAt: null,
+    lastRefreshReason: null, lastErrorAt: null, lastErrorMessage: '' })
+  useEffect(() => { refreshRef.current = onRefresh }, [onRefresh])
   useEffect(() => {
-    refreshRef.current = onRefresh
-  }, [onRefresh])
-
-  useEffect(() => {
-    const normalizedTransactionId = String(transactionId || '').trim()
-    if (!enabled || !normalizedTransactionId || !isSupabaseConfigured) {
-      setConnectionState('idle')
-      return undefined
-    }
-
-    const state = { active: true, inFlight: false, pending: false, timer: null, reconciling: false }
-    setConnectionState('connecting')
-    const runRefresh = async (reason, payload = null) => {
-      if (!state.active) return
-      if (state.inFlight) {
-        state.pending = true
-        return
-      }
-      state.inFlight = true
-      try {
-        await refreshRef.current?.({ reason, payload })
-        if (state.active) {
-          setLastRefreshAt(new Date().toISOString())
-          setLastRefreshReason(reason)
-          setLastErrorAt(null)
-          setLastErrorMessage('')
-        }
-      } catch (error) {
-        if (state.active) {
-          setLastErrorAt(new Date().toISOString())
-          setLastErrorMessage(error?.message || 'Background refresh failed.')
-        }
-        console.warn('[transaction-live-refresh] Background refresh failed.', {
-          transactionId: normalizedTransactionId,
-          reason,
-          message: error?.message || 'refresh_failed',
-        })
-      } finally {
-        state.inFlight = false
-        if (state.active && state.pending) {
-          state.pending = false
-          queueMicrotask(() => void runRefresh('pending_change'))
-        }
-      }
-    }
-    const scheduleRefresh = (reason, payload = null) => {
-      if (state.timer) window.clearTimeout(state.timer)
-      state.timer = window.setTimeout(() => {
-        state.timer = null
-        void runRefresh(reason, payload)
+    const id = String(transactionId || '').trim()
+    setStatus({ connectionState: enabled && id ? (realtime ? 'connecting' : 'polling') : 'idle',
+      lastRefreshAt: null, lastRefreshReason: null, lastErrorAt: null, lastErrorMessage: '' })
+    if (!enabled || !id || (realtime && !isSupabaseConfigured)) return undefined
+    let active = true
+    let timer = null
+    let pendingVersion = null
+    let pendingForce = false
+    let reconciling = false
+    let lastFullReadAt = 0
+    const queue = createLiveRefreshQueue({
+      refresh: (context) => refreshRef.current?.(context),
+      onSuccess: ({ reason }) => {
+        lastFullReadAt = Date.now()
+        setStatus((previous) => ({ ...previous, lastRefreshAt: new Date().toISOString(),
+          lastRefreshReason: reason, lastErrorAt: null, lastErrorMessage: '' }))
+      },
+      onError: () => setStatus((previous) => ({ ...previous,
+        lastErrorAt: new Date().toISOString(), lastErrorMessage: 'Updates could not be refreshed. Retrying automatically.' })),
+    })
+    const canRead = () => active && document.visibilityState !== 'hidden' && navigator.onLine !== false
+    const schedule = (reason, version = null) => {
+      if (!canRead()) return
+      pendingVersion = Math.max(pendingVersion ?? -1, Number.isSafeInteger(version) ? version : -1)
+      pendingForce ||= !Number.isSafeInteger(version) || version < 0
+      if (timer) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        timer = null
+        const nextVersion = pendingForce ? null : pendingVersion
+        pendingVersion = null
+        pendingForce = false
+        if (canRead()) void queue.request({ reason, version: nextVersion })
       }, Math.max(0, Number(debounceMs) || 0))
     }
-
-    const handleVersionSignal = (payload) => {
-      const nextVersion = Number(payload?.new?.version || payload?.record?.version || 0)
-      if (!nextVersion) return
-      if (lastVersionRef.current === null) {
-        lastVersionRef.current = nextVersion
-        return
-      }
-      if (nextVersion <= lastVersionRef.current) return
-      lastVersionRef.current = nextVersion
-      scheduleRefresh('transaction_version_changed', payload)
-    }
-    // Some production environments predate transaction_refresh_signals. The
-    // canonical transaction row is still shared and RLS-protected, so it is a
-    // safe compatibility signal for cross-workspace Deal Setup updates.
-    const handleCanonicalTransactionSignal = (payload) => {
-      if (!payload?.new && !payload?.record) return
-      scheduleRefresh('canonical_transaction_changed', payload)
-    }
-    const reconcileVersion = async () => {
-      if (state.reconciling) return
-      state.reconciling = true
+    const reconcile = async (force = false) => {
+      if (!canRead() || reconciling) return
+      // Portal headers do not authorise a WebSocket. Reuse the portal's secure
+      // full loader, including seller session checks, on every visible poll.
+      if (!realtime) { schedule(force ? 'portal_reconnected' : 'portal_poll'); return }
+      reconciling = true
       try {
-        const result = await supabase
-          .from('transaction_refresh_signals')
-          .select('version,changed_at')
-          .eq('transaction_id', normalizedTransactionId)
-          .maybeSingle()
-        if (result.error || !result.data || !state.active) return
-        const remoteVersion = Number(result.data.version || 0)
-        if (lastVersionRef.current !== null && remoteVersion > lastVersionRef.current) {
-          scheduleRefresh('transaction_version_reconciled', result.data)
-        }
-        lastVersionRef.current = remoteVersion
-      } finally {
-        state.reconciling = false
-      }
+        const result = await supabase.from('transaction_refresh_signals')
+          .select('version').eq('transaction_id', id).maybeSingle()
+        if (!canRead()) return
+        if (result.error) throw result.error
+        const revision = result.data?.version == null ? null : Number(result.data.version)
+        // Also recover changes which do not yet publish a version signal.
+        if (force || revision === null || Date.now() - lastFullReadAt >= 60_000) schedule('transaction_reconciled')
+        else if (revision > queue.acknowledged) schedule('transaction_version_changed', revision)
+      } catch {
+        if (canRead()) schedule('transaction_poll_fallback')
+      } finally { reconciling = false }
     }
-
-    const channel = supabase
-      .channel(createChannelName(normalizedTransactionId))
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'transaction_refresh_signals',
-          filter: `transaction_id=eq.${normalizedTransactionId}`,
-        },
-        handleVersionSignal,
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'transactions',
-          filter: `id=eq.${normalizedTransactionId}`,
-        },
-        handleCanonicalTransactionSignal,
-      )
-
-    if (includeNotifications) {
-      channel.on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notification_events',
-          filter: `transaction_id=eq.${normalizedTransactionId}`,
-        },
-        () => void reconcileVersion(),
-      )
+    let channel = null
+    if (realtime) {
+      channel = supabase.channel(`transaction-live-${id}-${Math.random().toString(36).slice(2, 9)}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_refresh_signals',
+          filter: `transaction_id=eq.${id}` }, (payload) => schedule('transaction_version_changed', Number(payload?.new?.version)))
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'transactions',
+          filter: `id=eq.${id}` }, () => schedule('canonical_transaction_changed'))
+      if (includeNotifications) channel.on('postgres_changes', { event: '*', schema: 'public',
+        table: 'notification_events', filter: `transaction_id=eq.${id}` }, () => schedule('notification_changed'))
+      channel.subscribe((state) => {
+        if (!active) return
+        setStatus((previous) => ({ ...previous, connectionState: navigator.onLine === false ? 'offline'
+          : state === 'SUBSCRIBED' ? 'live' : 'polling' }))
+        if (state === 'SUBSCRIBED') void reconcile(true)
+      })
     }
-
-    channel.subscribe((status) => {
-      if (!state.active) return
-      setConnectionState(status === 'SUBSCRIBED' ? 'live' : status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' ? 'polling' : 'connecting')
-      if (status === 'SUBSCRIBED') void reconcileVersion()
-    })
-
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void reconcileVersion()
-    }, Math.max(10_000, Number(pollingIntervalMs) || 30_000))
-    const handleFocus = () => void reconcileVersion()
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') void reconcileVersion()
+    void reconcile(true)
+    const interval = window.setInterval(() => void reconcile(), Math.max(10_000, Number(pollingIntervalMs) || 30_000))
+    const recover = () => { if (canRead()) void reconcile(true) }
+    const online = () => {
+      setStatus((previous) => ({ ...previous, connectionState: 'polling' }))
+      recover()
     }
-    window.addEventListener('focus', handleFocus)
-    document.addEventListener('visibilitychange', handleVisibility)
-
+    const offline = () => setStatus((previous) => ({ ...previous, connectionState: 'offline' }))
+    window.addEventListener('focus', recover)
+    window.addEventListener('online', online)
+    window.addEventListener('offline', offline)
+    document.addEventListener('visibilitychange', recover)
     return () => {
-      state.active = false
-      state.pending = false
-      lastVersionRef.current = null
-      if (state.timer) window.clearTimeout(state.timer)
+      active = false
+      queue.stop()
+      if (timer) window.clearTimeout(timer)
       window.clearInterval(interval)
-      window.removeEventListener('focus', handleFocus)
-      document.removeEventListener('visibilitychange', handleVisibility)
-      void supabase.removeChannel(channel)
+      window.removeEventListener('focus', recover)
+      window.removeEventListener('online', online)
+      window.removeEventListener('offline', offline)
+      document.removeEventListener('visibilitychange', recover)
+      if (channel) void supabase.removeChannel(channel)
     }
-  }, [debounceMs, enabled, includeNotifications, pollingIntervalMs, transactionId])
-
-  return {
-    connectionState,
-    lastRefreshAt,
-    lastRefreshReason,
-    lastErrorAt,
-    lastErrorMessage,
-  }
+  }, [debounceMs, enabled, includeNotifications, pollingIntervalMs, realtime, scopeKey, transactionId])
+  return status
 }

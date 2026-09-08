@@ -27,6 +27,7 @@ import {
 } from './attorneyLaneResolver.js'
 import { normaliseFinanceType, resolveFinanceWorkflowKey } from './financeWorkflowResolver.js'
 import { buildTransactionJourneySnapshot } from './transactionJourneySnapshot.js'
+import { fetchSharedMatterJourney } from '../../src/services/sharedMatterJourneyReader.js'
 
 const TRANSACTION_SELECT =
   'id, finance_type, onboarding_status, seller_onboarding_status, current_main_stage, stage, next_action, lifecycle_state, purchaser_type, transaction_type, property_type, development_id, sale_route, sale_channel, lead_owner, ownership_model, source_agency_org_id, seller_has_existing_bond, existing_bond, cancellation_required, registration_date, title_deed_number, registration_confirmation_document_id, created_at, updated_at, completed_at, cancelled_at, last_meaningful_activity_at'
@@ -1526,7 +1527,7 @@ async function buildContext(transactionId, options = {}) {
   }
 }
 
-export async function resolveTransactionRollup(transactionId, options = {}) {
+async function resolveTransactionRollupBase(transactionId, options = {}) {
   const normalizedTransactionId = normalizeText(transactionId)
   if (!normalizedTransactionId) {
     throw new Error('Transaction id is required.')
@@ -1641,6 +1642,17 @@ export async function resolveTransactionRollup(transactionId, options = {}) {
     actorRole: options.actorRole || '',
     requiredDocuments: context.requiredDocuments || [],
   })
+}
+
+export async function resolveTransactionRollup(transactionId, options = {}) {
+  const client = options.client || (options.context ? null : requireClient())
+  const [rollup, legalJourney] = await Promise.all([
+    resolveTransactionRollupBase(transactionId, options),
+    fetchSharedMatterJourney(client, String(transactionId || '').trim()),
+  ])
+  return { ...rollup, transactionJourneySnapshot: {
+    ...rollup.transactionJourneySnapshot, legalJourney,
+  } }
 }
 
 export function buildLegacyRollupComparison(rollup = {}) {

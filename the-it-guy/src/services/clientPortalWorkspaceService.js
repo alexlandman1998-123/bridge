@@ -3960,13 +3960,15 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   })
 
   const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
-  const transactionJourneySnapshotPromise = mode !== 'core' && !isSellerOnboardingToken(token)
-    ? fetchClientPortalJourneySnapshotByToken(token, clientRole).catch((error) => {
+  const transactionJourneySnapshotPromise = mode !== 'core'
+    ? fetchClientPortalJourneySnapshotByToken(token, clientRole, {
+        sellerPortalAccessToken: options?.sellerPortalAccessToken,
+      }).catch((error) => {
         console.warn('[client-portal-journey] Canonical snapshot unavailable', {
           clientRole,
           error,
         })
-        return null
+        return { schemaVersion: 1, milestones: [], legalJourney: { status: 'unavailable', snapshot: null } }
       })
     : Promise.resolve(null)
   let portalData = await fetchPortalDataForWorkspace(token, mode, {
