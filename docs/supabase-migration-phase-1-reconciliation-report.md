@@ -193,3 +193,42 @@ No duplicate local migration timestamps detected.
 - File: `sql/supabase-phase1-live-object-checks.sql`
 - Bytes: 5673
 
+## 2026-09-08 Production Re-baseline
+
+This re-baseline supersedes the counts above for the active recovery work. It
+uses the linked production project and is deliberately read-only.
+
+| Measure | Result |
+| --- | ---: |
+| Total unmatched local/remote ledger rows | 99 |
+| Local migration files not recorded as applied in production | 82 |
+| Current Deal Setup → attorney handoff migration | applied (`20260908105346`) |
+
+### Critical transaction and attorney contract checks
+
+| Contract | Production status | History status | Classification |
+| --- | --- | --- | --- |
+| `transaction_participants.ownership_percentage` and `signing_required` | present | `20260907193000` not recorded | Historical ledger candidate; verify full constraint before repair. |
+| `transactions.current_detailed_stage` | present | `20260907194208` not recorded | Historical ledger candidate; verify Data API visibility before repair. |
+| `transaction_refresh_signals` table | present | earlier history is incomplete | Object exists; refresh trigger still required. |
+| `bridge_emit_attorney_workflow_refresh_signal()` | absent | `20260907183523` not recorded | Required production change; do not ledger-repair. |
+| `bridge_reconcile_attorney_lane_progress_with_matter_plan()` | present | `20260908064347` not recorded | Historical ledger candidate; verify grants and body before repair. |
+| `transaction_sync_action_catalog` | present | `20260908065905` not recorded | Historical ledger candidate; verify required action row before repair. |
+
+### Release-train classification
+
+| Train | Handling decision |
+| --- | --- |
+| Developer / attorney / Deal Setup | Priority release train; contract-test each migration and apply only missing behavior. |
+| Organisation / access controls | Separate security-reviewed wave. |
+| Public websites / marketing | Separate public-surface wave; do not mix with transactions. |
+| Bond and rental | Separate dependency chain with data and RLS checks. |
+| Commercial, WhatsApp, analytics | Hold until their module is explicitly released. |
+
+### Phase 1 decision
+
+No historical migration may be blindly replayed or marked applied solely to
+remove drift. A migration is eligible for ledger reconciliation only when its
+full live contract (tables, columns, constraints, functions, grants, RLS, and
+required reference rows) has been checked. Missing behavior is promoted as a
+new idempotent corrective migration in its own release train.
