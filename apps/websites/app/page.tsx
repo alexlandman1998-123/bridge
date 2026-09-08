@@ -5,7 +5,8 @@ import { cache } from 'react'
 import { ContentBlocks } from '@/components/content-blocks'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { getPublicPage, resolveSite } from '@/lib/site-repository'
-import { templateClassName } from '@/lib/site-templates'
+import styles from './homepage.module.css'
+import { isHomeSeekersTemplate, templateClassName } from '@/lib/site-templates'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,9 +33,9 @@ export default async function HomePage() {
   if (!site || !page) notFound()
 
   return (
-    <main className={templateClassName(site.templateKey)} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
+    <main className={`${templateClassName(site.templateKey)} ${isHomeSeekersTemplate(site.templateKey) ? styles.homepage : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
       {site.preview && <div className="preview-banner">Preview site — not yet connected to a client domain</div>}
-      <SiteHeader site={site} enquiryHref="/valuation" />
+      <SiteHeader site={site} enquiryHref="/valuation" homepage />
       <ContentBlocks page={page} properties={site.properties} site={site} templateKey={site.templateKey} />
       <SiteFooter site={site} />
     </main>

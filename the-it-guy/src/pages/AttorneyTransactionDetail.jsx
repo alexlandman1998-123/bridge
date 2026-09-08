@@ -1,4 +1,5 @@
 import { workflowActionLabel, workflowTaskButtonLabel } from '../lib/workflowActionLabel.js'
+import TransactionDetailRouteShell from '../components/transactions/TransactionDetailRouteShell.jsx'
 import {
   Activity,
   AlertTriangle,
@@ -22217,7 +22218,7 @@ function AttorneyTransactionDetail() {
   )
 
   if (shouldRenderAttorneyAccessPreview) {
-    return <AttorneyMatterAccessPreview />
+    return <TransactionDetailRouteShell />
   }
 
   if (workspaceRole === 'attorney' && attorneyPermissionState.membership && !attorneyPermissionState.membership.isActive) {
@@ -22229,7 +22230,7 @@ function AttorneyTransactionDetail() {
   }
 
   if (loading) {
-    return <LoadingSkeleton lines={8} className="panel" />
+    return <TransactionDetailRouteShell />
   }
 
   if (!data || !transaction) {

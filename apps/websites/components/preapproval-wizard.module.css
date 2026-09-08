@@ -1,0 +1,62 @@
+.wizard { max-width: 1240px; margin: 0 auto 80px; padding: 52px 32px; display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 70px; color: #253024; }
+.sidebar { align-self: start; position: sticky; top: 32px; }
+.eyebrow { font-size: 10px; letter-spacing: .15em; color: #65715f; }
+.sidebar h2 { font: 400 35px/1.12 Georgia,serif; letter-spacing: -.04em; margin: 20px 0; }
+.sidebar > p { font-size: 13px; line-height: 1.6; color: #65715f; }
+.sidebar ol { list-style: none; padding: 18px 0; margin: 24px 0; border-top: 1px solid #d4dacd; }
+.sidebar li button { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 13px 8px; border: 0; border-radius: 4px; background: transparent; color: #65715f; font: 400 13px Arial,sans-serif; }
+.sidebar li span { font-size: 11px; min-width: 22px; }
+.sidebar li[aria-current=step] button { background: #e8ece0; color: #253024; font-weight: 600; }
+.sidebar li button:disabled { opacity: .65; }
+.privateNote { padding: 18px 0; border-top: 1px solid #d4dacd; }
+.form { min-width: 0; }
+.progress { display: flex; justify-content: space-between; font-size: 11px; color: #65715f; margin-bottom: 10px; gap: 16px; }
+.form progress { width: 100%; height: 3px; border: 0; accent-color: #53644a; background: #e4e8df; }
+.form progress::-webkit-progress-bar { background: #e4e8df; }
+.form progress::-webkit-progress-value { background: #53644a; }
+.form > h2 { margin: 30px 0 12px; font: 400 34px/1.15 Arial,sans-serif; letter-spacing: -.04em; }
+.description { color: #65715f; font-size: 14px; line-height: 1.7; margin: 0 0 32px; }
+.fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 24px 26px; }
+.fields label { display: block; min-width: 0; font: 400 12px/1.5 Arial,sans-serif; color: #57644f; }
+.fields input, .fields select, .document select { box-sizing: border-box; display: block; width: 100%; min-width: 0; min-height: 46px; border: 0; border-bottom: 1px solid #aab79f; border-radius: 0; background: transparent; padding: 12px 0; color: #253024; font: 400 16px Arial,sans-serif; margin-top: 6px; }
+.fields small { display: block; font-size: 11px; line-height: 1.6; margin-top: 8px; color: #6b7564; }
+.optional { font-size: 11px; }
+.wizard input:focus-visible, .wizard select:focus-visible, .wizard button:focus-visible, .wizard summary:focus-visible { outline: 2px solid #718164; outline-offset: 4px; }
+.applicant { border: 0; padding: 0; margin: 32px 0; min-width: 0; }
+.applicant legend { width: 100%; padding: 14px 0; margin-bottom: 22px; border-top: 1px solid #d4dacd; font-size: 13px; font-weight: 600; }
+.applicant h3 { font-size: 16px; font-weight: 500; margin: 30px 0 22px; }
+.note { color: #65715f; font-size: 12px; line-height: 1.7; }
+.note a, .consent a { color: inherit; text-decoration: underline; }
+.callout { margin: 32px 0; padding: 24px; background: #eaece3; border-radius: 5px; }
+.callout span { font-size: 12px; color: #65715f; }
+.callout strong { display: block; font: 400 32px/1.2 Georgia,serif; margin: 12px 0; }
+.callout p { font-size: 12px; line-height: 1.7; color: #57644f; }
+.callout h3 { font-size: 17px; font-weight: 500; margin-top: 0; }
+.wizard dl { display: block; margin: 14px 0; padding: 0; border: 0; }
+.wizard dl div { display: flex; justify-content: space-between; gap: 24px; border-bottom: 1px solid #d4dacd; padding: 12px 0; font-size: 12px; line-height: 1.6; }
+.wizard dt { color: #65715f; }
+.wizard dd { margin: 0; text-align: right; max-width: 58%; overflow-wrap: anywhere; }
+.document { display: grid; grid-template-columns: 1fr 190px; gap: 22px; align-items: center; padding: 14px 0; color: #57644f; font-size: 13px; line-height: 1.6; }
+.document select { font-size: 14px; }
+.reviewSection { border-top: 1px solid #d4dacd; padding: 14px 0; }
+.reviewSection h3 { display: flex; justify-content: space-between; font-size: 18px; }
+.reviewSection button { background: none; color: #57644f; border: 0; text-decoration: underline; font-size: 12px; cursor: pointer; padding: 8px 0; }
+.reviewSection details { border-bottom: 1px solid #d4dacd; padding: 14px 0; }
+.reviewSection summary { font-size: 13px; cursor: pointer; }
+.consent { display: flex; gap: 12px; align-items: flex-start; font-size: 12px; line-height: 1.7; color: #57644f; margin-bottom: 24px; }
+.consent input { width: 17px; height: 17px; flex-shrink: 0; margin-top: 3px; accent-color: #253024; }
+.errors { border-left: 3px solid #a33d32; background: #fcf1ed; padding: 18px; margin: 28px 0; color: #8b2922; font-size: 13px; line-height: 1.6; }
+.errors ul { padding-left: 18px; margin-bottom: 0; }
+.actions { display: flex; justify-content: space-between; gap: 16px; padding-top: 28px; margin-top: 34px; border-top: 1px solid #d4dacd; }
+.actions button { width: auto; padding: 16px 22px; border: 1px solid #cbd4c2; border-radius: 4px; color: #253024; background: transparent; font: 500 13px Arial,sans-serif; cursor: pointer; }
+.actions .primary { background: #253024; color: white; margin-left: auto; border-color: #253024; }
+.actions button:disabled { opacity: .55; cursor: wait; }
+.success { max-width: 720px; margin: 70px auto; padding: 40px; background: #eaece3; border-radius: 6px; }
+.success h2 { font: 400 40px/1.1 Georgia,serif; }
+.success p { font-size: 15px; line-height: 1.7; }
+.success a { display: inline-block; background: #253024; color: white; padding: 16px 24px; margin-top: 20px; border-radius: 4px; text-decoration: none; }
+@media(max-width: 900px) { .wizard { grid-template-columns: 220px minmax(0,1fr); gap: 32px; padding: 40px 24px; } .sidebar h2 { font-size: 30px; } }
+@media(max-width: 760px) { .wizard { display: block; padding: 32px 20px; margin-bottom: 24px; } .sidebar { position: static; } .sidebar h2 { font-size: 32px; } .sidebar h2 br { display: none; } .sidebar ol { display: none; } .privateNote { font-size: 11px !important; margin-bottom: 28px; } .fields { gap: 20px 18px; } .document { grid-template-columns: 1fr; gap: 4px; } .success { margin: 30px 20px; padding: 28px; } }
+@media(max-width: 480px) { .fields { grid-template-columns: 1fr; } .actions button { padding: 15px 16px; } .form > h2 { font-size: 30px; } }
+
+.previewNotice { padding: 16px 18px; background: #eaece3; border-radius: 4px; color: #57644f; font-size: 12px; line-height: 1.6; margin: 0 0 24px; }

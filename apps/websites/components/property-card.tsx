@@ -17,7 +17,18 @@ export function PropertyCard({ property, variant = 'default' }: { property: Publ
     <Link className="property-result-image" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>
       {image ? <Image src={image.url} alt={image.caption || property.title} fill sizes="(max-width: 760px) 100vw, 33vw" /> : <div className="image-placeholder" />}
     </Link>
-    <div className="property-result-copy"><strong>{property.price ? money.format(property.price) : 'Price on request'}</strong><p className="property-result-suburb">{property.suburb || property.title}</p>{property.province ? <p className="property-result-region">{property.province}</p> : null}<div className="property-result-divider" /><div className="property-result-features">{property.bedrooms ? <span><FeatureIcon kind="bed" />{property.bedrooms}</span> : null}{property.bathrooms ? <span><FeatureIcon kind="bath" />{property.bathrooms}</span> : null}{property.parkingBays ? <span><FeatureIcon kind="parking" />{property.parkingBays}</span> : null}</div></div>
+    <div className="property-result-copy">
+      <p className="property-result-type">{property.propertyType} · {property.transactionType === 'rental' ? 'To rent' : 'For sale'}</p>
+      <strong>{property.price ? money.format(property.price) : 'Price on request'}{property.price && property.transactionType === 'rental' ? <small> / month</small> : null}</strong>
+      <h2 className="property-result-suburb"><Link href={`/properties/${propertySlug(property)}`}>{property.suburb || property.title}</Link></h2>
+      <p className="property-result-region">{property.title}{property.province ? ` · ${property.province}` : ''}</p>
+      <div className="property-result-divider" />
+      <div className="property-result-features">
+        {property.bedrooms ? <span><FeatureIcon kind="bed" />{property.bedrooms}<span className="sr-only"> bedrooms</span></span> : null}
+        {property.bathrooms ? <span><FeatureIcon kind="bath" />{property.bathrooms}<span className="sr-only"> bathrooms</span></span> : null}
+        {property.parkingBays ? <span><FeatureIcon kind="parking" />{property.parkingBays}<span className="sr-only"> parking bays</span></span> : null}
+      </div>
+    </div>
   </article>
   return <article className="property-card">
     <Link className="property-image" href={`/properties/${propertySlug(property)}`} aria-label={`View ${property.title}`}>

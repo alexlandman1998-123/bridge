@@ -1,0 +1,50 @@
+[
+  {
+    "slug": "make-the-most-of-a-property-viewing",
+    "title": "Look beyond the first impression.",
+    "excerpt": "A thoughtful checklist to help you make more of your next property viewing.",
+    "category": "Buying",
+    "publishedAt": "2026-09-08",
+    "status": "published",
+    "audience": "shared",
+    "image": "/images/kingdom-showcase-apartment-v1.png",
+    "imageAlt": "A light-filled living room opening onto a covered balcony",
+    "sections": [
+      { "heading": "Start with how you live", "paragraphs": ["Before you arrive, write down three things your next home needs to do well. That might be a manageable commute, space to work quietly, or a garden that suits your family. A clear list makes it easier to separate a beautiful room from a home that works for you.", "Bring your questions and take notes during each viewing. Ask permission before taking photographs, especially if someone still lives in the property."] },
+      { "heading": "Notice the everyday details", "paragraphs": ["Look at the light, storage, parking and flow between rooms. Consider where your furniture would go and how you would use the home in a normal week. Ask about recurring costs such as rates, levies and maintenance rather than focusing only on the asking price."], "points": ["Check the practical route from parking to the front door.", "Ask what is included in the sale and what the owner plans to remove.", "Ask about known defects, recent maintenance and available documentation.", "Revisit the area at a different time to understand traffic and noise."] },
+      { "heading": "Leave space for a second look", "paragraphs": ["A viewing is a starting point, not a technical inspection. If a property makes your shortlist, arrange a second visit and consider an independent inspection where appropriate. Your agent can help gather answers before you decide on your next step."] }
+    ]
+  },
+  {
+    "slug": "prepare-your-home-for-photography",
+    "title": "Let your home tell its story.",
+    "excerpt": "Simple preparation that gives property photographs a calmer, more welcoming feel.",
+    "category": "Selling",
+    "publishedAt": "2026-09-08",
+    "status": "published",
+    "audience": "shared",
+    "image": "/images/kingdom-showcase-house-v1.png",
+    "imageAlt": "A contemporary home framed by a landscaped garden",
+    "sections": [
+      { "heading": "Create a little breathing room", "paragraphs": ["Good property photographs help someone understand a space. Clear kitchen counters, bedside tables and walkways so the proportions of each room are easy to read. You do not need to remove all personality; aim for a home that looks cared for and comfortable."] },
+      { "heading": "Work with the light", "paragraphs": ["Open curtains and blinds, clean windows and replace broken bulbs. Discuss the best time of day with the photographer, particularly if a garden, terrace or living room catches attractive natural light.", "Tidy the entrance and outside areas as carefully as the interior. A clear path, swept terrace and neat garden help explain how the different spaces connect."] },
+      { "heading": "Keep the presentation honest", "paragraphs": ["Prepare the home without concealing defects or suggesting that items are included when they are not. Put away personal documents, family photographs and valuables before the photography appointment."], "points": ["Agree on the rooms and features to highlight with your agent.", "Make arrangements for pets during the appointment.", "Move vehicles if they obscure the entrance or garden.", "Do one final walk-through before the photographer arrives."] }
+    ]
+  },
+  {
+    "slug": "get-to-know-your-next-neighbourhood",
+    "title": "Find the place that feels like you.",
+    "excerpt": "Go beyond the address and explore the everyday rhythm of a neighbourhood.",
+    "category": "Neighbourhoods",
+    "publishedAt": "2026-09-08",
+    "status": "published",
+    "audience": "shared",
+    "image": "/images/kingdom-neighbourhood-v1.png",
+    "imageAlt": "A leafy residential street with flowering trees",
+    "sections": [
+      { "heading": "Try your everyday journey", "paragraphs": ["A neighbourhood is part of your daily routine. Test the routes you expect to use, including work, school and shopping. If you can, visit at different times to get a sense of traffic, activity and noise."] },
+      { "heading": "Explore what matters to you", "paragraphs": ["Think about the places you would actually use: a nearby park, a grocery shop, a place for coffee, or access to public transport. Walk the area where practical and ask specific questions about amenities rather than relying only on a description in a listing.", "If schools or future development plans influence your decision, confirm current details with the relevant school or local authority. Availability and plans can change."] },
+      { "heading": "Bring your questions to the local team", "paragraphs": ["Your agent can help you compare areas and point you towards relevant local information. Share your priorities openly so the conversation stays focused on the home and setting that suit your needs."] }
+    ]
+  }
+]

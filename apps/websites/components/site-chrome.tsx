@@ -1,7 +1,11 @@
+import { MobileNavigation } from './mobile-navigation'
 import Image from 'next/image'
 import Link from 'next/link'
+import resourceStyles from './resource-navigation.module.css'
 import type { ResolvedSite } from '@/lib/types'
 import { isHomeSeekersTemplate, templateNavigation } from '@/lib/site-templates'
+
+const resources = [{ href: '/blog', label: 'Journal' }, { href: '/calculators', label: 'Calculators' }, { href: '/preapproval', label: 'Get preapproved' }]
 
 function SiteLogo({ site, dark = false }: { site: ResolvedSite; dark?: boolean }) {
   const logoUrl = dark
@@ -11,10 +15,10 @@ function SiteLogo({ site, dark = false }: { site: ResolvedSite; dark?: boolean }
   return <Image className="site-logo-image" src={logoUrl} alt={`${site.name} logo`} width={220} height={72} sizes="(max-width: 760px) 150px, 190px" unoptimized />
 }
 
-export function SiteHeader({ site, enquiryHref = '/valuation' }: { site: ResolvedSite; enquiryHref?: string }) {
+export function SiteHeader({ site, enquiryHref = '/valuation', homepage = false, currentHref }: { site: ResolvedSite; enquiryHref?: string; homepage?: boolean; currentHref?: string }) {
   const homeSeekers = isHomeSeekersTemplate(site.templateKey)
-  const navigation = templateNavigation(site.templateKey)
-  return <header className="site-header"><Link className="wordmark" href="/" aria-label={`${site.name} home`}><SiteLogo site={site} /></Link><nav aria-label="Primary">{navigation.map((item) => <Link href={item.href} key={`${item.href}-${item.label}`}>{item.label}</Link>)}</nav><Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link><details className="mobile-menu"><summary aria-label="Open navigation"><span /><span /><span /></summary><nav aria-label="Mobile primary">{navigation.map((item) => <Link href={item.href} key={`${item.href}-${item.label}`}>{item.label}</Link>)}<Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link></nav></details></header>
+  const navigation = templateNavigation(site.templateKey).filter(item => !(homepage || homeSeekers) || item.label !== 'Our people')
+  return <header className="site-header"><Link className="wordmark" href="/" aria-label={`${site.name} home`}><SiteLogo site={site} /></Link><nav aria-label="Primary">{navigation.map((item) => <Link href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} key={`${item.href}-${item.label}`}>{item.label}</Link>)}<details className={resourceStyles.menu}><summary className={resources.some(item => item.href === currentHref) ? resourceStyles.active : undefined}>Resources <span aria-hidden="true">⌄</span></summary><div className={resourceStyles.dropdown}>{resources.map(item => <Link key={item.href} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined}>{item.label}<span aria-hidden="true">↗</span></Link>)}</div></details></nav><Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link><MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={homeSeekers ? 'Book a valuation' : 'Enquire now'} /></header>
 }
 
 export function SiteFooter({ site }: { site: ResolvedSite }) {
@@ -23,6 +27,7 @@ export function SiteFooter({ site }: { site: ResolvedSite }) {
     { href: '/properties?type=sale', label: 'Buy' }, { href: '/properties?type=rental', label: 'Rent' }, { href: '/valuation', label: 'Sell' }, { href: '/properties', label: 'Developments' },
   ] : templateNavigation(site.templateKey)
   const agency = homeSeekers ? [{ href: '/about', label: 'About us' }, { href: '/about', label: 'Our team' }, { href: '/contact', label: 'Contact' }] : templateNavigation(site.templateKey)
+  explore.push(...resources)
   const social = Object.entries(site.socialLinks || {}) as Array<[string, string]>
 
   return <footer className="site-footer-dark"><div className="footer-top">

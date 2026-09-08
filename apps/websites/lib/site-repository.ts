@@ -1,3 +1,4 @@
+import { additionalMockProperties } from '@/lib/mock-properties'
 import { getServerSupabase } from '@/lib/supabase-server'
 import type { PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
 
@@ -15,13 +16,36 @@ const demoSite: ResolvedSite = {
   email: 'hello@example.arch9.co.za',
   preview: true,
   properties: [
-    { id: 'demo-1', reference: 'PDP-001', title: 'Contemporary family home', transactionType: 'sale', propertyType: 'House', suburb: 'Waterkloof', province: 'Gauteng', price: 4850000, bedrooms: 4, bathrooms: 3, parkingBays: 2, floorSize: 315, description: 'A calm, contemporary family home with generous rooms and a garden designed for long summer afternoons.', features: ['Open-plan living', 'Study', 'Swimming pool', 'Secure garden'], amenities: ['Close to schools', 'Easy highway access'], media: [] },
-    { id: 'demo-2', reference: 'PDP-002', title: 'Light-filled garden apartment', transactionType: 'sale', propertyType: 'Apartment', suburb: 'Brooklyn', province: 'Gauteng', price: 1895000, bedrooms: 2, bathrooms: 2, parkingBays: 1, floorSize: 104, description: 'A beautifully finished apartment with leafy views, generous natural light and a practical lock-up-and-go layout.', features: ['Private balcony', 'Fibre ready', 'Secure parking'], amenities: ['Walkable neighbourhood', 'Near cafes'], media: [] },
-    { id: 'demo-3', reference: 'PDP-003', title: 'Secure townhouse with private garden', transactionType: 'rental', propertyType: 'Townhouse', suburb: 'Menlo Park', province: 'Gauteng', price: 18500, bedrooms: 3, bathrooms: 2, parkingBays: 2, floorSize: 156, description: 'A secure rental townhouse offering comfortable proportions, a private garden and easy access to daily essentials.', features: ['Pet friendly', 'Private garden', 'Double parking'], amenities: ['Security complex', 'Near public transport'], media: [] },
+    { id: 'demo-1', reference: 'PDP-001', title: 'Contemporary family home', transactionType: 'sale', propertyType: 'House', suburb: 'Waterkloof', province: 'Gauteng', price: 4850000, bedrooms: 4, bathrooms: 3, parkingBays: 2, floorSize: 315, description: 'A calm, contemporary family home with generous rooms and a garden designed for long summer afternoons.', features: ['Open-plan living', 'Study', 'Swimming pool', 'Secure garden'], amenities: ['Close to schools', 'Easy highway access'], media: [{ type: 'image', url: '/images/kingdom-showcase-house-v1.png', caption: 'Template preview property', order: 0 }] },
+    { id: 'demo-2', reference: 'PDP-002', title: 'Light-filled garden apartment', transactionType: 'sale', propertyType: 'Apartment', suburb: 'Brooklyn', province: 'Gauteng', price: 1895000, bedrooms: 2, bathrooms: 2, parkingBays: 1, floorSize: 104, description: 'A beautifully finished apartment with leafy views, generous natural light and a practical lock-up-and-go layout.', features: ['Private balcony', 'Fibre ready', 'Secure parking'], amenities: ['Walkable neighbourhood', 'Near cafes'], media: [{ type: 'image', url: '/images/kingdom-showcase-apartment-v1.png', caption: 'Template preview property', order: 0 }] },
+    { id: 'demo-3', reference: 'PDP-003', title: 'Secure townhouse with private garden', transactionType: 'rental', propertyType: 'Townhouse', suburb: 'Menlo Park', province: 'Gauteng', price: 18500, bedrooms: 3, bathrooms: 2, parkingBays: 2, floorSize: 156, description: 'A secure rental townhouse offering comfortable proportions, a private garden and easy access to daily essentials.', features: ['Pet friendly', 'Private garden', 'Double parking'], amenities: ['Security complex', 'Near public transport'], media: [{ type: 'image', url: '/images/kingdom-showcase-lynnwood-v1.png', caption: 'Template preview property', order: 0 }] },
+    ...additionalMockProperties,
   ],
 }
 
 const demoPages: PublicPage[] = [
+  {
+    id: '00000000-0000-0000-0000-000000000012', slug: 'about', kind: 'about', title: 'About',
+    seoTitle: 'About Arch9 Demo Realty',
+    blocks: [
+      { type: 'hero', eyebrow: 'ABOUT OUR AGENCY', heading: 'Good property advice starts with people.', body: 'A personal approach to buying, selling and renting. We help you make your next move with clarity and confidence.' },
+      { type: 'rich_text', heading: 'Local understanding. A personal perspective.', body: 'Every home and every move is different. We take the time to understand what matters to you, combining local market knowledge with thoughtful presentation and practical guidance.' },
+      { type: 'benefits', heading: 'A more considered property experience.', items: [
+        { title: 'Local knowledge', body: 'Insight into the places and properties that make a neighbourhood feel like home.' },
+        { title: 'Thoughtful presentation', body: 'An approach to marketing shaped around each property and its audience.' },
+        { title: 'Personal guidance', body: 'A team to help you understand the options and navigate your next step.' },
+      ] },
+    ],
+  },
+  {
+    id: '00000000-0000-0000-0000-000000000013', slug: 'contact', kind: 'contact', title: 'Contact',
+    seoTitle: 'Contact Arch9 Demo Realty',
+    blocks: [
+      { type: 'hero', eyebrow: 'GET IN TOUCH', heading: 'Let’s talk property.', body: 'Buying, selling or finding your next rental? Tell us what you have in mind.' },
+      { type: 'rich_text', heading: 'A conversation is a good place to start.', body: 'Reach out to the team or send a message. We’ll help you find the right person for your next move.' },
+      { type: 'lead_form', heading: 'How can we help?', body: 'Share a few details and we’ll be in touch.', purpose: 'general_enquiry' },
+    ],
+  },
   {
     id: '00000000-0000-0000-0000-000000000010', slug: '', kind: 'home', title: 'Home',
     seoTitle: 'Arch9 Demo Realty | Property for sale and to rent', seoDescription: 'Explore property for sale and to rent with Arch9 Demo Realty.',
@@ -64,6 +88,7 @@ const homeSeekersShowcaseProperties: PublicProperty[] = [
     description: 'A warm contemporary home with textured stone, landscaped grounds and flexible family living.', features: ['Landscaped garden', 'Open-plan living', 'Double garage', 'Security'], amenities: ['Close to schools', 'Easy access to the city'], isShowcase: true,
     media: [{ type: 'image', url: '/images/kingdom-showcase-lynnwood-v1.png', caption: 'Kingdom showcase property', order: 0 }],
   },
+  ...additionalMockProperties,
 ]
 
 export function normalizeHostname(host: string | null | undefined): string {

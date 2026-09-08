@@ -1,3 +1,4 @@
+import styles from '@/app/agency.module.css'
 import type { WebsiteTemplateKey } from '@/lib/types'
 
 export const HOME_SEEKERS_TEMPLATE_KEY: WebsiteTemplateKey = 'home-seekers-v1'
@@ -8,7 +9,7 @@ export function isHomeSeekersTemplate(templateKey: WebsiteTemplateKey) {
 }
 
 export function templateClassName(templateKey: WebsiteTemplateKey) {
-  return isHomeSeekersTemplate(templateKey) ? 'template-home-seekers' : 'template-property-standard'
+  return isHomeSeekersTemplate(templateKey) ? `template-home-seekers ${styles.shell}` : 'template-property-standard'
 }
 
 export function templateNavigation(templateKey: WebsiteTemplateKey) {

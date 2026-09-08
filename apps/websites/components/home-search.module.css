@@ -1,0 +1,22 @@
+.finder { background: #fff; color: #222722; border-radius: 12px; padding: 0 28px 16px; box-shadow: 0 12px 48px #00000014; width: 100%; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid #e8e6e1; margin-bottom: 20px; }
+.tabs { display: flex; gap: 28px; }
+.tabs button { background: none; border: 0; border-bottom: 2px solid transparent; padding: 20px 0 16px; font-size: 14px; color: #686b66; cursor: pointer; }
+.tabs button[aria-pressed='true'] { border-color: var(--home-accent, #9a1715); color: #20251f; font-weight: 600; }
+.note { color: #777b75; font-size: 12px; }
+.fields { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) auto; gap: 20px; align-items: center; }
+.finder label { display: grid; gap: 8px; min-width: 0; }
+.finder label span { color: #6d726b; font-size: 11px; letter-spacing: .03em; }
+.finder input, .finder select { width: 100%; min-width: 0; background: transparent; color: #242b24; border: 0; padding: 4px 0; font-size: 15px; height: 32px; }
+.location { border-right: 1px solid #e8e6e1; padding-right: 20px; }
+.finder .submit { display: flex; align-items: center; justify-content: space-between; gap: 36px; border: 0; border-radius: 6px; padding: 0 24px; min-height: 54px; font-size: 14px; background: #222b25; color: white; cursor: pointer; }
+.submit:hover { background: var(--home-accent, #9a1715); }
+.more { margin-top: 16px; }
+.more summary { cursor: pointer; width: max-content; list-style: none; font-size: 12px; color: #62685f; padding: 4px 0; }
+.more summary::-webkit-details-marker { display: none; }
+.more summary span { margin-left: 10px; display: inline-block; }
+.more:not([open]) .extra { display: none; }
+.more[open] summary span { transform: rotate(45deg); }
+.extra { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; padding: 20px 0 4px; border-top: 1px solid #e8e6e1; margin-top: 12px; }
+.finder :is(button, input, select, summary):focus-visible { outline: 2px solid var(--home-accent, #9a1715); outline-offset: 5px; }
+@media (max-width: 640px) { .finder { padding: 0 20px 16px; } .note { display: none; } .fields { grid-template-columns: 1fr; gap: 14px; } .location { border-right: 0; padding: 0 0 12px; border-bottom: 1px solid #e8e6e1; } .extra { grid-template-columns: 1fr; gap: 16px; } .tabs { gap: 28px; } .finder .submit { margin-top: 4px; } }

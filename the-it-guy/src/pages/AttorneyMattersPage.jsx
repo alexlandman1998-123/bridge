@@ -23,6 +23,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { createElement, useEffect, useMemo, useRef, useState } from 'react'
+import { preloadTransactionDetailRoute } from '../routes/transactionDetailRouteLoader.js'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyModuleSettings from '../hooks/useAttorneyModuleSettings'
@@ -397,13 +398,14 @@ function AssignedBySource({ source = {}, compact = false }) {
 
 function PropertyThumbnail({ row = {}, size = 'md' }) {
   const imageUrl = firstText(row.propertyThumbnailUrl, row.raw?.allocation?.property_image_url, row.raw?.transaction?.property_image_url)
+  const [failedImageUrl, setFailedImageUrl] = useState('')
   const label = firstText(row.propertyAddress, row.property, row.reference, 'Property')
   const sizeClass = size === 'lg' ? 'h-20 w-28 rounded-xl' : 'h-14 w-16 rounded-lg'
 
   return (
     <div className={classNames('shrink-0 overflow-hidden border border-slate-200 bg-slate-100', sizeClass)}>
-      {imageUrl ? (
-        <img src={imageUrl} alt={label} className="h-full w-full object-cover" />
+      {imageUrl && failedImageUrl !== imageUrl ? (
+        <img src={imageUrl} alt={label} className="h-full w-full object-cover" onError={() => setFailedImageUrl(imageUrl)} />
       ) : (
         <div className="grid h-full w-full place-items-center bg-gradient-to-br from-emerald-50 via-white to-slate-100 text-[#00614f]">
           <Home size={size === 'lg' ? 24 : 20} />
@@ -1143,6 +1145,9 @@ function MatterPropertyCell({ row, preview }) {
           to={row.actionHref}
           state={{ matterPreview: preview }}
           onClick={(event) => event.stopPropagation()}
+          onMouseEnter={preloadTransactionDetailRoute}
+          onFocus={preloadTransactionDetailRoute}
+          onTouchStart={preloadTransactionDetailRoute}
           className="block truncate text-base font-semibold text-slate-950 hover:text-[#00614f]"
         >
           {address}

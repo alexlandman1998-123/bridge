@@ -1,5 +1,6 @@
 import { getAttorneyProfessionalProfilePermissions, getCurrentUserAttorneyMembership } from '../lib/attorneyPermissions'
 import { buildMatterListProgress, fetchMatterListProgress } from './attorneyMatterProgress.js'
+import { fetchDashboardDevelopmentProfileImages } from '../lib/api/dashboardTransactionSummaryApi.js'
 import { getFirmAttorneyAssignments, getUserAttorneyAssignments } from './transactionAttorneyAssignments'
 import { getAttorneyFirmById, getAttorneyFirmDepartments, getCurrentUserPrimaryAttorneyFirm } from './attorneyFirms'
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
@@ -1028,10 +1029,11 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
     ]),
   ]
   const listingIds = [...new Set(transactions.map(t => t.listing_id).filter(Boolean))]
-  const [developmentsById, matterProgress, listingResult] = await Promise.all([
+  const [developmentsById, matterProgress, listingResult, developmentImages] = await Promise.all([
     fetchDevelopmentsById(client, developmentIds),
     fetchMatterListProgress(client, transactions),
     listingIds.length ? client.from('private_listings').select('*').in('id', listingIds) : { data: [] },
+    fetchDashboardDevelopmentProfileImages(client, developmentIds),
   ])
   if (listingResult.error) throw listingResult.error
   const listingsById = new Map((listingResult.data || []).map(row => [row.id, row]))
@@ -1144,6 +1146,7 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
           unit?.image_url ||
           unit?.thumbnail_url ||
           unit?.cover_image_url ||
+          developmentImages.get(transaction.development_id || unit?.development_id) ||
           development?.hero_image_url ||
           development?.cover_image_url ||
           development?.image_url ||

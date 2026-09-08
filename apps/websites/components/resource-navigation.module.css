@@ -1,0 +1,8 @@
+.menu { position: relative; }
+.menu.menu summary { text-transform: none; letter-spacing: normal; border: 0; padding: 0; list-style: none; display: flex; gap: 8px; align-items: center; font: 500 13px Arial, sans-serif; color: #353c34; cursor: pointer; }
+.menu summary::-webkit-details-marker { display: none; }
+.menu summary:focus-visible { outline: 2px solid #718164; outline-offset: 6px; }
+.active { text-decoration: underline; text-underline-offset: 9px; }
+.dropdown { position: absolute; top: calc(100% + 16px); right: 0; width: 220px; padding: 12px; background: #faf9f6; border: 1px solid #d9dfd2; border-radius: 5px; box-shadow: 0 12px 28px #25302412; z-index: 60; }
+.dropdown a { display: flex; justify-content: space-between; padding: 14px 10px; text-decoration: none; }
+.dropdown a:hover { background: #eaece3; }

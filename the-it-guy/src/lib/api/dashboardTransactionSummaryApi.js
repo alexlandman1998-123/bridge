@@ -205,7 +205,7 @@ function getDevelopmentProfileImage(profile = {}) {
   ])
 }
 
-async function fetchDashboardDevelopmentProfileImages(client, developmentIds = []) {
+export async function fetchDashboardDevelopmentProfileImages(client, developmentIds = []) {
   const ids = [...new Set((developmentIds || []).filter(Boolean))]
   if (!ids.length) return new Map()
 

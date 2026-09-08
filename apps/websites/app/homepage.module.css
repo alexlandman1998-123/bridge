@@ -1,0 +1,107 @@
+/* The homepage owns its composition. Scope legacy block hooks here so changes
+   do not alter campaign, listing or valuation pages. */
+.homepage.homepage {
+  --home-accent: var(--secondary, #9a1715);
+  --content: min(1240px, calc(100% - 96px));
+  --page: #faf9f6;
+  --red: var(--home-accent);
+  background: var(--page);
+  color: #262b25;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+.homepage.homepage :global(.header-cta:hover) { background: var(--home-accent); border-color: var(--home-accent); }
+.homepage.homepage :global(.hero) { display: block; position: relative; min-height: 0; padding: 76px 0 32px; background-image: linear-gradient(90deg, #101c16c7 0%, #101c1670 47%, #101c1612 100%), url('/images/kingdom-hero-v1.png'); background-position: center; background-size: cover; }
+.homepage.homepage :global(.hero > .content-shell) { max-width: none; }
+.homepage.homepage :global(.hero .eyebrow) { color: #fff; font-size: 10px; letter-spacing: .2em; margin: 0 0 24px; }
+.homepage.homepage :global(.hero .eyebrow::after) { display: none; }
+.homepage.homepage :global(.hero h1) { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(44px, 5.5vw, 78px); font-weight: 400; line-height: 1.06; letter-spacing: -.045em; margin: 0; max-width: 750px; text-wrap: balance; }
+.homepage.homepage :global(.hero p:not(.eyebrow)) { font-family: inherit; font-size: 15px; line-height: 1.7; color: #ffffffd9; margin: 24px 0 44px; max-width: 430px; }
+.homepage.homepage :global(.featured-properties-section) { padding: 76px 0 80px; }
+.homepage.homepage :global(.featured-properties-header) { margin-bottom: 28px; }
+.homepage.homepage :global(.featured-properties-header h2),
+.homepage.homepage :global(.section-heading h2) { font-size: clamp(28px, 3vw, 40px); font-weight: 400; letter-spacing: -.04em; line-height: 1.15; }
+.homepage.homepage :global(.featured-carousel) { position: relative; grid-auto-columns: calc((100% - 48px) / 3); gap: 24px; }
+.homepage.homepage :global(.featured-property-card) { border-radius: 8px; background: transparent; border: 0; box-shadow: none; }
+.homepage.homepage :global(.featured-property-image) { border-radius: 8px; aspect-ratio: 1.42; }
+.homepage.homepage :global(.featured-property-details) { padding: 20px 0 0; }
+.homepage.homepage :global(.featured-property-details strong) { font-size: 23px; letter-spacing: -.035em; font-weight: 500; }
+.homepage.homepage :global(.featured-property-suburb) { font-size: 15px; margin-top: 8px; }
+.homepage.homepage :global(.featured-property-region) { font-size: 12px; margin-top: 5px; color: #72796f; }
+.homepage.homepage :global(.featured-property-toggle button) { white-space: nowrap; }
+.homepage.homepage :global(.featured-view-all) { font-size: 12px; color: #454f42; }
+.homepage.homepage :global(.editorial-block) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; padding: 0; min-height: 480px; background: #222b25; color: #fff; }
+.homepage.homepage :global(.editorial-block > div) { box-sizing: border-box; justify-self: stretch; align-self: center; width: 100%; max-width: none; padding: 64px clamp(32px, 5vw, 80px) 64px max(48px, calc((100vw - 1240px) / 2)); }
+.homepage.homepage :global(.editorial-block .eyebrow) { color: #cdd5c8; font-size: 10px; letter-spacing: .18em; margin-bottom: 28px; }
+.homepage.homepage :global(.editorial-block .eyebrow::before) { display: none; }
+.homepage.homepage :global(.editorial-block h2) { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(34px, 3.8vw, 54px); font-weight: 400; line-height: 1.1; letter-spacing: -.035em; max-width: 480px; text-wrap: balance; margin: 0 0 24px; }
+.homepage.homepage :global(.editorial-block p:not(.eyebrow)) { font-family: inherit; font-size: 15px; line-height: 1.75; color: #d0d6cc; max-width: 385px; margin-bottom: 28px; }
+.homepage.homepage :global(.editorial-block a) { display: inline-block; color: #fff; font-size: 13px; border-bottom: 1px solid #ffffff70; padding-bottom: 8px; }
+.homepage.homepage :global(.editorial-block::after) { min-height: 100%; margin: 0; background-size: cover; background-position: center; }
+.homepage.homepage :global(.neighbourhoods-section) { padding: 80px 0; }
+.homepage.homepage :global(.neighbourhoods-section .section-heading) { margin-bottom: 28px; gap: 24px; }
+.homepage.homepage :global(.neighbourhoods-section .section-heading p) { font-size: 14px; color: #74796f; margin-top: 12px; }
+.homepage.homepage :global(.neighbourhoods-section .section-heading > a) { font-size: 12px; color: #454f42; white-space: nowrap; }
+.homepage.homepage :global(.neighbourhood-grid) { gap: 24px; }
+.homepage.homepage :global(.neighbourhood-card) { border: 0; border-radius: 8px; position: relative; background: #222b25; }
+.homepage.homepage :global(.neighbourhood-card img) { aspect-ratio: 1.4; transition: transform .25s ease; }
+.homepage.homepage :global(.neighbourhood-card:hover img) { transform: scale(1.025); }
+.homepage.homepage :global(.neighbourhood-card > span) { position: absolute; inset: auto 0 0; padding: 50px 22px 22px; background: linear-gradient(transparent, #101b15c9); color: #fff; font-size: 21px; }
+.homepage.homepage :global(.neighbourhood-card b) { color: #fff; }
+.homepage.homepage :global(.cta-block) { background: #eaece4; color: #283025; padding: 48px max(48px, calc((100% - 1240px) / 2)); min-height: 0; display: grid; grid-template-columns: 1fr 1fr auto; gap: 32px; }
+.homepage.homepage :global(.cta-block h2) { font-size: clamp(28px, 3vw, 38px); font-weight: 400; line-height: 1.15; letter-spacing: -.04em; }
+.homepage.homepage :global(.cta-block p) { font-size: 14px; line-height: 1.7; color: #626a5e; max-width: 330px; }
+.homepage.homepage :global(.cta-block .header-cta) { background: #222b25; color: #fff; font-size: 12px; text-transform: none; padding: 14px 22px; }
+.homepage.homepage :global(.newsletter-section) { background: #faf9f6; padding: 80px max(48px, calc((100% - 1240px) / 2)); gap: 72px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+.homepage.homepage :global(.newsletter-section > div) { display: block; }
+.homepage.homepage :global(.newsletter-section .eyebrow) { font-size: 10px; letter-spacing: .18em; color: #767c70; margin: 0 0 20px; }
+.homepage.homepage :global(.newsletter-section h2) { font-family: inherit; font-size: clamp(30px, 3.2vw, 42px); line-height: 1.12; letter-spacing: -.04em; font-weight: 400; min-width: 0; margin: 0 0 18px; text-wrap: balance; }
+.homepage.homepage :global(.newsletter-section > div > p:not(.eyebrow)) { font-size: 14px; line-height: 1.75; color: #73796d; max-width: 360px; }
+.homepage.homepage :global(.newsletter-section .lead-form) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); background: transparent; padding: 0; gap: 16px; }
+.homepage.homepage :global(.newsletter-section .lead-form .lead-field) { display: grid; grid-column: auto; font-size: 12px; font-weight: 500; color: #50594b; gap: 8px; }
+.homepage.homepage :global(.newsletter-section .lead-form input:not([type='checkbox'])) { border: 1px solid #d8dcd2; border-radius: 5px; min-width: 0; width: 100%; min-height: 48px; padding: 12px; }
+.homepage.homepage :global(.newsletter-section .lead-form .consent) { display: flex; align-items: start; grid-column: 1 / -1; gap: 10px; color: #6c7365; font-size: 11px; line-height: 1.6; font-weight: 400; }
+.homepage.homepage :global(.newsletter-section .consent input) { width: 15px; height: 15px; min-height: 15px; flex-shrink: 0; margin: 1px 0 0; accent-color: #222b25; }
+.homepage.homepage :global(.newsletter-section .lead-form button) { justify-self: start; background: #222b25; color: #fff; border-radius: 5px; font-size: 12px; padding: 14px 28px; min-height: 46px; }
+.homepage.homepage :global(.newsletter-section .form-message),
+.homepage.homepage :global(.newsletter-section .form-error) { display: block; grid-column: 1 / -1; color: #46613a; font-size: 13px; margin: 0; min-height: 0; }
+.homepage.homepage :global(.newsletter-section .form-error) { color: #a62e20; }
+@media (min-width: 1800px) {
+.homepage.homepage :global(.hero) { padding-top: 100px; }
+}
+@media (max-width: 1050px) {
+.homepage.homepage :global(.cta-block) { grid-template-columns: 1fr auto; }
+.homepage.homepage :global(.cta-block p) { grid-row: 2; }
+.homepage.homepage :global(.cta-block .header-cta) { grid-column: 2; grid-row: 1 / 3; }
+.homepage.homepage :global(.newsletter-section) { gap: 40px; }
+}
+@media (max-width: 760px) {
+.homepage.homepage { --content: calc(100% - 40px); }
+.homepage.homepage :global(.hero) { padding: 48px 0 24px; background-position: 60% center; }
+.homepage.homepage :global(.hero h1) { font-size: clamp(40px, 7.8vw, 58px); max-width: 570px; }
+.homepage.homepage :global(.hero p:not(.eyebrow)) { font-size: 14px; margin: 22px 0 32px; }
+.homepage.homepage :global(.featured-carousel) { grid-auto-columns: 82%; gap: 16px; }
+.homepage.homepage :global(.featured-properties-section), .homepage.homepage :global(.neighbourhoods-section) { padding: 52px 0; }
+.homepage.homepage :global(.editorial-block) { grid-template-columns: 1fr; min-height: 0; }
+.homepage.homepage :global(.editorial-block > div) { padding: 48px 24px; }
+.homepage.homepage :global(.editorial-block h2) { max-width: 450px; font-size: 40px; }
+.homepage.homepage :global(.editorial-block::after) { display: block; min-height: 280px; }
+.homepage.homepage :global(.neighbourhood-grid) { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.homepage.homepage :global(.neighbourhood-card img) { aspect-ratio: .85; }
+.homepage.homepage :global(.neighbourhood-card > span) { font-size: 16px; padding: 40px 12px 16px; }
+.homepage.homepage :global(.cta-block) { padding: 40px 24px; }
+.homepage.homepage :global(.newsletter-section) { grid-template-columns: 1fr; padding: 52px 24px; gap: 30px; }
+.homepage.homepage :global(.newsletter-section > div > p:not(.eyebrow)) { max-width: 420px; }
+}
+@media (max-width: 480px) {
+.homepage.homepage :global(.hero h1) { font-size: 43px; }
+.homepage.homepage :global(.featured-properties-header), .homepage.homepage :global(.section-heading) { align-items: start; flex-direction: column; gap: 16px; }
+.homepage.homepage :global(.neighbourhood-grid) { grid-template-columns: 1fr; gap: 16px; }
+.homepage.homepage :global(.neighbourhood-card img) { aspect-ratio: 1.65; }
+.homepage.homepage :global(.neighbourhood-card > span) { font-size: 22px; padding: 50px 20px 20px; }
+.homepage.homepage :global(.cta-block) { grid-template-columns: 1fr; gap: 18px; }
+.homepage.homepage :global(.cta-block .header-cta) { grid-column: auto; grid-row: auto; justify-self: start; }
+.homepage.homepage :global(.newsletter-section .lead-form) { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+.homepage.homepage :global(*) { scroll-behavior: auto; transition: none; }
+}

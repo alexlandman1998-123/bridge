@@ -97,6 +97,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import LeadsRouteShell from './components/leads/LeadsRouteShell'
 import LeadWorkspaceRouteLoadingShell from './components/leads/LeadWorkspaceRouteLoadingShell'
 import TransactionDetailRouteShell from './components/transactions/TransactionDetailRouteShell'
+import { loadTransactionDetailRouteModule } from './routes/transactionDetailRouteLoader.js'
 import TransactionsRouteShell from './components/transactions/TransactionsRouteShell'
 import { loadAgencyLeadListRouteModule, loadAgencyLeadWorkspaceRouteModule } from './routes/leadsRouteLoader'
 import { loadTransactionsRouteModule } from './routes/transactionsRouteLoader'
@@ -297,7 +298,7 @@ const AttorneyOperationsPage = lazy(() => import('./pages/AttorneyOperationsPage
 const AttorneyPublicIntakePage = lazy(() => import('./pages/AttorneyPublicIntakePage'))
 const AttorneyQuoteDecisionPage = lazy(() => import('./pages/AttorneyQuoteDecisionPage'))
 const AttorneySchedulingPage = lazy(() => import('./pages/AttorneySchedulingPage'))
-const AttorneyTransactionDetail = lazy(() => import('./pages/AttorneyTransactionDetail'))
+const AttorneyTransactionDetail = lazy(loadTransactionDetailRouteModule)
 const Auth = lazy(() => import('./pages/Auth'))
 const AuthCallback = lazy(() => import('./pages/AuthCallback'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))

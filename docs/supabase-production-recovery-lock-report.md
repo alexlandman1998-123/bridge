@@ -1,6 +1,6 @@
 # Supabase Production Recovery Lock Report
 
-Generated: 2026-07-25T18:57:28.964Z
+Generated: 2026-09-08T09:25:04.833Z
 Production project: `isdowlnollckzvltkasn`
 
 ## Decision
