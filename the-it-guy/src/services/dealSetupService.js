@@ -9,16 +9,25 @@ import { syncCanonicalRequiredDocumentsForTransactionContext } from './documents
 
 const text = (value) => String(value || '').trim()
 
+function resolveCanonicalTransactionType(transaction = {}) {
+  if (text(transaction.development_id) || text(transaction.unit_id)) return 'developer_sale'
+  return text(transaction.transaction_type) || null
+}
+
 export async function loadCanonicalDealSetup({ transactionId, client = supabase } = {}) {
   if (!text(transactionId)) throw new Error('Transaction is required.')
   if (!client) throw new Error('Supabase is not configured.')
   const [transactionResult, buyerParties] = await Promise.all([
-    client.from('transactions').select('id, buyer_id, development_id, unit_id, property_address_line_1, seller_name, purchaser_type, purchase_price, sales_price, deposit_amount, reservation_required, reservation_amount, finance_type, finance_managed_by, cash_amount, bond_amount, bank, bond_originator, updated_at').eq('id', text(transactionId)).single(),
+    client.from('transactions').select('id, buyer_id, development_id, unit_id, transaction_type, property_address_line_1, seller_name, purchaser_type, purchase_price, sales_price, deposit_amount, reservation_required, reservation_amount, finance_type, finance_managed_by, cash_amount, bond_amount, bank, bond_originator, updated_at').eq('id', text(transactionId)).single(),
     listTransactionBuyerParties({ transactionId, client }),
   ])
   if (transactionResult.error) throw transactionResult.error
-  const setup = buildDealSetup({ transaction: transactionResult.data, buyerParties })
-  return { setup, validation: validateDealSetup(setup), transaction: transactionResult.data, buyerParties }
+  const transaction = {
+    ...transactionResult.data,
+    transaction_type: resolveCanonicalTransactionType(transactionResult.data),
+  }
+  const setup = buildDealSetup({ transaction, buyerParties })
+  return { setup, validation: validateDealSetup(setup), transaction, buyerParties }
 }
 
 export async function deriveDealSetupDocumentRequirements({ transactionId, client = supabase } = {}) {
@@ -83,6 +92,8 @@ export async function auditDealSetupCompatibility({ transactionId, client = supa
 export async function saveCanonicalDealTerms({ transactionId, terms = {}, finance = {}, client = supabase } = {}) {
   if (!text(transactionId)) throw new Error('Transaction is required.')
   if (!client) throw new Error('Supabase is not configured.')
+  const current = await client.from('transactions').select('development_id, unit_id, transaction_type').eq('id', text(transactionId)).single()
+  if (current.error) throw current.error
   const payload = {
     purchaser_type: text(terms.purchaserType) || null,
     purchase_price: terms.purchasePrice === '' ? null : Number(terms.purchasePrice) || null,
@@ -92,6 +103,7 @@ export async function saveCanonicalDealTerms({ transactionId, terms = {}, financ
     cash_amount: finance.cashAmount === '' ? null : Number(finance.cashAmount) || null,
     bond_amount: finance.bondAmount === '' ? null : Number(finance.bondAmount) || null,
     bank: text(finance.bank) || null,
+    transaction_type: resolveCanonicalTransactionType(current.data),
     updated_at: new Date().toISOString(),
   }
   const result = await client.from('transactions').update(payload).eq('id', text(transactionId)).select('id').single()
