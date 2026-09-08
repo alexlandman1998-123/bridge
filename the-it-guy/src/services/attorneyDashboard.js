@@ -710,7 +710,18 @@ export function mapMatterToActiveMatterCard({ summary = {}, primaryUnit = {}, me
     development: propertyDevelopment,
     listing: propertyListing,
   }
-  const propertyAddress = resolvePortalPropertyLabel(identityRow, { fallback: 'Property address pending' })
+  const resolvedAddress = resolvePortalPropertyLabel(identityRow, { fallback: 'Property address pending' })
+  const unitNumber = [propertyUnit.unit_label, propertyUnit.unitLabel, propertyUnit.unit_number, propertyUnit.unitNumber, transaction.unit_label, transaction.unit_number]
+    .find((value) => (typeof value === 'string' || typeof value === 'number') && String(value).trim())
+  const unitText = unitNumber == null ? '' : String(unitNumber).trim().replace(/^unit\s+/i, '')
+  // Street-address precedence in the shared identity resolver must not hide
+  // the linked unit on dashboard cards. Preserve existing unit/scheme labels.
+  const normaliseUnit = (value) => value.toLowerCase().replace(/^0+(?=\d)/, '')
+  const existingUnits = [...resolvedAddress.matchAll(/\bunit\s+([\w-]+)/gi)]
+  const alreadyIncludesUnit = existingUnits.some((match) => normaliseUnit(match[1]) === normaliseUnit(unitText))
+  const propertyAddress = unitText && !alreadyIncludesUnit
+    ? `${resolvedAddress} · Unit ${unitText}`
+    : resolvedAddress
   const buyerName = resolvePortalBuyerName(identityRow, { fallback: buyer.email || 'Client pending' })
   const sellerName = resolvePortalSellerName(identityRow, { fallback: 'Seller pending' })
   const referralOrganisationId = transaction.originating_partner_organisation_id || transaction.referral_source_organisation_id || ''
