@@ -92,7 +92,7 @@ function confirmedProfile(transaction) {
     { step_key: 'levy_clearance_received', status: 'completed' },
   ], plan, 'transfer')
 
-  assert.deepEqual(filtered.map((step) => step.step_key), ['rates_clearance_received', 'levy_clearance_received'])
+  assert.deepEqual(filtered.map((step) => step.step_key), ['rates_clearance_received'])
 }
 
 console.log('matter-workflow-plan tests passed')

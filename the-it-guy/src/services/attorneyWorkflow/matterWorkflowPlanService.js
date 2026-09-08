@@ -131,8 +131,8 @@ export function filterStepsForMatterWorkflowPlan(steps = [], plan = {}, laneKey 
   if (!allowedStepKeys.size) return []
   return (Array.isArray(steps) ? steps : []).filter((step) => {
     const stepKey = normalizeText(step?.stepKey || step?.step_key)
-    // Historic completed work remains available even where a later profile revision
-    // means that its template step is no longer applicable.
-    return allowedStepKeys.has(stepKey) || normalizeText(step?.status).toLowerCase() === 'completed'
+    // Excluded rows are never deleted; they remain in the lane history and audit
+    // trail, but must not inflate the active plan's progress denominator.
+    return allowedStepKeys.has(stepKey)
   })
 }

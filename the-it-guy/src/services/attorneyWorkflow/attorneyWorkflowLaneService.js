@@ -1889,6 +1889,25 @@ export async function updateAttorneyWorkflowStepStatus({
     throw atomicUpdate.error
   }
 
+  const planReconciliation = await client.rpc('bridge_reconcile_attorney_lane_progress_with_matter_plan', {
+    p_transaction_id: normalizedTransactionId,
+    p_lane_key: normalizedLaneKey,
+    p_step_key: resolvedStepKey,
+    p_step_status: normalizedStatus,
+  })
+  if (planReconciliation.error) {
+    const message = `${planReconciliation.error?.message || ''} ${planReconciliation.error?.details || ''}`.toLowerCase()
+    const migrationPending =
+      planReconciliation.error?.code === 'PGRST202' ||
+      planReconciliation.error?.code === '42883' ||
+      (message.includes('bridge_reconcile_attorney_lane_progress_with_matter_plan') && message.includes('not found'))
+    if (migrationPending) {
+      console.warn('[attorney-workflow] plan progress reconciliation is pending database deployment', { transactionId: normalizedTransactionId })
+    } else {
+      throw planReconciliation.error
+    }
+  }
+
   await publishAttorneySharedProgress(client, {
     transactionId: normalizedTransactionId,
     laneKey: normalizedLaneKey,
@@ -1912,7 +1931,10 @@ export async function updateAttorneyWorkflowStepStatus({
       operationalState: canonicalTransaction.operational_state || null,
       stage: canonicalTransaction.stage || null,
       updatedAt: canonicalTransaction.updated_at || atomicUpdate.data?.updatedAt || null,
-      workflowMutation: atomicUpdate.data || null,
+      workflowMutation: {
+        ...(atomicUpdate.data || {}),
+        planReconciliation: planReconciliation.data || null,
+      },
     },
   }
 }

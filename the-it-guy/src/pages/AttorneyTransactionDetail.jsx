@@ -3911,7 +3911,7 @@ function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null
 function getConditionalLegalWorkflowProgress({ workflowKey = 'transfer', lane = null, facts = {}, fallback = 0, workflowPlan = null } = {}) {
   const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane, facts, workflowPlan })
   return steps.length
-    ? getCanonicalLegalWorkflowProgressPercent({ lane, steps })
+    ? getCanonicalLegalWorkflowProgressPercent({ lane, steps, workflowPlan })
     : Math.max(0, Math.min(100, Number(fallback || 0)))
 }
 
