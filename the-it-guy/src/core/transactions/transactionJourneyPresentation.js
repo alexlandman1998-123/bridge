@@ -1,4 +1,5 @@
 import { buildBuyerJourneyPresentationModel } from '../clientPortal/buyerJourneyPresentationModel.js'
+import { buildSharedHighLevelJourney } from './highLevelJourneyAdapter.js'
 
 function isCanonicalSnapshot(snapshot) {
   return Boolean(
@@ -17,6 +18,20 @@ export function buildTransactionJourneyPresentation({
   fallbackProgressPercent,
   fallbackSource = 'legacy',
 } = {}) {
+  if (snapshot?.legalJourney || snapshot?.highLevelJourney?.ruleVersion === 1) {
+    const highLevelJourney = buildSharedHighLevelJourney(snapshot)
+    const steps = highLevelJourney.milestones.map(m => ({ ...m, key: m.id,
+      isCurrent: ['in_progress', 'waiting', 'blocked'].includes(m.status),
+      isBlocked: m.status === 'blocked', isUpcoming: m.status === 'pending' }))
+    const currentStep = steps.find(s => s.isCurrent) || null
+    return { source: 'shared-high-level-journey', transactionId: snapshot.transactionId,
+      highLevelJourney, legalJourney: snapshot.legalJourney || null, steps,
+      currentStep, currentStepId: currentStep?.id || null,
+      currentIndex: steps.findIndex(s => s.isCurrent),
+      isComplete: steps.every(s => s.isComplete),
+      statusLabel: `${steps.filter(s => s.isComplete).length} of 5 milestones complete`,
+      progressPercent: null }
+  }
   if (!isCanonicalSnapshot(snapshot)) {
     const fallback = fallbackModel || buildBuyerJourneyPresentationModel({
       steps: fallbackSteps,

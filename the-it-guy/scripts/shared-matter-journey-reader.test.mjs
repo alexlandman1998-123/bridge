@@ -39,6 +39,36 @@ create function bridge_resolve_private_listing_transaction_id(uuid) returns uuid
  select case when $1='${lane}'::uuid then '${matter}'::uuid else null end $$;
 `)
 await db.exec(migration('20260908152512_shared_matter_journey_seller_session_reader.sql'))
+await db.exec(`
+alter table transactions add column finance_type text;
+create table transaction_workflow_instances(id uuid primary key,transaction_id uuid,workflow_key text);
+create table transaction_workflow_steps(workflow_instance_id uuid,transaction_id uuid,workflow_key text,step_key text,status text);
+`)
+await db.exec(migration('20260908181335_shared_journey_active_plan_manifest.sql'))
+await db.exec(migration('20260908183116_shared_journey_commercial_facts.sql'))
+// Exercise the real SQL migrations in isolated PostgreSQL with scoped permission fixtures.
+for (const [route, financeKeys] of Object.entries({ cash: ['proof_of_funds_reviewed','cash_confirmation_approved'],
+  bond: ['quote_approved','instruction_sent'], hybrid: ['cash_portion_confirmed','quote_approved','instruction_sent'] })) {
+  await db.exec('begin')
+  await db.query('update transactions set finance_type=$1 where id=$2',[route,matter])
+  const otp = randomUUID(), finance = randomUUID()
+  await db.query("insert into transaction_workflow_instances values ($1,$3,'sales_otp'),($2,$3,$4)",[otp,finance,matter,`finance_${route}`])
+  await db.query("insert into transaction_workflow_steps values ($1,$2,'sales_otp','signed_otp_received','completed')",[otp,matter])
+  for (const key of financeKeys) await db.query('insert into transaction_workflow_steps values ($1,$2,$3,$4,$5)',[finance,matter,`finance_${route}`,key,'completed'])
+  await db.query("insert into transaction_workflow_steps values ($1,$2,'sales_otp','private_secret','completed')",[otp,matter])
+  const initial = (await db.query('select journey_private.read_matter_journey($1) result',[matter])).rows[0].result
+  assert.equal(initial.commercialFacts.steps.length,financeKeys.length+1)
+  assert.ok(initial.commercialFacts.steps.every(s=>s.status==='completed'))
+  assert.doesNotMatch(JSON.stringify(initial.commercialFacts),/private_secret/)
+  await db.query("update transaction_workflow_steps set status='not_started' where step_key=$1",[financeKeys[0]])
+  const reopened = (await db.query('select journey_private.read_matter_journey($1) result',[matter])).rows[0].result
+  assert.equal(reopened.commercialFacts.steps.find(s=>s.key===financeKeys[0]).status,'not_started')
+  await db.query("select set_config('test.actor','',false),set_config('test.token','valid',false)")
+  await db.exec('set role anon')
+  assert.deepEqual((await db.query('select bridge_read_shared_matter_journey($1) result',[matter])).rows[0].result.commercialFacts,reopened.commercialFacts)
+  assert.deepEqual((await db.query("select bridge_read_seller_shared_matter_journey('seller-valid','valid-session') result")).rows[0].result.commercialFacts,reopened.commercialFacts)
+  await db.exec('reset role; rollback')
+}
 await db.query("select set_config('test.actor',$1,false)",[actor])
 for (const key of ['transfer','bond','cancellation']) {
   const expected = getLegalWorkspacePhases(key).flatMap((phase,i)=>phase.stageKeys.map((task,j)=>({
@@ -75,7 +105,10 @@ for (const finance of ['cash','bond','hybrid']) for (const buyer of ['individual
   const professionalSource=await read()
   const projected=projectSharedMatterJourneyRead(professionalSource)
   const expected=buildPlannedSharedMatterJourney({transactionId:matter,revision:7,planRevision:7,routingProfile:{...profile,workflowPlan:plan},laneSnapshots:snapshots}).journey
-  assert.deepEqual(projected,presentSharedMatterJourney(expected,'buyer'))
+  const { commercialFacts, requiredLaneKeys, ...legalProjection } = projected
+  assert.deepEqual(legalProjection,presentSharedMatterJourney(expected,'buyer'))
+  assert.deepEqual(requiredLaneKeys,plan.lanes.map(l=>l.laneKey))
+  assert.equal(commercialFacts.revision,7)
   assert.doesNotMatch(JSON.stringify(professionalSource),/PRIVATE EVIDENCE|routing_profile|comment|note|email/)
   const result={status:'ready',snapshot:projected}
   const work=alignWorkStepsWithSharedJourney(raw,laneRows,result,plan)

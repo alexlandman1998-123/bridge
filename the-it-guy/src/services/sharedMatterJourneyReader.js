@@ -10,7 +10,20 @@ export function projectSharedMatterJourneyRead(source) {
       ...phase, tasks: phase.tasks.map(task => ({ ...task, outstandingEvidenceCount: 0 })),
     })) })),
   })
-  return presentSharedMatterJourney(journey, 'buyer')
+  // Only the explicit persisted active-plan manifest establishes applicability.
+  // Old readers and legacy task lists remain visible but cannot prove milestones.
+  return { ...presentSharedMatterJourney(journey, 'buyer'),
+    commercialFacts: source.commercialFacts?.version === 1 ? {
+      version: 1, revision: source.commercialFacts.revision,
+      financeType: ['cash','bond','hybrid'].includes(source.commercialFacts.financeType) ? source.commercialFacts.financeType : null,
+      steps: (Array.isArray(source.commercialFacts.steps) ? source.commercialFacts.steps : []).filter(step =>
+        ['sales_otp:signed_otp_received', 'finance_cash:proof_of_funds_reviewed', 'finance_cash:cash_confirmation_approved',
+          'finance_bond:quote_approved', 'finance_bond:instruction_sent', 'finance_hybrid:cash_portion_confirmed',
+          'finance_hybrid:quote_approved', 'finance_hybrid:instruction_sent'].includes(`${step.workflowKey}:${step.key}`)
+      ).map(step => ({ workflowKey: step.workflowKey, key: step.key, status: step.status })),
+    } : null,
+    requiredLaneKeys: source.planStatus === 'active' && Array.isArray(source.requiredLaneKeys)
+      ? [...source.requiredLaneKeys] : null }
 }
 
 export async function fetchSharedMatterJourney(client, transactionId) {

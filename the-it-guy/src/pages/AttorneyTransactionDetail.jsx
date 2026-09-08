@@ -48,6 +48,9 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SharedTransactionShell from '../components/SharedTransactionShell'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
+import DeveloperOverviewJourney from '../components/transaction/DeveloperOverviewJourney'
+import DeveloperConveyancingJourney from '../components/transaction/DeveloperConveyancingJourney'
+import { buildDeveloperJourneySnapshot } from '../core/transactions/highLevelJourneyAdapter.js'
 import MatterConversation from '../components/transaction/MatterConversation'
 import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
 import { sharedJourneyHeaderPhases } from '../services/sharedMatterJourneyReader.js'
@@ -14215,6 +14218,8 @@ function AgentTransactionOverview({
 }
 
 function AgentTransactionCommandCenter({
+  developerOverview = false,
+  onOpenWorkspace,
   journeyModel = null,
   journeyLoading = false,
   outstandingItems = [],
@@ -14264,14 +14269,14 @@ function AgentTransactionCommandCenter({
 
   return (
     <section className="space-y-4">
-      <TransactionJourneyTracker
+      {developerOverview ? <DeveloperOverviewJourney model={journeyModel} loading={journeyLoading} onOpenWorkspace={onOpenWorkspace} /> : <TransactionJourneyTracker
         model={journeyModel}
         loading={journeyLoading}
         title="Transaction Journey"
         subtitle="The same milestone view shared with every party in this transaction."
         action={<Button type="button" variant="secondary" size="sm" onClick={onOpenTimeline}>View full journey<ChevronRight size={14} /></Button>}
         audience="agent"
-      />
+      />}
       <section className="grid gap-4 xl:grid-cols-2">
         <article className="flex min-h-[430px] flex-col rounded-[16px] border border-borderDefault bg-white p-5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <div className="flex items-center justify-between gap-3">
@@ -14345,13 +14350,13 @@ function AgentTransactionCommandCenter({
             })}
             {!activityEntries.length ? <p className="py-10 text-center text-sm text-textMuted">No activity yet.</p> : null}
           </div>
-          <form onSubmit={onPublishDiscussion} className="grid shrink-0 gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          {developerOverview ? <div className="p-3"><Button type="button" variant="secondary" size="sm" onClick={onOpenTimeline}>Open updates &amp; conversation</Button></div> : <form onSubmit={onPublishDiscussion} className="grid shrink-0 gap-2 p-3 sm:grid-cols-[minmax(0,1fr)_auto]">
             <Field as="textarea" rows={2} value={discussionBody} onChange={(event) => onDiscussionBodyChange?.(event.target.value)} placeholder="Publish an update to everyone involved..." />
             <Button type="submit" size="sm" className="self-stretch justify-center sm:self-end" disabled={discussionSubmitDisabled}>
               {publishing ? 'Publishing...' : 'Publish'}
               <Send size={14} />
             </Button>
-          </form>
+          </form>}
         </article>
       </section>
 
@@ -20702,13 +20707,14 @@ function AttorneyTransactionDetail() {
     ],
   )
   const agentOverviewJourneyModel = useMemo(
-    () => buildTransactionJourneyPresentation({
+    () => ({ ...buildTransactionJourneyPresentation({
       snapshot: transactionRollup?.transactionJourneySnapshot || null,
       fallbackSteps: agentOverviewJourneyStages,
       fallbackProgressPercent: displayedLifecycleProgress?.progressPercent,
       fallbackSource: 'agent-legacy',
-    }),
-    [agentOverviewJourneyStages, displayedLifecycleProgress?.progressPercent, transactionRollup?.transactionJourneySnapshot],
+    }), ...(isDeveloperTransactionView ? buildDeveloperJourneySnapshot({ transaction, rollup: transactionRollup,
+      plan: workflowOperations?.workflowPlan, financeType: normalizedFinanceType }) : {}) }),
+    [agentOverviewJourneyStages, displayedLifecycleProgress?.progressPercent, transactionRollup, transaction, workflowOperations?.workflowPlan, normalizedFinanceType, isDeveloperTransactionView],
   )
   const agentOverviewJourneyLoading = Boolean(
     USE_TRANSACTION_ROLLUP_OVERVIEW &&
@@ -22453,7 +22459,11 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {isTransactionOperatorView && activeWorkspaceMenu === 'transfer' ? (
-          <AgentConveyancingWorkspace
+          isDeveloperTransactionView ? <DeveloperConveyancingJourney
+            result={agentOverviewJourneyModel?.legalJourney}
+            loading={agentOverviewJourneyLoading}
+            onOpenActivity={() => openWorkspaceMenu('activity')}
+          /> : <AgentConveyancingWorkspace
             workflows={transferHubWorkflows}
             activeDetailKey={activeLegalWorkflowDetailKey}
             routingDiagnostics={routingDiagnostics}
@@ -22720,6 +22730,8 @@ function AttorneyTransactionDetail() {
         ) : null}
 
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'activity' ? (
+          <section className="space-y-4">
+          {isDeveloperTransactionView ? <MatterConversation transactionId={transaction?.id} revision={agentOverviewJourneyModel?.legalJourney?.snapshot?.revision} /> : null}
           <ArchlineActivityWorkspace
             compact={workspaceRole === 'attorney'}
             entries={filteredActivityFeed}
@@ -22728,7 +22740,7 @@ function AttorneyTransactionDetail() {
             activeFilter={activityFilter}
             onFilterChange={setActivityFilter}
             onOpenWorkspace={openWorkspaceMenu}
-            composer={(
+            composer={isDeveloperTransactionView ? null : (
               <form onSubmit={handleAddDiscussion} className="rounded-lg border border-slate-200 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
                 <h3 className="text-base font-semibold text-slate-950">Add Update</h3>
                 <div className="mt-4 grid gap-3">
@@ -22755,6 +22767,7 @@ function AttorneyTransactionDetail() {
               </form>
             )}
           />
+          </section>
         ) : null}
 
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'stakeholders' ? (
@@ -22831,6 +22844,8 @@ function AttorneyTransactionDetail() {
                 {activeWorkspaceMenu === 'overview' ? (
                   isTransactionOperatorView ? (
                     <AgentTransactionCommandCenter
+                      developerOverview={isDeveloperTransactionView}
+                      onOpenWorkspace={openWorkspaceMenu}
                       journeyModel={agentOverviewJourneyModel}
                       journeyLoading={agentOverviewJourneyLoading}
                       outstandingItems={agentOverviewOutstandingItems}

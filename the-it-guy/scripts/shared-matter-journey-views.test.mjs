@@ -32,7 +32,7 @@ try {
   const seller=renderToStaticMarkup(createElement(MemoryRouter,null,createElement(Seller,{journeyModel:model,overviewPath:'/overview',documentsPath:'/documents'})))
   assert.match(seller,/Rates clearance/)
   assert.doesNotMatch(seller,/Estimated duration|Current day|What is happening/)
-  const unavailable=renderToStaticMarkup(createElement(Tracker,{model:{...model,legalJourney:{status:'unavailable',snapshot:null}}}))
+  const unavailable=renderToStaticMarkup(createElement(Tracker,{variant:'detailed',model:{...model,legalJourney:{status:'unavailable',snapshot:null}}}))
   assert.match(unavailable,/Legal journey unavailable/)
   assert.doesNotMatch(unavailable,/data-task-id=/)
   console.log('Shared journey views: 5 audiences render identical tasks/outcomes; seller legacy panel removed; privacy and unavailable-state checks PASS')

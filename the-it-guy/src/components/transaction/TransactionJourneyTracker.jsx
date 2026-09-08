@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, Clock3, Flag } from 'lucide-react'
 import SharedLegalJourney from './SharedLegalJourney'
+import DeveloperOverviewJourney from './DeveloperOverviewJourney'
 
 function hexToRgba(hex, alpha = 1) {
   const normalized = String(hex || '#087955').replace('#', '')
@@ -39,6 +40,14 @@ export default function TransactionJourneyTracker({
   const isDetailed = variant === 'detailed'
   const isBlocked = Boolean(currentStep?.isBlocked || model?.canonicalStatus === 'blocked')
   const CurrentIcon = isBlocked ? AlertTriangle : CheckCircle2
+
+  if (model?.highLevelJourney?.ruleVersion === 1) {
+    return <section data-transaction-journey="shared" data-journey-audience={audience} data-journey-source="shared-high-level-journey" className="space-y-4">
+      <DeveloperOverviewJourney model={model} loading={loading} title={title} action={action} />
+      {isDetailed && !loading && model.legalJourney ? <SharedLegalJourney result={model.legalJourney}
+        showConversation={conversationAudience} conversationRequiresPortal={conversationRequiresPortal} /> : null}
+    </section>
+  }
 
   if (loading) {
     return (

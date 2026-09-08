@@ -64,6 +64,7 @@ import {
   filterStepsForMatterWorkflowPlan,
   getMatterWorkflowPlanStepKeys,
   getApplicableAttorneyTaskDefinitions,
+  readMatterWorkflowPlan,
   resolveMatterWorkflowPlan,
 } from './matterWorkflowPlanService.js'
 import { isAttorneyTaskResolved, isAttorneyTaskCompleted } from '../../core/transactions/attorneyTaskOutcomes.js'
@@ -1012,7 +1013,10 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   if (!normalizedTransactionId) throw new Error('Transaction id is required.')
 
   const transaction = await fetchTransaction(client, normalizedTransactionId)
-  const workflowPlan = resolveMatterWorkflowPlan(transaction.routing_profile_json || transaction.routingProfile || {})
+  const routingProfile = transaction.routing_profile_json || transaction.routingProfile || {}
+  const storedWorkflowPlan = readMatterWorkflowPlan(routingProfile)
+  // Generated provisional templates are not the persisted shared plan.
+  const workflowPlan = storedWorkflowPlan?.status === 'active' ? resolveMatterWorkflowPlan(routingProfile) : null
   const assignments = await getTransactionAttorneyAssignments(normalizedTransactionId).catch(() => [])
   const delegations = actor?.id
     ? await getAttorneyLaneDelegations({ transactionId: normalizedTransactionId }, { client }).catch(() => [])

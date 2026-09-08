@@ -27,6 +27,7 @@ import {
 } from './attorneyLaneResolver.js'
 import { normaliseFinanceType, resolveFinanceWorkflowKey } from './financeWorkflowResolver.js'
 import { buildTransactionJourneySnapshot } from './transactionJourneySnapshot.js'
+import { evaluateHighLevelJourney } from '../../src/core/transactions/highLevelJourneyRules.js'
 import { fetchSharedMatterJourney } from '../../src/services/sharedMatterJourneyReader.js'
 
 const TRANSACTION_SELECT =
@@ -1395,6 +1396,10 @@ function buildRollupResult({
     derivedAt: resolvedDerivedAt,
     actorRole,
   })
+  const highLevelJourney = evaluateHighLevelJourney({ workflows: allWorkflows,
+    financeType: normaliseFinanceType(transaction.finance_type),
+    factsAvailable: fallback.usedLegacyFallback === false,
+    lifecycleState: transaction.lifecycle_state })
 
   return {
     transactionId,
@@ -1421,7 +1426,7 @@ function buildRollupResult({
     }),
     supportingDocumentsConfigured,
     derivedAt: resolvedDerivedAt,
-    transactionJourneySnapshot,
+    transactionJourneySnapshot: { ...transactionJourneySnapshot, highLevelJourney },
     evidenceUsed: unique(evidenceUsed),
     derivedFrom,
     usedLegacyFallback: fallback.usedLegacyFallback,
