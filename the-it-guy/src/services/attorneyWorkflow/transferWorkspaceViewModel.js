@@ -13,6 +13,7 @@ import {
   normalizeDocumentMaritalRegime,
   normalizeDocumentPartyEntityType,
 } from '../../core/documents/documentPartyClassification.js'
+import { getMatterWorkflowPlanStepKeys } from './matterWorkflowPlanService.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -803,7 +804,9 @@ function isTaskOverdue(task = {}, now = new Date()) {
 }
 
 function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = null, documents = [], scenario = null } = {}) {
+  const plannedStepKeys = getMatterWorkflowPlanStepKeys(workflow?.workflowPlan, workflowKey)
   const definitions = getAttorneyStageDefinitionsForLane(workflowKey)
+    .filter((definition) => !plannedStepKeys.length || plannedStepKeys.includes(definition.key))
     .filter((definition) => workflowKey === 'transfer' && scenario?.finance?.requiresGuarantees === false ? !GUARANTEE_STAGE_KEYS.has(definition.key) : true)
     .map((definition) => applyTransferScenarioToTask(definition, scenario))
   const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []

@@ -111,6 +111,7 @@ import {
   updateAttorneyWorkflowStepStatus,
 } from '../services/attorneyWorkflow/attorneyWorkflowLaneService'
 import { buildTransferWorkspaceViewModel } from '../services/attorneyWorkflow/transferWorkspaceViewModel.js'
+import { getMatterWorkflowPlanStepKeys } from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
 import { buildLegalTaskWorkbenchModel } from '../core/transactions/legalTaskWorkbenchModel.js'
 import { getCanonicalLegalWorkflowProgressPercent } from '../core/transactions/legalWorkflowProgress.js'
 import { recordLegalWorkspaceUxEvent } from '../services/legalWorkspaceUxTelemetryService.js'
@@ -3859,12 +3860,15 @@ function buildLegalWorkflowReasonChips(facts = {}, workflowKey = 'transfer') {
   return [...new Set(chips.filter((chip) => chip && chip !== 'Unknown'))]
 }
 
-function getLegalWorkflowStageDefinitions(workflowKey = 'transfer', facts = {}) {
+function getLegalWorkflowStageDefinitions(workflowKey = 'transfer', facts = {}, workflowPlan = null) {
   const definitions = LEGAL_WORKFLOW_STAGE_CATALOG[workflowKey] || LEGAL_WORKFLOW_STAGE_CATALOG.transfer
-  return definitions.filter((stage) => !stage.appliesWhen || stage.appliesWhen({ facts }))
+  const plannedStepKeys = getMatterWorkflowPlanStepKeys(workflowPlan, workflowKey)
+  return definitions
+    .filter((stage) => !plannedStepKeys.length || plannedStepKeys.includes(stage.key))
+    .filter((stage) => !stage.appliesWhen || stage.appliesWhen({ facts }))
 }
 
-function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null, facts = {} } = {}) {
+function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null, facts = {}, workflowPlan = null } = {}) {
   const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
   const laneStepMap = new Map(
     laneSteps.map((step) => [normalizeAttorneyStageKey(step.stepKey || step.step_key || '', workflowKey), step]),
@@ -3873,7 +3877,7 @@ function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null
   const currentKey = normalizeAttorneyStageKey(currentStep?.stepKey || currentStep?.step_key || lane?.currentStage || lane?.summary?.currentStage || '', workflowKey)
   let currentIndex = -1
 
-  const steps = getLegalWorkflowStageDefinitions(workflowKey, facts).map((definition, index) => {
+  const steps = getLegalWorkflowStageDefinitions(workflowKey, facts, workflowPlan).map((definition, index) => {
     const storedStep = laneStepMap.get(definition.key)
     if (definition.key === currentKey) currentIndex = index
     return {
@@ -3904,8 +3908,8 @@ function buildLegalWorkflowProgressSteps({ workflowKey = 'transfer', lane = null
   })
 }
 
-function getConditionalLegalWorkflowProgress({ workflowKey = 'transfer', lane = null, facts = {}, fallback = 0 } = {}) {
-  const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane, facts })
+function getConditionalLegalWorkflowProgress({ workflowKey = 'transfer', lane = null, facts = {}, fallback = 0, workflowPlan = null } = {}) {
+  const steps = buildLegalWorkflowProgressSteps({ workflowKey, lane, facts, workflowPlan })
   return steps.length
     ? getCanonicalLegalWorkflowProgressPercent({ lane, steps })
     : Math.max(0, Math.min(100, Number(fallback || 0)))
@@ -6854,6 +6858,7 @@ function ArchlineMatterHeader({
     workflowKey,
     lane: workflow?.lane,
     facts: workflow?.facts || {},
+    workflowPlan: workflow?.workflowPlan || null,
   })
   const visibleWorkflowSteps = workflowSteps.length
     ? workflowSteps
@@ -19945,6 +19950,7 @@ function AttorneyTransactionDetail() {
         lane: transferWorkflowLane,
         facts: routingFacts,
         fallback: transferWorkflowLane?.summary?.completionPercent,
+        workflowPlan: workflowOperations?.workflowPlan || null,
       }),
       nextStep: transferWorkflowLane
         ? (getCurrentWorkflowStep(transferWorkflowLane) ? getWorkflowStepLabel(getCurrentWorkflowStep(transferWorkflowLane)) : transferWorkflowLane?.summary?.nextAction || 'Workflow review')
@@ -19962,6 +19968,7 @@ function AttorneyTransactionDetail() {
         ...(Array.isArray(transferWorkflowLane?.summary?.blockers) ? transferWorkflowLane.summary.blockers : []),
       ].filter(Boolean),
       lane: transferWorkflowLane,
+      workflowPlan: workflowOperations?.workflowPlan || null,
     }
 
     const items = [transferWorkflow]
@@ -19987,6 +19994,7 @@ function AttorneyTransactionDetail() {
             lane: bondAttorneyWorkflowLane,
             facts: routingFacts,
             fallback: bondAttorneyWorkflowLane?.summary?.completionPercent ?? getBondWorkflowProgressPercent(transactionFinanceWorkflow),
+            workflowPlan: workflowOperations?.workflowPlan || null,
           })
         : 0,
       nextStep: requiresBondRegistrationWorkflow
@@ -20011,6 +20019,7 @@ function AttorneyTransactionDetail() {
           ].filter(Boolean)
         : [],
       lane: bondAttorneyWorkflowLane,
+      workflowPlan: workflowOperations?.workflowPlan || null,
     })
 
     items.push({
@@ -20034,6 +20043,7 @@ function AttorneyTransactionDetail() {
             lane: cancellationWorkflowLane,
             facts: routingFacts,
             fallback: cancellationWorkflowLane?.summary?.completionPercent,
+            workflowPlan: workflowOperations?.workflowPlan || null,
           })
         : 0,
       nextStep: requiresCancellationWorkflow
@@ -20058,6 +20068,7 @@ function AttorneyTransactionDetail() {
           ].filter(Boolean)
         : [],
       lane: cancellationWorkflowLane,
+      workflowPlan: workflowOperations?.workflowPlan || null,
     })
 
     if (workflowOperations?.matterScope?.scoped) {
@@ -20082,6 +20093,7 @@ function AttorneyTransactionDetail() {
     transferWorkflowLane,
     visibleWorkflowLaneKeys,
     workflowOperations?.matterScope?.scoped,
+    workflowOperations?.workflowPlan,
   ])
   const transferHubWorkflows = useMemo(
     () => legalWorkflowModels.filter((item) => item.required),

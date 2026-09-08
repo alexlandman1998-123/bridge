@@ -1249,6 +1249,7 @@
     "test:manual-listing-oversight": "node scripts/manual-listing-oversight.test.mjs",
     "test:manual-listing-reminders": "node scripts/manual-listing-reminders.test.mjs",
     "test:transaction-routing-profile": "node scripts/transaction-routing-profile.test.mjs",
+    "test:matter-workflow-plan": "node scripts/matter-workflow-plan.test.mjs",
     "test:listing-to-transaction-routing-propagation": "node scripts/listing-to-transaction-routing-propagation.test.mjs",
     "test:transaction-routing-workflow-adaptation": "node scripts/transaction-routing-workflow-adaptation.test.mjs",
     "test:transaction-routing-diagnostics": "node scripts/transaction-routing-diagnostics.test.mjs",

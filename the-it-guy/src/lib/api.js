@@ -271,6 +271,7 @@ import { runCanonicalDocumentRequestRecalculationBatch } from '../services/docum
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
+import { buildMatterWorkflowPlan } from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
 import { publishTransactionSharedProgress } from '../services/transactionSharedProgressService.js'
 import { getAgentTransactionSyncReadModel } from '../services/transactionSyncReadModelService.js'
 import { buildTransactionRoutingBackfillPlan } from '../services/transactionRoutingGovernanceService'
@@ -38815,10 +38816,27 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
     cancellation_required: cancellationRequired,
     vat_treatment: nullableUnknown(input.vatTreatment ?? input.vat_treatment ?? transaction.vat_treatment),
   }
+  const priorMatterProfile = resolveTransactionRoutingProfile({ transaction }).matterProfile || {}
+  const proposedRoutingProfile = resolveTransactionRoutingProfile({ transaction: nextTransaction })
+  const matterProfileInput = input.matterProfile?.status === 'confirmed' &&
+    priorMatterProfile.status === 'confirmed' &&
+    priorMatterProfile.factFingerprint === proposedRoutingProfile.matterProfile?.factFingerprint
+    ? {
+        status: 'confirmed',
+        confirmedAt: priorMatterProfile.confirmedAt,
+        confirmedByRole: priorMatterProfile.confirmedByRole,
+        revision: priorMatterProfile.revision,
+      }
+    : input.matterProfile
   const routingProfile = resolveTransactionRoutingProfile({
     transaction: nextTransaction,
-    matterProfile: input.matterProfile,
+    matterProfile: matterProfileInput,
   })
+  const workflowPlan = buildMatterWorkflowPlan({
+    routingProfile,
+    generatedAt: routingProfile.matterProfile?.confirmedAt || null,
+  })
+  const persistedRoutingProfile = { ...routingProfile, workflowPlan }
   const resolvedFinanceType = routingProfile.financeType === 'hybrid' ? 'hybrid' : financeType
   const resolvedTransactionType =
     routingProfile.transactionType && routingProfile.transactionType !== 'unknown'
@@ -38847,10 +38865,10 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
       vat_treatment:
         routingProfile.vatTreatment && routingProfile.vatTreatment !== 'unknown' ? routingProfile.vatTreatment : null,
       routing_profile_version: routingProfile.version || null,
-      routing_profile_json: routingProfile,
+      routing_profile_json: persistedRoutingProfile,
       updated_at: new Date().toISOString(),
     },
-    routingProfile,
+    routingProfile: persistedRoutingProfile,
   }
 }
 
@@ -38916,7 +38934,6 @@ export async function saveTransactionRoutingProfile({
   const transaction = transactionQuery.data
   if (!transaction) throw new Error('Transaction not found.')
 
-  const priorMatterProfile = resolveTransactionRoutingProfile({ transaction }).matterProfile || {}
   const { payload, routingProfile } = buildTransactionRoutingCorrectionPayload(transaction, {
     financeType,
     transactionType,
@@ -38931,7 +38948,7 @@ export async function saveTransactionRoutingProfile({
       status: 'confirmed',
       confirmedAt: new Date().toISOString(),
       confirmedByRole: normalizedActorRole,
-      revision: Math.max(0, Number(priorMatterProfile.revision) || 0) + 1,
+      revision: Math.max(0, Number(resolveTransactionRoutingProfile({ transaction }).matterProfile?.revision) || 0) + 1,
     },
   })
 

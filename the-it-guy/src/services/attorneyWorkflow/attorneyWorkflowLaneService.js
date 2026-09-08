@@ -58,6 +58,11 @@ import {
   assertAttorneyTaskStatusAction,
   buildAttorneyTaskMutationPacket,
 } from '../../core/transactions/attorneyTaskOperationalContract.js'
+import {
+  filterStepsForMatterWorkflowPlan,
+  getMatterWorkflowPlanStepKeys,
+  resolveMatterWorkflowPlan,
+} from './matterWorkflowPlanService.js'
 
 const LANE_META = {
   transfer: {
@@ -915,7 +920,7 @@ function buildTimelineFromSources({ updates = [], history = [], documentRequests
   return items.sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime())
 }
 
-async function createLane(client, { transactionId, laneKey, assignment, actorId = null }) {
+async function createLane(client, { transactionId, laneKey, assignment, actorId = null, workflowPlan = null }) {
   const meta = LANE_META[laneKey]
   const stages = getLaneStages(laneKey)
   const payload = {
@@ -952,7 +957,7 @@ async function createLane(client, { transactionId, laneKey, assignment, actorId 
   if (upsert.error) throw upsert.error
 
   const laneRow = upsert.data
-  const stepRows = buildMissingStepRows(laneRow, laneKey, [])
+  const stepRows = buildMissingStepRows(laneRow, laneKey, [], workflowPlan)
   await upsertLaneStepRows(client, stepRows)
 
   await insertTransactionEvent(client, {
@@ -966,8 +971,9 @@ async function createLane(client, { transactionId, laneKey, assignment, actorId 
   return laneRow
 }
 
-function buildMissingStepRows(laneRow, laneKey, existingSteps = []) {
-  const stages = getLaneStages(laneKey)
+function buildMissingStepRows(laneRow, laneKey, existingSteps = [], workflowPlan = null) {
+  const plannedStageKeys = getMatterWorkflowPlanStepKeys(workflowPlan, laneKey)
+  const stages = plannedStageKeys.length ? plannedStageKeys : getLaneStages(laneKey)
   const existingCanonicalKeys = new Set((existingSteps || []).map((step) => normalizeAttorneyStageKey(step.step_key, laneKey)))
   return stages
     .filter((stageKey) => !existingCanonicalKeys.has(stageKey))
@@ -1002,12 +1008,12 @@ async function upsertLaneStepRows(client, stepRows = []) {
   return true
 }
 
-async function ensureCanonicalLaneSteps(client, laneRows = [], stepsBySubprocessId = {}) {
+async function ensureCanonicalLaneSteps(client, laneRows = [], stepsBySubprocessId = {}, workflowPlan = null) {
   const stepRows = []
   for (const row of laneRows) {
     const laneKey = normalizeLaneKey(row.process_type === 'attorney' ? 'transfer' : row.process_type)
     if (!['transfer', 'bond', 'cancellation'].includes(laneKey)) continue
-    stepRows.push(...buildMissingStepRows(row, laneKey, stepsBySubprocessId[row.id] || []))
+    stepRows.push(...buildMissingStepRows(row, laneKey, stepsBySubprocessId[row.id] || [], workflowPlan))
   }
   return upsertLaneStepRows(client, stepRows)
 }
@@ -1019,6 +1025,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   if (!normalizedTransactionId) throw new Error('Transaction id is required.')
 
   const transaction = await fetchTransaction(client, normalizedTransactionId)
+  const workflowPlan = resolveMatterWorkflowPlan(transaction.routing_profile_json || transaction.routingProfile || {})
   const assignments = await getTransactionAttorneyAssignments(normalizedTransactionId).catch(() => [])
   const delegations = actor?.id
     ? await getAttorneyLaneDelegations({ transactionId: normalizedTransactionId }, { client }).catch(() => [])
@@ -1104,6 +1111,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
         laneKey,
         assignment: mapAssignmentForLane(assignments, laneKey),
         actorId: actor?.id || null,
+        workflowPlan,
       })
     }
     laneRows = await fetchLaneRows(client, normalizedTransactionId)
@@ -1124,7 +1132,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   }, {})
 
   if (initialize) {
-    const syncedSteps = await ensureCanonicalLaneSteps(client, laneRows, stepsBySubprocessId)
+    const syncedSteps = await ensureCanonicalLaneSteps(client, laneRows, stepsBySubprocessId, workflowPlan)
     if (syncedSteps) {
       steps = await fetchSteps(client, laneIds)
       stepsBySubprocessId = steps.reduce((accumulator, step) => {
@@ -1164,7 +1172,11 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     .map((row) => {
       const laneKey = normalizeLaneKey(row.process_type === 'attorney' ? 'transfer' : row.process_type)
       const assignment = mapAssignmentForLane(assignments, laneKey)
-      const lane = mapLaneRow({ ...row, process_type: laneKey }, stepsBySubprocessId[row.id] || [], assignment)
+      const lane = mapLaneRow(
+        { ...row, process_type: laneKey },
+        filterStepsForMatterWorkflowPlan(stepsBySubprocessId[row.id] || [], workflowPlan, laneKey),
+        assignment,
+      )
       const permissionContext = laneContexts[laneKey] || deniedLaneContext
       const laneDelegations = delegations.filter((item) => item.attorney_role === lane.attorneyRole)
       const transferAssignment = mapAssignmentForLane(assignments, 'transfer')
@@ -1278,6 +1290,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
 
   return scopeAttorneyWorkflowOperations({
     transaction,
+    workflowPlan,
     workflow,
     legalDocuments,
     legalTimeline,
