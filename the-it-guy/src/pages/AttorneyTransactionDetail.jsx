@@ -6771,6 +6771,9 @@ function ArchlineMatterHeader({
   shareLabel = 'Share Portal',
   moreActionsLabel = 'More Actions',
   showWorkflowProgress = true,
+  workflowKey: selectedWorkflowKey = 'transfer',
+  workflowDocuments = [],
+  onSelectWorkflowPhase,
   onTabChange,
   onTabIntent,
   onSharePortal,
@@ -6815,18 +6818,15 @@ function ArchlineMatterHeader({
       : /awaiting|pending|action needed|at risk/.test(normalizedStatus)
         ? 'border-amber-300/70 bg-amber-950/30 text-amber-200'
         : 'border-emerald-300/70 bg-emerald-950/30 text-emerald-200'
-  const workflowKey = workflow?.detailKey === 'bond-cancellation'
+  const workflowKey = selectedWorkflowKey || (workflow?.detailKey === 'bond-cancellation'
     ? 'cancellation'
     : workflow?.detailKey === 'bond-registration'
       ? 'bond'
-      : 'transfer'
-  const workflowSteps = buildLegalWorkflowProgressSteps({
-    workflowKey,
-    lane: workflow?.lane,
-    facts: workflow?.facts || {},
-    workflowPlan: workflow?.workflowPlan || null,
-  })
-  const visibleWorkflowSteps = workflowSteps
+      : 'transfer')
+  const journeyModel = useMemo(() => buildTransferWorkspaceViewModel({
+    workflow, workflowKey, documents: workflowDocuments,
+  }), [workflow, workflowKey, workflowDocuments])
+  const visibleWorkflowSteps = workflow?.lane ? journeyModel.phases : []
 
   return (
     <header className="archline-matter-header no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
@@ -6934,21 +6934,26 @@ function ArchlineMatterHeader({
 
         {showWorkflowProgress ? (
         <section className="rounded-[20px] border border-slate-200/80 bg-white px-4 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
+          <p className="mb-4 text-xs font-semibold text-slate-600">{workflow?.title || 'Attorney work'} · Select a phase to open its tasks</p>
+          {!visibleWorkflowSteps.length ? <p className="text-sm text-slate-500">Workflow progress will appear when the work area is available.</p> : null}
+          {workflow?.workflowPlan?.provisional ? <p className="mb-3 text-xs text-amber-700">Matter profile not confirmed. Review the buyer, seller and funding details in Work.</p> : null}
           <div className="overflow-x-auto px-1 pb-2">
             <div className="flex min-w-max items-start">
               {visibleWorkflowSteps.map((stage, index) => {
                 const completed = isAttorneyTaskCompleted(stage.status)
-                const blocked = stage.displayStatus === 'blocked'
-                const current = stage.isCurrent || ['in_progress', 'waiting'].includes(stage.displayStatus)
+                const blocked = stage.status === 'blocked'
+                const current = stage.hasCurrentTask && !['completed', 'not_applicable'].includes(stage.status)
                 const statusLabel = stage.status === 'not_applicable' ? 'Not applicable' : stage.status === 'completed_externally' ? 'Completed externally' : completed
-                  ? formatDate(stage.completedAt, 'Completed')
+                  ? 'Completed'
                   : blocked
                     ? 'Blocked'
-                    : current
+                    : stage.status === 'waiting'
+                      ? 'Waiting'
+                    : stage.status === 'in_progress'
                       ? 'In Progress'
                       : 'Pending'
                 return (
-                  <div key={stage.key || stage.stepKey || index} className="relative grid w-[158px] shrink-0 justify-items-center gap-2 px-2 text-center sm:w-[176px]">
+                  <button type="button" key={stage.key} onClick={() => onSelectWorkflowPhase?.(stage, workflowKey)} aria-current={current ? 'step' : undefined} className="relative grid w-[158px] shrink-0 justify-items-center gap-2 rounded-lg px-2 py-1 text-center hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 sm:w-[176px]">
                     {index > 0 ? <span className={`absolute right-1/2 top-3.5 h-px w-full ${completed || current ? 'bg-emerald-700' : 'border-t border-dashed border-slate-300'}`} /> : null}
                     <span className={`relative z-10 inline-flex size-8 items-center justify-center rounded-full border-2 bg-white ${
                       completed
@@ -6966,8 +6971,9 @@ function ArchlineMatterHeader({
                         {stage.label || getWorkflowStepLabel(stage)}
                       </strong>
                       <span className="mt-1 block text-xs leading-4 text-[#60758d]">{statusLabel}</span>
+                      <span className="mt-1 block text-xs leading-4 text-[#60758d]">{stage.completed} of {stage.total} tasks completed{stage.notApplicable ? ` · ${stage.notApplicable} not applicable` : ''}</span>
                     </div>
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -7972,6 +7978,7 @@ function ArchlineTransferWorkspace({
   workflow = null,
   workflowKey = 'transfer',
   selectionStorageKey = '',
+  focusRequest = null,
   documents = [],
   keyDates = [],
   parties = [],
@@ -8005,6 +8012,16 @@ function ArchlineTransferWorkspace({
   const [showFilters, setShowFilters] = useState(false)
   const [expandedPhaseKeys, setExpandedPhaseKeys] = useState({})
   const [activeTaskTab, setActiveTaskTab] = useState('checklist')
+  useEffect(() => {
+    if (!focusRequest || focusRequest.workflowKey !== workflowKey) return
+    setSelectedTaskKey(focusRequest.taskKey || '')
+    setSearch('')
+    setAttentionFilter('')
+    setPhaseFilter('')
+    setStatusFilter('')
+    setExpandedPhaseKeys(previous => ({ ...previous, [focusRequest.phaseKey]: true }))
+    setActiveTaskTab('checklist')
+  }, [focusRequest, workflowKey])
   const [statusDraft, setStatusDraft] = useState({
     open: false,
     task: null,
@@ -20204,6 +20221,7 @@ function AttorneyTransactionDetail() {
     if (activeWorkspaceMenu === 'stakeholders') return 'roleplayers'
     return 'transfer'
   }, [activeWorkspaceMenu])
+  const [journeyFocusRequest, setJourneyFocusRequest] = useState(null)
   const handleArchlineTabChange = useCallback((tabId) => {
     if (tabId === 'roleplayers') {
       openWorkspaceMenu('stakeholders')
@@ -22246,7 +22264,13 @@ function AttorneyTransactionDetail() {
             daysOpenLabel={daysBetween(transaction?.instruction_date || transaction?.created_at)}
             instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, '—')}
             matterChips={archlineMatterChips}
-            workflow={archlineTransferWorkflow}
+            workflow={archlineActiveLegalTaskWorkflow}
+            workflowKey={archlineActiveLegalTaskWorkflowKey}
+            workflowDocuments={archlineActiveLegalTaskDocuments}
+            onSelectWorkflowPhase={(phase, workflowKey) => {
+              setJourneyFocusRequest({ workflowKey, phaseKey: phase.key, taskKey: phase.currentTask?.key || phase.tasks[0]?.key })
+              openWorkspaceMenu('transfer')
+            }}
             tabs={isTransactionOperatorView
               ? workspaceMenuTabs.map((tab) => ({ id: tab.id, label: tab.label }))
               : archlineWorkspaceTabs}
@@ -22451,6 +22475,7 @@ function AttorneyTransactionDetail() {
               workflow={archlineActiveLegalTaskWorkflow}
               workflowKey={archlineActiveLegalTaskWorkflowKey}
               selectionStorageKey={`arch9:attorney-workflow-selection:${transaction.id}:${archlineActiveLegalTaskWorkflowKey}`}
+              focusRequest={journeyFocusRequest}
               documents={archlineActiveLegalTaskDocuments}
               keyDates={archlineKeyDates}
               parties={archlinePartyItems}
