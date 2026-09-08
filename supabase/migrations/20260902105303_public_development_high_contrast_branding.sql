@@ -39,7 +39,16 @@ as $$
     'totalUnitsExpected', published.total_units_expected,
     'organisationBranding', jsonb_build_object(
       'organisationName', coalesce(org.display_name, org.name, published.developer_company),
-      'logoUrl', coalesce(branding.logo_high_contrast_url, branding.logo_dark_url, branding.logo_light_url, branding.logo_icon_url, org.logo_url),
+      -- Some production tenants predate the optional high-contrast column.
+      -- Reading the row as JSON keeps this public landing RPC compatible
+      -- while still preferring the field whenever it exists.
+      'logoUrl', coalesce(
+        to_jsonb(branding)->>'logo_high_contrast_url',
+        to_jsonb(branding)->>'logo_dark_url',
+        to_jsonb(branding)->>'logo_light_url',
+        to_jsonb(branding)->>'logo_icon_url',
+        org.logo_url
+      ),
       'logoHighContrastUrl', branding.logo_high_contrast_url,
       'logoLightUrl', coalesce(branding.logo_light_url, org.logo_url),
       'logoDarkUrl', branding.logo_dark_url,
