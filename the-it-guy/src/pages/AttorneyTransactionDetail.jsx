@@ -16143,7 +16143,12 @@ function AttorneyTransactionDetail() {
       ? transactionPerformanceBaselineRef.current?.baseline?.startBackgroundRefresh({ reason: refreshReason || 'unspecified' })
       : null
     let backgroundStatus = 'success'
+    // A navigation preview makes the first paint feel immediate, but it is not
+    // proof that the record still exists. In particular, a bookmarked URL can
+    // point at a transaction that has since been deleted.
     let hasCoreData = Boolean(navigationPreviewData?.transaction)
+    let hasVerifiedCoreData = false
+    let routeCoreLookupFailed = false
     let initialRollupRequest = Promise.resolve(null)
     try {
       if (!background && !hasCoreData) {
@@ -16153,6 +16158,7 @@ function AttorneyTransactionDetail() {
       const coreDetail = await fetchTransactionRouteCoreById(transactionId)
       if (coreDetail) {
         hasCoreData = true
+        hasVerifiedCoreData = true
         setData((previous) => {
           if (!previous) {
             return {
@@ -16200,6 +16206,7 @@ function AttorneyTransactionDetail() {
         }
       }
     } catch (coreError) {
+      routeCoreLookupFailed = true
       if (!hasCoreData) {
         console.warn('[transaction-workspace] core data load deferred to full detail', {
           transactionId,
@@ -16217,7 +16224,7 @@ function AttorneyTransactionDetail() {
       : Promise.resolve(null)
 
     if (!fullRefresh) {
-      if (!background && hasCoreData) {
+      if (!background && hasVerifiedCoreData) {
         void fetchTransactionCoreById(transactionId)
           .then((enrichedCore) => {
             if (!enrichedCore) return
@@ -16251,8 +16258,12 @@ function AttorneyTransactionDetail() {
       void initialRollupRequest.then((initialRollupResult) => {
         if (initialRollupResult) setTransactionRollupError(initialRollupResult.error?.message || '')
       })
-      if (!hasCoreData) {
-        setError('Unable to load the transaction workspace core data.')
+      if (!hasVerifiedCoreData) {
+        backgroundStatus = routeCoreLookupFailed ? 'failed' : 'empty'
+        setData(null)
+        setError(routeCoreLookupFailed
+          ? 'Unable to load the transaction workspace core data.'
+          : 'Transaction not found.')
       }
       setHydratingDetail(false)
       setLoading(false)
@@ -16283,7 +16294,7 @@ function AttorneyTransactionDetail() {
           workspaceId: telemetryWorkspaceId,
           metadata: { background },
         })
-      } else if (!hasCoreData) {
+      } else if (!hasVerifiedCoreData) {
         backgroundStatus = 'empty'
         setData(null)
         setError('Transaction not found.')
@@ -16293,7 +16304,7 @@ function AttorneyTransactionDetail() {
       }
     } catch (loadError) {
       backgroundStatus = 'failed'
-      if (!hasCoreData) {
+      if (!hasVerifiedCoreData) {
         setError(loadError.message || 'Unable to load transaction.')
       }
       if (background) {

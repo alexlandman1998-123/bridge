@@ -51425,6 +51425,26 @@ function getCanonicalUploadKeyCandidates({ requiredDocumentKey = null, documentT
   return [...new Set(values.map(normalizeDocumentKeyCandidate).filter(Boolean))]
 }
 
+async function assertActiveTransactionForDocumentUpload(client, transactionId) {
+  const normalizedTransactionId = String(transactionId || '').trim()
+  if (!normalizedTransactionId) {
+    throw new Error('Choose an active transaction before uploading a document.')
+  }
+
+  const result = await client
+    .from('transactions')
+    .select('id')
+    .eq('id', normalizedTransactionId)
+    .maybeSingle()
+
+  if (result.error) throw result.error
+  if (!result.data?.id) {
+    throw new Error('This transaction no longer exists. Open an active transaction before uploading a document.')
+  }
+
+  return normalizedTransactionId
+}
+
 async function resolveCanonicalRequirementTargetForUpload(
   client,
   {
@@ -51635,10 +51655,11 @@ export async function uploadDocument({
   attorneyRole = null,
 }) {
   const client = requireClient()
+  const activeTransactionId = await assertActiveTransactionForDocumentUpload(client, transactionId)
   const activeProfile = await resolveActiveProfileContext(client)
   const attorneyLaneMetadata = resolveAttorneyDocumentLaneMetadata({ attorneyLaneKey, attorneyRole })
   const canonicalTarget = await resolveCanonicalRequirementTargetForUpload(client, {
-    transactionId,
+    transactionId: activeTransactionId,
     canonicalRequirementInstanceId,
     requiredDocumentKey,
     documentType,
@@ -51651,7 +51672,7 @@ export async function uploadDocument({
   })
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
-  const filePath = `transaction-${transactionId}/${Date.now()}-${safeName}`
+  const filePath = `transaction-${activeTransactionId}/${Date.now()}-${safeName}`
   const normalizedDocumentType =
     normalizePortalDocumentType(
       documentType || canonicalTarget?.requiredDocumentKey || requiredDocumentKey || category || file.name,
@@ -51660,7 +51681,7 @@ export async function uploadDocument({
   await uploadToDocumentsBucket(client, filePath, file)
 
   const documentInsertPayload = {
-    transaction_id: transactionId,
+    transaction_id: activeTransactionId,
     name: file.name,
     file_path: filePath,
     category: category || 'General',
@@ -51746,7 +51767,7 @@ export async function uploadDocument({
     result = await client
       .from('documents')
       .insert({
-        transaction_id: transactionId,
+        transaction_id: activeTransactionId,
         name: file.name,
         file_path: filePath,
         category: category || 'General',
@@ -51762,7 +51783,7 @@ export async function uploadDocument({
   let canonicalUploadResult = null
   if (canonicalTarget?.canonicalRequirementInstanceId) {
     canonicalUploadResult = await linkInternalUploadToCanonicalRequirementIfPossible(client, {
-      transactionId,
+      transactionId: activeTransactionId,
       documentId: result.data.id,
       canonicalRequirementInstanceId: canonicalTarget.canonicalRequirementInstanceId,
       actorRole: activeProfile.role || 'developer',
@@ -51777,7 +51798,7 @@ export async function uploadDocument({
     })
   } else if (canonicalKeyCandidates.length) {
     canonicalUploadResult = await linkInternalUploadToCanonicalRequirementByKeyIfPossible(client, {
-      transactionId,
+      transactionId: activeTransactionId,
       documentId: result.data.id,
       keyCandidates: canonicalKeyCandidates,
       actorRole: activeProfile.role || 'developer',
@@ -51803,7 +51824,7 @@ export async function uploadDocument({
     requiredDocumentKey
 
   await logTransactionEventIfPossible(client, {
-    transactionId,
+    transactionId: activeTransactionId,
     eventType: 'DocumentUploaded',
     createdBy: activeProfile.userId || null,
     createdByRole: activeProfile.role || null,
@@ -51821,7 +51842,7 @@ export async function uploadDocument({
   })
 
   await updateDocumentRequestFromUploadIfPossible(client, {
-    transactionId,
+    transactionId: activeTransactionId,
     documentId: result.data.id,
     category: result.data.category || category || 'General',
     documentName: result.data.name,
@@ -51831,7 +51852,7 @@ export async function uploadDocument({
   })
 
   await matchAndMarkRequiredDocumentFromUpload(client, {
-    transactionId,
+    transactionId: activeTransactionId,
     documentId: result.data.id,
     documentName: result.data.name,
     category: result.data.category || category || 'General',
