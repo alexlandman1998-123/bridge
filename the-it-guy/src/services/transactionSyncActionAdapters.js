@@ -26,6 +26,7 @@ const ACTION_ADAPTERS = {
   ORIGINATOR_OFFER_PUBLISHED: ['bond_originator', 'transaction_bond_originator_bank_offer_captures', 'client_visible', ['buyer', 'agent', 'bond_originator']],
   ORIGINATOR_GRANT_RECORDED: ['bond_originator', 'transaction_bond_originator_grant_captures', 'professional_shared', ['buyer', 'seller', 'agent', 'bond_originator', 'transfer_attorney', 'bond_attorney']],
   TRANSFER_ATTORNEY_STAGE_UPDATED: ['transfer_attorney', 'transaction_subprocesses', 'professional_shared', ['buyer', 'seller', 'agent', 'bond_originator', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney']],
+  ATTORNEY_WORKFLOW_PLAN_RECONCILED: ['transfer_attorney', 'transactions', 'professional_shared', ['agent', 'bond_originator', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney']],
   TRANSFER_ATTORNEY_COMMENT_ADDED: ['transfer_attorney', 'transaction_attorney_lane_updates', 'internal', ['buyer', 'seller', 'agent', 'bond_originator', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney']],
   TRANSFER_ATTORNEY_DOCUMENT_REVIEWED: ['transfer_attorney', 'documents', 'professional_shared', ['buyer', 'seller', 'agent', 'transfer_attorney']],
   TRANSFER_ATTORNEY_LODGEMENT_CONFIRMED: ['transfer_attorney', 'transaction_subprocess_steps', 'client_visible', ['buyer', 'seller', ...PROFESSIONAL_AUDIENCE]],

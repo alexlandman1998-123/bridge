@@ -7,6 +7,10 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const apiSource = fs.readFileSync(path.join(root, 'src/lib/api.js'), 'utf8')
 const pageSource = fs.readFileSync(path.join(root, 'src/pages/AttorneyTransactionDetail.jsx'), 'utf8')
 const workflowServiceSource = fs.readFileSync(path.join(root, 'src/services/attorneyWorkflow/attorneyWorkflowLaneService.js'), 'utf8')
+const planSyncMigration = fs.readFileSync(
+  path.join(root, '..', 'supabase/migrations/20260908065905_publish_attorney_workflow_plan_reconciliation.sql'),
+  'utf8',
+)
 const packageSource = fs.readFileSync(path.join(root, 'package.json'), 'utf8')
 
 function assertHas(source, pattern, message) {
@@ -101,6 +105,16 @@ assertHas(
   pageSource,
   /reconcileAttorneyWorkflowPlanForTransaction\(transaction\.id\)/,
   'Saving a routing profile should apply the resulting plan before refreshing the matter.',
+)
+assertHas(
+  workflowServiceSource,
+  /actionKey: 'ATTORNEY_WORKFLOW_PLAN_RECONCILED'/,
+  'Plan application should publish the canonical professional refresh signal.',
+)
+assertHas(
+  planSyncMigration,
+  /'ATTORNEY_WORKFLOW_PLAN_RECONCILED'[\s\S]*'professional_shared'[\s\S]*false/,
+  'The plan-reconciliation sync contract must remain professional-only and never require a client projection.',
 )
 assertHas(
   packageSource,

@@ -415,6 +415,18 @@
       "currentState": "partial"
     },
     {
+      "actionKey": "ATTORNEY_WORKFLOW_PLAN_RECONCILED",
+      "ownerRole": "transfer_attorney",
+      "sourceTable": "transactions",
+      "eventType": "AttorneyWorkflowPlanReconciled",
+      "affectedLane": "transfer",
+      "audiences": ["agent", "bond_originator", "transfer_attorney", "bond_attorney", "cancellation_attorney"],
+      "defaultVisibility": "professional_shared",
+      "visibilityRule": "A confirmed routing-profile revision refreshes professional workspaces without exposing legal configuration or operational notes to buyer or seller portals.",
+      "idempotencyScope": "transaction_id:matter_profile_fingerprint:matter_profile_revision",
+      "currentState": "partial"
+    },
+    {
       "actionKey": "SYSTEM_EVIDENCE_RECONCILED",
       "ownerRole": "system",
       "sourceTable": "transaction_workflow_evidence",

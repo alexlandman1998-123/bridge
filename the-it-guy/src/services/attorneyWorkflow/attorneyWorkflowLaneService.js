@@ -1387,6 +1387,31 @@ export async function reconcileAttorneyWorkflowPlanForTransaction(transactionId,
     },
   }).catch(() => null)
 
+  const planRevision = `${plan.matterProfileFingerprint || 'unconfirmed'}:${plan.matterProfileRevision || 0}`
+  await commitTransactionModuleAction({
+    client,
+    transactionId: normalizedTransactionId,
+    actionKey: 'ATTORNEY_WORKFLOW_PLAN_RECONCILED',
+    sourceRecordId: normalizedTransactionId,
+    revision: planRevision,
+    idempotencyKey: buildTransactionSyncIdempotencyKey({
+      transactionId: normalizedTransactionId,
+      actionKey: 'ATTORNEY_WORKFLOW_PLAN_RECONCILED',
+      sourceRecordId: normalizedTransactionId,
+      revision: planRevision,
+    }),
+    visibility: 'professional_shared',
+    audience: ['agent', 'bond_originator', 'transfer_attorney', 'bond_attorney', 'cancellation_attorney'],
+    professionalTitle: 'Matter workflow plan updated',
+    professionalDescription: 'The confirmed matter profile has been applied to the legal workflow.',
+    eventData: {
+      matterProfileRevision: plan.matterProfileRevision || 0,
+      reconciledLanes,
+      skippedLanes,
+    },
+    optionalUntilMigrated: true,
+  })
+
   operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
   const canonicalTransaction = operations?.transaction || await fetchTransaction(client, normalizedTransactionId)
   return {
