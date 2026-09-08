@@ -1,5 +1,17 @@
 # Attorney MVP staging execution — 8 September 2026
 
+## Authorised live write test
+
+The user authorised assigning one staging demo matter. Transfer assignment `815b2e1e-9489-4898-ba0b-7106f6a901e6` on demo matter `b27fc192-b5ff-471b-9da5-902409f78116` was reassigned from `254b6403-d6a6-4302-b139-344561203c79` to demo attorney `5e8f930b-aa84-46a2-8aa6-288542748d7e` (both attorney ID fields). Firm, role, capabilities, bond/cancellation assignments and production were unchanged.
+
+Browser completion initially exposed a second defect: the legacy `transaction_events_visibility_scope_check` accepted only shared/internal, rejecting the atomic RPC's professional_shared event. The entire mutation rolled back; the UI correctly displayed the error. Applied staging migration `20260908091504_attorney_event_visibility_contract` to preserve legacy values and allow explicit professional_shared/client_visible values. No access policies were changed. Updated the isolated SQL regression fixture to reproduce the legacy constraint before applying the compatibility migration; tests passed. Security advisors were rerun; this does not clear the existing unrelated findings.
+
+Retried through the actual authenticated browser: Guarantees Requested was saved completed, the lane advanced to Guarantees Received, Work changed from 5/8 to 6/8, header displayed the new completion date, and dashboard progress increased from 70% to 73%. Navigating back to the matter retained completion. Task and published-progress events both stored professional_shared; client sharing was unchecked.
+
+Reopen was then submitted through the browser and saved not_started, returning the lane to Guarantees Requested. These are actual live mutation results, not administrator-written task statuses. The assignment remains with the demo attorney for further testing. Full cross-role/client and six-profile live acceptance is still outstanding; historical NO GO findings below are retained for audit.
+
+After reopen and navigation back to the dashboard, progress returned to **70%**, completing the observed 70% → 73% → 70% test. The test left the task reopened (not_started), not artificially completed. Four professional_shared events and zero client_visible events were recorded during the test window. Post-save refresh took noticeably longer than the database commit; this remains a usability concern, not a failed persistence assertion.
+
 Decision: **NO GO for live pilot. Authentication and deployment passed; workflow acceptance did not.**
 
 ## Follow-up fix

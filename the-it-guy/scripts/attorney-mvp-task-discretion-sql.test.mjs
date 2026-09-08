@@ -22,7 +22,7 @@ create table transaction_subprocesses(id uuid primary key, transaction_id uuid, 
 create table transaction_subprocess_steps(id uuid primary key, subprocess_id uuid, step_key text, step_label text, status text, comment text, completed_at timestamptz, completed_by uuid, visibility_scope text, updated_at timestamptz, sort_order integer, created_at timestamptz);
 create table transaction_lifecycle_workflows(transaction_id uuid primary key, current_stage text, status text, last_updated_by uuid, last_updated_at timestamptz, updated_at timestamptz);
 create table transaction_attorney_lane_history(transaction_id uuid, subprocess_id uuid, lane_key text, attorney_role text, previous_stage text, new_stage text, previous_status text, new_status text, changed_by uuid, note text, visibility text, source text, metadata jsonb);
-create table transaction_events(transaction_id uuid, event_type text, event_data jsonb, created_by uuid, created_by_role text, visibility_scope text);
+create table transaction_events(transaction_id uuid, event_type text, event_data jsonb, created_by uuid, created_by_role text, visibility_scope text constraint transaction_events_visibility_scope_check check (visibility_scope in ('shared','internal')));
 create function bridge_attorney_step_to_matter_stage(text,text) returns text language sql as $$select case when $2 = 'instruction_received' then 'instruction' else 'documents' end$$;
 create function bridge_matter_lifecycle_stage_rank(text) returns integer language sql as $$select case when $1 = 'instruction' then 1 else 2 end$$;
 create function bridge_matter_lifecycle_stage_label(text) returns text language sql as $$select $1$$;
@@ -34,6 +34,7 @@ insert into transaction_subprocess_steps(id,subprocess_id,step_key,status,sort_o
 `)
 await db.exec(readFileSync(new URL('../../supabase/migrations/20260908071547_attorney_mvp_atomic_task_progress.sql', import.meta.url), 'utf8'))
 await db.exec(readFileSync(new URL('../../supabase/migrations/20260908073924_attorney_mvp_task_discretion.sql', import.meta.url), 'utf8'))
+await db.exec(readFileSync(new URL('../../supabase/migrations/20260908091504_attorney_event_visibility_contract.sql', import.meta.url), 'utf8'))
 const privileges = (await db.query(`select
   has_function_privilege('anon','bridge_update_attorney_workflow_step_v3(uuid,text,uuid,text,text,text,jsonb)','EXECUTE') as anonymous_update,
   has_function_privilege('authenticated','bridge_update_attorney_workflow_step_v3(uuid,text,uuid,text,text,text,jsonb)','EXECUTE') as authenticated_update,

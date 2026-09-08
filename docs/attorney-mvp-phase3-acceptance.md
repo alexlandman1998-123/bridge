@@ -4,7 +4,7 @@ Date: 2026-09-08. Decision: **NO GO for live pilot yet**.
 
 ## Latest staging execution
 
-The initial preflight below is historical. The two MVP migrations have now been applied to staging and a matching protected preview deployed. Authentication succeeds after the explicitly authorised staging demo password reset. The subsequent workflow-loading defect has been fixed and browser read-state agreement verified on a corrected preview. Live acceptance remains **NO GO** pending an authorised editable staging fixture for mutation/reload and cross-role checks. See [staging execution report](attorney-mvp-staging-deployment-20260908.md) for evidence and remaining checks.
+The initial preflight below is historical. The two MVP migrations and an event-visibility compatibility migration have now been applied to staging. Following the authorised demo assignment, actual browser completion and reopening succeeded; task state, Work, header and dashboard updates were checked. Professional-only events were retained with zero client-visible test events. The broader pilot remains **NO GO** pending the full profile and cross-role/client matrix. Post-save refresh latency is also a remaining usability concern. See [staging execution report](attorney-mvp-staging-deployment-20260908.md) for evidence and remaining checks.
 
 ## Implemented and run locally
 
