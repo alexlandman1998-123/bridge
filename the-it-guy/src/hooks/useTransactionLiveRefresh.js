@@ -87,6 +87,13 @@ export default function useTransactionLiveRefresh({
       lastVersionRef.current = nextVersion
       scheduleRefresh('transaction_version_changed', payload)
     }
+    // Some production environments predate transaction_refresh_signals. The
+    // canonical transaction row is still shared and RLS-protected, so it is a
+    // safe compatibility signal for cross-workspace Deal Setup updates.
+    const handleCanonicalTransactionSignal = (payload) => {
+      if (!payload?.new && !payload?.record) return
+      scheduleRefresh('canonical_transaction_changed', payload)
+    }
     const reconcileVersion = async () => {
       if (state.reconciling) return
       state.reconciling = true
@@ -118,6 +125,16 @@ export default function useTransactionLiveRefresh({
           filter: `transaction_id=eq.${normalizedTransactionId}`,
         },
         handleVersionSignal,
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'transactions',
+          filter: `id=eq.${normalizedTransactionId}`,
+        },
+        handleCanonicalTransactionSignal,
       )
 
     if (includeNotifications) {

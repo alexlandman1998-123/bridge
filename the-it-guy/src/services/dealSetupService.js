@@ -80,6 +80,19 @@ export async function syncDealSetupDownstream({ transactionId, client = supabase
   return { deal, documentResolution, documentRequestSync }
 }
 
+// The attorney workspace derives its operational plan from routing_profile_json.
+// Deal Setup remains the owner of commercial terms, so a save must refresh that
+// derived profile without replacing attorney-only routing decisions.
+export async function syncDealSetupAttorneyHandoff({ transactionId, client = supabase } = {}) {
+  if (!text(transactionId)) throw new Error('Transaction is required.')
+  if (!client?.rpc) throw new Error('Supabase is not configured.')
+  const result = await client.rpc('bridge_sync_deal_setup_attorney_handoff', {
+    p_transaction_id: text(transactionId),
+  })
+  if (result.error) throw result.error
+  return result.data || null
+}
+
 // Deliberately read-only. Phase 8 reports legacy gaps before a separately
 // authorised migration/backfill writes to production transactions.
 export async function auditDealSetupCompatibility({ transactionId, client = supabase } = {}) {
@@ -108,6 +121,7 @@ export async function saveCanonicalDealTerms({ transactionId, terms = {}, financ
   }
   const result = await client.from('transactions').update(payload).eq('id', text(transactionId)).select('id').single()
   if (result.error) throw result.error
+  const attorneyHandoff = await syncDealSetupAttorneyHandoff({ transactionId, client })
   const downstream = await syncDealSetupDownstream({ transactionId, client })
-  return { ...downstream.deal, downstream }
+  return { ...downstream.deal, downstream: { ...downstream, attorneyHandoff } }
 }
