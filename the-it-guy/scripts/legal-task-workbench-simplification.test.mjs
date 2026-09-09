@@ -30,6 +30,13 @@ try {
   assert.match(html, /Review documents/)
   assert.match(html, /Save progress/)
   assert.match(html, /Complete task/)
+  const documentHtml = render({ documents: [
+    { id: 'attached', displayName: 'Attached OTP', ready: true },
+    { id: 'missing', displayName: 'Duplicate missing OTP', ready: false },
+  ] })
+  assert.match(documentHtml, /Attached OTP/)
+  assert.doesNotMatch(documentHtml, /Duplicate missing OTP/)
+  assert.doesNotMatch(documentHtml, /More status options/)
   assert.match(render({ outstandingRequirements: [{ id: 'otp', label: 'OTP', description: 'Check all signatures.' }] }), /<summary[^>]*>Details<\/summary><p[^>]*>Check all signatures\./)
   assert.doesNotMatch(render({ completeAction: null }), /Complete task<\/button>/)
   assert.match(render({ canComplete: false }), /disabled=""[^>]*>[\s\S]*Complete task/)

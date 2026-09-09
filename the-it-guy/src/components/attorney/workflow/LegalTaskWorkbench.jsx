@@ -23,6 +23,19 @@ function requirementStatus(item = {}) {
   return item.required === false ? 'Not applicable' : 'Required'
 }
 
+function isAttachedDocument(document = {}) {
+  return document?.missing !== true && Boolean(
+    document?.ready ||
+    document?.fileUrl ||
+    document?.file_url ||
+    document?.signedUrl ||
+    document?.signed_url ||
+    document?.url ||
+    document?.uploadedAt ||
+    document?.uploaded_at,
+  )
+}
+
 function RequirementRow({ item, action = null, saving = false, onRunAction }) {
   const complete = Boolean(item.complete)
   const status = requirementStatus(item)
@@ -246,6 +259,7 @@ export default function LegalTaskWorkbench({
     'cancellation_existing_bond_confirmed',
   ].includes(model.taskKey) || /existing bond.*(cancellation|requirement)|cancellation.*existing bond/i.test(`${model.taskLabel} ${model.taskDescription}`)
   const canEdit = !model.readOnly && !saving
+  const attachedDocuments = model.documents.filter(isAttachedDocument)
 
   function toggleRail() {
     setRailCollapsed((current) => {
@@ -373,23 +387,14 @@ export default function LegalTaskWorkbench({
                 {!model.readOnly ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
               </div>
               <div className="divide-y divide-slate-100">
-                {model.documents.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">{document.ready ? 'Available' : 'Outstanding'}</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
-                {!model.documents.length ? <p className="px-4 py-6 text-sm text-slate-500">No documents are attached to this task yet.</p> : null}
+                {attachedDocuments.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
+                {!attachedDocuments.length ? <p className="px-4 py-6 text-sm text-slate-500">No supporting documents are attached yet.</p> : null}
               </div>
             </section>
           </div>
 
           <footer className="shrink-0 border-t border-slate-200 bg-slate-50/75 px-5 py-3.5 lg:px-6">
             {error ? <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
-            {(model.outcomeActions?.length || model.followUpActions?.length) ? <div className="mb-3 flex flex-wrap gap-2" aria-label="Attorney task outcomes">
-              {(model.outcomeActions || []).map(action => <Button key={action.id} type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => runAction(action, 'outcome')}>{action.label}</Button>)}
-              {model.followUpActions?.length ? <details className="text-sm">
-                <summary className="cursor-pointer rounded-lg px-3 py-2 font-medium text-slate-600 focus-visible:outline-emerald-700">More status options</summary>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {model.followUpActions.map(action => <Button key={action.id} type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => runAction(action, 'outcome')}>{action.label}</Button>)}
-                </div>
-              </details> : null}
-            </div> : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {!model.readOnly && !model.taskResolved ? (
@@ -435,7 +440,7 @@ export default function LegalTaskWorkbench({
       >
         <div className="grid gap-4 lg:grid-cols-[minmax(14rem,0.42fr)_minmax(0,1fr)]">
           <div className="max-h-[52vh] space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
-            {model.documents.length ? model.documents.map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => setPreviewDocument(document)} className={`w-full rounded-lg px-3 py-3 text-left text-sm transition ${previewDocument === document ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'}`}><strong className="block truncate">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">{document.ready ? 'Available' : 'Outstanding'}</span></button>) : <p className="p-3 text-sm text-slate-500">No documents are attached yet.</p>}
+            {attachedDocuments.length ? attachedDocuments.map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => setPreviewDocument(document)} className={`w-full rounded-lg px-3 py-3 text-left text-sm transition ${previewDocument === document ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'}`}><strong className="block truncate">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></button>) : <p className="p-3 text-sm text-slate-500">No supporting documents are attached yet.</p>}
           </div>
           <div className="min-h-[18rem] rounded-xl border border-slate-200 bg-slate-50 p-4">
             {previewDocument ? <div className="flex h-full flex-col"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-slate-950">{previewDocument.displayName || previewDocument.label || previewDocument.name || 'Document'}</h3><p className="mt-1 text-xs text-slate-500">{previewDocument.ready ? 'Available for review' : 'Document is still outstanding'}</p></div>{documentUrl(previewDocument) ? <a href={documentUrl(previewDocument)} target="_blank" rel="noreferrer" className="shrink-0 text-sm font-semibold text-emerald-800 hover:text-emerald-950">Download</a> : null}</div>{documentUrl(previewDocument) ? <iframe title={`Preview ${previewDocument.displayName || previewDocument.name || 'document'}`} src={documentUrl(previewDocument)} className="mt-4 min-h-[24rem] w-full rounded-lg border border-slate-200 bg-white" /> : <div className="flex flex-1 items-center justify-center text-center text-sm text-slate-500">A preview is not available for this file. Use Download to open it.</div>}</div> : <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">Choose a document to preview it here.</div>}
