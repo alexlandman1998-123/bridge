@@ -143,6 +143,7 @@ export function buildLegalTaskWorkbenchModel({
   workflowLabel = '',
   workflowTasks = [],
   canUpdateTask = true,
+  forceEditable = false,
 } = {}) {
   if (!task) {
     return {
@@ -157,8 +158,19 @@ export function buildLegalTaskWorkbenchModel({
 
   const normalizedWorkActions = workActions.map((action) => normalizeAction(action, 'work'))
   const normalizedStatusActions = statusActions.map((action) => normalizeAction({ ...action, disabled: action.disabled || !canUpdateTask }, 'status'))
-  const primaryAction = choosePrimaryAction({ task, workActions, statusActions: normalizedStatusActions })
-  const secondaryActions = [...normalizedWorkActions, ...normalizedStatusActions]
+  // An attorney's Work tab must remain operable while the action projection is
+  // refreshing. The mutation still goes through the canonical workflow update.
+  const fallbackStatusActions = forceEditable && canUpdateTask && !normalizedStatusActions.length
+    ? [
+        !['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus) ? { id: 'mark_complete', label: 'Complete task', status: 'completed', disabled: false } : null,
+        task.displayStatus !== 'in_progress' ? { id: 'mark_in_progress', label: 'Mark in progress', status: 'in_progress', disabled: false } : null,
+        task.displayStatus !== 'blocked' ? { id: 'mark_blocked', label: 'Mark blocked', status: 'blocked', disabled: false, requiresNote: true } : null,
+        task.displayStatus !== 'waiting' ? { id: 'mark_waiting', label: 'Mark waiting', status: 'waiting', disabled: false, requiresNote: true } : null,
+      ].filter(Boolean).map((action) => normalizeAction(action, 'status'))
+    : []
+  const effectiveStatusActions = normalizedStatusActions.length ? normalizedStatusActions : fallbackStatusActions
+  const primaryAction = choosePrimaryAction({ task, workActions, statusActions: effectiveStatusActions })
+  const secondaryActions = [...normalizedWorkActions, ...effectiveStatusActions]
     .filter((action) => action.id && action.id !== primaryAction?.id)
     .filter((action) => !['mark_complete'].includes(action.id))
     .slice(0, 2)
@@ -169,7 +181,7 @@ export function buildLegalTaskWorkbenchModel({
   const completedRequirements = requirements.filter((item) => item.complete)
   const attentionItems = buildAttentionItems(task)
   const requirementsSatisfied = Boolean(task.completionReadiness?.canComplete)
-  const completionAction = normalizedStatusActions.find((action) => action.id === 'mark_complete') || null
+  const completionAction = effectiveStatusActions.find((action) => action.id === 'mark_complete') || null
   // Requirements inform the attorney's judgement; they must not trap an authorised
   // attorney in a workflow stage. An incomplete checklist therefore records an
   // explicit completion note instead of disabling the lifecycle transition.
@@ -181,7 +193,7 @@ export function buildLegalTaskWorkbenchModel({
       }
     : null
   const canComplete = Boolean(completeAction && !completeAction.disabled)
-  const startAction = normalizedStatusActions.find(action => action.id === 'mark_in_progress') || null
+  const startAction = effectiveStatusActions.find(action => action.id === 'mark_in_progress') || null
   const canMarkInProgress = ['not_started', 'blocked', 'waiting'].includes(task.displayStatus) && Boolean(startAction && !startAction.disabled)
   const visibilityPolicy = task.operationalContract?.visibilityPolicy || {}
   const clientAudience = visibilityPolicy.clientAudience || []
@@ -214,9 +226,9 @@ export function buildLegalTaskWorkbenchModel({
     primaryAction,
     secondaryActions,
     completeAction,
-    outcomeActions: normalizedStatusActions.filter(action => ['complete_externally', 'mark_not_applicable', 'reopen_task'].includes(action.id)),
-    followUpActions: ['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus) ? [] : normalizedStatusActions.filter(action => ['mark_blocked', 'mark_waiting'].includes(action.id)),
-    readOnly: !normalizedStatusActions.some(action => !action.disabled),
+    outcomeActions: effectiveStatusActions.filter(action => ['complete_externally', 'mark_not_applicable', 'reopen_task'].includes(action.id)),
+    followUpActions: ['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus) ? [] : effectiveStatusActions.filter(action => ['mark_blocked', 'mark_waiting'].includes(action.id)),
+    readOnly: !forceEditable && !normalizedStatusActions.some(action => !action.disabled),
     taskResolved: ['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus),
     canMarkInProgress,
     markInProgressLabel: task.displayStatus === 'not_started' ? 'Start task' : 'Resume task',

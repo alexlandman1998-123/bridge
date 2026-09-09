@@ -5462,7 +5462,7 @@ function AgentListingDetail() {
       setDetailError('Unable to open the listing editor because this listing is missing an id.')
       return
     }
-    navigate(`/listings/${targetListingId}/edit?step=property&scope=property`)
+    navigate(`/listings/${targetListingId}/edit?step=property&scope=listing-publication`)
   }
 
   function openDetailTab(tab) {
@@ -12794,20 +12794,7 @@ function AgentListingDetail() {
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-5">
               <article className="rounded-[28px] border border-[#e1e9f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)] sm:p-7">
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {listingPerformance.hasOverrides ? (
-                    <span className="mr-auto text-xs font-semibold text-[#1f7d44]">Manual seller-facing stats are active.</span>
-                  ) : null}
-                    <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
-                      Last 30 days
-                    </span>
-                    <Button type="button" size="sm" variant="secondary" onClick={openListingPerformanceEditor}>
-                      <Pencil size={14} />
-                      Edit Stats
-                    </Button>
-                </div>
-
-                <div className="mt-5 grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   {[
                     {
                       label: 'Views',
@@ -12860,6 +12847,19 @@ function AgentListingDetail() {
                       </div>
                     )
                   })}
+                </div>
+
+                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+                  {listingPerformance.hasOverrides ? (
+                    <span className="mr-auto text-xs font-semibold text-[#1f7d44]">Manual seller-facing stats are active.</span>
+                  ) : null}
+                  <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
+                    Last 30 days
+                  </span>
+                  <Button type="button" size="sm" variant="secondary" onClick={openListingPerformanceEditor}>
+                    <Pencil size={14} />
+                    Edit Stats
+                  </Button>
                 </div>
               </article>
 

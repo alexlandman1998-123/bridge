@@ -66,7 +66,9 @@ function PhaseNavigator({
   workflowLabel = 'Legal workflow',
   operationalHealth = null,
   collapsed = false,
+  expandedPhaseKey = '',
   onToggleCollapsed,
+  onTogglePhase,
   onSelectTask,
 }) {
   const selectedPhase = phases.find((phase) => phase.key === selectedPhaseKey) || phases[0] || null
@@ -105,6 +107,7 @@ function PhaseNavigator({
           <ol className="space-y-1.5">
             {phases.map((phase) => {
               const active = phase.key === selectedPhase?.key
+              const expanded = active && expandedPhaseKey === phase.key
               const phaseIndex = phases.findIndex((item) => item.key === phase.key)
               const exception = phaseExceptions.get(phase.key)
               return (
@@ -112,7 +115,14 @@ function PhaseNavigator({
                   <button
                     type="button"
                     className={`relative flex min-h-12 w-full items-center gap-3 rounded-xl py-2.5 text-left transition ${collapsed ? 'justify-center px-2' : 'px-3'} ${active ? 'bg-emerald-50 text-emerald-950 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-emerald-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
-                    onClick={() => onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => !isAttorneyTaskResolved(task.status))?.key || phase.tasks?.[0]?.key)}
+                    onClick={() => {
+                      if (expanded) {
+                        onTogglePhase?.(phase.key)
+                        return
+                      }
+                      onTogglePhase?.(phase.key)
+                      onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => !isAttorneyTaskResolved(task.status))?.key || phase.tasks?.[0]?.key)
+                    }}
                     aria-current={active ? 'step' : undefined}
                     title={`${phase.label} · ${phase.completed} of ${phase.total} complete`}
                   >
@@ -132,7 +142,7 @@ function PhaseNavigator({
                       </span>
                     ) : null}
                   </button>
-                  {!collapsed && active && phase.tasks?.length ? (
+                  {!collapsed && expanded && phase.tasks?.length ? (
                     <ol className="mt-1.5 space-y-1 border-l border-slate-200 pl-3" aria-label={`${phase.label} tasks`}>
                       {phase.tasks.map((task) => {
                         const taskActive = task.key === selectedTaskKey
@@ -197,6 +207,7 @@ export default function LegalTaskWorkbench({
   const [documentModalOpen, setDocumentModalOpen] = useState(false)
   const [previewDocument, setPreviewDocument] = useState(null)
   const [taskResponses, setTaskResponses] = useState({ existingBond: '', cancellationInstruction: '' })
+  const [expandedPhaseKey, setExpandedPhaseKey] = useState(selectedPhaseKey)
 
   useEffect(() => {
     uxEventRef.current = onUxEvent
@@ -223,6 +234,10 @@ export default function LegalTaskWorkbench({
     setPreviewDocument(null)
     setDocumentModalOpen(false)
   }, [model?.note, model?.taskKey])
+
+  useEffect(() => {
+    setExpandedPhaseKey(selectedPhaseKey)
+  }, [selectedPhaseKey])
 
   if (!model || model.empty) return null
   const completionHelpId = `legal-task-completion-help-${model.taskKey}`
@@ -290,7 +305,9 @@ export default function LegalTaskWorkbench({
         workflowLabel={model.workflowLabel}
         operationalHealth={model.operationalHealth}
         collapsed={railCollapsed}
+        expandedPhaseKey={expandedPhaseKey}
         onToggleCollapsed={toggleRail}
+        onTogglePhase={(phaseKey) => setExpandedPhaseKey((current) => current === phaseKey ? '' : phaseKey)}
         onSelectTask={onSelectTask}
       />
 

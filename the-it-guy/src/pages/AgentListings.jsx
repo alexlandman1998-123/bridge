@@ -3544,10 +3544,10 @@ function AgentListings({ initialTab = null } = {}) {
   const isCreateListingWorkspace = location.pathname === '/listings/new'
   const isEditListingWorkspace = Boolean(editListingId && location.pathname.startsWith('/listings/') && location.pathname.endsWith('/edit'))
   const isListingEditorWorkspace = isCreateListingWorkspace || isEditListingWorkspace
-  const isPropertyOnlyListingEditor = isEditListingWorkspace && new URLSearchParams(location.search || '').get('scope') === 'property'
+  const isListingPublicationEditor = isEditListingWorkspace && ['property', 'listing-publication'].includes(new URLSearchParams(location.search || '').get('scope'))
   const listingEditorSteps = useMemo(
-    () => (isPropertyOnlyListingEditor ? CREATE_LISTING_WORKFLOW_STEPS.filter((step) => step.key === 'property') : CREATE_LISTING_WORKFLOW_STEPS),
-    [isPropertyOnlyListingEditor],
+    () => (isListingPublicationEditor ? CREATE_LISTING_WORKFLOW_STEPS.filter((step) => step.key !== 'seller') : CREATE_LISTING_WORKFLOW_STEPS),
+    [isListingPublicationEditor],
   )
   const createListingDraftStorageKey = `${CREATE_LISTING_DRAFT_STORAGE_KEY}:${normalizeText(profile?.id || profile?.email || 'local')}`
   const listingEditorDraftStorageKey = isEditListingWorkspace && editListingId
@@ -3788,8 +3788,8 @@ function AgentListings({ initialTab = null } = {}) {
 
   useEffect(() => {
     if (!isListingEditorWorkspace) return
-    const requestedStep = isPropertyOnlyListingEditor
-      ? 'property'
+    const requestedStep = isListingPublicationEditor
+      ? (resolveListingEditorStep(new URLSearchParams(location.search || '').get('step'), 'property') === 'seller' ? 'property' : resolveListingEditorStep(new URLSearchParams(location.search || '').get('step'), 'property'))
       : resolveListingEditorStep(new URLSearchParams(location.search || '').get('step'), isEditListingWorkspace ? 'property' : 'seller')
     setListingModalMode(isDeveloperWorkspace ? 'developer' : agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
     setListingModalFlow('quick_add')
@@ -3801,7 +3801,7 @@ function AgentListings({ initialTab = null } = {}) {
     setError('')
     setCreateListingStep(requestedStep)
     setCreateListingMaxVisitedStep(isEditListingWorkspace ? listingEditorSteps.length - 1 : Math.max(0, listingEditorSteps.findIndex((step) => step.key === requestedStep)))
-  }, [agencyWorkflowMode, isCreateListingWorkspace, isDeveloperWorkspace, isEditListingWorkspace, isListingEditorWorkspace, isPropertyOnlyListingEditor, listingEditorSteps, location.search])
+  }, [agencyWorkflowMode, isCreateListingWorkspace, isDeveloperWorkspace, isEditListingWorkspace, isListingEditorWorkspace, isListingPublicationEditor, listingEditorSteps, location.search])
 
   useEffect(() => {
     if (!isEditListingWorkspace) return
@@ -7030,9 +7030,9 @@ function AgentListings({ initialTab = null } = {}) {
       : form.priceOnApplication ? 'Price on Application' : 'Price not captured'
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
     const isFinalCreateListingStep = createListingStepIndex === listingEditorSteps.length - 1
-    const editorTitle = isPropertyOnlyListingEditor ? 'Edit Property Details' : isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
-    const editorHeading = isPropertyOnlyListingEditor ? 'Property details' : isEditListingWorkspace ? 'Edit Listing' : 'New listing'
-    const editorDescription = isPropertyOnlyListingEditor ? 'Update property facts only. Seller, mandate, documents and syndication stay in their dedicated workspaces.' : isEditListingWorkspace ? 'Update the details of your property listing.' : 'Capture the listing details.'
+    const editorTitle = isListingPublicationEditor ? 'Edit Listing Publication' : isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
+    const editorHeading = isListingPublicationEditor ? 'Property, marketing & syndication' : isEditListingWorkspace ? 'Edit Listing' : 'New listing'
+    const editorDescription = isListingPublicationEditor ? 'Update property data, public marketing content and distribution. Seller, mandate and documents remain in their dedicated workspaces.' : isEditListingWorkspace ? 'Update the details of your property listing.' : 'Capture the listing details.'
     const editorCrumbTitle = isEditListingWorkspace ? normalizeText(editListingRecord?.listingTitle || editListingRecord?.title || editListingRecord?.addressLine1 || editListingRecord?.propertyAddress || 'Listing') : ''
     const cancelEditor = () => navigate(isEditListingWorkspace ? `/agent/listings/${encodeURIComponent(editListingId)}` : '/listings')
 
@@ -7109,7 +7109,7 @@ function AgentListings({ initialTab = null } = {}) {
                 <ListingWizardHeader
                   title="Seller & Mandate"
                   description="Add the property owner and confirm the mandate."
-                  eyebrow="Step 1 of 5"
+                  eyebrow={`Step ${listingEditorSteps.findIndex((step) => step.key === 'seller') + 1} of ${listingEditorSteps.length}`}
                 />
 
                 <ListingWizardSection title="Ownership type">
@@ -7264,7 +7264,7 @@ function AgentListings({ initialTab = null } = {}) {
                 <ListingWizardHeader
                   title="Property"
                   description="Add the property details."
-                  eyebrow="Step 2 of 5"
+                  eyebrow={`Step ${listingEditorSteps.findIndex((step) => step.key === 'property') + 1} of ${listingEditorSteps.length}`}
                 />
 
                 <ListingWizardSection title="1. Property address">
@@ -7388,7 +7388,7 @@ function AgentListings({ initialTab = null } = {}) {
             {createListingStep === 'marketing' ? (
               <div className="space-y-6">
                 <div className="border-b border-[#e6edf5] pb-5">
-                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step 3 of 5</p>
+                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step {listingEditorSteps.findIndex((step) => step.key === 'marketing') + 1} of {listingEditorSteps.length}</p>
                   <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Marketing</h2>
                 </div>
                 <div className="rounded-[8px] border border-dashed border-[#c8d7e8] bg-[#fbfdff] p-5">
@@ -7474,7 +7474,7 @@ function AgentListings({ initialTab = null } = {}) {
             {createListingStep === 'syndication' ? (
               <div className="space-y-6">
                 <div className="border-b border-[#e6edf5] pb-5">
-                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step 4 of 5</p>
+                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step {listingEditorSteps.findIndex((step) => step.key === 'syndication') + 1} of {listingEditorSteps.length}</p>
                   <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Syndication</h2>
                   <p className="mt-1 text-sm text-[#607387]">Choose where this property should appear.</p>
                 </div>
@@ -7523,7 +7523,7 @@ function AgentListings({ initialTab = null } = {}) {
             {createListingStep === 'review' ? (
               <div className="space-y-6">
                 <div className="border-b border-[#e6edf5] pb-5">
-                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step 5 of 5</p>
+                  <p className="text-xs font-bold uppercase text-[#1f7d44]">Step {listingEditorSteps.findIndex((step) => step.key === 'review') + 1} of {listingEditorSteps.length}</p>
                   <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Review Listing</h2>
                 </div>
                 <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">

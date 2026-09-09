@@ -7466,7 +7466,9 @@ function ArchlineOverviewWorkspace({
   const missingDocs = documentHealthSummary.missingCount || 0
   const queueItems = taskItems.length ? taskItems : overviewNextActions
   const nextAction = queueItems[0] || overviewNextActions[0] || null
-  const activityRows = activityFeed.slice(0, 5)
+  // Keep the panel's footprint stable while still letting attorneys review the
+  // full, in-memory feed without leaving the overview.
+  const activityRows = activityFeed
   const activeWorkflows = workflows.filter((workflow) => workflow?.required)
   const blockedWorkflowCount = activeWorkflows.reduce((total, workflow) => total + (Array.isArray(workflow?.blockers) ? workflow.blockers.length : 0), 0)
   const outstandingTasks = queueItems.length
@@ -7574,9 +7576,9 @@ function ArchlineOverviewWorkspace({
         <ArchlinePanel
           title="Latest Activity"
           action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('activity')}>View all</Button>}
-          className="p-5"
+          className="flex min-h-[340px] flex-col p-5"
         >
-          <div className="max-h-[252px] space-y-3 overflow-y-auto pr-2">
+          <div className="h-[252px] space-y-3 overflow-y-auto overscroll-contain pr-2">
             {activityRows.length ? activityRows.map((entry) => (
               <article key={entry.id} className="flex gap-3">
                 <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-slate-50 text-[#35546c]">
@@ -8119,6 +8121,7 @@ function ArchlineTransferWorkspace({
     workActions: taskWorkActions,
     statusActions: primaryTaskActions,
     canUpdateTask: canUpdateSteps,
+    forceEditable: canUpdateSteps,
     workflowLabel: viewModel.title,
     workflowTasks: viewModel.tasks,
   })
@@ -8338,7 +8341,7 @@ function ArchlineTransferWorkspace({
   function handleTaskWorkbenchAction(action = {}) {
     if (action.source === 'status') {
       const canonicalAction = primaryTaskActions.find((item) => item.id === action.id)
-      if (!canonicalAction || canonicalAction.disabled || action.disabled) return
+      if (canonicalAction?.disabled || action.disabled) return
       const statusAction = { ...canonicalAction, ...action }
       openStatusDraft(selectedTask, statusAction)
       return
@@ -22359,7 +22362,7 @@ function AttorneyTransactionDetail() {
               {onboardingActionMessage}
             </p>
           ) : null}
-          {workspaceRole === 'attorney' && ['overview', 'activity'].includes(activeWorkspaceMenu)
+          {workspaceRole === 'attorney' && activeWorkspaceMenu === 'activity'
             ? <MatterConversation transactionId={transaction?.id} revision={transactionRollup?.transactionJourneySnapshot?.legalJourney?.snapshot?.revision} /> : null}
         </div>
       ) : (

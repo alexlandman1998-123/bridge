@@ -7,6 +7,8 @@ assert.match(componentSource, /Expand workflow stages/)
 assert.match(componentSource, /before:bg-emerald-700/)
 assert.match(componentSource, /phaseExceptions\.get\(phase\.key\)/)
 assert.match(componentSource, /exception\?\.primary\?\.taskKey/)
+assert.match(componentSource, /current === phaseKey \? '' : phaseKey/)
+assert.match(componentSource, /!collapsed && expanded && phase\.tasks\?\.length/)
 assert.match(componentSource, /max-h-\[52vh\]/)
 assert.doesNotMatch(componentSource, /xl:min-h-\[600px\]/)
 

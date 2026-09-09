@@ -44,9 +44,20 @@ for (const lane of ['transfer', 'bond', 'cancellation']) {
     assert.equal(model.outstandingRequirements.length, 1, 'completion does not imply evidence received')
   }
 }
+const projectedActionGap = buildLegalTaskWorkbenchModel({
+  task: { key: 'task', displayStatus: 'not_started', completionReadiness: { canComplete: false }, operationalContract: { lane: 'transfer' } },
+  statusActions: [],
+  taskContext: { checklistItems: [] },
+  forceEditable: true,
+  canUpdateTask: true,
+})
+assert.equal(projectedActionGap.readOnly, false, 'an attorney stays actionable while the status-action projection refreshes')
+assert.equal(projectedActionGap.canComplete, true)
+assert.equal(projectedActionGap.completeAction.id, 'mark_complete')
 const source = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
 assert.match(source, /const statusAction = \{ \.\.\.canonicalAction, \.\.\.action \}/, 'preserve workbench completion-note requirements')
-assert.match(source, /!taskWorkbenchModel\.canMarkInProgress/)
+assert.match(source, /taskWorkbenchModel\.readOnly \|\| isAttorneyTaskResolved/)
 assert.match(source, /if \(statusDraft.requiresReason && !statusDraft.reason\?\.trim\(\)\) return/)
 assert.match(source, /visibility: 'professional_shared'/)
+assert.match(source, /forceEditable: canUpdateSteps/)
 console.log('Task actions: 3 lanes, 7 statuses, access checks and evidence preservation passed')
