@@ -608,7 +608,10 @@ export function resolveTransactionRoutingProfile(input = {}) {
     foreignBuyer,
     vatTreatment,
     requiresTransferAttorney: true,
-    requiresBondAttorney: mvpProfile.bondWorkflow === 'include' || (mvpProfile.bondWorkflow !== 'exclude' && (financeType === 'bond' || financeType === 'hybrid')),
+    // A configuration preference must never create a bond-registration lane
+    // for a cash/unknown/developer-finance matter. The finance route is the
+    // canonical condition for this legal lane.
+    requiresBondAttorney: financeType === 'bond' || financeType === 'hybrid',
     requiresCancellationAttorney: mvpProfile.cancellationWorkflow === 'include' || (mvpProfile.cancellationWorkflow !== 'exclude' && cancellationRequired),
     isDevelopmentSale: transactionType === 'development_sale',
     isCommercialTransaction: transactionType === 'commercial',

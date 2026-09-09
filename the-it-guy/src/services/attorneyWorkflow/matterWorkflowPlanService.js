@@ -1,4 +1,5 @@
 import { getAttorneyStageDefinitionsForLane } from '../../constants/attorneyWorkflowStages.js'
+import { isBondFinanceType, normalizeFinanceType } from '../../core/transactions/financeType.js'
 
 export const MATTER_WORKFLOW_PLAN_VERSION = 'attorney_matter_workflow_plan_v2'
 
@@ -70,9 +71,13 @@ function resolveLaneStepKeys(laneKey, profile = {}) {
 }
 
 function resolveRequiredLaneKeys(profile = {}) {
+  const financeType = normalizeFinanceType(profile.financeType || profile.finance_type, { allowUnknown: true })
+  const bondRegistrationRequired = isBondFinanceType(financeType)
   return [
     'transfer',
-    profile.requiresBondAttorney ? 'bond' : '',
+    // Plans may outlive legacy flags, so enforce the same canonical finance
+    // condition here as well as in routing.
+    bondRegistrationRequired ? 'bond' : '',
     profile.requiresCancellationAttorney ? 'cancellation' : '',
   ].filter(Boolean)
 }

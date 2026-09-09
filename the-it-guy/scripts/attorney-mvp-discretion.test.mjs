@@ -18,18 +18,18 @@ const profile = resolveTransactionRoutingProfile({ transaction: {
   finance_type: 'cash', purchaser_type: 'individual', seller_type: 'company', property_tenure: 'freehold',
   routing_profile_json: { mvpProfile: { buyerMaritalRegime: 'in_community', paymentSecurity: 'guarantee', bondWorkflow: 'include', cancellationWorkflow: 'exclude' } },
 } })
-assert.equal(profile.requiresBondAttorney, true)
+assert.equal(profile.requiresBondAttorney, false, 'A legacy include flag cannot create a bond lane for cash finance')
 assert.equal(profile.requiresCancellationAttorney, false)
 assert.equal(profile.buyerMaritalRegime, 'in_community')
 const plan = buildMatterWorkflowPlan({ routingProfile: profile })
-assert(plan.laneKeys.includes('bond'))
+assert(!plan.laneKeys.includes('bond'))
 assert(plan.lanes[0].stepKeys.includes('guarantees_received'), 'cash must retain security review')
 assert(plan.lanes[0].stepKeys.includes('levy_clearance_received'), 'applicability is reviewed, not silently removed')
 const existing = { version: 'attorney_matter_workflow_plan_v1', status: 'active', lanes: [] }
 assert.equal(resolveMatterWorkflowPlan({ workflowPlan: existing }), existing, 'do not silently rewrite accepted plans')
 
 for (const laneKey of ['transfer', 'bond', 'cancellation']) {
-  const fullPlan = buildMatterWorkflowPlan({ routingProfile: { requiresBondAttorney: true, requiresCancellationAttorney: true } })
+  const fullPlan = buildMatterWorkflowPlan({ routingProfile: { financeType: 'bond', requiresBondAttorney: true, requiresCancellationAttorney: true } })
   const stepKeys = fullPlan.lanes.find(lane => lane.laneKey === laneKey).stepKeys.slice(0, 3)
   const workflowPlan = { ...fullPlan, lanes: [{ laneKey, stepKeys }] }
   const steps = stepKeys.map((stepKey, index) => ({ id: String(index), stepKey, status: ['completed_externally','not_applicable','not_started'][index], comment: index < 2 ? 'Attorney reason recorded' : '' }))

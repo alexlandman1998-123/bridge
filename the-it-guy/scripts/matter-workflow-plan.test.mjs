@@ -47,6 +47,17 @@ function confirmedProfile(transaction) {
 }
 
 {
+  const plan = buildMatterWorkflowPlan({
+    routingProfile: {
+      financeType: 'cash',
+      // This represents a stale profile written before finance was confirmed.
+      requiresBondAttorney: true,
+    },
+  })
+  assert.deepEqual(plan.laneKeys, ['transfer'], 'Cash finance must suppress a stale bond-attorney flag')
+}
+
+{
   const profile = confirmedProfile({
     id: 'bond-sectional-cancellation',
     finance_type: 'bond',

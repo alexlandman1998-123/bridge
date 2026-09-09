@@ -202,6 +202,7 @@ export function buildLegalTaskWorkbenchModel({
     taskType: task.operationalContract?.taskType || 'confirm_milestone',
     taskLabel: task.label,
     taskDescription: task.description,
+    note: text(task.comment),
     applicabilitySuggestion: task.applicabilitySuggestion || '',
     outcomeReason: ['completed_externally', 'not_applicable'].includes(task.status) ? text(task.comment) : '',
     status: task.displayStatus,

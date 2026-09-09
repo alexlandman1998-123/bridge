@@ -444,7 +444,10 @@ export function resolveTransactionFacts(transaction = {}) {
     isBondDeal,
     isHybridDeal,
     requiresTransferAttorney: hasUsableValue(routingProfile.requiresTransferAttorney) ? truthyFlag(routingProfile.requiresTransferAttorney) : true,
-    requiresBondAttorney: hasUsableValue(routingProfile.requiresBondAttorney) ? truthyFlag(routingProfile.requiresBondAttorney) : isBondDeal || isHybridDeal,
+    // Never let a legacy/manual routing flag revive a bond lane for a cash
+    // matter. A bond attorney is relevant only where the captured finance
+    // route has a bond component.
+    requiresBondAttorney: isBondDeal || isHybridDeal,
     requiresCancellationAttorney: hasUsableValue(routingProfile.requiresCancellationAttorney) ? truthyFlag(routingProfile.requiresCancellationAttorney) : cancellationRequired,
     buyerEntityType,
     sellerEntityType,

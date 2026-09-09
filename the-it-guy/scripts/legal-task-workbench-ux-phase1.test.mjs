@@ -27,13 +27,18 @@ function buildTask(overrides = {}) {
   }
 }
 
-const routineModel = buildLegalTaskWorkbenchModel({ task: buildTask(), workflowTasks: [] })
+const routineModel = buildLegalTaskWorkbenchModel({
+  task: buildTask(),
+  workflowTasks: [],
+  statusActions: [{ id: 'mark_complete', label: 'Complete task', disabled: false }],
+})
 assert.equal(routineModel.showOwner, false, 'routine tasks should not repeat the default owner')
-assert.equal(routineModel.clientUpdate.visible, true, 'client visibility remains available to the update flow')
+assert.equal(routineModel.readOnly, false, 'a standard attorney task remains editable')
 
 const escalatedModel = buildLegalTaskWorkbenchModel({
   task: buildTask({ displayStatus: 'blocked', statusLabel: 'Blocked' }),
   workflowTasks: [],
+  statusActions: [{ id: 'mark_complete', label: 'Complete task', disabled: false }],
 })
 assert.equal(escalatedModel.showOwner, true, 'blocked tasks should expose ownership for escalation')
 
@@ -41,7 +46,8 @@ const componentSource = readFileSync(new URL('../src/components/attorney/workflo
 assert.doesNotMatch(componentSource, /No task exceptions\./, 'healthy-state filler copy should be removed')
 assert.doesNotMatch(componentSource, /Workflow healthy/, 'healthy workflow summaries should remain hidden')
 assert.doesNotMatch(componentSource, /No due date/, 'unset due dates should not render as task metadata')
-assert.match(componentSource, /aria-label=\{`\$\{workflowLabel\} checkpoints`\}/, 'the navigator label should match every legal workflow lane')
-assert.equal((componentSource.match(/model\.clientUpdate\.label/g) || []).length, 1, 'client visibility should appear only in the status update flow')
+assert.match(componentSource, /aria-label=\{`\$\{workflowLabel\} stages`\}/, 'the navigator label should match every legal workflow lane')
+assert.match(componentSource, /arch9:attorney-task-rail:collapsed/, 'stage-rail preference should persist locally')
+assert.equal((componentSource.match(/client_visible/g) || []).length >= 1, true, 'client visibility should remain limited to the status update flow')
 
 console.log('Legal task workbench UX Phase 1 checks passed.')

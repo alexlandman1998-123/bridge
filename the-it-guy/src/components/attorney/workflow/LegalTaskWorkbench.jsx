@@ -1,62 +1,20 @@
 import {
   AlertTriangle,
-  CalendarDays,
   CheckCircle2,
   ChevronRight,
   Circle,
   FileText,
+  PanelLeftClose,
+  PanelLeftOpen,
   Paperclip,
   Save,
   MessageSquarePlus,
-  UserRound,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
 import Modal from '../../ui/Modal.jsx'
 import { isAttorneyTaskResolved } from '../../../core/transactions/attorneyTaskOutcomes.js'
-
-const TASK_TYPE_COPY = Object.freeze({
-  capture_information: {
-    heading: 'Information needed',
-    helper: 'Capture the facts required to progress this task.',
-  },
-  collect_documents: {
-    heading: 'Documents needed',
-    helper: 'Collect the outstanding evidence and keep it linked to this task.',
-  },
-  review_evidence: {
-    heading: 'Evidence to review',
-    helper: 'Review the available evidence and resolve any remaining gaps.',
-  },
-  request_external_action: {
-    heading: 'Request requirements',
-    helper: 'Send or follow up on the request needed to progress this task.',
-  },
-  schedule_action: {
-    heading: 'Scheduling requirements',
-    helper: 'Confirm the people, documents, and timing needed for this appointment.',
-  },
-  confirm_milestone: {
-    heading: 'Completion checks',
-    helper: 'Confirm the evidence required for this legal milestone.',
-  },
-})
-
-function formatDueDate(value = '') {
-  if (!value) return ''
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return new Intl.DateTimeFormat('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }).format(date)
-}
-
-function statusTone(status = '') {
-  if (status === 'completed') return 'border-emerald-200 bg-emerald-50 text-emerald-800'
-  if (status === 'blocked') return 'border-red-200 bg-red-50 text-red-800'
-  if (status === 'waiting') return 'border-amber-200 bg-amber-50 text-amber-800'
-  if (status === 'in_progress') return 'border-blue-200 bg-blue-50 text-blue-800'
-  return 'border-slate-200 bg-slate-50 text-slate-700'
-}
 
 function requirementStatus(item = {}) {
   if (item.complete) return 'Approved'
@@ -101,19 +59,16 @@ function RequirementRow({ item, action = null, saving = false, onRunAction }) {
   )
 }
 
-function Disclosure({ title, count = null, children, defaultOpen = false }) {
-  return (
-    <details className="group border-t border-slate-200" open={defaultOpen}>
-      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between gap-3 py-3 text-sm font-semibold text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700">
-        <span>{title}{typeof count === 'number' ? <span className="ml-2 text-xs font-medium text-slate-400">{count}</span> : null}</span>
-        <ChevronRight size={16} className="shrink-0 text-slate-400 transition group-open:rotate-90" />
-      </summary>
-      <div className="pb-4">{children}</div>
-    </details>
-  )
-}
-
-function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = '', workflowLabel = 'Legal workflow', operationalHealth = null, onSelectTask }) {
+function PhaseNavigator({
+  phases = [],
+  selectedTaskKey = '',
+  selectedPhaseKey = '',
+  workflowLabel = 'Legal workflow',
+  operationalHealth = null,
+  collapsed = false,
+  onToggleCollapsed,
+  onSelectTask,
+}) {
   const selectedPhase = phases.find((phase) => phase.key === selectedPhaseKey) || phases[0] || null
   const phaseExceptions = useMemo(() => {
     const grouped = new Map()
@@ -129,15 +84,24 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
     return grouped
   }, [operationalHealth?.exceptions])
   return (
-    <aside className="min-h-0 xl:sticky xl:top-24 xl:self-start">
+    <aside className={`min-h-0 transition-[width] duration-200 xl:sticky xl:top-24 xl:self-start ${collapsed ? 'xl:w-[72px]' : ''}`}>
       <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
-        <div className="shrink-0 border-b border-slate-200 bg-slate-50/70 px-4 py-4">
-          <div className="mt-1 flex items-center justify-between gap-3">
-            <h2 className="text-base font-semibold text-slate-950">{workflowLabel}</h2>
-            <span className="text-xs font-medium text-slate-500">{Math.max(1, phases.findIndex((phase) => phase.key === selectedPhase?.key) + 1)} of {phases.length}</span>
+        <div className={`shrink-0 border-b border-slate-200 bg-slate-50/70 py-4 ${collapsed ? 'px-2' : 'px-4'}`}>
+          <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-3'}`}>
+            {!collapsed ? <h2 className="text-base font-semibold text-slate-950">{workflowLabel}</h2> : null}
+            <button
+              type="button"
+              className="inline-flex size-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-white hover:text-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? 'Expand workflow stages' : 'Collapse workflow stages'}
+              title={collapsed ? 'Expand workflow stages' : 'Collapse workflow stages'}
+            >
+              {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            </button>
           </div>
+          {!collapsed ? <span className="mt-2 block text-xs font-medium text-slate-500">{Math.max(1, phases.findIndex((phase) => phase.key === selectedPhase?.key) + 1)} of {phases.length}</span> : null}
         </div>
-        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2.5" aria-label={`${workflowLabel} stages`}>
+        <nav className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${collapsed ? 'p-2' : 'p-2.5'}`} aria-label={`${workflowLabel} stages`}>
           <ol className="space-y-1.5">
             {phases.map((phase) => {
               const active = phase.key === selectedPhase?.key
@@ -147,18 +111,19 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
                 <li key={phase.key}>
                   <button
                     type="button"
-                    className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition ${active ? 'bg-emerald-50 text-emerald-950 ring-1 ring-emerald-200' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                    className={`relative flex min-h-12 w-full items-center gap-3 rounded-xl py-2.5 text-left transition ${collapsed ? 'justify-center px-2' : 'px-3'} ${active ? 'bg-emerald-50 text-emerald-950 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-emerald-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
                     onClick={() => onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => !isAttorneyTaskResolved(task.status))?.key || phase.tasks?.[0]?.key)}
                     aria-current={active ? 'step' : undefined}
+                    title={`${phase.label} · ${phase.completed} of ${phase.total} complete`}
                   >
                     <span className={`inline-flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${phase.status === 'completed' ? 'bg-emerald-700 text-white' : active ? 'bg-white text-emerald-800' : 'bg-slate-100 text-slate-600'}`}>
                       {phase.status === 'completed' ? <CheckCircle2 size={15} /> : phaseIndex + 1}
                     </span>
-                    <span className="min-w-0 flex-1">
+                    {!collapsed ? <span className="min-w-0 flex-1">
                       <strong className="block text-sm font-semibold leading-5">{phase.label}</strong>
                       <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} / {phase.total} complete{phase.notApplicable ? ` · ${phase.notApplicable} N/A` : ''}</span>
-                    </span>
-                    {exception ? (
+                    </span> : null}
+                    {exception && !collapsed ? (
                       <span
                         className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-[0.68rem] font-semibold ${exception.severity === 'critical' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'}`}
                         aria-label={`${exception.count} task exception${exception.count === 1 ? '' : 's'}`}
@@ -167,7 +132,7 @@ function PhaseNavigator({ phases = [], selectedTaskKey = '', selectedPhaseKey = 
                       </span>
                     ) : null}
                   </button>
-                  {active && phase.tasks?.length ? (
+                  {!collapsed && active && phase.tasks?.length ? (
                     <ol className="mt-1.5 space-y-1 border-l border-slate-200 pl-3" aria-label={`${phase.label} tasks`}>
                       {phase.tasks.map((task) => {
                         const taskActive = task.key === selectedTaskKey
@@ -212,6 +177,7 @@ export default function LegalTaskWorkbench({
   onOpenDocuments,
   onAddNote,
   onMarkInProgress,
+  onPersistTaskResponses,
   statusDraft = null,
   onStatusDraftChange,
   onSubmitStatusDraft,
@@ -220,6 +186,17 @@ export default function LegalTaskWorkbench({
 }) {
   const taskTimingRef = useRef({ taskKey: '', startedAt: 0 })
   const uxEventRef = useRef(onUxEvent)
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    if (typeof window === 'undefined') return false
+    try {
+      return window.localStorage.getItem('arch9:attorney-task-rail:collapsed') === 'true'
+    } catch {
+      return false
+    }
+  })
+  const [documentModalOpen, setDocumentModalOpen] = useState(false)
+  const [previewDocument, setPreviewDocument] = useState(null)
+  const [taskResponses, setTaskResponses] = useState({ existingBond: '', cancellationInstruction: '' })
 
   useEffect(() => {
     uxEventRef.current = onUxEvent
@@ -239,10 +216,44 @@ export default function LegalTaskWorkbench({
     })
   }, [model?.empty, model?.lane, model?.status, model?.taskKey, model?.taskType])
 
+  useEffect(() => {
+    const existingBond = String(model?.note || '').match(/existing bond confirmed:\s*(yes|no|not_applicable)/i)?.[1]?.toLowerCase() || ''
+    const cancellationInstruction = String(model?.note || '').match(/cancellation instructions confirmed:\s*(yes|no|not_applicable)/i)?.[1]?.toLowerCase() || ''
+    setTaskResponses({ existingBond, cancellationInstruction })
+    setPreviewDocument(null)
+    setDocumentModalOpen(false)
+  }, [model?.note, model?.taskKey])
+
   if (!model || model.empty) return null
-  const taskCopy = TASK_TYPE_COPY[model.taskType] || TASK_TYPE_COPY.confirm_milestone
-  const dueDateLabel = formatDueDate(model.dueDate)
   const completionHelpId = `legal-task-completion-help-${model.taskKey}`
+  const isBondCancellationConfirmation = model.taskKey === 'existing_bond_confirmed'
+  const canEdit = !model.readOnly && !saving
+
+  function toggleRail() {
+    setRailCollapsed((current) => {
+      const next = !current
+      try {
+        window.localStorage.setItem('arch9:attorney-task-rail:collapsed', String(next))
+      } catch {
+        // The preference is non-critical; preserve the in-session preference.
+      }
+      return next
+    })
+  }
+
+  async function saveTaskResponses(nextResponses) {
+    setTaskResponses(nextResponses)
+    const responseLines = [
+      nextResponses.existingBond ? `Existing bond confirmed: ${nextResponses.existingBond}` : '',
+      nextResponses.cancellationInstruction ? `Cancellation instructions confirmed: ${nextResponses.cancellationInstruction}` : '',
+    ].filter(Boolean)
+    if (!responseLines.length || !onPersistTaskResponses) return
+    await onPersistTaskResponses(responseLines.join('\n'))
+  }
+
+  function documentUrl(document = {}) {
+    return document.fileUrl || document.file_url || document.signedUrl || document.signed_url || document.url || ''
+  }
 
   function emitActionEvent(action = {}, placement = 'secondary') {
     const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -271,13 +282,15 @@ export default function LegalTaskWorkbench({
 
   return (
     <>
-      <section className="archline-transfer-workspace grid items-start gap-4 xl:grid-cols-[minmax(280px,320px)_minmax(0,1fr)]">
+      <section className={`archline-transfer-workspace grid items-start gap-4 ${railCollapsed ? 'xl:grid-cols-[72px_minmax(0,1fr)]' : 'xl:grid-cols-[minmax(300px,320px)_minmax(0,1fr)]'}`}>
       <PhaseNavigator
         phases={phases}
         selectedTaskKey={selectedTaskKey}
         selectedPhaseKey={selectedPhaseKey}
         workflowLabel={model.workflowLabel}
         operationalHealth={model.operationalHealth}
+        collapsed={railCollapsed}
+        onToggleCollapsed={toggleRail}
         onSelectTask={onSelectTask}
       />
 
@@ -286,98 +299,56 @@ export default function LegalTaskWorkbench({
         aria-busy={saving}
       >
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
-          <header className="shrink-0 border-b border-slate-200 bg-slate-50/60 px-5 py-4 lg:px-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="min-w-0 max-w-3xl">
-                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Stage {phases.findIndex((phase) => phase.key === selectedPhaseKey) + 1} · {model.phaseLabel}</span>
-                <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                  <h2 className="min-w-0 text-2xl font-semibold leading-tight tracking-[-0.02em] text-slate-950">{model.taskLabel}</h2>
-                  <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(model.status)}`}>{model.statusLabel}</span>
-                </div>
-                {model.applicabilitySuggestion ? <p className="mt-3 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700"><strong>Profile suggestion:</strong> {model.applicabilitySuggestion} The attorney decides applicability.</p> : null}
-                {model.outcomeReason ? <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700"><strong>Recorded reason:</strong> {model.outcomeReason}</p> : null}
-              </div>
-              {dueDateLabel || model.showOwner ? (
-                <div className="grid shrink-0 gap-1 text-xs text-slate-500 sm:text-right">
-                  {dueDateLabel ? (
-                    <span className="inline-flex items-center gap-2 font-semibold text-slate-700 sm:justify-end"><CalendarDays size={14} /> Due {dueDateLabel}</span>
-                  ) : null}
-                  {model.showOwner ? (
-                    <span className="inline-flex items-center gap-2 sm:justify-end"><UserRound size={14} /> {model.ownerLabel}</span>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
+          <header className="shrink-0 px-5 pb-3 pt-5 lg:px-6">
+            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Stage {phases.findIndex((phase) => phase.key === selectedPhaseKey) + 1} · {model.phaseLabel}</span>
+            <h2 className="mt-2 min-w-0 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950 sm:text-3xl">{model.taskLabel}</h2>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4 lg:px-6">
-            <section aria-labelledby="legal-task-outstanding-heading">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <h3 id="legal-task-outstanding-heading" className="text-base font-semibold text-slate-950">{model.outstandingRequirements.length} item{model.outstandingRequirements.length === 1 ? '' : 's'} to review</h3>
-                </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-slate-200 px-5 py-4 lg:px-6">
+            <section aria-labelledby="legal-task-outstanding-heading" className="overflow-hidden rounded-xl border border-slate-200">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5">
+                <h3 id="legal-task-outstanding-heading" className="text-lg font-semibold text-slate-950">Required action</h3>
+                {!model.readOnly ? <span className="text-sm text-slate-500">Complete the relevant items below.</span> : null}
               </div>
-              <ul className="mt-3 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                {model.outstandingRequirements.map((item) => <RequirementRow key={item.id} item={item} action={model.requirementActions?.[item.id]} saving={saving} onRunAction={runAction} />)}
-                {!model.outstandingRequirements.length ? (
-                  <li className="flex items-center gap-3 py-5 text-sm text-emerald-700">
-                    <CheckCircle2 size={18} /> All required items are present.
-                  </li>
-                ) : null}
-              </ul>
+              {isBondCancellationConfirmation ? (
+                <div className="divide-y divide-slate-200">
+                  {[
+                    ['existingBond', 'Existing bond confirmed', 'Is there an existing mortgage bond registered against the property?'],
+                    ['cancellationInstruction', 'Cancellation instructions confirmed', 'Have cancellation instructions been received from the seller or bondholder?'],
+                  ].map(([key, label, helper], index) => (
+                    <div key={key} className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="min-w-0">
+                        <strong className="block text-sm text-slate-950">{index + 1}. {label}</strong>
+                        <p className="mt-1 text-sm text-slate-500">{helper}</p>
+                      </div>
+                      {!model.readOnly ? <div className="flex flex-wrap gap-2">
+                        {[['yes', 'Yes'], ['no', 'No'], ['not_applicable', 'Not applicable']].map(([value, choiceLabel]) => (
+                          <button key={value} type="button" disabled={!canEdit} onClick={() => void saveTaskResponses({ ...taskResponses, [key]: value })} className={`min-h-10 rounded-lg border px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${taskResponses[key] === value ? 'border-emerald-700 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-200'} disabled:cursor-not-allowed disabled:opacity-60`}>
+                            <span className="mr-2 inline-block size-3 rounded-full border border-current align-[-1px]" />{choiceLabel}
+                          </button>
+                        ))}
+                        <Button type="button" variant="ghost" size="sm" onClick={() => runUtilityAction('add_note', onAddNote)}><MessageSquarePlus size={15} /> Add note</Button>
+                      </div> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <ul className="divide-y divide-slate-100 bg-white">
+                  {model.outstandingRequirements.map((item) => <RequirementRow key={item.id} item={item} action={model.readOnly ? null : model.requirementActions?.[item.id]} saving={saving} onRunAction={runAction} />)}
+                  {!model.outstandingRequirements.length ? <li className="flex items-center gap-3 px-4 py-5 text-sm text-emerald-700"><CheckCircle2 size={18} /> All required items are present.</li> : null}
+                </ul>
+              )}
             </section>
 
-            <section className="mt-4">
-              {model.confirmationRequirements.length ? (
-                <Disclosure title="Checks" count={model.confirmationRequirements.length}>
-                  <ul className="divide-y divide-slate-100">
-                    {model.confirmationRequirements.map((item) => <RequirementRow key={item.id} item={{ ...item, required: false }} saving={saving} />)}
-                  </ul>
-                </Disclosure>
-              ) : null}
-              {model.completedRequirements.length ? (
-                <Disclosure title="Completed" count={model.completedRequirements.length}>
-                  <ul className="divide-y divide-slate-100">
-                    {model.completedRequirements.map((item) => <RequirementRow key={item.id} item={item} saving={saving} />)}
-                  </ul>
-                </Disclosure>
-              ) : null}
-              <Disclosure title="Documents" count={model.documents.length}>
-                {model.documents.length ? (
-                  <div className="space-y-2">
-                    {model.documents.slice(0, 6).map((document) => (
-                      <div key={document.id || document.key || document.sourceRequirementKey} className="flex items-start gap-3 rounded-lg bg-slate-50 px-3 py-3 text-sm">
-                        <FileText size={16} className="mt-0.5 shrink-0 text-slate-500" />
-                        <span className="min-w-0 flex-1">
-                          <strong className="block font-semibold text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong>
-                          <span className="mt-0.5 block text-xs text-slate-500">{document.ready ? 'Available' : 'Outstanding'}</span>
-                        </span>
-                      </div>
-                    ))}
-                    <Button type="button" variant="ghost" size="sm" onClick={() => runUtilityAction('open_documents', onOpenDocuments)}>Open document register</Button>
-                  </div>
-                ) : <p className="text-sm text-slate-500">No documents are linked to this task.</p>}
-              </Disclosure>
-              {(model.notes.length || model.activity.length) ? <Disclosure title="Activity" count={model.notes.length + model.activity.length}>
-                <div className="space-y-3">
-                  {[...model.notes, ...model.activity].slice(0, 4).map((item, index) => (
-                    <article key={item.id || index} className="rounded-lg bg-slate-50 px-3 py-3 text-sm text-slate-700">
-                      <strong className="block text-slate-950">{item.title || item.label || 'Matter update'}</strong>
-                      <p className="mt-1 leading-5">{item.body || item.message || 'Activity recorded.'}</p>
-                    </article>
-                  ))}
-                  {!model.notes.length && !model.activity.length ? <p className="text-sm text-slate-500">No task activity has been recorded.</p> : null}
-                  <Button type="button" variant="ghost" size="sm" onClick={() => runUtilityAction('add_note', onAddNote)}><MessageSquarePlus size={15} /> Add note</Button>
-                </div>
-              </Disclosure> : null}
-              <Disclosure key={model.taskKey} title="Task guidance">
-                <div className="space-y-2 text-sm leading-5 text-slate-600">
-                  {model.taskDescription ? <p>{model.taskDescription}</p> : null}
-                  <p>{taskCopy.helper}</p>
-                  <p>Complete work using your professional judgement. Missing documents remain outstanding, including when work is completed externally.</p>
-                  {!model.requirementsSatisfied && model.completionMessage ? <p>{model.completionMessage}</p> : null}
-                </div>
-              </Disclosure>
+            <section className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5">
+                <div><h3 className="text-lg font-semibold text-slate-950">Supporting documents</h3><p className="mt-1 text-sm text-slate-500">Files linked to this task stay available in the matter.</p></div>
+                {!model.readOnly ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
+              </div>
+              <div className="divide-y divide-slate-100">
+                {model.documents.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">{document.ready ? 'Available' : 'Outstanding'}</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
+                {!model.documents.length ? <p className="px-4 py-6 text-sm text-slate-500">No documents are attached to this task yet.</p> : null}
+              </div>
             </section>
           </div>
 
@@ -394,12 +365,12 @@ export default function LegalTaskWorkbench({
             </div> : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                {model.canMarkInProgress ? (
+                {!model.readOnly && !model.taskResolved ? (
                   <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={onMarkInProgress}>
-                    <Save size={15} /> {model.markInProgressLabel}
+                    <Save size={15} /> Save progress
                   </Button>
                 ) : null}
-                {model.uploadAction ? <Button type="button" variant="ghost" size="sm" disabled={saving || model.uploadAction.disabled} onClick={() => runAction(model.uploadAction, 'secondary')}>
+                {!model.readOnly && model.uploadAction ? <Button type="button" variant="ghost" size="sm" disabled={saving || model.uploadAction.disabled} onClick={() => { setPreviewDocument(null); setDocumentModalOpen(true) }}>
                   <Paperclip size={15} /> Upload document
                 </Button> : null}
               </div>
@@ -413,21 +384,37 @@ export default function LegalTaskWorkbench({
                 >
                   <CheckCircle2 size={15} /> Complete task
                 </Button>
-              ) : model.readOnly && !model.taskResolved ? (
-                <Button type="button" size="sm" disabled aria-describedby={`${completionHelpId}-access`}><CheckCircle2 size={15} /> Complete task</Button>
               ) : null}
             </div>
-            {model.readOnly ? <p id={`${completionHelpId}-access`} className="mt-2 text-xs text-slate-600">Read-only workflow. Task updates require access to this attorney lane.</p> : null}
+            {model.readOnly ? <p id={`${completionHelpId}-access`} className="mt-2 text-xs text-slate-600">Read-only workflow. You can review this matter and its supporting documents.</p> : null}
             {!model.requirementsSatisfied ? (
               <details className="mt-2 text-xs text-slate-600">
                 <summary id={completionHelpId} className="w-fit cursor-pointer focus-visible:outline-emerald-700">{model.outstandingRequirements.length ? `${model.outstandingRequirements.length} outstanding item${model.outstandingRequirements.length === 1 ? '' : 's'}` : 'Outstanding checks'}</summary>
-                <p className="mt-1">Missing evidence remains outstanding after completion. {model.completeAction?.requiresNote ? 'Add a completion note to explain the outstanding items.' : 'See Task guidance for details.'}</p>
+                <p className="mt-1">Missing evidence remains visible after completion. {model.completeAction?.requiresNote ? 'Add a completion note to explain the outcome.' : 'Review the outstanding items before completing the task.'}</p>
               </details>
             ) : null}
           </footer>
         </div>
       </main>
       </section>
+
+      <Modal
+        open={documentModalOpen}
+        title="Supporting documents"
+        subtitle={model.taskLabel}
+        onClose={saving ? undefined : () => setDocumentModalOpen(false)}
+        className="max-w-5xl"
+        footer={<div className="flex flex-wrap justify-between gap-2"><Button type="button" variant="secondary" onClick={() => setDocumentModalOpen(false)} disabled={saving}>Close</Button>{!model.readOnly ? <Button type="button" disabled={saving} onClick={() => { setDocumentModalOpen(false); runUtilityAction('upload_document', onOpenDocuments) }}><Paperclip size={15} /> Upload document</Button> : null}</div>}
+      >
+        <div className="grid gap-4 lg:grid-cols-[minmax(14rem,0.42fr)_minmax(0,1fr)]">
+          <div className="max-h-[52vh] space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
+            {model.documents.length ? model.documents.map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => setPreviewDocument(document)} className={`w-full rounded-lg px-3 py-3 text-left text-sm transition ${previewDocument === document ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'}`}><strong className="block truncate">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">{document.ready ? 'Available' : 'Outstanding'}</span></button>) : <p className="p-3 text-sm text-slate-500">No documents are attached yet.</p>}
+          </div>
+          <div className="min-h-[18rem] rounded-xl border border-slate-200 bg-slate-50 p-4">
+            {previewDocument ? <div className="flex h-full flex-col"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-slate-950">{previewDocument.displayName || previewDocument.label || previewDocument.name || 'Document'}</h3><p className="mt-1 text-xs text-slate-500">{previewDocument.ready ? 'Available for review' : 'Document is still outstanding'}</p></div>{documentUrl(previewDocument) ? <a href={documentUrl(previewDocument)} target="_blank" rel="noreferrer" className="shrink-0 text-sm font-semibold text-emerald-800 hover:text-emerald-950">Download</a> : null}</div>{documentUrl(previewDocument) ? <iframe title={`Preview ${previewDocument.displayName || previewDocument.name || 'document'}`} src={documentUrl(previewDocument)} className="mt-4 min-h-[24rem] w-full rounded-lg border border-slate-200 bg-white" /> : <div className="flex flex-1 items-center justify-center text-center text-sm text-slate-500">A preview is not available for this file. Use Download to open it.</div>}</div> : <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">Choose a document to preview it here.</div>}
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         open={Boolean(statusDraft?.open)}

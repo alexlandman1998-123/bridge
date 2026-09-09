@@ -8351,7 +8351,7 @@ function ArchlineTransferWorkspace({
   }
 
   async function markTaskInProgress() {
-    if (!selectedTask || !canUpdateSteps || !taskWorkbenchModel.canMarkInProgress) return
+    if (!selectedTask || !canUpdateSteps || taskWorkbenchModel.readOnly || isAttorneyTaskResolved(selectedTask.displayStatus)) return
     const saved = await onUpdateStep?.(
       selectedTask,
       'in_progress',
@@ -8513,6 +8513,11 @@ function ArchlineTransferWorkspace({
         onOpenDocuments={() => onOpenDocuments?.(selectedTask, selectedDocuments)}
         onAddNote={() => onAddNote?.(selectedTask)}
         onMarkInProgress={markTaskInProgress}
+        onPersistTaskResponses={async (note) => onUpdateStep?.(
+          selectedTask,
+          'in_progress',
+          note,
+        )}
         statusDraft={statusDraft}
         onStatusDraftChange={setStatusDraft}
         onSubmitStatusDraft={submitStatusDraft}
@@ -19951,9 +19956,11 @@ function AttorneyTransactionDetail() {
     () => summarizeBondHybridFinanceWorkflow(transactionFinanceWorkflow || {}),
     [transactionFinanceWorkflow],
   )
-  const requiresBondRegistrationWorkflow = workflowOperations?.workflowPlan?.status === 'active'
-    ? workflowOperations.workflowPlan.laneKeys.includes('bond')
-    : isBondOrHybridFinance
+  const requiresBondRegistrationWorkflow = isBondOrHybridFinance && (
+    workflowOperations?.workflowPlan?.status === 'active'
+      ? workflowOperations.workflowPlan.laneKeys.includes('bond')
+      : true
+  )
   const requiresCancellationWorkflow = workflowOperations?.workflowPlan?.status === 'active' ? workflowOperations.workflowPlan.laneKeys.includes('cancellation') : Boolean(
     transaction?.seller_has_existing_bond || transaction?.transaction_requires_cancellation,
   )
@@ -20207,6 +20214,10 @@ function AttorneyTransactionDetail() {
     () => legalWorkflowModels.find((item) => item.detailKey === activeLegalWorkflowDetailKey) || null,
     [activeLegalWorkflowDetailKey, legalWorkflowModels],
   )
+  useEffect(() => {
+    if (activeLegalWorkflowDetailKey !== 'bond-registration' || requiresBondRegistrationWorkflow) return
+    closeLegalWorkflowDetail()
+  }, [activeLegalWorkflowDetailKey, closeLegalWorkflowDetail, requiresBondRegistrationWorkflow])
   useEffect(() => {
     if (!workflowOperations?.matterScope?.scoped || !activeLegalWorkflowDetailKey || activeLegalWorkflowModel) return
     const fallbackWorkflow = legalWorkflowModels.find((item) => item.required) || legalWorkflowModels[0]
@@ -22505,7 +22516,9 @@ function AttorneyTransactionDetail() {
             <div className="flex flex-wrap items-center gap-2 rounded-[14px] border border-slate-200 bg-white p-2 shadow-sm" role="tablist" aria-label="Legal workflow lane">
               {[
                 { key: 'transfer', label: 'Transfer', detailKey: '' },
-                { key: 'bond', label: 'Bond registration', detailKey: 'bond-registration' },
+                ...(requiresBondRegistrationWorkflow
+                  ? [{ key: 'bond', label: 'Bond registration', detailKey: 'bond-registration' }]
+                  : []),
                 ...(requiresCancellationWorkflow
                   ? [{ key: 'cancellation', label: 'Cancellation', detailKey: 'bond-cancellation' }]
                   : []),
@@ -22574,7 +22587,15 @@ function AttorneyTransactionDetail() {
                   handleOpenDetailPanel('matter')
                 }
               }}
-              onOpenDocuments={(task) => openTaskLinkedWorkspace('documents', task)}
+              onOpenDocuments={(task, taskDocuments = []) => {
+                const targetDocument = taskDocuments.find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
+                const targetRequirement = targetDocument?.requirement || targetDocument?.requiredDocument || null
+                if (targetRequirement) {
+                  openDocumentUploadModal({ requirement: targetRequirement })
+                } else {
+                  openDocumentUploadModal({ category: archlineActiveLegalTaskWorkflowKey })
+                }
+              }}
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
               onOpenFinance={(task) => openTaskLinkedWorkspace('finance', task)}
               onOpenMatter={() => handleOpenDetailPanel('matter')}

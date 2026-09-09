@@ -34,11 +34,11 @@ assert.equal(model.clientUpdate.available, true, 'client publication must be opt
 
 const componentSource = readFileSync(new URL('../src/components/attorney/workflow/LegalTaskWorkbench.jsx', import.meta.url), 'utf8')
 assert.match(componentSource, /legal-task-outstanding-heading/)
-assert.match(componentSource, /Complete & advance matter/)
-assert.match(componentSource, /Outstanding items are advisory/)
+assert.match(componentSource, /Complete task/)
+assert.match(componentSource, /Missing evidence remains visible after completion/)
 assert.match(componentSource, /aria-label=\{`\$\{phase\.label\} tasks`\}/)
-assert.match(componentSource, /model\.canMarkInProgress/)
-assert.match(componentSource, /Share a client-safe completion update/)
+assert.match(componentSource, /!model\.readOnly && !model\.taskResolved/)
+assert.match(componentSource, /Also notify \{model\.clientUpdate\.audienceLabel\}/)
 assert.match(componentSource, /visibility === 'client_visible'/)
 
 const pageSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
