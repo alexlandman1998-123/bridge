@@ -20017,6 +20017,11 @@ function mapDevelopmentLinkedListing(row = {}) {
     row.private_property_listing_url || row.private_property_reference || row.private_property_status,
     row.bridge_listing_public_url || row.bridge_listing_status,
   ].filter(Boolean).length
+  const platforms = [
+    row.property24_listing_url || row.property24_reference || row.property24_status ? 'Property24' : '',
+    row.private_property_listing_url || row.private_property_reference || row.private_property_status ? 'Private Property' : '',
+    row.bridge_listing_public_url || row.bridge_listing_status ? 'Arch9' : '',
+  ].filter(Boolean)
 
   return {
     id: normalizeTextValue(row.id),
@@ -20033,6 +20038,10 @@ function mapDevelopmentLinkedListing(row = {}) {
     unitId: linkSignals.unitId,
     unitNumber: linkSignals.unitNumber,
     portalSignals,
+    platforms,
+    coverImageUrl: normalizeTextValue(
+      row.hero_image_url || row.heroImageUrl || row.cover_image_url || row.coverImageUrl || row.image_url || row.imageUrl || row.primary_image_url || row.primaryImageUrl,
+    ),
     updatedAt: row.updated_at || row.created_at || null,
   }
 }

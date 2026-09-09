@@ -10371,104 +10371,49 @@ function DevelopmentDetail() {
         {activeTab === 'listings' ? (
           <section className="mt-4 grid gap-5">
             <section className={CARD_SHELL}>
-              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#7b8ca2]">Development Listings</p>
-                  <h3 className="mt-2 text-[1.35rem] font-semibold tracking-[-0.035em] text-[#142132]">Listings linked to this development</h3>
-                  <p className="mt-2 max-w-3xl text-sm leading-6 text-[#607387]">Marketing is the collateral library. Listings is the syndication layer: agency listings, direct developer listings, portal status, and unit-level listing readiness all roll back into this development workspace.</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" onClick={() => navigate(`/listings/developments?developmentId=${encodeURIComponent(data.development.id)}`)}>
-                    <FolderKanban size={15} />
-                    Open Listings Workspace
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => openMarketingHubSection('content')}>
-                    <Download size={15} />
-                    Marketing Collateral
-                  </Button>
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 {[
-                  ['Linked listings', developmentListingSummary.linkedCount],
-                  ['Agencies / teams', developmentListingSummary.agencyCount],
-                  ['Live / public', developmentListingSummary.liveCount],
-                  ['Portal signals', developmentListingSummary.portalSignals],
-                  ['Direct stock ready', developmentListingSummary.directCandidateCount]
-                ].map(([label, value]) => (
-                  <article key={label} className="rounded-[16px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-4">
-                    <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">{label}</span>
-                    <strong className="mt-2 block text-[1.35rem] font-semibold tracking-[-0.04em] text-[#142132]">{formatNumber(value)}</strong>
+                  ['Linked listings', developmentListingSummary.linkedCount, FolderKanban, 'border-t-[#76c6fb]', 'bg-[#e8f4ff] text-[#2363a0]'],
+                  ['Agencies / teams', developmentListingSummary.agencyCount, Users, 'border-t-[#38d39f]', 'bg-[#e4fbf3] text-[#0b9270]'],
+                  ['Live / public', developmentListingSummary.liveCount, TrendingUp, 'border-t-[#6e91ff]', 'bg-[#edf1ff] text-[#365caf]'],
+                  ['Portal signals', developmentListingSummary.portalSignals, Upload, 'border-t-[#f9b528]', 'bg-[#fff3d9] text-[#aa7416]'],
+                  ['Direct stock ready', developmentListingSummary.directCandidateCount, Building2, 'border-t-[#9baabd]', 'bg-[#f2f5f8] text-[#526b83]']
+                ].map(([label, value, Icon, accent, iconTone]) => (
+                  <article key={label} className={`flex min-h-[178px] flex-col justify-between rounded-[16px] border border-[#e0e9f2] border-t-[4px] bg-gradient-to-br from-white to-[#fbfdff] p-5 ${accent}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-[0.9rem] font-semibold text-[#637996]">{label}</span>
+                      <span className={`grid h-10 w-10 place-items-center rounded-[12px] ${iconTone}`}><Icon size={18} /></span>
+                    </div>
+                    <strong className="mt-5 block text-[2.6rem] font-semibold leading-none tracking-[-0.055em] text-[#10243a]">{formatNumber(value)}</strong>
                   </article>
                 ))}
               </div>
-
-              <section className="mt-5 rounded-[18px] border border-[#dce8e1] bg-[#f8fcfa] p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-[#e4f5ea] px-2.5 py-1 text-[0.68rem] font-bold uppercase tracking-[0.09em] text-[#1f7547]">Site-plan delivery</span>
-                      <span className="rounded-full border border-[#d9e6df] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#537066]">{sitePlanSyndication.mode === 'asset_only' ? 'Asset only' : 'Interactive map capable'}</span>
-                    </div>
-                    <h4 className="mt-3 text-base font-semibold text-[#173149]">{sitePlanSyndication.sitePlanAsset ? 'Site-plan asset ready for portals' : 'No site-plan asset ready for portals'}</h4>
-                    <p className="mt-1 max-w-3xl text-sm leading-6 text-[#60758d]">External portal exports receive the approved plan image only. Unit-marker coordinates stay within Arch9 unless a destination explicitly supports interactive maps.</p>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    {sitePlanSyndication.sitePlanAsset ? (
-                      <>
-                        <a href={sitePlanSyndication.sitePlanAsset.url} target="_blank" rel="noreferrer" className="inline-flex h-9 items-center gap-2 rounded-lg border border-[#cfe0d5] bg-white px-3 text-xs font-semibold text-[#315c4a] hover:bg-[#f1faf4]">
-                          <ArrowUpRight size={14} /> Open asset
-                        </a>
-                        <Button type="button" size="sm" variant="secondary" onClick={() => void handleCopyMarketingValue(sitePlanSyndication.sitePlanAsset.url, 'Site-plan asset URL')}>
-                          <Copy size={14} /> Copy asset URL
-                        </Button>
-                      </>
-                    ) : (
-                      <Button type="button" size="sm" variant="secondary" onClick={() => openDevelopmentTab('availability')}>
-                        <Upload size={14} /> Add site plan
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </section>
             </section>
 
-            <section className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+            <section>
               <section className={CARD_SHELL}>
-                <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Agent and Direct Listings</h4>
-                    <p className="mt-1.5 text-sm leading-6 text-[#6b7d93]">Listings appear here when agency/direct listing records carry this development or unit reference.</p>
-                  </div>
-                  <span className="inline-flex w-fit rounded-full border border-[#d7e5f5] bg-[#f7fbff] px-3 py-1 text-xs font-semibold text-[#35546c]">{linkedListingRows.length} linked</span>
-                </div>
-
                 {linkedListingRows.length ? (
-                  <div className="grid gap-3">
+                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                     {linkedListingRows.map(listing => (
-                      <article key={listing.id} className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] p-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="rounded-full border border-[#d7e5f5] bg-white px-2.5 py-1 text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#5b7895]">{toTitleLabel(listing.sourceLabel)}</span>
-                              <span className="rounded-full border border-[#d8ecdf] bg-[#f2fbf6] px-2.5 py-1 text-[0.72rem] font-semibold text-[#1f7d44]">{toTitleLabel(listing.status)}</span>
-                              {listing.unitNumber ? <span className="rounded-full border border-[#e3ebf4] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#607387]">Unit {listing.unitNumber}</span> : null}
-                            </div>
-                            <h5 className="mt-3 text-base font-semibold text-[#142132]">{listing.title}</h5>
-                            <p className="mt-1 text-sm text-[#607387]">{listing.location}</p>
-                            <p className="mt-2 text-sm font-semibold text-[#35546c]">
-                              {listing.agencyName} · {listing.assignedAgent}
-                            </p>
+                      <article key={listing.id} className="group overflow-hidden rounded-[18px] border border-[#e0e9f2] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                        <div className="relative h-36 bg-[#eaf0f5]">
+                          {listing.coverImageUrl ? <img src={listing.coverImageUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" loading="lazy" /> : <div className="flex h-full items-center justify-center bg-[#edf3f7] text-[#7890a6]"><Building2 size={28} /></div>}
+                          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#10243a]/60 to-transparent" aria-hidden="true" />
+                          <div className="absolute left-3 top-3 flex flex-wrap gap-1.5">
+                            <span className="rounded-full bg-white/95 px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-[0.08em] text-[#315a7b]">{toTitleLabel(listing.status)}</span>
+                            {listing.unitNumber ? <span className="rounded-full bg-[#10243a]/80 px-2.5 py-1 text-[0.65rem] font-bold text-white">Unit {listing.unitNumber}</span> : null}
                           </div>
-                          <div className="shrink-0 text-left lg:text-right">
-                            <p className="text-base font-semibold text-[#142132]">{listing.price ? currency.format(listing.price) : 'Price pending'}</p>
-                            <p className="mt-1 text-xs font-semibold text-[#7b8ca2]">{listing.portalSignals ? `${listing.portalSignals} portal signal${listing.portalSignals === 1 ? '' : 's'}` : 'No portal signal yet'}</p>
-                            <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => navigate(`/agent/listings/${encodeURIComponent(listing.id)}`)}>
-                              Open Listing
-                              <ArrowUpRight size={14} />
-                            </Button>
+                        </div>
+                        <div className="p-4">
+                          <h5 className="truncate text-base font-semibold tracking-[-0.025em] text-[#142132]">{listing.title}</h5>
+                          <p className="mt-1 truncate text-sm text-[#607387]">{listing.location}</p>
+                          <p className="mt-3 text-lg font-semibold tracking-[-0.03em] text-[#142132]">{listing.price ? currency.format(listing.price) : 'Price pending'}</p>
+                          <div className="mt-3 grid gap-1.5 border-t border-[#e9eef4] pt-3 text-xs">
+                            <span className="truncate text-[#607387]"><strong className="font-semibold text-[#35546c]">Agent:</strong> {listing.assignedAgent}</span>
+                            <span className="truncate text-[#607387]"><strong className="font-semibold text-[#35546c]">Agency:</strong> {listing.agencyName}</span>
+                            <span className="truncate text-[#607387]"><strong className="font-semibold text-[#35546c]">Platform:</strong> {listing.platforms?.length ? listing.platforms.join(' · ') : 'Not published'}</span>
                           </div>
+                          <Button type="button" size="sm" variant="secondary" className="mt-4 w-full" onClick={() => navigate(`/agent/listings/${encodeURIComponent(listing.id)}`)}>Open Listing <ArrowUpRight size={14} /></Button>
                         </div>
                       </article>
                     ))}
@@ -10482,7 +10427,7 @@ function DevelopmentDetail() {
                 )}
               </section>
 
-              <aside className="grid gap-5">
+              <aside className="hidden">
                 <section className={CARD_SHELL}>
                   <div className="mb-5">
                     <h4 className="text-[1.08rem] font-semibold tracking-[-0.025em] text-[#142132]">Developer Direct Stock</h4>
