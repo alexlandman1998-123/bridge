@@ -2798,6 +2798,29 @@ function normalizeDevelopmentProfile(rawProfile = {}) {
   }
 }
 
+function getDevelopmentProfileCoverImage(profile = {}) {
+  const mediaLibrary = profile?.marketingContent?.mediaLibrary || profile?.marketingContent?.media_library || {}
+  const galleryImages = normalizeListValue(mediaLibrary.galleryImageUrls || mediaLibrary.gallery_image_urls)
+  const candidates = [
+    mediaLibrary.heroImageUrl,
+    mediaLibrary.hero_image_url,
+    mediaLibrary.coverImageUrl,
+    mediaLibrary.cover_image_url,
+    ...galleryImages,
+    ...(profile.imageLinks || []),
+  ]
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) return candidate.trim()
+    if (candidate && typeof candidate === 'object') {
+      const url = normalizeTextValue(candidate.url || candidate.src || candidate.imageUrl || candidate.image_url)
+      if (url) return url
+    }
+  }
+
+  return ''
+}
+
 function normalizeDevelopmentSellerDetails(rawSellerDetails = {}) {
   const source = rawSellerDetails && typeof rawSellerDetails === 'object' ? rawSellerDetails : {}
   const rawSignatories = Array.isArray(
@@ -19567,10 +19590,20 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
   let configuredAttorneyByDevelopmentId = {}
 
   if (developmentIds.length) {
-    const profileQuery = await client
+    let profileQuery = await client
       .from('development_profiles')
-      .select('development_id, location, status, image_links, developer_company')
+      .select('development_id, location, status, image_links, marketing_content, developer_company')
       .in('development_id', developmentIds)
+
+    // Older environments may not yet have marketing_content. Keep their
+    // image_links fallback working while newer workspaces use the configured
+    // Marketing cover image.
+    if (profileQuery.error && isMissingColumnError(profileQuery.error, 'marketing_content')) {
+      profileQuery = await client
+        .from('development_profiles')
+        .select('development_id, location, status, image_links, developer_company')
+        .in('development_id', developmentIds)
+    }
 
     if (!profileQuery.error) {
       profileByDevelopmentId = (profileQuery.data || []).reduce((accumulator, row) => {
@@ -19652,7 +19685,7 @@ export async function fetchDevelopmentsData({ organisationId = null } = {}) {
       const profile = profileByDevelopmentId[item.id] || null
       return {
         ...item,
-        coverImageUrl: profile?.imageLinks?.[0] || null,
+        coverImageUrl: getDevelopmentProfileCoverImage(profile) || item.coverImageUrl || null,
         location: profile?.location || item.location || null,
         phase: profile?.status || item.phase || null,
         developerCompany: profile?.developerCompany || item.developerCompany || null,
