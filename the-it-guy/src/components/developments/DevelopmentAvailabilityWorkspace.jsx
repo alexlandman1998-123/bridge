@@ -191,8 +191,6 @@ export default function DevelopmentAvailabilityWorkspace({
   productCatalogue = null,
   role = "",
   canManageInventory = false,
-  canCreateTransactions = false,
-  buyerLeads = [],
   reservationDepositConfigured = true,
   reservationDepositSummary = "",
   sitePlanUrl = "",
@@ -214,14 +212,9 @@ export default function DevelopmentAvailabilityWorkspace({
   onDiscardSitePlanSuggestions,
   onPreviewPublicSitePlan,
   onOpenSitePlanPublicationControls,
-  onEditUnit,
-  onChangeUnitStatus,
   onSetReleaseState,
-  onCreateTransaction,
-  onOpenTransaction,
-  onCreateBuyerLead,
-  onLeadAction,
   onSaveUnitPrice,
+  legacySalesPanelEnabled = false,
 }) {
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -237,19 +230,11 @@ export default function DevelopmentAvailabilityWorkspace({
   const [matchSaving, setMatchSaving] = useState(false);
   const [cropDraft, setCropDraft] = useState(() => normaliseSitePlanViewport(sitePlanViewport));
   const [zoom, setZoom] = useState(1);
-  const [comparisonUnitIds, setComparisonUnitIds] = useState([]);
-  const [selectedLeadId, setSelectedLeadId] = useState("");
-  const [showBuyerForm, setShowBuyerForm] = useState(false);
-  const [buyerDraft, setBuyerDraft] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    note: "",
-  });
-  const [salesSaving, setSalesSaving] = useState(false);
-  const [salesError, setSalesError] = useState("");
   const [priceDraft, setPriceDraft] = useState("");
   const [controlSaving, setControlSaving] = useState(false);
+  const [controlError, setControlError] = useState("");
+  const [controlMessage, setControlMessage] = useState("");
+  const [releaseConfirmationOpen, setReleaseConfirmationOpen] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const [sitePlanSetupOpen, setSitePlanSetupOpen] = useState(true);
   const structurePathById = useMemo(
@@ -369,7 +354,7 @@ export default function DevelopmentAvailabilityWorkspace({
       );
   }, [blockFilter, inventory, query, statusFilter, structureFilter, typeFilter]);
   const selectedUnit =
-    visibleUnits.find((unit) => unit.id === selectedUnitId) ||
+    inventory.find((unit) => unit.id === selectedUnitId) ||
     visibleUnits[0] ||
     null;
   const notShownIds = useMemo(
@@ -429,19 +414,17 @@ export default function DevelopmentAvailabilityWorkspace({
         ? "Ready to publish"
         : `${placedUnitCount} of ${inventory.length} units placed`;
   const isAgency = role === "agent";
-  const comparisonUnits = inventory.filter((unit) =>
-    comparisonUnitIds.includes(unit.id),
-  );
-  const selectedLead =
-    buyerLeads.find((lead) => lead.developerLeadId === selectedLeadId) || null;
-  const canStartSale = Boolean(
-    selectedUnit &&
-    selectedUnit.inventoryStatus === "available" &&
-    canCreateTransactions,
+  const parsedPriceDraft = Number(String(priceDraft || "").replace(/[^\d]/g, ""));
+  const priceIsValid = Number.isFinite(parsedPriceDraft) && parsedPriceDraft > 0;
+  const priceHasChanged = priceIsValid && parsedPriceDraft !== Number(selectedUnit?.displayPrice || 0);
+  const canMoveToUnreleased = Boolean(
+    canManageInventory &&
+      selectedUnit &&
+      ["available", "reserved"].includes(selectedUnit.inventoryStatus),
   );
   useEffect(() => {
     setPriceDraft(
-      selectedUnit?.displayPrice ? String(selectedUnit.displayPrice) : "",
+      selectedUnit?.displayPrice ? currency.format(selectedUnit.displayPrice) : "",
     );
   }, [selectedUnit?.id, selectedUnit?.displayPrice]);
   function reviewSitePlanPlacement() {
@@ -481,95 +464,40 @@ export default function DevelopmentAvailabilityWorkspace({
     setCropEditorOpen(false);
     setSitePlanReviewOpen(false);
   }
-  function toggleComparison(unit) {
-    setComparisonUnitIds((previous) =>
-      previous.includes(unit.id)
-        ? previous.filter((id) => id !== unit.id)
-        : [...previous, unit.id].slice(-3),
-    );
-  }
-  async function createBuyerLead() {
-    if (!selectedUnit || !buyerDraft.name.trim()) {
-      setSalesError("Add the buyer name before saving this lead.");
-      return;
-    }
-    try {
-      setSalesSaving(true);
-      setSalesError("");
-      const lead = await onCreateBuyerLead?.({
-        unit: selectedUnit,
-        buyerName: buyerDraft.name,
-        buyerEmail: buyerDraft.email,
-        buyerPhone: buyerDraft.phone,
-        note: buyerDraft.note,
-      });
-      if (lead?.developerLeadId) setSelectedLeadId(lead.developerLeadId);
-      setBuyerDraft({ name: "", email: "", phone: "", note: "" });
-      setShowBuyerForm(false);
-    } catch (error) {
-      setSalesError(error?.message || "Buyer lead could not be added.");
-    } finally {
-      setSalesSaving(false);
-    }
-  }
-  async function runLeadAction(action) {
-    if (!selectedUnit || !selectedLead) {
-      setSalesError("Choose a buyer lead before continuing.");
-      return false;
-    }
-    try {
-      setSalesSaving(true);
-      setSalesError("");
-      await onLeadAction?.({ lead: selectedLead, unit: selectedUnit, action });
-      return true;
-    } catch (error) {
-      setSalesError(
-        error?.message || "The sales action could not be recorded.",
-      );
-      return false;
-    } finally {
-      setSalesSaving(false);
-    }
-  }
-  async function shareUnit() {
-    if (!(await runLeadAction("share"))) return;
-    const summary = `Unit ${selectedUnit.displayNumber} · ${selectedUnit.displayType} · ${selectedUnit.displayPrice ? currency.format(selectedUnit.displayPrice) : "Price on request"}`;
-    try {
-      await navigator.clipboard?.writeText(summary);
-    } catch {
-      /* The activity is still saved when clipboard access is unavailable. */
-    }
-  }
   async function savePrice() {
-    if (!selectedUnit || !priceDraft.trim()) return;
-    const price = Number(priceDraft);
-    if (!Number.isFinite(price) || price < 0) {
-      setSalesError("Enter a valid unit price.");
+    if (!selectedUnit || !priceIsValid || !priceHasChanged) return;
+    if (!onSaveUnitPrice) {
+      setControlError("Price updates are not available in this workspace.");
       return;
     }
     try {
       setControlSaving(true);
-      setSalesError("");
-      await onSaveUnitPrice?.(selectedUnit, price);
+      setControlError("");
+      setControlMessage("");
+      await onSaveUnitPrice(selectedUnit, parsedPriceDraft);
+      setPriceDraft(currency.format(parsedPriceDraft));
+      setControlMessage("Price saved.");
     } catch (error) {
-      setSalesError(error?.message || "Price could not be saved.");
+      setControlError(error?.message || "Price could not be saved.");
     } finally {
       setControlSaving(false);
     }
   }
-  async function changeReleaseState() {
+  async function moveToUnreleased() {
     if (!selectedUnit) return;
+    if (!onSetReleaseState) {
+      setControlError("Stock release controls are not available in this workspace.");
+      return;
+    }
     try {
       setControlSaving(true);
-      setSalesError("");
-      await onSetReleaseState?.(
-        selectedUnit,
-        selectedUnit.inventoryStatus === "unreleased"
-          ? "Available"
-          : "Not Released",
-      );
+      setControlError("");
+      setControlMessage("");
+      await onSetReleaseState(selectedUnit, "Not Released");
+      setControlMessage("Unit moved to unreleased.");
+      setReleaseConfirmationOpen(false);
     } catch (error) {
-      setSalesError(error?.message || "Release state could not be updated.");
+      setControlError(error?.message || "Release state could not be updated.");
     } finally {
       setControlSaving(false);
     }
@@ -1020,7 +948,68 @@ export default function DevelopmentAvailabilityWorkspace({
             </div>
           )}
         </article>
-        <aside className="rounded-[22px] border border-[#dce5ee] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
+        {selectedUnit ? <article className="w-full rounded-[20px] border border-[#dce5ee] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.045)] sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <span className="block text-[0.68rem] font-bold uppercase tracking-[0.14em] text-[#76899d]">Selected unit</span>
+              <h3 className="mt-1 text-[1.65rem] font-semibold tracking-[-0.045em] text-[#142132]">Unit {selectedUnit.displayNumber}</h3>
+              <p className="mt-1 text-sm text-[#64778d]">{selectedUnit.displayType} · {selectedUnit.location}</p>
+              <strong className="mt-3 block text-[1.5rem] font-semibold tracking-[-0.04em] text-[#173149]">{selectedUnit.displayPrice ? currency.format(selectedUnit.displayPrice) : "Price on request"}</strong>
+            </div>
+            <StatusPill status={selectedUnit.inventoryStatus} />
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-2.5 lg:grid-cols-4">
+            {[
+              [<BedDouble key="bedrooms" size={16} />, "Bedrooms", selectedUnit.bedrooms || "—"],
+              [<Home key="bathrooms" size={16} />, "Bathrooms", selectedUnit.bathrooms || "—"],
+              [<MapPinned key="size" size={16} />, "Size", selectedUnit.sizeSqm ? `${selectedUnit.sizeSqm} m²` : "—"],
+              [<Building2 key="floorplan" size={16} />, "Floorplan", selectedUnit.floorplanUrl || selectedUnit.floorplan_url ? <a className="text-[#236c4e] underline underline-offset-2" href={selectedUnit.floorplanUrl || selectedUnit.floorplan_url} target="_blank" rel="noreferrer">View floorplan</a> : selectedUnit.floorplanName || "—"],
+            ].map(([icon, label, value]) => (
+              <div key={label} className="min-h-[92px] rounded-[14px] border border-[#e1e9f2] bg-[#f7faff] p-3">
+                <span className="grid h-7 w-7 place-items-center rounded-[9px] bg-[#eaf1f8] text-[#52728f]">{icon}</span>
+                <span className="mt-2 block text-[0.63rem] font-semibold uppercase tracking-[0.1em] text-[#7b8da1]">{label}</span>
+                <strong className="mt-1 block text-sm text-[#263d52]">{value}</strong>
+              </div>
+            ))}
+          </div>
+
+          {canManageInventory ? <section className="mt-5 rounded-[16px] border border-[#d8e2ee] bg-[#f7f9fc] p-4">
+            <div className="flex items-start gap-3">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#e8f0f8] text-[#466987]"><LockKeyhole size={15} /></span>
+              <div>
+                <span className="block text-[0.68rem] font-bold uppercase tracking-[0.11em] text-[#3d5978]">Developer controls</span>
+                <p className="mt-1 text-xs text-[#62758d]">Release stock and apply governed pricing.</p>
+              </div>
+            </div>
+            <label className="mt-4 block text-xs font-semibold text-[#38516b]">
+              Price (ZAR)
+              <div className="mt-1.5 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                <Field
+                  inputMode="numeric"
+                  value={priceDraft}
+                  disabled={controlSaving}
+                  onChange={(event) => setPriceDraft(event.target.value)}
+                  onBlur={() => priceIsValid && setPriceDraft(currency.format(parsedPriceDraft))}
+                  placeholder="R 0"
+                />
+                <Button type="button" size="sm" disabled={controlSaving || !priceHasChanged} onClick={() => void savePrice()}>
+                  {controlSaving ? "Saving…" : "Save price"}
+                </Button>
+              </div>
+            </label>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#dde6ef] pt-3">
+              <span className="text-xs text-[#60758d]"><strong className="font-semibold text-[#29425e]">Reservation default:</strong> {reservationDepositConfigured ? reservationDepositSummary || "No reservation deposit required" : "No reservation deposit required"}</span>
+              {canMoveToUnreleased ? <button type="button" disabled={controlSaving} className="text-xs font-semibold text-[#285f47] hover:underline disabled:cursor-not-allowed disabled:text-[#91a2b2]" onClick={() => setReleaseConfirmationOpen(true)}>Move to unreleased</button> : null}
+            </div>
+            {controlMessage ? <p role="status" className="mt-3 text-xs font-semibold text-[#167044]">{controlMessage}</p> : null}
+            {controlError ? <p role="alert" className="mt-3 text-xs font-semibold text-[#b74334]">{controlError}</p> : null}
+          </section> : <p className="mt-5 rounded-[14px] border border-[#e2e9f1] bg-[#fafcff] px-4 py-3 text-xs text-[#60758d]">You do not have permission to change this unit’s stock or price.</p>}
+        </article> : <article className="rounded-[20px] border border-dashed border-[#dce5ee] bg-white px-5 py-10 text-center text-sm text-[#60758d]">Select a unit from the map or availability list to view its details.</article>}
+
+        {/* Kept out of the render tree while the legacy sales panel is retired. */}
+        {/* eslint-disable no-undef */}
+        {legacySalesPanelEnabled ? <aside className="rounded-[22px] border border-[#dce5ee] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,0.055)]">
           {selectedUnit ? (
             <>
               <div className="flex items-start justify-between gap-3">
@@ -1429,9 +1418,25 @@ export default function DevelopmentAvailabilityWorkspace({
               ) : null}
             </>
           ) : null}
-        </aside>
+        </aside> : null}
+        {/* eslint-enable no-undef */}
       </section>
     </section>
+    {releaseConfirmationOpen && selectedUnit ? (
+      <div className="fixed inset-0 z-[80] grid place-items-center bg-[#081c20]/55 p-4" role="dialog" aria-modal="true" aria-labelledby="move-unit-to-unreleased-title">
+        <section className="w-full max-w-md overflow-hidden rounded-[20px] bg-white shadow-2xl">
+          <div className="p-5 sm:p-6">
+            <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#eef2f6] text-[#596b7c]"><LockKeyhole size={18} /></span>
+            <h3 id="move-unit-to-unreleased-title" className="mt-4 text-lg font-semibold tracking-[-0.025em] text-[#142132]">Move Unit {selectedUnit.displayNumber} to unreleased?</h3>
+            <p className="mt-2 text-sm leading-6 text-[#60758d]">This removes the unit from available stock. You can release it for sale again later from the governed stock controls.</p>
+          </div>
+          <footer className="flex flex-wrap justify-end gap-2 border-t border-[#e5ebf1] px-5 py-4 sm:px-6">
+            <Button type="button" size="sm" variant="secondary" disabled={controlSaving} onClick={() => setReleaseConfirmationOpen(false)}>Cancel</Button>
+            <Button type="button" size="sm" disabled={controlSaving} onClick={() => void moveToUnreleased()}>{controlSaving ? "Moving…" : "Move to unreleased"}</Button>
+          </footer>
+        </section>
+      </div>
+    ) : null}
     {cropEditorOpen ? (
       <div className="fixed inset-0 z-[80] grid place-items-center bg-[#081c20]/55 p-4" role="dialog" aria-modal="true" aria-label="Crop site plan">
         <section className="w-full max-w-4xl overflow-hidden rounded-[22px] bg-white shadow-2xl">
