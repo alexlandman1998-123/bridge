@@ -7487,7 +7487,7 @@ function DevelopmentDetail() {
                 )}
               </article>
 
-              <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <article className="self-start rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
                 <div className="mb-5 flex items-center justify-between gap-3">
                   <h3 className="text-[1.05rem] font-semibold tracking-[-0.02em] text-[#142132]">Transaction Pipeline</h3>
                   <span className="text-xs font-semibold text-[#6b7d93]">{formatNumber(developmentTrackerMetrics.totalUnits || 0)} units</span>
