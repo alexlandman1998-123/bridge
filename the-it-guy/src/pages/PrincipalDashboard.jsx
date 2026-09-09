@@ -35,13 +35,16 @@ import {
   ResidentialCommandCenterGrid,
   ResidentialDashboardModeToggle,
 } from '../components/residential/ResidentialDashboard'
+import HomeSeekersFicTrainingPanel from '../components/training/HomeSeekersFicTrainingPanel'
 import PartnerBusinessDistributionPanel from '../components/dashboard/PartnerBusinessDistributionPanel'
+import { useOrganisation } from '../context/OrganisationContext'
 import { useWorkspace } from '../context/WorkspaceContext'
 import { canAccessPrincipalExperience } from '../lib/organisationAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { getPrincipalDashboardData, PRINCIPAL_DASHBOARD_DATE_PRESETS } from '../services/principalDashboardService'
 import { deriveResidentialDashboardMetrics } from '../services/residentialDashboardService'
 import { resolveWorkspaceRole } from '../services/roleResolutionService'
+import { isHomeSeekersOrganisation } from '../services/homeSeekersFicTrainingService'
 import {
   DASHBOARD_PERFORMANCE_METRICS,
   createDashboardPerformanceTrace,
@@ -2234,7 +2237,7 @@ function _buildPrincipalPremiumModel(data = {}) {
   }
 }
 
-function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'company', profile, dateRange = 'last_30_days', branchId = '', onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
+function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'company', profile, dateRange = 'last_30_days', branchId = '', trainingPanel = null, onViewTransactions, onOpenTransaction, onViewCalendar, onOpenCalendar, onManageAppointment, onOpenAppointment, onScheduleAppointment }) {
   const dashboardScope = dataScope === 'agent' ? 'agent' : 'principal'
   const commissionTracker = (() => {
     const tracker = dashboardScope === 'agent'
@@ -2275,6 +2278,7 @@ function PrincipalPremiumCommandCenter({ data, mode = 'sales', dataScope = 'comp
         canManageAppointments
         appointmentRefreshKey={`${data?.meta?.agencyId || ''}:${dateRange}:${mode}:${branchId}:${dashboardScope}`}
         commissionTracker={commissionTracker}
+        trainingPanel={trainingPanel}
         onViewTransactions={onViewTransactions}
         onOpenTransaction={onOpenTransaction}
         onViewCalendar={onViewCalendar}
@@ -2298,6 +2302,7 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
     workspaceDegradedMessage,
     retryWorkspaceBootstrap,
   } = useWorkspace()
+  const { organisation } = useOrganisation()
   const navigate = useNavigate()
   const location = useLocation()
   const [dateRange, setDateRange] = useState('last_30_days')
@@ -2599,6 +2604,13 @@ function PrincipalDashboard({ agencyId = '', workspaceId = '', canViewAllTransac
               profile={profile}
               dateRange={dateRange}
               branchId={selectedWorkspaceId}
+              trainingPanel={isHomeSeekersOrganisation(organisation) ? (
+                <HomeSeekersFicTrainingPanel
+                  organisationId={resolvedAgencyId}
+                  userId={String(currentMembership?.userId || currentMembership?.user_id || profile?.userId || profile?.id || '').trim()}
+                  isPrincipal
+                />
+              ) : null}
               onViewTransactions={() => navigate('/transactions')}
               onOpenTransaction={(record) => {
                 if (record?.id) navigate(`/transactions/${record.id}`)

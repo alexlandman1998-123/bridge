@@ -651,6 +651,7 @@ export function ResidentialCommandCenterGrid({
   canManageAppointments = false,
   appointmentRefreshKey = '',
   commissionTracker = null,
+  trainingPanel = null,
   afterActiveTransactions = null,
   onViewTransactions,
   onOpenTransaction,
@@ -684,10 +685,17 @@ export function ResidentialCommandCenterGrid({
       </div>
 
       {commissionTracker ? (
-        scope === 'agent'
+        trainingPanel ? (
+          <div className="grid items-stretch gap-4 xl:grid-cols-2">
+            {scope === 'agent'
+              ? <AgentCommissionTracker tracker={commissionTracker} compact />
+              : <CompanyTargetTracker tracker={commissionTracker} compact />}
+            {trainingPanel}
+          </div>
+        ) : (scope === 'agent'
           ? <AgentCommissionTracker tracker={commissionTracker} compact />
-          : <CompanyTargetTracker tracker={commissionTracker} compact />
-      ) : null}
+          : <CompanyTargetTracker tracker={commissionTracker} compact />)
+      ) : trainingPanel}
 
       <ResidentialActiveTransactionsCarousel
         title={model.activeTransactions.title}

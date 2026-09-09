@@ -28,6 +28,7 @@ import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useS
 import { useLocation, useNavigate } from 'react-router-dom'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import SummaryCards from '../components/SummaryCards'
+import HomeSeekersFicTrainingPanel from '../components/training/HomeSeekersFicTrainingPanel'
 import { PillToggle } from '../components/ui/FilterBar'
 import '../styles/developerCommand.css'
 import {
@@ -105,6 +106,7 @@ import {
   normalizePropertyStructureType,
 } from '../lib/propertyTaxonomy'
 import { buildAgencyAgentCardUrls } from '../services/agencyPublicIntakeLinkService'
+import { isHomeSeekersOrganisation } from '../services/homeSeekersFicTrainingService'
 import {
   buildAgentDigitalCardFileBaseName,
   buildAgentDigitalCardShareText,
@@ -2004,6 +2006,7 @@ function Dashboard() {
     membershipRole: hydratedMembershipRole,
   } = useOrganisation()
   const currentOrganisationId = String(organisation?.id || '').trim()
+  const isHomeSeekersTrainingWorkspace = isHomeSeekersOrganisation(organisation)
   const isDevAuthBypassWorkspace = String(currentMembership?.source || '').trim() === 'dev_auth_bypass'
   const developerDashboardOrganisationId = role === 'developer' && isDevAuthBypassWorkspace ? null : currentOrganisationId
   // `workspace.id` is an organisation workspace ID, not a development ID.
@@ -5400,6 +5403,12 @@ function renderActiveTransactionsBlock({
                         canManageAppointments={false}
                         appointmentRefreshKey={`${organisationIdForAppointments}:${String(profile?.id || profile?.email || '').trim()}:${agentAppointmentSummary.rows.length}:${residentialMode}:${residentialDateRange}`}
                         commissionTracker={agentCommissionTracker}
+                        trainingPanel={isHomeSeekersTrainingWorkspace ? (
+                          <HomeSeekersFicTrainingPanel
+                            organisationId={currentOrganisationId}
+                            userId={String(currentMembership?.userId || currentMembership?.user_id || profile?.userId || profile?.id || '').trim()}
+                          />
+                        ) : null}
                         onViewTransactions={() => navigate('/transactions')}
                         onOpenTransaction={(record) => {
                           if (record?.id) navigate(`/transactions/${record.id}`)
