@@ -76,7 +76,7 @@ export async function listHomeSeekersAgents({ organisationId }) {
   const client = requireClient()
   const { data, error } = await client
     .from('organisation_users')
-    .select('user_id, first_name, last_name, full_name, email, role, organisation_role, workspace_role, membership_status, status')
+    .select('user_id, first_name, last_name, email, role, organisation_role, workspace_role, membership_status, status')
     .eq('organisation_id', organisationId)
   if (error) throw error
   return (data || [])
@@ -87,7 +87,7 @@ export async function listHomeSeekersAgents({ organisationId }) {
     })
     .map((member) => ({
       userId: String(member.user_id),
-      name: String(member.full_name || [member.first_name, member.last_name].filter(Boolean).join(' ') || member.email || 'Team member'),
+      name: String([member.first_name, member.last_name].filter(Boolean).join(' ') || member.email || 'Team member'),
       email: String(member.email || ''),
       role: String(member.workspace_role || member.organisation_role || member.role || 'agent'),
     }))
