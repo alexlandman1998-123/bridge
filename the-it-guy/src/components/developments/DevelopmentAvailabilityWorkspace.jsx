@@ -3,6 +3,7 @@ import {
   BedDouble,
   Building2,
   CalendarClock,
+  ChevronDown,
   CircleDollarSign,
   Copy,
   Filter,
@@ -250,6 +251,7 @@ export default function DevelopmentAvailabilityWorkspace({
   const [priceDraft, setPriceDraft] = useState("");
   const [controlSaving, setControlSaving] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
+  const [sitePlanSetupOpen, setSitePlanSetupOpen] = useState(true);
   const structurePathById = useMemo(
     () => buildDevelopmentStructurePathMap(structureNodes),
     [structureNodes],
@@ -750,20 +752,37 @@ export default function DevelopmentAvailabilityWorkspace({
           </span>
         </div>
         {canManageInventory ? (
-          <section className="mb-4 grid gap-3 rounded-[18px] border border-[#dbe8e1] bg-[#f8fcfa] p-3 sm:grid-cols-3 sm:p-4">
+          <section className="mb-4 rounded-[18px] border border-[#dbe8e1] bg-[#f8fcfa] p-3 sm:p-4">
+            <button
+              type="button"
+              className="flex w-full items-center justify-between gap-3 text-left"
+              aria-expanded={sitePlanSetupOpen}
+              aria-controls="site-plan-setup"
+              onClick={() => setSitePlanSetupOpen((isOpen) => !isOpen)}
+            >
+              <span>
+                <span className="block text-[0.72rem] font-bold uppercase tracking-[0.14em] text-[#4d7965]">Setup</span>
+                <span className="mt-1 block text-xs leading-5 text-[#6b7d93]">Upload, crop, match, and review the site plan.</span>
+              </span>
+              <span className="inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold text-[#315c4a]">
+                {sitePlanSetupOpen ? 'Hide' : 'Show'}
+                <ChevronDown size={16} className={sitePlanSetupOpen ? 'rotate-180 transition-transform' : 'transition-transform'} />
+              </span>
+            </button>
+            {sitePlanSetupOpen ? <div id="site-plan-setup" className="mt-3 grid gap-3 border-t border-[#dce9e1] pt-3 xl:grid-cols-4">
             <div className="min-w-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">1. Upload plan</span>
               <strong className="mt-1 block text-sm text-[#173149]">{sitePlanUrl ? "Plan image connected" : "Add a site-plan image or PDF"}</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">This becomes the shared background for Arch9 availability pages. PDFs use their first page for the map.</p>
               {onUploadSitePlan ? <label className={`mt-3 inline-flex h-9 items-center gap-2 rounded-lg bg-[#173f38] px-3 text-xs font-semibold text-white ${sitePlanSaving ? "cursor-wait opacity-60" : "cursor-pointer hover:bg-[#12322d]"}`}><Upload size={14} />{sitePlanSaving ? "Preparing plan…" : sitePlanUrl ? "Replace site plan" : "Upload site plan"}<input type="file" accept="image/*,application/pdf,.pdf" className="hidden" disabled={sitePlanSaving} onChange={onUploadSitePlan} /></label> : null}
             </div>
-            <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+            <div className="min-w-0 border-t border-[#dce9e1] pt-3 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">2. Crop & orient</span>
               <strong className="mt-1 block text-sm text-[#173149]">{isFullSitePlanViewport(sitePlanViewport) ? "Use only the plotted plan area" : "Plan crop ready"}</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Remove schedules, legends, margins and drawing notes before placing units.</p>
               <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl || sitePlanSaving} onClick={openCropEditor}><PencilLine size={13} /> Crop plan</Button>
             </div>
-            <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+            <div className="min-w-0 border-t border-[#dce9e1] pt-3 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">3. Match units</span>
               <strong className="mt-1 block text-sm text-[#173149]">{suggestionCount ? `${suggestionCount} detected match${suggestionCount === 1 ? '' : 'es'} ready` : `${placedUnitCount} of ${inventory.length} units mapped`}</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Open the Mapping Studio to trace unit footprints. Existing markers remain available there for conversion.</p>
@@ -773,16 +792,17 @@ export default function DevelopmentAvailabilityWorkspace({
               </div>
               {suggestionCount ? <div className="mt-3 rounded-[10px] border border-[#f0d59e] bg-[#fff9eb] p-2.5"><strong className="block text-xs text-[#8b5d0b]">Detected labels are drafts until confirmed</strong><p className="mt-1 text-[0.7rem] leading-4 text-[#896b2e]">Review one by one, or accept all and fine-tune any marker afterwards.</p><div className="mt-2 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" disabled={sitePlanSaving} onClick={() => onApplySitePlanSuggestions?.(visibleSitePlanSuggestions)}>Accept all matches</Button><Button type="button" size="sm" variant="ghost" disabled={sitePlanSaving} onClick={() => onDiscardSitePlanSuggestions?.()}>Discard all</Button></div></div> : null}
             </div>
-            <div className="min-w-0 border-t border-[#dce9e1] pt-3 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+            <div className="min-w-0 border-t border-[#dce9e1] pt-3 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
               <span className="text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#4d7965]">4. Review & publish</span>
               <strong className="mt-1 block text-sm text-[#173149]">{hasSitePlanIssues ? `${sitePlanIssueCount} placement check${sitePlanIssueCount === 1 ? "" : "s"} need review` : "Map ready for publication"}</strong>
               <p className="mt-1 text-xs leading-5 text-[#6b7d93]">{notShownUnits.length ? `${notShownUnits.length} unit${notShownUnits.length === 1 ? '' : 's'} intentionally hidden from this plan. ` : ''}Publishing remains under Marketing.</p>
               <Button type="button" size="sm" variant="secondary" className="mt-3" disabled={!sitePlanUrl} onClick={reviewSitePlanPlacement}><MapPinned size={13} /> Review map</Button>
             </div>
+            </div> : null}
           </section>
         ) : null}
         <div className="grid gap-4 xl:grid-cols-[240px_minmax(0,1fr)_minmax(340px,0.85fr)]">
-          <aside className="flex h-[470px] flex-col rounded-[18px] border border-[#e0e8e4] bg-[#fbfdfb] p-3.5 xl:h-[540px]">
+          <aside className="flex h-auto min-h-[470px] flex-col rounded-[18px] border border-[#e0e8e4] bg-[#fbfdfb] p-3.5 xl:h-[540px]">
             <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">
               Browse by
             </span>
@@ -790,12 +810,12 @@ export default function DevelopmentAvailabilityWorkspace({
               <label className="relative block">
                 <span className="sr-only">Search availability</span>
                 <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#8497aa]" />
-                <Field value={query} onChange={(event) => setQuery(event.target.value)} className="h-9 pl-8 text-xs" placeholder="Search unit, type, block, or buyer" />
+                <Field value={query} onChange={(event) => setQuery(event.target.value)} className="h-11 !py-2 pl-9 pr-3 text-sm" placeholder="Search unit, type, block, or buyer" />
               </label>
-              <Field as="select" value={blockFilter} onChange={(event) => setBlockFilter(event.target.value)} className="h-9 text-xs"><option value="all">All blocks</option>{blocks.map((block) => <option key={block} value={block}>{block}</option>)}</Field>
-              <Field as="select" value={structureFilter} onChange={(event) => setStructureFilter(event.target.value)} className="h-9 text-xs"><option value="all">All floors / structures</option>{structureOptions.map((item) => <option key={item.id} value={item.id}>{item.labelPath}</option>)}</Field>
-              <Field as="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-9 text-xs"><option value="all">All unit types</option>{unitTypes.map((type) => <option key={type} value={type}>{type}</option>)}</Field>
-              <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-9 text-xs"><option value="all">All availability</option>{Object.entries(STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</Field>
+              <Field as="select" value={blockFilter} onChange={(event) => setBlockFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All blocks</option>{blocks.map((block) => <option key={block} value={block}>{block}</option>)}</Field>
+              <Field as="select" value={structureFilter} onChange={(event) => setStructureFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All floors / structures</option>{structureOptions.map((item) => <option key={item.id} value={item.id}>{item.labelPath}</option>)}</Field>
+              <Field as="select" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All unit types</option>{unitTypes.map((type) => <option key={type} value={type}>{type}</option>)}</Field>
+              <Field as="select" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="h-11 !py-2 text-sm"><option value="all">All availability</option>{Object.entries(STATUS_META).map(([value, meta]) => <option key={value} value={value}>{meta.label}</option>)}</Field>
             </div>
             <div className="mt-4 border-t border-[#e4ece6] pt-3">
               <span className="text-[0.66rem] font-bold uppercase tracking-[0.12em] text-[#536c61]">Legend</span>
