@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   Copy,
   Filter,
-  HeartPulse,
   LineChart,
   MapPin,
   MoreHorizontal,
@@ -840,7 +839,6 @@ export default function AgencyBranchesPage() {
             <KpiCard label="Company Pipeline" value={formatCompactCurrency(totals.companyPipeline)} helper="Open listings and transactions" icon={LineChart} tone="gold" sparkline={periodMetrics.pipeline?.sparkline} />
             <KpiCard label="Active Transactions" value={formatNumber(totals.activeTransactions)} helper="Open branch transactions" icon={ArrowRightLeft} tone="blue" sparkline={periodMetrics.transactions?.sparkline} />
             <KpiCard label="Projected Commission" value={projectedCommissionValue} helper={totals.hasProjectedCommissionData ? 'Estimated commission' : 'No data yet'} icon={Banknote} tone={totals.hasProjectedCommissionData ? 'green' : 'slate'} sparkline={periodMetrics.pipeline?.sparkline} />
-            <KpiCard label="Company Health" value={`${formatNumber(totals.companyHealth)}%`} helper={totals.companyHealthChangePercent === null ? 'No previous snapshot' : 'Vs last month'} icon={HeartPulse} tone={totals.companyHealth >= 75 ? 'green' : totals.companyHealth >= 55 ? 'gold' : 'red'} sparkline={periodMetrics.transactions?.sparkline} change={totals.companyHealthChangePercent} />
           </section>
 
           <section className="rounded-lg border border-[#e2e8f0] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">

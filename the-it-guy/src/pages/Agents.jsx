@@ -11,7 +11,9 @@ import {
   Copy,
   DollarSign,
   Edit3,
+  ExternalLink,
   Grid2X2,
+  IdCard,
   KeyRound,
   Mail,
   MessageCircle,
@@ -50,6 +52,7 @@ import { canAccessAgentsModule, canManageAgentOrganisations } from '../lib/roles
 import { saveTransaction } from '../lib/api'
 import { invokeEdgeFunction, isSupabaseConfigured } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
+import { loadAgencyAgentCardInsights, loadAgencyAgentCardLink } from '../lib/dashboardSecondaryApi'
 import { createProfileAvatarFile, getProfileAvatarErrorMessage } from '../lib/profileAvatarImage'
 import {
   deactivateOrganisationUser,
@@ -1582,6 +1585,142 @@ function AgentMetricCard({ label, value, helper = '' }) {
       <p className="mt-2 truncate text-[1.25rem] font-semibold tracking-[-0.02em] text-[#142132]" title={String(value ?? '—')}>{value}</p>
       {helper ? <p className="mt-1 truncate text-xs text-[#657a92]" title={helper}>{helper}</p> : null}
     </div>
+  )
+}
+
+function buildAgentDigitalCardUrl(slug = '') {
+  const safeSlug = String(slug || '').trim()
+  if (!safeSlug) return ''
+  const host = typeof window !== 'undefined' && window.location?.origin
+    ? window.location.origin
+    : 'https://app.arch9.co.za'
+  return `${host.replace(/\/+$/, '')}/card/${encodeURIComponent(safeSlug)}`
+}
+
+function AgentDigitalCardOverview({ cardState, agentName = '', onCopyLink = () => {} }) {
+  const link = cardState?.link
+  const shareUrl = link?.status === 'active' ? buildAgentDigitalCardUrl(link.slug) : ''
+  const insights = cardState?.insights?.summary || {}
+  const hasActiveCard = Boolean(shareUrl)
+  const metrics = [
+    ['Views', insights.views || 0],
+    ['Contact clicks', insights.contactClicks || 0],
+    ['Leads captured', insights.totalLeads || 0],
+    ['Shares', (insights.shareClicks || 0) + (insights.copyLinkClicks || 0)],
+  ]
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[#dce7f2] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.04)]" aria-label="Digital business card">
+      <div className="grid min-w-0 gap-4 p-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(360px,0.75fr)] lg:items-center lg:p-5">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2 rounded-full border border-[#cfe6dc] bg-[#effaf4] px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#24724c]">
+              <IdCard size={14} /> Digital business card
+            </span>
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${hasActiveCard ? 'border-[#cce8d8] bg-[#f1fbf5] text-[#24724c]' : 'border-[#e0e7ef] bg-[#f7f9fc] text-[#647a92]'}`}>
+              {cardState?.loading ? 'Checking card…' : hasActiveCard ? 'Active' : 'Not active'}
+            </span>
+          </div>
+          <h2 className="mt-3 text-[1.08rem] font-semibold tracking-[-0.03em] text-[#10243a]">{agentName || 'Agent'}’s share card</h2>
+          {hasActiveCard ? (
+            <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+              <a href={shareUrl} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate rounded-xl border border-[#dce7f2] bg-[#f8fbfe] px-3 py-2 text-sm font-medium text-[#315d85] underline decoration-[#b7d0e8] underline-offset-2 hover:bg-white" title={shareUrl}>
+                {shareUrl}
+              </a>
+              <div className="flex shrink-0 gap-2">
+                <button type="button" onClick={() => onCopyLink(shareUrl)} className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d9e4ef] bg-white px-3 text-sm font-semibold text-[#17344d] hover:bg-[#f7fafc]"><Copy size={15} /> Copy</button>
+                <a href={shareUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-xl bg-[#147a55] px-3 text-sm font-semibold text-white hover:bg-[#0f6847]"><ExternalLink size={15} /> View card</a>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-2 text-sm leading-6 text-[#647a92]">No active card is available for this agent yet. Once it is activated, its public link and engagement results will appear here.</p>
+          )}
+          {cardState?.error ? <p className="mt-3 text-sm text-[#b42318]">{cardState.error}</p> : null}
+          {cardState?.copyFeedback ? <p className="mt-3 text-sm font-medium text-[#24724c]">{cardState.copyFeedback}</p> : null}
+        </div>
+        <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+          {metrics.map(([label, value]) => (
+            <div key={label} className="min-w-0 rounded-xl border border-[#e1eaf3] bg-[#f8fbfe] px-3 py-3">
+              <p className="truncate text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7388a0]">{label}</p>
+              <p className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#10243a]">{value}</p>
+              <p className="mt-1 text-xs text-[#6d8197]">Last 30 days</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function resolveAgentListingCoverImage(listing = {}) {
+  const marketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
+  const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
+  const gallery = [
+    ...(Array.isArray(marketing.imageGallery) ? marketing.imageGallery : []),
+    ...(Array.isArray(propertyDetails.imageGallery) ? propertyDetails.imageGallery : []),
+    ...(Array.isArray(listing.imageGallery) ? listing.imageGallery : []),
+  ]
+  const firstGalleryImage = gallery.find((image) => image?.url || image?.signedUrl || image?.publicUrl)
+  return String(
+    listing.imageUrl || listing.image_url || listing.coverImageUrl || listing.cover_image_url || marketing.mediaUrl ||
+    firstGalleryImage?.url || firstGalleryImage?.signedUrl || firstGalleryImage?.publicUrl || '',
+  ).trim()
+}
+
+function getAgentListingStatusMeta(status = '') {
+  const key = String(status || 'active').trim().toLowerCase()
+  if (key.includes('sold') || key.includes('register')) return { label: 'Sold', className: 'bg-[#2f6fa6]' }
+  if (key.includes('offer')) return { label: 'Offer received', className: 'bg-[#2b83c5]' }
+  if (key.includes('reserve')) return { label: 'Reserved', className: 'bg-[#e99e2e]' }
+  if (key.includes('inactive') || key.includes('withdraw')) return { label: 'Inactive', className: 'bg-[#7b8797]' }
+  return { label: 'Active', className: 'bg-[#28a66a]' }
+}
+
+function getAgentListingFacts(listing = {}) {
+  return [
+    [listing.bedrooms ?? listing.beds, 'Beds'],
+    [listing.bathrooms ?? listing.baths, 'Baths'],
+    [listing.parking ?? listing.garages, 'Parking'],
+    [listing.size ?? listing.floorSize ?? listing.floor_size, 'm²'],
+  ]
+    .filter(([value]) => value !== null && value !== undefined && String(value).trim() !== '')
+    .slice(0, 4)
+    .map(([value, label]) => `${value} ${label}`)
+}
+
+function AgentListingCard({ listing, onOpen }) {
+  const title = listing.title || listing.listingTitle || listing.address || 'Listing'
+  const location = listing.developmentName || listing.suburb || listing.address || 'Location pending'
+  const price = listing.price ?? listing.askingPrice
+  const imageUrl = resolveAgentListingCoverImage(listing)
+  const status = getAgentListingStatusMeta(listing.status)
+  const facts = getAgentListingFacts(listing)
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(listing)}
+      className="group flex min-w-0 flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white text-left shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:border-[#bfd0e1] hover:shadow-[0_12px_26px_rgba(15,23,42,0.10)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1769d1] focus-visible:ring-offset-2"
+      aria-label={`Open listing ${title}`}
+    >
+      <div className="relative h-[168px] w-full overflow-hidden border-b border-[#e5edf6] bg-[#eef4fa]">
+        {imageUrl ? <img src={imageUrl} alt="" className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.025]" /> : (
+          <div className="h-full w-full bg-[linear-gradient(140deg,#1f4f78_0%,#4a7da8_55%,#a8c2dc_100%)]" />
+        )}
+        <span className="absolute left-3 top-3 inline-flex items-center gap-2 rounded-full border border-white/25 bg-[#091322]/60 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
+          <i className={`h-2 w-2 rounded-full ${status.className}`} /> {status.label}
+        </span>
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
+        <div className="min-w-0">
+          <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{title}</h3>
+          <p className="mt-1 truncate text-sm text-[#60758d]">{location}</p>
+          <p className="mt-2 text-[1.08rem] font-semibold text-[#1f4f78]">{formatCurrency(price)}</p>
+        </div>
+        {facts.length ? <div className="grid gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]" style={{ gridTemplateColumns: `repeat(${facts.length}, minmax(0, 1fr))` }}>{facts.map((fact) => <span key={fact} className="truncate">{fact}</span>)}</div> : null}
+        <span className="mt-auto inline-flex items-center gap-1.5 border-t border-[#eef3f8] pt-3 text-[0.78rem] font-semibold text-[#1f4f78]">Open listing <ArrowRight size={14} /></span>
+      </div>
+    </button>
   )
 }
 
@@ -4140,6 +4279,13 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const [permissionsForm, setPermissionsForm] = useState({ role: '' })
   const [permissionsSaving, setPermissionsSaving] = useState(false)
   const [permissionsError, setPermissionsError] = useState('')
+  const [agentDigitalCardState, setAgentDigitalCardState] = useState({
+    loading: false,
+    error: '',
+    link: null,
+    insights: null,
+    copyFeedback: '',
+  })
 
   const effectiveActiveTab = AGENT_WORKSPACE_TABS.some((tab) => tab.key === activeTab) ? activeTab : 'overview'
   const commissionStructureOptions = commissionStructures.filter(Boolean)
@@ -4162,6 +4308,8 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
   const commissionSummary = remoteCommissionSummary || fallbackCommissionSummary
   const commissionTargetUserId = normalizeAgentRecordId(agent.userId || agent.user_id)
   const commissionTargetEmail = normalizeIdentityEmail(agent.email)
+  const agentCardOrganisationId = normalizeAgentRecordId(agent.organisationId || agent.organisation_id)
+  const agentCardUserId = normalizeAgentRecordId(agent.userId || agent.user_id || agent.id)
 
   useEffect(() => {
     if (modalMode !== 'commission') return
@@ -4235,6 +4383,54 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     agent.userId,
     agent.user_id,
   ])
+
+  useEffect(() => {
+    if (!agentCardOrganisationId || !agentCardUserId) {
+      setAgentDigitalCardState({ loading: false, error: '', link: null, insights: null, copyFeedback: '' })
+      return undefined
+    }
+
+    let cancelled = false
+    setAgentDigitalCardState({ loading: true, error: '', link: null, insights: null, copyFeedback: '' })
+    void (async () => {
+      try {
+        const result = await loadAgencyAgentCardLink({
+          organisationId: agentCardOrganisationId,
+          agentUserId: agentCardUserId,
+        })
+        const insights = result?.link?.id
+          ? await loadAgencyAgentCardInsights({
+              organisationId: agentCardOrganisationId,
+              intakeLinkId: result.link.id,
+              windowDays: 30,
+            }).catch(() => null)
+          : null
+        if (!cancelled) {
+          setAgentDigitalCardState({
+            loading: false,
+            error: '',
+            link: result?.link || null,
+            insights,
+            copyFeedback: '',
+          })
+        }
+      } catch (cardError) {
+        if (!cancelled) {
+          setAgentDigitalCardState({
+            loading: false,
+            error: cardError?.message || 'Unable to load this digital business card.',
+            link: null,
+            insights: null,
+            copyFeedback: '',
+          })
+        }
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [agentCardOrganisationId, agentCardUserId])
 
   const {
     branches = [],
@@ -4592,6 +4788,19 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
     navigate(transactionId ? `/transactions/${transactionId}` : '/transactions')
   }
 
+  async function handleCopyDigitalCardLink(link) {
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) throw new Error('Copy is unavailable in this browser.')
+      await navigator.clipboard.writeText(link)
+      setAgentDigitalCardState((current) => ({ ...current, copyFeedback: 'Digital card link copied.' }))
+      window.setTimeout(() => {
+        setAgentDigitalCardState((current) => current.copyFeedback ? { ...current, copyFeedback: '' } : current)
+      }, 2200)
+    } catch {
+      setAgentDigitalCardState((current) => ({ ...current, copyFeedback: 'Copy unavailable — select the link to copy it.' }))
+    }
+  }
+
   const actionItems = [
     ['transactions', 'Open Transactions', BriefcaseBusiness],
     ['listings', 'Open Listings', Building2],
@@ -4810,6 +5019,12 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
             </WorkspaceCard>
           </div>
 
+          <AgentDigitalCardOverview
+            cardState={agentDigitalCardState}
+            agentName={agentDisplayName}
+            onCopyLink={handleCopyDigitalCardLink}
+          />
+
           <AppointmentDashboardSection
             module="agent"
             organisationId={String(agent?.organisationId || '').trim()}
@@ -4871,42 +5086,16 @@ function AgentWorkspace({ agent, canManageSettings = false, commissionStructures
 
       {effectiveActiveTab === 'listings' ? (
         <section className="min-w-0 space-y-4">
-          <LockedAgentFilterChip label={agentDisplayName} />
           <PrincipalAgentTabShell title="Listings" description="Listings assigned to this agent, with principal-level assignment context." actionLabel="Assign Listing" actionUnavailableReason="Listing assignment is not connected in this workspace yet">
             {allListings.length ? (
-              <div className="overflow-x-auto rounded-2xl border border-[#e2eaf3]">
-                <table className="min-w-[980px] w-full text-left text-sm">
-                  <thead className="bg-[#f5f9fd] text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#70849d]">
-                    <tr>
-                      <th className="px-4 py-3">Listing</th>
-                      <th className="px-4 py-3">Address</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3">Mandate</th>
-                      <th className="px-4 py-3">Price</th>
-                      <th className="px-4 py-3">Leads</th>
-                      <th className="px-4 py-3">Viewings</th>
-                      <th className="px-4 py-3">Created</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#e8eef5] bg-white text-[#22384c]">
-                    {allListings.map((listing) => (
-                      <tr key={listing.id} className="hover:bg-[#fbfcfe]">
-                        <td className="px-4 py-3 font-semibold text-[#10243a]">
-                          <button type="button" className="rounded-lg text-left font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1769d1] focus-visible:ring-offset-2" onClick={() => navigate(listing.id ? `/agent/listings/${listing.id}` : '/listings')} aria-label={`Open ${listing.title || listing.listingTitle || 'listing'}`}>
-                            {listing.title || listing.listingTitle || 'Listing'}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3">{listing.developmentName || listing.suburb || listing.address || 'Property pending'}</td>
-                        <td className="px-4 py-3">{listing.status || 'Active'}</td>
-                        <td className="px-4 py-3">{listing.mandateStatus || listing.mandateType || '—'}</td>
-                        <td className="px-4 py-3 font-semibold">{formatCurrency(listing.price || listing.askingPrice)}</td>
-                        <td className="px-4 py-3">{listing.enquiries || listing.leads || 0}</td>
-                        <td className="px-4 py-3">{listing.viewings || 0}</td>
-                        <td className="px-4 py-3">{formatDate(listing.listedAt || listing.createdAt)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {allListings.map((listing) => (
+                  <AgentListingCard
+                    key={listing.id || listing.title || listing.listingTitle}
+                    listing={listing}
+                    onOpen={(selectedListing) => navigate(selectedListing.id ? `/agent/listings/${encodeURIComponent(selectedListing.id)}` : '/listings')}
+                  />
+                ))}
               </div>
             ) : (
               <EmptyWorkspaceState>No listings assigned to this agent.</EmptyWorkspaceState>
