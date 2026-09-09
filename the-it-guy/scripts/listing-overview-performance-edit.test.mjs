@@ -27,8 +27,9 @@ assertContains(listingDetailSource, 'updatePrivateListingOnboardingFormData(list
 assertContains(listingDetailSource, 'listingPerformanceOverrides: overrides', 'local listing performance override patch')
 assertContains(listingDetailSource, 'Edit Listing Performance', 'listing performance edit modal')
 assertContains(listingDetailSource, 'Edit Stats', 'listing performance edit button')
-assertContains(listingDetailSource, `<section>
-                <article className="flex h-full flex-col rounded-[24px]`, 'seller communication full width row')
+assertContains(listingDetailSource, 'border-t-[4px]', 'performance card top accent rails')
+assertContains(listingDetailSource, "label: 'Days on market'", 'performance days-on-market card')
+assertNotContains(listingDetailSource, 'Buyer Interest Funnel', 'duplicate buyer interest funnel')
 assertNotContains(listingDetailSource, '<h2 className="text-base font-semibold text-[#142132]">Listing Follow-Ups</h2>', 'listing follow-ups overview block')
 assertNotContains(listingDetailSource, '<h3 className="text-base font-semibold text-[#142132]">Recent Activity</h3>', 'recent activity overview block')
 

@@ -39,7 +39,7 @@ import {
   Users,
   X,
 } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getProperty24ListingStatusOptions } from './settings/property24SettingsModel'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
@@ -7820,27 +7820,6 @@ function AgentListingDetail() {
     return applyListingPerformanceOverrides(basePerformance, overrides)
   }, [listingLeads, listingRecord, marketingDraft.price, metrics, offerRows.length, offerSummary.highest, viewings])
 
-  const listingConversionMetrics = useMemo(() => {
-    const rate = (from, to) => (from ? (to / from) * 100 : 0)
-    return [
-      {
-        label: 'Lead Conversion',
-        value: rate(listingPerformance.totalViews, listingPerformance.leadCount),
-        meta: 'Leads from views',
-      },
-      {
-        label: 'Viewing Conversion',
-        value: rate(listingPerformance.leadCount, listingPerformance.scheduledViewings),
-        meta: 'Viewings from leads',
-      },
-      {
-        label: 'Offer Conversion',
-        value: rate(listingPerformance.scheduledViewings, listingPerformance.offerCount),
-        meta: 'Offers from viewings',
-      },
-    ]
-  }, [listingPerformance])
-
   const offerPriceOverview = useMemo(() => {
     const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
     const timestampFor = (offer) => {
@@ -12814,10 +12793,10 @@ function AgentListingDetail() {
 
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-5">
-              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <article className="rounded-[28px] border border-[#e1e9f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)] sm:p-7">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
-                    <h2 className="text-base font-semibold text-[#142132]">Performance</h2>
+                    <h2 className="text-[1.55rem] font-semibold tracking-[-0.035em] text-[#10243a]">Performance</h2>
                     {listingPerformance.hasOverrides ? (
                       <p className="mt-1 text-xs font-semibold text-[#1f7d44]">Manual seller-facing stats are active.</p>
                     ) : null}
@@ -12833,7 +12812,7 @@ function AgentListingDetail() {
                   </div>
                 </div>
 
-                <div className="mt-4 grid items-stretch gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="mt-5 grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   {[
                     {
                       label: 'Views',
@@ -12842,12 +12821,26 @@ function AgentListingDetail() {
                         ? `${formatSignedPercentValue(listingPerformance.viewChangePercent)} vs previous 30 days`
                         : listingPerformance.portalViews || listingPerformance.bridgeViews
                           ? `${formatCompactNumber(listingPerformance.portalViews)} portal / ${formatCompactNumber(listingPerformance.bridgeViews)} Arch9`
-                          : 'Analytics not recorded',
+                          : 'No analytics yet',
                       icon: Eye,
+                      tone: {
+                        border: 'border-t-[#76c6fb]',
+                        icon: 'bg-[#e8f4ff] text-[#2363a0]',
+                        chip: 'bg-[#edf5ff] text-[#57718f]',
+                      },
                     },
-                    { label: 'Leads', value: formatCompactNumber(listingPerformance.leadCount), meta: `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users },
-                    { label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.upcomingViewings)} upcoming`, icon: CalendarDays },
-                    { label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(listingPerformance.pendingOffers)} active`, icon: HandCoins },
+                    {
+                      label: 'Leads', value: formatCompactNumber(listingPerformance.leadCount), meta: `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users,
+                      tone: { border: 'border-t-[#38d39f]', icon: 'bg-[#e4fbf3] text-[#0b9270]', chip: 'bg-[#e6faf3] text-[#168664]' },
+                    },
+                    {
+                      label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.upcomingViewings)} upcoming`, icon: CalendarDays,
+                      tone: { border: 'border-t-[#6e91ff]', icon: 'bg-[#edf1ff] text-[#365caf]', chip: 'bg-[#edf1ff] text-[#365caf]' },
+                    },
+                    {
+                      label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(listingPerformance.pendingOffers)} active`, icon: HandCoins,
+                      tone: { border: 'border-t-[#f9b528]', icon: 'bg-[#fff3d9] text-[#aa7416]', chip: 'bg-[#fff6e5] text-[#94651b]' },
+                    },
                     {
                       label: 'Days on market',
                       value: formatCompactNumber(listingPerformance.daysOnMarket),
@@ -12855,65 +12848,23 @@ function AgentListingDetail() {
                         ? `Area avg. ${formatCompactNumber(listingPerformance.areaAverageDays)}`
                         : `Listed ${formatDate(listingPerformance.marketStartDate)}`,
                       icon: BarChart3,
+                      tone: { border: 'border-t-[#9baabd]', icon: 'bg-[#f2f5f8] text-[#526b83]', chip: 'bg-[#f3f6f8] text-[#60758c]' },
                     },
                   ].map((card) => {
                     const Icon = card.icon
                     return (
-                      <div key={card.label} className="flex h-full min-h-[112px] flex-col justify-between rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+                      <div key={card.label} className={`flex h-full min-h-[214px] flex-col justify-between rounded-[16px] border border-[#e0e9f2] border-t-[4px] bg-gradient-to-br from-white to-[#fbfdff] p-5 ${card.tone.border}`}>
                         <div className="flex items-start justify-between gap-3">
-                          <p className="text-[0.72rem] font-semibold text-[#6f8198]">{card.label}</p>
-                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1f4f78]">
-                            <Icon size={15} />
+                          <p className="text-[0.95rem] font-semibold text-[#637996]">{card.label}</p>
+                          <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[13px] ${card.tone.icon}`}>
+                            <Icon size={20} />
                           </span>
                         </div>
-                        <p className="mt-3 text-2xl font-semibold text-[#10243a]">{card.value}</p>
-                        <p className="mt-1 text-xs font-semibold leading-5 text-[#607387]">{card.meta}</p>
+                        <p className="mt-5 text-[3rem] font-semibold leading-none tracking-[-0.055em] text-[#10243a]">{card.value}</p>
+                        <span className={`mt-5 inline-flex w-fit rounded-[11px] px-3 py-2 text-sm font-semibold ${card.tone.chip}`}>{card.meta}</span>
                       </div>
                     )
                   })}
-                </div>
-              </article>
-
-              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-semibold text-[#142132]">Buyer Interest Funnel</h2>
-                  <Info size={15} className="text-[#7890aa]" />
-                </div>
-                <div className="mt-4 grid items-center gap-3 lg:grid-cols-[minmax(0,1fr)_24px_minmax(0,1fr)_24px_minmax(0,1fr)_24px_minmax(0,1fr)]">
-                  {[
-                    { label: 'Views', value: listingPerformance.totalViews, icon: Eye },
-                    { label: 'Leads', value: listingPerformance.leadCount, icon: Users },
-                    { label: 'Viewings', value: listingPerformance.scheduledViewings, icon: CalendarDays },
-                    { label: 'Offers', value: listingPerformance.offerCount, icon: HandCoins },
-                  ].map((stage, index) => {
-                    const Icon = stage.icon
-                    return (
-                      <Fragment key={stage.label}>
-                        <div className="flex min-h-[64px] items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3">
-                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1f4f78]">
-                            <Icon size={15} />
-                          </span>
-                          <div>
-                            <p className="text-lg font-semibold text-[#142132]">{formatCompactNumber(stage.value)}</p>
-                            <p className="text-xs font-semibold text-[#6b7d93]">{stage.label}</p>
-                          </div>
-                        </div>
-                        {index < 3 ? <ChevronRight className="hidden justify-self-center text-[#7890aa] lg:block" size={20} /> : null}
-                      </Fragment>
-                    )
-                  })}
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-3">
-                  {[
-                    { label: 'Enquiry rate', value: listingConversionMetrics[0]?.value || 0 },
-                    { label: 'Viewing conversion', value: listingConversionMetrics[1]?.value || 0 },
-                    { label: 'Offer conversion', value: listingConversionMetrics[2]?.value || 0 },
-                  ].map((metric) => (
-                    <div key={metric.label} className="flex min-h-[52px] items-center justify-between gap-3 border-t border-[#e7edf5] pt-3">
-                      <span className="text-xs font-semibold text-[#6b7d93]">{metric.label}</span>
-                      <span className="text-sm font-semibold text-[#142132]">{formatPercentValue(metric.value)}</span>
-                    </div>
-                  ))}
                 </div>
               </article>
 
