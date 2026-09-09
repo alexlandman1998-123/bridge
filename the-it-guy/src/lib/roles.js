@@ -108,8 +108,8 @@ export const APP_NAV_BY_ROLE = {
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
     { key: 'transactions', label: 'Transactions', to: '/transactions', activeMatch: ['/transactions', '/units'] },
     { key: 'developments', label: 'Developments', to: '/developer/developments', activeMatch: ['/developer/developments'] },
-    createAgentPipelineNav(),
     { key: 'developer_leads', label: 'Development Leads', to: '/developer/leads', activeMatch: ['/developer/leads'], icon: Users },
+    { key: 'developer_snags', label: 'Handover & Snags', to: '/developer/handover-snags', activeMatch: ['/developer/handover-snags', '/snags'] },
     {
       key: 'listings',
       label: 'Listings',

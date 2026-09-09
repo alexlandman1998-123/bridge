@@ -10,6 +10,10 @@ const migrationSource = fs.readFileSync(
   path.join(root, '../supabase/migrations/202605250015_canonical_document_browser_upload_link_rpc.sql'),
   'utf8',
 )
+const recoveryMigrationSource = fs.readFileSync(
+  path.join(root, '../supabase/migrations/20260909100000_transaction_document_upload_recovery.sql'),
+  'utf8',
+)
 
 assert.equal(
   packageJson.scripts['test:canonical-document-upload-path'],
@@ -30,6 +34,36 @@ assert.match(
 )
 assert.match(apiSource, /matchAndMarkRequiredDocumentFromUpload/, 'legacy upload fallback should remain in place')
 assert.match(apiSource, /CANONICAL_UPLOAD_CATEGORY_KEY_HINTS/, 'explicit category aliases should be centralized')
+assert.match(
+  apiSource,
+  /void runInternalDocumentUploadFollowUps\(/,
+  'durable document uploads should return before non-critical post-upload projections complete',
+)
+assert.match(
+  apiSource,
+  /Promise\.allSettled\(followUps\.map\(\(\{ run \}\) => run\(\)\)\)/,
+  'a failed follow-up projection should not prevent the remaining projections from running',
+)
+assert.match(
+  apiSource,
+  /postUploadProcessing:\s*'queued'/,
+  'callers should be able to distinguish a durable upload from queued follow-up processing',
+)
+assert.match(
+  apiSource,
+  /createDocumentUploadIdempotencyKey/,
+  'internal uploads should derive a stable idempotency key before storing a document',
+)
+assert.match(
+  apiSource,
+  /removeDocumentUploadObjectAfterFailedPersistence/,
+  'failed document persistence should clean up its newly stored object',
+)
+assert.match(
+  apiSource,
+  /listOrphanedTransactionDocumentObjects/,
+  'the client should expose the scoped orphaned-object reconciliation check',
+)
 
 assert.match(attorneyDetailSource, /Required document/, 'internal document upload UI should expose requirement targeting')
 assert.match(attorneyDetailSource, /canonicalRequirementInstanceId/, 'internal document upload UI should pass canonical ids')
@@ -45,5 +79,22 @@ assert.match(migrationSource, /transaction_required_documents/, 'RPC should sync
 assert.match(migrationSource, /document_requirement_events/, 'RPC should create canonical lifecycle events')
 assert.match(migrationSource, /bridge_link_document_to_canonical_requirement_by_key/, 'migration should expose a scoped key-based canonical upload linker')
 assert.match(migrationSource, /ambiguous_canonical_requirement/, 'key-based linker should avoid ambiguous requirement matches')
+assert.match(recoveryMigrationSource, /upload_idempotency_key text/i, 'documents should retain upload idempotency keys')
+assert.match(
+  recoveryMigrationSource,
+  /unique index.*documents_transaction_upload_idempotency_key_unique/is,
+  'the database should enforce one upload idempotency key per transaction',
+)
+assert.match(
+  recoveryMigrationSource,
+  /bridge_list_orphaned_transaction_document_objects/,
+  'the database should expose a permission-scoped historical orphan check',
+)
+assert.match(
+  recoveryMigrationSource,
+  /bridge_can_access_transaction_org_member/,
+  'orphan reconciliation must enforce transaction access',
+)
+assert.match(recoveryMigrationSource, /storage\.objects/, 'orphan reconciliation should inspect stored document objects')
 
 console.log('canonical-document-upload-path tests passed')

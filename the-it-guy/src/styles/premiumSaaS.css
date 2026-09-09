@@ -44,7 +44,8 @@ body {
 
 .ui-content-container,
 .ui-content-container-dashboard {
-  padding-inline: clamp(0.75rem, 1.1vw, 1.25rem);
+  /* Keep the content visually close to the navigation without crowding it. */
+  padding-inline: clamp(0.375rem, 0.55vw, 0.625rem);
 }
 
 .ui-shell-header,
@@ -602,7 +603,7 @@ body {
 
   .ui-content-container,
   .ui-content-container-dashboard {
-    padding-inline: 1rem;
+    padding-inline: 0.5rem;
   }
 
   .ui-page-title,

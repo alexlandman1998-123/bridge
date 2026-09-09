@@ -13,7 +13,7 @@ import {
   listAgencyLeadListRecords,
   preloadAgencyLeadCoreRecord,
 } from './agencyLeadListReadRepository'
-import { preloadAgencyLeadWorkspace } from './agencyLeadWorkspaceLoader'
+import { preloadAgencyLeadWorkspaceRoute } from '../../routes/leadsRouteLoader'
 import { writeAgencyLeadCoreCache } from './agencyLeadCoreCache'
 import { seedAgencyLeadWorkspaceSnapshot } from './agencyLeadWorkspaceSnapshotCache'
 import {
@@ -423,7 +423,7 @@ export default function AgencyLeadListRoutePage() {
   const handleLeadIntent = useCallback((leadId) => {
     if (!organisationId || !leadId) return
     void preloadAgencyLeadCoreRecord(organisationId, leadId).catch(() => {})
-    void preloadAgencyLeadWorkspace()
+    void preloadAgencyLeadWorkspaceRoute({ organisationId, leadId })
   }, [organisationId])
 
   if (loading) return <LeadsRouteShell />

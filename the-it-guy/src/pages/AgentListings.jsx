@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -44,6 +44,7 @@ import {
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { assertMvpPilotCreationAllowed, resolveMvpPilotCreationFreeze } from '../lib/mvpPilotCreationFreeze'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy'
 import {
   evaluatePrivateListingTransitionGuards,
   getPrivateListingLifecycleNextAction,
@@ -610,6 +611,23 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function describeQuickAddDocumentUploadFailure(error) {
+  const message = normalizeText(error?.message || error?.error)
+  const code = normalizeKey(error?.code)
+  const searchable = `${code} ${message}`.toLowerCase()
+
+  if (searchable.includes('permission') || searchable.includes('access denied') || searchable.includes('rls') || code === '42501') {
+    return 'Permission denied. You do not have access to attach this document.'
+  }
+  if (searchable.includes('storage') || searchable.includes('bucket') || searchable.includes('network')) {
+    return 'Storage is unavailable. The file was not attached and can be retried.'
+  }
+  if (searchable.includes('file type') || searchable.includes('mime') || searchable.includes('file size') || searchable.includes('too large')) {
+    return message || 'This file does not meet the document upload requirements.'
+  }
+  return message || 'The file was not attached. It is available to retry.'
 }
 
 function isUnstorableCreateListingImageUrl(value) {
@@ -3521,6 +3539,7 @@ function AgentListings({ initialTab = null } = {}) {
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
   const [quickAddDuplicateAction, setQuickAddDuplicateAction] = useState('')
   const [quickAddSuccess, setQuickAddSuccess] = useState(null)
+  const [retryingQuickAddDocumentKey, setRetryingQuickAddDocumentKey] = useState('')
   const [isListingSaving, setIsListingSaving] = useState(false)
   const [quickAddGuideOpen, setQuickAddGuideOpen] = useState(false)
   const [quickAddAdditionalDetailsOpen, setQuickAddAdditionalDetailsOpen] = useState(false)
@@ -4736,6 +4755,7 @@ function AgentListings({ initialTab = null } = {}) {
     const uploadedDocuments = []
     const failedDocumentUploads = []
     for (const documentUpload of documentUploadQueue) {
+      let failure = null
       const uploadedDocument = await uploadPrivateListingDocument(listingId, documentUpload.file, {
         documentType: documentUpload.documentType,
         documentCategory: documentUpload.documentCategory,
@@ -4744,6 +4764,7 @@ function AgentListings({ initialTab = null } = {}) {
         status: 'uploaded',
       }).catch((uploadError) => {
         console.warn('[Listings] quick add document upload failed', uploadError)
+        failure = uploadError
         return null
       })
       if (uploadedDocument) {
@@ -4761,10 +4782,51 @@ function AgentListings({ initialTab = null } = {}) {
           kind: documentUpload.kind,
           category: documentUpload.documentCategory,
           name: documentUpload.documentName,
+          file: documentUpload.file,
+          documentType: documentUpload.documentType,
+          documentCategory: documentUpload.documentCategory,
+          documentName: documentUpload.documentName,
+          message: describeQuickAddDocumentUploadFailure(failure),
         })
       }
     }
     return { uploadedDocuments, failedDocumentUploads }
+  }
+
+  async function retryQuickAddDocumentUpload(failure) {
+    const listingId = normalizeText(quickAddSuccess?.id)
+    if (!listingId || !failure?.file) return
+
+    const retryKey = `${failure.kind || 'document'}:${failure.name || failure.file.name}`
+    try {
+      setRetryingQuickAddDocumentKey(retryKey)
+      setError('')
+      const uploaded = await uploadPrivateListingDocument(listingId, failure.file, {
+        documentType: failure.documentType || 'listing_document',
+        documentCategory: failure.documentCategory || failure.category || 'Other',
+        documentName: failure.documentName || failure.name || failure.file.name,
+        visibility: 'internal',
+        status: 'uploaded',
+      })
+      setQuickAddSuccess((current) => ({
+        ...current,
+        documentsUploaded: Number(current?.documentsUploaded || 0) + 1,
+        documentUploadFailures: (current?.documentUploadFailures || []).filter((item) => item !== failure),
+      }))
+      setWorkflowMessage(`${uploaded.document_name || failure.name || 'Document'} attached successfully.`)
+      await loadData({ showLoading: false }).catch(() => null)
+    } catch (retryError) {
+      const message = describeQuickAddDocumentUploadFailure(retryError)
+      setQuickAddSuccess((current) => ({
+        ...current,
+        documentUploadFailures: (current?.documentUploadFailures || []).map((item) =>
+          item === failure ? { ...item, message } : item,
+        ),
+      }))
+      setError(message)
+    } finally {
+      setRetryingQuickAddDocumentKey('')
+    }
   }
 
   async function handleMergeQuickAddIntoExistingListing(match = null) {
@@ -5641,35 +5703,9 @@ function AgentListings({ initialTab = null } = {}) {
           return null
         })
         if (documentUploadQueue.length) {
-          for (const documentUpload of documentUploadQueue) {
-            const uploadedDocument = await uploadPrivateListingDocument(created.listing.id, documentUpload.file, {
-              documentType: documentUpload.documentType,
-              documentCategory: documentUpload.documentCategory,
-              documentName: documentUpload.documentName,
-              visibility: 'internal',
-              status: 'uploaded',
-            }).catch((uploadError) => {
-              console.warn('[Listings] quick add document upload failed', uploadError)
-              return null
-            })
-            if (uploadedDocument) {
-              uploadedDocuments.push({
-                kind: documentUpload.kind,
-                id: uploadedDocument.id,
-                category: uploadedDocument.category || documentUpload.documentCategory,
-                name: uploadedDocument.document_name || documentUpload.documentName,
-                type: uploadedDocument.document_type || documentUpload.documentType,
-                status: uploadedDocument.status || 'uploaded',
-                visibility: 'internal',
-              })
-            } else {
-              failedDocumentUploads.push({
-                kind: documentUpload.kind,
-                category: documentUpload.documentCategory,
-                name: documentUpload.documentName,
-              })
-            }
-          }
+          const uploadResult = await uploadQuickAddDocumentsForListing(created.listing.id, documentUploadQueue)
+          uploadedDocuments = uploadResult.uploadedDocuments
+          failedDocumentUploads = uploadResult.failedDocumentUploads
         }
         directListingRequirementSync = await syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created')
         directListingSellerPortalInvite = await sendQuickAddSellerPortalInvite({
@@ -7681,7 +7717,33 @@ function AgentListings({ initialTab = null } = {}) {
                   <p className="mt-1 text-xs text-[#4d6a59]">{quickAddSuccess.documentsUploaded} document{quickAddSuccess.documentsUploaded === 1 ? '' : 's'} attached.</p>
                 ) : null}
                 {quickAddSuccess.documentUploadFailures?.length ? (
-                  <p className="mt-1 text-xs font-semibold text-[#9a5b13]">{quickAddSuccess.documentUploadFailures.length} supporting document upload{quickAddSuccess.documentUploadFailures.length === 1 ? '' : 's'} need to be retried.</p>
+                  <div className="mt-2 space-y-2 rounded-[12px] border border-[#f2d6ac] bg-[#fffaf0] p-2.5">
+                    <p className="text-xs font-semibold text-[#9a5b13]">
+                      {quickAddSuccess.documentUploadFailures.length} supporting document upload{quickAddSuccess.documentUploadFailures.length === 1 ? '' : 's'} need to be retried.
+                    </p>
+                    {quickAddSuccess.documentUploadFailures.map((failure, index) => {
+                      const retryKey = `${failure.kind || 'document'}:${failure.name || failure.file?.name || index}`
+                      const isRetrying = retryingQuickAddDocumentKey === retryKey
+                      return (
+                        <div key={`${retryKey}:${index}`} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#7c5a27]">
+                          <CircleAlert size={13} className="shrink-0 text-[#b87922]" />
+                          <span className="font-semibold">{failure.name || failure.file?.name || 'Supporting document'}</span>
+                          <span>{failure.message || 'The file was not attached.'}</span>
+                          {failure.file ? (
+                            <button
+                              type="button"
+                              onClick={() => void retryQuickAddDocumentUpload(failure)}
+                              disabled={isRetrying}
+                              className="inline-flex items-center gap-1 rounded-[8px] border border-[#e8c789] bg-white px-2 py-1 font-semibold text-[#9a5b13] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {isRetrying ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                              {isRetrying ? 'Retrying…' : 'Retry'}
+                            </button>
+                          ) : null}
+                        </div>
+                      )
+                    })}
+                  </div>
                 ) : null}
                 {quickAddSuccess.sellerPortalInvite?.requested ? (
                   <p className={`mt-1 text-xs font-semibold ${quickAddSuccess.sellerPortalInvite.error ? 'text-[#9a5b13]' : 'text-[#4d6a59]'}`}>
@@ -9437,7 +9499,7 @@ function AgentListings({ initialTab = null } = {}) {
                           <span className="text-sm font-semibold text-[#2d445e]">Manual mandate evidence (internal only)</span>
                           <Field
                             type="file"
-                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                            accept={DOCUMENT_UPLOAD_ACCEPT}
                             onChange={(event) => {
                               const file = event.target.files?.[0] || null
                               updateForm('manualMandateFile', file)

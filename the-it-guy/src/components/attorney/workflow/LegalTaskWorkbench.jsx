@@ -241,7 +241,10 @@ export default function LegalTaskWorkbench({
 
   if (!model || model.empty) return null
   const completionHelpId = `legal-task-completion-help-${model.taskKey}`
-  const isBondCancellationConfirmation = model.taskKey === 'existing_bond_confirmed'
+  const isBondCancellationConfirmation = [
+    'existing_bond_confirmed',
+    'cancellation_existing_bond_confirmed',
+  ].includes(model.taskKey) || /existing bond.*(cancellation|requirement)|cancellation.*existing bond/i.test(`${model.taskLabel} ${model.taskDescription}`)
   const canEdit = !model.readOnly && !saving
 
   function toggleRail() {
@@ -287,6 +290,13 @@ export default function LegalTaskWorkbench({
 
   function runAction(action, placement) {
     emitActionEvent(action, placement)
+    // Document work must remain in the task workspace. The modal can then
+    // preview existing files or hand off to the contextual upload dialog.
+    if (['open_documents', 'upload_document', 'review_document'].includes(action?.id)) {
+      setPreviewDocument(null)
+      setDocumentModalOpen(true)
+      return
+    }
     onRunAction?.(action)
   }
 

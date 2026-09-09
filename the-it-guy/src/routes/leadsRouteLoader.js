@@ -1,3 +1,5 @@
+import { preloadAgencyLeadWorkspace } from '../pages/agency/agencyLeadWorkspaceLoader'
+
 let leadListRouteModulePromise = null
 let leadWorkspaceRouteModulePromise = null
 let leadReadRepositoryPromise = null
@@ -24,7 +26,13 @@ export function loadAgencyLeadListRouteModule() {
 
 export function loadAgencyLeadWorkspaceRouteModule() {
   if (!leadWorkspaceRouteModulePromise) {
-    leadWorkspaceRouteModulePromise = import('../pages/agency/AgencyLeadWorkspaceRoutePage').catch((error) => {
+    // The route entry renders the workspace controller through its own lazy
+    // boundary. Start both downloads together so opening a lead does not first
+    // paint the generic route skeleton, then wait on a second controller chunk.
+    leadWorkspaceRouteModulePromise = Promise.all([
+      import('../pages/agency/AgencyLeadWorkspaceRoutePage'),
+      preloadAgencyLeadWorkspace(),
+    ]).then(([routeModule]) => routeModule).catch((error) => {
       leadWorkspaceRouteModulePromise = null
       throw error
     })

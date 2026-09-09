@@ -1,4 +1,4 @@
-import { Building2, Download, FileSignature, FileUp, FolderKanban, UserCircle2 } from 'lucide-react'
+import { AlertTriangle, Building2, Download, FileSignature, FileUp, FolderKanban, RotateCcw, UserCircle2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import LoadingSkeleton from '../components/LoadingSkeleton'
 import Button from '../components/ui/Button'
@@ -19,6 +19,7 @@ import {
 } from '../lib/api'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { DOCUMENT_UPLOAD_ACCEPT } from '../lib/documentUploadPolicy'
 
 const HUB_SECTIONS = [
   { key: 'client', label: 'Client Documents' },
@@ -86,6 +87,23 @@ function statusBadgeClass(status) {
     return 'border-[#f5d0d0] bg-[#fff4f4] text-[#b42318]'
   }
   return 'border-[#e8edf4] bg-[#f9fbfd] text-[#6b7d93]'
+}
+
+function describeDocumentUploadFailure(error) {
+  const message = String(error?.message || error?.error || '').trim()
+  const code = String(error?.code || '').trim().toLowerCase()
+  const searchable = `${code} ${message}`.toLowerCase()
+
+  if (searchable.includes('permission') || searchable.includes('access denied') || searchable.includes('rls') || code === '42501') {
+    return 'You do not have permission to attach this document to this transaction.'
+  }
+  if (searchable.includes('storage') || searchable.includes('bucket') || searchable.includes('network')) {
+    return 'Document storage is unavailable right now. Your file was not attached; retry when the connection is restored.'
+  }
+  if (searchable.includes('file type') || searchable.includes('mime') || searchable.includes('file size') || searchable.includes('too large')) {
+    return message || 'This file does not meet the document upload requirements.'
+  }
+  return message || 'The document could not be attached. Your file is still available to retry.'
 }
 
 function inferClientCategory(requirement) {
@@ -202,6 +220,7 @@ function Documents() {
   const [searchTerm, setSearchTerm] = useState('')
   const [loading, setLoading] = useState(true)
   const [uploadingKey, setUploadingKey] = useState('')
+  const [uploadFailures, setUploadFailures] = useState({})
   const [error, setError] = useState('')
 
   const [developmentDetail, setDevelopmentDetail] = useState(null)
@@ -407,9 +426,22 @@ function Documents() {
         category: item.label || 'General',
         requiredDocumentKey: item.key || null,
       })
+      setUploadFailures((current) => {
+        const next = { ...current }
+        delete next[item.key]
+        return next
+      })
       await loadBaseData()
     } catch (uploadError) {
-      setError(uploadError.message || 'Unable to upload document.')
+      const message = describeDocumentUploadFailure(uploadError)
+      setUploadFailures((current) => ({
+        ...current,
+        [item.key]: {
+          file,
+          message,
+        },
+      }))
+      setError(message)
     } finally {
       setUploadingKey('')
     }
@@ -798,6 +830,12 @@ function Documents() {
                               <div className="min-w-0">
                                 <p className="text-sm font-semibold text-[#142132]">{item.label}</p>
                                 <p className="mt-1 text-xs text-[#6b7d93]">{item.matchedDocument?.name || 'No file uploaded yet'}</p>
+                                {uploadFailures[item.key] ? (
+                                  <p className="mt-1 flex items-start gap-1 text-xs font-medium text-[#b45309]">
+                                    <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                                    {uploadFailures[item.key].message}
+                                  </p>
+                                ) : null}
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusBadgeClass(item.complete ? 'uploaded' : 'missing')}`}>
@@ -819,6 +857,7 @@ function Documents() {
                                   {uploadingKey === item.key ? 'Uploading...' : item.complete ? 'Replace' : 'Upload'}
                                   <input
                                     type="file"
+                                    accept={DOCUMENT_UPLOAD_ACCEPT}
                                     className="hidden"
                                     disabled={uploadingKey === item.key || !selectedClientWorkspace?.transaction?.id}
                                     onChange={(event) => {
@@ -828,6 +867,17 @@ function Documents() {
                                     }}
                                   />
                                 </label>
+                                {uploadFailures[item.key]?.file ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleChecklistUpload(selectedClientWorkspace, item, uploadFailures[item.key].file)}
+                                    disabled={uploadingKey === item.key || !selectedClientWorkspace?.transaction?.id}
+                                    className="inline-flex items-center gap-1 rounded-[10px] border border-[#f2d6ac] bg-[#fffaf0] px-3 py-1.5 text-xs font-semibold text-[#9a5b13] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <RotateCcw size={13} />
+                                    Retry {uploadFailures[item.key].file.name}
+                                  </button>
+                                ) : null}
                               </div>
                             </div>
                           ))}

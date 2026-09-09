@@ -423,6 +423,7 @@ const DevelopmentMarketingInvitePage = lazy(() => import('./pages/DevelopmentMar
 const DeveloperPartnerInvitePage = lazy(() => import('./pages/DeveloperPartnerInvitePage'))
 const DeveloperAccessInvitePage = lazy(() => import('./pages/DeveloperAccessInvitePage'))
 const DeveloperDocumentPortalPage = lazy(() => import('./pages/DeveloperDocumentPortalPage'))
+const DeveloperHandoverSnagsPage = lazy(() => import('./pages/DeveloperHandoverSnagsPage'))
 const DeveloperLeadsPage = lazy(() => import('./pages/DeveloperLeadsPage'))
 const DeveloperPartnersPage = lazy(() => import('./pages/DeveloperPartnersPage'))
 const Developments = lazy(() => import('./pages/Developments'))
@@ -2505,6 +2506,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/developer/handover-snags"
+                element={
+                  <RoleRoute allowedRoles={['developer']}>
+                    <AppErrorBoundary scope="developer-handover-snags-workspace" title="Handover and snags failed to load">
+                      <DeveloperHandoverSnagsPage />
+                    </AppErrorBoundary>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/deals"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -4145,7 +4156,7 @@ function PipelineEntryRoute() {
     return <Navigate to="/pipeline/leads" replace />
   }
   if (role === 'developer') {
-    return <Navigate to="/developer/leads?view=pipeline" replace />
+    return <Navigate to="/developer/leads" replace />
   }
   if (role === 'bond_originator') {
     return <Navigate to="/bond/pipeline" replace />

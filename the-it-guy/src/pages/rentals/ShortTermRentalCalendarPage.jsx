@@ -50,7 +50,7 @@ export default function ShortTermRentalCalendarPage() {
     }) }
   }, [board, search, status])
 
-  return <main className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 lg:px-7"><section className="rounded-[20px] border border-[#e4ebf2] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,.035)] sm:p-5">
+  return <main className="mx-auto w-full max-w-[1600px] px-1.5 py-3 sm:px-2.5 lg:px-3.5"><section className="rounded-[20px] border border-[#e4ebf2] bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,.035)] sm:p-5">
     <CalendarHeader summary={board.summary} />
     {error ? <p className="mt-4 rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}
     {!scope.organisationId ? <p className="mt-4 rounded-xl border border-[#f4d7a9] bg-[#fffaf0] p-3 text-sm text-[#7a4b05]">Choose an agency workspace to load the Short-Term calendar.</p> : null}

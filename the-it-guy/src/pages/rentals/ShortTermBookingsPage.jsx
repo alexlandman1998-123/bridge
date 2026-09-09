@@ -90,7 +90,7 @@ export default function ShortTermBookingsPage() {
   const activeFilters = Boolean(search || status !== 'all' || property !== 'all' || activeTab !== 'all')
   const clearFilters = () => { setSearch(''); setStatus('all'); setProperty('all'); setActiveTab('all') }
 
-  return <main className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 lg:px-7"><div className="space-y-4 pb-8">
+  return <main className="mx-auto w-full max-w-[1600px] px-1.5 py-3 sm:px-2.5 lg:px-3.5"><div className="space-y-4 pb-8">
     <BookingsHeader metrics={metrics} canManage={canManage} onNewBooking={() => setDrawer({ type: 'new' })} />
     {error ? <p className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}
     {!scope.organisationId ? <p className="rounded-xl border border-[#f4d7a9] bg-[#fffaf0] p-3 text-sm text-[#7a4b05]">Choose an agency workspace to load Short-Term bookings.</p> : null}

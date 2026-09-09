@@ -36,6 +36,7 @@ import { hasSignedMandateEvidence } from '../core/clientAccess/clientAccessPolic
 import { resolveSellerPortalFinalSignedArtifactAccess } from '../core/documents/finalSignedArtifactAccess'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
 import { uploadToStorageCandidateBuckets } from '../lib/storageFallbacks'
+import { sanitizeDocumentFileName, validateDocumentUploadFile } from '../lib/documentUploadPolicy'
 import { mapSellerOnboardingToMandateData } from '../core/documents/mandateDataMapper'
 import { validateMandateGenerationData } from '../core/documents/mandateValidation'
 import {
@@ -8816,6 +8817,7 @@ export async function uploadSellerClientPortalDocument({
   const listing = context?.listing || null
   if (!listing?.id) throw new Error('Seller client portal link is invalid or inactive.')
   const storageClient = requireSellerPortalStorageClient(normalizedToken, resolvedAccessToken)
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'seller_portal', listingId: listing.id })
 
   const normalizedRequirementKey = normalizeText(requirementKey)
   const canonicalRequirementInstanceId = normalizeUuid(requirementInstanceId)
@@ -8852,10 +8854,7 @@ export async function uploadSellerClientPortalDocument({
     normalizeText(category) ||
     'seller_document'
 
-  const safeOriginalName = normalizeText(file.name || 'seller-document')
-    .replace(/[^a-zA-Z0-9._-]/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 140) || 'seller-document'
+  const safeOriginalName = sanitizeDocumentFileName(filePolicy.safeName, 'seller-document')
   const timestamp = Date.now()
   const filePath = `seller-portal/${listing.id}/${timestamp}-${safeOriginalName}`
 
@@ -8869,7 +8868,7 @@ export async function uploadSellerClientPortalDocument({
     rpc = await client.rpc('bridge_upload_private_listing_seller_document', {
       p_token: normalizedToken,
       p_requirement_key: normalizedRequirementKey || null,
-      p_document_name: file.name || safeOriginalName,
+      p_document_name: safeOriginalName,
       p_storage_path: filePath,
       p_file_url: null,
       p_document_type: normalizedDocumentType,
@@ -8951,8 +8950,8 @@ export async function uploadSellerClientPortalDocument({
 
   return {
     id: documentRow?.id || filePath,
-    name: documentRow?.document_name || file.name || safeOriginalName,
-    document_name: documentRow?.document_name || file.name || safeOriginalName,
+    name: documentRow?.document_name || safeOriginalName,
+    document_name: documentRow?.document_name || safeOriginalName,
     document_type: documentRow?.document_type || normalizedDocumentType,
     category: category || 'Seller Document',
     status: documentRow?.status || 'uploaded',
@@ -9000,14 +8999,18 @@ export async function uploadPrivateListingDocument(listingId, file, {
   const normalizedListingId = normalizeUuid(listingId)
   if (!normalizedListingId) throw new Error('Listing id is required.')
   if (!file) throw new Error('A file is required.')
+  const filePolicy = validateDocumentUploadFile(file, { surface: 'agent_listing', listingId: normalizedListingId })
+  const accessibleListing = await getPrivateListingById(normalizedListingId, {
+    includeRequirementsAndDocuments: false,
+  })
+  if (!accessibleListing) {
+    throw new Error('This listing is unavailable or you do not have permission to upload documents to it.')
+  }
 
-  const safeOriginalName = normalizeText(documentName || file.name || 'listing-document')
-    .replace(/[^a-zA-Z0-9._-]/g, '-')
-    .replace(/-+/g, '-')
-    .slice(0, 140) || 'listing-document'
+  const safeOriginalName = sanitizeDocumentFileName(documentName || filePolicy.safeName, 'listing-document')
   const filePath = `private-listings/${normalizedListingId}/documents/${Date.now()}-${safeOriginalName}`
 
-  await uploadToPrivateListingDocumentsBucket(client, filePath, file, {
+  const uploadedBucket = await uploadToPrivateListingDocumentsBucket(client, filePath, file, {
     upsert: false,
     contentType: file.type || undefined,
   })
@@ -9041,7 +9044,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
     requirement_id: matchedRequirement?.id || normalizedRequirementId || null,
     document_type: normalizeText(documentType) || 'listing_document',
     category: normalizeText(documentCategory || documentType) || 'Other',
-    document_name: documentName || file.name || safeOriginalName,
+    document_name: safeOriginalName,
     storage_path: filePath,
     file_url: null,
     uploaded_by: user?.id || null,
@@ -9052,7 +9055,17 @@ export async function uploadPrivateListingDocument(listingId, file, {
   }
 
   const inserted = await insertPrivateListingDocumentRow(client, insertPayload)
-  if (inserted.error && !isMissingColumnError(inserted.error) && !isMissingTableError(inserted.error, 'private_listing_documents')) {
+  if (inserted.error) {
+    try {
+      await removePrivateListingDocumentObject(client, filePath, uploadedBucket)
+    } catch (cleanupError) {
+      console.warn('[Private Listings] Failed to remove a storage object after document persistence failed.', {
+        listingId: normalizedListingId,
+        filePath,
+        persistenceError: inserted.error,
+        cleanupError,
+      })
+    }
     throw inserted.error
   }
   const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
@@ -9114,7 +9127,12 @@ export async function uploadPrivateListingDocument(listingId, file, {
     status: documentRow?.status || insertPayload.status,
     storage_path: documentRow?.storage_path || filePath,
     uploaded_at: documentRow?.uploaded_at || insertPayload.uploaded_at,
-    url: await createPrivateListingDocumentSignedUrl(client, documentRow?.storage_path || filePath),
+    url: await createPrivateListingDocumentSignedUrl(
+      client,
+      documentRow?.storage_path || filePath,
+      120,
+      uploadedBucket,
+    ),
     privateListingId: normalizedListingId,
   }
 }

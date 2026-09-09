@@ -6,6 +6,7 @@ import { listShortTermUnitInventory } from '../../services/rentals/rentalShortTe
 import { listShortTermRatePlans } from '../../services/rentals/rentalShortTermRatePlanRepository.js'
 import { listShortTermTurnovers } from '../../services/rentals/rentalShortTermTurnoverRepository.js'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope.js'
+import { getRevoShortTermDemoData, isRevoPropertyGroupWorkspace } from '../../services/rentals/revoShortTermDemoData.js'
 import { AttentionPanel, DailyGuestLists, Metrics, OccupancyForecast, TodayTimeline } from './ShortTermDashboardComponents.jsx'
 
 const DATE_OPTIONS = [{ value: 'last_7_days', label: 'Last 7 Days', days: 7 }, { value: 'last_30_days', label: 'Last 30 Days', days: 30 }, { value: 'last_90_days', label: 'Last 90 Days', days: 90 }]
@@ -20,6 +21,7 @@ export default function ShortTermRentalDashboardPage() {
   const [source, setSource] = useState({ units: [], bookings: [], turnovers: [], ratePlans: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const isRevoDemo = useMemo(() => isRevoPropertyGroupWorkspace(workspace), [workspace])
   const workspaceOptions = useMemo(() => [{ value: 'all', label: 'All Branches' }, ...(scope.branchId ? [{ value: scope.branchId, label: 'My Branch' }] : [])], [scope.branchId])
 
   const load = useCallback(async () => {
@@ -38,13 +40,14 @@ export default function ShortTermRentalDashboardPage() {
         listShortTermTurnovers({ organisationId: scope.organisationId, branchId }),
         listShortTermRatePlans({ organisationId: scope.organisationId, branchId }),
       ])
-      setSource({ units, bookings, turnovers, ratePlans })
+      const emptyWorkspace = !units.length && !bookings.length && !turnovers.length && !ratePlans.length
+      setSource(isRevoDemo && emptyWorkspace ? getRevoShortTermDemoData({ organisationId: scope.organisationId, branchId }) : { units, bookings, turnovers, ratePlans })
     } catch (cause) {
       setError(cause?.message || 'Unable to load Short-Term operations.')
     } finally {
       setLoading(false)
     }
-  }, [scope.organisationId, selectedWorkspaceId])
+  }, [isRevoDemo, scope.organisationId, selectedWorkspaceId])
 
   useEffect(() => { void load() }, [load])
   useEffect(() => {
@@ -69,7 +72,8 @@ export default function ShortTermRentalDashboardPage() {
   const dashboard = useMemo(() => buildShortTermRentalDashboard({ ...source, rangeDays: rangeDays(dateRange) }), [dateRange, source])
   const selectedRangeDays = rangeDays(dateRange)
 
-  return <main className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 lg:px-7"><div className="space-y-4 pb-8">
+  return <main className="mx-auto w-full max-w-[1600px] px-1.5 py-3 sm:px-2.5 lg:px-3.5"><div className="space-y-4 pb-8">
+    {isRevoDemo && source.units.some((unit) => unit.id.startsWith('revo-demo-')) ? <p className="rounded-xl border border-[#cfe8dc] bg-[#f3fbf6] px-3 py-2 text-xs font-medium text-[#26724c]">Showing Revo Property Group demo operations for 9 September 2026.</p> : null}
     {error ? <p className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}
     {!scope.organisationId ? <p className="rounded-xl border border-[#f4d7a9] bg-[#fffaf0] p-3 text-sm text-[#7a4b05]">Choose an agency workspace to load Short-Term Rentals.</p> : null}
     <Metrics dashboard={dashboard} loading={loading} rangeDays={selectedRangeDays} />
