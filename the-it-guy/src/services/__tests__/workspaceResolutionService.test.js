@@ -12,7 +12,18 @@ try {
     buildWorkspaceResolution,
     mergeAttorneyFirmBrandingRows,
     WORKSPACE_RESOLUTION_STATUSES,
+    __workspaceResolutionTestUtils,
   } = await server.ssrLoadModule('/src/services/workspaceResolutionService.js')
+
+  const timedOutBranding = await __workspaceResolutionTestUtils.fetchAttorneyFirmBrandingRows({
+    from() {
+      return {
+        select() { return this },
+        in() { return new Promise(() => {}) },
+      }
+    },
+  }, ['firm-timeout'], { timeoutMs: 1 })
+  assert.deepEqual(timedOutBranding, [])
 
   const profile = {
     id: 'user-1',

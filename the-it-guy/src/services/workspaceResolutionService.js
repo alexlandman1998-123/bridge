@@ -48,6 +48,7 @@ const INVALID_SERVICE_WORKSPACE_IDS = new Set([
 
 const WORKSPACE_QUERY_TIMEOUT_MS = 6000
 const WORKSPACE_OPTIONAL_QUERY_TIMEOUT_MS = 3500
+const WORKSPACE_BRANDING_QUERY_TIMEOUT_MS = 1250
 const WORKSPACE_CONTEXT_RPC_NAME = 'bridge_resolve_current_workspace_context'
 
 const INACTIVE_WORKSPACE_STATUSES = new Set([
@@ -1450,9 +1451,18 @@ async function fetchAttorneyFirmBrandingRows(client, firmIds = [], options = {})
       },
     )
 
-  let query = await runQuery('firm_id, logo_url, logo_bucket, logo_path, primary_colour, secondary_colour')
-  if (query.error && (isMissingColumnError(query.error, 'logo_bucket') || isMissingColumnError(query.error, 'logo_path'))) {
-    query = await runQuery('firm_id, logo_url, primary_colour, secondary_colour')
+  // Branding is presentation-only. Do not let a slow optional branding query
+  // prevent an otherwise valid account from opening its workspace.
+  let query
+  try {
+    query = await runQuery('firm_id, logo_url, logo_bucket, logo_path, primary_colour, secondary_colour')
+    if (query.error && (isMissingColumnError(query.error, 'logo_bucket') || isMissingColumnError(query.error, 'logo_path'))) {
+      query = await runQuery('firm_id, logo_url, primary_colour, secondary_colour')
+    }
+  } catch (error) {
+    warnOptionalWorkspaceQueryTimeout(error, 'workspace.attorneyFirmBranding.fetch')
+    console.warn('[WORKSPACE_RESOLUTION] attorney branding could not be loaded; using firm branding fallback.', error)
+    return []
   }
 
   if (query.error) {
@@ -1580,7 +1590,7 @@ export async function resolveCurrentWorkspace(userId, options = {}) {
       ...attorneyMembershipRows.map((row) => row?.firm_id),
       profile?.primaryAttorneyFirmId,
     ],
-    { timeoutMs: optionalQueryTimeoutMs },
+    { timeoutMs: Math.min(optionalQueryTimeoutMs, WORKSPACE_BRANDING_QUERY_TIMEOUT_MS) },
   )
 
   const resolution = buildWorkspaceResolution({
@@ -1836,4 +1846,5 @@ export const __workspaceResolutionTestUtils = Object.freeze({
   getPermissionMapForMembership,
   normalizeWorkspaceResolutionRpcContext,
   isMissingWorkspaceContextRpcError,
+  fetchAttorneyFirmBrandingRows,
 })
