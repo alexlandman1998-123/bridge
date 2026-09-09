@@ -10,6 +10,8 @@
   }
 
   :root {
+    /* Changes the immutable build asset fingerprint for this production recovery. */
+    --arch9-css-release: 20260909;
     --color-bg-app: #F6F8FB;
     --color-bg-surface: #FFFFFF;
     --color-bg-surface-alt: #F9FBFD;
