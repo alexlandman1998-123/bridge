@@ -269,6 +269,37 @@ function preloadTransactionWorkspaceTab(tabId = '') {
   if (dataset) void preloadTransactionWorkspaceDataset(dataset)
 }
 
+const ROUTE_CORE_DATASET_FIELDS = Object.freeze({
+  activity: ['transactionDiscussion', 'transactionEvents', 'transactionProxyUpdates'],
+  documents: ['documents', 'transactionRequiredDocuments', 'requiredDocumentChecklist', 'documentRequests', 'documentRequestSummary', 'transactionChecklistItems', 'checklistSummary', 'documentSummary'],
+  finance: ['transactionFinanceWorkflow'],
+  partners: ['transactionParticipants', 'transactionRolePlayers', 'transaction_role_players', 'rolePlayers'],
+  workflow: ['transactionSubprocesses'],
+})
+
+// Route-core reads intentionally contain empty dataset placeholders so the
+// matter header can paint quickly. Do not allow a later core refresh to erase
+// an already-hydrated dataset while its targeted refresh is still in flight.
+function mergeRouteCoreSnapshot(previous, routeCore) {
+  if (!previous) return routeCore
+  const next = {
+    ...previous,
+    ...routeCore,
+    transaction: { ...(previous.transaction || {}), ...(routeCore.transaction || {}) },
+  }
+  for (const [dataset, fields] of Object.entries(ROUTE_CORE_DATASET_FIELDS)) {
+    const hasLoadedDataset = previous[`__${dataset}Hydrated`] || fields.some((field) => {
+      const value = previous[field]
+      return Array.isArray(value) ? value.length > 0 : value !== null && value !== undefined
+    })
+    if (!hasLoadedDataset) continue
+    for (const field of fields) {
+      if (Object.prototype.hasOwnProperty.call(previous, field)) next[field] = previous[field]
+    }
+  }
+  return next
+}
+
 const ATTORNEY_WORKSPACE_TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'parties', label: 'Parties' },
@@ -6943,7 +6974,7 @@ function ArchlineMatterHeader({
           {!visibleWorkflowSteps.length ? <p className="text-sm text-slate-500">{sharedLegalJourney?.status === 'ready' ? 'No applicable legal tasks in this lane.' : 'Legal journey unavailable. Refresh to try again.'}</p> : null}
           {workflow?.workflowPlan?.provisional ? <p className="mb-3 text-xs text-amber-700">Matter profile not confirmed. Review the buyer, seller and funding details in Work.</p> : null}
           <div className="overflow-x-auto px-1 pb-2">
-            <div className="flex min-w-max items-start">
+            <div className="grid min-w-[960px] grid-cols-6 items-start lg:min-w-0">
               {visibleWorkflowSteps.map((stage, index) => {
                 const completed = isAttorneyTaskCompleted(stage.status)
                 const blocked = stage.status === 'blocked'
@@ -6958,7 +6989,7 @@ function ArchlineMatterHeader({
                       ? 'In Progress'
                       : 'Pending'
                 return (
-                  <button type="button" key={stage.key} onClick={() => onSelectWorkflowPhase?.(stage, workflowKey)} aria-current={current ? 'step' : undefined} className="relative grid w-[158px] shrink-0 justify-items-center gap-2 rounded-lg px-2 py-1 text-center hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 sm:w-[176px]">
+                  <button type="button" key={stage.key} onClick={() => onSelectWorkflowPhase?.(stage, workflowKey)} aria-current={current ? 'step' : undefined} className="relative grid w-[158px] shrink-0 justify-items-center gap-2 rounded-lg px-2 py-1 text-center hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700 sm:w-[176px] lg:min-w-0 lg:w-full">
                     {index > 0 ? <span className={`absolute right-1/2 top-3.5 h-px w-full ${completed || current ? 'bg-emerald-700' : 'border-t border-dashed border-slate-300'}`} /> : null}
                     <span className={`relative z-10 inline-flex size-8 items-center justify-center rounded-full border-2 bg-white ${
                       completed
@@ -7545,7 +7576,7 @@ function ArchlineOverviewWorkspace({
           action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('activity')}>View all</Button>}
           className="p-5"
         >
-          <div className="space-y-3">
+          <div className="max-h-[252px] space-y-3 overflow-y-auto pr-2">
             {activityRows.length ? activityRows.map((entry) => (
               <article key={entry.id} className="flex gap-3">
                 <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-slate-50 text-[#35546c]">
@@ -16186,9 +16217,7 @@ function AttorneyTransactionDetail() {
             }
           }
           return {
-            ...previous,
-            ...coreDetail,
-            transaction: coreDetail.transaction || previous.transaction,
+            ...mergeRouteCoreSnapshot(previous, coreDetail),
             unit: coreDetail.unit || previous.unit,
             development: coreDetail.development || previous.development,
             buyer: coreDetail.buyer || previous.buyer,
@@ -16252,9 +16281,7 @@ function AttorneyTransactionDetail() {
                 return previous
               }
               return {
-                ...(previous || {}),
-                ...enrichedCore,
-                transaction: { ...(previous?.transaction || {}), ...(enrichedCore.transaction || {}) },
+                ...mergeRouteCoreSnapshot(previous, enrichedCore),
                 unit: enrichedCore.unit || previous?.unit || null,
                 development: enrichedCore.development || previous?.development || null,
                 buyer: enrichedCore.buyer || previous?.buyer || null,
@@ -16531,9 +16558,7 @@ function AttorneyTransactionDetail() {
     if (liveMatterScopeRef.current !== scope || canonicalRefreshSequenceRef.current !== sequence) return null
     if (coreDetail) {
       setData((previous) => previous ? {
-        ...previous,
-        ...coreDetail,
-        transaction: { ...(previous.transaction || {}), ...(coreDetail.transaction || {}) },
+        ...mergeRouteCoreSnapshot(previous, coreDetail),
         __coreHydrated: true,
       } : coreDetail)
     }

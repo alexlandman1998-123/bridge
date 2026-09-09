@@ -25,7 +25,10 @@ export default function TransactionJourneyTracker({
   loading = false,
 }) {
   const primary = themeInput?.primary || '#087955'
-  const conversationAudience = ['attorney','agent','developer','developer-agent','bond-originator','buyer','buyer-overview','seller'].includes(audience)
+  // Developer updates live in the dedicated Activity tab. Keeping the legal
+  // rail focused on milestones prevents an empty, read-only conversation card
+  // from interrupting the overview.
+  const conversationAudience = ['attorney','agent','bond-originator','buyer','buyer-overview','seller'].includes(audience)
   const conversationRequiresPortal = ['buyer','buyer-overview','seller'].includes(audience)
   const steps = Array.isArray(model?.steps) ? model.steps : []
   const currentStep = model?.currentStep || steps.find((step) => step.isCurrent) || null
