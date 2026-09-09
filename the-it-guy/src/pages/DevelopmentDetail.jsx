@@ -7494,12 +7494,12 @@ function DevelopmentDetail() {
                 </div>
                 <div className="grid gap-4">
                   {transactionPipelineItems.map(item => (
-                    <div key={item.key} className="grid grid-cols-[minmax(110px,0.8fr)_minmax(90px,1fr)_36px] items-center gap-3">
-                      <span className="text-sm font-semibold text-[#1f3145]">{item.label}</span>
-                      <span className="h-2 overflow-hidden rounded-full bg-[#edf2f7]" aria-hidden="true">
+                    <div key={item.key} className="grid min-h-[50px] grid-cols-[minmax(110px,0.8fr)_minmax(90px,1fr)_36px] items-center gap-3">
+                      <span className="text-[0.95rem] font-semibold text-[#1f3145]">{item.label}</span>
+                      <span className="h-2.5 overflow-hidden rounded-full bg-[#edf2f7]" aria-hidden="true">
                         <span className={`block h-full rounded-full ${item.tone}`} style={{ width: `${item.width}%` }} />
                       </span>
-                      <strong className="text-right text-sm font-semibold text-[#142132]">{formatNumber(item.count)}</strong>
+                      <strong className="text-right text-[0.95rem] font-semibold text-[#142132]">{formatNumber(item.count)}</strong>
                     </div>
                   ))}
                 </div>
