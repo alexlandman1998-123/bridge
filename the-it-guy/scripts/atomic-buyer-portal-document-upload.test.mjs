@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const migration = readFileSync(
-  resolve(root, '../supabase/migrations/20260831132002_atomic_buyer_portal_document_upload.sql'),
+  resolve(root, '../supabase/migrations/20260831125409_atomic_buyer_portal_document_upload.sql'),
   'utf8',
 )
 const api = readFileSync(resolve(root, 'src/lib/api.js'), 'utf8')

@@ -854,6 +854,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
       completedAt: storedStep?.completedAt || storedStep?.completed_at || null,
       updatedAt: storedStep?.updatedAt || storedStep?.updated_at || null,
       comment: storedStep?.comment || '',
+      taskConfirmations: storedStep?.taskConfirmations ?? storedStep?.task_confirmations,
       dueDate: storedStep?.dueDate || storedStep?.due_date || null,
       ownerRole: definition.ownerRole || storedStep?.ownerRole || storedStep?.owner_type || definition.operationalContract?.owner?.role || `${workflowKey}_attorney`,
       ownerLabel: definition.ownerLabel || definition.operationalContract?.owner?.label || 'Matter Attorney',

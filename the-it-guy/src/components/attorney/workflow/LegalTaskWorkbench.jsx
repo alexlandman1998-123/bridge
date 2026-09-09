@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
 import Modal from '../../ui/Modal.jsx'
+import TaskConfirmations from './TaskConfirmations.jsx'
 import { isAttorneyTaskResolved } from '../../../core/transactions/attorneyTaskOutcomes.js'
 
 function requirementStatus(item = {}) {
@@ -195,6 +196,7 @@ export default function LegalTaskWorkbench({
   selectedPhaseKey = '',
   saving = false,
   error = '',
+  successMessage = '',
   onSelectTask,
   onRunAction,
   onOpenDocuments,
@@ -206,6 +208,8 @@ export default function LegalTaskWorkbench({
   onSubmitStatusDraft,
   onCloseStatusDraft,
   onUxEvent,
+  onReviewDocument,
+  onSaveConfirmations,
 }) {
   const taskTimingRef = useRef({ taskKey: '', startedAt: 0 })
   const uxEventRef = useRef(onUxEvent)
@@ -219,8 +223,18 @@ export default function LegalTaskWorkbench({
   })
   const [documentModalOpen, setDocumentModalOpen] = useState(false)
   const [previewDocument, setPreviewDocument] = useState(null)
+  const [documentTarget, setDocumentTarget] = useState(null)
+  const [reviewBusy, setReviewBusy] = useState(false)
+  const [reviewReason, setReviewReason] = useState('')
+  const [reviewFeedback, setReviewFeedback] = useState('')
+  const [reviewError, setReviewError] = useState('')
+  const reviewPending = useRef(false)
   const [taskResponses, setTaskResponses] = useState({ existingBond: '', cancellationInstruction: '' })
   const [expandedPhaseKey, setExpandedPhaseKey] = useState(selectedPhaseKey)
+
+  useEffect(() => {
+    setReviewReason(''); setReviewFeedback(''); setReviewError('')
+  }, [previewDocument?.id, model?.taskKey])
 
   useEffect(() => {
     uxEventRef.current = onUxEvent
@@ -245,6 +259,7 @@ export default function LegalTaskWorkbench({
     const cancellationInstruction = String(model?.note || '').match(/cancellation instructions confirmed:\s*(yes|no|not_applicable)/i)?.[1]?.toLowerCase() || ''
     setTaskResponses({ existingBond, cancellationInstruction })
     setPreviewDocument(null)
+    setDocumentTarget(null)
     setDocumentModalOpen(false)
   }, [model?.note, model?.taskKey])
 
@@ -260,6 +275,23 @@ export default function LegalTaskWorkbench({
   ].includes(model.taskKey) || /existing bond.*(cancellation|requirement)|cancellation.*existing bond/i.test(`${model.taskLabel} ${model.taskDescription}`)
   const canEdit = !model.readOnly && !saving
   const attachedDocuments = model.documents.filter(isAttachedDocument)
+  const confirmationItems = isBondCancellationConfirmation ? [
+    { id: 'existingBond', label: 'Existing bond confirmed' },
+    { id: 'cancellationInstruction', label: 'Cancellation instructions confirmed' },
+  ] : model.confirmationRequirements || []
+  async function review(action) {
+    if (reviewPending.current || !previewDocument || !onReviewDocument) return
+    reviewPending.current = true
+    setReviewBusy(true)
+    setReviewFeedback('')
+    setReviewError('')
+    try {
+      const result = await onReviewDocument(previewDocument, action, reviewReason)
+      setReviewFeedback(result?.message || 'Review saved.')
+      setReviewReason('')
+    } catch (error) { setReviewError(error.message || 'Review could not be saved.') }
+    finally { reviewPending.current = false; setReviewBusy(false) }
+  }
 
   function toggleRail() {
     setRailCollapsed((current) => {
@@ -274,13 +306,15 @@ export default function LegalTaskWorkbench({
   }
 
   async function saveTaskResponses(nextResponses) {
+    const previousResponses = taskResponses
     setTaskResponses(nextResponses)
     const responseLines = [
       nextResponses.existingBond ? `Existing bond confirmed: ${nextResponses.existingBond}` : '',
       nextResponses.cancellationInstruction ? `Cancellation instructions confirmed: ${nextResponses.cancellationInstruction}` : '',
     ].filter(Boolean)
     if (!responseLines.length || !onPersistTaskResponses) return
-    await onPersistTaskResponses(responseLines.join('\n'))
+    const saved = await onPersistTaskResponses(responseLines.join('\n'))
+    if (saved === false) setTaskResponses(previousResponses)
   }
 
   function documentUrl(document = {}) {
@@ -307,7 +341,10 @@ export default function LegalTaskWorkbench({
     // Document work must remain in the task workspace. The modal can then
     // preview existing files or hand off to the contextual upload dialog.
     if (['open_documents', 'upload_document', 'review_document'].includes(action?.id)) {
-      setPreviewDocument(null)
+      const requiredId = String(action.requirementId || action.requirement?.id || '').replace(/^document:/, '')
+      const target = model.documents.find(document => requiredId && [document.id, document.key, document.sourceRequirementKey].includes(requiredId)) || null
+      setDocumentTarget(target)
+      setPreviewDocument(target && isAttachedDocument(target) ? target : null)
       setDocumentModalOpen(true)
       return
     }
@@ -351,7 +388,7 @@ export default function LegalTaskWorkbench({
                 <h3 id="legal-task-outstanding-heading" className="text-lg font-semibold text-slate-950">Required action</h3>
                 {!model.readOnly ? <span className="text-sm text-slate-500">Complete the relevant items below.</span> : null}
               </div>
-              {isBondCancellationConfirmation ? (
+              {isBondCancellationConfirmation && !onSaveConfirmations ? (
                 <div className="divide-y divide-slate-200">
                   {[
                     ['existingBond', 'Existing bond confirmed', 'Is there an existing mortgage bond registered against the property?'],
@@ -381,10 +418,13 @@ export default function LegalTaskWorkbench({
               )}
             </section>
 
+            {onSaveConfirmations ? <TaskConfirmations taskKey={model.taskKey} items={confirmationItems} saved={model.confirmations || {}} disabled={!canEdit || model.taskResolved} onSave={onSaveConfirmations} /> : null}
+            {!model.readOnly && model.contextualActions?.length ? <div className="mt-4 flex flex-wrap gap-2">{model.contextualActions.map(action => <Button key={action.id} type="button" variant="secondary" disabled={saving || action.disabled} onClick={() => runAction(action, 'task')}>{action.label}</Button>)}</div> : null}
+
             <section className="mt-4 overflow-hidden rounded-xl border border-slate-200">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5">
                 <div><h3 className="text-lg font-semibold text-slate-950">Supporting documents</h3><p className="mt-1 text-sm text-slate-500">Files linked to this task stay available in the matter.</p></div>
-                {!model.readOnly ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
+                {!model.readOnly ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
               </div>
               <div className="divide-y divide-slate-100">
                 {attachedDocuments.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
@@ -395,6 +435,17 @@ export default function LegalTaskWorkbench({
 
           <footer className="shrink-0 border-t border-slate-200 bg-slate-50/75 px-5 py-3.5 lg:px-6">
             {error ? <p role="alert" className="mb-3 rounded-lg bg-red-50 p-3 text-sm text-red-800">{error}</p> : null}
+            {!error && successMessage ? <p role="status" className="mb-3 text-sm text-emerald-800">{successMessage}</p> : null}
+            {!model.readOnly && [...(model.outcomeActions || []), ...(model.followUpActions || [])].length ? (
+              <details className="mb-3 text-sm text-slate-700">
+                <summary className="w-fit cursor-pointer font-medium">Task outcome options</summary>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {[...(model.outcomeActions || []), ...(model.followUpActions || [])].map(action => (
+                    <Button key={action.id} type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => runAction(action, 'outcome')}>{action.label}</Button>
+                  ))}
+                </div>
+              </details>
+            ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 {!model.readOnly && !model.taskResolved ? (
@@ -434,13 +485,19 @@ export default function LegalTaskWorkbench({
         open={documentModalOpen}
         title="Supporting documents"
         subtitle={model.taskLabel}
-        onClose={saving ? undefined : () => setDocumentModalOpen(false)}
+        onClose={saving || reviewBusy ? undefined : () => setDocumentModalOpen(false)}
         className="max-w-5xl"
-        footer={<div className="flex flex-wrap justify-between gap-2"><Button type="button" variant="secondary" onClick={() => setDocumentModalOpen(false)} disabled={saving}>Close</Button>{!model.readOnly ? <Button type="button" disabled={saving} onClick={() => { setDocumentModalOpen(false); runUtilityAction('upload_document', onOpenDocuments) }}><Paperclip size={15} /> Upload document</Button> : null}</div>}
+        footer={<div className="flex flex-wrap justify-between gap-2"><Button type="button" variant="secondary" onClick={() => setDocumentModalOpen(false)} disabled={saving || reviewBusy}>Close</Button>{!model.readOnly ? <Button type="button" disabled={saving || reviewBusy} onClick={() => { setDocumentModalOpen(false); runUtilityAction('upload_document', () => onOpenDocuments?.(previewDocument || documentTarget)) }}><Paperclip size={15} /> Upload document</Button> : null}</div>}
       >
+        {!model.readOnly && previewDocument && onReviewDocument ? <div className="mb-4 space-y-2 rounded-xl border border-slate-200 p-3">
+          {reviewError ? <p role="alert" className="text-sm text-red-700">{reviewError}</p> : null}
+          {reviewFeedback ? <p role="status" className="text-sm text-emerald-800">{reviewFeedback}</p> : null}
+          <label className="grid gap-1 text-sm">Review note / correction needed<Field as="textarea" rows={2} disabled={reviewBusy} value={reviewReason} onChange={event => setReviewReason(event.target.value)} /></label>
+          <div className="flex gap-2"><Button type="button" disabled={reviewBusy} onClick={() => review('approve')}>Approve document</Button><Button type="button" variant="secondary" disabled={reviewBusy || !reviewReason.trim()} onClick={() => review('reject')}>Request correction</Button></div>
+        </div> : null}
         <div className="grid gap-4 lg:grid-cols-[minmax(14rem,0.42fr)_minmax(0,1fr)]">
           <div className="max-h-[52vh] space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
-            {attachedDocuments.length ? attachedDocuments.map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => setPreviewDocument(document)} className={`w-full rounded-lg px-3 py-3 text-left text-sm transition ${previewDocument === document ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'}`}><strong className="block truncate">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></button>) : <p className="p-3 text-sm text-slate-500">No supporting documents are attached yet.</p>}
+            {attachedDocuments.length ? attachedDocuments.map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" disabled={reviewBusy} onClick={() => setPreviewDocument(document)} className={`w-full rounded-lg px-3 py-3 text-left text-sm transition ${previewDocument === document ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'}`}><strong className="block truncate">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></button>) : <p className="p-3 text-sm text-slate-500">No supporting documents are attached yet.</p>}
           </div>
           <div className="min-h-[18rem] rounded-xl border border-slate-200 bg-slate-50 p-4">
             {previewDocument ? <div className="flex h-full flex-col"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-slate-950">{previewDocument.displayName || previewDocument.label || previewDocument.name || 'Document'}</h3><p className="mt-1 text-xs text-slate-500">{previewDocument.ready ? 'Available for review' : 'Document is still outstanding'}</p></div>{documentUrl(previewDocument) ? <a href={documentUrl(previewDocument)} target="_blank" rel="noreferrer" className="shrink-0 text-sm font-semibold text-emerald-800 hover:text-emerald-950">Download</a> : null}</div>{documentUrl(previewDocument) ? <iframe title={`Preview ${previewDocument.displayName || previewDocument.name || 'document'}`} src={documentUrl(previewDocument)} className="mt-4 min-h-[24rem] w-full rounded-lg border border-slate-200 bg-white" /> : <div className="flex flex-1 items-center justify-center text-center text-sm text-slate-500">A preview is not available for this file. Use Download to open it.</div>}</div> : <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">Choose a document to preview it here.</div>}

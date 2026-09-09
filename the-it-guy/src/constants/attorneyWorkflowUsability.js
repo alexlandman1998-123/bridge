@@ -1,3 +1,4 @@
+import { normalizeTaskConfirmations } from '../core/transactions/legalTaskConfirmations.js'
 import {
   attorneyStageKeyMatches,
   getAttorneyEvidenceRequirementsForStage,
@@ -625,6 +626,7 @@ export function normalizeAttorneyWorkflowWorkPacket(packet = null) {
     statusAction: compactText(packet.statusAction || ''),
     clientAudience,
     eventKey: compactText(packet.eventKey || ''),
+    ...(packet.taskConfirmations ? { taskConfirmations: normalizeTaskConfirmations(packet.taskConfirmations) } : {}),
   }
 }
 

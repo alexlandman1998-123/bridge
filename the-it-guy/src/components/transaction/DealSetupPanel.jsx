@@ -4,7 +4,7 @@ import { loadCanonicalDealSetup, saveCanonicalDealTerms } from '../../services/d
 import TransactionBuyerPartiesPanel from './TransactionBuyerPartiesPanel'
 import DealSetupReadinessPanel from './DealSetupReadinessPanel'
 
-export default function DealSetupPanel({ transactionId, organisationId = '', canEdit = false, onSaved }) {
+export default function DealSetupPanel({ transactionId, organisationId = '', canEdit = false, embedded = false, onSaved }) {
   const [draft, setDraft] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -64,7 +64,7 @@ export default function DealSetupPanel({ transactionId, organisationId = '', can
       </div>
     </section>
 
-    <TransactionBuyerPartiesPanel transactionId={transactionId} organisationId={organisationId} purchaserType={draft.terms.purchaserType} canEdit={canEdit} onUpdated={reloadSetup} />
+    <TransactionBuyerPartiesPanel transactionId={transactionId} organisationId={organisationId} purchaserType={draft.terms.purchaserType} canEdit={canEdit} embedded={embedded} onUpdated={reloadSetup} />
 
     <section className="rounded-[18px] border border-borderDefault bg-surface p-5 shadow-surface">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-wide text-textMuted">Step 3</p><h3 className="mt-1 text-section-title font-semibold text-textStrong">Funding</h3><p className="mt-1 text-secondary text-textMuted">Only the fields relevant to this finance route are shown.</p></div>{isDirty ? <Button type="button" disabled={!canEdit || busy} onClick={save}>{busy ? 'Saving…' : 'Save Deal Setup'}</Button> : null}</div>

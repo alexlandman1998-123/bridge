@@ -113,12 +113,12 @@ assert.match(pageSource, /onCaptureDetails/)
 assert.match(pageSource, /action\.requirement \|\| null/)
 
 const componentSource = readFileSync(new URL('../src/components/attorney/workflow/LegalTaskWorkbench.jsx', import.meta.url), 'utf8')
-assert.match(componentSource, /Checks confirmed on completion/)
-assert.match(componentSource, /Share a client-safe completion update/)
-assert.match(componentSource, /Outstanding items are advisory/)
+assert.match(componentSource, /Required action/)
+assert.match(componentSource, /Requires a client-safe note/)
+assert.match(componentSource, /Missing evidence remains visible after completion/)
 
 const laneServiceSource = readFileSync(new URL('../src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', import.meta.url), 'utf8')
 assert.match(laneServiceSource, /buildAttorneyTaskMutationPacket\(operationalContract/)
-assert.match(laneServiceSource, /publishAttorneySharedProgress\(client/)
+assert.match(laneServiceSource, /commitSharedJourneyTask\(client/)
 
 console.log('Legal task workbench Phase 4 operational checks passed.')

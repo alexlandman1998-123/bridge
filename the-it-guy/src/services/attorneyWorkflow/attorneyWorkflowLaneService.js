@@ -508,6 +508,7 @@ function mapStep(row, laneKey = null) {
     status: row.status || 'not_started',
     completedAt: row.completed_at || null,
     comment: row.comment || '',
+    taskConfirmations: row.task_confirmations,
     ownerType: row.owner_type || 'attorney',
     sortOrder: row.sort_order || 0,
     visibilityScope: row.visibility_scope || 'internal',
@@ -715,7 +716,7 @@ async function fetchLaneRows(client, transactionId) {
 
 async function fetchSteps(client, subprocessIds = []) {
   if (!subprocessIds.length) return []
-  const query = await client
+  let query = await client
     .from('transaction_subprocess_steps')
     .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, visibility_scope, updated_at, created_at')
     .in('subprocess_id', subprocessIds)
@@ -729,12 +730,16 @@ async function fetchSteps(client, subprocessIds = []) {
         .in('subprocess_id', subprocessIds)
         .order('sort_order', { ascending: true })
       if (fallback.error) throw fallback.error
-      return fallback.data || []
+      query = fallback
     }
-    if (isMissingSchemaError(query.error)) return []
-    throw query.error
+    if (query.error && isMissingSchemaError(query.error)) return []
+    if (query.error) throw query.error
   }
-  return query.data || []
+  const confirmations = await client.from('attorney_task_confirmations')
+    .select('step_id, task_confirmations').in('subprocess_id', subprocessIds)
+  if (confirmations.error && !isMissingSchemaError(confirmations.error)) throw confirmations.error
+  const byStep = new Map((confirmations.data || []).map(row => [row.step_id, row.task_confirmations]))
+  return (query.data || []).map(row => ({ ...row, task_confirmations: byStep.get(row.id) }))
 }
 
 async function fetchLaneUpdates(client, transactionId) {

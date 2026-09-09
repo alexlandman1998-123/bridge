@@ -146,20 +146,28 @@ for (const finance of ['cash','bond','hybrid']) for (const buyer of ['individual
   assert.equal(selectStableTransactionRollup(oldOverall,newLegalOldOverall,{transactionId:matter}).transactionJourneySnapshot.legalJourney.snapshot.revision,8)
   scenarios++
 }
-// A committed new revision yields the same changed task for every recipient.
+// Each committed outcome yields the same changed task for every recipient.
 const changedTask = (await db.query("select id,step_key from transaction_subprocess_steps where status='not_started' limit 1")).rows[0]
-await db.exec('begin')
-await db.query("update transaction_subprocess_steps set status='completed' where id=$1",[changedTask.id])
-await db.query('update transaction_refresh_signals set version=8 where transaction_id=$1',[matter])
-await db.exec('commit')
-const updated = (await db.query('select bridge_read_shared_matter_journey($1) result',[matter])).rows[0].result
-assert.equal(updated.revision,8)
-assert.ok(updated.lanes.flatMap(l=>l.phases.flatMap(p=>p.tasks)).some(t=>t.key===changedTask.step_key && t.status==='completed'))
-await db.query("select set_config('test.actor','',false),set_config('test.token','valid',false)")
-await db.exec('set role anon')
-assert.deepEqual((await db.query('select bridge_read_shared_matter_journey($1) result',[matter])).rows[0].result,updated)
-assert.deepEqual((await db.query("select bridge_read_seller_shared_matter_journey('seller-valid','valid-session') result")).rows[0].result,updated)
-await db.exec('reset role')
+for (const [offset, status] of ['completed','not_applicable','not_started'].entries()) {
+  await db.query("select set_config('test.actor',$1,false),set_config('test.token','',false)",[actor])
+  await db.exec('begin')
+  await db.query('update transaction_subprocess_steps set status=$2 where id=$1',[changedTask.id,status])
+  await db.query('update transaction_refresh_signals set version=$2 where transaction_id=$1',[matter,8+offset])
+  await db.exec('commit')
+  const updated = (await db.query('select bridge_read_shared_matter_journey($1) result',[matter])).rows[0].result
+  assert.equal(updated.revision,8+offset)
+  assert.ok(updated.lanes.flatMap(l=>l.phases.flatMap(p=>p.tasks)).some(t=>t.key===changedTask.step_key && t.status===status))
+  for (const role of ['attorney','agent','developer','buyer','seller']) {
+    const portal = ['buyer','seller'].includes(role)
+    await db.query("select set_config('test.actor',$1,false),set_config('test.token',$2,false)",[portal?'':actor,portal?'valid':''])
+    await db.exec(portal ? 'set role anon' : 'set role authenticated')
+    const read = role === 'seller'
+      ? await db.query("select bridge_read_seller_shared_matter_journey('seller-valid','valid-session') result")
+      : await db.query('select bridge_read_shared_matter_journey($1) result',[matter])
+    assert.deepEqual(read.rows[0].result,updated,`${role} must observe ${status} at the committed revision`)
+    await db.exec('reset role')
+  }
+}
 await db.query("select set_config('test.actor',$1,false)",[actor])
 await db.query("update transactions set routing_profile_json=jsonb_set(routing_profile_json,'{workflowPlan,lanes,0,stepKeys}','[\"unknown_task\"]') where id=$1",[matter])
 await assert.rejects(db.query('select bridge_read_shared_matter_journey($1)',[matter]),/reconciliation/)

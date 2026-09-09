@@ -128,6 +128,10 @@ import {
 } from '../services/attorneyWorkflow/matterWorkflowPlanService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService.js'
 import { buildLegalTaskWorkbenchModel } from '../core/transactions/legalTaskWorkbenchModel.js'
+import { readTaskConfirmations, normalizeTaskConfirmations } from '../core/transactions/legalTaskConfirmations.js'
+import { createAttorneyAppointmentInvite, resendAttorneyAppointmentCommunication } from '../services/attorneyOperations.js'
+import { buildAttorneyInviteOutcome } from '../core/appointments/attorneyInviteDelivery.js'
+import LegalTaskAppointmentForm from '../components/attorney/workflow/LegalTaskAppointmentForm.jsx'
 import { getCanonicalLegalWorkflowProgressPercent } from '../core/transactions/legalWorkflowProgress.js'
 import { isAttorneyTaskResolved, isAttorneyTaskCompleted } from '../core/transactions/attorneyTaskOutcomes.js'
 import { recordLegalWorkspaceUxEvent } from '../services/legalWorkspaceUxTelemetryService.js'
@@ -8023,6 +8027,8 @@ function ArchlineTransferWorkspace({
   onCaptureDetails,
   onExecuteCommand,
   onUxEvent,
+  onReviewTaskDocument,
+  onScheduleTask,
 }) {
   const [selectedTaskKey, setSelectedTaskKey] = useState(() => {
     if (!selectionStorageKey || typeof window === 'undefined') return ''
@@ -8064,6 +8070,10 @@ function ArchlineTransferWorkspace({
     workPacket: null,
   })
   const selectedTaskButtonRef = useRef(null)
+  const taskSavePending = useRef(false)
+  const [taskSaveBusy, setTaskSaveBusy] = useState(false)
+  const [taskSaveError, setTaskSaveError] = useState('')
+  const [taskSaveMessage, setTaskSaveMessage] = useState('')
   const canUpdateSteps = typeof onUpdateStep === 'function'
   const viewModel = useMemo(
     () => buildTransferWorkspaceViewModel({
@@ -8125,6 +8135,7 @@ function ArchlineTransferWorkspace({
     workflowLabel: viewModel.title,
     workflowTasks: viewModel.tasks,
   })
+  taskWorkbenchModel.confirmations = selectedTask?.taskConfirmations ?? readTaskConfirmations(activityFeed, workflowKey, selectedTask?.key)
   const statusFilterOptions = [
     ['', 'All'],
     ['open', 'Open'],
@@ -8211,6 +8222,8 @@ function ArchlineTransferWorkspace({
 
   function openStatusDraft(task, action = null) {
     if (!task || !action || action.disabled || !canUpdateSteps) return
+    setTaskSaveError('')
+    setTaskSaveMessage('')
     setStatusDraft({
       open: true,
       task,
@@ -8270,7 +8283,7 @@ function ArchlineTransferWorkspace({
     if (action.id === 'open_documents') return typeof onOpenDocuments === 'function'
     if (action.id === 'open_parties') return typeof onOpenParties === 'function'
     if (action.id === 'open_finance') return typeof onOpenFinance === 'function'
-    if (action.id === 'schedule_signing') return typeof onExecuteCommand === 'function' || typeof onAddNote === 'function'
+    if (action.id === 'schedule_signing') return typeof onScheduleTask === 'function' || typeof onExecuteCommand === 'function' || typeof onAddNote === 'function'
     if (action.id === 'add_note') return typeof onAddNote === 'function'
     return false
   }
@@ -8322,6 +8335,7 @@ function ArchlineTransferWorkspace({
       return
     }
     if (action.id === 'schedule_signing') {
+      if (onScheduleTask) { onScheduleTask(selectedTask); return }
       if (action.command && typeof onExecuteCommand === 'function') {
         onExecuteCommand(action.workflowAction, action.command)
         return
@@ -8340,8 +8354,11 @@ function ArchlineTransferWorkspace({
 
   function handleTaskWorkbenchAction(action = {}) {
     if (action.source === 'status') {
-      const canonicalAction = primaryTaskActions.find((item) => item.id === action.id)
-      if (canonicalAction?.disabled || action.disabled) return
+      const canonicalAction = taskWorkbenchModel.statusActions.find((item) => item.id === action.id)
+      if (!canonicalAction || canonicalAction.disabled || action.disabled) {
+        setTaskSaveError('This task action is no longer available. Refresh the workflow and try again.')
+        return
+      }
       const statusAction = { ...canonicalAction, ...action }
       openStatusDraft(selectedTask, statusAction)
       return
@@ -8355,10 +8372,10 @@ function ArchlineTransferWorkspace({
 
   async function markTaskInProgress() {
     if (!selectedTask || !canUpdateSteps || taskWorkbenchModel.readOnly || isAttorneyTaskResolved(selectedTask.displayStatus)) return
-    const saved = await onUpdateStep?.(
+    const saved = await persistTaskUpdate(
       selectedTask,
       'in_progress',
-      'Task marked in progress from the Work tab.',
+      selectedTask.comment || 'Task marked in progress from the Work tab.',
     )
     onUxEvent?.({
       eventName: 'task_marked_in_progress',
@@ -8468,16 +8485,50 @@ function ArchlineTransferWorkspace({
     }
   }
 
+  async function persistTaskUpdate(task, status, note, workPacket = null, visibility = 'professional_shared') {
+    if (taskSavePending.current) return false
+    taskSavePending.current = true
+    setTaskSaveBusy(true)
+    setTaskSaveError('')
+    setTaskSaveMessage('')
+    try {
+      if (!canUpdateSteps) throw new Error('You do not have access to update this task.')
+      const saved = await onUpdateStep(task, status, note, workPacket, visibility)
+      if (saved !== true) throw new Error('The task could not be saved. Review the workflow error and try again.')
+      setTaskSaveMessage(`${task.label || 'Task'} saved.`)
+      return true
+    } catch (error) {
+      setTaskSaveError(error?.message || 'The task could not be saved. Please try again.')
+      return false
+    } finally {
+      taskSavePending.current = false
+      setTaskSaveBusy(false)
+    }
+  }
+
   async function submitStatusDraft(event) {
     event.preventDefault()
-    if (!statusDraft.task || saving || !canUpdateSteps) return
-    const allowedAction = primaryTaskActions.find(action => action.id === statusDraft.actionId && action.status === statusDraft.status)
-    if (!allowedAction || allowedAction.disabled || statusDraft.task.key !== selectedTask?.key) return
-    if (statusDraft.requiresReason && !statusDraft.reason?.trim()) return
-    if ((statusDraft.requiresNote || statusDraft.visibility === 'client_visible') && !statusDraft.note?.trim()) return
-    if (statusDraft.visibility === 'client_visible' && (statusDraft.status !== 'completed' || !taskWorkbenchModel.clientUpdate.available)) return
+    if (saving || taskSavePending.current) return
+    const allowedActions = selectedTask?.operationalContract ? taskWorkbenchModel.statusActions : primaryTaskActions
+    const allowedAction = allowedActions.find(action => action.id === statusDraft.actionId && action.status === statusDraft.status)
+    if (!statusDraft.task || !canUpdateSteps || !allowedAction || allowedAction.disabled || statusDraft.task.key !== selectedTask?.key) {
+      setTaskSaveError('This task changed or is no longer editable. Close this dialog and refresh the workflow.')
+      return
+    }
+    if ((allowedAction.requiresReason || statusDraft.requiresReason) && !statusDraft.reason?.trim()) {
+      setTaskSaveError('Add a reason for this outcome.')
+      return
+    }
+    if ((allowedAction.requiresNote || statusDraft.requiresNote || statusDraft.visibility === 'client_visible') && !statusDraft.note?.trim()) {
+      setTaskSaveError('Add a note explaining this task outcome.')
+      return
+    }
+    if (statusDraft.visibility === 'client_visible' && (statusDraft.status !== 'completed' || !taskWorkbenchModel.clientUpdate.available)) {
+      setTaskSaveError('This outcome cannot be published as a client update.')
+      return
+    }
     const nextTaskKey = statusDraft.status === 'completed' ? viewModel.nextActionableTask?.key : ''
-    const updateSucceeded = await onUpdateStep?.(
+    const updateSucceeded = await persistTaskUpdate(
       statusDraft.task,
       statusDraft.status,
       buildStatusDraftNote(),
@@ -8509,14 +8560,15 @@ function ArchlineTransferWorkspace({
         phases={viewModel.phases}
         selectedTaskKey={selectedTask.key}
         selectedPhaseKey={selectedTask.phaseKey}
-        saving={saving}
-        error={workflowError}
+        saving={saving || taskSaveBusy}
+        error={workflowError || taskSaveError}
+        successMessage={taskSaveMessage}
         onSelectTask={setSelectedTaskKey}
         onRunAction={handleTaskWorkbenchAction}
-        onOpenDocuments={() => onOpenDocuments?.(selectedTask, selectedDocuments)}
+        onOpenDocuments={(document) => onOpenDocuments?.(selectedTask, document ? [document] : [])}
         onAddNote={() => onAddNote?.(selectedTask)}
         onMarkInProgress={markTaskInProgress}
-        onPersistTaskResponses={async (note) => onUpdateStep?.(
+        onPersistTaskResponses={async (note) => persistTaskUpdate(
           selectedTask,
           'in_progress',
           note,
@@ -8526,6 +8578,14 @@ function ArchlineTransferWorkspace({
         onSubmitStatusDraft={submitStatusDraft}
         onCloseStatusDraft={closeStatusDraft}
         onUxEvent={onUxEvent}
+        onReviewDocument={onReviewTaskDocument}
+        onSaveConfirmations={async (responses) => persistTaskUpdate(
+          selectedTask,
+          selectedTask.displayStatus === 'not_started' ? 'in_progress' : selectedTask.displayStatus,
+          selectedTask.comment || '',
+          { laneKey: workflowKey, stageKey: selectedTask.key, taskConfirmations: normalizeTaskConfirmations(responses) },
+          'internal',
+        )}
       />
     )
   }
@@ -15889,6 +15949,11 @@ function AttorneyTransactionDetail() {
   const [workspaceMenu, setWorkspaceMenu] = useState('overview')
   const [localLegalWorkflowDetailKey, setLocalLegalWorkflowDetailKey] = useState('')
   const [legalTaskReturnContext, setLegalTaskReturnContext] = useState(null)
+  const [legalTaskDrawer, setLegalTaskDrawer] = useState(null)
+  const [legalTaskDrawerBusy, setLegalTaskDrawerBusy] = useState(false)
+  const [legalTaskDrawerMessage, setLegalTaskDrawerMessage] = useState('')
+  const [legalTaskDrawerError, setLegalTaskDrawerError] = useState('')
+  const [legalTaskFinanceDocument, setLegalTaskFinanceDocument] = useState(null)
   const [discussionBody, setDiscussionBody] = useState('')
   const [discussionType, setDiscussionType] = useState('operational')
   const [discussionVisibility, setDiscussionVisibility] = useState('shared')
@@ -18471,6 +18536,10 @@ function AttorneyTransactionDetail() {
   }
   function handleOpenFinanceDocument(document = {}) {
     const url = document?.url || document?.publicUrl || document?.downloadUrl || ''
+    if (legalTaskDrawer) {
+      setLegalTaskFinanceDocument({ url, label: document.name || document.label || 'Finance document' })
+      return
+    }
     if (workspaceRole === 'bond_originator' && transaction?.id && isSupabaseConfigured && supabase) {
       void supabase
         .from('bond_finance_document_access_audit')
@@ -18503,7 +18572,7 @@ function AttorneyTransactionDetail() {
           />
         </Suspense>
       ) : null}
-      handoffPanel={workspaceRole === 'attorney' ? (
+      handoffPanel={workspaceRole === 'attorney' && !legalTaskDrawer ? (
         <BondOriginatorAttorneyHandoffView
           handoffView={bondOriginatorAttorneyHandoffView}
           transaction={transaction}
@@ -20391,6 +20460,12 @@ function AttorneyTransactionDetail() {
       : archlineDocumentsByWorkflow.cancellation || []
 
   function openTaskLinkedWorkspace(targetWorkspace, task = null) {
+    if (workspaceRole === 'attorney' && activeWorkspaceMenu === 'transfer') {
+      setLegalTaskDrawer({ kind: targetWorkspace, task })
+      setLegalTaskDrawerMessage('')
+      setLegalTaskDrawerError('')
+      return
+    }
     if (task?.key) {
       setLegalTaskReturnContext({
         taskKey: task.key,
@@ -22556,7 +22631,7 @@ function AttorneyTransactionDetail() {
               documents={archlineActiveLegalTaskDocuments}
               keyDates={archlineKeyDates}
               parties={archlinePartyItems}
-              activityFeed={overviewConversationEntries}
+              activityFeed={workflowOperations?.legalTimeline || overviewConversationEntries}
               saving={workflowSaving}
               workflowError={workflowError}
               onUpdateStep={(step, status, note, workPacket, visibility) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket, visibility)}
@@ -22570,6 +22645,23 @@ function AttorneyTransactionDetail() {
                 }
               }}
               onRequestDocument={handleLegalTaskDocumentRequest}
+              onScheduleTask={(task) => setLegalTaskDrawer({ kind: 'schedule', task })}
+              onReviewTaskDocument={async (row, action, reason) => {
+                const requirement = row.requirement || row.requiredDocument || {}
+                const raw = row.linkedDocument || row.raw || row.document || row
+                const requirementInstanceId = getRequirementCanonicalId(requirement) || getDocumentCanonicalId(raw) || getDocumentCanonicalId(row)
+                const documentId = row.linkedDocument?.id || row.document?.id || row.documentId || row.uploadedDocumentId || getRequirementDocumentId(requirement) || raw.id
+                if (!requirementInstanceId || !documentId) throw new Error('Link this file to its required document before approving it.')
+                if (action === 'reject' && !reason.trim()) throw new Error('Add a reason for the correction request.')
+                await reviewCanonicalDocumentRequirement({ requirementInstanceId, documentId, action, reason })
+                try {
+                  await refreshTransactionDatasets(['documents', 'workflow', 'activity'], { reason: 'task_document_review' })
+                  await refreshCanonicalTransactionSnapshot()
+                } catch {
+                  return { message: 'Review saved. Refresh the workspace to see the latest document status.' }
+                }
+                return { message: action === 'approve' ? 'Document approved.' : 'Document marked for correction.' }
+              }}
               onAddNote={(task) => handleWorkflowActionCommand(archlineActiveLegalTaskWorkflow?.lane, { stageKey: task?.key, label: `Note: ${task?.label || 'legal task'}` })}
               onCaptureDetails={(task, requirement) => {
                 setLegalTaskReturnContext({
@@ -24932,6 +25024,56 @@ function AttorneyTransactionDetail() {
         onExecuteCoordination={handleWorkflowCoordinationCommand}
         sellerPartyLabel={sellerPartyLabels.party}
       />
+
+      <Modal
+        open={Boolean(legalTaskDrawer)}
+        onClose={legalTaskDrawerBusy ? undefined : () => setLegalTaskDrawer(null)}
+        title={legalTaskDrawer?.kind === 'schedule' ? 'Schedule signing' : legalTaskDrawer?.kind === 'finance' ? 'Task finance' : 'Party details'}
+        subtitle={legalTaskDrawer?.task?.label || 'Current task'}
+        className="ml-auto h-[90dvh] w-full max-w-5xl overflow-y-auto"
+      >
+        {legalTaskDrawer?.kind === 'finance' ? <div className="space-y-4">
+          <DealSetupPanel transactionId={transaction?.id} organisationId={transaction?.organisation_id || workspaceOrganisationId} canEdit embedded onSaved={() => refreshWorkflowAfterChange()} />
+          {financeCommandCenterPanel}
+        </div> : null}
+        {legalTaskDrawer?.kind === 'stakeholders' ? <div className="space-y-5">
+          <form className="space-y-4" onSubmit={async event => {
+            event.preventDefault()
+            if (legalTaskDrawerBusy) return
+            setLegalTaskDrawerBusy(true)
+            setLegalTaskDrawerError('')
+            setLegalTaskDrawerMessage('')
+            try { await persistRoleplayerContacts(); await refreshWorkflowAfterChange(); setLegalTaskDrawerMessage('Party details saved.') }
+            catch (error) { setLegalTaskDrawerError(error.message || 'Party details could not be saved.') }
+            finally { setLegalTaskDrawerBusy(false) }
+          }}>
+            {legalTaskDrawerError ? <p role="alert" className="text-red-700">{legalTaskDrawerError}</p> : null}
+            {legalTaskDrawerMessage ? <p role="status" className="text-emerald-800">{legalTaskDrawerMessage}</p> : null}
+            <div className="grid gap-4 sm:grid-cols-2">{['buyer', 'seller'].map(party => <fieldset key={party} className="space-y-3 rounded-xl border border-slate-200 p-4"><legend className="px-1 font-semibold capitalize">{party}</legend>{[['Name', 'Name', 'text'], ['Email', 'Email', 'email'], ['Phone', 'Phone', 'tel']].map(([key, label, type]) => <label key={key} className="grid gap-1 text-sm">{label}<Field type={type} value={roleplayerForm[party + key] || ''} disabled={legalTaskDrawerBusy} onChange={event => setRoleplayerForm(previous => ({ ...previous, [party + key]: event.target.value }))} /></label>)}</fieldset>)}</div>
+            <Button type="submit" disabled={legalTaskDrawerBusy}>{legalTaskDrawerBusy ? 'Saving…' : 'Save party details'}</Button>
+          </form>
+          <Button type="button" variant="secondary" onClick={openRoutingProfileModal}>Edit entity and transaction details</Button>
+          <TransactionBuyerPartiesPanel transactionId={transaction?.id} organisationId={transaction?.organisation_id || workspaceOrganisationId} canEdit embedded onUpdated={() => refreshWorkflowAfterChange()} />
+        </div> : null}
+        {legalTaskDrawer?.kind === 'schedule' ? <LegalTaskAppointmentForm
+          key={`${transaction?.id}:${legalTaskDrawer.task?.key}`}
+          task={legalTaskDrawer.task || { label: 'Signing' }}
+          onBusyChange={setLegalTaskDrawerBusy}
+          recipient={/seller/.test(legalTaskDrawer.task?.key || '') ? { name: sellerDisplayName, email: sellerEmail } : { name: buyerDisplayName, email: buyerEmail }}
+          onCreate={async draft => {
+            const laneKey = archlineActiveLegalTaskWorkflowKey
+            const result = await createAttorneyAppointmentInvite({ ...draft, organisationId: workspaceOrganisationId, transactionId: transaction.id, appointmentType: laneKey === 'bond' ? 'bond_signing' : 'transfer_signing', linkedWorkflow: laneKey, linkedWorkflowStage: legalTaskDrawer.task?.key, attachCalendarInvite: true })
+            let message = buildAttorneyInviteOutcome(result.delivery).message
+            try { await refreshWorkflowAfterChange() } catch { message += ' Refresh the matter to load the saved appointment.' }
+            return { ...result, message }
+          }}
+          onResend={appointmentId => resendAttorneyAppointmentCommunication(appointmentId)}
+        /> : null}
+      </Modal>
+
+      <Modal open={Boolean(legalTaskFinanceDocument)} onClose={() => setLegalTaskFinanceDocument(null)} title={legalTaskFinanceDocument?.label || 'Finance document'} className="max-w-5xl">
+        {legalTaskFinanceDocument?.url ? <iframe title={legalTaskFinanceDocument.label} src={legalTaskFinanceDocument.url} className="h-[65dvh] w-full rounded-xl border" /> : <p role="status">No preview is available for this document.</p>}
+      </Modal>
 
       <Modal
         open={detailPanelOpen}

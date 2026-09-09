@@ -166,6 +166,12 @@ export function buildLegalTaskWorkbenchModel({
         task.displayStatus !== 'in_progress' ? { id: 'mark_in_progress', label: 'Mark in progress', status: 'in_progress', disabled: false } : null,
         task.displayStatus !== 'blocked' ? { id: 'mark_blocked', label: 'Mark blocked', status: 'blocked', disabled: false, requiresNote: true } : null,
         task.displayStatus !== 'waiting' ? { id: 'mark_waiting', label: 'Mark waiting', status: 'waiting', disabled: false, requiresNote: true } : null,
+        ...(['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus)
+          ? [{ id: 'reopen_task', label: 'Reopen task', status: 'not_started', requiresNote: true }]
+          : [
+              { id: 'complete_externally', label: 'Completed externally', status: 'completed_externally', requiresReason: true },
+              { id: 'mark_not_applicable', label: 'Not applicable', status: 'not_applicable', requiresReason: true },
+            ]),
       ].filter(Boolean).map((action) => normalizeAction(action, 'status'))
     : []
   const effectiveStatusActions = normalizedStatusActions.length ? normalizedStatusActions : fallbackStatusActions
@@ -225,7 +231,9 @@ export function buildLegalTaskWorkbenchModel({
     dueDate: task.dueDate,
     primaryAction,
     secondaryActions,
+    contextualActions: normalizedWorkActions.filter(action => ['open_parties', 'open_finance', 'schedule_signing'].includes(action.id)),
     completeAction,
+    statusActions: effectiveStatusActions.map(action => action.id === 'mark_complete' ? completeAction : action),
     outcomeActions: effectiveStatusActions.filter(action => ['complete_externally', 'mark_not_applicable', 'reopen_task'].includes(action.id)),
     followUpActions: ['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus) ? [] : effectiveStatusActions.filter(action => ['mark_blocked', 'mark_waiting'].includes(action.id)),
     readOnly: !forceEditable && !normalizedStatusActions.some(action => !action.disabled),

@@ -9,6 +9,10 @@ import {
   removeTransactionBuyerParty,
   setTransactionPrimaryBuyerParty,
   updateTransactionBuyerParty,
+  getReusableBuyerProfile,
+  saveReusableBuyerProfile,
+  saveBuyerProfileIdentity,
+  listReusableBuyerProfileTransactionIds,
 } from '../../services/buyerProfileReuseService'
 import { syncDealSetupDownstream } from '../../services/dealSetupService'
 
@@ -47,7 +51,7 @@ const buyerStatus = (party = {}) => {
   return 'Profile still needed'
 }
 
-export default function TransactionBuyerPartiesPanel({ transactionId, organisationId = '', purchaserType = 'individual', canEdit = false, onUpdated }) {
+export default function TransactionBuyerPartiesPanel({ transactionId, organisationId = '', purchaserType = 'individual', canEdit = false, embedded = false, onUpdated }) {
   const navigate = useNavigate()
   const [parties, setParties] = useState([])
   const [profiles, setProfiles] = useState([])
@@ -56,9 +60,39 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
   const [newBuyer, setNewBuyer] = useState({ name: '', email: '', phone: '' })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [editingProfile, setEditingProfile] = useState(null)
+  const [profileNotice, setProfileNotice] = useState('')
   const primaryBuyer = useMemo(() => parties.find((party) => party.is_primary_buyer) || null, [parties])
   const normalizedPurchaserType = BUYER_PROFILE_FIELDS[purchaserType] ? purchaserType : 'individual'
   const profileFields = BUYER_PROFILE_FIELDS[normalizedPurchaserType]
+
+  async function editProfile(buyerId) {
+    if (!embedded) { navigate(`/buyers/${buyerId}`); return }
+    setBusy(true); setError(''); setProfileNotice('')
+    try {
+      const result = await getReusableBuyerProfile({ buyerId })
+      setEditingProfile({ buyer: result.buyer, data: result.profile?.profile_data || {} })
+    } catch (error) { setError(error.message || 'Could not open party details.') }
+    finally { setBusy(false) }
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault()
+    if (busy || !editingProfile) return
+    setBusy(true); setError('')
+    try {
+      const { buyer, data } = editingProfile
+      await saveBuyerProfileIdentity({ buyerId: buyer.id, name: buyer.name, email: buyer.email, phone: buyer.phone })
+      await saveReusableBuyerProfile({ buyerId: buyer.id, profileData: data })
+      setProfileNotice('Party profile saved.')
+      setEditingProfile(null)
+      const ids = await listReusableBuyerProfileTransactionIds({ buyerId: buyer.id })
+      await Promise.all(ids.map(transactionId => syncDealSetupDownstream({ transactionId })))
+      window.dispatchEvent(new CustomEvent('buyer-profile:updated', { detail: { buyerId: buyer.id } }))
+      await refresh({ syncDownstream: false })
+    } catch (error) { setError(error.message || 'Could not save or refresh party details.') }
+    finally { setBusy(false) }
+  }
 
   async function refresh({ syncDownstream = true } = {}) {
     if (syncDownstream) await syncDealSetupDownstream({ transactionId })
@@ -144,7 +178,7 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
           <div><h4 className="font-semibold text-textStrong">{displayName(party)}</h4><p className="mt-1 text-sm text-textMuted">{party.participant_email || party.participant_phone || 'Contact details still needed'}</p><p className="mt-2 text-xs text-textMuted">{buyerStatus(party)}{party.signing_required === false ? ' · Signature not required' : ' · Signature required'}</p></div>
           <div className="flex flex-wrap gap-2">
             {party.is_primary_buyer ? <span className="rounded-full bg-successSoft px-3 py-1.5 text-xs font-semibold text-success">Primary buyer</span> : canEdit ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => assignPrimary(party)}>Make primary</Button> : null}
-            {party.buyer_party_id ? <Button type="button" size="sm" variant="secondary" onClick={() => navigate(`/buyers/${party.buyer_party_id}`)}>Edit profile</Button> : null}
+            {party.buyer_party_id && canEdit ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => editProfile(party.buyer_party_id)}>Edit profile</Button> : null}
             {canEdit && !party.is_primary_buyer ? <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => remove(party)}>Remove</Button> : null}
           </div>
         </div>
@@ -153,5 +187,15 @@ export default function TransactionBuyerPartiesPanel({ transactionId, organisati
       {!parties.length ? <p className="rounded-control bg-surfaceAlt px-4 py-3 text-sm text-textMuted">Add a buyer profile to begin.</p> : null}
     </div>
     {canEdit ? <div className="mt-5 border-t border-borderSoft pt-4"><div className="flex flex-wrap gap-2"><select value={selectedProfile} onChange={(event) => setSelectedProfile(event.target.value)} className="min-w-[16rem] flex-1 rounded-control border border-borderDefault bg-surface px-3 py-2 text-sm"><option value="">Add an existing buyer profile…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.email ? ` — ${profile.email}` : ''}</option>)}</select><Button type="button" disabled={!selectedProfile || busy} onClick={addProfile}>{primaryBuyer ? 'Add buyer' : 'Add as primary buyer'}</Button><Button type="button" variant="secondary" disabled={busy} onClick={() => setShowCreateBuyer((current) => !current)}>{showCreateBuyer ? 'Cancel' : 'Create new buyer'}</Button></div>{showCreateBuyer ? <div className="mt-4 rounded-control border border-borderSoft bg-surfaceAlt p-4"><div><h4 className="font-semibold text-textStrong">Create reusable buyer profile</h4><p className="mt-1 text-sm text-textMuted">{BUYER_TYPE_LABELS[normalizedPurchaserType]} details are saved once and reused on future transactions. Fields can be completed later, but identity and tax details are needed before FICA is complete.</p></div><div className="mt-4 grid gap-3 md:grid-cols-3"><label className="text-sm font-medium text-textMuted">{normalizedPurchaserType === 'company' ? 'Registered company / CC name' : normalizedPurchaserType === 'trust' ? 'Trust name' : 'Full name'}<input autoComplete="name" disabled={busy} value={newBuyer.name} onChange={(event) => setNewBuyer((current) => ({ ...current, name: event.target.value }))} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" placeholder="Required" /></label><label className="text-sm font-medium text-textMuted">Email<input autoComplete="email" disabled={busy} type="email" value={newBuyer.email} onChange={(event) => setNewBuyer((current) => ({ ...current, email: event.target.value }))} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" placeholder="Optional" /></label><label className="text-sm font-medium text-textMuted">Mobile number<input autoComplete="tel" disabled={busy} type="tel" value={newBuyer.phone} onChange={(event) => setNewBuyer((current) => ({ ...current, phone: event.target.value }))} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" placeholder="Optional" /></label>{profileFields.map(([key, label]) => <label key={key} className="text-sm font-medium text-textMuted">{label}<input disabled={busy} value={newBuyer[key] || ''} onChange={(event) => setNewBuyer((current) => ({ ...current, [key]: event.target.value }))} className="mt-1 w-full rounded-control border border-borderDefault bg-surface p-2" placeholder="Capture now or complete later" /></label>)}</div><div className="mt-4 flex justify-end"><Button type="button" disabled={!newBuyer.name.trim() || busy} onClick={createAndAddBuyer}>{busy ? 'Creating…' : primaryBuyer ? 'Create and add buyer' : 'Create as primary buyer'}</Button></div></div> : null}</div> : null}
+    {profileNotice ? <p role="status" className="text-sm text-emerald-800">{profileNotice}</p> : null}
+    {editingProfile && canEdit ? <form onSubmit={saveProfile} className="space-y-4 rounded-xl border border-slate-200 p-4">
+      <h4 className="font-semibold">Edit party profile</h4>
+      <p className="text-sm text-slate-600">Changes apply to this buyer’s shared profile and linked matters.</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {['name', 'email', 'phone'].map(key => <label key={key} className="grid gap-1 text-sm capitalize">{key}<input className="ui-input" disabled={busy} type={key === 'email' ? 'email' : 'text'} value={editingProfile.buyer[key] || ''} onChange={event => setEditingProfile(previous => ({ ...previous, buyer: { ...previous.buyer, [key]: event.target.value } }))} /></label>)}
+        {(BUYER_PROFILE_FIELDS[editingProfile.data.purchaser_type] || profileFields).map(([key, label]) => <label key={key} className="grid gap-1 text-sm">{label}<input className="ui-input" disabled={busy} value={editingProfile.data[key] || ''} onChange={event => setEditingProfile(previous => ({ ...previous, data: { ...previous.data, [key]: event.target.value } }))} /></label>)}
+      </div>
+      <div className="flex gap-2"><Button type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save profile'}</Button><Button type="button" variant="secondary" disabled={busy} onClick={() => setEditingProfile(null)}>Cancel</Button></div>
+    </form> : null}
   </section>
 }

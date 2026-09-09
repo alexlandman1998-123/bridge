@@ -39,6 +39,12 @@ try {
   assert.doesNotMatch(documentHtml, /More status options/)
   assert.match(render({ outstandingRequirements: [{ id: 'otp', label: 'OTP', description: 'Check all signatures.' }] }), /<summary[^>]*>Details<\/summary><p[^>]*>Check all signatures\./)
   assert.doesNotMatch(render({ completeAction: null }), /Complete task<\/button>/)
+  const outcomesHtml = render({ outcomeActions: [
+    { id: 'mark_not_applicable', label: 'Not applicable' },
+    { id: 'complete_externally', label: 'Completed externally' },
+    { id: 'reopen_task', label: 'Reopen task' },
+  ] })
+  for (const label of ['Not applicable', 'Completed externally', 'Reopen task']) assert.ok(outcomesHtml.includes(label))
   assert.match(render({ canComplete: false }), /disabled=""[^>]*>[\s\S]*Complete task/)
   console.log('Work tab simplification: task-first rendering, labels and action gates passed')
 } finally {

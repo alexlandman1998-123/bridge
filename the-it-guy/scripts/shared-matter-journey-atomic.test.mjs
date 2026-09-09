@@ -32,14 +32,17 @@ await db.exec(legacy.slice(legacy.indexOf('create or replace function public.bri
 const refresh = migration('20260908121455_transaction_attorney_refresh_contract_repair.sql')
 await db.exec(refresh.slice(refresh.indexOf('create or replace function'), refresh.indexOf('-- A changed routing')))
 await db.exec(migration('20260908144636_shared_matter_journey_atomic_commands.sql'))
+const laneSecurity = migration('202607230008_attorney_three_lane_transaction_spine.sql')
+await db.exec(laneSecurity.slice(laneSecurity.indexOf('create or replace function public.bridge_attorney_lane_role'), laneSecurity.indexOf('create or replace function public.bridge_can_mutate_attorney_lane')))
+await db.exec(migration('20260909144454_attorney_task_confirmation_state.sql'))
 for (const key of ['transfer','bond','cancellation']) {
   const rows = (await db.query('select step_key,definition from journey_private.task_catalog where lane_key=$1 order by step_key',[key])).rows
   assert.deepEqual(rows, getAttorneyStageDefinitionsForLane(key).map(t=>({step_key:t.key,definition:t.sharedProgress})).sort((a,b)=>a.step_key.localeCompare(b.step_key)))
 }
-const update = async (status, command = randomUUID(), expected = undefined, note = '') => {
+const update = async (status, command = randomUUID(), expected = undefined, note = '', packet = null) => {
   if (expected === undefined) expected = (await db.query('select updated_at from transaction_subprocess_steps where id=$1',[step])).rows[0].updated_at
-  return (await db.query('select bridge_update_attorney_workflow_step_v4($1,$2,$3,$4,$5,$6,$7,$8) result',
-    [matter,'transfer',step,status,command,expected,note,'internal'])).rows[0].result
+  return (await db.query('select bridge_update_attorney_workflow_step_v4($1,$2,$3,$4,$5,$6,$7,$8,$9) result',
+    [matter,'transfer',step,status,command,expected,note,'internal',packet])).rows[0].result
 }
 const id = randomUUID()
 let result = await update('completed',id,null,'Private note')
@@ -59,6 +62,9 @@ assert.equal(result.completionPercent,0)
 for (const status of ['in_progress','waiting','blocked','completed_externally','not_applicable']) {
   const next = await update(status,randomUUID(),undefined,'Reason')
   assert.equal(next.stepStatus,status)
+  const reloaded = (await db.query('select status, comment from transaction_subprocess_steps where id=$1', [step])).rows[0]
+  assert.equal(reloaded.status, status, 'a fresh database read must retain the saved outcome')
+  assert.equal(reloaded.comment, 'Reason', 'the outcome reason must survive a fresh read')
   assert.ok(next.revision > result.revision)
   result = next
 }
@@ -85,10 +91,6 @@ has_function_privilege('anon','bridge_update_attorney_workflow_step_v4(uuid,text
 has_function_privilege('authenticated','bridge_update_attorney_workflow_step_v3(uuid,text,uuid,text,text,text,jsonb)','execute') legacy,
 has_schema_privilege('authenticated','journey_private','usage') private_access`)).rows[0]
 assert.deepEqual(privileges,{anonymous:false,legacy:false,private_access:false})
-await db.exec('delete from transaction_attorney_assignments')
-await assert.rejects(update('completed'),/permission/)
-await assert.rejects(update('completed',id,null,'Private note'),/permission/, 'replays must recheck authority')
-await db.close()
 let calls = []
 const payload = {p_command_id:randomUUID()}
 const response = await commitSharedJourneyTask({rpc:async(name,args)=>{
@@ -101,4 +103,24 @@ assert.strictEqual(calls[0].args,calls[1].args)
 calls=[]
 await commitSharedJourneyTask({rpc:async()=>{calls.push(1);return {error:{code:'40001'}}}},payload)
 assert.equal(calls.length,1)
-console.log('Shared journey atomic: PostgreSQL commit, publication/receipt rollback, seven outcomes, revisions, replay, stale edits, ACL and transport retry PASS')
+const confirmations = { 'evidence:instruction_received:0': { answer: 'yes', note: 'Reviewed locally' } }
+await update('in_progress', randomUUID(), undefined, '', { taskConfirmations: confirmations })
+assert.deepEqual((await db.query('select task_confirmations from attorney_task_confirmations where step_id=$1',[step])).rows[0].task_confirmations, confirmations)
+await update('completed')
+assert.deepEqual((await db.query('select task_confirmations from attorney_task_confirmations where step_id=$1',[step])).rows[0].task_confirmations, confirmations, 'completion must retain structured confirmations')
+await assert.rejects(update('in_progress', randomUUID(), undefined, '', { taskConfirmations: { bad: { answer: 'invented' } } }), /Invalid task confirmation/)
+assert.equal((await db.query('select status from transaction_subprocess_steps where id=$1',[step])).rows[0].status, 'completed', 'invalid confirmation must roll back the whole update')
+const confirmationPrivileges = (await db.query(`select has_table_privilege('anon','attorney_task_confirmations','select') anonymous_read, has_table_privilege('authenticated','attorney_task_confirmations','insert') direct_write`)).rows[0]
+assert.deepEqual(confirmationPrivileges, { anonymous_read: false, direct_write: false })
+// Supply the established base-table read grants in this isolated fixture.
+await db.exec('grant usage on schema auth to authenticated; grant select on transaction_subprocesses, transaction_attorney_assignments to authenticated; set role authenticated')
+assert.equal((await db.query('select count(*)::int n from attorney_task_confirmations')).rows[0].n, 1)
+await db.exec('reset role')
+await db.exec('delete from transaction_attorney_assignments')
+await db.exec('set role authenticated')
+assert.equal((await db.query('select count(*)::int n from attorney_task_confirmations')).rows[0].n, 0, 'unassigned readers must not see private confirmation notes')
+await db.exec('reset role')
+await assert.rejects(update('completed'),/permission/)
+await assert.rejects(update('completed',id,null,'Private note'),/permission/, 'replays must recheck authority')
+await db.close()
+console.log('Shared journey atomic: PostgreSQL commits, structured confirmations, reload, rollback, outcomes, revisions, ACL and transport retry PASS')
