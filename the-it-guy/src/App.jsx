@@ -2487,7 +2487,7 @@ function AppRoutes() {
               <Route
                 path="/developer/leads"
                 element={
-                  <RoleRoute allowedRoles={['developer']}>
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <AppErrorBoundary scope="developer-leads-workspace" title="Developer leads failed to load">
                       <DeveloperLeadsPage />
                     </AppErrorBoundary>
@@ -2497,7 +2497,7 @@ function AppRoutes() {
               <Route
                 path="/developer/leads/:developerLeadId"
                 element={
-                  <RoleRoute allowedRoles={['developer']}>
+                  <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <AppErrorBoundary scope="developer-lead-workspace" title="Developer lead workspace failed to load">
                       <DeveloperLeadsPage />
                     </AppErrorBoundary>

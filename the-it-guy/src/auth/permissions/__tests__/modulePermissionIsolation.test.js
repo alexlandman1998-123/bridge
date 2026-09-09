@@ -161,6 +161,8 @@ try {
   assert.equal(can(PERMISSIONS.viewListings, developerContext), true)
   assert.equal(can(PERMISSIONS.viewLeads, developerContext), true)
   assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/pipeline/leads'), developerContext).ok, true)
+  assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/developer/leads/example-lead-id'), developerContext).ok, true)
+  assert.equal(evaluateAccessRequirement(getRouteAccessRequirement('/developer/leads/example-lead-id'), agencyTeamLeadContext).ok, false)
 
   const clientKeys = visibleKeys(filterNavigationItems(getRoleNavItems('client'), {
     appRole: 'client',
