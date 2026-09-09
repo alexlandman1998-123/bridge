@@ -912,6 +912,7 @@ function buildListingSnapshotFormData(draft = {}) {
     mandateSignedDate: draft.mandateSignedDate || '',
     listingDate: draft.listingDate || '',
     expiryDate: draft.expiryDate || '',
+    property24ExpiryDate: formatDateInputValue(draft.property24ExpiryDate),
     property24ListingUrl: String(draft.property24ListingUrl || '').trim(),
     property24Reference: String(draft.property24Reference || '').trim(),
     property24Status: String(draft.property24Status || 'not_published').trim(),
@@ -1744,6 +1745,13 @@ function addDaysToDateInput(value = '', days = 1) {
   if (Number.isNaN(base.getTime())) return toLocalDateInput(new Date())
   base.setDate(base.getDate() + days)
   return toLocalDateInput(base)
+}
+
+function getProperty24ExpiryDateError(value = '') {
+  const expiryDate = formatDateInputValue(value)
+  if (!expiryDate) return 'Set a valid Property24 expiry date before publishing.'
+  if (expiryDate <= toLocalDateInput(new Date())) return 'Property24 expiry must be a future date.'
+  return ''
 }
 
 function createShowDayCaptureForm() {
@@ -3165,6 +3173,7 @@ function buildPropertyDraft(listingRecord) {
     mandateSignedDate: String(firstDraftValue(propertyDetails?.mandateSignedDate, onboardingFormData.mandateSignedDate)).trim(),
     listingDate: String(firstDraftValue(propertyDetails?.listingDate, onboardingFormData.listingDate)).trim(),
     expiryDate: String(firstDraftValue(propertyDetails?.expiryDate, onboardingFormData.expiryDate)).trim(),
+    property24ExpiryDate: formatDateInputValue(firstDraftValue(propertyDetails?.property24ExpiryDate, onboardingFormData.property24ExpiryDate, onboardingFormData.property24_expiry_date)),
     property24ListingUrl: String(firstDraftValue(propertyDetails?.property24ListingUrl, listingRecord?.property24ListingUrl, onboardingFormData.property24ListingUrl)).trim(),
     property24Reference: String(firstDraftValue(propertyDetails?.property24Reference, listingRecord?.property24Reference, onboardingFormData.property24Reference)).trim(),
     property24Status: String(firstDraftValue(propertyDetails?.property24Status, listingRecord?.property24Status, onboardingFormData.property24Status, 'not_published')).trim(),
@@ -3197,6 +3206,7 @@ function buildLightweightMarketingDraft(draft = {}) {
     property24ListingUrl: String(safeDraft.property24ListingUrl || '').trim(),
     property24Reference: String(safeDraft.property24Reference || '').trim(),
     property24Status: String(safeDraft.property24Status || '').trim(),
+    property24ExpiryDate: formatDateInputValue(safeDraft.property24ExpiryDate),
     privatePropertyListingUrl: String(safeDraft.privatePropertyListingUrl || '').trim(),
     privatePropertyReference: String(safeDraft.privatePropertyReference || '').trim(),
     privatePropertyStatus: String(safeDraft.privatePropertyStatus || '').trim(),
@@ -4104,6 +4114,7 @@ function AgentListingDetail() {
         mandateSignedDate: nextDraft.mandateSignedDate,
         listingDate: nextDraft.listingDate,
         expiryDate: nextDraft.expiryDate,
+        property24ExpiryDate: formatDateInputValue(nextDraft.property24ExpiryDate),
         property24ListingUrl: nextDraft.property24ListingUrl.trim(),
         property24Reference: nextDraft.property24Reference.trim(),
         property24Status: nextDraft.property24Status,
@@ -4523,14 +4534,35 @@ function AgentListingDetail() {
         listingRecord?.property24_listing_url ||
         '',
     ).trim()
+    const expiryDate = formatDateInputValue(marketingDraft.property24ExpiryDate)
 
     return {
       ...(listingNumber ? { listingNumber } : {}),
       ...(property24ListingUrl ? { property24ListingUrl } : {}),
+      ...(expiryDate ? { expiryDate } : {}),
     }
   }
 
+  async function saveProperty24ExpiryDate() {
+    const expiryDate = formatDateInputValue(marketingDraft.property24ExpiryDate)
+    const validationError = getProperty24ExpiryDateError(expiryDate)
+    if (validationError) {
+      setDetailMessage('')
+      setDetailError(validationError)
+      return null
+    }
+    const nextDraft = { ...marketingDraft, property24ExpiryDate: expiryDate }
+    setMarketingDraft(nextDraft)
+    return saveMarketingDraft(nextDraft, { successMessage: 'Property24 expiry date saved.' })
+  }
+
   async function previewProperty24Listing() {
+    const expiryError = getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate)
+    if (expiryError) {
+      setDetailMessage('')
+      setDetailError(expiryError)
+      return null
+    }
     setProperty24Action('preview')
     setProperty24Preview(null)
     setDetailError('')
@@ -4560,6 +4592,12 @@ function AgentListingDetail() {
   }
 
   async function publishProperty24Listing() {
+    const expiryError = getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate)
+    if (expiryError) {
+      setDetailMessage('')
+      setDetailError(expiryError)
+      return null
+    }
     setProperty24Action('publish')
     setDetailError('')
     setDetailMessage('Publishing to Property24...')
@@ -7528,6 +7566,8 @@ function AgentListingDetail() {
   const arch9IsPublished = normalizeKey(marketingDraft.publicationStatus) === 'published' && normalizeKey(marketingDraft.bridgeListingStatus) === 'published'
   const property24StatusKey = normalizeKey(marketingDraft.property24Status || listingRecord?.property24Status || listingRecord?.property24_status)
   const property24Reference = String(marketingDraft.property24Reference || listingRecord?.property24Reference || listingRecord?.property24_reference || '').trim()
+  const property24ExpiryDate = formatDateInputValue(marketingDraft.property24ExpiryDate)
+  const property24ExpiryError = property24ExpiryDate ? getProperty24ExpiryDateError(property24ExpiryDate) : ''
   const property24Published = ['published', 'live', 'active'].includes(property24StatusKey)
   const property24PreviewCounts = getProperty24ReadinessCounts(property24Preview)
   const property24ReadinessIssues = getProperty24ReadinessIssues(property24Preview)
@@ -7537,7 +7577,7 @@ function AgentListingDetail() {
   const property24CanSubmit = property24Preview?.preview?.canSubmit ?? property24Preview?.report?.preview?.canSubmit ?? null
   const property24HasPreviewBlockers = property24PreviewCounts.dataBlockers > 0 || property24PreviewCounts.technicalBlockers > 0
   const property24SandboxAgentIdPending = hasProperty24SandboxAgentIdBlocker(property24Preview)
-  const property24PublishDisabled = Boolean(property24Action) || property24CanSubmit !== true || property24HasPreviewBlockers
+  const property24PublishDisabled = Boolean(property24Action) || !property24ExpiryDate || Boolean(property24ExpiryError) || property24CanSubmit !== true || property24HasPreviewBlockers
   const property24PrimaryActionLabel = property24HasReference ? 'Update Existing Listing' : 'Publish New Listing'
   const property24NextStep = property24SandboxAgentIdPending
     ? 'Sandbox payload can be reviewed. Real publishing stays blocked until Property24 returns a usable agent ID.'
@@ -9576,6 +9616,8 @@ function AgentListingDetail() {
   const sellerProfileBuilderShowsSpouse = sellerProfileBuilderBranch === 'married'
 
   function renderProperty24ManagePanel() {
+    const mandateExpiryDate = formatDateInputValue(marketingDraft.expiryDate)
+    const canUseMandateExpiry = Boolean(mandateExpiryDate) && !getProperty24ExpiryDateError(mandateExpiryDate)
     return (
       <Modal
         open={property24ManageOpen}
@@ -9605,6 +9647,33 @@ function AgentListingDetail() {
               ))}
             </div>
             <p className="mt-3 text-sm leading-6 text-[#607387]">{property24NextStep}</p>
+          </section>
+
+          <section className="rounded-[18px] border border-[#cfe0ef] bg-[#f8fbff] p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-[#1f4f78]">
+                  <CalendarDays size={18} />
+                  <p className="text-sm font-semibold">Property24 expiry date</p>
+                </div>
+                <p className="mt-1 max-w-2xl text-sm leading-6 text-[#607387]">Set when this listing should be removed from Property24. This does not unpublish the Arch9 or agency-website listing, and is separate from the mandate expiry. Save it, then run Preview and Update Existing Listing to send a changed date to Property24.</p>
+              </div>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+                <label className="grid min-w-[210px] gap-1.5">
+                  <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718198]">Expires on</span>
+                  <Field type="date" min={addDaysToDateInput('', 1)} value={property24ExpiryDate} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24ExpiryDate: event.target.value }))} disabled={Boolean(property24Action)} />
+                </label>
+                <Button type="button" onClick={saveProperty24ExpiryDate} disabled={Boolean(property24Action)} className="justify-center">
+                  <CalendarDays size={15} />
+                  Save expiry
+                </Button>
+              </div>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {property24ExpiryDate && !property24ExpiryError ? <span className="inline-flex rounded-full border border-[#bfe5cf] bg-[#effbf4] px-2.5 py-1 text-xs font-semibold text-[#197849]">Property24 expiry: {formatDate(property24ExpiryDate)}</span> : <span className="inline-flex rounded-full border border-[#f0d6a8] bg-[#fff9ed] px-2.5 py-1 text-xs font-semibold text-[#8a5b13]">Expiry date required before publish or update</span>}
+              {canUseMandateExpiry && mandateExpiryDate !== property24ExpiryDate ? <button type="button" onClick={() => setMarketingDraft((previous) => ({ ...previous, property24ExpiryDate: mandateExpiryDate }))} disabled={Boolean(property24Action)} className="text-xs font-semibold text-[#1f4f78] underline underline-offset-2 disabled:opacity-50">Use future mandate end date ({formatDate(mandateExpiryDate)})</button> : null}
+            </div>
+            {property24ExpiryError ? <p className="mt-3 text-xs font-semibold text-[#b54708]">{property24ExpiryError}</p> : null}
           </section>
 
           <section className="grid gap-3 lg:grid-cols-4">

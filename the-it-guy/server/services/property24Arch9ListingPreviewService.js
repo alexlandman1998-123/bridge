@@ -46,6 +46,12 @@ function hydrateListingFromOnboarding(listing = {}, onboarding = {}) {
     formData.mandate_start_date,
     formData.listingDate,
   )
+  const property24ExpiryDate = firstText(
+    listing.property24_expiry_date,
+    listing.property24ExpiryDate,
+    formData.property24ExpiryDate,
+    formData.property24_expiry_date,
+  )
   const listingDescription = firstText(
     listing.listing_preview_description,
     listing.listingPreviewDescription,
@@ -77,6 +83,12 @@ function hydrateListingFromOnboarding(listing = {}, onboarding = {}) {
           mandateEndDate: firstText(listing.mandateEndDate, mandateEndDate),
           expiry_date: firstText(listing.expiry_date, mandateEndDate),
           expiryDate: firstText(listing.expiryDate, mandateEndDate),
+        }
+      : {}),
+    ...(property24ExpiryDate
+      ? {
+          property24_expiry_date: firstText(listing.property24_expiry_date, property24ExpiryDate),
+          property24ExpiryDate: firstText(listing.property24ExpiryDate, property24ExpiryDate),
         }
       : {}),
   }

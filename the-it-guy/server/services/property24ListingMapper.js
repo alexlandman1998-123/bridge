@@ -176,6 +176,10 @@ function resolveExpiryDate(listing = {}, publication = {}, options = {}) {
   const property24Import = canonicalFacts.property24Import || canonicalFacts.property24_import || {}
   const raw = firstText(
     options.expiryDate,
+    publication.property24ExpiryDate,
+    publication.property24_expiry_date,
+    listing.property24ExpiryDate,
+    listing.property24_expiry_date,
     publication.expiryDate,
     publication.expiry_date,
     listing.expiryDate,
@@ -190,6 +194,14 @@ function resolveExpiryDate(listing = {}, publication = {}, options = {}) {
   if (!raw) return ''
   const date = new Date(raw)
   return Number.isNaN(date.getTime()) ? '' : date.toISOString()
+}
+
+function isFutureProperty24ExpiryDate(value = '') {
+  const expiry = new Date(value)
+  if (Number.isNaN(expiry.getTime())) return false
+  const tomorrow = new Date()
+  tomorrow.setHours(24, 0, 0, 0)
+  return expiry.getTime() >= tomorrow.getTime()
 }
 
 function resolvePrice(listing = {}, publication = {}, options = {}) {
@@ -360,6 +372,7 @@ export function createProperty24ListingPlan({
   }
   if (!description) dataBlockers.push('missing_description')
   if (!expiryDate) dataBlockers.push('missing_expiry_date')
+  if (expiryDate && !isFutureProperty24ExpiryDate(expiryDate)) dataBlockers.push('property24_expiry_date_must_be_future')
   if (!suburbId) dataBlockers.push('missing_property24_suburb_id')
   if (!propertyTypeId) dataBlockers.push('missing_property24_property_type_id')
   if (!price && !isPOA) dataBlockers.push('missing_price_or_poa')
