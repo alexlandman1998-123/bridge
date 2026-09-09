@@ -620,7 +620,7 @@ function CreateListingProgressNav({ steps = [], activeStep = 'seller', maxVisite
   const activeIndex = Math.max(0, steps.findIndex((step) => step.key === activeStep))
   return (
     <nav className="overflow-x-auto rounded-[16px] border border-[#dde6ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-label="Create listing progress">
-      <div className="flex min-w-[860px] items-center gap-4">
+      <div className={`flex items-center gap-4 ${steps.length === 1 ? 'min-w-0' : 'min-w-[860px]'}`}>
         {steps.map((step, index) => (
           <ListingWizardStep
             key={step.key}
@@ -3544,6 +3544,11 @@ function AgentListings({ initialTab = null } = {}) {
   const isCreateListingWorkspace = location.pathname === '/listings/new'
   const isEditListingWorkspace = Boolean(editListingId && location.pathname.startsWith('/listings/') && location.pathname.endsWith('/edit'))
   const isListingEditorWorkspace = isCreateListingWorkspace || isEditListingWorkspace
+  const isPropertyOnlyListingEditor = isEditListingWorkspace && new URLSearchParams(location.search || '').get('scope') === 'property'
+  const listingEditorSteps = useMemo(
+    () => (isPropertyOnlyListingEditor ? CREATE_LISTING_WORKFLOW_STEPS.filter((step) => step.key === 'property') : CREATE_LISTING_WORKFLOW_STEPS),
+    [isPropertyOnlyListingEditor],
+  )
   const createListingDraftStorageKey = `${CREATE_LISTING_DRAFT_STORAGE_KEY}:${normalizeText(profile?.id || profile?.email || 'local')}`
   const listingEditorDraftStorageKey = isEditListingWorkspace && editListingId
     ? `${CREATE_LISTING_DRAFT_STORAGE_KEY}:edit:${editListingId}`
@@ -3783,7 +3788,9 @@ function AgentListings({ initialTab = null } = {}) {
 
   useEffect(() => {
     if (!isListingEditorWorkspace) return
-    const requestedStep = resolveListingEditorStep(new URLSearchParams(location.search || '').get('step'), isEditListingWorkspace ? 'property' : 'seller')
+    const requestedStep = isPropertyOnlyListingEditor
+      ? 'property'
+      : resolveListingEditorStep(new URLSearchParams(location.search || '').get('step'), isEditListingWorkspace ? 'property' : 'seller')
     setListingModalMode(isDeveloperWorkspace ? 'developer' : agencyWorkflowMode === 'principal' ? 'principal' : 'agent')
     setListingModalFlow('quick_add')
     setShowNewListingModal(false)
@@ -3793,8 +3800,8 @@ function AgentListings({ initialTab = null } = {}) {
     setQuickAddSuccess(null)
     setError('')
     setCreateListingStep(requestedStep)
-    setCreateListingMaxVisitedStep(isEditListingWorkspace ? CREATE_LISTING_WORKFLOW_STEPS.length - 1 : Math.max(0, CREATE_LISTING_WORKFLOW_STEPS.findIndex((step) => step.key === requestedStep)))
-  }, [agencyWorkflowMode, isCreateListingWorkspace, isDeveloperWorkspace, isEditListingWorkspace, isListingEditorWorkspace, location.search])
+    setCreateListingMaxVisitedStep(isEditListingWorkspace ? listingEditorSteps.length - 1 : Math.max(0, listingEditorSteps.findIndex((step) => step.key === requestedStep)))
+  }, [agencyWorkflowMode, isCreateListingWorkspace, isDeveloperWorkspace, isEditListingWorkspace, isListingEditorWorkspace, isPropertyOnlyListingEditor, listingEditorSteps, location.search])
 
   useEffect(() => {
     if (!isEditListingWorkspace) return
@@ -4075,7 +4082,7 @@ function AgentListings({ initialTab = null } = {}) {
     setQuickAddDuplicateAction('')
   }
 
-  const createListingStepIndex = Math.max(0, CREATE_LISTING_WORKFLOW_STEPS.findIndex((step) => step.key === createListingStep))
+  const createListingStepIndex = Math.max(0, listingEditorSteps.findIndex((step) => step.key === createListingStep))
   const sellerRequirementSummary = useMemo(() => buildCreateListingRequirementSummary(form), [form])
   const createListingPortalStatuses = useMemo(() => buildCreateListingPortalStatuses(form), [form])
   const selectedCreateListingPortalStatuses = createListingPortalStatuses.filter((portal) => portal.enabled)
@@ -4089,7 +4096,7 @@ function AgentListings({ initialTab = null } = {}) {
   }, [form])
 
   function openCreateListingStep(stepKey, { allowForward = false } = {}) {
-    const targetIndex = CREATE_LISTING_WORKFLOW_STEPS.findIndex((step) => step.key === stepKey)
+    const targetIndex = listingEditorSteps.findIndex((step) => step.key === stepKey)
     if (targetIndex < 0 || (!isEditListingWorkspace && !allowForward && targetIndex > createListingMaxVisitedStep)) return
     setCreateListingStep(stepKey)
     if (isEditListingWorkspace) {
@@ -4100,7 +4107,7 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   async function goToNextCreateListingStep() {
-    const nextIndex = Math.min(createListingStepIndex + 1, CREATE_LISTING_WORKFLOW_STEPS.length - 1)
+    const nextIndex = Math.min(createListingStepIndex + 1, listingEditorSteps.length - 1)
     if (isEditListingWorkspace && !isListingSaving) {
       setIsListingSaving(true)
       setError('')
@@ -4124,12 +4131,12 @@ function AgentListings({ initialTab = null } = {}) {
       setIsListingSaving(false)
     }
     setCreateListingMaxVisitedStep((previous) => Math.max(previous, nextIndex))
-    openCreateListingStep(CREATE_LISTING_WORKFLOW_STEPS[nextIndex].key, { allowForward: true })
+    openCreateListingStep(listingEditorSteps[nextIndex].key, { allowForward: true })
   }
 
   function goToPreviousCreateListingStep() {
     const previousIndex = Math.max(createListingStepIndex - 1, 0)
-    openCreateListingStep(CREATE_LISTING_WORKFLOW_STEPS[previousIndex].key)
+    openCreateListingStep(listingEditorSteps[previousIndex].key)
   }
 
   function updateCreateListingOwnerCard(ownerId, fallbackIndex, key, value) {
@@ -7022,10 +7029,10 @@ function AgentListings({ initialTab = null } = {}) {
       ? `R${Number(form.listingPrice || form.estimatedAskingPrice || 0).toLocaleString('en-ZA')}`
       : form.priceOnApplication ? 'Price on Application' : 'Price not captured'
     const createListingOwnerCards = normalizeCreateListingOwnerCards(form.multipleOwners, form.multipleOwnersText, { includeBlank: sellerTypeKey === 'multiple_owners' })
-    const isFinalCreateListingStep = createListingStepIndex === CREATE_LISTING_WORKFLOW_STEPS.length - 1
-    const editorTitle = isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
-    const editorHeading = isEditListingWorkspace ? 'Edit Listing' : 'New listing'
-    const editorDescription = isEditListingWorkspace ? 'Update the details of your property listing.' : 'Capture the listing details.'
+    const isFinalCreateListingStep = createListingStepIndex === listingEditorSteps.length - 1
+    const editorTitle = isPropertyOnlyListingEditor ? 'Edit Property Details' : isEditListingWorkspace ? 'Edit Listing' : 'New listing (sales)'
+    const editorHeading = isPropertyOnlyListingEditor ? 'Property details' : isEditListingWorkspace ? 'Edit Listing' : 'New listing'
+    const editorDescription = isPropertyOnlyListingEditor ? 'Update property facts only. Seller, mandate, documents and syndication stay in their dedicated workspaces.' : isEditListingWorkspace ? 'Update the details of your property listing.' : 'Capture the listing details.'
     const editorCrumbTitle = isEditListingWorkspace ? normalizeText(editListingRecord?.listingTitle || editListingRecord?.title || editListingRecord?.addressLine1 || editListingRecord?.propertyAddress || 'Listing') : ''
     const cancelEditor = () => navigate(isEditListingWorkspace ? `/agent/listings/${encodeURIComponent(editListingId)}` : '/listings')
 
@@ -7073,9 +7080,9 @@ function AgentListings({ initialTab = null } = {}) {
         </header>
 
         <CreateListingProgressNav
-          steps={CREATE_LISTING_WORKFLOW_STEPS}
+          steps={listingEditorSteps}
           activeStep={createListingStep}
-          maxVisitedStep={isEditListingWorkspace ? CREATE_LISTING_WORKFLOW_STEPS.length - 1 : createListingMaxVisitedStep}
+          maxVisitedStep={isEditListingWorkspace ? listingEditorSteps.length - 1 : createListingMaxVisitedStep}
           onStepClick={openCreateListingStep}
         />
 

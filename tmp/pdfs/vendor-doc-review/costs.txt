@@ -1,0 +1,463 @@
+===== PAGE 1 =====
+GraphqQL Cost Specification
+
+===== PAGE 2 =====
+Table of Contents
+Metrics.....................................................................................................................................3
+Monetary Interpretation.....................................................................................................4
+Minimum Complexity Extension Price...........................................................................4
+Complexity Billing Intervals..........................................................................................5
+Example — Purchasing Additional Complexity..................................................6
+Example — Annual Additional Complexity..........................................................6
+Cancelling a Subscription...................................................................................................7
+How Remaining Credits Are Converted.....................................................................7
+Subscription Credits vs Prepaid Credits.....................................................................7
+Example — Cancelling With Unused Credits Remaining......................................8
+Example — Cancelling After Heavy Usage................................................................9
+Cancellation Audit..........................................................................................................10
+Default Prepaid Package After Cancellation................................................................10
+Example.......................................................................................................................10
+Example 1 — Simple Property Query............................................................................11
+Example 2 — Paginated Query........................................................................................11
+Example 3 — Report Generation....................................................................................12
+Example 4 — Complexity Limit.......................................................................................13
+Example 5 — Purchasing Additional Complexity......................................................14
+Example 6 — Pagination Within Pagination (Exponential Growth).....................15
+Why Nested Pagination Increases Cost....................................................................17
+Best Practices for Clients..............................................................................................17
+
+===== PAGE 3 =====
+Metrics
+Hot Chocolate provides several cost metrics used for execution limits and
+billing calculations.
+FieldCost
+Estimated computational impact of executing a field on the server.
+TypeCost
+Estimated number of objects instantiated or returned by the query.
+Note: Field and Type Cost follow the IBM cost specification:
+https://ibm.github.io/graphql-specs/cost-spec.html#sec-Type-Counts
+Complexity
+Complexity = FieldCost + TypeCost
+Complexity is used as a query limit / capacity control.
+Example:
+ If a client’s subscription allows 2000 complexity, then any query with
+complexity ≤ 2000 is allowed.
+ Queries exceeding this limit require the client to purchase additional
+complexity allowance.
+PriceSurcharge
+An additional fixed credit amount applied to specific APIs or operations.
+Example use cases:
+ Report generation
+ Bulk exports
+ Heavy aggregation queries
+CreditsConsumed
+CreditsConsumed = FieldCost + TypeCost + PriceSurcharge
+Credits are the billable unit consumed by each request.
+
+===== PAGE 4 =====
+Monetary Interpretation
+The system uses configurable constants to translate credits into monetary
+value.
+Configuration constants:
+ CreditsPerCent
+ CreditsPerCentPrepaid
+ CentPerComplexity
+Subscription Users:
+ValueInCents = CreditsConsumed/CreditsPerCent
+Subcription users generally have a discounted conversion rate.
+Prepaid Users:
+ValueInCents = CreditsConsumed/CreditsPerCentPrepaid
+Minimum Complexity Extension Price
+Each package includes a baseline complexity limit.
+Clients may purchase additional complexity allowance if they need to run
+more computationally expensive queries than their current package allows.
+The price of additional complexity is calculated as:
+ValueInCents =
+AdditionalComplexity
+× BillingIntervalMonthFactor
+× CentPerComplexity
+Where:
+Parameter Meaning
+Extra complexity units purchased by the
+AdditionalComplexity
+client.
+BillingIntervalMonthFactor
+The billing interval expressed as a monthly
+
+===== PAGE 5 =====
+multiplier.
+Cost per additional complexity unit per
+CentPerComplexity
+month.
+Complexity extensions are priced relative to a monthly base price. The billing
+interval determines how much of the monthly price applies.
+Complexity Billing Intervals
+The system uses the following billing interval factors when calculating the
+price of additional complexity:
+Month
+Billing Interval Meaning
+Factor
+One hour, assuming a 30-day month with 720
+hourly 1 / 720
+hours.
+daily 1 / 30 One day of a 30-day month.
+weekly 0.25 One quarter of a monthly billing period.
+monthly 1 One full month.
+quarterly 3 Three months.
+biannually 6 Six months.
+annually 12 Twelve months.
+Unsupported billing intervals are rejected.
+Supported intervals are:
+hourly
+daily
+weekly
+monthly
+quarterly
+biannually
+
+===== PAGE 6 =====
+annually
+Example — Purchasing Additional Complexity
+Client wants 500 additional complexity units.
+Configuration:
+AdditionalComplexity = 500
+CentPerComplexity = 5
+BillingInterval = monthly
+BillingIntervalMonthFactor = 1
+Calculation:
+ValueInCents =
+500 × 1 × 5
+ValueInCents = 2500
+Result:
+R25.00
+Example — Annual Additional Complexity
+Client wants 500 additional complexity units on an annual package.
+Configuration:
+AdditionalComplexity = 500
+CentPerComplexity = 5
+BillingInterval = annually
+BillingIntervalMonthFactor = 12
+Calculation:
+ValueInCents =
+500 × 12 × 5
+
+===== PAGE 7 =====
+ValueInCents = 30000
+Result:
+R300.00
+Cancelling a Subscription
+When a subscription is cancelled, any eligible unused subscription credits
+from the current billing cycle are converted into prepaid credits.
+This allows the remaining value of the current billing cycle to continue being
+available on the account, while also ensuring that subscription-only benefits
+do not continue after cancellation.
+After cancellation:
+ remaining subscription cycle credits are removed;
+ eligible unused credits are converted into prepaid credits;
+ the prepaid credits are added to the account’s prepaid balance;
+ the account is moved to the default prepaid package;
+ the account no longer has access to the subscription package’s
+complexity limit or other subscription-only allowances.
+How Remaining Credits Are Converted
+The number of credits converted depends on two limits:
+1. how many subscription credits are still available on the account; and
+2. how much unused value remains in the current billing cycle.
+The system uses the lower of these two amounts.
+This prevents a client from receiving more prepaid credits than the unused
+portion of the subscription represents.
+Subscription Credits vs Prepaid Credits
+Subscription credits and prepaid credits may have different conversion rates.
+For example:
+
+===== PAGE 8 =====
+Credit Type Example Conversion Rate
+Subscription credits 40 credits per cent
+Prepaid credits 30 credits per cent
+In this example, prepaid credits have a higher value per credit than
+subscription credits.
+Therefore, when remaining subscription credits are converted to prepaid
+credits, the amount is adjusted using the prepaid conversion rate.
+Example conversion ratio:
+30 / 40 = 0.75
+This means that every 1,000 eligible subscription credits would convert to 750
+prepaid credits.
+Example — Cancelling With Unused Credits Remaining
+Assume the following:
+Item Value
+Remaining subscription credits 10,000
+Unused prorated cycle value 8,000 credits
+Subscription credit rate 40 credits per cent
+Prepaid credit rate 30 credits per cent
+The system first determines the eligible amount to convert.
+Eligible credits = lower of 10,000 and 8,000
+Eligible credits = 8,000
+The system then applies the prepaid conversion ratio.
+Prepaid conversion ratio = 30 / 40
+Prepaid conversion ratio = 0.75
+The prepaid credits granted are:
+8,000 × 0.75 = 6,000 prepaid credits
+
+===== PAGE 9 =====
+Result:
+Balance Result
+Subscription cycle credits 0
+Prepaid credits added 6,000
+The client keeps the remaining value as prepaid credits, but no longer has
+access to the cancelled subscription’s cycle credits or subscription-level
+complexity allowance.
+Example — Cancelling After Heavy Usage
+Assume the following:
+Item Value
+Remaining subscription credits 2,000
+Unused prorated cycle value 8,000 credits
+Subscription credit rate 40 credits per cent
+Prepaid credit rate 30 credits per cent
+Although the unused prorated cycle value is 8,000 credits, the account only has
+2,000 subscription credits remaining.
+The system therefore converts only 2,000 credits.
+Eligible credits = lower of 2,000 and 8,000
+Eligible credits = 2,000
+The prepaid credits granted are:
+2,000 × 0.75 = 1,500 prepaid credits
+Result:
+Balance Result
+Subscription cycle credits 0
+Prepaid credits added 1,500
+
+===== PAGE 10 =====
+This ensures that credits already used during the billing cycle are not credited
+back again after cancellation.
+Cancellation Audit
+All subscription cancellations and credit conversions are recorded for audit
+and support purposes.
+The audit record includes the previous subscription credit balance, the
+prepaid credits granted, the conversion rate used, and the relevant billing
+cycle dates.
+This allows both the client and support team to verify how the final prepaid
+credit amount was calculated.
+Default Prepaid Package After Cancellation
+When a subscription is cancelled, the account is moved to the default prepaid
+package.
+The default prepaid package is a monthly package with a maximum query
+complexity of:
+MaxComplexity = 2,500
+This means that after cancellation, the account may continue using any
+available prepaid credit balance, but queries are still subject to the default
+prepaid complexity limit.
+If a query requires complexity greater than 2,500, it will not execute unless the
+account purchases additional complexity allowance or moves to a package
+with a higher complexity limit.
+Example
+Before cancellation, a subscription package may allow:
+MaxComplexity = 3,000
+After cancellation, the account is moved to the default prepaid package:
+MaxComplexity = 2,500
+A query with complexity 2,800 would therefore no longer execute after
+cancellation, even if the account still has prepaid credits available.
+
+===== PAGE 11 =====
+This is because credits determine the billable balance available for requests,
+while complexity determines the maximum size or computational weight of a
+single request.
+Example 1 — Simple Property Query
+Query:
+query {
+propertyById(id: 123) {
+id
+address
+}
+}
+Estimated cost metrics:
+Metric Value
+FieldCost 8
+TypeCost 4
+PriceSurchar
+0
+ge
+Calculation:
+CreditsConsumed = 8 + 4 + 0
+CreditsConsumed = 12
+If:
+CreditsPerCent = 40
+Then:
+ValueInCents = 12 / 40
+ValueInCents = 0.30 cents
+Example 2 — Paginated Query
+Query:
+
+===== PAGE 12 =====
+query {
+properties(first: 20) {
+nodes {
+id
+address {
+street
+suburb
+}
+}
+}
+}
+Estimated cost metrics:
+Metric Value
+FieldCost 40
+TypeCost 60
+PriceSurchar
+0
+ge
+Calculation:
+CreditsConsumed = 40 + 60
+CreditsConsumed = 100
+If:
+CreditsPerCent = 40
+Then:
+ValueInCents = 100 / 40
+ValueInCents = 2.5 cents
+Example 3 — Report Generation
+Query:
+query {
+propertyTransferReport(propertyId: 123) {
+
+===== PAGE 13 =====
+transfers {
+date
+buyer
+seller
+price
+}
+}
+}
+Estimated metrics:
+Metric Value
+FieldCost 30
+TypeCost 40
+PriceSurchar
+50
+ge
+Calculation:
+CreditsConsumed = 30 + 40 + 50
+CreditsConsumed = 120
+If:
+CreditsPerCent = 40
+Then:
+ValueInCents = 120 / 40
+ValueInCents = 3 cents
+Example 4 — Complexity Limit
+Suppose a client has:
+MaxComplexity = 2000
+Query complexity:
+
+===== PAGE 14 =====
+FieldCost = 900
+TypeCost = 700
+Complexity = 1600
+Result:
+1600 ≤ 2000
+Query executes successfully.
+But if:
+FieldCost = 1300
+TypeCost = 900
+Complexity = 2200
+Then:
+2200 > 2000
+The query is rejected unless the client purchases additional complexity.
+Example 5 — Purchasing Additional
+Complexity
+Client wants 500 additional complexity units.
+Configuration:
+CentPerComplexity = 5
+BillingInterval = 30
+Calculation:
+ValueInCents =
+500 × (30/30) × 5
+ValueInCents = 2500
+R25.00
+
+===== PAGE 15 =====
+Example 6 — Pagination Within Pagination
+(Exponential Growth)
+GraphQL allows lists to be nested inside other lists. When pagination occurs
+inside another paginated list, the number of returned objects can increase
+rapidly.
+This significantly increases TypeCost and FieldCost, which increases
+CreditsConsumed.
+Query Example
+query {
+suburbs(first: 10) {
+nodes {
+name
+properties(first: 20) {
+nodes {
+id
+owners(first: 5) {
+nodes {
+name
+}
+}
+}
+}
+}
+}
+}
+Result Structure
+The returned structure may resemble:
+suburbs (10)
+└ properties (20 each)
+└ owners (5 each)
+This results in:
+
+===== PAGE 16 =====
+10 suburbs
+200 properties
+1000 owners
+Estimated Object Instantiation
+Objects
+Level
+Returned
+Suburbs 10
+Propertie
+200
+s
+Owners 1000
+Total objects instantiated:
+10 + 200 + 1000 = 1210
+This contributes heavily to TypeCost.
+Estimated Cost Metrics
+Valu
+Metric
+e
+FieldCost 150
+TypeCost 1210
+PriceSurchar
+0
+ge
+Calculation:
+CreditsConsumed = 150 + 1210
+CreditsConsumed = 1360
+If:
+CreditsPerCent = 40
+Then:
+ValueInCents = 1360 / 40
+ValueInCents = 34 cents
+
+===== PAGE 17 =====
+Why Nested Pagination Increases Cost
+According to the IBM GraphQL Cost Specification, TypeCost scales with the
+number of returned objects.
+When pagination occurs inside another paginated field, the total number of
+instantiated objects grows multiplicatively.
+Example:
+suburbs(first:10)
+properties(first:20)
+owners(first:5)
+Total possible returned objects:
+10 × 20 × 5 = 1000
+Each additional nested list multiplies the potential object count.
+This is why deeply nested paginated queries can grow in cost very quickly.
+Best Practices for Clients
+To control cost and complexity:
+• Avoid deeply nested paginated queries
+• Use smaller first or last values
+• Request only the fields required
+• Use GraphQL-Cost: validate to estimate cost before executing queries
+
+===== PAGE 18 =====

@@ -1,0 +1,551 @@
+===== PAGE 1 =====
+GraphQL Client Usage Guide (Hot
+Chocolate)
+By Knowledge Factory
+1
+
+===== PAGE 2 =====
+Table of Contents
+Purpose....................................................................................................................................3
+Endpoint Url...........................................................................................................................3
+HTTP Method and Request Type.......................................................................................3
+Query vs Mutation................................................................................................................4
+Selecting Fields: “Only Ask for What You Need”..........................................................4
+Variables (How to Avoid String Concatenation)...........................................................5
+Pagination (Relay Connections): edges vs nodes..........................................................7
+Cursor Pagination Pattern (first/after, last/before)..................................................7
+First page.........................................................................................................................7
+Next page.........................................................................................................................8
+Previous Page.................................................................................................................8
+Filtering in the API...............................................................................................................9
+Basic Filter Structure.......................................................................................................9
+Common Filter Operators...............................................................................................9
+Errors and Partial Data.....................................................................................................11
+Operation Names (Recommended)................................................................................12
+Anonymous operation (valid).....................................................................................12
+Named operation (recommended).............................................................................12
+Why name operations?.................................................................................................13
+Query Cost: How to Estimate and Report It.................................................................13
+How to request cost reporting (client-side).............................................................13
+How to “calculate cost” (conceptually).....................................................................13
+Best Practices for Fast Queries........................................................................................13
+1) Filter by IDs and numeric keys whenever possible..........................................14
+2) Keep string filters selective and predictable......................................................14
+3) Filter “as high up” as you can (avoid deep relationship filtering)................14
+4) Limit nested selections (“only ask for what you need”)..................................15
+5) Combine filters rather than broad searches.......................................................15
+2
+
+===== PAGE 3 =====
+6) Use cost reporting while developing....................................................................15
+References............................................................................................................................16
+Purpose
+This document explains how to query our GraphQL endpoint using standard
+HTTP tooling (Postman, curl, browser fetch, etc.), with emphasis on:
+ endpoint URL and request format
+ Queries vs Mutations
+ Relay-style pagination (edges/nodes)
+ GraphQL variables
+ pagination patterns
+ query cost reporting
+Note: Most of the query examples are purely for illustrative purposes and do
+not necessarily represent the live fields available or the structure.
+Endpoint Url
+All GraphQL operations are sent to a single endpoint:
+ GraphQL Endpoint: https://{host}/{path}/graphql
+(Example path is commonly /graphql.)
+Hot Chocolate supports GraphQL over HTTP (POST and GET). (chillicream,
+2026)
+HTTP Method and Request Type
+Recommended: HTTP POST (application/json)
+Use POST with JSON payload for most client integrations.
+Request
+ Method: POST
+ Headers:
+o Content-Type: application/json
+3
+
+===== PAGE 4 =====
+o Authorization: Bearer <token>
+o GraphQL-cost: report (To view the fieldCost and typeCost of the
+query)
+Body
+{
+"query" : "query ($id: Int!){propertyById(id: $id){erf portion}}",
+"variables": {
+"id" : 81880
+}
+}
+Http Get
+While Get is supported (chillicream, 2026) we highly recommend against it,
+simply due to the fact that the Property related queries can become long and
+the POST alternative is much less error prone. If you still want to use Get
+Request you can view and example here:
+https://chillicream.com/docs/hotchocolate/v15/server/http-transport.
+Query vs Mutation
+GraphQL operations begin with an operation type:
+Query
+ Reads data (equivalent to REST “GET”).
+ Should not cause side effects (no “create/update/delete”).
+Example:
+query {
+someEntity {
+id
+name
+}
+}
+Mutation
+ Changes data (equivalent to REST “POST/PUT/PATCH/DELETE”).
+ Often returns the updated entity (or a result object).
+4
+
+===== PAGE 5 =====
+Example:
+mutation {
+updateSomething(input: { id: "123", name: "New Name" }) {
+id
+name
+}
+}
+Selecting Fields: “Only Ask for What You Need”
+REST endpoints often return a fixed payload shape. GraphQL allows the client
+to choose fields.
+Example:
+query {
+properties {
+totalCount
+nodes {
+erf
+portion
+propertyId
+}
+}
+}
+If you also need the Suburb info, you must explicitly request for it.
+Example:
+query {
+properties {
+totalCount
+nodes {
+erf
+portion
+propertyId
+suburb {
+5
+
+===== PAGE 6 =====
+postCode
+suburbId
+suburbName
+}
+}
+}
+}
+Variables (How to Avoid String Concatenation)
+Why variables matter
+Variables let you:
+ reuse the same query text with different values
+ avoid building query strings manually
+ improve caching / persisted operations use-cases
+ keep requests safer and cleaner
+Hot Chocolate’s HTTP transport doc shows variables passed in the JSON body.
+(chillicream, 2026)
+Example: query with variables
+Query text
+query ($id: Int!) {
+propertyById(id: $id) {
+erf
+portion
+}
+}
+Post body
+{
+"query" : "query ($id: Int!){propertyById(id: $id){erf portion}}",
+"variables": {
+"id" : 81880
+}
+}
+Common variable types you’ll see:
+ Type! = An exclamation mark indicates a required field
+6
+
+===== PAGE 7 =====
+ String, Int, Boolean
+ Input objects (e.g., LoginInput, SomeFilterInput, etc.)
+Here is an example with an Input object:
+Query text
+mutation ($input: LoginInput!) {
+login(login: $input) {
+tokenPayload {
+expiresUtc
+token
+}
+}
+}
+Post body
+{
+"query" : "mutation ($input: LoginInput!) {login(login: $input) {tokenPayload
+{expiresUtc token}}}",
+"variables": {
+"input" : {
+"email": "abc@gmail.com",
+"password": "password123"
+}
+}}
+Pagination (Relay Connections): edges vs nodes
+Many Hot Chocolate APIs use Relay-style pagination, which typically returns
+a Connection object with:
+ edges: items plus cursor metadata
+ nodes: items only (often a convenience)
+ pageInfo: pagination state
+Hot Chocolate’s cost analysis documentation explicitly references pagination
+connections using arguments like first/after/last/before and fields like edges
+and nodes.
+What are “nodes”?
+A node is the actual entity you care about (e.g., a Property, Transfer, User).
+7
+
+===== PAGE 8 =====
+What are “edges”?
+An edge wraps a node with pagination metadata, typically including a cursor:
+ edge.node: the item
+ edge.cursor: the position marker used to fetch the next/previous page
+Why do both exist?
+ Use nodes when you only need the data items.
+ Use edges when you also need cursors per item (common for infinite
+scroll / “load more”).
+Cursor Pagination Pattern (first/after, last/before)
+First page
+query GetThings($first: Int!) {
+things(first: $first) {
+pageInfo {
+hasNextPage
+endCursor
+}
+nodes {
+id
+name
+}
+}
+}
+Variables:
+{ "first": 50 }
+Next page
+User ‘after: endCursor’ from the previous response:
+query GetThings($first: Int!, $after: String) {
+things(first: $first, after: $after) {
+pageInfo {
+hasNextPage
+endCursor
+}
+8
+
+===== PAGE 9 =====
+nodes {
+id
+name
+}
+}
+}
+Variables:
+{ "first": 50, "after": "END_CURSOR_FROM_PREVIOUS_PAGE" }
+Using edges (if you need per-item cursors)
+query GetThings($first: Int!, $after: String) {
+things(first: $first, after: $after) {
+pageInfo { hasNextPage endCursor }
+edges {
+cursor
+node { id name }
+}
+}
+}
+Previous Page
+To paginate backwards, you use last together with before.
+Go to the previous page (from a known cursor)
+Assume you saved the startCursor from the current page. To fetch the previous
+page:
+query GetThingsPrev($last: Int!, $before: String) {
+things(last: $last, before: $before) {
+pageInfo {
+hasPreviousPage
+startCursor
+}
+nodes {
+id
+name
+}
+}
+}
+9
+
+===== PAGE 10 =====
+Variables:
+{ "last": 50, "before": "START_CURSOR_FROM_CURRENT_PAGE" }
+Notes
+ Use pageInfo.startCursor as the reference point for before when going
+backwards.
+ Use pageInfo.endCursor as the reference point for after when going
+forwards.
+Filtering in the API
+This API supports advanced filtering on fields using filter operators. These
+operators allow you to precisely control how records are matched — for
+equality, ranges, string patterns, and even nested collections.
+Filtering is implemented using Hot Chocolate Filters, which follow a
+consistent and predictable structure.
+Basic Filter Structure
+A filter is an object where each field exposes operations instead of direct
+values.
+where: {
+name: { eq: "Cape Town" }
+}
+Important
+ Not every field supports every operator.
+ Available operators depend on the field’s data type.
+ Filters are case-sensitive unless explicitly documented otherwise.
+Common Filter Operators
+Equality & Comparison
+Operato
+Meaning
+r
+eq Equals
+neq Not equals
+10
+
+===== PAGE 11 =====
+Operato
+Meaning
+r
+gt Greater than
+Greater than or
+gte
+equal
+lt Less than
+lte Less than or equal
+in Value is in a list
+nin Value is not in a list
+String Filters
+Operator Meaning
+contains Substring match
+ncontains Does not contain
+startsWith Starts with value
+nstartsWit Does not start
+h with
+endsWith Ends with value
+Does not end
+nendsWith
+with
+eq Exact match
+neq Not equal
+Example:
+where: {
+suburbName: {
+startsWith: "Cape"
+11
+
+===== PAGE 12 =====
+}
+}
+Filtering on Collections
+some
+At least one related item matches.
+where: {
+valuations: {
+some: {
+year: { eq: 2024 }
+}
+}
+}
+Property is returned if any valuation is from 2024.
+all
+All related items must match.
+where: {
+valuations: {
+all: {
+source: { eq: "AVM" }
+}
+}
+}
+Property is returned only if every valuation is from AVM.
+none
+No related items may match.
+where: {
+valuations: {
+none: {
+source: { eq: "Legacy" }
+}
+}
+}
+Property is returned only if no valuation is from the legacy source.
+12
+
+===== PAGE 13 =====
+Errors and Partial Data
+GraphQL responses usually return:
+ data (may be partially present)
+ errors (array; may exist alongside partial data)
+Operationally, treat this as:
+ If errors exists, log/inspect it even if data is present.
+ Do not assume “HTTP 200” means “everything succeeded” for the
+business operation. (GraphQL commonly uses 200 with an errors array.)
+(Hot Chocolate supports customizing status code behavior, but clients should
+not rely on non-200 codes as the only signal. (chillicream, 2026) )
+Here is a login fail example:
+{
+"data": {
+"login": {
+"tokenPayload": null,
+"errors": [
+{
+"message": "User does not exist. (Parameter 'Email')",
+"paramName": "Email"
+}
+]
+}
+}
+}
+Operation Names (Recommended)
+GraphQL operations can be named. The name is optional when sending a
+single operation, but recommended for logging, debugging, and tooling
+support.
+Anonymous operation (valid)
+query ($first: Int, $after: String) {
+properties(first: $first, after: $after) {
+nodes { propertyId }
+13
+
+===== PAGE 14 =====
+}
+}
+Named operation (recommended)
+query GetProperties($first: Int, $after: String) {
+properties(first: $first, after: $after) {
+nodes { propertyId }
+}
+}
+Why name operations?
+ Improved logging/tracing (you’ll see GetProperties instead of just
+“query”)
+ Required when sending multiple operations in one request
+ Better developer experience in tools like Postman / GraphQL IDEs
+Query Cost: How to Estimate and Report It
+Hot Chocolate includes built-in static cost analysis based on the IBM cost spec.
+(chillicream, 2026) (IBM, 2021)
+Cost metrics include:
+ FieldCost: estimated execution impact on the server
+ TypeCost: estimated data impact (objects instantiated)
+How to request cost reporting (client-side)
+To have the server include cost metrics in the response, set the HTTP header:
+ GraphQL-Cost: report
+Executes the request and reports costs.
+ GraphQL-Cost: validate
+Reports costs without executing the request.
+So in practice:
+POST headers
+ Content-Type: application/json
+ GraphQL-Cost: report (or validate)
+14
+
+===== PAGE 15 =====
+How to “calculate cost” (conceptually)
+While the exact weights depend on schema configuration, Hot Chocolate’s
+documentation provides example calculations and explains default weights
+and how pagination impacts list sizing. (chillicream, 2026)
+Client takeaway:
+ selecting more nested fields and larger pages increases cost
+ high first/last values can increase cost significantly
+ when troubleshooting “query rejected” scenarios, reduce page size and
+selected fields first
+Best Practices for Fast Queries
+GraphQL gives clients a lot of freedom. That flexibility can accidentally
+produce slow or expensive queries if you:
+ fetch more fields than necessary,
+ use broad string searching,
+ filter deep in nested relationships,
+ request large pages.
+Use the practices below to keep requests fast, reliable, and less likely to be
+rejected by cost limits.
+1) Filter by IDs and numeric keys whenever possible
+Prefer stable, indexed identifiers (IDs, numeric codes, dates) over string
+matching.
+Faster (preferred):
+where: { propertyId: { eq: 81880 } }
+Slower (avoid when possible):
+where: { suburbName: { contains: "Cape" } }
+Why:
+ numeric / ID filters typically map to indexes and cheap comparisons
+ string operations like contains often can’t use indexes effectively and
+may cause scans
+15
+
+===== PAGE 16 =====
+2) Keep string filters selective and predictable
+If you must filter on strings, prefer:
+ eq over contains
+ startsWith over contains (often more index-friendly)
+Preferred:
+where: { suburbName: { startsWith: "Cape" } }
+Avoid:
+where: { suburbName: { contains: "ape" } }
+Also avoid very short search tokens (e.g. "a", "c") — they match too broadly.
+3) Filter “as high up” as you can (avoid deep relationship
+filtering)
+Deep filters can force the server into expensive joins/subqueries.
+Avoid patterns like:
+TableA → TableB → TableC (filter here)
+Example (potentially expensive):
+where: {
+tableB: {
+tableC: {
+some: { name: { contains: "X" } }
+}
+}
+}
+Prefer:
+ filtering on a field available on the root entity, or
+ using a dedicated query designed for that use case, or
+ filtering on IDs (e.g., tableCId) instead of tableC.name
+4) Limit nested selections (“only ask for what you need”)
+Every nested level increases:
+ execution time (more resolvers),
+ response size,
+ type cost / field cost.
+16
+
+===== PAGE 17 =====
+Prefer a two-step flow:
+1. query for IDs + minimal fields
+2. query details by ID only when needed
+5) Combine filters rather than broad searches
+Broad queries (“give me everything, I’ll filter client-side”) are the most
+expensive pattern.
+Preferred:
+where: {
+and: [
+{ status: { eq: ACTIVE } }
+{ createdUtc: { gte: "2025-01-01" } }
+]
+}
+6) Use cost reporting while developing
+When building new queries (especially in the query builder), use:
+ GraphQL-Cost: report to execute and see cost
+ GraphQL-Cost: validate to estimate cost without executing (note: it won’t
+provide data)
+Client takeaway:
+ If cost spikes, you likely added nested fields, increased page size, or used
+broad string filtering.
+17
+
+===== PAGE 18 =====
+References
+chillicream. (2026, 01 20). Cost Analysis. Retrieved from Chillicream
+Hotchocolate:
+https://chillicream.com/docs/hotchocolate/v15/security/cost-analysis
+chillicream. (2026, 1 20). HTTP transport. Retrieved from Hotchocolate
+Chillicream: https://chillicream.com/docs/hotchocolate/v15/server/http-
+transport
+graphql-over-http. (2025, 12 18). graphql-over-http. Retrieved from Github:
+https://github.com/graphql/graphql-over-http/blob/a1e6d8ca248c9a19eb
+59a2eedd988c204909ee3f/spec/GraphQLOverHTTP.md
+IBM. (2021). GraphQL Cost Directives. Retrieved from ibm.github.io:
+https://ibm.github.io/graphql-specs/cost-spec.html
+18

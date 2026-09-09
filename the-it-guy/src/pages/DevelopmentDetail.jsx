@@ -58,6 +58,7 @@ const DEVELOPMENT_TABS = [
 ]
 
 const DEVELOPMENT_PRIMARY_TABS = DEVELOPMENT_TABS.filter(tab => tab.id !== 'performance')
+const DEVELOPMENT_CONFIGURATION_SECTION_IDS = new Set(['general', 'seller-entity', 'deposits', 'transaction-routing', 'team-access', 'danger-zone'])
 
 const MARKETING_HUB_SECTIONS = [
   { id: 'overview', label: 'Overview' },
@@ -2087,6 +2088,10 @@ function DevelopmentDetail() {
   const loadedDevelopmentIdRef = useRef('')
   const [error, setError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
+  const [configurationSection, setConfigurationSection] = useState(() => {
+    const requestedSection = new URLSearchParams(location.search).get('section')
+    return DEVELOPMENT_CONFIGURATION_SECTION_IDS.has(requestedSection) ? requestedSection : 'seller-entity'
+  })
   const [marketingHubSection, setMarketingHubSection] = useState('overview')
   const [marketingEditorSection, setMarketingEditorSection] = useState('overview')
   const [marketingUnitTab, setMarketingUnitTab] = useState('overview')
@@ -2162,10 +2167,11 @@ function DevelopmentDetail() {
   const [selectedDocumentForEmail, setSelectedDocumentForEmail] = useState(null)
   const [documentEmailForm, setDocumentEmailForm] = useState(DEFAULT_DOCUMENT_EMAIL_FORM)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('')
   const [deleteSaving, setDeleteSaving] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [generalDetailsExpanded, setGeneralDetailsExpanded] = useState(false)
-  const [sellerDetailsExpanded, setSellerDetailsExpanded] = useState(false)
+  const [sellerDetailsExpanded, setSellerDetailsExpanded] = useState(true)
   const [reservationSettingsExpanded, setReservationSettingsExpanded] = useState(true)
   const [routingDefaultsExpanded, setRoutingDefaultsExpanded] = useState(true)
   const [isEditingGeneralDetails, setIsEditingGeneralDetails] = useState(false)
@@ -2609,7 +2615,7 @@ function DevelopmentDetail() {
       {
         label: 'Units In Progress',
         value: formatNumber(inProgressUnitIds.size),
-        meta: 'requires transaction capture where unlinked',
+        meta: 'Transaction capture needed',
         icon: Workflow
       },
       {
@@ -2621,7 +2627,7 @@ function DevelopmentDetail() {
       {
         label: 'In-Progress Unit Value',
         value: currency.format(pipelineValue),
-        meta: 'unit-status estimate',
+        meta: 'Estimated from unit status',
         icon: Receipt
       },
       {
@@ -3357,9 +3363,26 @@ function DevelopmentDetail() {
   const sellerDetailsForm = normalizeSellerDetailsForm(detailsForm.sellerDetails)
   const primarySellerSignatory = sellerDetailsForm.signatories[0] || DEFAULT_SELLER_DETAILS_FORM.signatories[0]
   const sellerDetailsComplete = validateSellerDetailsForm(sellerDetailsForm).length === 0
+  const generalDetailsComplete = validateGeneralDetailsForm(detailsForm).length === 0
   const reservationDepositAmount = getReservationDepositAmountValue(reservationSettingsForm)
   const reservationDepositSummary = getReservationDepositSummary(reservationSettingsForm)
   const reservationDepositConfigured = !reservationSettingsForm.enabledByDefault || validateReservationSettingsForm(reservationSettingsForm).length === 0
+  const routingComplete = Boolean(reservationSettingsForm.defaultTransferAttorneyName && reservationSettingsForm.defaultBondOriginatorName)
+  const configurationStatusItems = [
+    { id: 'general', label: 'General', complete: generalDetailsComplete, optional: false },
+    { id: 'seller-entity', label: 'Seller entity', complete: sellerDetailsComplete, optional: false },
+    { id: 'deposits', label: 'Deposit rules', complete: reservationSettingsForm.enabledByDefault ? reservationDepositConfigured : false, optional: !reservationSettingsForm.enabledByDefault },
+    { id: 'transaction-routing', label: 'Routing', complete: routingComplete, optional: false },
+    { id: 'team-access', label: 'Team access', complete: agentAssignments.length > 0, optional: false }
+  ]
+  const configurationCompletedCount = configurationStatusItems.filter(item => item.complete).length
+
+  useEffect(() => {
+    const requestedSection = new URLSearchParams(location.search).get('section')
+    if (DEVELOPMENT_CONFIGURATION_SECTION_IDS.has(requestedSection) && requestedSection !== configurationSection) {
+      setConfigurationSection(requestedSection)
+    }
+  }, [configurationSection, location.search])
   const demandIntelligence = useMemo(
     () =>
       buildDevelopmentDemandIntelligence({
@@ -6122,6 +6145,10 @@ function DevelopmentDetail() {
   }
 
   async function handleDeleteDevelopment() {
+    if (deleteConfirmationText.trim() !== data?.development?.name) {
+      setError('Type the development name exactly before deleting it.')
+      return
+    }
     try {
       setDeleteSaving(true)
       setError('')
@@ -6136,6 +6163,34 @@ function DevelopmentDetail() {
       setDeleteSaving(false)
       setDeleteConfirmOpen(false)
     }
+  }
+
+  function selectConfigurationSection(sectionId) {
+    if (!DEVELOPMENT_CONFIGURATION_SECTION_IDS.has(sectionId) || sectionId === configurationSection) return
+
+    const hasUnsavedChanges = isEditingGeneralDetails || isEditingSellerDetails || isEditingReservationSettings || isEditingRoutingDefaults
+    if (hasUnsavedChanges && !window.confirm('You have unsaved configuration changes. Select OK to discard them, or Cancel to remain on this section.')) {
+      return
+    }
+
+    if (hasUnsavedChanges && data) {
+      setDetailsForm(buildDetailsForm(data))
+      setReservationSettingsForm(buildReservationSettingsForm(data.settings))
+    }
+
+    setIsEditingGeneralDetails(false)
+    setIsEditingSellerDetails(false)
+    setIsEditingReservationSettings(false)
+    setIsEditingRoutingDefaults(false)
+    setGeneralDetailsExpanded(sectionId === 'general')
+    setSellerDetailsExpanded(sectionId === 'seller-entity')
+    setReservationSettingsExpanded(sectionId === 'deposits')
+    setRoutingDefaultsExpanded(sectionId === 'transaction-routing')
+    setConfigurationSection(sectionId)
+
+    const query = new URLSearchParams(location.search)
+    query.set('section', sectionId)
+    navigate({ pathname: location.pathname, search: `?${query.toString()}` }, { replace: true })
   }
 
   function renderMarketingHubOverview() {
@@ -7420,25 +7475,28 @@ function DevelopmentDetail() {
         </section>
 
         <section className="relative z-20 -mt-12 px-0 sm:px-4">
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5 xl:gap-5">
+          <div className="rounded-[26px] border border-white/70 bg-white/50 p-3 shadow-[0_18px_44px_rgba(15,23,42,0.10)] backdrop-blur-sm sm:p-4">
+            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5 xl:gap-4">
             {summaryItems.map(item => {
               const Icon = item.icon
               return (
-                <article key={item.label} className="flex min-h-[252px] flex-col rounded-[20px] border border-[#dde4ee] bg-white px-6 py-6 shadow-[0_18px_42px_rgba(15,23,42,0.12)]">
+                <article key={item.label} className="relative flex min-h-[190px] flex-col overflow-hidden rounded-[18px] border border-[#dce6f0] bg-white px-5 py-5 shadow-[0_8px_20px_rgba(15,23,42,0.055)]">
+                  <span className="absolute inset-x-0 top-0 h-1 bg-[#239a5b]" aria-hidden="true" />
                   <div className="flex items-start justify-between gap-3">
+                    <span className="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-[#70839a]">Performance</span>
                     {Icon ? (
-                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#d7efdf] bg-[#eaf7ef] text-[#159447]">
-                        <Icon size={18} aria-hidden="true" />
+                      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border border-[#d7efdf] bg-[#eff9f3] text-[#16854a]">
+                        <Icon size={17} aria-hidden="true" />
                       </span>
                     ) : null}
-                    <span className="sr-only">{item.label}</span>
                   </div>
-                  <span className="mt-6 block text-sm font-medium tracking-[-0.01em] text-[#61738a]">{item.label}</span>
-                  <strong className="mt-1 block text-[1.7rem] font-semibold leading-none tracking-[-0.035em] text-[#142132]">{item.value}</strong>
-                  <span className="mt-auto pt-5 text-sm font-medium leading-6 text-[#6b7d93]">{item.meta}</span>
+                  <span className="mt-4 block text-sm font-semibold tracking-[-0.01em] text-[#52677f]">{item.label}</span>
+                  <strong className="mt-1 block break-words text-[clamp(1.65rem,2vw,2.05rem)] font-semibold leading-[1.08] tracking-[-0.04em] text-[#142132] tabular-nums">{item.value}</strong>
+                  <span className="mt-auto pt-4 text-sm font-medium leading-5 text-[#6b7d93]">{item.meta}</span>
                 </article>
               )
             })}
+            </div>
           </div>
         </section>
 
@@ -7885,11 +7943,11 @@ function DevelopmentDetail() {
             <div className={`grid gap-4 ${activeTab === 'performance' && canManageDevelopment ? 'xl:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]' : ''}`}>
               {activeTab === 'configuration' ? (
                 <div className="grid gap-4">
-                  <div className="flex flex-col gap-3 rounded-[22px] border border-[#dde4ee] bg-white px-5 py-4 shadow-[0_12px_28px_rgba(15,23,42,0.06)] lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex flex-col gap-4 rounded-[22px] border border-[#dde4ee] bg-white px-5 py-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)] lg:flex-row lg:items-center lg:justify-between">
                     <div>
                       <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#1f7a45]">Configuration</p>
-                      <h3 className="mt-1 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">Project settings</h3>
-                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Manage development-wide details, deposit rules, and team access.</p>
+                      <h3 className="mt-1 text-[1.45rem] font-semibold tracking-[-0.035em] text-[#142132]">Development setup</h3>
+                      <p className="mt-1 text-sm leading-6 text-[#6b7d93]">Set up how this development is sold, governed and accessed.</p>
                     </div>
                     <Button type="button" variant="secondary" size="sm" className="w-fit" onClick={() => setActiveTab('transactions')}>
                       <Workflow size={14} />
@@ -7897,6 +7955,60 @@ function DevelopmentDetail() {
                     </Button>
                   </div>
 
+                  <section className="flex flex-col gap-4 rounded-[18px] border border-[#d9ece5] bg-[#f7fcfa] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="shrink-0">
+                      <h4 className="text-sm font-semibold text-[#142132]">Development setup</h4>
+                      <p className="mt-1 text-sm text-[#607891]">{configurationCompletedCount} of {configurationStatusItems.length} complete</p>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:justify-end">
+                      {configurationStatusItems.map(item => {
+                        const Icon = item.complete ? CheckCircle2 : item.optional ? CircleDollarSign : AlertTriangle
+                        const tone = item.complete ? 'text-[#157a45]' : item.optional ? 'text-[#8a9aab]' : 'text-[#b86f12]'
+                        return (
+                          <button key={item.id} type="button" onClick={() => selectConfigurationSection(item.id)} className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-left text-xs font-semibold transition ${configurationSection === item.id ? 'border-[#cbe8d7] bg-white text-[#142132] shadow-sm' : 'border-[#dce9e5] bg-white/70 text-[#35546c] hover:bg-white'}`}>
+                            <Icon size={16} className={tone} />
+                            {item.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </section>
+
+                  <div className="grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]">
+                    <aside className="rounded-[18px] border border-[#dde6f0] bg-white p-3 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+                      <div className="grid gap-5">
+                        {[
+                          ['General', configurationStatusItems.slice(0, 1)],
+                          ['Commercial setup', configurationStatusItems.slice(1, 3)],
+                          ['Operations', configurationStatusItems.slice(3)]
+                        ].map(([label, items]) => (
+                          <div key={label}>
+                            <p className="px-2 text-[0.68rem] font-bold uppercase tracking-[0.13em] text-[#71839a]">{label}</p>
+                            <div className="mt-2 grid gap-1">
+                              {items.map(item => {
+                                const Icon = item.complete ? CheckCircle2 : item.optional ? CircleDollarSign : AlertTriangle
+                                const tone = item.complete ? 'text-[#16814a]' : item.optional ? 'text-[#8495a8]' : 'text-[#c27a17]'
+                                return <button key={item.id} type="button" onClick={() => selectConfigurationSection(item.id)} className={`relative flex min-h-11 items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium transition ${configurationSection === item.id ? 'bg-[#edf9f3] text-[#142132]' : 'text-[#35546c] hover:bg-[#f7fafc]'}`}>
+                                  {configurationSection === item.id ? <span className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-[#198451]" /> : null}
+                                  <Icon size={17} className={tone} />
+                                  <span>{item.label === 'Seller entity' ? 'Seller / developer entity' : item.label === 'Deposit rules' ? 'Reservation & deposits' : item.label === 'Routing' ? 'Transaction routing' : item.label}</span>
+                                </button>
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                        <div className="border-t border-[#e4ebf3] pt-4">
+                          <p className="px-2 text-[0.68rem] font-bold uppercase tracking-[0.13em] text-[#71839a]">Advanced</p>
+                          <button type="button" onClick={() => selectConfigurationSection('danger-zone')} className={`relative mt-2 flex min-h-11 w-full items-center gap-3 rounded-[10px] px-3 text-left text-sm font-medium ${configurationSection === 'danger-zone' ? 'bg-[#fff3f1] text-[#b42318]' : 'text-[#b42318] hover:bg-[#fff8f7]'}`}>
+                            <Trash2 size={17} /> Danger zone
+                          </button>
+                        </div>
+                      </div>
+                    </aside>
+
+                    <div className="min-w-0">
+
+                  {configurationSection === 'general' ? (
                   <ConfigurationCard
                     icon={Building2}
                     title="General Details"
@@ -8159,7 +8271,9 @@ function DevelopmentDetail() {
                       </div>
                     </form>
                   </ConfigurationCard>
+                  ) : null}
 
+                  {configurationSection === 'seller-entity' ? (
                   <ConfigurationCard
                     icon={UserPlus}
                     title="Seller / Developer Entity"
@@ -8264,7 +8378,9 @@ function DevelopmentDetail() {
                       </div>
                     </form>
                   </ConfigurationCard>
+                  ) : null}
 
+                  {configurationSection === 'deposits' ? (
                   <ConfigurationCard
                     icon={WalletCards}
                     title="Reservation & Deposit"
@@ -8613,7 +8729,9 @@ function DevelopmentDetail() {
                       </div>
                     </form>
                   </ConfigurationCard>
+                  ) : null}
 
+                  {configurationSection === 'transaction-routing' ? (
                   <ConfigurationCard
                     icon={ShieldCheck}
                     title="Transaction Routing"
@@ -8780,7 +8898,9 @@ function DevelopmentDetail() {
                       </div>
                     </form>
                   </ConfigurationCard>
+                  ) : null}
 
+                  {configurationSection === 'team-access' ? (
                   <form className={CARD_SHELL} onSubmit={handleAgentAssignmentsSave}>
                     <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                       <div className="min-w-0">
@@ -8881,7 +9001,9 @@ function DevelopmentDetail() {
                       </Button>
                     </div>
                   </form>
+                  ) : null}
 
+                  {configurationSection === 'danger-zone' ? (
                   <section className="rounded-[22px] border border-[#f3cbc6] bg-[#fffafa] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex items-start gap-4">
@@ -8894,13 +9016,19 @@ function DevelopmentDetail() {
                         </div>
                       </div>
                       {canManageDevelopment ? (
-                        <Button type="button" variant="secondary" className="border-[#f3b8b0] bg-white text-[#b42318] hover:bg-[#fff4f2]" onClick={() => setDeleteConfirmOpen(true)}>
+                        <Button type="button" variant="secondary" className="border-[#f3b8b0] bg-white text-[#b42318] hover:bg-[#fff4f2]" onClick={() => {
+                          setDeleteConfirmationText('')
+                          setDeleteConfirmOpen(true)
+                        }}>
                           <Trash2 size={15} />
                           Delete Development
                         </Button>
                       ) : null}
                     </div>
                   </section>
+                  ) : null}
+                    </div>
+                  </div>
                 </div>
               ) : null}
 
@@ -11377,11 +11505,14 @@ function DevelopmentDetail() {
               This will permanently delete <strong>{data.development.name}</strong>, all units, and all linked transactions. This action cannot be undone.
             </div>
             <p className="text-sm leading-6 text-[#6b7d93]">Linked workflow, onboarding, document, and discussion records tied to those transactions will be cleaned up as part of deletion.</p>
+            <DetailField label={`Type ${data.development.name} to confirm`}>
+              <Field value={deleteConfirmationText} onChange={event => setDeleteConfirmationText(event.target.value)} placeholder={data.development.name} disabled={deleteSaving} />
+            </DetailField>
             <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <Button variant="ghost" onClick={() => setDeleteConfirmOpen(false)} disabled={deleteSaving}>
                 Cancel
               </Button>
-              <Button onClick={() => void handleDeleteDevelopment()} disabled={deleteSaving} className="bg-[#b42318] text-white hover:bg-[#912018]">
+              <Button onClick={() => void handleDeleteDevelopment()} disabled={deleteSaving || deleteConfirmationText.trim() !== data.development.name} className="bg-[#b42318] text-white hover:bg-[#912018]">
                 {deleteSaving ? 'Deleting…' : 'Delete Development'}
               </Button>
             </div>

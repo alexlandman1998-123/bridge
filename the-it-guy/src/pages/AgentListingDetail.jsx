@@ -5462,7 +5462,7 @@ function AgentListingDetail() {
       setDetailError('Unable to open the listing editor because this listing is missing an id.')
       return
     }
-    navigate(`/listings/${targetListingId}/edit?step=property`)
+    navigate(`/listings/${targetListingId}/edit?step=property&scope=property`)
   }
 
   function openDetailTab(tab) {
@@ -12794,14 +12794,10 @@ function AgentListingDetail() {
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-5">
               <article className="rounded-[28px] border border-[#e1e9f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)] sm:p-7">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h2 className="text-[1.55rem] font-semibold tracking-[-0.035em] text-[#10243a]">Performance</h2>
-                    {listingPerformance.hasOverrides ? (
-                      <p className="mt-1 text-xs font-semibold text-[#1f7d44]">Manual seller-facing stats are active.</p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center justify-end gap-2">
+                  {listingPerformance.hasOverrides ? (
+                    <span className="mr-auto text-xs font-semibold text-[#1f7d44]">Manual seller-facing stats are active.</span>
+                  ) : null}
                     <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
                       Last 30 days
                     </span>
@@ -12809,7 +12805,6 @@ function AgentListingDetail() {
                       <Pencil size={14} />
                       Edit Stats
                     </Button>
-                  </div>
                 </div>
 
                 <div className="mt-5 grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-5">
@@ -12853,15 +12848,15 @@ function AgentListingDetail() {
                   ].map((card) => {
                     const Icon = card.icon
                     return (
-                      <div key={card.label} className={`flex h-full min-h-[214px] flex-col justify-between rounded-[16px] border border-[#e0e9f2] border-t-[4px] bg-gradient-to-br from-white to-[#fbfdff] p-5 ${card.tone.border}`}>
+                      <div key={card.label} className={`flex h-full min-h-[184px] flex-col justify-between rounded-[16px] border border-[#e0e9f2] border-t-[4px] bg-gradient-to-br from-white to-[#fbfdff] p-4 ${card.tone.border}`}>
                         <div className="flex items-start justify-between gap-3">
-                          <p className="text-[0.95rem] font-semibold text-[#637996]">{card.label}</p>
-                          <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[13px] ${card.tone.icon}`}>
-                            <Icon size={20} />
+                          <p className="text-[0.82rem] font-semibold text-[#637996]">{card.label}</p>
+                          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[11px] ${card.tone.icon}`}>
+                            <Icon size={17} />
                           </span>
                         </div>
-                        <p className="mt-5 text-[3rem] font-semibold leading-none tracking-[-0.055em] text-[#10243a]">{card.value}</p>
-                        <span className={`mt-5 inline-flex w-fit rounded-[11px] px-3 py-2 text-sm font-semibold ${card.tone.chip}`}>{card.meta}</span>
+                        <p className="mt-4 text-[2.35rem] font-semibold leading-none tracking-[-0.05em] text-[#10243a]">{card.value}</p>
+                        <span className={`mt-4 inline-flex w-fit rounded-[10px] px-2.5 py-1.5 text-xs font-semibold ${card.tone.chip}`}>{card.meta}</span>
                       </div>
                     )
                   })}
