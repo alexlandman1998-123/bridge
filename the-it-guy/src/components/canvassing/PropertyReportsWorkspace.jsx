@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { createCanvassingActivity, createCanvassingProspect } from '../../lib/canvassingRepository'
 import { propertyDataProvider } from '../../services/propertyIntelligence/propertyDataProvider'
+import KnowledgeFactoryReportsWorkspace from './KnowledgeFactoryReportsWorkspace'
 import {
   buildPropertyReportProspectActivity,
   buildPropertyReportProspectDraft,
@@ -128,7 +129,7 @@ function AddToCanvassingModal({ report, draft, error, saving, onChange, onClose,
   )
 }
 
-export default function PropertyReportsWorkspace({ prospects = EMPTY_PROSPECTS, onProspectCreated }) {
+function LegacyPropertyReportsWorkspace({ prospects = EMPTY_PROSPECTS, onProspectCreated }) {
   const navigate = useNavigate()
   const { currentWorkspace, profile, currentMembership } = useWorkspace()
   const [reportState, setReportState] = useState({ status: 'loading', orders: [], error: '' })
@@ -297,4 +298,10 @@ export default function PropertyReportsWorkspace({ prospects = EMPTY_PROSPECTS, 
       <AddToCanvassingModal report={conversion.report} draft={conversion.draft} error={conversion.error} saving={conversion.saving} onChange={updateConversionDraft} onClose={() => setConversion({ report: null, draft: null, saving: false, error: '' })} onSubmit={addToCanvassing} />
     </section>
   )
+}
+
+const KNOWLEDGE_FACTORY_MAP_ENABLED = String(import.meta.env.VITE_KNOWLEDGE_FACTORY_MAP_ENABLED || '').trim().toLowerCase() === 'true'
+
+export default function PropertyReportsWorkspace(props) {
+  return KNOWLEDGE_FACTORY_MAP_ENABLED ? <KnowledgeFactoryReportsWorkspace {...props} /> : <LegacyPropertyReportsWorkspace {...props} />
 }

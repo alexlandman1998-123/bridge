@@ -35,9 +35,18 @@ await db.exec(migration('20260908144636_shared_matter_journey_atomic_commands.sq
 const laneSecurity = migration('202607230008_attorney_three_lane_transaction_spine.sql')
 await db.exec(laneSecurity.slice(laneSecurity.indexOf('create or replace function public.bridge_attorney_lane_role'), laneSecurity.indexOf('create or replace function public.bridge_can_mutate_attorney_lane')))
 await db.exec(migration('20260909144454_attorney_task_confirmation_state.sql'))
+const sharedUpdateSync = migration('20260909213009_attorney_lane_updates_atomic_shared_journey_sync.sql')
+await db.exec(sharedUpdateSync.slice(
+  sharedUpdateSync.indexOf('with current_transfer_steps'),
+  sharedUpdateSync.indexOf('create or replace function public.bridge_add_attorney_lane_update_and_sync_v1'),
+))
 for (const key of ['transfer','bond','cancellation']) {
   const rows = (await db.query('select step_key,definition from journey_private.task_catalog where lane_key=$1 order by step_key',[key])).rows
-  assert.deepEqual(rows, getAttorneyStageDefinitionsForLane(key).map(t=>({step_key:t.key,definition:t.sharedProgress})).sort((a,b)=>a.step_key.localeCompare(b.step_key)))
+  const expected = getAttorneyStageDefinitionsForLane(key).map(t=>({step_key:t.key,definition:t.sharedProgress})).sort((a,b)=>a.step_key.localeCompare(b.step_key))
+  // Transfer retains old catalogue keys for open historical matters; the active
+  // plan itself must still exactly match the current workbench definitions.
+  const activeRows = rows.filter((row) => expected.some((item) => item.step_key === row.step_key))
+  assert.deepEqual(activeRows, expected)
 }
 const update = async (status, command = randomUUID(), expected = undefined, note = '', packet = null) => {
   if (expected === undefined) expected = (await db.query('select updated_at from transaction_subprocess_steps where id=$1',[step])).rows[0].updated_at

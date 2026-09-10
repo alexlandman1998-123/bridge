@@ -4,11 +4,14 @@ import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { propertyDataProvider } from '../../services/propertyIntelligence/propertyDataProvider'
 import { PROPERTY_REPORT_TYPE_LIST } from '../../services/propertyIntelligence/propertyDataProviderContract'
+import { getKnowledgeFactoryMapStatus, searchKnowledgeFactoryMap } from '../../services/propertyIntelligence/knowledgeFactoryMapService'
+import KnowledgeFactoryParcelMap from './KnowledgeFactoryParcelMap'
 import MockParcelMap from './MockParcelMap'
 import PropertyReportBasket from './PropertyReportBasket'
 
 const INITIAL_FILTERS = Object.freeze({ query: '', area: '', propertyType: '', transferPeriod: '', valueRange: '' })
 const FILTER_CLASS = 'min-h-11 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+const KNOWLEDGE_FACTORY_MAP_ENABLED = String(import.meta.env.VITE_KNOWLEDGE_FACTORY_MAP_ENABLED || '').trim().toLowerCase() === 'true'
 
 function providerFilters(filters) {
   const nextFilters = { query: filters.query, area: filters.area, propertyType: filters.propertyType, limit: 500 }
@@ -37,9 +40,13 @@ export default function PropertySearchWorkspace() {
   const [selectedReportTypeIds, setSelectedReportTypeIds] = useState(() => PROPERTY_REPORT_TYPE_LIST.map((reportType) => reportType.id))
   const [quoteState, setQuoteState] = useState({ status: 'idle', quote: null, error: '' })
   const [orderState, setOrderState] = useState({ status: 'idle', order: null, error: '' })
+  const [mapPurpose, setMapPurpose] = useState('Canvassing potential seller opportunities')
+  const [knowledgeFactoryState, setKnowledgeFactoryState] = useState({ status: KNOWLEDGE_FACTORY_MAP_ENABLED ? 'loading' : 'inactive', properties: [], count: 0, error: '', message: '' })
   const orderRunRef = useRef(0)
+  const organisationId = currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id || ''
 
   useEffect(() => {
+    if (KNOWLEDGE_FACTORY_MAP_ENABLED) return undefined
     let active = true
     const timer = window.setTimeout(() => {
       setPropertyState((previous) => ({ ...previous, status: 'loading', error: '' }))
@@ -56,6 +63,20 @@ export default function PropertySearchWorkspace() {
       window.clearTimeout(timer)
     }
   }, [filters])
+
+  useEffect(() => {
+    if (!KNOWLEDGE_FACTORY_MAP_ENABLED || !organisationId) return undefined
+    let active = true
+    getKnowledgeFactoryMapStatus({ organisationId })
+      .then((status) => {
+        if (!active) return
+        setKnowledgeFactoryState((previous) => ({ ...previous, status: status.livePropertySearchEnabled ? 'ready' : 'blocked', message: status.message || '', error: '' }))
+      })
+      .catch((error) => {
+        if (active) setKnowledgeFactoryState((previous) => ({ ...previous, status: 'error', error: error?.message || 'Property intelligence is unavailable.' }))
+      })
+    return () => { active = false }
+  }, [organisationId])
 
   const selectedPropertyIds = useMemo(() => selectedProperties.map((property) => property.id), [selectedProperties])
   const focusedProperty = useMemo(() => propertyState.properties.find((property) => property.id === focusedPropertyId) || null, [focusedPropertyId, propertyState.properties])
@@ -145,6 +166,32 @@ export default function PropertySearchWorkspace() {
     } catch (error) {
       if (orderRunRef.current === runId) setOrderState({ status: 'error', order: null, error: error?.message || 'Unable to generate property reports.' })
     }
+  }
+
+  async function searchMapArea(bounds) {
+    if (knowledgeFactoryState.status === 'loading') return
+    try {
+      setKnowledgeFactoryState((previous) => ({ ...previous, status: 'searching', error: '' }))
+      const result = await searchKnowledgeFactoryMap({ organisationId, purpose: mapPurpose, bounds })
+      setFocusedPropertyId('')
+      setKnowledgeFactoryState({ status: 'ready', properties: result.items || [], count: Number(result.count || 0), error: '', message: result.count ? '' : 'No mapped parcels were returned for this area.' })
+    } catch (error) {
+      setKnowledgeFactoryState((previous) => ({ ...previous, status: 'error', error: error?.message || 'Property intelligence is unavailable.' }))
+    }
+  }
+
+  if (KNOWLEDGE_FACTORY_MAP_ENABLED) {
+    const focusedParcel = knowledgeFactoryState.properties.find((property) => property.id === focusedPropertyId) || null
+    const blocked = ['blocked', 'error'].includes(knowledgeFactoryState.status)
+    return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:h-[calc(100dvh-14.5rem)] xl:min-h-[620px] xl:max-h-[760px]" data-canvassing-workspace="knowledge-factory-map">
+      <div className="flex min-h-[680px] flex-col xl:h-full xl:min-h-0">
+        <div className="border-b border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-end justify-between gap-3"><label className="block min-w-[min(100%,420px)] flex-1"><span className="mb-1.5 block text-xs font-semibold text-slate-600">Business purpose for this lookup</span><input value={mapPurpose} onChange={(event) => setMapPurpose(event.target.value)} maxLength={500} className={`${FILTER_CLASS} w-full font-normal`} placeholder="e.g. Canvassing potential seller opportunities" /></label><span className="max-w-sm text-xs leading-5 text-slate-500">Parcel-only map search. Each search is permission-checked, cost-audited, and capped at 25 results.</span></div>
+          {knowledgeFactoryState.message || knowledgeFactoryState.error ? <p role="status" className={`mt-3 text-sm ${knowledgeFactoryState.error ? 'text-rose-700' : 'text-slate-600'}`}>{knowledgeFactoryState.error || knowledgeFactoryState.message}</p> : null}
+        </div>
+        {blocked ? <div className="grid min-h-[520px] flex-1 place-items-center bg-slate-50 p-6 text-center"><div className="max-w-md"><h3 className="font-semibold text-slate-900">Property intelligence is not available</h3><p className="mt-2 text-sm leading-6 text-slate-600">{knowledgeFactoryState.error || knowledgeFactoryState.message || 'Your organisation needs an approved Knowledge Factory entitlement and named-user permission.'}</p></div></div> : <KnowledgeFactoryParcelMap properties={knowledgeFactoryState.properties} loading={knowledgeFactoryState.status === 'searching'} focusedProperty={focusedParcel} onFocusProperty={(property) => setFocusedPropertyId(property?.id || '')} onSearchArea={searchMapArea} onPrepareReport={(property) => navigate('/pipeline/canvassing/property-reports', { state: { propertyId: property?.propertyId || property?.id || '' } })} />}
+      </div>
+    </section>
   }
 
   return (

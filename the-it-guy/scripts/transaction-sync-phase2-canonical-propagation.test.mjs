@@ -9,6 +9,9 @@ import {
 const migration = await readFile('../supabase/migrations/20260829103738_transaction_sync_phase2_canonical_propagation.sql', 'utf8')
 const hook = await readFile('src/hooks/useTransactionLiveRefresh.js', 'utf8')
 const attorney = await readFile('src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', 'utf8')
+const sharedJourneyCommands = await readFile('src/services/attorneyWorkflow/sharedJourneyCommandService.js', 'utf8')
+const actionAdapters = await readFile('src/services/transactionSyncActionAdapters.js', 'utf8')
+const attorneyUpdateMigration = await readFile('../supabase/migrations/20260909213009_attorney_lane_updates_atomic_shared_journey_sync.sql', 'utf8')
 
 test('Phase 2 migration owns the six durable outputs and all 29 frozen actions', () => {
   for (const table of [
@@ -60,16 +63,30 @@ test('command client sends the stable envelope and rejects unsafe client activit
 test('all live consumers subscribe to one transaction version signal with reconnect and polling fallback', () => {
   assert.match(hook, /table: 'transaction_refresh_signals'/)
   assert.match(hook, /transaction_version_changed/)
-  assert.match(hook, /transaction_version_reconciled/)
+  assert.match(hook, /transaction_reconciled/)
   assert.match(hook, /pollingIntervalMs = 30_000/)
   assert.doesNotMatch(hook, /table: 'transaction_shared_progress'/)
 })
 
-test('attorney stage mutations commit a canonical command after lane progress is durable', () => {
-  const publicationIndex = attorney.indexOf('await publishAttorneySharedProgress')
-  const commandIndex = attorney.indexOf('await commitTransactionModuleAction', publicationIndex)
-  assert.ok(publicationIndex >= 0 && commandIndex > publicationIndex)
-  assert.match(attorney, /TRANSFER_REGISTRATION_CONFIRMED/)
-  assert.match(attorney, /BOND_ATTORNEY_STAGE_UPDATED/)
-  assert.match(attorney, /CANCELLATION_ATTORNEY_STAGE_UPDATED/)
+test('attorney task and shared-update mutations use canonical atomic commands', () => {
+  assert.match(attorney, /commitSharedJourneyTask/)
+  assert.match(attorney, /commitSharedJourneyLaneUpdate/)
+  assert.match(sharedJourneyCommands, /bridge_update_attorney_workflow_step_v4/)
+  assert.match(sharedJourneyCommands, /bridge_add_attorney_lane_update_and_sync_v1/)
+  assert.match(actionAdapters, /TRANSFER_REGISTRATION_CONFIRMED/)
+  assert.match(actionAdapters, /BOND_ATTORNEY_STAGE_UPDATED/)
+  assert.match(actionAdapters, /CANCELLATION_ATTORNEY_STAGE_UPDATED/)
+})
+
+test('attorney shared/client updates are published atomically for every legal lane', () => {
+  for (const action of [
+    'TRANSFER_ATTORNEY_UPDATE_PUBLISHED',
+    'BOND_ATTORNEY_UPDATE_PUBLISHED',
+    'CANCELLATION_ATTORNEY_UPDATE_PUBLISHED',
+  ]) assert.match(attorneyUpdateMigration, new RegExp(action))
+  assert.match(attorneyUpdateMigration, /create or replace function public\.bridge_add_attorney_lane_update_and_sync_v1/)
+  assert.match(attorneyUpdateMigration, /bridge_commit_transaction_sync_command_phase2/)
+  assert.match(attorneyUpdateMigration, /pg_advisory_xact_lock/)
+  assert.match(attorneyUpdateMigration, /security invoker/)
+  assert.match(attorneyUpdateMigration, /revoke all on function public\.bridge_add_attorney_lane_update_and_sync_v1/)
 })

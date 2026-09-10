@@ -36,7 +36,9 @@ for (const laneKey of Object.keys(ATTORNEY_WORKFLOW_LANES)) {
     }
   }
 }
-assert.equal(definitionCount, 73)
+// Transfer now uses consolidated, outcome-led tasks. Keep the count explicit so
+// workflow-plan changes must update this shared-progress contract deliberately.
+assert.equal(definitionCount, 57)
 
 let operationalDefinitionCount = 0
 for (const [laneKey, definitions] of Object.entries(OPERATIONAL_STEP_DEFINITIONS)) {
@@ -56,8 +58,8 @@ for (const [laneKey, definitions] of Object.entries(OPERATIONAL_STEP_DEFINITIONS
 }
 
 const ratesProgress = getAttorneySharedProgressDefinition('rates_clearance_requested', 'transfer')
-assert.equal(ratesProgress.client.title, 'Rates clearance requested')
-assert.match(ratesProgress.client.description, /awaiting the municipality/i)
+assert.equal(ratesProgress.client.title, 'Property transfer update')
+assert.match(ratesProgress.client.description, /municipal rates clearance/i)
 const ratesSnapshot = buildTransactionProgressSnapshot(ratesProgress, {
   transactionId: 'transaction-1',
   status: 'waiting',
@@ -67,7 +69,7 @@ const ratesSnapshot = buildTransactionProgressSnapshot(ratesProgress, {
 })
 
 assert.equal(ratesSnapshot.processKey, 'transfer')
-assert.equal(ratesSnapshot.stepKey, 'rates_figures_requested')
+assert.equal(ratesSnapshot.stepKey, 'municipal_rates_clearance_review')
 assert.equal(ratesSnapshot.responsibleRole, 'transfer_attorney')
 assert.equal(ratesSnapshot.visibility, TRANSACTION_PROGRESS_VISIBILITY.client)
 assert.equal(ratesSnapshot.safeExplanation, 'Awaiting the municipality.')
@@ -81,7 +83,7 @@ assert.equal(agentView.title, ratesProgress.professional.title)
 assert.equal(clientView.title, ratesProgress.client.title)
 assert.equal(clientView.safeExplanation, 'Awaiting the municipality.')
 
-const privateProgress = getAttorneySharedProgressDefinition('entity_authority_checked', 'transfer')
+const privateProgress = getAttorneySharedProgressDefinition('existing_bond_confirmed', 'transfer')
 const privateSnapshot = buildTransactionProgressSnapshot(privateProgress, { status: 'in_progress' })
 assert.equal(canViewTransactionProgress({ viewerRole: 'agent', visibility: privateSnapshot.visibility }), false)
 assert.equal(presentTransactionProgress(privateSnapshot, { viewerRole: 'agent' }), null)

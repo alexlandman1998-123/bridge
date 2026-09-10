@@ -1,197 +1,48 @@
-import { useState } from 'react'
-import {
-  ArrowLeft,
-  CalendarDays,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Clock3,
-  FileText,
-  Info,
-  Mail,
-  MailCheck,
-  MailOpen,
-  MousePointerClick,
-  MoreHorizontal,
-  Search,
-  Send,
-  UsersRound,
-} from 'lucide-react'
-import {
-  emailCampaignDraft,
-  emailCampaignForm,
-  emailCampaignInfo,
-  emailCampaignNextSteps,
-  emailCampaignStats,
-  emailCampaignSteps,
-  emailCampaignTabs,
-  emailCampaigns,
-} from '../../data/emailCampaigns'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Archive, ArrowLeft, CalendarClock, Check, ChevronRight, Copy, FileUp, LayoutTemplate, Mail, MailOpen, MousePointerClick, Plus, Save, Search, Send, ShieldCheck, SlidersHorizontal, UsersRound } from 'lucide-react'
+import { useAuthSession } from '../../context/AuthSessionContext'
+import { archiveEmailCampaign, cancelEmailCampaign, duplicateEmailCampaign, getEmailCampaignAnalytics, getEmailCampaignWorkspace, preflightEmailCampaign, previewEmailAudience, refreshEmailSenderVerification, saveEmailAudience, saveEmailCampaign, saveEmailTemplate, scheduleEmailCampaign, sendEmailCampaignTest } from '../../services/emailCampaignService'
 
-const statIcons = { campaigns: Send, recipients: UsersRound, opened: MailOpen, clicked: MousePointerClick }
-const nextStepIcons = { audience: UsersRound, content: Mail, review: CheckCircle2 }
+const STEPS = ['Details', 'Audience', 'Content', 'Review']
+const fmt = (v) => new Intl.NumberFormat().format(Number(v || 0))
+const rate = (v, total) => total ? `${Math.round(Number(v || 0) * 100 / total)}%` : '—'
+const getOrg = (a) => String(a?.currentWorkspace?.id || a?.currentMembership?.workspaceId || a?.currentMembership?.workspace_id || '').trim()
+const safePreviewHtml = (value) => String(value || '')
+  .replace(/<script[\s\S]*?<\/script>/gi, '')
+  .replace(/<iframe[\s\S]*?<\/iframe>/gi, '')
+  .replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
+  .replace(/javascript\s*:/gi, '')
 
-export function EmailCampaignStats() {
-  return (
-    <section className="wa-stats" aria-label="Email campaign performance">
-      {emailCampaignStats.map((stat) => {
-        const Icon = statIcons[stat.id]
-        return (
-          <article className={`wa-stat email-stat email-stat-${stat.id}`} key={stat.id}>
-            <span className="wa-stat-icon"><Icon size={19} /></span>
-            <span className="wa-stat-copy"><strong>{stat.value}</strong><span>{stat.label}</span><small>{stat.detail}</small></span>
-          </article>
-        )
-      })}
-    </section>
-  )
+function useCampaigns() {
+  const { authState } = useAuthSession(); const organisationId = getOrg(authState)
+  const [state, setState] = useState({ loading: true, error: '', campaigns: [], performance: [], identities: [], contacts: [], subscriptionTypes: [], deliverability: [], templates: [], savedAudiences: [], usage: [], billingProfile: null, dailyPerformance: [], categoryPerformance: [] })
+  const refresh = async () => { if (!organisationId) return setState((s) => ({ ...s, loading: false, error: 'Choose an organisation workspace to use Email Campaigns.' })); setState((s) => ({ ...s, loading: true, error: '' })); try { setState({ loading: false, error: '', ...(await getEmailCampaignWorkspace(organisationId)) }) } catch (e) { setState((s) => ({ ...s, loading: false, error: e.message || 'Campaign data could not be loaded.' })) } }
+  useEffect(() => { void refresh() }, [organisationId])
+  return { ...state, refresh, organisationId, userId: authState?.user?.id || '' }
 }
+function Status({ value }) { return <span className={`wa-status ${value === 'sent' ? 'wa-status-sent' : value === 'scheduled' ? 'wa-status-upcoming' : value?.includes('failed') ? 'wa-status-cancelled' : 'email-status-draft'}`}>{String(value || 'draft').replace('_', ' ')}</span> }
+function Stats({ campaigns, performance }) { const t = performance.reduce((a, x) => ({ recipients: a.recipients + Number(x.recipients || 0), delivered: a.delivered + Number(x.delivered || 0), opened: a.opened + Number(x.opened || 0), clicked: a.clicked + Number(x.clicked || 0) }), { recipients: 0, delivered: 0, opened: 0, clicked: 0 }); const items = [[Send, campaigns.filter((c) => c.status === 'sent').length, 'Sent this month', 'Completed campaigns'], [UsersRound, fmt(t.recipients), 'Recipients', 'Unique send records'], [MailOpen, rate(t.opened, t.delivered), 'Open rate', 'Indicative, privacy affected'], [MousePointerClick, rate(t.clicked, t.delivered), 'Click rate', 'Delivered recipients']]; return <section className="wa-stats">{items.map(([Icon, value, label, detail]) => <article className="wa-stat email-stat" key={label}><span className="wa-stat-icon"><Icon size={19} /></span><span className="wa-stat-copy"><strong>{value}</strong><span>{label}</span><small>{detail}</small></span></article>)}</section> }
+function TrustPanel({ identities, deliverability, organisationId, onRefresh }) { const [busy, setBusy] = useState(false); const [notice, setNotice] = useState(''); const verified = identities.filter((identity) => identity.verification_status === 'verified').length; const health = deliverability.some((item) => item.health_status === 'paused') ? 'paused' : deliverability.some((item) => item.health_status === 'warning') ? 'warning' : deliverability.length ? 'healthy' : 'warming'; const refresh = async () => { setBusy(true); try { const result = await refreshEmailSenderVerification(organisationId); setNotice(`${result.verified} of ${result.checked} sender domains verified.`); await onRefresh() } catch (error) { setNotice(error.message || 'Unable to refresh sender status.') } finally { setBusy(false) } }; return <section className="email-trust-panel"><div><span className="email-eyebrow">DELIVERABILITY CONTROL</span><h3>{verified ? `${verified} verified sender${verified === 1 ? '' : 's'}` : 'No verified sender'}</h3><p>Purpose-specific consent, global suppression and provider events are enforced before each delivery.</p></div><div className="email-trust-actions"><Status value={health} /><button type="button" className="wa-secondary-button" disabled={busy || !identities.length} onClick={() => void refresh()}>{busy ? 'Checking…' : 'Refresh domain status'}</button>{notice && <small>{notice}</small>}</div></section> }
+function UsagePanel({ usage, billingProfile }) { const recipients = usage.reduce((sum, record) => sum + Number(record.recipient_count || 0), 0); const charged = usage.reduce((sum, record) => sum + Number(record.wallet_charge || 0), 0); const currency = billingProfile?.currency || usage[0]?.pricing_snapshot?.currency || 'ZAR'; return <section className="email-usage-panel"><div><span className="email-eyebrow">USAGE & BILLING</span><h3>{fmt(recipients)} campaign emails recorded</h3><p>Billing adapter: <strong>{billingProfile?.adapter_key || 'no_charge'}</strong>. Charges are disabled in this release.</p></div><div className="email-usage-amount"><strong>{new Intl.NumberFormat('en-ZA', { style: 'currency', currency }).format(charged)}</strong><small>charged to wallet</small></div></section> }
+function InsightsPanel({ dailyPerformance, categoryPerformance }) { const days = [...dailyPerformance].slice(0, 7).reverse(); const max = Math.max(1, ...days.map((day) => Number(day.recipients || 0))); const category = categoryPerformance[0]; const total = dailyPerformance.reduce((sum, day) => ({ recipients: sum.recipients + Number(day.recipients || 0), delivered: sum.delivered + Number(day.delivered || 0), bounced: sum.bounced + Number(day.bounced || 0), unsubscribed: sum.unsubscribed + Number(day.unsubscribed || 0) }), { recipients: 0, delivered: 0, bounced: 0, unsubscribed: 0 }); const signal = total.recipients ? (total.bounced / total.recipients > .05 ? 'Bounce rate needs attention' : total.unsubscribed / total.recipients > .02 ? 'Unsubscribe trend needs attention' : 'Deliverability is within guardrails') : 'Send a campaign to unlock trend intelligence'; return <section className="email-insights"><div className="email-insights-head"><div><span className="email-eyebrow">PERFORMANCE INTELLIGENCE</span><h3>{signal}</h3><p>{category ? `${category.subscription_type} is currently your highest-volume category.` : 'Performance will appear once recipient events arrive.'}</p></div><div className="email-insight-kpis"><strong>{rate(total.delivered, total.recipients)}</strong><small>delivery rate</small></div></div><div className="email-trend-chart">{days.length ? days.map((day) => <div className="email-trend-day" key={day.metric_date}><span style={{ height: `${Math.max(6, Math.round(Number(day.recipients || 0) * 100 / max))}%` }} title={`${fmt(day.recipients)} recipients`} /><small>{new Date(`${day.metric_date}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'narrow' })}</small></div>) : <p>No sent campaign data yet.</p>}</div><div className="email-category-list">{categoryPerformance.slice(0, 3).map((item) => <div key={item.subscription_type_id}><span>{item.subscription_type}</span><strong>{rate(item.clicked, item.delivered)} click rate</strong></div>)}</div><small className="email-insight-note">Open rates remain indicative because privacy tools can distort opens.</small></section> }
+function TemplateStudio({ html, onChange, templates, organisationId, userId, onRefresh, busy, setNotice, setError }) { const [templateName, setTemplateName] = useState(''); const [saving, setSaving] = useState(false); const input = useRef(null); const applyTemplate = (template) => { onChange(template.html || ''); setNotice(`Applied “${template.name}”. Review the preview before sending.`) }; const upload = async (event) => { const file = event.target.files?.[0]; event.target.value = ''; if (!file) return; if (!/\.html?$/i.test(file.name) && file.type !== 'text/html') return setError('Choose an .html or .htm file.'); if (file.size > 750 * 1024) return setError('HTML uploads must be smaller than 750 KB.'); try { const content = await file.text(); if (!content.trim()) throw new Error('That HTML file is empty.'); onChange(content); setNotice(`Loaded ${file.name}. Scripts and unsafe markup are stripped before preview and delivery.`) } catch (error) { setError(error.message || 'Unable to read that HTML file.') } }; const saveTemplate = async () => { setSaving(true); setError(''); try { await saveEmailTemplate({ organisationId, userId, template: { name: templateName || 'Untitled template', html, category: 'custom', designJson: { source: 'html_upload', schema_version: 1 } } }); setTemplateName(''); setNotice('Template saved to your agency library.'); await onRefresh() } catch (error) { setError(error.message || 'Unable to save this template.') } finally { setSaving(false) } }; return <section className="email-template-studio"><div className="email-template-heading"><span className="email-eyebrow"><LayoutTemplate size={13} /> TEMPLATE LIBRARY</span><p>Start from an agency-approved layout or import production HTML. Campaigns retain their own immutable content snapshot when sending begins.</p></div><div className="email-template-actions"><select defaultValue="" onChange={(event) => { const template = templates.find((item) => item.id === event.target.value); if (template) applyTemplate(template); event.target.value = '' }}><option value="">Apply a saved template…</option>{templates.map((template) => <option value={template.id} key={template.id}>{template.name}</option>)}</select><input ref={input} type="file" accept=".html,.htm,text/html" hidden onChange={(event) => void upload(event)} /><button className="wa-secondary-button" type="button" disabled={busy} onClick={() => input.current?.click()}><FileUp size={15} /> Upload HTML</button></div><div className="email-template-save"><input value={templateName} onChange={(event) => setTemplateName(event.target.value)} placeholder="Save current layout as…" aria-label="Template name" /><button className="wa-secondary-button" type="button" disabled={saving || busy || !html.trim()} onClick={() => void saveTemplate()}><Save size={15} /> {saving ? 'Saving…' : 'Save template'}</button></div></section> }
+function AudienceStudio({ audienceFilter, onChange, contacts, savedAudiences, organisationId, userId, onRefresh, setNotice, setError }) { const [audienceName, setAudienceName] = useState(''); const [saving, setSaving] = useState(false); const set = (key, value) => onChange({ ...audienceFilter, [key]: value }); const apply = (id) => { const audience = savedAudiences.find((item) => item.id === id); if (audience) { onChange(audience.filter_json || {}); setNotice(`Applied “${audience.name}”.`); } }; const save = async () => { setSaving(true); setError(''); try { await saveEmailAudience({ organisationId, userId, audience: { name: audienceName || 'Untitled audience', filterJson: audienceFilter } }); setAudienceName(''); setNotice('Audience saved for your agency. Consent and suppression remain live checks.'); await onRefresh() } catch (error) { setError(error.message || 'Unable to save this audience.') } finally { setSaving(false) } }; return <section className="email-audience-studio"><div className="email-template-heading"><span className="email-eyebrow"><SlidersHorizontal size={13} /> AUDIENCE BUILDER</span><p>Build a reusable CRM segment or choose individual contacts. Saved audiences never bypass consent, suppression or deduplication.</p></div><div className="email-template-actions"><select defaultValue="" onChange={(event) => { apply(event.target.value); event.target.value = '' }}><option value="">Apply a saved audience…</option>{savedAudiences.map((audience) => <option value={audience.id} key={audience.id}>{audience.name}</option>)}</select><input value={audienceName} onChange={(event) => setAudienceName(event.target.value)} placeholder="Save these filters as…" aria-label="Audience name" /><button type="button" className="wa-secondary-button" disabled={saving} onClick={() => void save()}><Save size={15} /> {saving ? 'Saving…' : 'Save audience'}</button></div><div className="email-audience-filters"><label className="wa-field-label"><span>Contact type</span><select value={audienceFilter.role_type || ''} onChange={(event) => set('role_type', event.target.value)}><option value="">Any contact type</option>{['lead', 'buyer', 'seller', 'landlord', 'tenant'].map((value) => <option value={value} key={value}>{value}s</option>)}</select></label><label className="wa-field-label"><span>Area</span><input value={audienceFilter.area || ''} onChange={(event) => set('area', event.target.value)} placeholder="e.g. Sandton" /></label><label className="wa-field-label"><span>Tag</span><input value={audienceFilter.tag || ''} onChange={(event) => set('tag', event.target.value)} placeholder="e.g. investor" /></label><label className="wa-field-label email-contact-picker"><span>Specific contacts <small>Optional</small></span><select multiple value={audienceFilter.contact_ids || []} onChange={(event) => set('contact_ids', [...event.target.selectedOptions].map((option) => option.value))}>{contacts.map((contact) => <option value={contact.id} key={contact.id}>{contact.full_name || contact.email} · {contact.email}</option>)}</select><small>Hold ⌘/Ctrl to select more than one.</small></label></div></section> }
 
-export function EmailCampaignFilters() {
-  return (
-    <section className="wa-filter-row" aria-label="Campaign filters">
-      <label className="wa-search"><Search size={17} aria-hidden="true" /><span className="sr-only">Search campaigns</span><input type="search" placeholder="Search campaigns..." /></label>
-      <button className="wa-filter-control" type="button">All statuses <ChevronDown size={15} /></button>
-      <button className="wa-filter-control" type="button">Last 30 days <CalendarDays size={16} /></button>
-    </section>
-  )
-}
-
-function CampaignThumbnail({ campaign }) {
-  if (campaign.thumbnailType === 'market-update') {
-    return <div className="wa-campaign-thumbnail email-newsletter-thumbnail" aria-label="April Market Update email artwork"><small>HOME SEEKERS</small><strong>Market<br />update</strong><span>APR 2026</span></div>
-  }
-  return <img className="wa-campaign-thumbnail" src={campaign.thumbnail} alt={campaign.thumbnailAlt || ''} />
-}
-
-export function EmailCampaignCard({ campaign }) {
-  return (
-    <article className="wa-campaign-card">
-      <CampaignThumbnail campaign={campaign} />
-      <div className="wa-campaign-main">
-        <div className="wa-campaign-heading">
-          <div><h3>{campaign.name}</h3><p>Sent to <strong>{campaign.audience}</strong></p></div>
-          <span className="wa-status wa-status-sent">{campaign.status}</span>
-        </div>
-        <p className="wa-sent-time"><CalendarDays size={13} /> Sent {campaign.sentAt}</p>
-        <dl className="wa-metrics">
-          <div><dt>Recipients</dt><dd>{campaign.recipients}</dd></div>
-          <div><dt>Opened</dt><dd>{campaign.opened} <span>({campaign.openRate})</span></dd></div>
-          <div><dt>Clicked</dt><dd>{campaign.clicked} <span>({campaign.clickRate})</span></dd></div>
-          <div><dt>Replies</dt><dd>{campaign.replies}</dd></div>
-        </dl>
-      </div>
-      <button className="wa-more" type="button" aria-label={`More options for ${campaign.name}`}><MoreHorizontal size={18} /></button>
-    </article>
-  )
-}
-
-function EmailDraftCard({ onContinue }) {
-  return (
-    <article className="wa-draft-card email-draft-card">
-      <span className="wa-draft-icon"><FileText size={22} /></span>
-      <div><h3>{emailCampaignDraft.name}</h3><p><Clock3 size={13} /> {emailCampaignDraft.updatedAt}</p></div>
-      <span className="wa-status email-status-draft">{emailCampaignDraft.status}</span>
-      <button className="wa-secondary-button" type="button" onClick={onContinue}>Continue</button>
-    </article>
-  )
-}
-
-export function EmailCampaignOverview({ onCreateCampaign }) {
-  const [activeTab, setActiveTab] = useState(emailCampaignTabs[0])
-  return (
-    <div className="wa-page email-page">
-      <EmailCampaignStats />
-      <section className="wa-campaigns-panel">
-        <div className="wa-panel-toolbar">
-          <div className="wa-tabs" role="tablist" aria-label="Campaign status">
-            {emailCampaignTabs.map((tab) => <button className={activeTab === tab ? 'wa-tab-active' : ''} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}
-          </div>
-          <button className="wa-primary-button" type="button" onClick={onCreateCampaign}>Create Campaign <ChevronRight size={16} /></button>
-        </div>
-        <div className="wa-campaigns-content">
-          <EmailCampaignFilters />
-          <div className="wa-campaign-list">
-            {emailCampaigns.map((campaign) => <EmailCampaignCard campaign={campaign} key={campaign.id} />)}
-            <EmailDraftCard onContinue={onCreateCampaign} />
-          </div>
-          <footer className="wa-list-footer"><span>Showing 1–3 of 14 campaigns</span><div aria-label="Pagination">{[1, 2, 3, 4].map((page) => <button type="button" className={`wa-page-number ${page === 1 ? 'wa-page-number-active' : ''}`} key={page}>{page}</button>)}</div></footer>
-        </div>
-      </section>
-    </div>
-  )
-}
-
-export function EmailCampaignStepHeader({ activeStep }) {
-  return (
-    <ol className="wa-step-header" aria-label="Email campaign creation steps">
-      {emailCampaignSteps.map((step) => (
-        <li className={activeStep === step.id ? 'wa-step-active' : activeStep > step.id ? 'wa-step-complete' : ''} key={step.id}>
-          <span className="wa-step-number">{activeStep > step.id ? <Check size={14} /> : step.id}</span>
-          <span className="wa-step-copy"><strong>{step.label}</strong><small>{step.detail}</small></span>
-        </li>
-      ))}
-    </ol>
-  )
-}
-
-function EmailChoiceCard({ checked, name, title, detail, onChange }) {
-  return <label className={`wa-choice-card ${checked ? 'wa-choice-card-selected' : ''}`}><input type="radio" name={name} checked={checked} onChange={onChange} /><span><strong>{title}</strong><small>{detail}</small></span></label>
-}
-
-export function EmailCampaignDetailsForm({ onNext }) {
-  const [campaignName, setCampaignName] = useState(emailCampaignForm.defaultName)
-  const [replyToEmail, setReplyToEmail] = useState(emailCampaignForm.replyToEmail)
-  const [campaignType, setCampaignType] = useState('marketing')
-  const [schedule, setSchedule] = useState('now')
-  return (
-    <section className="wa-form-card">
-      <div className="wa-card-heading"><span>Step 1 of 4</span><h2>Campaign details</h2><p>Set up the essentials for your email campaign.</p></div>
-      <div className="wa-form-fields">
-        <label className="wa-field-label"><span>Campaign name</span><span className="wa-input-shell"><input value={campaignName} maxLength={100} onChange={(event) => setCampaignName(event.target.value)} /><small>{campaignName.length}/100</small></span></label>
-        <label className="wa-field-label"><span>Email sender (from)</span><span className="wa-sender-select"><span className="wa-sender-icon email-sender-icon"><Mail size={17} /></span><span><strong>{emailCampaignForm.senderName}</strong><small>{emailCampaignForm.senderEmail}</small></span><ChevronDown size={16} /></span></label>
-        <label className="wa-field-label"><span>Reply-to email</span><span className="wa-input-shell"><input type="email" value={replyToEmail} onChange={(event) => setReplyToEmail(event.target.value)} /></span></label>
-        <fieldset className="wa-fieldset"><legend>Campaign type</legend><div className="wa-choice-grid">{emailCampaignForm.campaignTypes.map((type) => <EmailChoiceCard name="email-campaign-type" title={type.title} detail={type.detail} checked={campaignType === type.id} onChange={() => setCampaignType(type.id)} key={type.id} />)}</div></fieldset>
-        <fieldset className="wa-fieldset"><legend>Schedule</legend><div className="wa-radio-row"><label><input type="radio" name="email-schedule" checked={schedule === 'now'} onChange={() => setSchedule('now')} /> Send now</label><label><input type="radio" name="email-schedule" checked={schedule === 'later'} onChange={() => setSchedule('later')} /> Schedule for later</label></div></fieldset>
-      </div>
-      <div className="wa-form-footer"><button className="wa-primary-button" type="button" onClick={onNext}>Next <ChevronRight size={16} /></button></div>
-    </section>
-  )
-}
-
-export function EmailCampaignInfoPanel() {
-  return (
-    <aside className="wa-info-panel email-info-panel">
-      <div className="wa-info-heading"><span><Info size={16} /></span><p>{emailCampaignInfo.title}</p></div>
-      <span className="wa-info-icon email-info-icon"><MailCheck size={27} /></span>
-      <h2>{emailCampaignInfo.heading}</h2>
-      <p>{emailCampaignInfo.description}</p>
-      <ul>{emailCampaignInfo.checklist.map((point) => <li key={point}><Check size={14} /> {point}</li>)}</ul>
-    </aside>
-  )
-}
-
-export function EmailCampaignNextSteps() {
-  return <section className="wa-next-steps">{emailCampaignNextSteps.map((step) => { const Icon = nextStepIcons[step.id]; return <div key={step.id}><span className="wa-next-steps-icon"><Icon size={17} /></span><p><strong>{step.title}</strong><small>{step.detail}</small></p></div> })}</section>
-}
-
-function EmailPlaceholderStep({ activeStep, onBack, onNext }) {
-  const step = emailCampaignSteps[activeStep - 1]
-  const Icon = activeStep === 2 ? UsersRound : activeStep === 3 ? Mail : CheckCircle2
-  return (
-    <section className="wa-form-card wa-placeholder-card"><span className="wa-placeholder-icon"><Icon size={26} /></span><span>Step {activeStep} of 4</span><h2>{step.label}</h2><p>This step is a static preview. Audience selection, email design and campaign delivery will be added in a future release.</p><div className="wa-placeholder-actions"><button className="wa-secondary-button" type="button" onClick={onBack}><ArrowLeft size={15} /> Back</button>{activeStep < 4 ? <button className="wa-primary-button" type="button" onClick={onNext}>Next <ChevronRight size={16} /></button> : null}</div></section>
-  )
+export function EmailCampaignOverview({ onCreateCampaign, onOpenCampaign }) {
+  const { loading, error, campaigns, performance, identities, deliverability, usage, billingProfile, dailyPerformance, categoryPerformance, refresh, organisationId } = useCampaigns(); const [tab, setTab] = useState('all'); const metrics = useMemo(() => Object.fromEntries(performance.map((x) => [x.campaign_id, x])), [performance]); const rows = campaigns.filter((x) => tab === 'all' || x.status === tab)
+  return <div className="wa-page email-page"><Stats campaigns={campaigns} performance={performance} /><TrustPanel identities={identities} deliverability={deliverability} organisationId={organisationId} onRefresh={refresh} /><InsightsPanel dailyPerformance={dailyPerformance} categoryPerformance={categoryPerformance} /><UsagePanel usage={usage} billingProfile={billingProfile} /><section className="wa-campaigns-panel"><div className="wa-panel-toolbar"><div className="wa-tabs">{['all', 'draft', 'scheduled', 'sending', 'sent', 'failed'].map((x) => <button type="button" className={tab === x ? 'wa-tab-active' : ''} onClick={() => setTab(x)} key={x}>{x === 'all' ? 'All campaigns' : x}</button>)}</div><button className="wa-primary-button" type="button" onClick={onCreateCampaign}><Plus size={16} /> Create campaign</button></div>{error && <p className="wa-error">{error}</p>}<div className="wa-campaigns-content">{loading ? <p className="wa-empty">Loading campaigns…</p> : rows.length ? <div className="wa-campaign-list">{rows.map((c) => { const m = metrics[c.id] || {}; return <button type="button" className="wa-campaign-card wa-campaign-card-button" onClick={() => onOpenCampaign(c.id)} key={c.id}><span className="email-campaign-mark"><Mail size={19} /></span><div className="wa-campaign-main"><div className="wa-campaign-heading"><div><h3>{c.name}</h3><p>{c.email_sender_identities?.display_name || 'Sender pending'} · {c.subject}</p></div><Status value={c.status} /></div><dl className="wa-metrics"><div><dt>Recipients</dt><dd>{fmt(m.recipients)}</dd></div><div><dt>Delivered</dt><dd>{rate(m.delivered, m.recipients)}</dd></div><div><dt>Opened</dt><dd>{rate(m.opened, m.delivered)}</dd></div><div><dt>Clicked</dt><dd>{rate(m.clicked, m.delivered)}</dd></div></dl></div><ChevronRight size={18} /></button> })}</div> : <div className="wa-empty"><Mail size={26} /><h3>No campaigns yet</h3><p>Create a branded campaign, choose a consented audience and send when ready.</p><button className="wa-primary-button" type="button" onClick={onCreateCampaign}>Create campaign</button></div>}</div><button className="wa-refresh" type="button" onClick={() => void refresh()}>Refresh results</button></section></div>
 }
 
 export function CreateEmailCampaign({ onBack }) {
-  const [activeStep, setActiveStep] = useState(1)
-  return (
-    <div className="wa-page wa-create-page email-page">
-      <button className="wa-back-link" type="button" onClick={onBack}><ArrowLeft size={15} /> Email Campaigns</button>
-      <EmailCampaignStepHeader activeStep={activeStep} />
-      <div className="wa-create-grid">{activeStep === 1 ? <EmailCampaignDetailsForm onNext={() => setActiveStep(2)} /> : <EmailPlaceholderStep activeStep={activeStep} onBack={() => setActiveStep((step) => Math.max(1, step - 1))} onNext={() => setActiveStep((step) => Math.min(4, step + 1))} />}<EmailCampaignInfoPanel /></div>
-      <EmailCampaignNextSteps />
-    </div>
-  )
+  const { organisationId, userId, identities, contacts, subscriptionTypes, templates, savedAudiences, refresh } = useCampaigns(); const [step, setStep] = useState(0); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [exactAudience, setExactAudience] = useState(null); const [scheduledFor, setScheduledFor] = useState(''); const [draft, setDraft] = useState({ name: '', subject: '', previewText: '', senderIdentityId: '', subscriptionTypeId: '', replyToEmail: '', audienceFilter: { role_type: '' }, contentJson: { blocks: [] }, html: '<h1>Hello {{first_name}}</h1><p>Share your update here.</p>' }); const sender = identities.find((x) => x.id === draft.senderIdentityId); const audience = contacts.filter((x) => !draft.audienceFilter.role_type || x.role_type === draft.audienceFilter.role_type); const audienceKey = JSON.stringify(draft.audienceFilter)
+  useEffect(() => { let active = true; if (!organisationId || !draft.subscriptionTypeId) { setExactAudience(null); return () => { active = false } } ; void previewEmailAudience({ organisationId, subscriptionTypeId: draft.subscriptionTypeId, audienceFilter: draft.audienceFilter }).then((count) => { if (active) setExactAudience(count) }).catch(() => { if (active) setExactAudience(null) }); return () => { active = false } }, [organisationId, draft.subscriptionTypeId, audienceKey])
+  const save = async (send = false) => { setBusy(true); setError(''); try { const c = await saveEmailCampaign({ campaign: draft, organisationId, userId }); setDraft((x) => ({ ...x, id: c.id })); if (send) { const preflight = await preflightEmailCampaign(c.id); if (!preflight.ready) throw new Error('Preflight found a sending blocker. Check sender, consent category, policy and eligible audience.'); await scheduleEmailCampaign(c.id, scheduledFor ? new Date(scheduledFor).toISOString() : new Date().toISOString()) } setNotice(send ? (scheduledFor ? 'Campaign scheduled. Delivery will begin at the selected time.' : 'Campaign queued. Delivery begins in the background.') : 'Draft saved.'); await refresh() } catch (e) { setError(e.message || 'Unable to save campaign.') } finally { setBusy(false) } }
+  const sendTest = async () => { setBusy(true); setError(''); try { const result = await sendEmailCampaignTest({ organisationId, senderIdentityId: draft.senderIdentityId, subject: draft.subject, html: draft.html }); setNotice(`Test sent to ${result.deliveredTo}. It is excluded from campaign analytics.`) } catch (e) { setError(e.message || 'Unable to send test email.') } finally { setBusy(false) } }
+  return <div className="wa-page wa-create-page email-page"><button className="wa-back-link" type="button" onClick={onBack}><ArrowLeft size={15} /> Email Campaigns</button><ol className="wa-step-header">{STEPS.map((x, i) => <li className={step === i ? 'wa-step-active' : step > i ? 'wa-step-complete' : ''} key={x}><span className="wa-step-number">{step > i ? <Check size={14} /> : i + 1}</span><span className="wa-step-copy"><strong>{x}</strong><small>{['Set essentials', 'Choose recipients', 'Build email', 'Confirm delivery'][i]}</small></span></li>)}</ol><section className="wa-form-card"><div className="wa-card-heading"><span>Step {step + 1} of 4</span><h2>{STEPS[step]}</h2><p>{step === 1 ? 'Invalid, duplicated and suppressed emails are automatically excluded.' : step === 2 ? 'Use merge fields and leave unsubscribe handling to Arch9.' : 'A focused campaign, with all delivery controls built in.'}</p></div>
+    {step === 0 && <div className="wa-form-fields"><label className="wa-field-label"><span>Campaign name</span><input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="September buyer update" /></label><label className="wa-field-label"><span>Subject line</span><input value={draft.subject} onChange={(e) => setDraft({ ...draft, subject: e.target.value })} placeholder="New homes worth seeing this week" /></label><label className="wa-field-label"><span>Preview text</span><input value={draft.previewText} onChange={(e) => setDraft({ ...draft, previewText: e.target.value })} /></label><label className="wa-field-label"><span>Email category</span><select value={draft.subscriptionTypeId} onChange={(e) => setDraft({ ...draft, subscriptionTypeId: e.target.value })}><option value="">Select a consent category</option>{subscriptionTypes.map((x) => <option value={x.id} key={x.id}>{x.name}</option>)}</select><small>Only recipients opted into this category can be scheduled.</small></label><label className="wa-field-label"><span>Verified sender</span><select value={draft.senderIdentityId} onChange={(e) => { const i = identities.find((x) => x.id === e.target.value); setDraft({ ...draft, senderIdentityId: e.target.value, replyToEmail: i?.reply_to_email || '' }) }}><option value="">Select a sender identity</option>{identities.map((x) => <option value={x.id} disabled={x.verification_status !== 'verified'} key={x.id}>{x.display_name} · {x.from_email} ({x.verification_status})</option>)}</select></label></div>}
+    {step === 1 && <div className="wa-form-fields"><AudienceStudio audienceFilter={draft.audienceFilter} onChange={(audienceFilter) => setDraft((current) => ({ ...current, audienceFilter }))} contacts={contacts} savedAudiences={savedAudiences} organisationId={organisationId} userId={userId} onRefresh={refresh} setNotice={setNotice} setError={setError} /><div className="email-audience-count"><UsersRound size={20} /><div><strong>{exactAudience === null ? `${fmt(audience.length)} CRM contacts shown` : `${fmt(exactAudience)} eligible recipients`}</strong><small>{exactAudience === null ? 'Choose an email category to calculate consent-aware eligibility.' : 'Exact count includes consent, subscription, suppression and deduplication rules.'}</small></div></div></div>}
+    {step === 2 && <><TemplateStudio html={draft.html} onChange={(html) => setDraft((current) => ({ ...current, html }))} templates={templates} organisationId={organisationId} userId={userId} onRefresh={refresh} busy={busy} setNotice={setNotice} setError={setError} /><div className="email-editor-grid"><label className="wa-field-label"><span>Email HTML <small>Advanced</small></span><textarea rows="13" value={draft.html} onChange={(e) => setDraft({ ...draft, html: e.target.value })} /><small>Merge: {'{{first_name}}'}, {'{{last_name}}'}, {'{{full_name}}'}, {'{{agent_name}}'}, {'{{agency_name}}'}, {'{{branch_name}}'}</small><button type="button" className="wa-secondary-button" disabled={!sender || busy} onClick={() => void sendTest()}>Send test to me</button></label><div className="email-preview"><small>LIVE PREVIEW</small><h2>{draft.subject || 'Your subject line'}</h2><div dangerouslySetInnerHTML={{ __html: safePreviewHtml(draft.html).replace(/\{\{first_name\}\}/g, 'Alex') }} /><footer>Unsubscribe link and required agency details are added automatically.</footer></div></div></>}
+    {step === 3 && <><div className="email-review"><div><span>From</span><strong>{sender ? `${sender.display_name} <${sender.from_email}>` : 'Choose a verified sender'}</strong></div><div><span>Consent category</span><strong>{subscriptionTypes.find((x) => x.id === draft.subscriptionTypeId)?.name || 'Choose a category'}</strong></div><div><span>Audience snapshot</span><strong>{exactAudience === null ? 'Calculate eligibility first' : `${fmt(exactAudience)} eligible recipients`}</strong></div><div><span>Estimated usage</span><strong>{exactAudience === null ? 'Awaiting eligible count' : `${fmt(exactAudience)} emails · R0 today`}</strong></div><p>Opens are indicative only; privacy tools can distort them.</p></div><label className="wa-field-label email-schedule-field"><span><CalendarClock size={15} /> Send time <small>Optional</small></span><input type="datetime-local" value={scheduledFor} min={new Date().toISOString().slice(0, 16)} onChange={(event) => setScheduledFor(event.target.value)} /><small>Leave blank to queue immediately. Arch9 runs a server-side preflight before either action.</small></label></>}{error && <p className="wa-error">{error}</p>}{notice && <p className="wa-notice">{notice}</p>}<div className="wa-form-footer">{step > 0 && <button type="button" className="wa-secondary-button" onClick={() => setStep(step - 1)}>Back</button>}{step < 3 ? <button type="button" className="wa-primary-button" onClick={() => setStep(step + 1)}>Continue <ChevronRight size={16} /></button> : <><button type="button" className="wa-secondary-button" disabled={busy} onClick={() => void save()}>Save draft</button><button type="button" className="wa-primary-button" disabled={busy || !sender || !draft.subscriptionTypeId || !exactAudience} onClick={() => void save(true)}><Send size={15} /> {busy ? 'Preparing…' : scheduledFor ? 'Preflight & schedule' : 'Preflight & send'}</button></>}</div></section></div>
 }
+
+export function EmailCampaignDetail({ campaignId, onBack }) { const { campaigns, performance, refresh } = useCampaigns(); const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [operationBusy, setOperationBusy] = useState(false); const [report, setReport] = useState({ loading: true, recipients: [], events: [], links: [], audit: [] }); const [query, setQuery] = useState(''); const c = campaigns.find((x) => x.id === campaignId); const m = performance.find((x) => x.campaign_id === campaignId) || {}; const loadReport = async () => { const data = await getEmailCampaignAnalytics(campaignId); setReport({ loading: false, ...data }) }; useEffect(() => { let active = true; void getEmailCampaignAnalytics(campaignId).then((data) => { if (active) setReport({ loading: false, ...data }) }).catch((cause) => { if (active) { setError(cause.message || 'Unable to load campaign activity.'); setReport((current) => ({ ...current, loading: false })) } }); return () => { active = false } }, [campaignId]); const run = async (action) => { setOperationBusy(true); setError(''); try { const message = await action(); setNotice(message); await refresh(); await loadReport() } catch (e) { setError(e.message || 'Campaign operation failed.') } finally { setOperationBusy(false) } }; const cancel = () => run(async () => { await cancelEmailCampaign(campaignId); return 'Scheduled campaign cancelled.' }); const duplicate = () => run(async () => { await duplicateEmailCampaign(campaignId); return 'A draft copy was created.' }); const archive = () => run(async () => { await archiveEmailCampaign(campaignId); return 'Campaign archived.' }); const preflight = () => run(async () => { const result = await preflightEmailCampaign(campaignId); return result.ready ? `Preflight passed for ${fmt(result.eligible_recipients)} eligible recipients.` : 'Preflight found a blocking issue. Review sender, consent category, policy and audience.' }); const rows = report.recipients.filter((recipient) => `${recipient.email} ${recipient.recipient_snapshot?.full_name || ''} ${recipient.status}`.toLowerCase().includes(query.toLowerCase())); if (!c) return <div className="wa-page email-page"><button className="wa-back-link" type="button" onClick={onBack}><ArrowLeft size={15} /> Email Campaigns</button><p className="wa-empty">Loading campaign…</p></div>; return <div className="wa-page email-page"><button className="wa-back-link" type="button" onClick={onBack}><ArrowLeft size={15} /> Email Campaigns</button><section className="wa-form-card"><div className="wa-card-heading"><span>CAMPAIGN PERFORMANCE</span><h2>{c.name}</h2><p>{c.subject}</p><Status value={c.status} /></div><Stats campaigns={[c]} performance={[m]} /><div className="email-operations"><button type="button" className="wa-secondary-button" disabled={operationBusy} onClick={() => void preflight()}><ShieldCheck size={15} /> Run preflight</button><button type="button" className="wa-secondary-button" disabled={operationBusy} onClick={() => void duplicate()}><Copy size={15} /> Duplicate</button>{['draft', 'sent', 'partially_failed', 'failed', 'cancelled'].includes(c.status) && <button type="button" className="wa-secondary-button" disabled={operationBusy} onClick={() => void archive()}><Archive size={15} /> Archive</button>}</div><div className="email-review"><div><span>Recipients</span><strong>{fmt(m.recipients)}</strong></div><div><span>Bounced</span><strong>{fmt(m.bounced)}</strong></div><div><span>Unsubscribed</span><strong>{fmt(m.unsubscribed)}</strong></div><div><span>Failed</span><strong>{fmt(m.failed)}</strong></div></div>{report.links.length > 0 && <section className="email-report-section"><div className="email-report-heading"><div><span className="email-eyebrow">LINK PERFORMANCE</span><h3>What recipients clicked</h3></div><small>Unique clickers are deduplicated by recipient.</small></div><div className="email-link-list">{report.links.map((link) => <article key={link.target_url}><a href={link.target_url} target="_blank" rel="noreferrer">{link.target_url}</a><strong>{fmt(link.unique_clickers)} unique · {fmt(link.clicks)} clicks</strong></article>)}</div></section>}<section className="email-report-section"><div className="email-report-heading"><div><span className="email-eyebrow">RECIPIENT ACTIVITY</span><h3>Delivery-level evidence</h3></div><label className="email-activity-search"><Search size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, email or status" /></label></div>{report.loading ? <p className="wa-empty">Loading recipient activity…</p> : <div className="email-activity-table"><div className="email-activity-row email-activity-head"><span>Recipient</span><span>Status</span><span>Latest activity</span><span>Detail</span></div>{rows.map((recipient) => { const event = report.events.find((item) => item.recipient_id === recipient.id); return <div className="email-activity-row" key={recipient.id}><span><strong>{recipient.recipient_snapshot?.full_name || recipient.email}</strong><small>{recipient.email}</small></span><Status value={recipient.status} /><span>{event ? `${event.event_type} · ${new Date(event.occurred_at).toLocaleString()}` : 'No provider event yet'}</span><span>{recipient.error_reason || (event?.url ? 'Tracked link activity' : '—')}</span></div> })}{!rows.length && <p className="wa-empty">No recipients match that search.</p>}</div>}</section>{report.audit.length > 0 && <section className="email-report-section"><div className="email-report-heading"><div><span className="email-eyebrow">CAMPAIGN LOG</span><h3>Operational audit trail</h3></div></div><div className="email-audit-list">{report.audit.map((event) => <p key={event.id}><strong>{event.event_type.replace('_', ' ')}</strong><span>{new Date(event.created_at).toLocaleString()}</span></p>)}</div></section>}{error && <p className="wa-error">{error}</p>}{notice && <p className="wa-notice">{notice}</p>}{c.status === 'scheduled' && <div className="wa-form-footer"><button type="button" className="wa-secondary-button" disabled={operationBusy} onClick={() => void cancel()}>Cancel scheduled campaign</button></div>}</section></div> }

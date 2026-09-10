@@ -685,10 +685,9 @@ function applyTransferScenarioToTask(definition = {}, scenario = null) {
   const taskKey = definition.key
   const isBuyerFicaTask = /^buyer_fica/.test(taskKey)
   const isSellerFicaTask = /^seller_fica/.test(taskKey)
-  const isAuthorityTask = taskKey === 'entity_authority_checked'
-  if (!isBuyerFicaTask && !isSellerFicaTask && !isAuthorityTask) return definition
+  if (!isBuyerFicaTask && !isSellerFicaTask) return definition
 
-  const roles = isBuyerFicaTask ? ['buyer'] : isSellerFicaTask ? ['seller'] : ['buyer', 'seller']
+  const roles = isBuyerFicaTask ? ['buyer'] : ['seller']
   const requirementGroups = roles.map((role) => buildPartyScenarioRequirements(scenario[role]))
   const scopedPartyKeys = new Set(roles.flatMap((role) => PARTY_DOCUMENT_KEYS[role] || []))
   const knownPartyTypes = roles.every((role) => scenario[role]?.entityType && scenario[role].entityType !== 'unknown')

@@ -15,6 +15,12 @@ import { publishTransactionSharedProgress } from './transactionSharedProgressSer
 
 const WARNING_PREFIX = '[operational-checklist]'
 const LEGACY_TRANSFER_STEP_ALIASES = {
+  buyer_fica_review: 'fica_review',
+  seller_fica_review: 'fica_review',
+  transfer_duty_vat_review: 'transfer_duty_receipt_received',
+  municipal_rates_clearance_review: 'rates_clearance_uploaded',
+  levy_hoa_clearance_review: 'levy_clearance_uploaded',
+  property_compliance_review: 'compliance_certificates_received',
   fica_received: 'fica_review',
   buyer_fica_requested: 'fica_requested',
   buyer_fica_received: 'fica_received',
@@ -27,8 +33,10 @@ const LEGACY_TRANSFER_STEP_ALIASES = {
   rates_clearance_received: 'rates_clearance_uploaded',
   levy_clearance_received: 'levy_clearance_uploaded',
   lodgement_ready: 'lodgement_pack_prepared',
+  lodgement_pack_prepared: 'lodgement_pack_prepared',
   lodged_at_deeds_office: 'lodgement_submitted',
   registered: 'registration_confirmed',
+  post_registration_closeout_review: 'registration_confirmed',
   matter_closed: 'registration_confirmed',
 }
 
@@ -114,8 +122,8 @@ function resolveWorkflowEvidenceKeyFromChecklist({ parsed = null, definition = n
 
   const lane = toLower(parsed?.lane)
   const stepKey = toLower(parsed?.stepKey)
-  if (lane === 'transfer' && stepKey === 'transfer_documents_prepared') return 'transfer_documents_prepared'
-  if (lane === 'transfer' && ['buyer_signed_transfer_documents', 'seller_signed_transfer_documents'].includes(stepKey)) return 'transfer_signatures_complete'
+  if (lane === 'transfer' && ['transfer_documents_prepared', 'transfer_document_pack_review'].includes(stepKey)) return 'transfer_documents_prepared'
+  if (lane === 'transfer' && ['buyer_signed_transfer_documents', 'seller_signed_transfer_documents', 'buyer_signing_review', 'seller_signing_review'].includes(stepKey)) return 'transfer_signatures_complete'
   if (lane === 'transfer' && ['rates_clearance_uploaded', 'rates_clearance_received', 'levy_clearance_uploaded', 'levy_clearance_received'].includes(stepKey)) return 'transfer_clearance_complete'
   if (lane === 'transfer' && ['lodgement_submitted', 'lodged_at_deeds_office'].includes(stepKey)) return 'lodgement_confirmed'
   if (lane === 'finance' && stepKey === 'ready_for_transfer') return 'ready_for_transfer'

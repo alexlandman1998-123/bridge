@@ -95,6 +95,52 @@ Deno.serve(async (req: Request) => {
   if (audit.error?.code === "23505") return response(200, { received: true, duplicate: true });
   if (audit.error) return response(500, { error: audit.error.message });
 
+  // Marketing campaigns use the same verified Resend endpoint as operational
+  // mail, but their recipient lifecycle and compliance rules are isolated.
+  // The unique provider event id makes retried webhook delivery harmless.
+  const campaignRecipient = providerMessageId
+    ? await supabase.from("email_campaign_recipients")
+      .select("id, campaign_id, organisation_id, email, status")
+      .eq("provider_message_id", providerMessageId).maybeSingle()
+    : { data: null, error: null };
+  if (campaignRecipient.data) {
+    const recipient = campaignRecipient.data;
+    const eventMap: Record<string, string> = {
+      "email.delivered": "delivered", "email.opened": "opened", "email.clicked": "clicked",
+      "email.bounced": "bounced", "email.complained": "complained",
+    };
+    const mapped = eventMap[eventType];
+    if (!mapped) {
+      await supabase.from("notification_provider_webhook_events").update({ processing_status: "ignored", processed_at: new Date().toISOString() }).eq("id", audit.data.id);
+      return response(200, { received: true, ignored: true });
+    }
+    const inserted = await supabase.from("email_events").insert({
+      organisation_id: recipient.organisation_id, campaign_id: recipient.campaign_id, recipient_id: recipient.id,
+      provider: "resend", provider_event_id: providerEventId, event_type: mapped, url: text(payload.data?.click?.link || payload.data?.url), payload,
+      occurred_at: text(payload.created_at) || new Date().toISOString(),
+    });
+    if (inserted.error?.code !== "23505" && inserted.error) {
+      await supabase.from("notification_provider_webhook_events").update({ processing_status: "failed", processing_error: inserted.error.message, processed_at: new Date().toISOString() }).eq("id", audit.data.id);
+      return response(500, { error: inserted.error.message });
+    }
+    // Provider webhooks are not guaranteed to arrive in lifecycle order. Keep
+    // a later engagement state rather than letting a delayed open overwrite a
+    // click, while bounces and complaints remain terminal safety signals.
+    const rank: Record<string, number> = { queued: 0, sending: 1, sent: 2, delivered: 3, opened: 4, clicked: 5 };
+    const nextStatus = (mapped === "bounced" || mapped === "complained" || Number(rank[mapped] || 0) >= Number(rank[recipient.status] || 0)) ? mapped : recipient.status;
+    const patch: Record<string, unknown> = { status: nextStatus, updated_at: new Date().toISOString() };
+    if (mapped === "delivered") patch.delivered_at = patch.updated_at;
+    if (mapped === "opened") patch.opened_at = patch.updated_at;
+    if (mapped === "clicked") patch.clicked_at = patch.updated_at;
+    if (mapped === "bounced") patch.bounced_at = patch.updated_at;
+    await supabase.from("email_campaign_recipients").update(patch).eq("id", recipient.id);
+    if (mapped === "bounced" || mapped === "complained") {
+      await supabase.from("email_suppressions").upsert({ organisation_id: recipient.organisation_id, email: recipient.email, reason: mapped === "bounced" ? "hard_bounce" : "complaint", source: "resend" }, { onConflict: "organisation_id,email" });
+    }
+    await supabase.from("notification_provider_webhook_events").update({ processing_status: "processed", processed_at: new Date().toISOString() }).eq("id", audit.data.id);
+    return response(200, { received: true, processed: true, campaign: true });
+  }
+
   if (!providerMessageId || ![
     "email.delivered", "email.bounced", "email.complained", "email.suppressed",
   ].includes(eventType)) {

@@ -232,3 +232,38 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/website-lead-dispatcher/deno.json"
 entrypoint = "./functions/website-lead-dispatcher/index.ts"
+
+[functions.knowledge-factory-graphql]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/knowledge-factory-graphql/index.ts"
+
+[functions.email-campaign-worker]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/email-campaign-worker/index.ts"
+
+[functions.email-campaign-test]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/email-campaign-test/index.ts"
+
+[functions.email-unsubscribe]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/email-unsubscribe/index.ts"
+
+[functions.email-preference-centre]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/email-preference-centre/index.ts"
+
+[functions.email-sender-verification]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/email-sender-verification/index.ts"
+
+[functions.email-campaign-track]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/email-campaign-track/index.ts"

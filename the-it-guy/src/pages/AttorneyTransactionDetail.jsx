@@ -208,6 +208,13 @@ import { getPrivateListingTransferAttorneyAllocation } from '../services/private
 import { fetchMatterHealth, saveMatterHealth } from '../services/matterHealthService'
 import { createDeveloperDocumentPortalLink } from '../services/developerDocumentPortalService'
 import { getTransferInstructionLifecycle } from '../services/transferInstructionLifecycleService'
+import {
+  createTransactionAttorneyAssignment,
+  getAssignableAttorneyFirmMembers,
+  getTransactionAttorneyAssignments,
+  listAttorneyFirmsForAssignment,
+  updateTransactionAttorneyAssignment,
+} from '../services/transactionAttorneyAssignments'
 import { buildMatterDocumentWorkspaceModel } from '../services/documents/matterDocumentWorkspaceModel'
 import { getBankPanelForCurrentUser } from '../services/bondOriginatorBankService'
 import {
@@ -1661,7 +1668,12 @@ const WORKFLOW_STEP_LABEL_OVERRIDES = {
   registration_confirmed: 'Registered',
   registered: 'Registered',
   bond_instruction_received: 'Bond Instruction Received',
-  buyer_fica_received: 'Buyer FICA Received',
+  buyer_fica_review: 'Review & Approve Buyer FICA',
+  seller_fica_review: 'Review & Approve Seller FICA',
+  transfer_document_pack_review: 'Review Transfer Document Pack',
+  buyer_signing_review: 'Complete Buyer Signing',
+  seller_signing_review: 'Complete Seller Signing',
+  payment_security_review: 'Review Payment Security',
   bond_documents_prepared: 'Bond Docs Prepared',
   buyer_signed_bond_docs: 'Buyer Signed Bond Documents',
   buyer_signed_bond_documents: 'Buyer Signed Bond Documents',
@@ -8025,6 +8037,12 @@ function ArchlineTransferWorkspace({
   onOpenFinance,
   onOpenMatter,
   onCaptureDetails,
+  onSaveMatterNumber,
+  onLoadMatterTeam,
+  onSaveMatterTeam,
+  onSaveSourceDetails,
+  onSaveTitleDetails,
+  onSaveBondCancellationDecision,
   onExecuteCommand,
   onUxEvent,
   onReviewTaskDocument,
@@ -8579,6 +8597,12 @@ function ArchlineTransferWorkspace({
         onCloseStatusDraft={closeStatusDraft}
         onUxEvent={onUxEvent}
         onReviewDocument={onReviewTaskDocument}
+        onSaveMatterNumber={onSaveMatterNumber}
+        onLoadMatterTeam={onLoadMatterTeam}
+        onSaveMatterTeam={onSaveMatterTeam}
+        onSaveSourceDetails={onSaveSourceDetails}
+        onSaveTitleDetails={onSaveTitleDetails}
+        onSaveBondCancellationDecision={onSaveBondCancellationDecision}
         onSaveConfirmations={async (responses) => persistTaskUpdate(
           selectedTask,
           selectedTask.displayStatus === 'not_started' ? 'in_progress' : selectedTask.displayStatus,
@@ -16906,6 +16930,116 @@ function AttorneyTransactionDetail() {
     setMatterHealth(saved)
     return saved
   }, [transaction?.id])
+  const saveTransferMatterNumber = useCallback(async (matterNumber) => {
+    const normalized = String(matterNumber || '').trim()
+    if (!transaction?.id || !normalized) throw new Error('Enter a matter number before saving.')
+    const { error } = await supabase
+      .from('transactions')
+      .update({ matter_number: normalized })
+      .eq('id', transaction.id)
+    if (error) throw error
+    await Promise.all([
+      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
+      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_matter_number_saved' }),
+    ])
+    return true
+  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction?.id])
+  const loadTransferMatterTeam = useCallback(async (requestedFirmId = '') => {
+    if (!transaction?.id) throw new Error('Matter details are unavailable.')
+    const [assignments, firms] = await Promise.all([
+      getTransactionAttorneyAssignments(transaction.id),
+      listAttorneyFirmsForAssignment(),
+    ])
+    const assignment = assignments.find((item) => item.attorneyRole === 'transfer_attorney' || item.assignmentType === 'transfer' || item.assignmentType === 'transfer_and_bond') || null
+    const firmId = assignment?.firmId || requestedFirmId || firms[0]?.id || ''
+    const members = firmId ? await getAssignableAttorneyFirmMembers(firmId, 'transfer') : { primaryAttorneys: [], secretaries: [] }
+    return { assignment, firms, firmId, members }
+  }, [transaction?.id])
+  const saveTransferMatterTeam = useCallback(async ({ assignmentId, firmId, attorneyUserId, secretaryId }) => {
+    if (!transaction?.id) throw new Error('Matter details are unavailable.')
+    if (!firmId) throw new Error('Select the attorney firm for this matter.')
+    if (!attorneyUserId) throw new Error('Select the responsible conveyancer.')
+    const payload = {
+      transactionId: transaction.id,
+      firmId,
+      assignmentType: 'transfer',
+      attorneyRole: 'transfer_attorney',
+      attorneyUserId,
+      secretaryId: secretaryId || null,
+      assignmentStatus: 'active',
+      isPrimary: true,
+    }
+    const saved = assignmentId
+      ? await updateTransactionAttorneyAssignment(assignmentId, payload)
+      : await createTransactionAttorneyAssignment(payload)
+    await Promise.all([
+      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
+      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_matter_team_saved' }),
+    ])
+    return saved
+  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction?.id])
+  const saveTransferSourceDetails = useCallback(async ({ purchasePrice, propertyDescription }) => {
+    if (!transaction?.id) throw new Error('Matter details are unavailable.')
+    const normalizedPrice = String(purchasePrice ?? '').trim()
+    const normalizedDescription = String(propertyDescription || '').trim()
+    if (!normalizedPrice || Number(normalizedPrice) < 0) throw new Error('Enter a valid purchase price.')
+    if (!normalizedDescription) throw new Error('Enter the property description from the OTP.')
+    const { error } = await supabase
+      .from('transactions')
+      .update({ purchase_price: Number(normalizedPrice), property_description: normalizedDescription })
+      .eq('id', transaction.id)
+    if (error) throw error
+    await Promise.all([
+      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
+      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_source_details_saved' }),
+    ])
+    return true
+  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction?.id])
+  const saveTransferTitleDetails = useCallback(async ({ identifier, tenure }) => {
+    if (!transaction?.id) throw new Error('Matter details are unavailable.')
+    const normalizedIdentifier = String(identifier || '').trim()
+    const normalizedTenure = String(tenure || '').trim()
+    if (!normalizedIdentifier) throw new Error('Enter the title deed or property identifier.')
+    if (!normalizedTenure) throw new Error('Select the property tenure.')
+    const { error } = await supabase
+      .from('transactions')
+      .update({ title_deed_number: normalizedIdentifier, property_tenure: normalizedTenure })
+      .eq('id', transaction.id)
+    if (error) throw error
+    await Promise.all([
+      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
+      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_title_details_saved' }),
+    ])
+    return true
+  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction?.id])
+  const saveTransferBondCancellationDecision = useCallback(async ({ existingBond, cancellationRequired }) => {
+    if (!transaction?.id) throw new Error('Matter details are unavailable.')
+    const profile = resolveTransactionRoutingProfile({ transaction })
+    const hasExistingBond = existingBond === 'yes'
+    const requiresCancellation = cancellationRequired === 'yes'
+    const nextDetail = await saveTransactionRoutingProfile({
+      transactionId: transaction.id,
+      financeType: profile.financeType,
+      transactionType: profile.transactionType,
+      propertyType: profile.propertyType,
+      propertyTenure: profile.propertyTenure,
+      purchaserType: profile.buyerEntityType,
+      sellerType: profile.sellerEntityType,
+      sellerHasExistingBond: hasExistingBond,
+      cancellationRequired: requiresCancellation,
+      vatTreatment: profile.vatTreatment,
+      mvpProfile: { ...(profile.mvpProfile || {}), sellerExistingBond: hasExistingBond },
+      reason: 'Existing bond and cancellation requirement confirmed in the transfer work task.',
+      actorRole: workspaceRole,
+    })
+    if (nextDetail) setData(nextDetail)
+    await reconcileAttorneyWorkflowPlanForTransaction(transaction.id)
+    await Promise.all([
+      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
+      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_existing_bond_decision_saved' }),
+    ])
+    return true
+  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction, workspaceRole])
   const requiredDocumentChecklist = useMemo(() => {
     const rows = data?.requiredDocumentChecklist || EMPTY_ARRAY
     if (workspaceRole !== 'bond_originator') return rows
@@ -22694,6 +22828,12 @@ function AttorneyTransactionDetail() {
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
               onOpenFinance={(task) => openTaskLinkedWorkspace('finance', task)}
               onOpenMatter={() => handleOpenDetailPanel('matter')}
+              onSaveMatterNumber={saveTransferMatterNumber}
+              onLoadMatterTeam={loadTransferMatterTeam}
+              onSaveMatterTeam={saveTransferMatterTeam}
+              onSaveSourceDetails={saveTransferSourceDetails}
+              onSaveTitleDetails={saveTransferTitleDetails}
+              onSaveBondCancellationDecision={saveTransferBondCancellationDecision}
               onExecuteCommand={(action, command) => handleWorkflowActionCommand(archlineActiveLegalTaskWorkflow?.lane, action, command)}
               onUxEvent={recordLegalWorkspaceUx}
             />}

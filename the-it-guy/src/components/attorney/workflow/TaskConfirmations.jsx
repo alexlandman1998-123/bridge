@@ -32,8 +32,11 @@ export default function TaskConfirmations({ taskKey, items, saved = {}, disabled
     <div className="divide-y divide-slate-200">{items.map(item => <div key={item.id} className="space-y-2 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3"><strong className="text-sm">{item.label}</strong>
         <div role="group" aria-label={item.label} className="flex flex-wrap gap-2">
-          {[['yes', 'Yes'], ['no', 'No'], ['not_applicable', 'Not applicable']].map(([value, label]) => <Button key={value} type="button" size="sm" variant={draft[item.id]?.answer === value ? 'primary' : 'secondary'} aria-pressed={draft[item.id]?.answer === value} disabled={disabled} onClick={() => change(item.id, { answer: value })}>{label}</Button>)}
-          <Button type="button" variant="ghost" size="sm" onClick={() => setNotes(previous => ({ ...previous, [item.id]: !previous[item.id] }))}>Add note</Button>
+          {(item.answers || ['yes', 'no', 'not_applicable']).map((value) => {
+            const label = value === 'not_applicable' ? 'Not applicable' : value === 'yes' ? 'Yes' : 'No'
+            return <Button key={value} type="button" size="sm" variant={draft[item.id]?.answer === value ? 'primary' : 'secondary'} aria-pressed={draft[item.id]?.answer === value} disabled={disabled} onClick={() => change(item.id, { answer: value })}>{label}</Button>
+          })}
+          {item.allowNote !== false ? <Button type="button" variant="ghost" size="sm" onClick={() => setNotes(previous => ({ ...previous, [item.id]: !previous[item.id] }))}>Add note</Button> : null}
         </div>
       </div>
       {notes[item.id] || draft[item.id]?.note ? <label className="grid gap-1 text-sm">Note for {item.label}<Field as="textarea" rows={2} disabled={disabled} value={draft[item.id]?.note || ''} onChange={event => change(item.id, { note: event.target.value })} /></label> : null}

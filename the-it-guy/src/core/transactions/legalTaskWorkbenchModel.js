@@ -135,6 +135,78 @@ function resolveRequirementAction(requirement = {}, actions = []) {
   return present(pick('capture_data', 'open_matter', 'add_note'))
 }
 
+function isTransferInstructionTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && text(task.key) === 'instruction_received'
+}
+
+function isOtpRequirement(requirement = {}) {
+  return /sales_agreement_or_otp|sales agreement|\botp\b/i.test(`${requirement.id || ''} ${requirement.label || ''} ${requirement.description || ''}`)
+}
+
+function isTransferMatterOpeningTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && text(task.key) === 'matter_opened'
+}
+
+function isTransferOtpSourceTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && text(task.key) === 'otp_source_docs_checked'
+}
+
+function isTransferTitleDeedTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && text(task.key) === 'title_deed_checked'
+}
+
+function isTransferExistingBondTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && text(task.key) === 'existing_bond_confirmed'
+}
+
+function isTransferFicaReviewTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && ['buyer_fica_review', 'seller_fica_review'].includes(text(task.key))
+}
+
+function isTransferFinancialReviewTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && [
+    'transfer_duty_vat_review',
+    'municipal_rates_clearance_review',
+    'levy_hoa_clearance_review',
+    'property_compliance_review',
+  ].includes(text(task.key))
+}
+
+function isTransferDocumentsGuaranteesReviewTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && [
+    'transfer_document_pack_review',
+    'buyer_signing_review',
+    'seller_signing_review',
+    'payment_security_review',
+  ].includes(text(task.key))
+}
+
+function isTransferLodgementRegistrationTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && [
+    'lodgement_ready',
+    'lodged_at_deeds_office',
+    'in_prep',
+    'registered',
+  ].includes(text(task.key))
+}
+
+function isTransferPostRegistrationTask(task = {}) {
+  const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
+  return lane === 'transfer' && [
+    'post_registration_closeout_review',
+    'matter_closed',
+  ].includes(text(task.key))
+}
+
 export function buildLegalTaskWorkbenchModel({
   task = null,
   taskContext = {},
@@ -210,6 +282,123 @@ export function buildLegalTaskWorkbenchModel({
     outstandingRequirements.map((requirement) => [requirement.id, resolveRequirementAction(requirement, normalizedWorkActions)]).filter(([, action]) => action),
   )
   const uploadAction = normalizedWorkActions.find((action) => action.id === 'upload_document') || null
+  const transferInstructionTask = isTransferInstructionTask(task)
+  const transferMatterOpeningTask = isTransferMatterOpeningTask(task)
+  const transferOtpSourceTask = isTransferOtpSourceTask(task)
+  const transferTitleDeedTask = isTransferTitleDeedTask(task)
+  const transferExistingBondTask = isTransferExistingBondTask(task)
+  const transferFicaReviewTask = isTransferFicaReviewTask(task)
+  const transferFinancialReviewTask = isTransferFinancialReviewTask(task)
+  const transferDocumentsGuaranteesReviewTask = isTransferDocumentsGuaranteesReviewTask(task)
+  const transferLodgementRegistrationTask = isTransferLodgementRegistrationTask(task)
+  const transferPostRegistrationTask = isTransferPostRegistrationTask(task)
+  const stageOneRequirements = transferInstructionTask
+    ? requirements.filter(isOtpRequirement).map((requirement) => isOtpRequirement(requirement)
+      ? { ...requirement, label: 'Instruction received from instructing agency', complete: false, statusLabel: 'Review required' }
+      : requirement)
+    : (transferOtpSourceTask || transferTitleDeedTask || transferExistingBondTask || transferFicaReviewTask || transferDocumentsGuaranteesReviewTask || transferLodgementRegistrationTask || transferPostRegistrationTask)
+      ? requirements.filter((requirement) => requirement.type === 'document').map((requirement) => ({ ...requirement, complete: false, statusLabel: 'Review required' }))
+      : requirements
+  const stageOneOutstandingRequirements = stageOneRequirements.filter((item) => !item.complete)
+  const stageOneCompletedRequirements = stageOneRequirements.filter((item) => item.complete)
+  const stageOneRequirementActions = transferInstructionTask
+    ? Object.fromEntries(stageOneOutstandingRequirements.map((requirement) => {
+      if (!isOtpRequirement(requirement)) return [requirement.id, requirementActions[requirement.id]]
+      return [requirement.id, {
+        id: 'review_document',
+        label: 'Review OTP',
+        description: 'Review the OTP in this workspace.',
+        requirementId: requirement.id,
+        requirementLabel: requirement.label,
+        requirement,
+        reviewOtp: true,
+      }]
+    }).filter(([, action]) => action))
+    : (transferOtpSourceTask || transferTitleDeedTask || transferExistingBondTask || transferFicaReviewTask || transferFinancialReviewTask || transferDocumentsGuaranteesReviewTask || transferLodgementRegistrationTask || transferPostRegistrationTask)
+      ? Object.fromEntries(stageOneOutstandingRequirements.map((requirement) => [requirement.id, {
+        ...((transferFinancialReviewTask && requirement.type !== 'document')
+          ? requirementActions[requirement.id]
+          : {
+              id: 'review_document',
+              label: (transferFicaReviewTask || transferFinancialReviewTask || transferDocumentsGuaranteesReviewTask || transferLodgementRegistrationTask || transferPostRegistrationTask) ? 'Review & approve' : transferExistingBondTask ? 'Review bond information' : transferTitleDeedTask ? 'Review ownership documents' : isOtpRequirement(requirement) ? 'Review OTP' : 'Review property documents',
+              description: 'Review this source document in the workspace.',
+              requirementId: requirement.id,
+              requirementLabel: requirement.label,
+              requirement,
+              reviewOtp: isOtpRequirement(requirement),
+            }),
+      }]))
+      : requirementActions
+  const stageOneConfirmations = transferInstructionTask
+    ? [
+        { id: 'transfer_instruction_received', label: 'Transfer instruction received from the instructing party.', answers: ['yes', 'no'], allowNote: false },
+        { id: 'otp_received_and_reviewed', label: 'Received and reviewed OTP.', answers: ['yes', 'no'], allowNote: false },
+      ]
+    : transferOtpSourceTask
+      ? [
+          { id: 'otp_or_sale_agreement_reviewed', label: 'OTP or sale agreement reviewed.', answers: ['yes', 'no'], allowNote: false },
+          { id: 'source_details_checked', label: 'Parties, property, price, and suspensive conditions checked.', answers: ['yes', 'no'], allowNote: false },
+        ]
+      : transferTitleDeedTask
+        ? [
+            { id: 'title_or_ownership_source_checked', label: 'Title deed or ownership source checked.', answers: ['yes', 'no'], allowNote: false },
+            { id: 'restrictions_or_conditions_recorded', label: 'Restrictions or title conditions recorded.', answers: ['yes', 'no'], allowNote: false },
+          ]
+          : transferExistingBondTask
+          ? [
+              { id: 'seller_existing_bond_position', label: 'Seller existing bond position captured.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
+              { id: 'cancellation_lane_required', label: 'Cancellation lane is required or explicitly not required.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
+            ]
+          : transferFicaReviewTask
+            ? [{
+                id: `${task.key}_documents_checked`,
+                label: `${task.key === 'buyer_fica_review' ? 'Buyer' : 'Seller'} identity and FICA documents checked.`,
+                answers: ['yes', 'no'],
+                allowNote: false,
+              }]
+          : transferFinancialReviewTask
+            ? [{
+                id: `${task.key}_evidence_checked`,
+                label: `${task.label} evidence checked and applicable to this matter.`,
+                answers: ['yes', 'no', 'not_applicable'],
+                allowNote: false,
+              }]
+          : transferDocumentsGuaranteesReviewTask
+            ? [{
+                id: `${task.key}_reviewed`,
+                label: task.key === 'payment_security_review'
+                  ? 'Applicable payment security is reviewed and accepted.'
+                  : `${task.label} is complete and the supporting documents are reviewed.`,
+                answers: ['yes', 'no', 'not_applicable'],
+                allowNote: false,
+              }]
+          : transferLodgementRegistrationTask
+            ? [{
+                id: `${task.key}_confirmed`,
+                label: task.key === 'lodgement_ready'
+                  ? 'Lodgement pack and applicable cross-attorney coordination are ready.'
+                  : task.key === 'lodged_at_deeds_office'
+                    ? 'Deeds Office lodgement has been accepted and the lodgement reference is recorded.'
+                    : task.key === 'in_prep'
+                      ? 'Deeds Office prep status has been confirmed.'
+                      : 'Transfer registration has been confirmed and registration evidence reviewed.',
+                answers: ['yes', 'no', 'not_applicable'],
+                allowNote: false,
+              }]
+          : transferPostRegistrationTask
+            ? task.key === 'post_registration_closeout_review'
+              ? [
+                  { id: 'final_account_position_reviewed', label: 'Final accounts, proceeds, refunds, and fees position reviewed.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
+                  { id: 'registration_communication_issued', label: 'Final registration communication issued to the applicable stakeholders.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
+                ]
+              : [{
+                  id: 'matter_closure_confirmed',
+                  label: 'Matter closure is confirmed and the file is ready to be archived.',
+                  answers: ['yes', 'no'],
+                  allowNote: false,
+                }]
+          : confirmationRequirements
+  const matterNumberRequirement = requirements.find((requirement) => /matter_number/i.test(requirement.id || '')) || null
 
   return {
     empty: false,
@@ -231,7 +420,7 @@ export function buildLegalTaskWorkbenchModel({
     dueDate: task.dueDate,
     primaryAction,
     secondaryActions,
-    contextualActions: normalizedWorkActions.filter(action => ['open_parties', 'open_finance', 'schedule_signing'].includes(action.id)),
+    contextualActions: normalizedWorkActions.filter(action => ['open_parties', 'open_finance', 'schedule_signing'].includes(action.id) && !((transferInstructionTask || transferOtpSourceTask || transferTitleDeedTask || transferExistingBondTask) && action.id === 'open_parties')),
     completeAction,
     statusActions: effectiveStatusActions.map(action => action.id === 'mark_complete' ? completeAction : action),
     outcomeActions: effectiveStatusActions.filter(action => ['complete_externally', 'mark_not_applicable', 'reopen_task'].includes(action.id)),
@@ -245,11 +434,30 @@ export function buildLegalTaskWorkbenchModel({
     completionMessage: requirementsSatisfied
       ? 'Confirm this work was done. Checklist completion is not a legal-compliance or lodgement certification.'
       : 'These requirements are guidance. You may work ahead. Confirm completed work, record work completed externally, or explain why a task is not applicable. Missing evidence stays visible.',
-    outstandingRequirements,
-    requirementActions,
+    outstandingRequirements: stageOneOutstandingRequirements,
+    requirementActions: stageOneRequirementActions,
     uploadAction,
-    completedRequirements,
-    confirmationRequirements,
+    completedRequirements: stageOneCompletedRequirements,
+    confirmationRequirements: stageOneConfirmations,
+    transferInstructionTask,
+    transferMatterOpeningTask,
+    transferOtpSourceTask,
+    transferTitleDeedTask,
+    transferExistingBondTask,
+    transferFicaReviewTask,
+    transferFinancialReviewTask,
+    transferDocumentsGuaranteesReviewTask,
+    transferLodgementRegistrationTask,
+    transferPostRegistrationTask,
+    sourceDetails: {
+      purchasePrice: text(requirements.find((requirement) => /purchase_price/i.test(requirement.id || ''))?.value),
+      propertyDescription: text(requirements.find((requirement) => /property_description/i.test(requirement.id || ''))?.value),
+    },
+    titleDetails: {
+      identifier: text(requirements.find((requirement) => /title_deed_or_property_identifier/i.test(requirement.id || ''))?.value),
+      tenure: text(requirements.find((requirement) => /property_tenure/i.test(requirement.id || ''))?.value),
+    },
+    matterNumber: text(matterNumberRequirement?.value),
     attentionItems,
     documents: taskContext.relatedDocuments || [],
     notes: taskContext.notes || [],

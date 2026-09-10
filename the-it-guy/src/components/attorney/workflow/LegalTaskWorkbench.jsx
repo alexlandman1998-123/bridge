@@ -210,6 +210,12 @@ export default function LegalTaskWorkbench({
   onUxEvent,
   onReviewDocument,
   onSaveConfirmations,
+  onSaveMatterNumber,
+  onLoadMatterTeam,
+  onSaveMatterTeam,
+  onSaveSourceDetails,
+  onSaveTitleDetails,
+  onSaveBondCancellationDecision,
 }) {
   const taskTimingRef = useRef({ taskKey: '', startedAt: 0 })
   const uxEventRef = useRef(onUxEvent)
@@ -231,6 +237,24 @@ export default function LegalTaskWorkbench({
   const reviewPending = useRef(false)
   const [taskResponses, setTaskResponses] = useState({ existingBond: '', cancellationInstruction: '' })
   const [expandedPhaseKey, setExpandedPhaseKey] = useState(selectedPhaseKey)
+  const [matterNumberDraft, setMatterNumberDraft] = useState('')
+  const [matterNumberBusy, setMatterNumberBusy] = useState(false)
+  const [matterNumberError, setMatterNumberError] = useState('')
+  const [teamModalOpen, setTeamModalOpen] = useState(false)
+  const [teamLoading, setTeamLoading] = useState(false)
+  const [teamSaving, setTeamSaving] = useState(false)
+  const [teamError, setTeamError] = useState('')
+  const [matterTeam, setMatterTeam] = useState(null)
+  const [teamDraft, setTeamDraft] = useState({ firmId: '', attorneyUserId: '', secretaryId: '' })
+  const [sourceDetailsDraft, setSourceDetailsDraft] = useState({ purchasePrice: '', propertyDescription: '' })
+  const [sourceDetailsBusy, setSourceDetailsBusy] = useState(false)
+  const [sourceDetailsError, setSourceDetailsError] = useState('')
+  const [titleDetailsDraft, setTitleDetailsDraft] = useState({ identifier: '', tenure: '' })
+  const [titleDetailsBusy, setTitleDetailsBusy] = useState(false)
+  const [titleDetailsError, setTitleDetailsError] = useState('')
+  const [bondDecision, setBondDecision] = useState({ existingBond: '', cancellationRequired: '' })
+  const [bondDecisionBusy, setBondDecisionBusy] = useState(false)
+  const [bondDecisionError, setBondDecisionError] = useState('')
 
   useEffect(() => {
     setReviewReason(''); setReviewFeedback(''); setReviewError('')
@@ -262,6 +286,26 @@ export default function LegalTaskWorkbench({
     setDocumentTarget(null)
     setDocumentModalOpen(false)
   }, [model?.note, model?.taskKey])
+
+  useEffect(() => {
+    setMatterNumberDraft(model?.matterNumber || '')
+    setMatterNumberError('')
+  }, [model?.matterNumber, model?.taskKey])
+
+  useEffect(() => {
+    setSourceDetailsDraft({ purchasePrice: model?.sourceDetails?.purchasePrice || '', propertyDescription: model?.sourceDetails?.propertyDescription || '' })
+    setSourceDetailsError('')
+  }, [model?.sourceDetails?.propertyDescription, model?.sourceDetails?.purchasePrice, model?.taskKey])
+
+  useEffect(() => {
+    setTitleDetailsDraft({ identifier: model?.titleDetails?.identifier || '', tenure: model?.titleDetails?.tenure || '' })
+    setTitleDetailsError('')
+  }, [model?.taskKey, model?.titleDetails?.identifier, model?.titleDetails?.tenure])
+
+  useEffect(() => {
+    setBondDecision({ existingBond: '', cancellationRequired: '' })
+    setBondDecisionError('')
+  }, [model?.taskKey])
 
   useEffect(() => {
     setExpandedPhaseKey(selectedPhaseKey)
@@ -317,6 +361,98 @@ export default function LegalTaskWorkbench({
     if (saved === false) setTaskResponses(previousResponses)
   }
 
+  async function saveMatterNumber() {
+    const next = matterNumberDraft.trim()
+    if (!next || !onSaveMatterNumber || matterNumberBusy) return
+    setMatterNumberBusy(true)
+    setMatterNumberError('')
+    try {
+      await onSaveMatterNumber(next)
+    } catch (error) {
+      setMatterNumberError(error?.message || 'Matter number could not be saved.')
+    } finally {
+      setMatterNumberBusy(false)
+    }
+  }
+
+  async function openMatterTeam(firmId = '') {
+    if (!onLoadMatterTeam || teamLoading) return
+    setTeamModalOpen(true)
+    setTeamLoading(true)
+    setTeamError('')
+    try {
+      const next = await onLoadMatterTeam(firmId)
+      setMatterTeam(next)
+      setTeamDraft({
+        firmId: next?.assignment?.firmId || next?.firmId || next?.firms?.[0]?.id || '',
+        attorneyUserId: next?.assignment?.attorneyUserId || next?.assignment?.primaryAttorneyId || '',
+        secretaryId: next?.assignment?.secretaryId || '',
+      })
+    } catch (error) {
+      setTeamError(error?.message || 'Matter team could not be loaded.')
+    } finally {
+      setTeamLoading(false)
+    }
+  }
+
+  async function saveMatterTeam() {
+    if (!onSaveMatterTeam || teamSaving) return
+    setTeamSaving(true)
+    setTeamError('')
+    try {
+      const saved = await onSaveMatterTeam({ ...teamDraft, assignmentId: matterTeam?.assignment?.id || '' })
+      setMatterTeam((current) => ({ ...current, assignment: saved }))
+      setTeamModalOpen(false)
+    } catch (error) {
+      setTeamError(error?.message || 'Matter team could not be saved.')
+    } finally {
+      setTeamSaving(false)
+    }
+  }
+
+  async function saveSourceDetails() {
+    if (!onSaveSourceDetails || sourceDetailsBusy) return
+    setSourceDetailsBusy(true)
+    setSourceDetailsError('')
+    try {
+      await onSaveSourceDetails(sourceDetailsDraft)
+    } catch (error) {
+      setSourceDetailsError(error?.message || 'Source details could not be saved.')
+    } finally {
+      setSourceDetailsBusy(false)
+    }
+  }
+
+  async function saveTitleDetails() {
+    if (!onSaveTitleDetails || titleDetailsBusy) return
+    setTitleDetailsBusy(true)
+    setTitleDetailsError('')
+    try {
+      await onSaveTitleDetails(titleDetailsDraft)
+    } catch (error) {
+      setTitleDetailsError(error?.message || 'Title details could not be saved.')
+    } finally {
+      setTitleDetailsBusy(false)
+    }
+  }
+
+  async function saveBondCancellationDecision() {
+    if (!onSaveBondCancellationDecision || bondDecisionBusy) return
+    if (!bondDecision.existingBond || !bondDecision.cancellationRequired) {
+      setBondDecisionError('Record both the existing bond position and the cancellation decision.')
+      return
+    }
+    setBondDecisionBusy(true)
+    setBondDecisionError('')
+    try {
+      await onSaveBondCancellationDecision(bondDecision)
+    } catch (error) {
+      setBondDecisionError(error?.message || 'Bond and cancellation decision could not be saved.')
+    } finally {
+      setBondDecisionBusy(false)
+    }
+  }
+
   function documentUrl(document = {}) {
     return document.fileUrl || document.file_url || document.signedUrl || document.signed_url || document.url || ''
   }
@@ -342,7 +478,10 @@ export default function LegalTaskWorkbench({
     // preview existing files or hand off to the contextual upload dialog.
     if (['open_documents', 'upload_document', 'review_document'].includes(action?.id)) {
       const requiredId = String(action.requirementId || action.requirement?.id || '').replace(/^document:/, '')
-      const target = model.documents.find(document => requiredId && [document.id, document.key, document.sourceRequirementKey].includes(requiredId)) || null
+      const isOtp = (document = {}) => /sales_agreement_or_otp|sales agreement|\botp\b/i.test(`${document.id || ''} ${document.key || ''} ${document.sourceRequirementKey || ''} ${document.displayName || ''} ${document.label || ''} ${document.name || ''}`)
+      const target = model.documents.find(document => requiredId && [document.id, document.key, document.sourceRequirementKey].includes(requiredId))
+        || (action.reviewOtp ? model.documents.find(isOtp) : null)
+        || null
       setDocumentTarget(target)
       setPreviewDocument(target && isAttachedDocument(target) ? target : null)
       setDocumentModalOpen(true)
@@ -383,12 +522,73 @@ export default function LegalTaskWorkbench({
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-slate-200 px-5 py-4 lg:px-6">
-            <section aria-labelledby="legal-task-outstanding-heading" className="overflow-hidden rounded-xl border border-slate-200">
+            <section className="overflow-hidden rounded-xl border border-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5">
+                <div><h3 className="text-lg font-semibold text-slate-950">Supporting documents</h3><p className="mt-1 text-sm text-slate-500">Review the OTP and any files linked to this task.</p></div>
+                {!model.readOnly ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
+              </div>
+              <div className="divide-y divide-slate-100">
+                {attachedDocuments.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
+                {!attachedDocuments.length ? <p className="px-4 py-6 text-sm text-slate-500">No supporting documents are attached yet.</p> : null}
+              </div>
+            </section>
+
+            <section aria-labelledby="legal-task-outstanding-heading" className="mt-4 overflow-hidden rounded-xl border border-slate-200">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5">
-                <h3 id="legal-task-outstanding-heading" className="text-lg font-semibold text-slate-950">Required action</h3>
+                <h3 id="legal-task-outstanding-heading" className="text-lg font-semibold text-slate-950">{model.transferMatterOpeningTask ? 'File setup' : model.transferOtpSourceTask ? 'Source review' : model.transferTitleDeedTask ? 'Ownership review' : model.transferExistingBondTask ? 'Bond and cancellation decision' : 'Required action'}</h3>
                 {!model.readOnly ? <span className="text-sm text-slate-500">Complete the relevant items below.</span> : null}
               </div>
-              {isBondCancellationConfirmation && !onSaveConfirmations ? (
+              {model.transferMatterOpeningTask ? (
+                <div className="divide-y divide-slate-200">
+                  <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-end lg:justify-between">
+                    <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-semibold text-slate-950">Matter number
+                      <Field value={matterNumberDraft} disabled={!canEdit || matterNumberBusy} onChange={(event) => setMatterNumberDraft(event.target.value)} placeholder="Enter the firm matter number" />
+                      <span className="text-xs font-normal text-slate-500">Saved to the shared matter record.</span>
+                    </label>
+                    <Button type="button" variant="secondary" disabled={!canEdit || matterNumberBusy || !matterNumberDraft.trim()} onClick={() => void saveMatterNumber()}>{matterNumberBusy ? 'Saving…' : 'Save matter number'}</Button>
+                  </div>
+                  {matterNumberError ? <p role="alert" className="px-4 pb-3 text-sm text-red-700">{matterNumberError}</p> : null}
+                  <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
+                    <div><strong className="block text-sm text-slate-950">Responsible conveyancer or secretary is allocated</strong><p className="mt-1 text-sm text-slate-500">Add the matter team, or confirm that the existing allocation is correct.</p></div>
+                    <Button type="button" variant="secondary" disabled={!canEdit} onClick={() => void openMatterTeam()}>Manage matter team</Button>
+                  </div>
+                </div>
+              ) : model.transferOtpSourceTask ? (
+                <div className="divide-y divide-slate-200">
+                  <div className="grid gap-3 px-4 py-4 lg:grid-cols-2">
+                    <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Purchase price
+                      <Field type="number" min="0" value={sourceDetailsDraft.purchasePrice} disabled={!canEdit || sourceDetailsBusy} onChange={(event) => setSourceDetailsDraft((current) => ({ ...current, purchasePrice: event.target.value }))} placeholder="Enter purchase price" />
+                    </label>
+                    <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Property description
+                      <Field value={sourceDetailsDraft.propertyDescription} disabled={!canEdit || sourceDetailsBusy} onChange={(event) => setSourceDetailsDraft((current) => ({ ...current, propertyDescription: event.target.value }))} placeholder="Enter the property description" />
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-4"><span className="text-xs text-slate-500">Saved to the shared transaction record.</span><Button type="button" variant="secondary" disabled={!canEdit || sourceDetailsBusy} onClick={() => void saveSourceDetails()}>{sourceDetailsBusy ? 'Saving…' : 'Save source details'}</Button></div>
+                  {sourceDetailsError ? <p role="alert" className="px-4 pb-3 text-sm text-red-700">{sourceDetailsError}</p> : null}
+                </div>
+              ) : model.transferTitleDeedTask ? (
+                <div className="divide-y divide-slate-200">
+                  <div className="grid gap-3 px-4 py-4 lg:grid-cols-2">
+                    <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Title deed / property identifier
+                      <Field value={titleDetailsDraft.identifier} disabled={!canEdit || titleDetailsBusy} onChange={(event) => setTitleDetailsDraft((current) => ({ ...current, identifier: event.target.value }))} placeholder="Enter title deed or erf number" />
+                    </label>
+                    <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Property tenure
+                      <select className="input" value={titleDetailsDraft.tenure} disabled={!canEdit || titleDetailsBusy} onChange={(event) => setTitleDetailsDraft((current) => ({ ...current, tenure: event.target.value }))}><option value="">Select tenure</option><option value="freehold">Freehold</option><option value="sectional_title">Sectional title</option><option value="estate">Estate</option><option value="other">Other</option></select>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-4"><span className="text-xs text-slate-500">Saved to the shared transaction record.</span><Button type="button" variant="secondary" disabled={!canEdit || titleDetailsBusy} onClick={() => void saveTitleDetails()}>{titleDetailsBusy ? 'Saving…' : 'Save ownership details'}</Button></div>
+                  {titleDetailsError ? <p role="alert" className="px-4 pb-3 text-sm text-red-700">{titleDetailsError}</p> : null}
+                </div>
+              ) : model.transferExistingBondTask ? (
+                <div className="divide-y divide-slate-200">
+                  {[
+                    ['existingBond', 'Existing bond confirmed', 'Is there an existing mortgage bond registered against the property?'],
+                    ['cancellationRequired', 'Cancellation requirement confirmed', 'Is a cancellation attorney required for this matter?'],
+                  ].map(([key, label, helper], index) => <div key={key} className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between"><div><strong className="block text-sm text-slate-950">{index + 1}. {label}</strong><p className="mt-1 text-sm text-slate-500">{helper}</p></div><div className="flex flex-wrap gap-2">{[['yes', 'Yes'], ['no', 'No'], ['not_applicable', 'Not applicable']].map(([value, choice]) => <Button key={value} type="button" size="sm" variant={bondDecision[key] === value ? 'primary' : 'secondary'} disabled={!canEdit || bondDecisionBusy} onClick={() => setBondDecision((current) => ({ ...current, [key]: value }))}>{choice}</Button>)}</div></div>)}
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4"><span className="text-xs text-slate-500">This decision updates whether the cancellation lane applies.</span><Button type="button" variant="secondary" disabled={!canEdit || bondDecisionBusy} onClick={() => void saveBondCancellationDecision()}>{bondDecisionBusy ? 'Saving…' : 'Save decision'}</Button></div>
+                  {bondDecisionError ? <p role="alert" className="px-4 pb-3 text-sm text-red-700">{bondDecisionError}</p> : null}
+                </div>
+              ) : isBondCancellationConfirmation && !onSaveConfirmations ? (
                 <div className="divide-y divide-slate-200">
                   {[
                     ['existingBond', 'Existing bond confirmed', 'Is there an existing mortgage bond registered against the property?'],
@@ -420,17 +620,6 @@ export default function LegalTaskWorkbench({
 
             {onSaveConfirmations ? <TaskConfirmations taskKey={model.taskKey} items={confirmationItems} saved={model.confirmations || {}} disabled={!canEdit || model.taskResolved} onSave={onSaveConfirmations} /> : null}
             {!model.readOnly && model.contextualActions?.length ? <div className="mt-4 flex flex-wrap gap-2">{model.contextualActions.map(action => <Button key={action.id} type="button" variant="secondary" disabled={saving || action.disabled} onClick={() => runAction(action, 'task')}>{action.label}</Button>)}</div> : null}
-
-            <section className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5">
-                <div><h3 className="text-lg font-semibold text-slate-950">Supporting documents</h3><p className="mt-1 text-sm text-slate-500">Files linked to this task stay available in the matter.</p></div>
-                {!model.readOnly ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
-              </div>
-              <div className="divide-y divide-slate-100">
-                {attachedDocuments.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
-                {!attachedDocuments.length ? <p className="px-4 py-6 text-sm text-slate-500">No supporting documents are attached yet.</p> : null}
-              </div>
-            </section>
           </div>
 
           <footer className="shrink-0 border-t border-slate-200 bg-slate-50/75 px-5 py-3.5 lg:px-6">
@@ -480,6 +669,22 @@ export default function LegalTaskWorkbench({
         </div>
       </main>
       </section>
+
+      <Modal
+        open={teamModalOpen}
+        title="Responsible matter team"
+        subtitle="Allocate the conveyancer and secretary for this transfer matter."
+        onClose={teamSaving ? undefined : () => setTeamModalOpen(false)}
+        footer={<div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={teamSaving} onClick={() => setTeamModalOpen(false)}>Cancel</Button><Button type="button" disabled={teamLoading || teamSaving || !teamDraft.attorneyUserId} onClick={() => void saveMatterTeam()}>{teamSaving ? 'Saving…' : matterTeam?.assignment ? 'Confirm allocation' : 'Save allocation'}</Button></div>}
+      >
+        {teamLoading ? <p className="text-sm text-slate-500">Loading the firm team…</p> : <div className="grid gap-4">
+          {teamError ? <p role="alert" className="text-sm text-red-700">{teamError}</p> : null}
+          {!matterTeam?.assignment ? <label className="grid gap-1.5 text-sm font-semibold">Attorney firm<select className="input" value={teamDraft.firmId} onChange={(event) => void openMatterTeam(event.target.value)}><option value="">Select firm</option>{(matterTeam?.firms || []).map((firm) => <option key={firm.id} value={firm.id}>{firm.name}</option>)}</select></label> : null}
+          <label className="grid gap-1.5 text-sm font-semibold">Responsible conveyancer<select className="input" value={teamDraft.attorneyUserId} onChange={(event) => setTeamDraft((current) => ({ ...current, attorneyUserId: event.target.value }))} disabled={!teamDraft.firmId}><option value="">Select conveyancer</option>{(matterTeam?.members?.primaryAttorneys || []).map((member) => <option key={member.userId} value={member.userId}>{member.label}</option>)}</select></label>
+          <label className="grid gap-1.5 text-sm font-semibold">Secretary <span className="font-normal text-slate-500">(optional)</span><select className="input" value={teamDraft.secretaryId} onChange={(event) => setTeamDraft((current) => ({ ...current, secretaryId: event.target.value }))} disabled={!teamDraft.firmId}><option value="">No secretary allocated</option>{(matterTeam?.members?.secretaries || []).map((member) => <option key={member.userId} value={member.userId}>{member.label}</option>)}</select></label>
+          {matterTeam?.assignment ? <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900">Review the current people above and confirm the allocation if it is correct.</p> : null}
+        </div>}
+      </Modal>
 
       <Modal
         open={documentModalOpen}

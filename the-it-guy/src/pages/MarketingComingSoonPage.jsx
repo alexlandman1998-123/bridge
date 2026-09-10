@@ -1,5 +1,5 @@
 import { useSearchParams } from 'react-router-dom'
-import { CreateEmailCampaign, EmailCampaignOverview } from '../components/marketing/EmailCampaigns'
+import { CreateEmailCampaign, EmailCampaignDetail, EmailCampaignOverview } from '../components/marketing/EmailCampaigns'
 import { LaunchesOverview } from '../components/marketing/LaunchesAuctions'
 import MarketingDashboard from '../components/marketing/MarketingDashboard'
 import WebsiteWorkspace from '../components/marketing/WebsiteWorkspace'
@@ -30,9 +30,12 @@ export default function MarketingComingSoonPage() {
   if (section === 'email') {
     const openOverview = () => setSearchParams({ section: 'email' })
     const openCreateCampaign = () => setSearchParams({ section: 'email', view: 'create' })
+    const openCampaign = (id) => setSearchParams({ section: 'email', view: 'detail', id })
     return campaignView === 'create'
       ? <CreateEmailCampaign onBack={openOverview} />
-      : <EmailCampaignOverview onCreateCampaign={openCreateCampaign} />
+      : campaignView === 'detail'
+        ? <EmailCampaignDetail campaignId={searchParams.get('id')} onBack={openOverview} onEdit={openCreateCampaign} />
+        : <EmailCampaignOverview onCreateCampaign={openCreateCampaign} onOpenCampaign={openCampaign} />
   }
 
   if (section === 'whatsapp') {

@@ -26,6 +26,9 @@ import Field from '../components/ui/Field'
 import Modal from '../components/ui/Modal'
 import CanvassingWorkspaceTabs from '../components/canvassing/CanvassingWorkspaceTabs'
 import PropertyReportsWorkspace from '../components/canvassing/PropertyReportsWorkspace'
+import KnowledgeFactoryFicaWorkspace from '../components/canvassing/KnowledgeFactoryFicaWorkspace'
+import KnowledgeFactorySensitiveLookupWorkspace from '../components/canvassing/KnowledgeFactorySensitiveLookupWorkspace'
+import KnowledgeFactoryOperationsWorkspace from '../components/canvassing/KnowledgeFactoryOperationsWorkspace'
 import PropertySearchWorkspace from '../components/canvassing/PropertySearchWorkspace'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../components/location/AreaAutocomplete'
@@ -1561,6 +1564,12 @@ function PipelineCanvassingPage() {
     ? 'property-search'
     : location.pathname.endsWith('/property-reports')
       ? 'property-reports'
+      : location.pathname.endsWith('/fica-kyc')
+        ? 'fica-kyc'
+        : location.pathname.endsWith('/lookup-approvals')
+          ? 'sensitive-lookups'
+          : location.pathname.endsWith('/operations')
+            ? 'operations'
       : 'prospects'
 
   useEffect(() => {
@@ -3977,6 +3986,28 @@ function PipelineCanvassingPage() {
         <PropertyReportsWorkspace prospects={prospects} onProspectCreated={handlePropertyReportProspectCreated} />
       </section>
     )
+  }
+
+  if (activeCanvassingWorkspace === 'fica-kyc') {
+    return (
+      <section className="space-y-5">
+        {canvassingWorkspaceHeader}
+        <KnowledgeFactoryFicaWorkspace />
+      </section>
+    )
+  }
+
+  if (activeCanvassingWorkspace === 'sensitive-lookups') {
+    return (
+      <section className="space-y-5">
+        {canvassingWorkspaceHeader}
+        <KnowledgeFactorySensitiveLookupWorkspace />
+      </section>
+    )
+  }
+
+  if (activeCanvassingWorkspace === 'operations') {
+    return <section className="space-y-5">{canvassingWorkspaceHeader}<KnowledgeFactoryOperationsWorkspace /></section>
   }
 
   return (

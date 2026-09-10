@@ -49,7 +49,7 @@ import {
   getTransactionProgressNotifications,
   dispatchCommittedProgressNotifications,
 } from '../transactionSharedProgressService.js'
-import { commitSharedJourneyTask } from './sharedJourneyCommandService.js'
+import { commitSharedJourneyLaneUpdate, commitSharedJourneyTask } from './sharedJourneyCommandService.js'
 import { fetchSharedMatterJourney, alignWorkStepsWithSharedJourney } from '../sharedMatterJourneyReader.js'
 import {
   buildAttorneyDelegationAttribution,
@@ -1919,20 +1919,29 @@ export async function addAttorneyTransactionUpdate({
     if (!phase3Unavailable) throw atomicComment.error
   }
 
-  const payload = {
-    transaction_id: normalizedTransactionId,
-    subprocess_id: lane.id,
-    lane_key: normalizedLaneKey,
-    attorney_role: normalizedAttorneyRole,
-    update_type: isGenericInternalNote ? UPDATE_TYPE_BY_VISIBILITY[normalizedVisibility] || 'internal_note' : registryType.id,
-    visibility: normalizedVisibility,
-    message: normalizedMessage,
-    created_by: actor.id,
-    related_document_id: documentId || null,
-    related_signing_packet_id: signingPacketId || null,
-    client_recipients: normalizedClientRecipients,
-    metadata: {
-      updateTypeLabel: isGenericInternalNote ? getUpdateTypeLabel(UPDATE_TYPE_BY_VISIBILITY[normalizedVisibility]) : registryType.label,
+  const actionKey = normalizedLaneKey === 'bond'
+    ? 'BOND_ATTORNEY_UPDATE_PUBLISHED'
+    : normalizedLaneKey === 'cancellation'
+      ? 'CANCELLATION_ATTORNEY_UPDATE_PUBLISHED'
+      : 'TRANSFER_ATTORNEY_UPDATE_PUBLISHED'
+  const stableKey = idempotencyKey || buildTransactionSyncIdempotencyKey({
+    transactionId: normalizedTransactionId,
+    actionKey,
+    sourceRecordId: lane.id,
+    revision: globalThis.crypto?.randomUUID?.() || `${Date.now()}`,
+  })
+  const updateLabel = isGenericInternalNote
+    ? getUpdateTypeLabel(UPDATE_TYPE_BY_VISIBILITY[normalizedVisibility])
+    : registryType.label
+  const atomicUpdate = await commitSharedJourneyLaneUpdate(client, {
+    p_transaction_id: normalizedTransactionId,
+    p_lane_key: normalizedLaneKey,
+    p_update_type: isGenericInternalNote ? UPDATE_TYPE_BY_VISIBILITY[normalizedVisibility] || 'internal_note' : registryType.id,
+    p_visibility: normalizedVisibility,
+    p_message: normalizedMessage,
+    p_client_recipients: normalizedClientRecipients,
+    p_metadata: {
+      updateTypeLabel: updateLabel,
       updateCategory: isGenericInternalNote ? 'note' : registryType.category,
       clientVisibleAllowed: Boolean(registryType?.clientVisibleAllowed),
       clientRecipients: normalizedClientRecipients,
@@ -1940,54 +1949,13 @@ export async function addAttorneyTransactionUpdate({
       signingPacketId: signingPacketId || null,
       ...workPacketMetadata,
     },
-  }
-
-  let insert = await client.from('transaction_attorney_lane_updates').insert(payload)
-  if (
-    insert.error &&
-    (isMissingColumnError(insert.error, 'related_document_id') ||
-      isMissingColumnError(insert.error, 'related_signing_packet_id') ||
-      isMissingColumnError(insert.error, 'client_recipients') ||
-      isMissingColumnError(insert.error, 'metadata'))
-  ) {
-    const fallback = { ...payload }
-    delete fallback.related_document_id
-    delete fallback.related_signing_packet_id
-    delete fallback.client_recipients
-    delete fallback.metadata
-    insert = await client.from('transaction_attorney_lane_updates').insert(fallback)
-  }
-  if (insert.error) throw insert.error
-
-  await insertTransactionEvent(client, {
-    transactionId: normalizedTransactionId,
-    eventType:
-      normalizedVisibility === 'client_visible'
-        ? 'AttorneyLaneClientVisibleUpdatePublished'
-        : normalizedVisibility === 'professional_shared'
-          ? 'AttorneyLaneSharedUpdateAdded'
-          : 'AttorneyLaneNoteAdded',
-    actorId: actor.id,
-    visibility: normalizedVisibility,
-    eventData: {
-      laneKey: normalizedLaneKey,
-      attorneyRole: normalizedAttorneyRole,
-      updateType: payload.update_type,
-      title: payload.metadata.updateTypeLabel,
-      message: normalizedMessage,
-      visibility: normalizedVisibility,
-      relatedDocumentId: documentId || null,
-      relatedSigningPacketId: signingPacketId || null,
-      clientRecipients: payload.client_recipients,
-      audience:
-        payload.client_recipients.length === 1
-          ? payload.client_recipients[0]
-          : payload.client_recipients.length > 1
-            ? 'buyer_and_seller'
-            : '',
-      ...workPacketMetadata,
-    },
+    p_idempotency_key: stableKey,
+    p_professional_title: `${meta.label} update`,
+    p_professional_description: normalizedMessage,
+    p_client_title: normalizedVisibility === 'client_visible' ? updateLabel : null,
+    p_client_description: normalizedVisibility === 'client_visible' ? normalizedMessage : null,
   })
+  if (atomicUpdate.error) throw atomicUpdate.error
 
   return getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false })
 }

@@ -1,13 +1,11 @@
 import { getAttorneyStageDefinitionsForLane } from '../../constants/attorneyWorkflowStages.js'
 import { isBondFinanceType, normalizeFinanceType } from '../../core/transactions/financeType.js'
 
-export const MATTER_WORKFLOW_PLAN_VERSION = 'attorney_matter_workflow_plan_v2'
+export const MATTER_WORKFLOW_PLAN_VERSION = 'attorney_matter_workflow_plan_v7'
 
 const LANE_KEYS = Object.freeze(['transfer', 'bond', 'cancellation'])
 const CASH_EXCLUDED_TRANSFER_STEPS = new Set([
-  'guarantees_requested',
-  'guarantees_received',
-  'transfer_guarantees_accepted',
+  'payment_security_review',
 ])
 const NON_LEVY_TRANSFER_STEPS = new Set([
   'levy_clearance_requested',
@@ -22,8 +20,9 @@ export function getApplicableAttorneyTaskDefinitions({ laneKey = 'transfer', wor
     const keys = getMatterWorkflowPlanStepKeys(workflowPlan, laneKey)
     return definitions.filter((definition) => keys.includes(definition.key))
   }
-  const cash = facts.financeType === 'cash' || facts.isCashDeal === true
-  return definitions.filter((definition) => !(laneKey === 'transfer' && cash && CASH_EXCLUDED_TRANSFER_STEPS.has(definition.key)))
+  const clearedCash = (facts.financeType === 'cash' || facts.isCashDeal === true) &&
+    normalizeText(facts.paymentSecurity || facts.payment_security).toLowerCase() === 'cleared_trust_funds'
+  return definitions.filter((definition) => !(laneKey === 'transfer' && clearedCash && CASH_EXCLUDED_TRANSFER_STEPS.has(definition.key)))
 }
 
 export function getAttorneyTaskSuggestion(stepKey, profile = {}) {
@@ -61,7 +60,13 @@ function normalizeLaneKey(value) {
 }
 
 function resolveTransferStepKeys(profile = {}) {
+  const propertyTenure = normalizeText(profile.propertyTenure || profile.property_tenure).toLowerCase()
+  const financeType = normalizeFinanceType(profile.financeType || profile.finance_type, { allowUnknown: true })
+  const paymentSecurity = normalizeText(profile.paymentSecurity || profile.mvpProfile?.paymentSecurity).toLowerCase()
+  const clearedCash = financeType === 'cash' && paymentSecurity === 'cleared_trust_funds'
   return getAttorneyStageDefinitionsForLane('transfer')
+    .filter((definition) => definition.key !== 'levy_hoa_clearance_review' || !['freehold'].includes(propertyTenure))
+    .filter((definition) => definition.key !== 'payment_security_review' || !clearedCash)
     .map((definition) => definition.key)
 }
 
@@ -130,7 +135,7 @@ export function isMatterWorkflowPlanCurrent(plan = {}, routingProfile = {}) {
   const profile = parseJsonObject(routingProfile)
   const matterProfile = parseJsonObject(profile.matterProfile)
   return (
-    [MATTER_WORKFLOW_PLAN_VERSION, 'attorney_matter_workflow_plan_v1'].includes(plan?.version) &&
+    [MATTER_WORKFLOW_PLAN_VERSION].includes(plan?.version) &&
     plan?.status === 'active' &&
     matterProfile?.status === 'confirmed' &&
     normalizeText(plan.matterProfileFingerprint) === normalizeText(matterProfile.factFingerprint) &&
@@ -141,7 +146,7 @@ export function isMatterWorkflowPlanCurrent(plan = {}, routingProfile = {}) {
 export function resolveMatterWorkflowPlan(routingProfile = {}) {
   const profile = parseJsonObject(routingProfile)
   const storedPlan = readMatterWorkflowPlan(profile)
-  return storedPlan?.status === 'active'
+  return isMatterWorkflowPlanCurrent(storedPlan, profile)
     ? storedPlan
     : buildMatterWorkflowPlan({ routingProfile: profile })
 }

@@ -9,10 +9,10 @@ import {
 const workflow = {
   title: 'Transfer Progress',
   statusLabel: 'In Progress',
-  facts: { isCashDeal: false },
+  facts: { isCashDeal: false, buyerEntityType: 'company', sellerEntityType: 'trust' },
   lane: {
     laneKey: 'transfer',
-    currentStage: 'entity_authority_checked',
+    currentStage: 'buyer_fica_review',
     permissions: {
       canUpdateStage: true,
       canUploadDocuments: true,
@@ -21,11 +21,8 @@ const workflow = {
     steps: [
       { id: 'step-1', stepKey: 'instruction_received', status: 'completed', sortOrder: 1 },
       { id: 'step-2', stepKey: 'matter_opened', status: 'completed', sortOrder: 2 },
-      { id: 'step-3', stepKey: 'buyer_fica_requested', status: 'completed', sortOrder: 3 },
-      { id: 'step-4', stepKey: 'buyer_fica_received', status: 'completed', sortOrder: 4 },
-      { id: 'step-5', stepKey: 'buyer_fica_approved', status: 'completed', sortOrder: 5 },
-      { id: 'step-6', stepKey: 'entity_authority_checked', status: 'in_progress', comment: 'Checking directors', sortOrder: 6 },
-      { id: 'step-7', stepKey: 'transfer_documents_prepared', status: 'not_started', sortOrder: 7 },
+      { id: 'step-3', stepKey: 'buyer_fica_review', status: 'in_progress', comment: 'Checking buyer FICA', sortOrder: 3 },
+      { id: 'step-7', stepKey: 'transfer_document_pack_review', status: 'not_started', sortOrder: 7 },
     ],
     documentRequirements: [
       {
@@ -51,23 +48,23 @@ const workflow = {
 
 const viewModel = buildTransferWorkspaceViewModel({
   workflow,
-  selectedTaskKey: 'entity_authority_checked',
+  selectedTaskKey: 'buyer_fica_review',
   keyDates: [['Instruction Date', '04 May 2026'], ['Lodgement Date', 'TBD']],
   parties: [{ role: 'Buyer', name: 'John Smith' }],
   activityFeed: [
-    { id: 'activity-1', laneKey: 'transfer', stepKey: 'entity_authority_checked', title: 'Authority checked' },
+    { id: 'activity-1', laneKey: 'transfer', stepKey: 'buyer_fica_review', title: 'Buyer FICA reviewed' },
     { id: 'activity-2', laneKey: 'bond', stepKey: 'bond_instruction_received', title: 'Bond instruction' },
     { id: 'activity-3', kind: 'comment', visibility: 'internal', filterKeys: ['transfer'], title: 'Internal note added', body: 'Authority note' },
   ],
 })
 
 assert.equal(viewModel.workflowKey, 'transfer')
-assert.equal(viewModel.selectedTask.key, 'entity_authority_checked')
+assert.equal(viewModel.selectedTask.key, 'buyer_fica_review')
 assert.equal(viewModel.selectedTask.phaseKey, 'fica_authority')
 assert.equal(viewModel.currentPhase.label, 'FICA & Authority')
 
 assert.ok(viewModel.tasks.length > workflow.lane.steps.length, 'adapter must preserve configured workflow tasks, not only persisted rows')
-assert.equal(viewModel.progress.completed, 9)
+assert.equal(viewModel.progress.completed, 2)
 assert.equal(viewModel.progress.total, viewModel.tasks.length)
 assert.equal(viewModel.attention.blocked, 0)
 
@@ -77,45 +74,40 @@ assert.ok(phaseKeys.includes('fica_authority'))
 assert.ok(phaseKeys.includes('documents_guarantees'))
 assert.equal(viewModel.currentPhase.sequence, 2)
 assert.equal(viewModel.currentPhase.hasCurrentTask, true)
-assert.equal(viewModel.currentPhase.completed, 6)
-assert.equal(viewModel.currentPhase.total, 7)
+assert.equal(viewModel.currentPhase.completed, 0)
+assert.equal(viewModel.currentPhase.total, 2)
 assert.equal(viewModel.selectedTask.completionReadiness.canComplete, false)
 assert.ok(viewModel.selectedTask.completionReadiness.missingRequiredDocuments.length > 0)
-assert.equal(viewModel.selectedTask.dependencySummary.status, 'completed')
-assert.equal(viewModel.selectedTask.dependencySummary.advisory, false)
+assert.equal(viewModel.selectedTask.dependencySummary.status, 'waiting')
+assert.equal(viewModel.selectedTask.dependencySummary.advisory, true)
 assert.equal(viewModel.selectedTask.dependencySummary.blocksWork, false)
 assert.ok(viewModel.nextActionableTask)
 
 const relatedKeys = viewModel.selectedTaskContext.relatedDocuments.map((document) => document.sourceRequirementKey)
 assert.ok(relatedKeys.includes('buyer_company_resolution'))
-assert.ok(relatedKeys.includes('seller_company_resolution'))
-assert.equal(
-  viewModel.selectedTaskContext.relatedDocuments.find((document) => document.sourceRequirementKey === 'seller_company_resolution')?.ready,
-  false,
-)
+assert.ok(!relatedKeys.includes('seller_company_resolution'), 'Buyer FICA must never include seller authority documents.')
 
 assert.deepEqual(
   viewModel.availableActions.primary.map((action) => action.status).filter((status) => !TRANSFER_WORKSPACE_PERSISTED_STEP_STATUSES.includes(status)),
   [],
   'primary actions must only expose statuses the workflow service can persist',
 )
-assert.equal(viewModel.availableActions.primary.find((action) => action.id === 'mark_complete')?.disabled, true)
+assert.equal(viewModel.availableActions.primary.find((action) => action.id === 'mark_complete')?.disabled, false)
 assert.ok(viewModel.availableActions.unsupported.some((action) => action.status === 'delayed'))
-assert.ok(viewModel.availableActions.unsupported.some((action) => action.status === 'not_applicable'))
 
 const outOfSequenceModel = buildTransferWorkspaceViewModel({
   workflow,
-  selectedTaskKey: 'transfer_documents_prepared',
+  selectedTaskKey: 'transfer_document_pack_review',
 })
 const outOfSequenceActions = new Map(outOfSequenceModel.availableActions.primary.map((action) => [action.id, action]))
-assert.equal(outOfSequenceModel.selectedTask.key, 'transfer_documents_prepared')
+assert.equal(outOfSequenceModel.selectedTask.key, 'transfer_document_pack_review')
 assert.equal(outOfSequenceModel.selectedTask.dependencySummary.advisory, true)
 assert.equal(outOfSequenceModel.selectedTask.dependencySummary.blocksWork, false)
 assert.ok(outOfSequenceModel.selectedTask.dependencySummary.blockers.length > 0)
 assert.equal(outOfSequenceActions.get('mark_in_progress')?.disabled, false)
 assert.equal(outOfSequenceActions.get('mark_waiting')?.disabled, false)
 assert.equal(outOfSequenceActions.get('mark_blocked')?.disabled, false)
-assert.equal(outOfSequenceActions.get('mark_complete')?.disabled, true)
+assert.equal(outOfSequenceActions.get('mark_complete')?.disabled, false)
 
 assert.equal(viewModel.unsupportedCapabilities.editableTaskAssignee, true)
 assert.equal(viewModel.unsupportedCapabilities.persistedChecklistItems, true)
@@ -141,24 +133,24 @@ assert.equal(viewModel.selectedTaskContext.notes[0].visibilityLabel, 'Internal')
 assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id === 'request_document'))
 assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id === 'upload_document'))
 assert.ok(viewModel.selectedTaskContext.workActions.some((action) => action.id === 'open_parties'))
-assert.ok(viewModel.workActionsByTaskKey.entity_authority_checked.length > 0)
+assert.ok(viewModel.workActionsByTaskKey.buyer_fica_review.length > 0)
 assert.equal(viewModel.selectedTaskContext.outcomeSummary.canWorkAhead, true)
 assert.equal(viewModel.selectedTaskContext.outcomeSummary.completionBlocked, true)
 assert.ok(viewModel.selectedTaskContext.outcomeSummary.items.some((item) => item.key === 'completion'))
 
 const requestDocumentAction = viewModel.selectedTaskContext.workActions.find((action) => action.id === 'request_document')
 assert.equal(requestDocumentAction.command.commandType, 'request_document')
-assert.equal(requestDocumentAction.command.stageKey, 'entity_authority_checked')
+assert.equal(requestDocumentAction.command.stageKey, 'buyer_fica_review')
 assert.equal(requestDocumentAction.command.workPacket.commandType, 'request_document')
 assert.equal(requestDocumentAction.command.workPacket.laneKey, 'transfer')
 
 const noteAction = viewModel.selectedTaskContext.workActions.find((action) => action.id === 'add_note')
 assert.equal(noteAction.command.commandType, 'add_note')
-assert.equal(noteAction.command.workPacket.stageKey, 'entity_authority_checked')
+assert.equal(noteAction.command.workPacket.stageKey, 'buyer_fica_review')
 
 const completeAction = viewModel.availableActions.primary.find((action) => action.id === 'mark_complete')
 assert.equal(completeAction.command.commandType, 'complete_step')
-assert.equal(completeAction.command.workPacket.stageKey, 'entity_authority_checked')
+assert.equal(completeAction.command.workPacket.stageKey, 'buyer_fica_review')
 assert.ok(viewModel.commandQueue.items.length > 0)
 assert.equal(viewModel.commandQueue.laneKey, 'transfer')
 assert.ok(viewModel.commandQueue.counts.documents > 0)
@@ -201,24 +193,24 @@ viewModel.tasks.forEach((task) => {
 })
 
 assert.ok(
-  viewModel.workActionsByTaskKey.transfer_duty_assessment_prepared.some((action) => action.id === 'open_finance'),
+  viewModel.workActionsByTaskKey.transfer_duty_vat_review.some((action) => action.id === 'open_finance'),
   'financial preparation tasks expose the finance action',
 )
 assert.ok(
-  viewModel.workActionsByTaskKey.rates_clearance_received.some((action) => action.id === 'open_finance'),
+  viewModel.workActionsByTaskKey.municipal_rates_clearance_review.some((action) => action.id === 'open_finance'),
   'clearance tasks expose the finance action',
 )
 assert.ok(
-  viewModel.workActionsByTaskKey.buyer_signed_transfer_documents.some((action) => action.id === 'open_documents'),
+  viewModel.workActionsByTaskKey.buyer_signing_review.some((action) => action.id === 'open_documents'),
   'signing tasks expose document actions',
 )
 assert.ok(
-  viewModel.workActionsByTaskKey.buyer_signed_transfer_documents.some((action) => action.id === 'schedule_signing' && action.command?.commandType === 'schedule_signing'),
+  viewModel.workActionsByTaskKey.buyer_signing_review.some((action) => action.id === 'schedule_signing' && action.command?.commandType === 'schedule_signing'),
   'signing tasks expose a command-backed signing follow-up',
 )
 assert.ok(
-  viewModel.workActionsByTaskKey.buyer_fica_requested.some((action) => action.id === 'open_parties'),
-  'FICA tasks expose roleplayer actions',
+  viewModel.workActionsByTaskKey.buyer_fica_review.some((action) => action.id === 'open_parties'),
+  'FICA review keeps party details available where entity facts need correction',
 )
 
 const blockedModel = buildTransferWorkspaceViewModel({
@@ -228,14 +220,14 @@ const blockedModel = buildTransferWorkspaceViewModel({
       ...workflow.lane,
       steps: [
         ...workflow.lane.steps,
-        { id: 'step-8', stepKey: 'transfer_documents_prepared', status: 'blocked', comment: 'Awaiting seller', sortOrder: 8 },
+        { id: 'step-8', stepKey: 'transfer_document_pack_review', status: 'blocked', comment: 'Awaiting seller', sortOrder: 8 },
       ],
     },
   },
   filters: { attention: 'blocked' },
 })
 
-assert.equal(blockedModel.selectedTask.key, 'transfer_documents_prepared')
+assert.equal(blockedModel.selectedTask.key, 'transfer_document_pack_review')
 assert.equal(blockedModel.visibleTasks.length, 1)
 assert.equal(blockedModel.visibleTasks[0].displayStatus, 'blocked')
 const blockedDocumentsPhase = blockedModel.phases.find((phase) => phase.key === 'documents_guarantees')
@@ -296,14 +288,13 @@ assert.ok(missingDocumentsModel.visibleTasks.every((task) => task.missingDocumen
 const sellerFicaDerivedModel = buildTransferWorkspaceViewModel({
   workflow: {
     ...workflow,
+    facts: { ...workflow.facts, sellerEntityType: 'individual' },
     lane: {
       ...workflow.lane,
-      currentStage: 'seller_fica_received',
+      currentStage: 'seller_fica_review',
       steps: [
         { id: 'step-1', stepKey: 'instruction_received', status: 'completed', sortOrder: 1 },
-        { id: 'step-2', stepKey: 'seller_fica_requested', status: 'completed', sortOrder: 2 },
-        { id: 'step-3', stepKey: 'seller_fica_received', status: 'in_progress', sortOrder: 3 },
-        { id: 'step-4', stepKey: 'seller_fica_approved', status: 'not_started', sortOrder: 4 },
+        { id: 'step-2', stepKey: 'seller_fica_review', status: 'in_progress', sortOrder: 2 },
       ],
     },
   },
@@ -327,16 +318,16 @@ const sellerFicaDerivedModel = buildTransferWorkspaceViewModel({
       source: 'transaction_required_documents',
     },
   ],
-  selectedTaskKey: 'seller_fica_received',
+  selectedTaskKey: 'seller_fica_review',
 })
 
-assert.equal(sellerFicaDerivedModel.selectedTask.displayStatus, 'completed')
+assert.equal(sellerFicaDerivedModel.selectedTask.displayStatus, 'in_progress')
 assert.equal(sellerFicaDerivedModel.selectedTask.derivedCompletion.complete, true)
 assert.equal(sellerFicaDerivedModel.selectedTaskContext.documentSummary.received, 2)
 assert.equal(
-  sellerFicaDerivedModel.tasks.find((task) => task.key === 'seller_fica_approved')?.displayStatus,
-  'not_started',
-  'seller FICA approval should not complete until the received documents are verified',
+  sellerFicaDerivedModel.tasks.find((task) => task.key === 'seller_fica_review')?.derivedCompletion.complete,
+  true,
+  'one seller FICA review includes both received-document and approval work',
 )
 
 const delayedModel = buildTransferWorkspaceViewModel({
@@ -344,10 +335,10 @@ const delayedModel = buildTransferWorkspaceViewModel({
     ...workflow,
     lane: {
       ...workflow.lane,
-      currentStage: 'transfer_documents_prepared',
+      currentStage: 'transfer_document_pack_review',
       steps: [
         ...workflow.lane.steps,
-        { id: 'step-8', stepKey: 'transfer_documents_prepared', status: 'at_risk', sortOrder: 8 },
+        { id: 'step-8', stepKey: 'transfer_document_pack_review', status: 'at_risk', sortOrder: 8 },
       ],
     },
   },
@@ -452,9 +443,10 @@ const cashIndividualScenarioModel = buildTransferWorkspaceViewModel({
       sellerEntityType: 'individual',
       sellerMaritalStatus: 'single',
       sellerHasExistingBond: false,
+      requiresGuarantees: false,
     },
   },
-  selectedTaskKey: 'entity_authority_checked',
+  selectedTaskKey: 'buyer_fica_review',
 })
 
 assert.equal(cashIndividualScenarioModel.scenario.finance.type, 'cash')
@@ -462,18 +454,14 @@ assert.equal(cashIndividualScenarioModel.scenario.finance.requiresGuarantees, fa
 assert.equal(cashIndividualScenarioModel.scenario.buyer.spouseConsentRequired, true)
 assert.equal(cashIndividualScenarioModel.scenario.seller.maritalRegime, 'single')
 assert.ok(cashIndividualScenarioModel.scenario.coverageItems.some((item) => item.key === 'buyer_capacity' && item.status === 'covered'))
-assert.ok(!cashIndividualScenarioModel.tasks.some((task) => task.key === 'guarantees_requested'))
+assert.ok(cashIndividualScenarioModel.tasks.some((task) => task.key === 'payment_security_review'))
 assert.ok(!cashIndividualScenarioModel.tasks.some((task) => task.key === 'guarantees_received'))
 assert.ok(!cashIndividualScenarioModel.tasks.some((task) => task.key === 'transfer_guarantees_accepted'))
-const cashAuthorityTask = cashIndividualScenarioModel.tasks.find((task) => task.key === 'entity_authority_checked')
-assert.ok(cashAuthorityTask.requiredDocumentKeys.includes('buyer_marital_status_documents'))
-assert.ok(cashAuthorityTask.requiredDocumentKeys.includes('buyer_spouse_consent'))
-assert.ok(!cashAuthorityTask.requiredDocumentKeys.includes('buyer_company_resolution'))
-assert.ok(!cashAuthorityTask.requiredDocumentKeys.includes('seller_company_resolution'))
-assert.ok(!cashAuthorityTask.requiredDocumentKeys.includes('seller_spouse_consent'))
-const cashBuyerFicaTask = cashIndividualScenarioModel.tasks.find((task) => task.key === 'buyer_fica_received')
+const cashBuyerFicaTask = cashIndividualScenarioModel.tasks.find((task) => task.key === 'buyer_fica_review')
 assert.ok(cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_id_document'))
 assert.ok(cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_proof_of_address'))
+assert.ok(cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_marital_status_documents'))
+assert.ok(cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_spouse_consent'))
 assert.ok(!cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_company_registration_documents'))
 assert.ok(!cashBuyerFicaTask.requiredDocumentKeys.includes('buyer_trust_deed'))
 
@@ -488,26 +476,27 @@ const companyTrustScenarioModel = buildTransferWorkspaceViewModel({
       cancellationRequired: true,
     },
   },
-  selectedTaskKey: 'entity_authority_checked',
+  selectedTaskKey: 'buyer_fica_review',
 })
 
 assert.equal(companyTrustScenarioModel.scenario.finance.requiresGuarantees, true)
 assert.equal(companyTrustScenarioModel.scenario.cancellation.required, true)
 assert.equal(companyTrustScenarioModel.scenario.buyer.isCompany, true)
 assert.equal(companyTrustScenarioModel.scenario.seller.isTrust, true)
-assert.ok(companyTrustScenarioModel.tasks.some((task) => task.key === 'guarantees_requested'))
-assert.ok(companyTrustScenarioModel.tasks.some((task) => task.key === 'guarantees_received'))
-assert.ok(companyTrustScenarioModel.tasks.some((task) => task.key === 'transfer_guarantees_accepted'))
-const companyTrustAuthorityTask = companyTrustScenarioModel.tasks.find((task) => task.key === 'entity_authority_checked')
-assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('buyer_company_registration_documents'))
-assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('buyer_company_resolution'))
-assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('buyer_director_ids'))
-assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_trust_deed'))
-assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_letters_of_authority'))
-assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_trustee_ids'))
-assert.ok(companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_trustee_resolution'))
-assert.ok(!companyTrustAuthorityTask.requiredDocumentKeys.includes('buyer_marital_status_documents'))
-assert.ok(!companyTrustAuthorityTask.requiredDocumentKeys.includes('seller_company_resolution'))
+assert.ok(companyTrustScenarioModel.tasks.some((task) => task.key === 'payment_security_review'))
+assert.ok(!companyTrustScenarioModel.tasks.some((task) => task.key === 'guarantees_received'))
+assert.ok(!companyTrustScenarioModel.tasks.some((task) => task.key === 'transfer_guarantees_accepted'))
+const companyBuyerFicaTask = companyTrustScenarioModel.tasks.find((task) => task.key === 'buyer_fica_review')
+const trustSellerFicaTask = companyTrustScenarioModel.tasks.find((task) => task.key === 'seller_fica_review')
+assert.ok(companyBuyerFicaTask.requiredDocumentKeys.includes('buyer_company_registration_documents'))
+assert.ok(companyBuyerFicaTask.requiredDocumentKeys.includes('buyer_company_resolution'))
+assert.ok(companyBuyerFicaTask.requiredDocumentKeys.includes('buyer_director_ids'))
+assert.ok(trustSellerFicaTask.requiredDocumentKeys.includes('seller_trust_deed'))
+assert.ok(trustSellerFicaTask.requiredDocumentKeys.includes('seller_letters_of_authority'))
+assert.ok(trustSellerFicaTask.requiredDocumentKeys.includes('seller_trustee_ids'))
+assert.ok(trustSellerFicaTask.requiredDocumentKeys.includes('seller_trustee_resolution'))
+assert.ok(!companyBuyerFicaTask.requiredDocumentKeys.includes('buyer_marital_status_documents'))
+assert.ok(!trustSellerFicaTask.requiredDocumentKeys.includes('seller_company_resolution'))
 assert.ok(companyTrustScenarioModel.scenario.coverageItems.some((item) => item.key === 'cancellation_route' && item.value === 'Cancellation lane required'))
 
 console.log('transferWorkspaceViewModel tests passed')

@@ -134,6 +134,18 @@ export const WORKFLOW_STEP_CHECKLIST_TEMPLATES = {
       { key: 'stakeholders_notified', label: 'Stakeholders notified' },
       { key: 'file_ready_for_closeout', label: 'File ready for close-out' },
     ],
+    post_registration_closeout_review: [
+      {
+        key: 'final_accounts_reviewed',
+        label: 'Final accounts and settlement position reviewed',
+        documentUpload: {
+          category: 'Final Accounts',
+          label: 'Upload final accounts',
+        },
+      },
+      { key: 'stakeholders_notified', label: 'Applicable stakeholders notified of registration' },
+      { key: 'file_ready_for_closeout', label: 'File ready for administrative closure' },
+    ],
   },
   finance: {
     application_not_started: [
