@@ -22,7 +22,7 @@ for (const component of [
 assert.match(units, /const AgentTransactionsTable = lazy\(loadAgentTransactionsTableModule\)/)
 assert.match(units, /loadAgentTransactionsTableModule\(\)\.catch\(\(\) => \{\}\)/)
 assert.match(units, /<Suspense fallback=\{isTransactionsRoute \? <TransactionsRouteShell \/>/)
-assert.match(units, /return <TransactionsRouteShell \/>/)
+assert.doesNotMatch(units, /if \(showInitialTransactionsLoading && isTransactionsRoute\) \{\s*return <TransactionsRouteShell \/>/)
 
 for (const query of [
   'fetchTransactionsByParticipantSummary',

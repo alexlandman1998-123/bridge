@@ -24,14 +24,23 @@ const functions = migrations.flatMap(({ file, source }) =>
   getFunctionDefinitions(source).map((definition) => ({ ...definition, file })),
 )
 
-function findSingleRpc(label, predicate) {
+function findEffectiveRpc(label, predicate) {
   const matches = functions.filter(predicate)
-  assert.equal(
-    matches.length,
-    1,
-    `${label} must be defined once so the frontend and database stay on one access contract; found ${matches.map((item) => item.name).join(', ') || 'none'}`,
+  assert.ok(
+    matches.length > 0,
+    `${label} must have a database definition; found none`,
   )
-  return matches[0]
+  assert.equal(
+    new Set(matches.map((item) => item.name)).size,
+    1,
+    `${label} must resolve to one RPC name; found ${matches.map((item) => item.name).join(', ')}`,
+  )
+
+  // Supabase migrations are append-only. Multiple CREATE OR REPLACE entries for
+  // the same signature are historical revisions, not concurrently callable
+  // functions; PostgreSQL retains only the final definition. Migrations are
+  // sorted above, so the final matching entry is the effective RPC contract.
+  return matches.at(-1)
 }
 
 function functionBody(source, name) {
@@ -41,20 +50,18 @@ function functionBody(source, name) {
   return source.slice(start, next === -1 ? undefined : start + next + 1)
 }
 
-const portalRpc = findSingleRpc(
+const portalRpc = findEffectiveRpc(
   'buyer onboarding portal bridge RPC',
   ({ name, source }) =>
-    /onboarding/i.test(name) &&
-    /portal|client/i.test(name) &&
+    name === 'bridge_buyer_onboarding_portal_access' &&
     /client_portal_links/i.test(source) &&
     /security\s+definer/i.test(source),
 )
 
-const snapshotRpc = findSingleRpc(
+const snapshotRpc = findEffectiveRpc(
   'buyer onboarding snapshot save RPC',
   ({ name, source }) =>
-    /onboarding/i.test(name) &&
-    /save|snapshot|persist/i.test(name) &&
+    name === 'bridge_save_buyer_onboarding_snapshot' &&
     /onboarding_form_data/i.test(source) &&
     /security\s+definer/i.test(source),
 )

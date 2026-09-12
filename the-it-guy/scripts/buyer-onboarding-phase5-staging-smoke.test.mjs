@@ -10,10 +10,16 @@ const migrationSource = await readFile(
   new URL('../../supabase/migrations/202607310008_buyer_onboarding_projection_recovery_events.sql', import.meta.url),
   'utf8',
 )
+const correctiveMigrationSource = await readFile(
+  new URL('../../supabase/migrations/20260912072629_allow_buyer_participant_projection_recovery_marker.sql', import.meta.url),
+  'utf8',
+)
+const effectivePolicySource = `${migrationSource}\n${correctiveMigrationSource}`
 
 const markerEventTypes = [
   'buyer_onboarding_required_documents_projection_failed',
   'buyer_onboarding_platform_fee_consent_projection_failed',
+  'buyer_onboarding_buyer_participant_projection_failed',
   'buyer_onboarding_information_sheet_projection_failed',
   'buyer_onboarding_roleplayer_projection_failed',
   'buyer_onboarding_workflow_evidence_projection_failed',
@@ -62,41 +68,41 @@ assert.match(smokeSource, /redact\(error\?\.message/, 'smoke must redact failure
 
 for (const eventType of markerEventTypes) {
   assert.match(smokeSource, new RegExp(eventType), `${eventType} must be covered by the live smoke`)
-  assert.match(migrationSource, new RegExp(eventType), `${eventType} must be allowed by the recovery marker policy`)
+  assert.match(effectivePolicySource, new RegExp(eventType), `${eventType} must be allowed by the recovery marker policy`)
 }
 
 assert.match(
-  migrationSource,
+  effectivePolicySource,
   /grant insert on public\.transaction_events to anon, authenticated;/,
   'migration must grant the table privilege required for scoped marker inserts',
 )
 assert.match(
-  migrationSource,
+  effectivePolicySource,
   /create policy transaction_events_insert_buyer_onboarding_projection_recovery[\s\S]*for insert[\s\S]*to anon, authenticated/,
   'migration must add a dedicated scoped insert policy',
 )
 assert.match(
-  migrationSource,
+  effectivePolicySource,
   /bridge_has_onboarding_token_transaction_access\s*\(\s*transaction_id\s*\)/,
   'marker insert policy must be scoped to the onboarding token transaction',
 )
 assert.match(
-  migrationSource,
+  effectivePolicySource,
   /event_data ->> 'source'[\s\S]*buyer_onboarding_projection_recovery_marker/,
   'marker insert policy must require the sanitized recovery marker source',
 )
 assert.match(
-  migrationSource,
+  effectivePolicySource,
   /event_data ->> 'recoveryRequired'[\s\S]*'true'[\s\S]*event_data ->> 'retryable'[\s\S]*'true'/,
   'marker insert policy must require replayable recovery markers',
 )
 assert.match(
-  migrationSource,
+  effectivePolicySource,
   /created_by is null[\s\S]*created_by_role[\s\S]*system/,
   'marker insert policy must not allow caller-supplied user attribution',
 )
 assert.doesNotMatch(
-  migrationSource,
+  effectivePolicySource,
   /with check\s*\(\s*true\s*\)/,
   'marker insert policy must not open unrestricted transaction event inserts',
 )

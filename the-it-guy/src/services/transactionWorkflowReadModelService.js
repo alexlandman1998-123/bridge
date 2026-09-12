@@ -129,6 +129,7 @@ function mapTransactionRow(row = {}) {
     id: row.id,
     organisationId: row.organisation_id || null,
     transactionReference: row.transaction_reference || null,
+    arch9ListingReference: row.arch9_listing_reference || null,
     stage: detailedStage,
     currentMainStage: mainStage,
     currentSubStageSummary: row.current_sub_stage_summary || null,
@@ -631,7 +632,7 @@ function buildNextActions({ blockers = [] }) {
 async function fetchTransaction(client, transactionId, warnings) {
   const primary = await client
     .from('transactions')
-    .select('id, transaction_reference, accepted_offer_id, creation_idempotency_key, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, purchaser_type, transaction_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, routing_profile_json, lifecycle_state, risk_status, updated_at, created_at')
+    .select('id, transaction_reference, arch9_listing_reference, accepted_offer_id, creation_idempotency_key, stage, current_main_stage, current_sub_stage_summary, finance_type, finance_managed_by, purchaser_type, transaction_type, property_tenure, seller_type, seller_has_existing_bond, existing_bond, routing_profile_json, lifecycle_state, risk_status, updated_at, created_at')
     .eq('id', transactionId)
     .maybeSingle()
 
@@ -649,7 +650,7 @@ async function fetchTransaction(client, transactionId, warnings) {
     ) {
       const fallback = await client
         .from('transactions')
-        .select('id, transaction_reference, stage, finance_type, purchaser_type, updated_at, created_at')
+        .select('id, transaction_reference, arch9_listing_reference, stage, finance_type, purchaser_type, updated_at, created_at')
         .eq('id', transactionId)
         .maybeSingle()
 

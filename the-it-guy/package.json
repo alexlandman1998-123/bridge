@@ -130,6 +130,8 @@
     "dev": "vite",
     "build": "NODE_OPTIONS=--max-old-space-size=8192 vite build",
     "test": "node src/services/__tests__/principalDashboardService.test.js && node src/services/__tests__/inviteService.test.js && node src/services/__tests__/transactionPartnerInvitationService.test.js && node src/services/__tests__/organizationService.test.js && node src/services/__tests__/partnerNetworkService.test.js && node src/lib/__tests__/partnersRepository.test.js && node src/services/__tests__/organizationHierarchyService.test.js && node src/services/__tests__/assignmentEngineService.test.js && node src/services/__tests__/networkIntelligenceService.test.js",
+    "test:transfer-tax-phase7": "node --test src/services/__tests__/transferTaxCrossRoleAssurance.test.js",
+    "test:transfer-tax-phase8": "node --test src/services/__tests__/transferTaxPhase8ReleaseGate.test.js",
     "test:workspace-resolution": "node scripts/workspace-resolution.test.mjs",
     "test:organisation-ownership-contract-phase1": "node scripts/organisation-ownership-contract-phase1.test.mjs && node src/services/__tests__/organizationService.test.js",
     "test:organisation-permission-integrity-audit-phase1": "node scripts/organisation-permission-integrity-audit-phase1.test.mjs",

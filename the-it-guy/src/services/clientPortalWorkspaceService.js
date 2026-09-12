@@ -1777,6 +1777,21 @@ function documentMatchesRequirement(document = {}, requirement = {}) {
 }
 
 function findUploadedDocumentForRequirement(uploadedDocuments = [], requirement = {}) {
+  const requirementKey = normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key)
+  if (requirementKey) {
+    const exactDocument = (uploadedDocuments || []).find((document) => {
+      const directKeys = [
+        document?.requirementKey,
+        document?.requirement_key,
+        document?.document_type,
+        document?.documentType,
+        document?.category,
+        document?.document_category,
+      ].map(normalizeDocumentMatchKey).filter(Boolean)
+      return directKeys.includes(requirementKey)
+    })
+    if (exactDocument) return exactDocument
+  }
   return (uploadedDocuments || []).find((document) => documentMatchesRequirement(document, requirement)) || null
 }
 
