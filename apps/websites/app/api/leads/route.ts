@@ -22,6 +22,7 @@ type LeadBody = {
   marketingConsent?: unknown
   pageUrl?: unknown
   referrer?: unknown
+  source?: unknown
   idempotencyKey?: unknown
   companyWebsite?: unknown
 }
@@ -78,6 +79,7 @@ function attribution(request: Request, body: LeadBody, host: string) {
     utmTerm: pageMatchesSite ? text(page.searchParams.get('utm_term'), 160) : undefined,
     utmContent: pageMatchesSite ? text(page.searchParams.get('utm_content'), 160) : undefined,
     userAgent: text(request.headers.get('user-agent'), 512),
+    leadSource: text(body.source, 80) || undefined,
   }
 }
 

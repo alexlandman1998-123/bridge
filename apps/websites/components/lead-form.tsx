@@ -3,9 +3,9 @@
 import { FormEvent, useRef, useState } from 'react'
 
 type LeadPurpose = 'general_enquiry' | 'valuation_request' | 'campaign_enquiry' | 'newsletter_signup'
-type Props = { propertyId?: string; pageId?: string; purpose?: LeadPurpose; variant?: 'default' | 'homepage' | 'valuation'; privacyPolicyUrl?: string; heading?: string; intro?: string }
+type Props = { propertyId?: string; pageId?: string; purpose?: LeadPurpose; variant?: 'default' | 'homepage' | 'valuation'; privacyPolicyUrl?: string; heading?: string; intro?: string; source?: string }
 
-export function LeadForm({ propertyId, pageId, purpose, variant = 'default', privacyPolicyUrl, heading, intro }: Props) {
+export function LeadForm({ propertyId, pageId, purpose, variant = 'default', privacyPolicyUrl, heading, intro, source }: Props) {
   const isNewsletter = purpose === 'newsletter_signup'
   const homepageForm = variant === 'homepage' && !isNewsletter
   const valuationForm = variant === 'valuation' && !isNewsletter
@@ -35,6 +35,7 @@ export function LeadForm({ propertyId, pageId, purpose, variant = 'default', pri
           type: propertyId ? 'property_enquiry' : isNewsletter ? 'general_enquiry' : purpose || 'general_enquiry',
           propertyId,
           pageId,
+          source,
           name: form.get('name'),
           email: form.get('email'),
           phone: form.get('phone'),

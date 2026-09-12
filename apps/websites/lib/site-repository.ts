@@ -95,10 +95,23 @@ export function normalizeHostname(host: string | null | undefined): string {
   return String(host || '').trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '')
 }
 
-export function propertySlug(property: Pick<PublicProperty, 'id' | 'title'>): string {
-  const title = property.title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'property'
-  return `${title}-${property.id}`
+export function propertySlug(property: Pick<PublicProperty, 'id' | 'title' | 'reference'>): string {
+  return referenceSlug(property.reference) || textSlug(property.title) || 'property'
+}
+
+function textSlug(value: string | null | undefined): string {
+  return String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+}
+
+function referenceSlug(value: string | null | undefined): string {
+  return textSlug(value)
+}
+
+function legacyTitleSlug(property: Pick<PublicProperty, 'id' | 'title' | 'legacyReference'>): string {
+  const title = textSlug(property.title) || 'property'
+  const reference = referenceSlug(property.legacyReference)
+  return reference ? `${title}-${reference}` : title
 }
 
 function isDemoMode(hostname: string): boolean {
@@ -137,9 +150,12 @@ function mapPage(row: Record<string, unknown>): PublicPage {
 }
 
 function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'] = []): PublicProperty {
+  const legacyReference = String(row.listing_reference || row.reference || '')
+  const arch9Reference = String(row.arch9_reference || '')
   return {
     id: String(row.listing_id),
-    reference: String(row.listing_id),
+    reference: arch9Reference || legacyReference,
+    legacyReference: legacyReference || undefined,
     title: String(row.title || 'Property listing'),
     transactionType: String(row.listing_type).toLowerCase() === 'rental' ? 'rental' : 'sale',
     propertyType: String(row.property_type || 'Property'),
@@ -212,18 +228,26 @@ async function getPublishedWebsiteListings(
 
   const eligibilityResult = await supabase
     .from('listing_publication_data')
-    .select('listing_id, private_listings!inner(organisation_id)')
+    .select('listing_id, private_listings!inner(organisation_id, listing_reference, arch9_reference)')
     .in('listing_id', listingIds)
     .eq('status', 'Published')
     .eq('private_listings.organisation_id', site.organisationId)
   if (eligibilityResult.error) throw eligibilityResult.error
-  const eligibleIds = new Set((eligibilityResult.data || []).map((row) => String(row.listing_id)))
+  const eligibleListings = new Map((eligibilityResult.data || []).map((row) => {
+    const listing = Array.isArray(row.private_listings) ? row.private_listings[0] : row.private_listings
+    const privateListing = listing as { listing_reference?: string; arch9_reference?: string } | null
+    return [String(row.listing_id), {
+      listingReference: String(privateListing?.listing_reference || ''),
+      arch9Reference: String(privateListing?.arch9_reference || ''),
+    }]
+  }))
 
   return (channelResult.data || []).flatMap((channel) => {
     const listingId = String(channel.listing_id)
-    if (!eligibleIds.has(listingId) || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
+    if (!eligibleListings.has(listingId) || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
+    const references = eligibleListings.get(listingId)
     return [{
-      row: { ...(channel.publication_json as Record<string, unknown>), listing_id: listingId },
+      row: { ...(channel.publication_json as Record<string, unknown>), listing_id: listingId, listing_reference: references?.listingReference, arch9_reference: references?.arch9Reference },
       media: mapSnapshotMedia(channel.media_json),
     }]
   })
@@ -242,7 +266,13 @@ export async function getPublicProperties(site: ResolvedSite, query: Record<stri
 
 export async function getPublicProperty(site: ResolvedSite, slug: string): Promise<PublicProperty | null> {
   const properties = await getPublicProperties(site)
-  return properties.find((property) => propertySlug(property) === slug) || null
+  const requestedSlug = textSlug(slug)
+  return properties.find((property) => (
+    propertySlug(property) === requestedSlug
+    || referenceSlug(property.legacyReference) === requestedSlug
+    || legacyTitleSlug(property) === requestedSlug
+    || `${textSlug(property.title)}-${property.id}` === requestedSlug
+  )) || null
 }
 
 export async function getPublicPage(site: ResolvedSite, slug: string): Promise<PublicPage | null> {
