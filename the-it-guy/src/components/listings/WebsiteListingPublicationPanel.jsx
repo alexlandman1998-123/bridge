@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, X } from 'lucide-react'
+import { ExternalLink, Globe2, Loader2, MoreVertical, RefreshCw, Send, X } from 'lucide-react'
 import Button from '../ui/Button'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../../services/websiteListingPublicationService'
 
@@ -14,6 +14,17 @@ const INFRASTRUCTURE_BLOCKERS = [
   'Publish the organisation website',
   'Activate a website domain',
 ]
+
+function formatRelativeTime(value) {
+  const timestamp = new Date(String(value || '')).getTime()
+  if (!Number.isFinite(timestamp)) return ''
+  const minutes = Math.max(0, Math.round((Date.now() - timestamp) / 60000))
+  if (minutes < 1) return 'Just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.round(hours / 24)}d ago`
+}
 
 export default function WebsiteListingPublicationPanel({ listingId, listingTitle, preparationBlockers = [], onPrepare }) {
   const [publication, setPublication] = useState(null)
@@ -48,6 +59,25 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     [preparationBlockers, publication?.blockers],
   )
   const infrastructureBlocked = readinessBlockers.some((blocker) => INFRASTRUCTURE_BLOCKERS.some((prefix) => String(blocker).startsWith(prefix)))
+  const status = loading ? 'Checking' : effectivelyLive ? stale ? 'Update available' : 'Published' : published ? 'Needs attention' : 'Not published'
+  const statusClass = effectivelyLive && !stale
+    ? 'text-[#18713e]'
+    : stale || published
+      ? 'text-[#9a5b13]'
+      : 'text-[#526a82]'
+  const statusDotClass = effectivelyLive && !stale
+    ? 'bg-[#1f9d64]'
+    : stale || published
+      ? 'bg-[#d99321]'
+      : loading
+        ? 'bg-[#2f6fb3]'
+        : 'border border-[#aebdca] bg-white'
+  const contextTitle = effectivelyLive && !stale
+    ? 'Published and up to date'
+    : stale
+      ? 'Listing changes need publishing'
+      : readinessBlockers[0] || 'Ready to publish'
+  const menuActionClass = 'flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50'
 
   const run = async (nextAction) => {
     if (!listingId || action) return
@@ -74,37 +104,28 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
   }
 
   return (
-    <section className="rounded-[24px] border border-[#cfe4d8] bg-gradient-to-br from-[#f7fcf8] via-white to-[#edf8f1] p-5 shadow-[0_14px_30px_rgba(15,76,42,0.07)]">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#56806a]">Agency website channel</p>
-          <h4 className="mt-1 text-[1.05rem] font-semibold text-[#173626]">Publish this CRM listing to your website</h4>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-[#607568]">The CRM remains the source of truth. Publish creates one website-channel record, Update refreshes it from the current listing, and Unpublish removes it without deleting the CRM listing.</p>
+    <section className="border-b border-[#edf2f7] last:border-b-0">
+      <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(230px,0.9fr)_minmax(150px,190px)_minmax(260px,1fr)_minmax(130px,170px)_auto] lg:items-center">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] border border-[#dbe6f2] bg-white text-[#1f4f78]"><Globe2 size={18} /></span>
+          <div className="min-w-0"><p className="truncate text-sm font-semibold leading-5 text-[#142132]">Agency Website</p><p className="truncate text-xs leading-5 text-[#607387]">Your organisation website</p></div>
         </div>
-        <span className={`inline-flex w-fit items-center gap-1 rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${effectivelyLive && !stale ? 'border-[#bfe2cb] bg-[#eaf8ef] text-[#1f7d44]' : stale ? 'border-[#f0d9ad] bg-[#fff9ec] text-[#825514]' : 'border-[#d9e3dc] bg-white text-[#607568]'}`}>
-          {effectivelyLive && !stale ? <CheckCircle2 size={13} /> : stale ? <RefreshCw size={13} /> : <Globe2 size={13} />}
-          {loading ? 'Checking…' : effectivelyLive ? stale ? 'Update available' : 'Published' : published ? 'Hidden by readiness' : 'Not published'}
-        </span>
+        <div className="min-w-0 md:justify-self-start"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusClass}`}><span className={`h-2 w-2 rounded-full ${statusDotClass}`} />{status}</p></div>
+        <div className="min-w-0"><p className="text-sm font-semibold leading-5 text-[#243d56]">{contextTitle}</p>{readinessBlockers.length ? <p className="mt-0.5 truncate text-xs leading-5 text-[#9a5b13]">{readinessBlockers[0]}</p> : null}</div>
+        <div className="min-w-0">{publication?.lastSyncedAt ? <><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last synced</p><p className="mt-0.5 text-xs font-semibold text-[#607387]">{formatRelativeTime(publication.lastSyncedAt)}</p></> : null}</div>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          {effectivelyLive && publicUrl ? <a href={publicUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]"><ExternalLink size={15} />View listing</a> : <Button type="button" size="sm" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish</Button>}
+          <details className="relative"><summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden" aria-label="Website actions"><MoreVertical size={15} /></summary><div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+            <button type="button" onClick={() => void run(published ? 'update' : 'publish')} disabled={Boolean(action) || loading || infrastructureBlocked} className={menuActionClass}>{action === 'update' || action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{published ? 'Update website' : 'Publish website'}</button>
+            <button type="button" onClick={() => void load()} disabled={Boolean(action) || loading} className={menuActionClass}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />Refresh status</button>
+            {publicUrl ? <a href={publicUrl} target="_blank" rel="noreferrer" className={menuActionClass}><ExternalLink size={15} />View listing</a> : null}
+            {published ? <button type="button" onClick={() => void run('unpublish')} disabled={Boolean(action)} className={`${menuActionClass} text-[#b42318] hover:bg-[#fff5f5]`}>{action === 'unpublish' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}Unpublish</button> : null}
+          </div></details>
+        </div>
       </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-[14px] border border-[#dbe9df] bg-white/85 p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Website</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.websiteStatus || 'Not created'}</p></div>
-        <div className="rounded-[14px] border border-[#dbe9df] bg-white/85 p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Listing projection</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.projectionStatus || 'Not saved'}</p></div>
-        <div className="rounded-[14px] border border-[#dbe9df] bg-white/85 p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Durable public images</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.durableImageCount ?? 0} / {publication?.imageCount ?? 0}</p></div>
-      </div>
-
-      {readinessBlockers.length ? <div className="mt-4 rounded-[14px] border border-[#f0d9ad] bg-[#fff9ec] p-3"><p className="text-sm font-semibold text-[#825514]">Readiness checks</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#825514]">{readinessBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></div> : null}
-      {publication?.mediaCleanupPending > 0 ? <div className="mt-4 rounded-[14px] border border-[#efc4c4] bg-[#fff5f5] p-3 text-xs leading-5 text-[#8a3030]">{publication.mediaCleanupPending} public media object{publication.mediaCleanupPending === 1 ? '' : 's'} could not be removed yet. Retry Unpublish before closing this listing.</div> : null}
-      {error ? <p className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
-      {notice ? <p className="mt-4 rounded-[14px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
-
-      <div className="mt-5 flex flex-wrap gap-2">
-        {published
-          ? <><Button type="button" className="justify-center" onClick={() => void run('update')} disabled={Boolean(action) || infrastructureBlocked}>{action === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}Update website</Button><Button type="button" variant="secondary" className="justify-center border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={() => void run('unpublish')} disabled={Boolean(action)}>{action === 'unpublish' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}Unpublish</Button></>
-          : <Button type="button" className="justify-center" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish to website</Button>}
-        <Button type="button" variant="secondary" className="justify-center" onClick={() => void load()} disabled={Boolean(action) || loading}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />Refresh status</Button>
-        {publicUrl ? <a className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#c9d9cf] bg-white px-3 text-sm font-semibold text-[#2f6346]" href={publicUrl} target="_blank" rel="noreferrer">View listing <ExternalLink size={14} /></a> : null}
-      </div>
+      {error ? <p className="mx-4 mb-4 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
+      {notice ? <p className="mx-4 mb-4 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
+      {publication?.mediaCleanupPending > 0 ? <p className="mx-4 mb-4 rounded-[12px] border border-[#efc4c4] bg-[#fff5f5] px-3 py-2 text-xs leading-5 text-[#8a3030]">{publication.mediaCleanupPending} public media object{publication.mediaCleanupPending === 1 ? '' : 's'} could not be removed yet. Retry Unpublish before closing this listing.</p> : null}
     </section>
   )
 }

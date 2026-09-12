@@ -3,12 +3,14 @@ import path from 'node:path'
 
 const root = process.cwd()
 const sourcePath = path.join(root, 'src/pages/AgentListings.jsx')
+const detailSourcePath = path.join(root, 'src/pages/AgentListingDetail.jsx')
 const storagePath = path.join(root, 'src/lib/agentListingStorage.js')
 const servicePath = path.join(root, 'src/services/privateListingService.js')
 const packagePath = path.join(root, 'package.json')
 const deletionMigrationPath = path.join(root, '..', 'supabase/migrations/20260908055855_agent_listing_deletion_rpc.sql')
 
 const source = fs.readFileSync(sourcePath, 'utf8')
+const detailSource = fs.readFileSync(detailSourcePath, 'utf8')
 const storageSource = fs.readFileSync(storagePath, 'utf8')
 const serviceSource = fs.readFileSync(servicePath, 'utf8')
 const pkg = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
@@ -88,7 +90,7 @@ const deletePrivateListingSource = serviceSource.match(
 )?.[0] || ''
 
 assert(
-  deletePrivateListingSource.includes("client.rpc('delete_private_listing', { p_listing_id: normalizedId })") &&
+  deletePrivateListingSource.includes("client.rpc('delete_private_listing', { p_listing_id: canonical?.id || normalizedId })") &&
     !deletePrivateListingSource.includes(".from('private_listings')\n    .delete()"),
   'permanent deletion must use the atomic database RPC rather than issuing a client-side parent-row delete.',
 )
@@ -124,6 +126,26 @@ assert(
 assert(
   source.includes('identityKeys,') && source.includes('id: identityKeys[0] || String(listing.id ||'),
   'listing cards should carry identityKeys and use a stable fallback id.',
+)
+
+assert(
+  !source.includes('window.confirm(') &&
+    source.includes('const [deleteListingCandidate, setDeleteListingCandidate] = useState(null)') &&
+    source.includes('function requestDeleteListing(card, event)') &&
+    source.includes('title="Delete listing?"'),
+  'listing-card deletion should use the in-app confirmation dialog instead of the browser confirmation prompt.',
+)
+
+const detailDeleteHandler = detailSource.match(
+  /async function confirmDeleteListing\(\)[\s\S]*?\n  }\n\n  const sellerProfileBuilderBranch/,
+)?.[0] || ''
+
+assert(
+  detailSource.includes('const [deleteListingDialogOpen, setDeleteListingDialogOpen] = useState(false)') &&
+    detailSource.includes('function requestDeleteListing()') &&
+    detailSource.includes('open={deleteListingDialogOpen}') &&
+    !detailDeleteHandler.includes('window.confirm('),
+  'listing-detail deletion should use the same in-app confirmation dialog while leaving unrelated browser confirmations untouched.',
 )
 
 assert(

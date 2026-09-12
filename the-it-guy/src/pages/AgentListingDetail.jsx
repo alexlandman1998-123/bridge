@@ -122,6 +122,11 @@ import {
 import { buildDirectListingOperationalSummary } from '../lib/directListingOperationalSummary'
 import { findPrivateListingById, getPrivateListingRecordId, sanitizePrivateListingRows } from '../lib/privateListingRecordIntegrity'
 import {
+  LISTING_POST_CREATE_PROGRESS_EVENT,
+  readListingPostCreateProgress,
+} from '../services/listingPostCreateProgress'
+import { getListingPostCreateTask } from '../services/listingPostCreateTaskService'
+import {
   completeViewingRequest,
   formatViewingStatusLabel,
   getViewingRequestsForListing,
@@ -230,6 +235,7 @@ import {
   getSellerPortalStatusLabel,
   resolveSellerPortalLifecycle,
 } from '../services/sellerPortalActivationService'
+import { retrySellerPortalInviteDelivery } from '../services/sellerPortalInviteOutboxService'
 import {
   captureShowDayLead,
   captureShowDayLeadBatch,
@@ -3044,6 +3050,68 @@ function readAsDataUrl(file) {
   })
 }
 
+function isDataUrl(value = '') {
+  return /^data:/i.test(normalizeText(value))
+}
+
+function getFileExtensionFromContentType(contentType = '') {
+  const subtype = normalizeText(contentType).split('/')[1]?.split('+')[0]
+  if (!subtype || !/^[a-z0-9]+$/i.test(subtype)) return 'bin'
+  return subtype.toLowerCase() === 'jpeg' ? 'jpg' : subtype.toLowerCase()
+}
+
+async function materializeListingMediaAssets(draft, listingId) {
+  const materializeItems = async (items, type) => Promise.all(
+    (Array.isArray(items) ? items : []).map(async (item, index) => {
+      const sourceUrl = normalizeText(item?.url || item?.signedUrl || item?.publicUrl)
+      if (!isDataUrl(sourceUrl)) return item
+
+      let response
+      try {
+        response = await fetch(sourceUrl)
+      } catch (error) {
+        throw new Error(`Could not prepare ${type === 'floorplans' ? 'a floorplan' : 'an image'} for publication: ${error?.message || 'invalid local media.'}`)
+      }
+      if (!response.ok) {
+        throw new Error(`Could not prepare ${type === 'floorplans' ? 'a floorplan' : 'an image'} for publication.`)
+      }
+
+      const blob = await response.blob()
+      const contentType = normalizeText(blob.type || item?.contentType) || 'application/octet-stream'
+      if (!contentType.startsWith('image/')) {
+        throw new Error('Only image files can be used for website listing media.')
+      }
+      const existingName = normalizeText(item?.name)
+      const fileName = existingName || `listing-${type === 'floorplans' ? 'floorplan' : 'image'}-${index + 1}.${getFileExtensionFromContentType(contentType)}`
+      const file = new File([blob], fileName, { type: contentType })
+      const uploaded = await uploadPrivateListingMediaAsset(file, { listingId, type })
+      const url = normalizeText(uploaded?.url || uploaded?.signedUrl || uploaded?.publicUrl)
+      if (!/^https:\/\//i.test(url)) {
+        throw new Error('The image upload did not return a public website address. Please try again.')
+      }
+
+      return {
+        ...item,
+        name: uploaded.fileName || fileName,
+        url,
+        signedUrl: uploaded.signedUrl || '',
+        publicUrl: uploaded.publicUrl || '',
+        bucket: uploaded.bucket || '',
+        path: uploaded.path || '',
+        contentType: uploaded.contentType || contentType,
+        size: uploaded.size || blob.size || 0,
+        uploadWarning: '',
+      }
+    }),
+  )
+
+  const [galleryImages, floorplans] = await Promise.all([
+    materializeItems(draft.galleryImages, 'gallery'),
+    materializeItems(draft.floorplans, 'floorplans'),
+  ])
+  return { ...draft, galleryImages, floorplans }
+}
+
 function buildPropertyDraft(listingRecord) {
   const propertyDetails = listingRecord?.propertyDetails || {}
   const marketing = listingRecord?.marketing || {}
@@ -3319,6 +3387,48 @@ function mergeAddressIntoMarketingDraft(previous, value) {
   }
 }
 
+function ListingPostCreateProgressCard({ progress = null, onRetrySellerPortal = null, retryingSellerPortal = false } = {}) {
+  if (!progress?.tasks) return null
+  const tasks = Object.entries(progress.tasks)
+  const complete = Boolean(progress.completedAt)
+  const Icon = ({ status }) => {
+    if (status === 'complete' || status === 'skipped') return <CheckCircle2 size={16} className="text-[#1f7d44]" />
+    if (status === 'attention') return <CircleAlert size={16} className="text-[#b7791f]" />
+    if (status === 'in_progress') return <Loader2 size={16} className="animate-spin text-[#1f4f78]" />
+    return <Circle size={16} className="text-[#8ca0b5]" />
+  }
+
+  return (
+    <section aria-live="polite" className="overflow-hidden rounded-[18px] border border-[#cfe0ef] bg-[#f7fbff] shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+      <div className="flex items-start gap-3 border-b border-[#dce8f3] px-4 py-3">
+        {complete ? <CheckCircle2 size={18} className="mt-0.5 text-[#1f7d44]" /> : <Loader2 size={18} className="mt-0.5 animate-spin text-[#1f4f78]" />}
+        <div>
+          <p className="text-sm font-semibold text-[#18324b]">{complete ? 'Listing setup complete' : 'Finishing listing setup'}</p>
+          <p className="mt-0.5 text-sm text-[#607387]">{complete ? 'Your listing is ready to continue working on.' : 'You can continue working while these steps finish.'}</p>
+        </div>
+      </div>
+      <div className="grid gap-2 p-4 sm:grid-cols-2">
+        {tasks.map(([key, task]) => (
+          <div key={key} className="flex items-center gap-2 rounded-[10px] bg-white px-3 py-2 text-sm font-medium text-[#35546c]">
+            <Icon status={task?.status} />
+            <span>{task?.label || key}</span>
+            {key === 'sellerPortal' && task?.status === 'attention' && onRetrySellerPortal ? (
+              <button
+                type="button"
+                onClick={onRetrySellerPortal}
+                disabled={retryingSellerPortal}
+                className="ml-auto rounded-[7px] border border-[#d8a75e] px-2 py-1 text-xs font-semibold text-[#8a5814] disabled:opacity-60"
+              >
+                {retryingSellerPortal ? 'Queueing…' : 'Retry'}
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function AgentListingDetail() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -3363,7 +3473,11 @@ function AgentListingDetail() {
   const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
   const [detailMessage, setDetailMessage] = useState('')
   const [detailError, setDetailError] = useState('')
+  const [postCreateProgress, setPostCreateProgress] = useState(() => readListingPostCreateProgress(listingId))
+  const [retryingPostCreateSellerPortal, setRetryingPostCreateSellerPortal] = useState(false)
   const [deletingListing, setDeletingListing] = useState(false)
+  const [deleteListingDialogOpen, setDeleteListingDialogOpen] = useState(false)
+  const [deleteListingDialogError, setDeleteListingDialogError] = useState('')
   const [gallerySaving, setGallerySaving] = useState(false)
   const [publicationSaving, setPublicationSaving] = useState(false)
   const [arch9LiveChecking, setArch9LiveChecking] = useState(false)
@@ -3384,6 +3498,45 @@ function AgentListingDetail() {
   const [, setSellerPortalAccessLoading] = useState(false)
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
   const [, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const refreshProgress = (event = null) => {
+      const incoming = event?.detail
+      if (incoming?.listingId && String(incoming.listingId) !== listingId) return
+      const progress = readListingPostCreateProgress(listingId)
+      const createdAt = Date.parse(progress?.createdAt || '')
+      const completedLongAgo = Boolean(progress?.completedAt) && Number.isFinite(createdAt) && Date.now() - createdAt > 60 * 60 * 1000
+      setPostCreateProgress(completedLongAgo ? null : progress)
+    }
+    refreshProgress()
+    void getListingPostCreateTask(listingId)
+      .then((progress) => {
+        if (active && progress) setPostCreateProgress(progress)
+      })
+      .catch((error) => console.warn('[Listings] post-create task load skipped', error))
+    window.addEventListener(LISTING_POST_CREATE_PROGRESS_EVENT, refreshProgress)
+    return () => {
+      active = false
+      window.removeEventListener(LISTING_POST_CREATE_PROGRESS_EVENT, refreshProgress)
+    }
+  }, [listingId])
+
+  async function handleRetryPostCreateSellerPortal() {
+    if (!listingId || retryingPostCreateSellerPortal) return
+    setRetryingPostCreateSellerPortal(true)
+    setDetailError('')
+    try {
+      await retrySellerPortalInviteDelivery(listingId)
+      const progress = await getListingPostCreateTask(listingId)
+      if (progress) setPostCreateProgress(progress)
+      setDetailMessage('Seller portal invitation queued for another delivery attempt.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to retry the seller portal invitation.')
+    } finally {
+      setRetryingPostCreateSellerPortal(false)
+    }
+  }
   const [sellerPortalActivationOpen, setSellerPortalActivationOpen] = useState(false)
   const [sellerPortalActivationDraft, setSellerPortalActivationDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
   const [sellerPortalActivationSending, setSellerPortalActivationSending] = useState(false)
@@ -4238,7 +4391,7 @@ function AgentListingDetail() {
         : Array.isArray(listingRecord?.publicationData?.amenities)
           ? listingRecord.publicationData.amenities
           : []
-    const effectiveDraft = {
+    let effectiveDraft = {
       ...draft,
       description: effectiveDescription,
       listingPreviewDescription: String(draft.listingPreviewDescription || listingRecord?.listingPreviewDescription || listingRecord?.propertyDetails?.listingPreviewDescription || effectiveDescription || '').trim(),
@@ -4255,6 +4408,7 @@ function AgentListingDetail() {
     }
 
     try {
+      effectiveDraft = await materializeListingMediaAssets(effectiveDraft, updatedListing.id)
       const listingPatch = {
         title: effectiveDraft.headline.trim() || updatedListing.listingTitle || '',
         propertyType: effectiveDraft.propertyType || updatedListing.propertyType || '',
@@ -5697,7 +5851,7 @@ function AgentListingDetail() {
             subject: `Seller onboarding: ${propertyLabel}`,
             message: `Seller onboarding link prepared for ${sellerDisplayName}.`,
             dedupeKey: `seller-onboarding:${listingRecord.id}:${onboardingToken}`,
-            metadata: { onboardingLink, listingReference: listingRecord?.listingReference || '' },
+            metadata: { onboardingLink, listingReference: listingRecord?.arch9Reference || listingRecord?.listingReference || '' },
           })
           outboxItems = prepared.items || []
         } catch (error) {
@@ -5729,7 +5883,7 @@ function AgentListingDetail() {
                 sellerName: sellerDisplayName,
                 propertyTitle: propertyLabel,
                 propertyType: listingRecord?.propertyType || marketingDraft.propertyType || '',
-                transactionReference: listingRecord?.listingCode || listingRecord?.listingReference || '',
+                transactionReference: listingRecord?.arch9Reference || listingRecord?.listingCode || listingRecord?.listingReference || '',
                 onboardingLink,
                 onboardingUrl: onboardingLink,
                 expiresAt: response?.expiresAt || '',
@@ -9577,12 +9731,19 @@ function AgentListingDetail() {
     })
   }
 
-  async function handleDeleteListing() {
+  function requestDeleteListing() {
+    setDeleteListingDialogError('')
+    setDeleteListingDialogOpen(true)
+  }
+
+  function closeDeleteListingDialog() {
+    if (deletingListing) return
+    setDeleteListingDialogOpen(false)
+    setDeleteListingDialogError('')
+  }
+
+  async function confirmDeleteListing() {
     const listingTitle = String(listingRecord?.listingTitle || 'this listing').trim()
-    const confirmed = window.confirm(
-      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Arch9, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
-    )
-    if (!confirmed) return
 
     setDeletingListing(true)
     setDetailError('')
@@ -9590,7 +9751,7 @@ function AgentListingDetail() {
 
     try {
       if (isSupabaseConfigured && isUuidLike(listingId)) {
-        const remoteDelete = await deletePrivateListing(listingId, { organisationId: listingOrganisationId })
+        const remoteDelete = await deletePrivateListing(listingId, { organisationId: listingOrganisationId, listingReference: listingRecord?.listingReference || listingRecord?.listing_reference || listingRecord?.listingCode })
         if (!remoteDelete?.deleted) {
           throw new Error('Could not delete listing. Please try again.')
         }
@@ -9602,7 +9763,9 @@ function AgentListingDetail() {
         state: { message: `"${listingTitle}" was permanently deleted.` },
       })
     } catch (error) {
-      setDetailError(error?.message || 'Unable to delete this listing.')
+      const message = error?.message || 'Unable to delete this listing.'
+      setDetailError(message)
+      setDeleteListingDialogError(message)
     } finally {
       setDeletingListing(false)
     }
@@ -10244,6 +10407,13 @@ function AgentListingDetail() {
             />
           ))}
 
+          <WebsiteListingPublicationPanel
+            listingId={listingRecord?.id}
+            listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
+            preparationBlockers={arch9PublicationBlockers}
+            onPrepare={prepareAgencyWebsiteListing}
+          />
+
           {!visibleExternalListingLinks.length ? (
             <div className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
               <div className="flex items-center gap-3">
@@ -10403,6 +10573,11 @@ function AgentListingDetail() {
       {detailMessage ? (
         <div className="rounded-[14px] border border-[#d8eddf] bg-[#ecfaf1] px-4 py-3 text-sm font-medium text-[#1f7d44]">{detailMessage}</div>
       ) : null}
+      <ListingPostCreateProgressCard
+        progress={postCreateProgress}
+        onRetrySellerPortal={handleRetryPostCreateSellerPortal}
+        retryingSellerPortal={retryingPostCreateSellerPortal}
+      />
       <ListingAgentReassignmentPanel
         listingId={listingRecord.id}
         listing={listingRecord}
@@ -10841,6 +11016,11 @@ function AgentListingDetail() {
                     <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">
                       Private Listing
                     </span>
+                    {listingRecord.arch9Reference ? (
+                      <span className="inline-flex rounded-full border border-[#c7e2d7] bg-[#eff9f3] px-2.5 py-1 font-mono text-[0.72rem] font-semibold text-[#17613e]" title="Immutable Arch9 listing reference">
+                        {listingRecord.arch9Reference}
+                      </span>
+                    ) : null}
                     <span className={`inline-flex rounded-full border px-2.5 py-1 text-[0.72rem] font-semibold ${statusClass(normalizeListingStatus(listingRecord))}`}>
                       {formatStatusLabel(normalizeListingStatus(listingRecord))}
                     </span>
@@ -10863,7 +11043,7 @@ function AgentListingDetail() {
                     <Building2 size={15} />
                     {listingRecord.developmentId || listingRecord.development_id ? 'Linked to development' : 'Link to development'}
                   </Button>
-                  <Button variant="secondary" onClick={handleDeleteListing} disabled={deletingListing}>
+                  <Button variant="secondary" onClick={requestDeleteListing} disabled={deletingListing}>
                     {deletingListing ? <Loader2 size={15} className="animate-spin" /> : <Trash2 size={15} />}
                     Delete Listing
                   </Button>
@@ -11153,7 +11333,8 @@ function AgentListingDetail() {
                   </div>
 
                   <div className="mt-5 grid gap-4 border-t border-[#e7edf5] pt-5 sm:grid-cols-2 xl:grid-cols-4">
-                    <SnapshotRow label="Listing ID" value={marketingDraft.listingCode || listingRecord.listingReference || 'Pending'} />
+                    <SnapshotRow label="Arch9 reference" value={listingRecord.arch9Reference || 'Assigned when the listing is created'} />
+                    <SnapshotRow label="Legacy listing ID" value={marketingDraft.listingCode || listingRecord.listingReference || 'Not assigned'} />
                     <SnapshotRow label="Assigned Agent" value={listingRecord?.assignedAgentName || listingRecord?.assignedAgent || 'Agent pending'} />
                     <SnapshotRow label="Last Updated" value={formatDate(listingRecord?.updatedAt || listingRecord?.createdAt)} />
                     <SnapshotRow label="Source" value={marketingDraft.source || 'Seller Onboarding'} />
@@ -11862,13 +12043,6 @@ function AgentListingDetail() {
                 )}
               </div>
             </section>
-
-            <WebsiteListingPublicationPanel
-              listingId={listingRecord?.id}
-              listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
-              preparationBlockers={arch9PublicationBlockers}
-              onPrepare={prepareAgencyWebsiteListing}
-            />
 
             <section className="rounded-[24px] border border-[#cfe0ef] bg-gradient-to-br from-[#f8fbff] via-white to-[#eef6fb] p-5 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -13043,6 +13217,24 @@ function AgentListingDetail() {
                         </span>
                       </div>
                     </div>
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4" data-testid="seller-onboarding-email-diagnostics">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-sm font-semibold text-[#142132]">Seller Onboarding Email Diagnostics</h3>
+                      <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${sellerOnboardingEmailDiagnostics.failedCount ? 'border-[#f6d7d7] bg-[#fff5f5] text-[#b42318]' : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'}`}>
+                        {sellerOnboardingEmailDiagnostics.failedCount ? 'Attention' : 'Healthy'}
+                      </span>
+                    </div>
+                    {sellerOnboardingEmailDiagnostics.totalCount ? (
+                      <div className="mt-3 grid gap-2 text-xs leading-5 text-[#607387]">
+                        <div className="flex items-center justify-between gap-3"><span>Sent / queued</span><strong className="text-[#142132]">{sellerOnboardingEmailDiagnostics.sentCount}</strong></div>
+                        <div className="flex items-center justify-between gap-3"><span>Pending</span><strong className="text-[#142132]">{sellerOnboardingEmailDiagnostics.pendingCount}</strong></div>
+                        <div className="flex items-center justify-between gap-3"><span>Failed</span><strong className="text-[#142132]">{sellerOnboardingEmailDiagnostics.failedCount}</strong></div>
+                        {sellerOnboardingEmailDiagnostics.latestFailureMessage ? <p className="rounded-[10px] border border-[#f6d7d7] bg-[#fff5f5] px-3 py-2 text-[#b42318]">Latest failure: {sellerOnboardingEmailDiagnostics.latestFailureMessage}</p> : null}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs leading-5 text-[#607387]">No seller onboarding email delivery rows have been logged for this listing yet.</p>
+                    )}
                   </div>
                 </article>
 
@@ -14352,6 +14544,39 @@ function AgentListingDetail() {
           </section>
         </section>
       ) : null}
+
+      <Modal
+        open={deleteListingDialogOpen}
+        onClose={deletingListing ? undefined : closeDeleteListingDialog}
+        title="Delete listing?"
+        subtitle={`Permanently remove “${listingRecord?.listingTitle || 'this listing'}” from Arch9.`}
+        className="max-w-lg"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={closeDeleteListingDialog} disabled={deletingListing} autoFocus>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void confirmDeleteListing()}
+              disabled={deletingListing}
+              className="bg-[#a13b35] hover:bg-[#852e29]"
+            >
+              {deletingListing ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              {deletingListing ? 'Deleting...' : 'Delete listing'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="rounded-[16px] border border-[#f1c6c2] bg-[#fff5f5] p-4 text-sm leading-6 text-[#6f302c]">
+          This removes the listing from Arch9, local fallback storage, seller workflow drafts, onboarding-linked records, documents, and activity. This cannot be undone.
+        </div>
+        {deleteListingDialogError ? (
+          <p role="alert" className="mt-4 rounded-[14px] border border-[#f1c6c2] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#a13b35]">
+            {deleteListingDialogError}
+          </p>
+        ) : null}
+      </Modal>
 
       <Modal
         open={sellerPortalActivationOpen}

@@ -1,3 +1,4 @@
+import { resolveListingDeletion, verifyListingDeletion } from './privateListingDeletion'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
@@ -3208,6 +3209,8 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     sellerProfileId: row.seller_profile_id || null,
     propertyProfileId: row.property_profile_id || null,
     listingReference: row.listing_reference || '',
+    arch9Reference: row.arch9_reference || '',
+    arch9_reference: row.arch9_reference || '',
     listingStatus,
     listingVisibility: normalizeStatus(row.listing_visibility, LISTING_VISIBILITY, 'internal'),
     propertyCategory: normalizePropertyCategory(row.property_category || row.property_type, { fallback: 'residential' }),
@@ -3534,6 +3537,8 @@ function mapPrivateListingSummaryRow(row = {}, onboardingCommissionByListingId =
     sellerProfileId: row.seller_profile_id || null,
     propertyProfileId: row.property_profile_id || null,
     listingReference: row.listing_reference || '',
+    arch9Reference: row.arch9_reference || '',
+    arch9_reference: row.arch9_reference || '',
     listingStatus,
     listingVisibility: normalizeStatus(row.listing_visibility, LISTING_VISIBILITY, 'internal'),
     listingSource: normalizeListingSource(row.listing_source || row.stock_source || row.listing_category, { fallback: 'private_listing' }),
@@ -5870,6 +5875,51 @@ export async function createPrivateListing(payload = {}, options = {}) {
     throw insert.error
   }
 
+  const recordCreationActivity = (createdListing) => createPrivateListingActivity({
+    privateListingId: insert.data.id,
+    activityType: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'quick_add_listing_created' : 'seller_lead_created',
+    activityTitle: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'Listing created via Quick Add' : 'Seller lead captured',
+    activityDescription: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'Private listing created from quick capture.' : 'Private listing intake shell created.',
+    performedBy: user.id,
+    visibility: 'internal',
+    metadata: {
+      origin: normalizeText(payload.origin || payload.source || 'manual'),
+      source: normalizeText(payload.source || 'manual'),
+      originatingCrmLeadId: createdListing.originatingCrmLeadId,
+      sellerLeadId: createdListing.sellerLeadId,
+      assignedAgentId: normalizeText(payload.assignedAgentId),
+      mandateStatus: normalizeText(payload.mandateStatus),
+      completeness: payload.completeness || null,
+      missingFollowUpItems: Array.isArray(payload.completeness?.missingItems) ? payload.completeness.missingItems : [],
+      canonicalStructure: Array.isArray(payload.canonicalStructure)
+        ? payload.canonicalStructure
+        : normalizeKey(payload.origin || payload.source) === 'quick_add'
+          ? ['listing', 'property', 'seller_party', 'mandate', 'commission_terms', 'agent_assignment', 'documents', 'private_listing_activity']
+          : null,
+    },
+  })
+
+  // Direct capture only needs an identity-safe listing shell to move the user
+  // into the workspace. Hydration, activity logging, and suggestions do not
+  // change that outcome and must not extend the create-screen wait.
+  if (options?.fastCreate === true) {
+    const listing = {
+      id: insert.data.id,
+      organisationId: insert.data.organisation_id,
+      listingTitle: normalizeText(insert.data.title),
+      title: normalizeText(insert.data.title),
+      listingStatus: mapLegacyListingStatusToCanonicalStatus(insert.data.listing_status || insert.data.status),
+      listingVisibility: normalizeText(insert.data.listing_visibility),
+      sellerLeadId: normalizeText(insert.data.seller_lead_id),
+      originatingCrmLeadId: normalizeText(insert.data.originating_crm_lead_id),
+    }
+    void recordCreationActivity(listing).catch(() => {})
+    void import('./suggestionGenerationService')
+      .then(({ queueListingSuggestionGeneration }) => queueListingSuggestionGeneration(listing))
+      .catch((generationError) => console.warn('[privateListingService] listing suggestion generation skipped', generationError))
+    return { listing, existing: false }
+  }
+
   const [onboardingMap, requirementsMap, documentsMap, mandatePacketsMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, [insert.data.id]),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
@@ -5886,29 +5936,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     }).catch(() => null)
   const listingWithRequirements = requirementSync?.listing || listing
 
-  await createPrivateListingActivity({
-    privateListingId: insert.data.id,
-    activityType: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'quick_add_listing_created' : 'seller_lead_created',
-    activityTitle: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'Listing created via Quick Add' : 'Seller lead captured',
-    activityDescription: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'Private listing created from quick capture.' : 'Private listing intake shell created.',
-    performedBy: user.id,
-    visibility: 'internal',
-    metadata: {
-      origin: normalizeText(payload.origin || payload.source || 'manual'),
-      source: normalizeText(payload.source || 'manual'),
-      originatingCrmLeadId: listingWithRequirements.originatingCrmLeadId,
-      sellerLeadId: listingWithRequirements.sellerLeadId,
-      assignedAgentId: normalizeText(payload.assignedAgentId),
-      mandateStatus: normalizeText(payload.mandateStatus),
-      completeness: payload.completeness || null,
-      missingFollowUpItems: Array.isArray(payload.completeness?.missingItems) ? payload.completeness.missingItems : [],
-      canonicalStructure: Array.isArray(payload.canonicalStructure)
-        ? payload.canonicalStructure
-        : normalizeKey(payload.origin || payload.source) === 'quick_add'
-          ? ['listing', 'property', 'seller_party', 'mandate', 'commission_terms', 'agent_assignment', 'documents', 'private_listing_activity']
-          : null,
-    },
-  }).catch(() => {})
+  await recordCreationActivity(listingWithRequirements).catch(() => {})
 
   void import('./suggestionGenerationService')
     .then(({ queueListingSuggestionGeneration }) => queueListingSuggestionGeneration(listingWithRequirements))
@@ -6066,11 +6094,12 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   return updatedListing
 }
 
-export async function deletePrivateListing(listingId, { organisationId = null } = {}) {
+export async function deletePrivateListing(listingId, { organisationId = null, listingReference = null } = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
-  const result = await client.rpc('delete_private_listing', { p_listing_id: normalizedId })
+  const canonical = await resolveListingDeletion(client, normalizedId, { organisationId, listingReference })
+  const result = await client.rpc('delete_private_listing', { p_listing_id: canonical?.id || normalizedId })
   if (result.error) {
     if (isPermissionDeniedError(result.error)) {
       throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')
@@ -6082,6 +6111,7 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
     throw new Error(result.data?.message || 'This listing cannot be permanently deleted until its linked workflows are resolved.')
   }
 
+  await verifyListingDeletion(client, canonical)
   return result.data
 }
 
@@ -6266,6 +6296,35 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
     }] : []),
   ].filter((item) => item.file_url)
 
+  const mediaSyncRows = [
+    ...galleryImages.map((item, index) => ({
+      id: normalizeText(item.id),
+      media_type: 'image',
+      file_url: normalizeText(item.url || item.signedUrl || item.publicUrl),
+      storage_bucket: normalizeText(item.bucket),
+      storage_path: normalizeText(item.path),
+      content_type: normalizeText(item.contentType),
+      byte_size: Number(item.size || 0) || null,
+      caption: normalizeNullableText(item.label || item.name),
+      sort_order: index,
+      is_cover: normalizeText(item.id) === normalizeText(media.coverImageId) || (!media.coverImageId && index === 0),
+    })),
+    ...floorplans.map((item, index) => ({
+      id: normalizeText(item.id),
+      media_type: 'floor_plan',
+      file_url: normalizeText(item.url || item.signedUrl || item.publicUrl),
+      storage_bucket: normalizeText(item.bucket),
+      storage_path: normalizeText(item.path),
+      content_type: normalizeText(item.contentType),
+      byte_size: Number(item.size || 0) || null,
+      caption: normalizeNullableText(item.label || item.name),
+      sort_order: index,
+      is_cover: false,
+    })),
+    ...(videoLink ? [{ media_type: 'video', file_url: videoLink, caption: 'Video link', sort_order: galleryImages.length + floorplans.length, is_cover: false }] : []),
+    ...(virtualTourLink ? [{ media_type: 'virtual_tour', file_url: virtualTourLink, caption: 'Virtual tour link', sort_order: galleryImages.length + floorplans.length + (videoLink ? 1 : 0), is_cover: false }] : []),
+  ].filter((item) => item.file_url)
+
   const externalLinkRows = externalLinks
     .filter((item) => item.url)
     .map((item) => ({
@@ -6279,20 +6338,23 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
       visible_to_seller: item.visibleToSeller,
     }))
 
-  const existingPublication = await client
-    .from('listing_publication_data')
-    .select('listing_id, description, features, amenities')
-    .eq('listing_id', normalizedId)
-    .maybeSingle()
-  if (existingPublication.error) {
-    if (isMissingTableError(existingPublication.error, 'listing_publication_data')) {
-      return { skipped: true, reason: 'distribution_tables_missing' }
+  let existingPublicationData = {}
+  if (payload.mergeExistingPublication !== false) {
+    const existingPublication = await client
+      .from('listing_publication_data')
+      .select('listing_id, description, features, amenities')
+      .eq('listing_id', normalizedId)
+      .maybeSingle()
+    if (existingPublication.error) {
+      if (isMissingTableError(existingPublication.error, 'listing_publication_data')) {
+        return { skipped: true, reason: 'distribution_tables_missing' }
+      }
+      throw existingPublication.error
     }
-    throw existingPublication.error
+    existingPublicationData = existingPublication.data && typeof existingPublication.data === 'object'
+      ? existingPublication.data
+      : {}
   }
-  const existingPublicationData = existingPublication.data && typeof existingPublication.data === 'object'
-    ? existingPublication.data
-    : {}
   if (!publicationPayload.description && existingPublicationData.description) {
     publicationPayload.description = normalizeNullableText(existingPublicationData.description)
   }
@@ -6323,20 +6385,35 @@ export async function syncPrivateListingDistributionData(listingId, payload = {}
     throw publication.error
   }
 
-  const deleteMedia = await client.from('listing_media').delete().eq('listing_id', normalizedId)
-  if (deleteMedia.error) {
-    if (isMissingTableError(deleteMedia.error, 'listing_media')) return { skipped: true, reason: 'distribution_tables_missing' }
-    throw deleteMedia.error
+  // Use the incremental sync RPC when it is available. It identifies media by
+  // stable storage object identity, so a retry cannot create duplicate rows.
+  // Keep the legacy delete/insert fallback only for environments that have not
+  // yet applied the incremental-sync migration.
+  const mediaSync = await client.rpc('bridge_sync_listing_media_v2', {
+    p_listing_id: normalizedId,
+    p_media: mediaSyncRows,
+  })
+  if (mediaSync.error && !isMissingRpcError(mediaSync.error, 'bridge_sync_listing_media_v2')) {
+    throw mediaSync.error
   }
-  if (mediaRows.length) {
-    const insertMedia = await client.from('listing_media').insert(mediaRows)
-    if (insertMedia.error) throw insertMedia.error
+  if (mediaSync.error) {
+    const deleteMedia = await client.from('listing_media').delete().eq('listing_id', normalizedId)
+    if (deleteMedia.error) {
+      if (isMissingTableError(deleteMedia.error, 'listing_media')) return { skipped: true, reason: 'distribution_tables_missing' }
+      throw deleteMedia.error
+    }
+    if (mediaRows.length) {
+      const insertMedia = await client.from('listing_media').insert(mediaRows)
+      if (insertMedia.error) throw insertMedia.error
+    }
   }
 
-  const deleteLinks = await client.from('listing_external_links').delete().eq('listing_id', normalizedId)
-  if (deleteLinks.error) {
-    if (isMissingTableError(deleteLinks.error, 'listing_external_links')) return { skipped: true, reason: 'distribution_tables_missing' }
-    throw deleteLinks.error
+  if (payload.replaceExternalLinks !== false || externalLinkRows.length) {
+    const deleteLinks = await client.from('listing_external_links').delete().eq('listing_id', normalizedId)
+    if (deleteLinks.error) {
+      if (isMissingTableError(deleteLinks.error, 'listing_external_links')) return { skipped: true, reason: 'distribution_tables_missing' }
+      throw deleteLinks.error
+    }
   }
   if (externalLinkRows.length) {
     const insertLinks = await client.from('listing_external_links').insert(externalLinkRows)

@@ -1638,10 +1638,6 @@ function Units() {
 
   const showInitialTransactionsLoading = loading && rows.length === 0
 
-  if (showInitialTransactionsLoading && isTransactionsRoute) {
-    return <TransactionsRouteShell />
-  }
-
   return (
     <section className="flex flex-col gap-6">
       {isDeveloperRole || isAttorneyRole || isBondRole || isAgentRole ? null : (
@@ -1967,7 +1963,7 @@ function Units() {
       ) : null}
 
       {!error && !showInitialTransactionsLoading && isSupabaseConfigured ? (
-        <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />}>
+        <Suspense fallback={isTransactionsRoute ? <TransactionsRouteShell /> : <LoadingSkeleton lines={8} className="rounded-[24px] border border-borderDefault bg-surface shadow-panel" />}>
           {isBondRole ? (
           <BondApplicationsTable
             rows={rows}

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
+import Modal from '../components/ui/Modal'
 import SectionHeader from '../components/ui/SectionHeader'
 import FinalListingModuleOverview from '../components/listings/FinalListingModuleOverview'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
@@ -80,6 +81,11 @@ import {
   PROPERTY_STRUCTURE_TYPES,
 } from '../lib/propertyTaxonomy'
 import { buildFinalListingModuleOverview } from '../services/listings/finalListingModuleModel'
+import {
+  completeListingPostCreateProgress,
+  startListingPostCreateProgress,
+  writeListingPostCreateProgress,
+} from '../services/listingPostCreateProgress'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const CREATE_LISTING_DRAFT_STORAGE_KEY = 'itg:agent-listings:create-draft:v1'
@@ -1006,8 +1012,25 @@ async function buildQuickListingImageDrafts(files = []) {
   )
 }
 
-async function uploadQuickListingImages(listingId = '', images = []) {
-  const uploaded = await Promise.all((Array.isArray(images) ? images : []).map(async (image, index) => {
+async function mapWithConcurrency(items = [], limit = 3, mapper) {
+  const source = Array.isArray(items) ? items : []
+  const results = new Array(source.length)
+  let nextIndex = 0
+  const worker = async () => {
+    while (nextIndex < source.length) {
+      const index = nextIndex
+      nextIndex += 1
+      results[index] = await mapper(source[index], index)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(Math.max(Number(limit) || 1, 1), source.length) }, worker))
+  return results
+}
+
+async function uploadQuickListingImages(listingId = '', images = [], { onProgress = null } = {}) {
+  const uploadableImages = (Array.isArray(images) ? images : []).filter((image) => typeof File !== 'undefined' && image?.file instanceof File)
+  let completedUploads = 0
+  const uploaded = await mapWithConcurrency(images, 3, async (image, index) => {
     const file = typeof File !== 'undefined' && image?.file instanceof File ? image.file : null
     if (!file) return image
     try {
@@ -1026,8 +1049,11 @@ async function uploadQuickListingImages(listingId = '', images = []) {
     } catch (error) {
       console.warn('[Listings] quick listing image upload failed; keeping local preview', error)
       return image
+    } finally {
+      completedUploads += 1
+      onProgress?.({ completed: completedUploads, total: uploadableImages.length })
     }
-  }))
+  })
 
   return uploaded.map((image, index) => ({
     id: String(image.id || image.path || `listing-image-${index + 1}`),
@@ -1043,11 +1069,15 @@ async function uploadQuickListingImages(listingId = '', images = []) {
 }
 
 async function syncQuickListingDistributionData(listingId = '', form = {}, context = {}) {
-  const uploadedImages = await uploadQuickListingImages(listingId, form.listingImages)
+  const uploadedImages = await uploadQuickListingImages(listingId, form.listingImages, {
+    onProgress: context.onMediaProgress,
+  })
   const description = normalizeText(form.listingDescription || form.notes)
   const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
   const publicationFeatures = buildQuickListingPublicationFeatures(form, keySellingPoints)
   return syncPrivateListingDistributionData(listingId, {
+    mergeExistingPublication: false,
+    replaceExternalLinks: false,
     publicationData: {
       title: normalizeText(form.listingTitle) || context.title || 'Listing draft',
       address: normalizeText(context.address || form.formattedAddress || form.propertyAddress),
@@ -1655,10 +1685,11 @@ function buildLocalQuickAddRequirementSync(listing = {}, existingRequirements = 
 function summarizeQuickAddSellerPortalInvite(result = null, requested = false) {
   if (!requested) return { requested: false, status: 'not_requested', sent: false }
   const payload = result && typeof result === 'object' ? result : {}
+  const status = normalizeText(payload.status) || (payload.ok || payload.sent ? 'invitation_sent' : 'not_sent')
   return {
     requested: true,
-    sent: Boolean(payload.sent || payload.ok),
-    status: normalizeText(payload.status) || (payload.ok || payload.sent ? 'invitation_sent' : 'not_sent'),
+    sent: Boolean(payload.sent || (payload.ok && status !== 'invitation_queued')),
+    status,
     activationSource: normalizeText(payload.activationSource) || SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
     sellerEmail: normalizeText(payload.sellerEmail),
     sellerPhonePresent: Boolean(payload.sellerPhone || payload.sellerPhonePresent),
@@ -1708,6 +1739,7 @@ async function sendQuickAddSellerPortalInvite({
       organisationId,
       agencyName,
       propertyAddress,
+      deferDelivery: true,
     })
     return summarizeQuickAddSellerPortalInvite(result, true)
   } catch (inviteError) {
@@ -1749,6 +1781,7 @@ function buildLocalQuickAddSellerPortalInvite({
 function buildQuickAddSellerPortalInviteMessage(inviteSummary = null) {
   if (inviteSummary?.requested !== true) return ''
   if (inviteSummary.sent) return ' Seller portal link sent.'
+  if (inviteSummary.status === 'invitation_queued') return ' Seller portal invitation queued.'
   if (inviteSummary.status === 'prepared_local') return ' Seller portal link prepared locally.'
   if (inviteSummary.error) return ' Seller portal invite needs a retry.'
   return ' Seller portal invite recorded.'
@@ -3525,6 +3558,8 @@ function AgentListings({ initialTab = null } = {}) {
   }, [getCurrentDeletedListingIds])
   const [organisationId, setOrganisationId] = useState('')
   const [deletingListingId, setDeletingListingId] = useState('')
+  const [deleteListingCandidate, setDeleteListingCandidate] = useState(null)
+  const [deleteListingError, setDeleteListingError] = useState('')
   const [openListingMenuId, setOpenListingMenuId] = useState('')
   const [shareModalListing, setShareModalListing] = useState(null)
   const [shareOptions, setShareOptions] = useState([])
@@ -5682,15 +5717,42 @@ function AgentListings({ initialTab = null } = {}) {
           sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
           completeness,
           canonicalStructure: CANONICAL_LISTING_STRUCTURE,
-        })
+        }, { includeRequirementsAndDocuments: false, syncRequirements: false, fastCreate: true })
         if (!created?.listing?.id) {
           throw new Error('Unable to create the quick listing record.')
         }
         createdListingId = created.listing.id
         createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
+        startListingPostCreateProgress(created.listing.id, {
+          imageCount: Array.isArray(form.listingImages) ? form.listingImages.length : 0,
+          portalInviteRequested: directListingPersistence.sellerPortalInvite?.requested === true,
+          organisationId: listingOrganisationId,
+        })
+        // The listing now exists. Move the agent to its workspace immediately;
+        // the remaining enrichment keeps running and reports progress there.
+        if (isCreateListingWorkspace) {
+          if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
+          navigate(`/agent/listings/${encodeURIComponent(created.listing.id)}`, {
+            state: { postCreateProgress: true },
+          })
+        }
         listingDistributionSync = await syncQuickListingDistributionData(created.listing.id, form, {
           title: listingTitle,
           address: formattedAddress || propertyAddress,
+          onMediaProgress: ({ completed, total }) => writeListingPostCreateProgress(created.listing.id, {
+            tasks: {
+              media: {
+                status: 'in_progress',
+                label: `Uploading photo ${completed} of ${total}`,
+              },
+            },
+          }),
+        })
+        writeListingPostCreateProgress(created.listing.id, {
+          tasks: {
+            media: { status: 'complete', label: 'Photos uploaded' },
+            marketing: { status: 'complete', label: 'Marketing data ready' },
+          },
         })
         await persistSellerProfileOnboardingFormData({
           listingId: created.listing.id,
@@ -5707,7 +5769,20 @@ function AgentListings({ initialTab = null } = {}) {
           uploadedDocuments = uploadResult.uploadedDocuments
           failedDocumentUploads = uploadResult.failedDocumentUploads
         }
+        writeListingPostCreateProgress(created.listing.id, {
+          tasks: { requirements: { status: 'in_progress', label: 'Preparing listing requirements' } },
+        })
         directListingRequirementSync = await syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created')
+        writeListingPostCreateProgress(created.listing.id, {
+          tasks: {
+            requirements: directListingRequirementSync?.synced
+              ? { status: 'complete', label: 'Listing requirements ready' }
+              : { status: 'attention', label: 'Listing requirements need a retry' },
+            sellerPortal: directListingPersistence.sellerPortalInvite?.requested === true
+              ? { status: 'in_progress', label: 'Sending seller portal invitation' }
+              : { status: 'skipped', label: 'Seller portal invitation not requested' },
+          },
+        })
         directListingSellerPortalInvite = await sendQuickAddSellerPortalInvite({
           listingId: created.listing.id,
           form,
@@ -5716,6 +5791,17 @@ function AgentListings({ initialTab = null } = {}) {
           organisationId: listingOrganisationId,
           agencyName: profile?.agencyName || profile?.company || workspace?.name || '',
           propertyAddress: formattedAddress || propertyAddress,
+        })
+        writeListingPostCreateProgress(created.listing.id, {
+          tasks: {
+            sellerPortal: directListingSellerPortalInvite?.status === 'invitation_queued'
+              ? { status: 'complete', label: 'Seller portal invitation queued for delivery' }
+              : directListingSellerPortalInvite?.sent
+              ? { status: 'complete', label: 'Seller portal invitation sent' }
+              : directListingSellerPortalInvite?.requested
+                ? { status: 'attention', label: 'Seller portal invitation needs a retry' }
+                : { status: 'skipped', label: 'Seller portal invitation not requested' },
+          },
         })
         handoffPlan = buildQuickAddHandoffPlan({
           listingId: created.listing.id,
@@ -5774,6 +5860,7 @@ function AgentListings({ initialTab = null } = {}) {
             createdAt: new Date().toISOString(),
           },
         }).catch(() => null)
+        completeListingPostCreateProgress(created.listing.id)
       } else {
         uploadedDocuments = documentUploadQueue.map((documentUpload) => ({
           kind: documentUpload.kind,
@@ -5995,10 +6082,6 @@ function AgentListings({ initialTab = null } = {}) {
         `Listing created as ${activationTier.workflowLabel}. Mandate follow-up still requires canonical signing before activation.${buildQuickAddSellerPortalInviteMessage(directListingSellerPortalInvite)}${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
-      if (isCreateListingWorkspace && createdListingId) {
-        if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
-        navigate(`/agent/listings/${encodeURIComponent(createdListingId)}`)
-      }
       return
     }
 
@@ -6293,7 +6376,7 @@ function AgentListings({ initialTab = null } = {}) {
     }
   }
 
-  async function handleDeleteListing(card, event) {
+  function requestDeleteListing(card, event) {
     event.stopPropagation()
     const listingIdentityKeys = Array.from(new Set([
       ...(Array.isArray(card?.identityKeys) ? card.identityKeys : []),
@@ -6307,11 +6390,28 @@ function AgentListings({ initialTab = null } = {}) {
       return
     }
 
-    const listingTitle = String(card?.title || 'this listing').trim()
-    const confirmed = window.confirm(
-      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Arch9, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
-    )
-    if (!confirmed) return
+    setOpenListingMenuId('')
+    setDeleteListingError('')
+    setDeleteListingCandidate({
+      card,
+      listingId,
+      listingIdentityKeys,
+      remoteListingId,
+      listingTitle: String(card?.title || 'this listing').trim(),
+    })
+  }
+
+  function closeDeleteListingDialog() {
+    if (deletingListingId) return
+    setDeleteListingCandidate(null)
+    setDeleteListingError('')
+  }
+
+  async function confirmDeleteListing() {
+    const candidate = deleteListingCandidate
+    if (!candidate) return
+
+    const { card, listingId, listingIdentityKeys, remoteListingId, listingTitle } = candidate
 
     setDeletingListingId(listingId)
     setError('')
@@ -6322,6 +6422,7 @@ function AgentListings({ initialTab = null } = {}) {
       if (isSupabaseConfigured && remoteListingId) {
         remoteDelete = await deletePrivateListing(remoteListingId, {
           organisationId: card?.listingRecord?.organisationId || card?.listingRecord?.organisation_id || organisationId,
+          listingReference: card?.listingRecord?.listingReference || card?.listingRecord?.listing_reference || card?.listingRecord?.listingCode,
         })
         if (!remoteDelete?.deleted) {
           throw new Error('Could not delete listing. Please try again.')
@@ -6343,8 +6444,11 @@ function AgentListings({ initialTab = null } = {}) {
       setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, currentDeletedIds)))
       await loadData({ showLoading: false, deletedIdsOverride: currentDeletedIds })
       setWorkflowMessage(`"${listingTitle}" was permanently deleted.`)
+      setDeleteListingCandidate(null)
     } catch (deleteError) {
-      setError(deleteError?.message || 'Unable to delete this listing.')
+      const message = deleteError?.message || 'Unable to delete this listing.'
+      setError(message)
+      setDeleteListingError(message)
     } finally {
       setDeletingListingId('')
     }
@@ -7749,6 +7853,8 @@ function AgentListings({ initialTab = null } = {}) {
                   <p className={`mt-1 text-xs font-semibold ${quickAddSuccess.sellerPortalInvite.error ? 'text-[#9a5b13]' : 'text-[#4d6a59]'}`}>
                     {quickAddSuccess.sellerPortalInvite.sent
                       ? 'Seller portal link sent.'
+                      : quickAddSuccess.sellerPortalInvite.status === 'invitation_queued'
+                        ? 'Seller portal invitation queued for delivery.'
                       : quickAddSuccess.sellerPortalInvite.status === 'prepared_local'
                         ? 'Seller portal link prepared locally.'
                         : 'Seller portal invite needs a retry.'}
@@ -7926,10 +8032,7 @@ function AgentListings({ initialTab = null } = {}) {
                           ) : null}
                           <button
                             type="button"
-                            onClick={(event) => {
-                              setOpenListingMenuId('')
-                              handleDeleteListing(card, event)
-                            }}
+                            onClick={(event) => requestDeleteListing(card, event)}
                             disabled={deletingListingId === card.id}
                             className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#a13b35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-60"
                           >
@@ -8336,6 +8439,39 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
         </div>
       ) : null}
+
+      <Modal
+        open={Boolean(deleteListingCandidate)}
+        onClose={deletingListingId ? undefined : closeDeleteListingDialog}
+        title="Delete listing?"
+        subtitle={`Permanently remove “${deleteListingCandidate?.listingTitle || 'this listing'}” from Arch9.`}
+        className="max-w-lg"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={closeDeleteListingDialog} disabled={Boolean(deletingListingId)} autoFocus>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void confirmDeleteListing()}
+              disabled={Boolean(deletingListingId)}
+              className="bg-[#a13b35] hover:bg-[#852e29]"
+            >
+              {deletingListingId ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              {deletingListingId ? 'Deleting...' : 'Delete listing'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="rounded-[16px] border border-[#f1c6c2] bg-[#fff5f5] p-4 text-sm leading-6 text-[#6f302c]">
+          This removes the listing from Arch9, local fallback storage, seller workflow drafts, onboarding-linked records, documents, and activity. This cannot be undone.
+        </div>
+        {deleteListingError ? (
+          <p role="alert" className="mt-4 rounded-[14px] border border-[#f1c6c2] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#a13b35]">
+            {deleteListingError}
+          </p>
+        ) : null}
+      </Modal>
 
       {showNewListingModal ? (
         <div className="fixed inset-0 z-[70] grid place-items-center bg-[#091322]/40 p-5 backdrop-blur-[1.5px]">

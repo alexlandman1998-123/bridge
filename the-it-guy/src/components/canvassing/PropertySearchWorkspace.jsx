@@ -2,6 +2,7 @@ import { Info, Search, SlidersHorizontal } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
+import { useAuthSession } from '../../context/AuthSessionContext'
 import { propertyDataProvider } from '../../services/propertyIntelligence/propertyDataProvider'
 import { PROPERTY_REPORT_TYPE_LIST } from '../../services/propertyIntelligence/propertyDataProviderContract'
 import { getKnowledgeFactoryMapStatus, searchKnowledgeFactoryMap } from '../../services/propertyIntelligence/knowledgeFactoryMapService'
@@ -33,6 +34,7 @@ function delay(milliseconds) {
 export default function PropertySearchWorkspace() {
   const navigate = useNavigate()
   const { currentWorkspace, profile } = useWorkspace()
+  const { session } = useAuthSession()
   const [filters, setFilters] = useState(INITIAL_FILTERS)
   const [propertyState, setPropertyState] = useState({ status: 'loading', properties: [], total: 0, error: '' })
   const [focusedPropertyId, setFocusedPropertyId] = useState('')
@@ -67,7 +69,7 @@ export default function PropertySearchWorkspace() {
   useEffect(() => {
     if (!KNOWLEDGE_FACTORY_MAP_ENABLED || !organisationId) return undefined
     let active = true
-    getKnowledgeFactoryMapStatus({ organisationId })
+    getKnowledgeFactoryMapStatus({ organisationId, accessToken: session?.access_token })
       .then((status) => {
         if (!active) return
         setKnowledgeFactoryState((previous) => ({ ...previous, status: status.livePropertySearchEnabled ? 'ready' : 'blocked', message: status.message || '', error: '' }))
@@ -76,7 +78,7 @@ export default function PropertySearchWorkspace() {
         if (active) setKnowledgeFactoryState((previous) => ({ ...previous, status: 'error', error: error?.message || 'Property intelligence is unavailable.' }))
       })
     return () => { active = false }
-  }, [organisationId])
+  }, [organisationId, session?.access_token])
 
   const selectedPropertyIds = useMemo(() => selectedProperties.map((property) => property.id), [selectedProperties])
   const focusedProperty = useMemo(() => propertyState.properties.find((property) => property.id === focusedPropertyId) || null, [focusedPropertyId, propertyState.properties])
@@ -172,7 +174,7 @@ export default function PropertySearchWorkspace() {
     if (knowledgeFactoryState.status === 'loading') return
     try {
       setKnowledgeFactoryState((previous) => ({ ...previous, status: 'searching', error: '' }))
-      const result = await searchKnowledgeFactoryMap({ organisationId, purpose: mapPurpose, bounds })
+      const result = await searchKnowledgeFactoryMap({ organisationId, purpose: mapPurpose, bounds, accessToken: session?.access_token })
       setFocusedPropertyId('')
       setKnowledgeFactoryState({ status: 'ready', properties: result.items || [], count: Number(result.count || 0), error: '', message: result.count ? '' : 'No mapped parcels were returned for this area.' })
     } catch (error) {

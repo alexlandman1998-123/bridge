@@ -19,7 +19,9 @@ function loadGoogleMaps(key) {
     const script = document.createElement('script')
     script.id = SCRIPT_ID
     script.async = true
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&libraries=places`
+    // Do not use Google's async-loader flag here: this component initialises
+    // immediately after the script load event and needs importLibrary present.
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&libraries=places`
     script.onload = () => window.google?.maps ? resolve(window.google.maps) : reject(new Error('Google Maps did not initialise.'))
     script.onerror = () => reject(new Error('Google Maps could not be loaded.'))
     document.head.appendChild(script)
@@ -36,7 +38,7 @@ function toBounds(map) {
 
 export default function KnowledgeFactoryParcelMap({ properties = [], loading = false, onSearchArea, onFocusProperty, onPrepareReport, focusedProperty }) {
   const containerRef = useRef(null)
-  const addressRef = useRef(null)
+  const addressHostRef = useRef(null)
   const mapRef = useRef(null)
   const polygonsRef = useRef([])
   const [state, setState] = useState({ status: apiKey() ? 'loading' : 'missing-key', error: '' })
@@ -45,19 +47,43 @@ export default function KnowledgeFactoryParcelMap({ properties = [], loading = f
     const key = apiKey()
     if (!key || !containerRef.current) return undefined
     let active = true
-    loadGoogleMaps(key).then((maps) => {
+    loadGoogleMaps(key).then(async (maps) => {
       if (!active || !maps) return
-      const map = new maps.Map(containerRef.current, { center: DEFAULT_CENTER, zoom: 12, mapTypeControl: false, streetViewControl: false, fullscreenControl: false })
+      const supportsNewPlaces = typeof maps.importLibrary === 'function'
+      const { Map } = supportsNewPlaces ? await maps.importLibrary('maps') : { Map: maps.Map }
+      if (!active || !addressHostRef.current) return
+      const map = new Map(containerRef.current, { center: DEFAULT_CENTER, zoom: 12, mapTypeControl: false, streetViewControl: false, fullscreenControl: false })
       mapRef.current = map
-      const autocomplete = new maps.places.Autocomplete(addressRef.current, { componentRestrictions: { country: 'za' }, fields: ['geometry', 'formatted_address', 'name'] })
-      autocomplete.addListener('place_changed', () => {
-        const place = autocomplete.getPlace()
-        if (place.geometry?.viewport) map.fitBounds(place.geometry.viewport)
-        else if (place.geometry?.location) {
-          map.setCenter(place.geometry.location)
+      const focusPlace = (place) => {
+        if (!place) return
+        if (place.viewport) map.fitBounds(place.viewport)
+        else if (place.location) {
+          map.setCenter(place.location)
           map.setZoom(17)
         }
-      })
+      }
+      if (supportsNewPlaces) {
+        const { PlaceAutocompleteElement } = await maps.importLibrary('places')
+        const autocomplete = new PlaceAutocompleteElement({ locationRestriction: { west: 16.45, south: -34.833, east: 32.95, north: -22.125 } })
+        autocomplete.setAttribute('aria-label', 'Search a South African address or suburb')
+        addressHostRef.current.replaceChildren(autocomplete)
+        autocomplete.addEventListener('gmp-select', async (event) => {
+          const place = event.place || event.placePrediction?.toPlace?.()
+          if (!place) return
+          if (!event.place) await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'viewport'] })
+          focusPlace(place)
+        })
+      } else {
+        const input = document.createElement('input')
+        input.className = 'h-9 w-full border-0 bg-transparent text-sm outline-none'
+        input.placeholder = 'Search a South African address or suburb'
+        addressHostRef.current.replaceChildren(input)
+        const autocomplete = new maps.places.Autocomplete(input, { componentRestrictions: { country: 'za' }, fields: ['geometry'] })
+        autocomplete.addListener('place_changed', () => {
+          const place = autocomplete.getPlace()
+          focusPlace({ location: place.geometry?.location, viewport: place.geometry?.viewport })
+        })
+      }
       setState({ status: 'ready', error: '' })
     }).catch((error) => {
       if (active) setState({ status: 'error', error: error?.message || 'Google Maps is unavailable.' })
@@ -89,7 +115,7 @@ export default function KnowledgeFactoryParcelMap({ properties = [], loading = f
   return <div className="relative min-h-[520px] flex-1 overflow-hidden bg-slate-100" data-testid="knowledge-factory-parcel-map">
     <div ref={containerRef} className="absolute inset-0" aria-label="Knowledge Factory parcel map" />
     <div className="absolute left-4 right-4 top-4 z-10 flex max-w-xl gap-2">
-      <label className="relative min-w-0 flex-1"><span className="sr-only">Search an address</span><Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} /><input ref={addressRef} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-2 pl-10 pr-3 text-sm shadow-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" placeholder="Search a South African address or suburb" /></label>
+      <label className="relative min-w-0 flex-1"><span className="sr-only">Search an address</span><Search className="pointer-events-none absolute left-3 top-1/2 z-10 -translate-y-1/2 text-slate-400" size={17} /><div ref={addressHostRef} className="min-h-11 w-full rounded-xl border border-slate-200 bg-white py-1 pl-9 pr-2 text-sm shadow-sm" /></label>
       <button type="button" disabled={loading || state.status !== 'ready'} onClick={() => { const bounds = toBounds(mapRef.current); if (bounds) onSearchArea?.(bounds) }} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#1769dc] px-4 text-sm font-semibold text-white shadow-sm hover:bg-[#1359bc] disabled:cursor-not-allowed disabled:opacity-60">{loading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}Search this area</button>
     </div>
     <div className="absolute left-4 top-20 z-10 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">{properties.length} parcels in view</div>

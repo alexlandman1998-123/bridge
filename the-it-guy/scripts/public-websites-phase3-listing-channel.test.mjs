@@ -82,11 +82,11 @@ assert.match(durableMediaFunction, /admin\.auth\.getUser\(token\)/, 'verifies th
 
 assert.match(service, /website_get_listing_publication_status/, 'client loads readiness from the guarded RPC')
 assert.match(service, /functions\.invoke\('website-listing-publication'/, 'client routes mutations through the durable media publisher')
-for (const label of ['Publish to website', 'Update website', 'Unpublish', 'Refresh status']) {
+for (const label of ['Publish', 'Update website', 'Unpublish', 'Refresh status', 'View listing']) {
   assert.match(panel, new RegExp(label, 'i'), `renders the ${label} control`)
 }
-assert.match(panel, /The CRM remains the source of truth/i, 'explains the source-of-truth boundary')
-assert.match(panel, /Durable public images/i, 'shows durable image readiness')
+assert.match(panel, /MoreVertical/, 'groups secondary website actions in the channel menu')
+assert.match(panel, /Agency Website/, 'renders the website as a first-class listing channel')
 assert.match(panel, /mediaCleanupPending/i, 'surfaces incomplete public media cleanup')
 assert.match(listingDetail, /<WebsiteListingPublicationPanel/, 'mounts the channel controls in listing detail')
 assert.match(listingDetail, /prepareAgencyWebsiteListing/, 'saves current CRM details before a channel publish/update')
