@@ -243,6 +243,11 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/email-campaign-worker/index.ts"
 
+[functions.email-automation-worker]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/email-automation-worker/index.ts"
+
 [functions.email-campaign-test]
 enabled = true
 verify_jwt = true

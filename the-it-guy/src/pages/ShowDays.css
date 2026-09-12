@@ -101,8 +101,9 @@
 .show-summary-row small { color: #77899a; font-size: .62rem; }
 .show-checklist > div { display: grid; gap: .7rem; margin-top: 1rem; }
 .show-checklist > div > div { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .15rem .2rem; }
-.show-checklist > div > div > span { display: flex; align-items: center; gap: .5rem; color: #405568; font-size: .68rem; }
-.show-checklist > div > div > span svg { color: var(--show-green); }
+.show-checklist > div > div > button { display: flex; align-items: center; gap: .5rem; border: 0; background: transparent; color: #405568; font-size: .68rem; cursor: pointer; text-align: left; }
+.show-checklist > div > div > button:hover { color: var(--show-green); }
+.show-checklist > div > div > button svg { color: var(--show-green); }
 .show-check-status { padding: .27rem .52rem; border-radius: 999px; font-size: .57rem; font-weight: 740; }
 .show-check-completed { background: #e6f6ed; color: #197653; }
 .show-check-pending { background: #fff1dc; color: #a66313; }
@@ -132,6 +133,7 @@
 .show-operations-list select { min-height: 30px; border: 1px solid #d8e2e8; border-radius: 7px; background: #fff; color: #344b5c; font-size: .64rem; }
 .show-operations-list .wa-primary-button, .show-operations-list .wa-secondary-button { min-height: 32px; padding: .4rem .6rem; font-size: .65rem; }
 .show-operations-error { color: #a03f38; font-size: .7rem; }
+.show-readiness-ready { color: #23704f; font-size: .78rem; font-weight: 600; }
 @media (max-width: 650px) { .show-operations-list article { grid-template-columns: 1fr; } }
 
 @media (max-width: 900px) {

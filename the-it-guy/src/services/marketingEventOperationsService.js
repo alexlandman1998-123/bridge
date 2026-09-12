@@ -1,6 +1,27 @@
 import { supabase } from '../lib/supabaseClient'
 import { createAgencyCrmLeadTask } from '../lib/agencyCrmRepository'
 
+export async function getMarketingEventOperations(eventId) {
+  const [summaryResult, handoffsResult, messagesResult] = await Promise.all([
+    supabase.from('marketing_event_operations_summary').select('*').eq('event_id', eventId).maybeSingle(),
+    supabase.from('marketing_event_rsvp_handoffs').select('id,status,attempts,last_error,failed_at,rsvp:marketing_event_rsvps(full_name,email)').eq('event_id', eventId).eq('status', 'failed').order('failed_at', { ascending: false }),
+    supabase.from('marketing_event_rsvp_messages').select('id,status,dispatch_attempts,error_message,failed_at,message_type,rsvp:marketing_event_rsvps(full_name,email)').eq('event_id', eventId).eq('status', 'failed').order('failed_at', { ascending: false }),
+  ])
+  if (summaryResult.error) throw summaryResult.error
+  if (handoffsResult.error) throw handoffsResult.error
+  if (messagesResult.error) throw messagesResult.error
+  return { summary: summaryResult.data || {}, failedHandoffs: handoffsResult.data || [], failedMessages: messagesResult.data || [] }
+}
+
+export async function retryMarketingEventOperation(kind, id) {
+  const table = kind === 'handoff' ? 'marketing_event_rsvp_handoffs' : 'marketing_event_rsvp_messages'
+  const patch = kind === 'handoff'
+    ? { status: 'queued', next_attempt_at: new Date().toISOString(), failed_at: null, last_error: null, updated_at: new Date().toISOString() }
+    : { status: 'queued', next_attempt_at: new Date().toISOString(), failed_at: null, error_message: null }
+  const { error } = await supabase.from(table).update(patch).eq('id', id).eq('status', 'failed')
+  if (error) throw error
+}
+
 export async function listMarketingEventRsvps(eventId) {
   const { data, error } = await supabase.from('marketing_event_rsvps').select('*').eq('event_id', eventId).order('submitted_at', { ascending: false })
   if (error) throw error

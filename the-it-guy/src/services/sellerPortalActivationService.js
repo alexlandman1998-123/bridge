@@ -12,6 +12,7 @@ import {
   sendSellerOnboarding,
   updatePrivateListing,
 } from './privateListingService'
+import { queueSellerPortalInviteDelivery } from './sellerPortalInviteOutboxService'
 
 export const SELLER_PORTAL_ACTIVATION_SOURCES = Object.freeze({
   sellerLead: 'seller_lead',
@@ -153,6 +154,7 @@ export async function activateSellerPortalForListing({
   agencyName = '',
   propertyAddress = '',
   ttlHours = 72,
+  deferDelivery = false,
 } = {}) {
   const source = normalizeKey(activationSource) || SELLER_PORTAL_ACTIVATION_SOURCES.existingListing
   const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: true })
@@ -232,27 +234,48 @@ export async function activateSellerPortalForListing({
     agencyName,
     agentName,
   })
-  const emailResponse = await invokeEdgeFunction('send-email', {
-    body: {
-      type: source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead ? 'seller_onboarding' : 'seller_portal_link',
-      emailKind: source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead ? 'seller_lead' : 'existing_listing',
-      activationSource: source,
-      to: sellerEmail,
-      organisationId: organisationId || listing.organisationId || listing.organisation_id || '',
+  const deliveryPayload = {
+    type: source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead ? 'seller_onboarding' : 'seller_portal_link',
+    emailKind: source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead ? 'seller_lead' : 'existing_listing',
+    activationSource: source,
+    to: sellerEmail,
+    organisationId: organisationId || listing.organisationId || listing.organisation_id || '',
+    listingId: listing.id,
+    recipientRole: 'seller',
+    recipientName: sellerName,
+    sellerName,
+    propertyTitle: propertyLabel,
+    propertyType: listing?.propertyType || listing?.property_type || '',
+    onboardingLink: portalLink,
+    portalLink,
+    agentName,
+    agentEmail,
+    agentPhone,
+    agencyName,
+    subject: preview.subject,
+  }
+  if (deferDelivery) {
+    const queued = await queueSellerPortalInviteDelivery({
       listingId: listing.id,
-      recipientRole: 'seller',
-      recipientName: sellerName,
-      sellerName,
-      propertyTitle: propertyLabel,
-      propertyType: listing?.propertyType || listing?.property_type || '',
-      onboardingLink: portalLink,
-      portalLink,
-      agentName,
-      agentEmail,
-      agentPhone,
-      agencyName,
-      subject: preview.subject,
-    },
+      organisationId: deliveryPayload.organisationId,
+      payload: deliveryPayload,
+    })
+    if (queued?.id) {
+      return {
+        ok: true,
+        queued: true,
+        listingId: listing.id,
+        activationSource: source,
+        status: 'invitation_queued',
+        sellerEmail,
+        sellerName,
+        invitation,
+        outboxId: queued.id,
+      }
+    }
+  }
+  const emailResponse = await invokeEdgeFunction('send-email', {
+    body: deliveryPayload,
   })
   if (emailResponse?.error || emailResponse?.data?.error) {
     throw emailResponse.error || new Error(emailResponse.data.error)

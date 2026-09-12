@@ -141,6 +141,47 @@ Deno.serve(async (req: Request) => {
     return response(200, { received: true, processed: true, campaign: true });
   }
 
+  const automationDelivery = providerMessageId
+    ? await supabase.from("email_automation_deliveries")
+      .select("id, organisation_id, contact_id, status")
+      .eq("provider_message_id", providerMessageId).maybeSingle()
+    : { data: null, error: null };
+  if (automationDelivery.data) {
+    const delivery = automationDelivery.data;
+    const eventMap: Record<string, string> = {
+      "email.delivered": "delivered", "email.opened": "opened", "email.clicked": "clicked",
+      "email.bounced": "bounced", "email.complained": "complained",
+    };
+    const mapped = eventMap[eventType];
+    if (!mapped) {
+      await supabase.from("notification_provider_webhook_events").update({ processing_status: "ignored", processed_at: new Date().toISOString() }).eq("id", audit.data.id);
+      return response(200, { received: true, ignored: true });
+    }
+    const inserted = await supabase.from("email_automation_delivery_events").insert({
+      organisation_id: delivery.organisation_id, delivery_id: delivery.id, provider: "resend", provider_event_id: providerEventId,
+      event_type: mapped, url: text(payload.data?.click?.link || payload.data?.url), payload, occurred_at: text(payload.created_at) || new Date().toISOString(),
+    });
+    if (inserted.error?.code !== "23505" && inserted.error) {
+      await supabase.from("notification_provider_webhook_events").update({ processing_status: "failed", processing_error: inserted.error.message, processed_at: new Date().toISOString() }).eq("id", audit.data.id);
+      return response(500, { error: inserted.error.message });
+    }
+    const rank: Record<string, number> = { queued: 0, processing: 1, sent: 2, delivered: 3, opened: 4, clicked: 5 };
+    const nextStatus = (mapped === "bounced" || mapped === "complained" || Number(rank[mapped] || 0) >= Number(rank[delivery.status] || 0)) ? mapped : delivery.status;
+    const patch: Record<string, unknown> = { status: nextStatus };
+    const now = new Date().toISOString();
+    if (mapped === "delivered") patch.delivered_at = now;
+    if (mapped === "opened") patch.opened_at = now;
+    if (mapped === "clicked") patch.clicked_at = now;
+    if (mapped === "bounced") patch.bounced_at = now;
+    await supabase.from("email_automation_deliveries").update(patch).eq("id", delivery.id);
+    if (mapped === "bounced" || mapped === "complained") {
+      const { data: contact } = await supabase.from("email_marketing_contacts").select("email").eq("id", delivery.contact_id).maybeSingle();
+      if (contact?.email) await supabase.from("email_suppressions").upsert({ organisation_id: delivery.organisation_id, email: contact.email, reason: mapped === "bounced" ? "hard_bounce" : "complaint", source: "resend" }, { onConflict: "organisation_id,email" });
+    }
+    await supabase.from("notification_provider_webhook_events").update({ processing_status: "processed", processed_at: now }).eq("id", audit.data.id);
+    return response(200, { received: true, processed: true, automation: true });
+  }
+
   if (!providerMessageId || ![
     "email.delivered", "email.bounced", "email.complained", "email.suppressed",
   ].includes(eventType)) {

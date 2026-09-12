@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { canPersistMarketingEvents, createMarketingEvent, listMarketingEvents } from '../services/marketingEventRepository'
+import { canPersistMarketingEvents, createMarketingEvent, listMarketingEvents, updateMarketingEvent, updateMarketingEventChecklist } from '../services/marketingEventRepository'
+import { assertMarketingEventPublicationReadiness } from '../services/marketingEventReadinessService'
 
 const STORAGE_KEY = 'arch9.marketing-events.v1'
 
@@ -40,6 +41,7 @@ export function useMarketingEvents(kind, seed, { organisationId = '' } = {}) {
   }, [kind, organisationId, persisted])
 
   const createEvent = useCallback(async (values) => {
+    assertMarketingEventPublicationReadiness(values, kind)
     if (persisted) {
       try {
         const event = await createMarketingEvent(organisationId, kind, values)
@@ -60,10 +62,47 @@ export function useMarketingEvents(kind, seed, { organisationId = '' } = {}) {
   }, [kind, organisationId, persisted])
 
   const updateEvent = useCallback((id, values) => {
-    setEvents((current) => current.map((event) => event.id === id ? { ...event, ...values, updatedAt: new Date().toISOString() } : event))
-  }, [])
+    assertMarketingEventPublicationReadiness(values, kind)
+    if (!persisted) {
+      setEvents((current) => current.map((event) => event.id === id ? { ...event, ...values, updatedAt: new Date().toISOString() } : event))
+      return Promise.resolve(null)
+    }
+    return updateMarketingEvent(id, values).then((event) => {
+      setEvents((current) => current.map((currentEvent) => currentEvent.id === id ? event : currentEvent))
+      return event
+    }).catch((error) => {
+      setPersistenceError(error?.message || 'Could not update shared event.')
+      throw error
+    })
+  }, [kind, persisted])
 
-  return useMemo(() => ({ events, createEvent, updateEvent, persisted, persistenceError }), [createEvent, events, persisted, persistenceError, updateEvent])
+  const refreshEvents = useCallback(async () => {
+    if (!persisted) return events
+    try {
+      const nextEvents = await listMarketingEvents(organisationId, kind)
+      setEvents(nextEvents)
+      return nextEvents
+    } catch (error) {
+      setPersistenceError(error?.message || 'Could not refresh shared events.')
+      throw error
+    }
+  }, [events, kind, organisationId, persisted])
+
+  const updateEventChecklist = useCallback((id, checklist) => {
+    if (!persisted) {
+      setEvents((current) => current.map((event) => event.id === id ? { ...event, checklist, updatedAt: new Date().toISOString() } : event))
+      return Promise.resolve(null)
+    }
+    return updateMarketingEventChecklist(id, checklist).then((event) => {
+      setEvents((current) => current.map((currentEvent) => currentEvent.id === id ? event : currentEvent))
+      return event
+    }).catch((error) => {
+      setPersistenceError(error?.message || 'Could not save the event checklist.')
+      throw error
+    })
+  }, [persisted])
+
+  return useMemo(() => ({ events, createEvent, updateEvent, updateEventChecklist, refreshEvents, persisted, persistenceError }), [createEvent, events, persisted, persistenceError, refreshEvents, updateEvent, updateEventChecklist])
 }
 
 export function formatEventDate(value) {

@@ -6,6 +6,8 @@ type Row = Record<string, unknown>;
 // worker is service-role only, so keep the client untyped rather than letting
 // supabase-js infer a `never` schema.
 type AdminClient = any;
+const MAX_ATTEMPTS = 3;
+const CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
 
 const json = (status: number, body: Row) => new Response(JSON.stringify(body), {
   status,
@@ -34,6 +36,22 @@ function splitName(fullName: string) {
 function errorMessage(error: unknown) {
   const record = asRow(error);
   return text(record.message || record.error || error) || "Worker operation failed.";
+}
+
+function nextAttemptAt(attempt: number) {
+  const delayMinutes = Math.min(60, 2 ** Math.max(0, attempt - 1));
+  return new Date(Date.now() + delayMinutes * 60 * 1000).toISOString();
+}
+
+async function recoverStaleClaims(client: AdminClient) {
+  const staleBefore = new Date(Date.now() - CLAIM_TIMEOUT_MS).toISOString();
+  const now = new Date().toISOString();
+  const [handoffs, messages] = await Promise.all([
+    client.from("marketing_event_rsvp_handoffs").update({ status: "queued", next_attempt_at: now, updated_at: now, last_error: "Recovered after an interrupted worker claim." }).eq("status", "processing").lt("last_attempt_at", staleBefore),
+    client.from("marketing_event_rsvp_messages").update({ status: "queued", next_attempt_at: now, error_message: "Recovered after an interrupted worker claim." }).eq("status", "sending").lt("last_attempt_at", staleBefore),
+  ]);
+  if (handoffs.error) throw handoffs.error;
+  if (messages.error) throw messages.error;
 }
 
 async function ensureCrmLead(client: AdminClient, handoff: Row) {
@@ -89,12 +107,15 @@ async function ensureCrmLead(client: AdminClient, handoff: Row) {
 }
 
 async function processHandoffs(client: AdminClient, limit: number) {
-  const { data, error } = await client.from("marketing_event_rsvp_handoffs").select("*, event:marketing_events(*), rsvp:marketing_event_rsvps(*)").eq("status", "queued").order("created_at", { ascending: true }).limit(limit);
+  const now = new Date().toISOString();
+  const { data, error } = await client.from("marketing_event_rsvp_handoffs").select("*, event:marketing_events(*), rsvp:marketing_event_rsvps(*)").eq("status", "queued").or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`).order("created_at", { ascending: true }).limit(limit);
   if (error) throw error;
   let processed = 0;
   let failed = 0;
+  let retried = 0;
   for (const handoff of data || []) {
-    const { data: claimed } = await client.from("marketing_event_rsvp_handoffs").update({ status: "processing", attempts: Number(handoff.attempts || 0) + 1, updated_at: new Date().toISOString() }).eq("id", handoff.id).eq("status", "queued").select("id").maybeSingle();
+    const attempt = Number(handoff.attempts || 0) + 1;
+    const { data: claimed } = await client.from("marketing_event_rsvp_handoffs").update({ status: "processing", attempts: attempt, last_attempt_at: now, next_attempt_at: null, updated_at: now }).eq("id", handoff.id).eq("status", "queued").select("id").maybeSingle();
     if (!claimed) continue;
     try {
       const { leadId, contactId } = await ensureCrmLead(client, handoff);
@@ -107,21 +128,26 @@ async function processHandoffs(client: AdminClient, limit: number) {
       if (handoffError) throw handoffError;
       processed += 1;
     } catch (error) {
-      failed += 1;
-      await client.from("marketing_event_rsvp_handoffs").update({ status: "failed", last_error: errorMessage(error), updated_at: new Date().toISOString() }).eq("id", handoff.id);
+      const terminal = attempt >= MAX_ATTEMPTS;
+      await client.from("marketing_event_rsvp_handoffs").update({ status: terminal ? "failed" : "queued", last_error: errorMessage(error), next_attempt_at: terminal ? null : nextAttemptAt(attempt), failed_at: terminal ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq("id", handoff.id);
       await client.from("marketing_event_rsvps").update({ crm_error: errorMessage(error) }).eq("id", handoff.rsvp_id);
+      if (terminal) failed += 1;
+      else retried += 1;
     }
   }
-  return { processed, failed };
+  return { processed, failed, retried };
 }
 
 async function dispatchMessages(client: AdminClient, serviceRoleKey: string, projectUrl: string, limit: number) {
-  const { data, error } = await client.from("marketing_event_rsvp_messages").select("*, event:marketing_events(*), rsvp:marketing_event_rsvps(*)").eq("status", "queued").lte("scheduled_for", new Date().toISOString()).order("scheduled_for", { ascending: true }).limit(limit);
+  const now = new Date().toISOString();
+  const { data, error } = await client.from("marketing_event_rsvp_messages").select("*, event:marketing_events(*), rsvp:marketing_event_rsvps(*)").eq("status", "queued").lte("scheduled_for", now).or(`next_attempt_at.is.null,next_attempt_at.lte.${now}`).order("scheduled_for", { ascending: true }).limit(limit);
   if (error) throw error;
   let sent = 0;
   let failed = 0;
+  let retried = 0;
   for (const message of data || []) {
-    const { data: claimed } = await client.from("marketing_event_rsvp_messages").update({ status: "sending", dispatch_attempts: Number(message.dispatch_attempts || 0) + 1, last_attempt_at: new Date().toISOString(), error_message: null }).eq("id", message.id).eq("status", "queued").select("id").maybeSingle();
+    const attempt = Number(message.dispatch_attempts || 0) + 1;
+    const { data: claimed } = await client.from("marketing_event_rsvp_messages").update({ status: "sending", dispatch_attempts: attempt, last_attempt_at: now, next_attempt_at: null, error_message: null }).eq("id", message.id).eq("status", "queued").select("id").maybeSingle();
     if (!claimed) continue;
     const event = asRow(message.event);
     const rsvp = asRow(message.rsvp);
@@ -134,11 +160,13 @@ async function dispatchMessages(client: AdminClient, serviceRoleKey: string, pro
       if (updateError) throw updateError;
       sent += 1;
     } catch (error) {
-      failed += 1;
-      await client.from("marketing_event_rsvp_messages").update({ status: "failed", error_message: errorMessage(error) }).eq("id", message.id);
+      const terminal = attempt >= MAX_ATTEMPTS;
+      await client.from("marketing_event_rsvp_messages").update({ status: terminal ? "failed" : "queued", error_message: errorMessage(error), next_attempt_at: terminal ? null : nextAttemptAt(attempt), failed_at: terminal ? new Date().toISOString() : null }).eq("id", message.id);
+      if (terminal) failed += 1;
+      else retried += 1;
     }
   }
-  return { sent, failed };
+  return { sent, failed, retried };
 }
 
 Deno.serve(async (request) => {
@@ -150,6 +178,7 @@ Deno.serve(async (request) => {
   const body = await request.json().catch(() => ({}));
   const limit = Math.min(Math.max(Number(body?.limit) || 50, 1), 100);
   try {
+    await recoverStaleClaims(client);
     const handoffs = await processHandoffs(client, limit);
     const messages = await dispatchMessages(client, serviceRoleKey, projectUrl, limit);
     return json(200, { ok: true, handoffs, messages });
