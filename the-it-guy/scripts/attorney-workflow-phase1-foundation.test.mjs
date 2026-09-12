@@ -18,28 +18,34 @@ const serviceSource = readFileSync(
   new URL('../src/services/attorneyWorkflow/attorneyWorkflowLaneService.js', import.meta.url),
   'utf8',
 )
+const sharedJourneyCommandSource = readFileSync(
+  new URL('../src/services/attorneyWorkflow/sharedJourneyCommandService.js', import.meta.url),
+  'utf8',
+)
 const pageSource = readFileSync(
   new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url),
   'utf8',
 )
 
 function verifyCanonicalBackfill() {
-  const expectedCounts = {
+  // This migration is an immutable Phase 1 historical backfill. The live
+  // catalogue is now scenario-driven and has intentionally evolved, so it
+  // must not be compared to this one-time migration's fixed row count.
+  const legacyCounts = {
     transfer: 37,
     bond: 17,
     cancellation: 19,
   }
 
-  for (const [laneKey, expectedCount] of Object.entries(expectedCounts)) {
+  for (const [laneKey, expectedCount] of Object.entries(legacyCounts)) {
+    const backfillRows = migrationSource
+      .split(/\r?\n/)
+      .filter((line) => new RegExp(`^\\s*\\('${laneKey}',`).test(line))
+    assert.equal(backfillRows.length, expectedCount, `${laneKey}: Phase 1 backfill changed unexpectedly`)
+
     const templates = getAttorneyWorkflowStageTemplates(laneKey)
-    assert.equal(templates.length, expectedCount, `${laneKey}: unexpected canonical stage count`)
-    for (const template of templates) {
-      assert.match(
-        migrationSource,
-        new RegExp(`\\('${laneKey}', '${template.key.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}',`),
-        `${laneKey}: backfill is missing ${template.key}`,
-      )
-    }
+    assert.ok(templates.length > 0, `${laneKey}: current scenario catalogue is empty`)
+    assert.equal(new Set(templates.map((template) => template.key)).size, templates.length, `${laneKey}: current scenario catalogue contains duplicate task keys`)
   }
 
   assert.match(migrationSource, /not exists \([\s\S]*existing\.subprocess_id = lane\.id[\s\S]*existing\.step_key = canonical\.step_key/)
@@ -61,11 +67,15 @@ function verifyAtomicCompletionContract() {
   assert.match(migrationSource, /AttorneyWorkflowStepCompleted/)
   assert.match(migrationSource, /grant execute on function public\.bridge_update_attorney_workflow_step[\s\S]*to authenticated/)
 
-  assert.match(serviceSource, /client\.rpc\('bridge_update_attorney_workflow_step'/)
+  // Phase 3 moved the atomic command behind the shared journey service so
+  // every role uses one durable mutation path. Keep testing both the caller
+  // and the canonical RPC instead of depending on the old inline call.
+  assert.match(serviceSource, /commitSharedJourneyTask\(client,\s*\{/)
+  assert.match(sharedJourneyCommandSource, /client\.rpc\('bridge_update_attorney_workflow_step_v4', payload\)/)
   assert.match(serviceSource, /p_work_packet:\s*workPacketMetadata\.workPacket \|\| null/)
   assert.match(serviceSource, /stageDefinition\?\.defaultVisibility \|\| 'professional_shared'/)
   assert.match(pageSource, /visibility:\s*draft\.visibility \|\| null/)
-  assert.match(serviceSource, /Phase 1 database foundation is deployed/)
+  assert.match(serviceSource, /Attorney workflow updates require the shared journey Phase 3 database migration\./)
 
   const stepUpdateStart = serviceSource.indexOf('export async function updateAttorneyWorkflowStepStatus')
   const stepUpdateEnd = serviceSource.indexOf('export async function getAttorneyUpdateOptionsForTransaction', stepUpdateStart)

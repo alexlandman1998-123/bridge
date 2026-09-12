@@ -1,4 +1,5 @@
 import { resolveTransactionFacts } from './transactionFactsResolver.js'
+import { resolveScenarioRequirementFacts, scopeScenarioRequirements } from './scenarioRequirementsEngine.js'
 import { withCanonicalDocumentRequestMetadata } from '../../core/documents/documentRequestCanonicalAdapter.js'
 
 // Phase 9 canonical document consolidation:
@@ -742,21 +743,21 @@ function dedupeById(items = []) {
 }
 
 export function resolveAttorneySigningRequirements(transactionOrFacts = {}) {
-  const facts = transactionOrFacts?.rawFieldsUsed ? transactionOrFacts : resolveTransactionFacts(transactionOrFacts)
+  const facts = resolveScenarioRequirementFacts(transactionOrFacts?.rawFieldsUsed ? transactionOrFacts : resolveTransactionFacts(transactionOrFacts))
   const signingRequirements = []
   addBaseSigningRequirements(signingRequirements, facts)
   addBondRequirements([], signingRequirements, facts)
   addCancellationRequirements([], signingRequirements, facts)
   return {
     transactionId: facts.transactionId,
-    signingRequirements: dedupeById(signingRequirements),
+    signingRequirements: scopeScenarioRequirements(dedupeById(signingRequirements), facts),
     warnings: [...(facts.confidenceWarnings || [])],
     missingFields: [...(facts.missingFields || [])],
   }
 }
 
 export function resolveLegalDocumentRequirements(transactionOrFacts = {}) {
-  const facts = transactionOrFacts?.rawFieldsUsed ? transactionOrFacts : resolveTransactionFacts(transactionOrFacts)
+  const facts = resolveScenarioRequirementFacts(transactionOrFacts?.rawFieldsUsed ? transactionOrFacts : resolveTransactionFacts(transactionOrFacts))
   const requirements = []
   const signingRequirements = []
 
@@ -773,8 +774,8 @@ export function resolveLegalDocumentRequirements(transactionOrFacts = {}) {
   return {
     transactionId: facts.transactionId,
     facts,
-    requirements: dedupeById(requirements),
-    signingRequirements: dedupeById(signingRequirements),
+    requirements: scopeScenarioRequirements(dedupeById(requirements), facts),
+    signingRequirements: scopeScenarioRequirements(dedupeById(signingRequirements), facts),
     warnings: [...(facts.confidenceWarnings || [])],
     missingFields: [...(facts.missingFields || [])],
   }

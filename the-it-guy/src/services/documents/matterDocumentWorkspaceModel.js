@@ -1,4 +1,5 @@
 import { getDocumentReadiness } from '../documentReadinessService.js'
+import { resolveRequirementReviewStatus } from './requirementReviewStatus.js'
 import { resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService.js'
 
 const RETIRED_MATTER_DOCUMENT_REQUIREMENT_KEYS = new Set(['information_sheet'])
@@ -921,7 +922,7 @@ export function buildRequiredDocumentRows({
         (uploadedDocumentId ? lookup.byDocumentId.get(String(uploadedDocumentId)) : null) ||
         requirement?.matchedDocument ||
         null
-      const status = normalizeDocumentCommandStatus(requirement?.status || linkedDocument?.review_status || linkedDocument?.status, {
+      const status = normalizeDocumentCommandStatus(resolveRequirementReviewStatus(requirement, linkedDocument), {
         hasDocument: Boolean(linkedDocument || uploadedDocumentId),
       })
       const category = resolveRequirementLibraryCategory(requirement)

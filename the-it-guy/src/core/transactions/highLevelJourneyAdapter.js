@@ -40,6 +40,15 @@ export function buildDeveloperJourneySnapshot({ transaction, rollup, plan, finan
   const sameMatter = Boolean(id && rollup?.transactionId === id)
   const source = sameMatter ? rollup.transactionJourneySnapshot?.legalJourney : null
   const snapshot = source?.status === 'ready' ? source.snapshot : null
+  // The authorised reader exposes requiredLaneKeys only for an active saved
+  // manifest. Route-core intentionally omits the large routing JSON, so use
+  // that reader's manifest rather than waiting for the attorney workbench.
+  // An explicitly supplied plan is still compared strictly below.
+  if (!plan && Array.isArray(snapshot?.requiredLaneKeys) && snapshot.requiredLaneKeys.length &&
+      JSON.stringify([...snapshot.requiredLaneKeys].sort()) === JSON.stringify(snapshot.lanes.map(l=>l.key).sort())) {
+    plan = { status: 'active', lanes: snapshot.lanes.map(l=>({laneKey:l.key,
+      stepKeys:l.phases.flatMap(p=>p.tasks.map(t=>t.key))})) }
+  }
   let legalJourney = { status: 'unavailable', snapshot: null }
   const validPlan = plan?.status === 'active' && Array.isArray(plan.lanes) && plan.lanes.length > 0 &&
     plan.lanes.every(l => Array.isArray(l.stepKeys) && l.stepKeys.length > 0)

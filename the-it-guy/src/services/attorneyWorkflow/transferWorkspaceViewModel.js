@@ -15,6 +15,7 @@ import {
 } from '../../core/documents/documentPartyClassification.js'
 import { getApplicableAttorneyTaskDefinitions, getAttorneyTaskSuggestion } from './matterWorkflowPlanService.js'
 import { isAttorneyTaskResolved, isAttorneyTaskCompleted, summarizeAttorneyTaskOutcomes } from '../../core/transactions/attorneyTaskOutcomes.js'
+import { evaluateTransferTaxLodgementReadiness } from './transferTaxLodgementGate.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -345,7 +346,7 @@ function isDocumentReady(document = {}) {
 
 const FICA_RECEIVED_STATUSES = new Set(['uploaded', 'under_review', 'pending_review', 'approved', 'accepted', 'verified', 'completed', 'ready'])
 const FICA_ACCEPTED_STATUSES = new Set(['approved', 'accepted', 'verified', 'completed', 'ready'])
-const GUARANTEE_STAGE_KEYS = new Set(['guarantees_requested', 'guarantees_received', 'transfer_guarantees_accepted'])
+const GUARANTEE_STAGE_KEYS = new Set(['payment_security_review', 'guarantees_requested', 'guarantees_received', 'transfer_guarantees_accepted'])
 const PARTY_DOCUMENT_KEYS = Object.freeze({
   buyer: Object.freeze([
     'buyer_id_document',
@@ -1007,10 +1008,11 @@ function buildCompletionReadiness(task = null) {
   const warnings = [
     ...missingRequiredData.map((requirement) => `${requirement.label || requirement.id} has not been captured.`),
     ...missingRequiredDocuments.map((document) => `${document.displayName || document.label || document.name || document.sourceRequirementKey} is not ready.`),
+    ...(task.taxLodgementReadiness?.warnings || []),
   ]
 
   return {
-    canComplete: missingRequiredDocuments.length === 0 && missingRequiredData.length === 0,
+    canComplete: missingRequiredDocuments.length === 0 && missingRequiredData.length === 0 && task.taxLodgementReadiness?.ready !== false,
     missingRequiredDocuments,
     missingRequiredData,
     warnings,
@@ -1224,13 +1226,15 @@ function buildAvailableActions(task = null, permissions = {}) {
           id: 'mark_complete',
           label: 'Mark Complete',
           status: 'completed',
-          // Evidence is surfaced as guidance in the Work tab. Attorneys retain
-          // authority to complete a task and record their professional reason.
-          disabled: false,
+          // Evidence is guidance for ordinary work. Lodgement is the narrow
+          // exception: the confirmed tax route needs its verified proof.
+          disabled: task.taxLodgementReadiness?.ready === false,
           requiresNote: task.completionReadiness?.canComplete === false,
-          reason: task.completionReadiness?.canComplete === false
-            ? 'Outstanding items will be recorded with the completion note.'
-            : '',
+          reason: task.taxLodgementReadiness?.ready === false
+            ? task.taxLodgementReadiness.warnings?.[0] || 'Complete the applicable transfer-tax verification before lodgement.'
+            : task.completionReadiness?.canComplete === false
+              ? 'Outstanding items will be recorded with the completion note.'
+              : '',
           command: buildTransferStatusActionCommand(task, 'completed'),
         }
       : null,
@@ -2074,7 +2078,14 @@ export function buildTransferWorkspaceViewModel({
   const permissions = lane?.permissions || {}
   const scenarioSources = buildTransferScenarioSources({ workflow, lane, facts: workflow?.facts || {} })
   const scenario = buildTransferScenarioProfile({ workflow, lane, facts: workflow?.facts || {} })
-  const tasks = buildWorkflowTasks({ workflowKey, lane, workflow, documents, scenario }).map((task) => {
+  const workflowTasks = buildWorkflowTasks({ workflowKey, lane, workflow, documents, scenario })
+  const taxLodgementReadiness = workflowKey === 'transfer'
+    ? evaluateTransferTaxLodgementReadiness({
+        transferTaxDecision: scenarioSources[0]?.transferTaxDecision || scenarioSources[1]?.transferTaxDecision,
+        steps: workflowTasks,
+      })
+    : null
+  const tasks = workflowTasks.map((task) => {
     const laneDataRequirements = Array.isArray(lane?.dataRequirements) ? lane.dataRequirements : []
     const dataRequirements = (task.requiredData || []).map((requirement) => {
       const runtimeRequirement = laneDataRequirements.find((item) => item.id === requirement.id)
@@ -2092,6 +2103,7 @@ export function buildTransferWorkspaceViewModel({
       missingDocumentCount: relatedDocuments.filter((document) => document.missing || document.ready === false).length,
       isOverdue: isTaskOverdue(task, now),
       isDueThisWeek: isTaskDueWithin(task, 7, now),
+      taxLodgementReadiness: task.key === 'lodgement_ready' ? taxLodgementReadiness : null,
     }
     return {
       ...taskWithDocuments,

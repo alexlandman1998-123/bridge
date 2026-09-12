@@ -253,12 +253,12 @@ async function resolveActorContext({ userId = null } = {}) {
   }
 }
 
-async function resolveAttorneyMembershipForTransaction(client, userId, transactionId, attorneyRole = 'transfer_attorney') {
-  const accessContext = await getAttorneyLaneAccessContext({
+async function resolveAttorneyMembershipForTransaction(client, userId, transactionId, attorneyRole = 'transfer_attorney', suppliedAccess = undefined) {
+  const accessContext = suppliedAccess === undefined ? await getAttorneyLaneAccessContext({
     userId,
     transactionId,
     attorneyRole,
-  })
+  }) : suppliedAccess
   if (accessContext?.firmId) {
     const membership = await getCurrentUserAttorneyMembership(accessContext.firmId, userId).catch(() => null)
     if (membership?.isActive) return membership
@@ -266,8 +266,8 @@ async function resolveAttorneyMembershipForTransaction(client, userId, transacti
   return null
 }
 
-export async function getAttorneyLegalPermissionContext({ userId = null, transactionId, attorneyRole = 'transfer_attorney' } = {}) {
-  const actor = await resolveActorContext({ userId })
+export async function getAttorneyLegalPermissionContext({ userId = null, transactionId, attorneyRole = 'transfer_attorney', actorContext = null, transactionAccess = null } = {}) {
+  const actor = actorContext || await resolveActorContext({ userId })
   const role = normalizeAttorneyTransactionRole(attorneyRole)
   const isAttorneyAppUser = actor.appRole === 'attorney'
   const isProfessionalAppUser = PROFESSIONAL_APP_ROLES.has(actor.appRole)
@@ -276,7 +276,7 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     ? await getAttorneyLaneAccessContext({ userId: actor.userId, transactionId, attorneyRole: role }).catch(() => null)
     : null
   let membership = isAttorneyAppUser
-    ? await resolveAttorneyMembershipForTransaction(actor.client, actor.userId, transactionId, role).catch(() => null)
+    ? await resolveAttorneyMembershipForTransaction(actor.client, actor.userId, transactionId, role, attorneyAccess).catch(() => null)
     : null
   const attorneyDelegation = isAttorneyAppUser && ['bond_attorney', 'cancellation_attorney'].includes(role)
     ? await getActiveAttorneyLaneDelegation({ transactionId, attorneyRole: role, delegateUserId: actor.userId }, { client: actor.client }).catch(() => null)
@@ -286,9 +286,11 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
   }
   const membershipRole = String(membership?.professionalRole || attorneyAccess?.firmRole || '').trim().toLowerCase()
   const isFirmManagement = isAttorneyProfessionalManagementRole(membership || { professionalRole: membershipRole })
-  const assignedRoles = isAttorneyAppUser ? await getUserAttorneyRolesForTransaction(actor.userId, transactionId).catch(() => []) : []
+  const assignedRoles = isAttorneyAppUser
+    ? transactionAccess?.assignedRoles ?? await getUserAttorneyRolesForTransaction(actor.userId, transactionId).catch(() => [])
+    : []
   const hasProfessionalParticipantAccess = isProfessionalAppUser
-    ? await userIsTransactionParticipant(actor.client, {
+    ? transactionAccess?.hasProfessionalParticipantAccess ?? await userIsTransactionParticipant(actor.client, {
         userId: actor.userId,
         email: actor.email,
         transactionId,
@@ -296,7 +298,7 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
       }).catch(() => false)
     : false
   const hasLegacyProfessionalAccess = isProfessionalAppUser
-    ? await userHasLegacyProfessionalAssignment(actor.client, {
+    ? transactionAccess?.hasLegacyProfessionalAccess ?? await userHasLegacyProfessionalAssignment(actor.client, {
         email: actor.email,
         transactionId,
         appRole: actor.appRole,
@@ -358,6 +360,44 @@ export async function getAttorneyLegalPermissionContext({ userId = null, transac
     canManageDelegation,
     viewReason: actionPermissions.actingOnBehalf ? 'explicit_lane_delegation' : canViewAsAttorney ? attorneyAccess?.reason || 'attorney_access' : canViewAsProfessional ? 'professional_participant' : 'no_access',
   }
+}
+
+// A matter can expose transfer, bond and cancellation lanes at once. Their
+// lane permissions remain independently calculated, but identity and
+// transaction-wide access must be read once—not once per lane—otherwise the
+// first attorney workspace paint fans out into duplicate RLS checks.
+export async function getAttorneyLegalPermissionContexts({ userId = null, transactionId, attorneyRoles = [] } = {}) {
+  const actor = await resolveActorContext({ userId })
+  const isAttorneyAppUser = actor.appRole === 'attorney'
+  const isProfessionalAppUser = PROFESSIONAL_APP_ROLES.has(actor.appRole)
+  const transactionAccess = {
+    assignedRoles: isAttorneyAppUser
+      ? await getUserAttorneyRolesForTransaction(actor.userId, transactionId).catch(() => [])
+      : [],
+    hasProfessionalParticipantAccess: isProfessionalAppUser
+      ? await userIsTransactionParticipant(actor.client, {
+          userId: actor.userId,
+          email: actor.email,
+          transactionId,
+          appRole: actor.appRole,
+        }).catch(() => false)
+      : false,
+    hasLegacyProfessionalAccess: isProfessionalAppUser
+      ? await userHasLegacyProfessionalAssignment(actor.client, {
+          email: actor.email,
+          transactionId,
+          appRole: actor.appRole,
+        }).catch(() => false)
+      : false,
+  }
+  const roles = [...new Set((Array.isArray(attorneyRoles) ? attorneyRoles : []).map(normalizeAttorneyTransactionRole).filter(Boolean))]
+  return Promise.all(roles.map((attorneyRole) => getAttorneyLegalPermissionContext({
+    userId: actor.userId,
+    transactionId,
+    attorneyRole,
+    actorContext: actor,
+    transactionAccess,
+  })))
 }
 
 export async function canViewTransactionLegalWorkspace(userId, transactionId) {

@@ -4349,11 +4349,13 @@ async function fetchSellerClientPortalCorePayloadByToken(client, token, options 
     throw rpc.error
   }
   if (rpc.data?.authRequired) {
-    if (accessToken) clearSellerPortalAccessToken(normalizedToken)
     return {
       portalAuth: {
         ...rpc.data,
-        sessionExpired: Boolean(rpc.data?.sessionExpired || accessToken),
+        // The database is authoritative for expiry. Do not treat a missing
+        // field from a degraded/older payload as proof that the local session
+        // has expired: doing so logs a seller out during a transient read.
+        sessionExpired: rpc.data?.sessionExpired === true,
       },
     }
   }
@@ -4395,11 +4397,12 @@ async function fetchSellerClientPortalPayloadByToken(client, token, options = {}
     throw rpc.error
   }
   if (rpc.data?.authRequired) {
-    if (accessToken) clearSellerPortalAccessToken(normalizedToken)
     return {
       portalAuth: {
         ...rpc.data,
-        sessionExpired: Boolean(rpc.data?.sessionExpired || accessToken),
+        // See the core-payload equivalent above. An explicit expiry may clear
+        // the local credential; an ambiguous response must remain recoverable.
+        sessionExpired: rpc.data?.sessionExpired === true,
       },
     }
   }

@@ -3,6 +3,15 @@ import { buildSharedMatterJourney, journeyTaskId, JOURNEY_TASK_STATUSES, LEGAL_J
 import { buildTransferWorkspaceViewModel, getLegalWorkspacePhases } from './transferWorkspaceViewModel.js'
 import { resolveMatterWorkflowPlan, isMatterWorkflowPlanCurrent, diffMatterWorkflowPlans } from './matterWorkflowPlanService.js'
 
+function clientSafeTaskLabel(definition = {}, laneKey = '') {
+  if (definition.clientVisibleAllowed !== false) {
+    return definition.sharedProgress?.client?.title || definition.label
+  }
+  if (laneKey === 'bond') return 'Bond registration progress'
+  if (laneKey === 'cancellation') return 'Bond cancellation progress'
+  return 'Transfer progress'
+}
+
 /** Internal adapter. Inputs must be an authorised, fully loaded matter snapshot. */
 export function buildPlannedSharedMatterJourney({ transactionId, revision, planRevision, routingProfile = {},
   laneSnapshots = {}, documentsByLane = {}, previousPlan = null, overallJourney = null,
@@ -51,7 +60,7 @@ export function buildPlannedSharedMatterJourney({ transactionId, revision, planR
           documents: (task.relatedDocuments || []).map(item => ({ key: item.key || item.sourceRequirementKey || item.id, ready: item.ready === true })),
           applicabilitySuggestion: task.applicabilitySuggestion || '',
         }
-        return { key: task.key, label: catalog.get(task.key).label, clientLabel: catalog.get(task.key).label,
+        return { key: task.key, label: catalog.get(task.key).label, clientLabel: clientSafeTaskLabel(catalog.get(task.key), laneKey),
           status: task.status, revision: stored.get(task.key)?.revision ?? revision,
           outstandingEvidenceCount: task.missingDocumentCount || 0 }
       }),

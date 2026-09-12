@@ -49,7 +49,9 @@ assert.ok(
 assert.match(uploadDocumentSource, /findDocumentByUploadIdempotencyKey/, 'retries should first resolve an existing document')
 assert.match(uploadDocumentSource, /removeDocumentUploadObjectAfterFailedPersistence/, 'persistence failures should trigger storage cleanup')
 assert.match(uploadDocumentSource, /void runInternalDocumentUploadFollowUps\(/, 'durable upload success should not wait for follow-up work')
-assert.match(apiSource, /Promise\.allSettled\(followUps\.map\(\(\{ run \}\) => run\(\)\)\)/, 'one failed follow-up must not block others')
+assert.match(apiSource, /Promise\.allSettled\(enabledFollowUps\.map\(\(\{ run \}\) => run\(\)\)\)/, 'one failed enabled follow-up must not block others')
+assert.match(apiSource, /followUps\.filter\(\(\{ step \}\) => inferCanonicalRequirement/, 'general uploads must not invoke implicit requirement automation')
+assert.match(uploadDocumentSource, /\.insert\(compatiblePayload\)/, 'optional-column retry must preserve document audience and links')
 assert.match(apiSource, /reportDocumentUploadTelemetry\(/, 'the transaction upload lifecycle should emit structured telemetry')
 
 console.log('document upload reliability phase 5 tests passed')

@@ -1,0 +1,43 @@
+{
+  "release": "conveyancing-workflow-20260912",
+  "scope": "Scenario-driven attorney transfer, bond and cancellation journeys; their shared client/professional projections; and the related document and permission read paths.",
+  "excludes": [
+    "Rental, auction, marketing, Property24, public-websites and unrelated organisation migrations",
+    "Any migration classed as manual data review or corrective in the legacy all-module promotion manifest",
+    "Staging fixture rows and generated dist directories"
+  ],
+  "migrations": [
+    { "version": "20260910080011", "file": "20260910080011_transfer_tax_decision_phase2_reconciliation.sql", "sha256": "fcfde60849515463820f15ba6a350fadd5f88dfb97c412d883cbc649e7875295", "kind": "data_reconciliation", "requiresProductionSnapshot": true },
+    { "version": "20260910080705", "file": "20260910080705_transfer_tax_conditional_workflow_phase3.sql", "sha256": "b2192db83abcee59a79fd1cee4dea3ce22613a582a1303a2e12304b2a30b52ce", "kind": "catalogue" },
+    { "version": "20260910092527", "file": "20260910092527_shared_journey_safe_tax_milestones.sql", "sha256": "e209dfc19399ae185dfcb72d5c273a4b66743c46829bfca35e1136ebe2071d73", "kind": "safe_projection" },
+    { "version": "20260910094209", "file": "20260910094209_transfer_tax_cross_role_safe_reader_phase7.sql", "sha256": "636189e97ee95a85abc1ce59aa98553857e26a41c8cdaca0e970759212ec6a49", "kind": "portal_reader" },
+    { "version": "20260910153146", "file": "20260910153146_reconcile_attorney_journey_catalogue.sql", "sha256": "4b6c03a482fb4a8576f209d33a4ca8943c18cea09d69496249eb57b2173a7b8d", "kind": "catalogue" },
+    { "version": "20260910153517", "file": "20260910153517_reconcile_shared_journey_reader_contract.sql", "sha256": "c22ed344b5cedce163e2cb33f10cb051df2d96227fb4e9ff910e2505abe3b19f", "kind": "portal_reader" },
+    { "version": "20260910154025", "file": "20260910154025_reconcile_attorney_lane_update_command.sql", "sha256": "e1c15f89abf7e255e0139aa340de26d7d995720913ef689276cd70d385273df8", "kind": "atomic_command" },
+    { "version": "20260910154340", "file": "20260910154340_restrict_professional_journey_audience.sql", "sha256": "d8a137ae274159513c75f9171d7fdf6633a6e66aa69d95c755de22307addce07", "kind": "access_control" },
+    { "version": "20260910160902", "file": "20260910160902_reconcile_legacy_matter_task_manifest.sql", "sha256": "6c996da7ea6350b6fbc307b6c43ccd1a32718f370da1e3bd396ac65d77853107", "kind": "reconciliation_command" },
+    { "version": "20260910161552", "file": "20260910161552_allow_operator_task_catalogue_read.sql", "sha256": "0db979876d25b7d627c332c5f0eeb0a6c6848f4a0b909d32a22e9fe053857a16", "kind": "operator_access" },
+    { "version": "20260911081342", "file": "20260911081342_document_storage_audience_boundary.sql", "sha256": "614a39cc237e569b69d7822b82de0f358821f59f066b902ae1503042187d05f9", "kind": "document_access_control" },
+    { "version": "20260911085953", "file": "20260911085953_document_visibility_choice_semantics.sql", "sha256": "f4f1966ecd9c6bf51c2655843f454e90cc9dbbe8c7bf83c6693dffcaff2f19ff", "kind": "document_access_control" },
+    { "version": "20260911093833", "file": "20260911093833_reconcile_document_workspace_dependencies.sql", "sha256": "11f28a583f8591f245f14776bf6d08bc70235c9c1bbced9ca158d339477639d0", "kind": "dependency_reconciliation" },
+    { "version": "20260911100546", "file": "20260911100546_bound_buyer_workspace_permission_reads.sql", "sha256": "2a3b3f7620b261f2e1fdd6290277cbe4db398d89583b426e8dca84075b833b56", "kind": "performance_safe_permission_read" },
+    { "version": "20260912071751", "file": "20260912071751_attorney_permission_identity_initplans.sql", "sha256": "8582a76d61dcf33272c8331f0a03943c11df018b370ca4a239d52568e45ff6e0", "kind": "guarded_permission_optimisation", "requiresProductionDefinitionMatch": true },
+    { "version": "20260912143012", "file": "20260912143012_tune_portal_journey_readers.sql", "sha256": "f605f20fa016f68ea0d1c84c56d60418a618d1fe60c19f380a37f581d2683032", "kind": "portal_reader_performance" }
+  ],
+  "requiredChecks": [
+    "npm run build",
+    "node scripts/attorney-workflow-phase1-foundation.test.mjs",
+    "node scripts/attorney-mvp-phase3-acceptance.test.mjs",
+    "node scripts/shared-journey-reconciliation.test.mjs",
+    "node scripts/workflow-load-serialization.test.mjs",
+    "node scripts/journey-read-failure-classification.test.mjs",
+    "node scripts/live-refresh-backpressure.test.mjs",
+    "five-role staging browser acceptance for transfer, bond and cancellation"
+  ],
+  "productionBlockers": [
+    "Clear the concurrent live read/refresh timeout and pass the full five-role acceptance matrix.",
+    "Repair the two legacy sixth-fixture storage paths and portal permission/RPC failures, then prove the document acceptance paths.",
+    "Take and verify a production backup/recovery point before the data reconciliation migration.",
+    "Verify the production permission-function definitions match the guard in 20260912071751 before applying it."
+  ]
+}

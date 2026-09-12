@@ -18,6 +18,10 @@ const LEGACY_TRANSFER_STEP_ALIASES = {
   buyer_fica_review: 'fica_review',
   seller_fica_review: 'fica_review',
   transfer_duty_vat_review: 'transfer_duty_receipt_received',
+  // The receipt task supersedes the legacy operational key. The other
+  // route-specific tasks must retain their own outcomes and must not create a
+  // misleading "duty receipt received" checklist result.
+  sars_transfer_tax_receipt_verified: 'transfer_duty_receipt_received',
   municipal_rates_clearance_review: 'rates_clearance_uploaded',
   levy_hoa_clearance_review: 'levy_clearance_uploaded',
   property_compliance_review: 'compliance_certificates_received',

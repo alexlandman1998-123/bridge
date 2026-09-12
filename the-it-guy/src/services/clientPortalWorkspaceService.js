@@ -1225,6 +1225,13 @@ function mapLaneStepToClientText(laneKey = '', step = null, fallback = '') {
       seller_fica_received: 'Seller verification documents have been received.',
       seller_fica_review: 'Seller verification documents are being reviewed.',
       transfer_duty_vat_review: 'Transfer tax information is being reviewed.',
+      transfer_tax_route_confirmed: 'The transfer attorneys are confirming the applicable tax route.',
+      transfer_duty_tdc01_submission: 'The transfer-tax clearance process is underway.',
+      sars_evidence_request_response: 'The transfer-tax clearance process is underway.',
+      transfer_duty_assessment_payment: 'The transfer-tax clearance process is underway.',
+      vat_exemption_evidence_verified: 'The applicable transfer-tax clearance is being verified.',
+      non_resident_seller_withholding_review: 'The transfer-tax clearance process is underway.',
+      sars_transfer_tax_receipt_verified: 'Transfer tax clearance has been verified.',
       municipal_rates_clearance_review: 'Municipal rates clearance is being reviewed.',
       levy_hoa_clearance_review: 'Property levy or HOA clearance is being reviewed where applicable.',
       property_compliance_review: 'Property compliance certificates are being reviewed.',
@@ -3971,9 +3978,9 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   })
 
   const clientRole = workspaceMode === 'selling' ? 'seller' : 'buyer'
-  const transactionJourneySnapshotPromise = mode !== 'core'
-    ? fetchClientPortalJourneySnapshotByToken(token, clientRole, {
+  const transactionJourneySnapshotPromise = fetchClientPortalJourneySnapshotByToken(token, clientRole, {
         sellerPortalAccessToken: options?.sellerPortalAccessToken,
+        legalOnly: mode === 'core',
       }).catch((error) => {
         console.warn('[client-portal-journey] Canonical snapshot unavailable', {
           clientRole,
@@ -3981,7 +3988,6 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
         })
         return { schemaVersion: 1, milestones: [], legalJourney: { status: 'unavailable', snapshot: null } }
       })
-    : Promise.resolve(null)
   let portalData = await fetchPortalDataForWorkspace(token, mode, {
     sellerPortalAccessToken: options?.sellerPortalAccessToken,
     clientRole,
@@ -4004,7 +4010,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
       }
     }
   }
-  if (!isSellerOnboardingToken(token) && portalData?.transaction?.id) {
+  if (mode !== 'core' && !isSellerOnboardingToken(token) && portalData?.transaction?.id) {
     const attorneyLaneUpdates = await fetchClientPortalAttorneyLaneUpdatesByToken(token, clientRole, { limit: 12 }).catch((error) => {
       console.warn('[client-portal-attorney-updates] Failed to resolve attorney updates', {
         token,
@@ -4081,7 +4087,7 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
   })
   const portalCapabilities = buildClientPortalCapabilities(portalProfile)
   let workflowReadModel = null
-  let transactionJourneySnapshot = null
+  let transactionJourneySnapshot = mode === 'core' ? await transactionJourneySnapshotPromise : null
   try {
     if (mode !== 'core' && portalData?.transaction?.id) {
       ;[workflowReadModel, transactionJourneySnapshot] = await Promise.all([

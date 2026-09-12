@@ -1,4 +1,5 @@
 import { resolveTransactionFacts } from './transactionFactsResolver.js'
+import { resolveScenarioRequirementFacts, scopeScenarioRequirements } from './scenarioRequirementsEngine.js'
 import {
   ATTORNEY_LANE_STAGES,
   getAttorneyDataRequirementsForLane,
@@ -546,7 +547,7 @@ function addVatTreatmentRequirements(requirements, facts) {
 }
 
 export function resolveLegalRequirements(transactionOrFacts = {}) {
-  const facts = transactionOrFacts?.rawFieldsUsed ? transactionOrFacts : resolveTransactionFacts(transactionOrFacts)
+  const facts = resolveScenarioRequirementFacts(transactionOrFacts?.rawFieldsUsed ? transactionOrFacts : resolveTransactionFacts(transactionOrFacts))
   const lanes = resolveAttorneyLanes(facts)
   const requiredAttorneyRoles = Object.values(lanes)
     .filter((lane) => lane?.role && lane.required)
@@ -617,10 +618,10 @@ export function resolveLegalRequirements(transactionOrFacts = {}) {
     facts,
     lanes,
     requiredAttorneyRoles,
-    documentRequirements,
+    documentRequirements: scopeScenarioRequirements(documentRequirements, facts),
     dataRequirements,
     updateOptions,
-    signingRequirements,
+    signingRequirements: scopeScenarioRequirements(signingRequirements, facts),
     warnings: [...(facts.confidenceWarnings || []), ...(lanes.warnings || [])],
   }
 }

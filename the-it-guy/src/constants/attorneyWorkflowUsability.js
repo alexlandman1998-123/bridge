@@ -1521,7 +1521,7 @@ const COORDINATION_RULES = {
       dependencyLaneKey: 'transfer',
       title: 'Transfer guarantee acceptance',
       description: 'Bond attorney needs the transfer attorney to accept guarantee wording and values.',
-      targetStages: ['transfer_guarantees_accepted'],
+      targetStages: ['payment_security_review'],
     },
     {
       id: 'transfer_lodgement_ready',
@@ -1537,7 +1537,7 @@ const COORDINATION_RULES = {
       dependencyLaneKey: 'transfer',
       title: 'Transfer guarantee alignment',
       description: 'Cancellation figures and guarantees must align with the transfer attorney.',
-      targetStages: ['transfer_guarantees_accepted'],
+      targetStages: ['payment_security_review'],
     },
     {
       id: 'transfer_lodgement_ready',
@@ -1573,12 +1573,7 @@ function getLaneStepIndex(steps = [], laneKey = 'transfer', stageKey = '') {
 function laneStageReached(lane = {}, targetStages = []) {
   if (!lane) return false
   const laneKey = normalizeLaneKey(lane.laneKey || lane.processType || lane.attorneyRole)
-  const laneStatus = normalizeStatus(lane.laneStatus || lane.status || lane.summary?.status)
-  if (laneStatus === 'completed') return true
-
   const steps = Array.isArray(lane.steps) ? lane.steps : []
-  const currentStage = normalizeAttorneyStageKey(getLaneCurrentStage(lane), laneKey)
-  const currentIndex = getLaneStepIndex(steps, laneKey, currentStage)
   const targetKeys = (targetStages || [])
     .map((stageKey) => normalizeAttorneyStageKey(stageKey, laneKey))
     .filter(Boolean)
@@ -1588,8 +1583,9 @@ function laneStageReached(lane = {}, targetStages = []) {
     const targetStep = targetIndex >= 0 ? steps[targetIndex] : null
     const targetStatus = normalizeStatus(targetStep?.status || '')
     if (targetStatus === 'completed' || targetStatus === 'approved') return true
-    if (targetIndex >= 0 && currentIndex > targetIndex) return true
-    return currentStage === targetKey && laneStatus === 'completed'
+    // Work is non-linear; later stages and stale summaries prove nothing about
+    // a dependency that may have been reopened.
+    return false
   })
 }
 

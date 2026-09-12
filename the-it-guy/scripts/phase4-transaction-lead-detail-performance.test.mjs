@@ -26,13 +26,12 @@ assert.match(transactionApi, /export function invalidateTransactionWorkspaceCore
 assert.match(transactionFacade, /'invalidateTransactionWorkspaceCoreCache'/)
 assert.match(
   transactionPage,
-  /invalidateTransactionWorkspaceCoreCache\(transaction\.id\)[\s\S]*?fetchTransactionRouteCoreById\(transaction\.id\)[\s\S]*?refreshTransactionDatasets\(\['workflow', 'activity'\]/,
-  'Workflow changes must rehydrate the canonical transaction projection before dependent workspace datasets.',
+  /const refreshAttorneyMutationWorkspace = useCallback[\s\S]*?refreshCanonicalTransactionSnapshot\([\s\S]*?refreshRollup: false[\s\S]*?refreshTransactionDatasets\(\['workflow'\]/,
+  'Attorney workflow changes must rehydrate the canonical projection before the one affected workspace dataset.',
 )
 
 const transactionCoreIndex = transactionPage.indexOf('await fetchTransactionRouteCoreById(transactionId)')
 const transactionRollupIndex = transactionPage.indexOf('requestTransactionRollup(transactionId)', transactionCoreIndex)
-const transactionEnrichmentIndex = transactionPage.indexOf('void fetchTransactionCoreById(transactionId)', transactionCoreIndex)
 const transactionInteractiveIndex = transactionPage.indexOf("markRouteMilestone('interactive_ready')", transactionCoreIndex)
 
 assert.ok(transactionCoreIndex > 0, 'Transaction detail must await only the stable core on its foreground path.')
@@ -41,8 +40,8 @@ assert.ok(
   'Transaction roll-up work must start after the route core is available.',
 )
 assert.ok(
-  transactionEnrichmentIndex > transactionCoreIndex && transactionEnrichmentIndex < transactionInteractiveIndex,
-  'Rich transaction metadata must be launched without being awaited before the route is marked interactive.',
+  transactionInteractiveIndex > transactionCoreIndex,
+  'The route must become interactive from the stable core without waiting for legacy enrichment.',
 )
 
 assert.match(

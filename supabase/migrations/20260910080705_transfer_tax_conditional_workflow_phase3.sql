@@ -1,0 +1,20 @@
+-- Phase 3: add the route-aware tax task catalogue. Legacy tax-review tasks are
+-- intentionally retained for historical replay; the v8 client-side plan reads
+-- these new keys according to the attorney's confirmed tax decision.
+
+insert into journey_private.task_catalog (
+  lane_key, step_key, definition, phase_key, phase_label, phase_order, task_order
+) values
+  ('transfer', 'transfer_tax_route_confirmed', jsonb_build_object('processKey','transfer','processLabel','Property transfer','stepKey','transfer_tax_route_confirmed','ownerRole','transfer_attorney','defaultVisibility','internal','clientVisibleAllowed',false,'professional',jsonb_build_object('title','Confirm Transfer Tax Route','description','The transfer attorney is confirming the applicable tax route.')), 'financial_preparation', 'Financial Preparation', 2, 0),
+  ('transfer', 'transfer_duty_tdc01_submission', jsonb_build_object('processKey','transfer','processLabel','Property transfer','stepKey','transfer_duty_tdc01_submission','ownerRole','transfer_attorney','defaultVisibility','internal','clientVisibleAllowed',false,'professional',jsonb_build_object('title','Prepare & Submit TDC01','description','The transfer-duty declaration is being prepared or submitted.')), 'financial_preparation', 'Financial Preparation', 2, 1),
+  ('transfer', 'sars_evidence_request_response', jsonb_build_object('processKey','transfer','processLabel','Property transfer','stepKey','sars_evidence_request_response','ownerRole','transfer_attorney','defaultVisibility','internal','clientVisibleAllowed',false,'professional',jsonb_build_object('title','Respond to SARS Evidence Request','description','SARS-requested supporting material is being handled.')), 'financial_preparation', 'Financial Preparation', 2, 2),
+  ('transfer', 'transfer_duty_assessment_payment', jsonb_build_object('processKey','transfer','processLabel','Property transfer','stepKey','transfer_duty_assessment_payment','ownerRole','transfer_attorney','defaultVisibility','internal','clientVisibleAllowed',false,'professional',jsonb_build_object('title','Confirm Duty Assessment & Payment','description','The transfer-duty assessment and payment are being handled.')), 'financial_preparation', 'Financial Preparation', 2, 3),
+  ('transfer', 'vat_exemption_evidence_verified', jsonb_build_object('processKey','transfer','processLabel','Property transfer','stepKey','vat_exemption_evidence_verified','ownerRole','transfer_attorney','defaultVisibility','internal','clientVisibleAllowed',false,'professional',jsonb_build_object('title','Verify VAT / Exemption Evidence','description','The applicable VAT, zero-rated, or exemption evidence is being verified.')), 'financial_preparation', 'Financial Preparation', 2, 4),
+  ('transfer', 'non_resident_seller_withholding_review', jsonb_build_object('processKey','transfer','processLabel','Property transfer','stepKey','non_resident_seller_withholding_review','ownerRole','transfer_attorney','defaultVisibility','internal','clientVisibleAllowed',false,'professional',jsonb_build_object('title','Review Non-Resident Seller Withholding','description','The non-resident seller withholding position is being reviewed.')), 'financial_preparation', 'Financial Preparation', 2, 5),
+  ('transfer', 'sars_transfer_tax_receipt_verified', jsonb_build_object('processKey','transfer','processLabel','Property transfer','stepKey','sars_transfer_tax_receipt_verified','ownerRole','transfer_attorney','defaultVisibility','professional_shared','clientVisibleAllowed',true,'professional',jsonb_build_object('title','Verify SARS Transfer-Tax Receipt','description','The applicable SARS transfer-tax proof is being verified.'),'client',jsonb_build_object('title','Transfer tax clearance','description','The transfer attorneys are completing the applicable transfer-tax clearance.')), 'financial_preparation', 'Financial Preparation', 2, 6)
+on conflict (lane_key, step_key) do update set
+  definition = excluded.definition,
+  phase_key = excluded.phase_key,
+  phase_label = excluded.phase_label,
+  phase_order = excluded.phase_order,
+  task_order = excluded.task_order;

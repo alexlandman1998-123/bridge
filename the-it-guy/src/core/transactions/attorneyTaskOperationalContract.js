@@ -74,7 +74,7 @@ function inferTaskType({ taskKey = '', requiredData = [], requiredDocuments = []
   const normalizedTaskKey = key(taskKey)
   if (/signing_scheduled|schedule|appointment/.test(normalizedTaskKey)) return ATTORNEY_TASK_TYPES.scheduleAction
   if (/requested|submitted|sent_to|issued/.test(normalizedTaskKey)) return ATTORNEY_TASK_TYPES.requestExternalAction
-  if (/approved|accepted|checked|reviewed|confirmed|resolved/.test(normalizedTaskKey)) return ATTORNEY_TASK_TYPES.reviewEvidence
+  if (/approved|accepted|checked|review(?:ed)?(?:_|$)|confirmed|resolved/.test(normalizedTaskKey)) return ATTORNEY_TASK_TYPES.reviewEvidence
   if (/captured|matter_opened|number_assigned|prepared/.test(normalizedTaskKey) && requiredData.length) return ATTORNEY_TASK_TYPES.captureInformation
   if (/fica_received|documents_received|signed_documents|receipt_received|certificate_received/.test(normalizedTaskKey)) return ATTORNEY_TASK_TYPES.collectDocuments
   if (requiredDocuments.length && /received|signed|document/.test(normalizedTaskKey)) return ATTORNEY_TASK_TYPES.collectDocuments
@@ -106,11 +106,11 @@ function buildAllowedActions({ taskType, requiredInputs, requiredDocuments, acti
   if (requiredInputs.length) {
     actions.push({ id: 'capture_data', label: 'Capture information', mode: 'task_workbench' })
   }
-  if (requiredDocuments.length) {
+  if (requiredDocuments.length || taskType === ATTORNEY_TASK_TYPES.reviewEvidence) {
     actions.push({ id: 'request_document', label: 'Request document', mode: 'document_request' })
     actions.push({ id: 'upload_document', label: 'Upload evidence', mode: 'document_upload' })
   }
-  if (taskType === ATTORNEY_TASK_TYPES.reviewEvidence && requiredDocuments.length) {
+  if (taskType === ATTORNEY_TASK_TYPES.reviewEvidence) {
     actions.push({ id: 'review_document', label: 'Review evidence', mode: 'document_review' })
   }
   if (taskType === ATTORNEY_TASK_TYPES.requestExternalAction) {

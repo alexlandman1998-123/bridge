@@ -76,6 +76,7 @@ import {
   getRoleFilteredRequirements,
 } from './buyerRequirementEngine'
 import { DEFAULT_DOCUMENT_REQUIREMENTS } from '../core/documents/documentRequirementRules'
+import { resolveRequirementReviewStatus } from '../services/documents/requirementReviewStatus.js'
 import {
   DOCUMENT_VAULT_GROUP_DEFINITIONS,
   buildTemplateMap,
@@ -273,6 +274,7 @@ import { runCanonicalDocumentRequestRecalculationBatch } from '../services/docum
 import { getCanonicalDocumentRolloutMode } from '../services/documents/canonicalDocumentConsolidationService'
 import { resolveCrossModuleDocumentReference } from '../services/documents/crossModuleDocumentKeyMapService.js'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
+import { applyTransferTaxDecisionUpdate } from '../services/transferTaxDecisionService.js'
 import {
   buildMatterWorkflowPlan,
   diffMatterWorkflowPlans,
@@ -8938,14 +8940,17 @@ export async function ensureTransactionRequiredDocuments(
       transactionId,
       client,
       formData,
+      readOnly: !sync,
       rolloutOptions: {
         transactionId,
       },
     })
 
     if (
-      canonicalResolution?.rolloutMode === 'canonical_primary' ||
-      canonicalResolution?.rolloutMode === 'canonical_only'
+      !canonicalResolution?.skipped && (
+        canonicalResolution?.rolloutMode === 'canonical_primary' ||
+        canonicalResolution?.rolloutMode === 'canonical_only'
+      )
     ) {
       return canonicalResolution.requirements || []
     }
@@ -9445,13 +9450,13 @@ function buildRequiredChecklistFromRows(requiredRows, documents) {
     const mapped = checklistByKey.get(row.key)
     const uploaded = Boolean(row.isUploaded || mapped?.complete)
     const resolvedStatus = normalizeRequiredStatus(
-      row.status,
+      resolveRequirementReviewStatus(row, mapped?.matchedDocument),
       statusFromLegacyFlags({
         isRequired: row.isRequired,
         isUploaded: uploaded,
       }),
     )
-    const complete = ['uploaded', 'under_review', 'accepted'].includes(resolvedStatus)
+    const complete = ['uploaded', 'under_review', 'accepted', 'approved', 'completed'].includes(resolvedStatus)
 
     return {
       key: row.key,
@@ -18037,10 +18042,8 @@ async function getSignedUrl(filePath, { client: suppliedClient = null, fileBucke
       continue
     }
 
-    const { data: publicUrlData } = bucket.getPublicUrl(filePath)
-    if (publicUrlData?.publicUrl) {
-      return publicUrlData.publicUrl
-    }
+    // A public URL is only a constructed address, not proof that a private
+    // document exists or that this viewer can read it. Preserve unavailable.
   }
 
   return null
@@ -32493,7 +32496,7 @@ async function fetchDirectParticipantRowsByIdentity(
       'transaction_id',
       'role_type',
       ...(includeStatus ? ['status', 'removed_at'] : []),
-      ...(includeOrganisationRelation ? ['transaction:transactions!inner(organisation_id)'] : []),
+      ...(includeOrganisationRelation ? ['transaction:transactions!transaction_participants_transaction_id_fkey!inner(organisation_id)'] : []),
     ].join(', ')
     let query = client
       .from('transaction_participants')
@@ -35388,17 +35391,17 @@ export async function fetchTransactionsByParticipant({ userId, roleType = null }
   return rows
 }
 
-async function buildTransactionWorkspaceShellFromTransaction(client, transaction, { cacheKey, timer = null } = {}) {
-  const [hydratedTransaction] = await hydrateMatterPropertyContext(client, [transaction])
+async function buildTransactionWorkspaceShellFromTransaction(client, transaction, { cacheKey, timer = null, routeOnly = false } = {}) {
+  const [hydratedTransaction] = routeOnly ? [transaction] : await hydrateMatterPropertyContext(client, [transaction])
   transaction = hydratedTransaction || transaction
   const [buyerQuery, developmentQuery, developmentProfile] = await Promise.all([
-    transaction?.buyer_id
+    !routeOnly && transaction?.buyer_id
       ? client.from('buyers').select('id, name, phone, email').eq('id', transaction.buyer_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    transaction?.development_id
+    !routeOnly && transaction?.development_id
       ? client.from('developments').select('id, name, location').eq('id', transaction.development_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    transaction?.development_id
+    !routeOnly && transaction?.development_id
       ? fetchDevelopmentProfile(client, transaction.development_id)
       : Promise.resolve(null),
   ])
@@ -35487,7 +35490,7 @@ export async function fetchTransactionRouteCoreById(transactionId) {
   if (query.error) throw query.error
 
   if (query.data?.id) {
-    const shell = await buildTransactionWorkspaceShellFromTransaction(client, query.data)
+    const shell = await buildTransactionWorkspaceShellFromTransaction(client, query.data, { routeOnly: true })
     const routeCore = { ...shell, __isRouteCore: true }
     writeTimedCache(transactionRouteCoreCache, normalizedTransactionId, routeCore)
     return routeCore
@@ -38859,9 +38862,29 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
       input.cancellationRequired ?? input.cancellation_required,
       transaction.cancellation_required ?? sellerHasExistingBond,
     ) || sellerHasExistingBond
+  const existingRoutingProfile = transaction.routing_profile_json && typeof transaction.routing_profile_json === 'object'
+    ? transaction.routing_profile_json
+    : {}
+  const transferTaxDecision = input.transferTaxDecision
+    ? applyTransferTaxDecisionUpdate(
+      existingRoutingProfile.transferTaxDecision || existingRoutingProfile.transfer_tax_decision,
+      input.transferTaxDecision,
+      input.transferTaxActor,
+    )
+    : existingRoutingProfile.transferTaxDecision || existingRoutingProfile.transfer_tax_decision
+  const decisionVatTreatment = transferTaxDecision?.status === 'confirmed' && [
+    'transfer_duty', 'vat', 'zero_rated_going_concern',
+  ].includes(transferTaxDecision.route)
+    ? transferTaxDecision.route
+    : null
   const nextTransaction = {
     ...transaction,
-    routing_profile_json: { ...transaction.routing_profile_json, mvpProfile: input.mvpProfile || transaction.routing_profile_json?.mvpProfile || {} },
+    routing_profile_json: {
+      ...existingRoutingProfile,
+      mvpProfile: input.mvpProfile || existingRoutingProfile.mvpProfile || {},
+      scenarioProfile: input.scenarioProfile || existingRoutingProfile.scenarioProfile,
+      ...(transferTaxDecision ? { transferTaxDecision } : {}),
+    },
     finance_type: financeType === 'unknown' ? transaction.finance_type || null : financeType,
     transaction_type: nullableUnknown(input.transactionType ?? input.transaction_type ?? transaction.transaction_type),
     property_type: normalizeNullableText(input.propertyType ?? input.property_type ?? transaction.property_type),
@@ -38875,7 +38898,7 @@ function buildTransactionRoutingCorrectionPayload(transaction = {}, input = {}) 
     seller_has_existing_bond: sellerHasExistingBond,
     existing_bond: sellerHasExistingBond,
     cancellation_required: cancellationRequired,
-    vat_treatment: nullableUnknown(input.vatTreatment ?? input.vat_treatment ?? transaction.vat_treatment),
+    vat_treatment: nullableUnknown(decisionVatTreatment ?? input.vatTreatment ?? input.vat_treatment ?? transaction.vat_treatment),
   }
   const priorMatterProfile = resolveTransactionRoutingProfile({ transaction }).matterProfile || {}
   const proposedRoutingProfile = resolveTransactionRoutingProfile({ transaction: nextTransaction })
@@ -38949,7 +38972,9 @@ export async function saveTransactionRoutingProfile({
   sellerHasExistingBond,
   cancellationRequired,
   vatTreatment,
+  transferTaxDecision,
   mvpProfile,
+  scenarioProfile,
   reason = '',
   actorRole = null,
 } = {}) {
@@ -38963,6 +38988,9 @@ export async function saveTransactionRoutingProfile({
   const normalizedActorRole = normalizeRoleType(actorRole || actorProfile.role || 'attorney')
   if (!['attorney', 'developer', 'internal_admin', 'admin', 'agent', 'bond_originator'].includes(normalizedActorRole)) {
     throw new Error('Your role does not have permission to update routing facts.')
+  }
+  if (transferTaxDecision && !['attorney', 'internal_admin', 'admin'].includes(normalizedActorRole)) {
+    throw new Error('Only an attorney may confirm the transfer-tax route.')
   }
 
   let transactionQuery = await client
@@ -39014,7 +39042,10 @@ export async function saveTransactionRoutingProfile({
     sellerHasExistingBond,
     cancellationRequired,
     vatTreatment,
+    transferTaxDecision,
+    transferTaxActor: { userId: actorProfile.userId || null, role: normalizedActorRole },
     mvpProfile,
+    scenarioProfile,
     matterProfile: {
       status: 'confirmed',
       confirmedAt: new Date().toISOString(),
@@ -39082,6 +39113,13 @@ export async function saveTransactionRoutingProfile({
         matterProfileStatus: routingProfile.matterProfile?.status || null,
         matterProfileRevision: routingProfile.matterProfile?.revision || 0,
         matterProfileFingerprint: routingProfile.matterProfile?.factFingerprint || null,
+        transferTaxDecision: transferTaxDecision
+          ? {
+              route: routingProfile.transferTaxDecision?.route || null,
+              status: routingProfile.transferTaxDecision?.status || null,
+              confirmedAt: routingProfile.transferTaxDecision?.confirmedAt || null,
+            }
+          : null,
         workflowPlanImpact,
       },
       createdBy: actorProfile.userId || null,
@@ -47253,11 +47291,16 @@ export async function fetchClientPortalByToken(token) {
 export async function fetchClientPortalJourneySnapshotByToken(token, actorRole = 'buyer', options = {}) {
   if (String(token || '').trim().toLowerCase().startsWith('seller-')) {
     const legalJourney = await fetchSellerSharedMatterJourney(requireClient(), token, options.sellerPortalAccessToken)
-    return legalJourney ? { schemaVersion: 1, transactionId: legalJourney.snapshot.transactionId, milestones: [], legalJourney } : null
+    return legalJourney ? { schemaVersion: 1, transactionId: legalJourney.snapshot.transactionId, milestones: [], legalOnly: true, legalJourney } : null
   }
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
   if (!link?.transaction_id) return null
+
+  if (options.legalOnly) return {
+    schemaVersion: 1, transactionId: link.transaction_id, milestones: [], legalOnly: true,
+    legalJourney: await fetchSharedMatterJourney(client, link.transaction_id),
+  }
 
   const { resolveTransactionRollup } = await loadTransactionWorkflowRollup()
   const rollup = await resolveTransactionRollup(link.transaction_id, {
@@ -51907,6 +51950,7 @@ async function runInternalDocumentUploadFollowUps(
     attorneyLaneMetadata = null,
     activeProfile = {},
     source = 'internal',
+    inferCanonicalRequirement = true,
   } = {},
 ) {
   if (!transactionId || !document?.id) return
@@ -52012,13 +52056,14 @@ async function runInternalDocumentUploadFollowUps(
     },
   ]
 
-  const results = await Promise.allSettled(followUps.map(({ run }) => run()))
+  const enabledFollowUps = followUps.filter(({ step }) => inferCanonicalRequirement || step === 'activity_log' || (step === 'document_request_link' && documentRequestId))
+  const results = await Promise.allSettled(enabledFollowUps.map(({ run }) => run()))
   results.forEach((result, index) => {
     if (result.status === 'rejected') {
       reportDocumentUploadFollowUpFailure({
         transactionId,
         documentId: document.id,
-        step: followUps[index].step,
+        step: enabledFollowUps[index].step,
         error: result.reason,
       })
     }
@@ -52045,24 +52090,25 @@ export async function uploadDocument({
   relatedEntityId = null,
   attorneyLaneKey = null,
   attorneyRole = null,
+  inferCanonicalRequirement = true,
 }) {
   const client = requireClient()
   const activeTransactionId = await assertActiveTransactionForDocumentUpload(client, transactionId)
   const activeProfile = await resolveActiveProfileContext(client)
   const filePolicy = validateDocumentUploadFile(file, { surface: 'internal_transaction', transactionId: activeTransactionId })
   const attorneyLaneMetadata = resolveAttorneyDocumentLaneMetadata({ attorneyLaneKey, attorneyRole })
-  const canonicalTarget = await resolveCanonicalRequirementTargetForUpload(client, {
+  const canonicalTarget = inferCanonicalRequirement ? await resolveCanonicalRequirementTargetForUpload(client, {
     transactionId: activeTransactionId,
     canonicalRequirementInstanceId,
     requiredDocumentKey,
     documentType,
     category,
-  })
-  const canonicalKeyCandidates = getCanonicalUploadKeyCandidates({
+  }) : null
+  const canonicalKeyCandidates = inferCanonicalRequirement ? getCanonicalUploadKeyCandidates({
     requiredDocumentKey,
     documentType,
     category,
-  })
+  }) : []
 
   const safeName = filePolicy.safeName
   const filePath = `transaction-${activeTransactionId}/${Date.now()}-${safeName}`
@@ -52183,37 +52229,14 @@ export async function uploadDocument({
     .select(documentSelectFields)
     .single()
 
-  if (
-    result.error &&
-    (isMissingColumnError(result.error, 'document_type') ||
-      isMissingColumnError(result.error, 'visibility_scope') ||
-      isMissingColumnError(result.error, 'stage_key') ||
-      isMissingColumnError(result.error, 'uploaded_by_user_id') ||
-      isMissingColumnError(result.error, 'uploaded_by_role') ||
-      isMissingColumnError(result.error, 'uploaded_by_email') ||
-      isMissingColumnError(result.error, 'is_client_visible') ||
-      isMissingColumnError(result.error, 'uploaded_by_party') ||
-      isMissingColumnError(result.error, 'bucket_key') ||
-      isMissingColumnError(result.error, 'source') ||
-      isMissingColumnError(result.error, 'file_bucket') ||
-      isMissingColumnError(result.error, 'finance_lane') ||
-      isMissingColumnError(result.error, 'related_entity_type') ||
-      isMissingColumnError(result.error, 'related_entity_id') ||
-      isMissingColumnError(result.error, 'canonical_requirement_instance_id') ||
-      isMissingColumnError(result.error, 'upload_idempotency_key') ||
-      (attorneyLaneMetadata &&
-        (isMissingColumnError(result.error, 'lane_key') ||
-          isMissingColumnError(result.error, 'attorney_role'))))
-  ) {
+  // Only the optional deduplication column may be omitted. Never silently lose
+  // audience, actor, bucket or canonical-link data on an older schema.
+  if (result.error && isMissingColumnError(result.error, 'upload_idempotency_key')) {
+    const { upload_idempotency_key: omittedIdempotencyKey, ...compatiblePayload } = documentInsertPayload
     result = await client
       .from('documents')
-      .insert({
-        transaction_id: activeTransactionId,
-        name: safeName,
-        file_path: filePath,
-        category: category || 'General',
-      })
-      .select('id, transaction_id, name, file_path, category, created_at')
+      .insert(compatiblePayload)
+      .select(documentSelectFields)
       .single()
   }
 
@@ -52289,6 +52312,7 @@ export async function uploadDocument({
     attorneyLaneMetadata,
     activeProfile,
     source,
+    inferCanonicalRequirement,
   })
 
   return {

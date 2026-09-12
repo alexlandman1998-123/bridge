@@ -172,7 +172,13 @@ function isTransferFicaReviewTask(task = {}) {
 function isTransferFinancialReviewTask(task = {}) {
   const lane = text(task.operationalContract?.lane || task.operationalContract?.laneKey).toLowerCase()
   return lane === 'transfer' && [
-    'transfer_duty_vat_review',
+    'transfer_tax_route_confirmed',
+    'transfer_duty_tdc01_submission',
+    'sars_evidence_request_response',
+    'transfer_duty_assessment_payment',
+    'vat_exemption_evidence_verified',
+    'non_resident_seller_withholding_review',
+    'sars_transfer_tax_receipt_verified',
     'municipal_rates_clearance_review',
     'levy_hoa_clearance_review',
     'property_compliance_review',

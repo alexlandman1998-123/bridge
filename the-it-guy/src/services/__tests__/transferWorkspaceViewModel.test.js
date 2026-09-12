@@ -193,8 +193,8 @@ viewModel.tasks.forEach((task) => {
 })
 
 assert.ok(
-  viewModel.workActionsByTaskKey.transfer_duty_vat_review.some((action) => action.id === 'open_finance'),
-  'financial preparation tasks expose the finance action',
+  viewModel.workActionsByTaskKey.transfer_tax_route_confirmed.some((action) => action.id === 'open_finance'),
+  'transfer-tax route tasks expose the in-workspace finance action',
 )
 assert.ok(
   viewModel.workActionsByTaskKey.municipal_rates_clearance_review.some((action) => action.id === 'open_finance'),
@@ -498,5 +498,46 @@ assert.ok(trustSellerFicaTask.requiredDocumentKeys.includes('seller_trustee_reso
 assert.ok(!companyBuyerFicaTask.requiredDocumentKeys.includes('buyer_marital_status_documents'))
 assert.ok(!trustSellerFicaTask.requiredDocumentKeys.includes('seller_company_resolution'))
 assert.ok(companyTrustScenarioModel.scenario.coverageItems.some((item) => item.key === 'cancellation_route' && item.value === 'Cancellation lane required'))
+
+const transferDutyLodgementModel = buildTransferWorkspaceViewModel({
+  workflow: {
+    ...workflow,
+    facts: {
+      ...workflow.facts,
+      transferTaxDecision: { route: 'transfer_duty', status: 'confirmed' },
+    },
+    lane: {
+      ...workflow.lane,
+      steps: [
+        ...workflow.lane.steps,
+        { id: 'tax-tdc01', stepKey: 'transfer_duty_tdc01_submission', status: 'completed', sortOrder: 30 },
+      ],
+    },
+  },
+  selectedTaskKey: 'lodgement_ready',
+})
+assert.equal(transferDutyLodgementModel.selectedTask.taxLodgementReadiness.ready, false)
+assert.equal(transferDutyLodgementModel.availableActions.primary.find((action) => action.id === 'mark_complete')?.disabled, true)
+
+const verifiedTransferDutyLodgementModel = buildTransferWorkspaceViewModel({
+  workflow: {
+    ...workflow,
+    facts: {
+      ...workflow.facts,
+      transferTaxDecision: { route: 'transfer_duty', status: 'confirmed' },
+    },
+    lane: {
+      ...workflow.lane,
+      steps: [
+        ...workflow.lane.steps,
+        { id: 'tax-tdc01', stepKey: 'transfer_duty_tdc01_submission', status: 'completed', sortOrder: 30 },
+        { id: 'tax-receipt', stepKey: 'sars_transfer_tax_receipt_verified', status: 'completed', sortOrder: 31 },
+      ],
+    },
+  },
+  selectedTaskKey: 'lodgement_ready',
+})
+assert.equal(verifiedTransferDutyLodgementModel.selectedTask.taxLodgementReadiness.ready, true)
+assert.equal(verifiedTransferDutyLodgementModel.availableActions.primary.find((action) => action.id === 'mark_complete')?.disabled, false)
 
 console.log('transferWorkspaceViewModel tests passed')

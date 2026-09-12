@@ -440,6 +440,11 @@ export function resolveTransactionFacts(transaction = {}) {
     propertyType,
     propertyTenure,
     vatTreatment,
+    // This is an attorney-owned legal determination. Onboarding facts can
+    // inform it, but must never silently choose the route on the attorney's
+    // behalf.
+    transferTaxDecision: routingProfile.transferTaxDecision || routingProfile.transfer_tax_decision || null,
+    scenarioProfile: routingProfile.scenarioProfile || null,
     isCashDeal,
     isBondDeal,
     isHybridDeal,
@@ -471,7 +476,7 @@ export function resolveTransactionFacts(transaction = {}) {
     isResale,
     isCommercialTransaction,
     isSectionalTitle: propertyTenure === 'sectional_title',
-    isEstateHoa: propertyTenure === 'estate_hoa',
+    isEstateHoa: propertyTenure === 'estate_hoa' || ['yes', 'true'].includes(String(routingProfile.hoaApplicable ?? routingProfile.mvpProfile?.hoaApplicable ?? '').toLowerCase()),
     isFreehold: propertyTenure === 'freehold',
     hasVatTreatment: vatTreatment === 'vat' || vatTreatment === 'zero_rated_going_concern',
     sellerHasExistingBond,

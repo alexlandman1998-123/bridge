@@ -1,4 +1,7 @@
 import { workflowActionLabel, workflowTaskButtonLabel } from '../lib/workflowActionLabel.js'
+import { resolveLegalTaskUploadRequirement } from '../core/transactions/legalTaskDocumentTarget.js'
+import MatterScenarioProfileEditor from '../components/transactions/MatterScenarioProfileEditor.jsx'
+import { prepopulateMatterScenarioProfile, describeScenarioChanges } from '../services/matterScenarioProfile.js'
 import TransactionDetailRouteShell from '../components/transactions/TransactionDetailRouteShell.jsx'
 import {
   Activity,
@@ -50,7 +53,9 @@ import SharedTransactionShell from '../components/SharedTransactionShell'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
 import DeveloperOverviewJourney from '../components/transaction/DeveloperOverviewJourney'
 import DeveloperConveyancingJourney from '../components/transaction/DeveloperConveyancingJourney'
+import AgentConveyancingJourney from '../components/transaction/AgentConveyancingJourney'
 import { buildDeveloperJourneySnapshot } from '../core/transactions/highLevelJourneyAdapter.js'
+import { buildLegalOverviewSummary } from '../core/transactions/legalOverviewSummary.js'
 import MatterConversation from '../components/transaction/MatterConversation'
 import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
 import { sharedJourneyHeaderPhases } from '../services/sharedMatterJourneyReader.js'
@@ -153,7 +158,6 @@ import {
   createTransactionDocumentSignedUrl,
   createTransactionWorkspaceHydrationContext,
   declineBondQuote,
-  fetchTransactionCoreById,
   fetchTransactionRouteCoreById,
   fetchTransactionById,
   fetchTransactionReferralIncentive,
@@ -6987,6 +6991,7 @@ function ArchlineMatterHeader({
         {showWorkflowProgress ? (
         <section className="rounded-[20px] border border-slate-200/80 bg-white px-4 py-5 shadow-[0_14px_32px_rgba(15,23,42,0.04)]">
           <p className="mb-4 text-xs font-semibold text-slate-600">{workflow?.title || 'Attorney work'} · Select a phase to open its tasks</p>
+          {sharedLegalJourney?.stale ? <p role="status" className="mb-3 text-sm text-amber-700">Showing the last loaded journey. Updates will retry automatically.</p> : null}
           {!visibleWorkflowSteps.length ? <p className="text-sm text-slate-500">{sharedLegalJourney?.status === 'ready' ? 'No applicable legal tasks in this lane.' : 'Legal journey unavailable. Refresh to try again.'}</p> : null}
           {workflow?.workflowPlan?.provisional ? <p className="mb-3 text-xs text-amber-700">Matter profile not confirmed. Review the buyer, seller and funding details in Work.</p> : null}
           <div className="overflow-x-auto px-1 pb-2">
@@ -8298,7 +8303,7 @@ function ArchlineTransferWorkspace({
     }
     if (action.id === 'request_document') return typeof onRequestDocument === 'function'
     if (action.id === 'upload_document') return typeof onUploadDocument === 'function'
-    if (action.id === 'open_documents') return typeof onOpenDocuments === 'function'
+    if (['open_documents', 'review_document'].includes(action.id)) return typeof onOpenDocuments === 'function'
     if (action.id === 'open_parties') return typeof onOpenParties === 'function'
     if (action.id === 'open_finance') return typeof onOpenFinance === 'function'
     if (action.id === 'schedule_signing') return typeof onScheduleTask === 'function' || typeof onExecuteCommand === 'function' || typeof onAddNote === 'function'
@@ -9626,8 +9631,9 @@ function ArchlineDocumentsWorkspace({
   const visibleParties = activePartyView === 'all'
     ? dashboardModel.parties
     : dashboardModel.parties.filter((party) => party.key === activePartyView)
-  const activeCategoryFiles = activeCategory?.documents || []
-  const activeCategoryRequirements = activeCategory?.requirements || []
+  const currentCategory = dashboardModel.parties.flatMap((party) => party.categories).find((category) => category.key === activeCategory?.key && category.partyLabel === activeCategory?.partyLabel) || activeCategory
+  const activeCategoryFiles = currentCategory?.documents || []
+  const activeCategoryRequirements = currentCategory?.requirements || []
 
   if (loading) {
     return (
@@ -9776,7 +9782,7 @@ function ArchlineDocumentsWorkspace({
         open={Boolean(activeCategory)}
         onClose={() => setActiveCategory(null)}
         title={activeCategory?.label || 'Document Category'}
-        subtitle={activeCategory ? `${activeCategory.partyLabel} - ${activeCategory.receivedCount} of ${activeCategory.requiredCount} received` : ''}
+        subtitle={currentCategory ? `${currentCategory.partyLabel} - ${currentCategory.receivedCount} of ${currentCategory.requiredCount} received` : ''}
         className="max-w-5xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -9878,10 +9884,13 @@ function ArchlineDocumentsWorkspace({
                           <Download size={13} /> {documentAccessBusy === `${row.id}:download` ? 'Preparing...' : 'Download'}
                         </button>
                       ) : null}
-                      {row.status === 'pending_review' && hasStoredFile && onReview ? (
+                      {['pending_review', 'uploaded', 'rejected'].includes(row.status) && hasStoredFile && onReview && (getDocumentCanonicalId(document) || getRequirementCanonicalId(row.requiredDocument)) ? (
                         <Button type="button" variant="secondary" size="sm" onClick={() => onReview('approve', document, row.requiredDocument)}>
                           Verify
                         </Button>
+                      ) : null}
+                      {['pending_review', 'uploaded', 'verified'].includes(row.status) && hasStoredFile && onReview && (getDocumentCanonicalId(document) || getRequirementCanonicalId(row.requiredDocument)) ? (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => onReview('reject', document, row.requiredDocument)}>Reject</Button>
                       ) : null}
                       {hasStoredFile ? (
                         <Button type="button" variant="ghost" size="sm" onClick={() => onReplace?.(document, row.requiredDocument)}>
@@ -14368,7 +14377,7 @@ function AgentTransactionCommandCenter({
   const NextActionIcon = nextAction?.Icon || FileText
   const callHref = getAgentContactHref('phone', nextContact?.phone)
   const whatsappHref = getAgentContactHref('whatsapp', nextContact?.phone)
-  const recommendationReasons = outstandingItems
+  const recommendationReasons = nextAction?.source === 'shared-legal-journey' ? [] : outstandingItems
     .map((item) => item.description || item.title)
     .filter(Boolean)
     .filter((value, index, values) => values.indexOf(value) === index)
@@ -15368,12 +15377,13 @@ function LegalWorkflowRoutingPanel({ diagnostics = null, workflows = [], canEdit
   )
 }
 
-function buildRoutingProfileDraft(transaction = {}, diagnostics = {}) {
+function buildRoutingProfileDraft(transaction = {}, diagnostics = {}, participants = []) {
   const facts = diagnostics?.facts || {}
   const profile = diagnostics?.profile || {}
   const boolString = (value) => (value == null ? 'unknown' : value ? 'true' : 'false')
   return {
     mvpProfile: { ...(transaction?.routing_profile_json?.mvpProfile || profile.mvpProfile || {}) },
+    scenarioProfile: prepopulateMatterScenarioProfile({ saved: transaction?.routing_profile_json?.scenarioProfile, legacy: { ...profile, ...facts }, participants, transaction }),
     financeType: facts.financeType || profile.financeType || transaction?.finance_type || 'unknown',
     transactionType: facts.transactionType || profile.transactionType || transaction?.transaction_type || 'unknown',
     propertyType: transaction?.property_type || transaction?.propertyType || '',
@@ -15383,6 +15393,7 @@ function buildRoutingProfileDraft(transaction = {}, diagnostics = {}) {
     sellerHasExistingBond: transaction?.routing_profile_json?.mvpProfile?.sellerExistingBond || boolString(transaction?.seller_has_existing_bond),
     cancellationRequired: boolString(facts.cancellationRequired || profile.cancellationRequired || transaction?.cancellation_required),
     vatTreatment: facts.vatTreatment || profile.vatTreatment || transaction?.vat_treatment || 'unknown',
+    transferTaxDecision: profile.transferTaxDecision || transaction?.routing_profile_json?.transferTaxDecision || {},
     reason: '',
   }
 }
@@ -15954,6 +15965,7 @@ function AttorneyTransactionDetail() {
   const discussionMessageRequestRef = useRef(null)
   liveMatterScopeRef.current = currentMatterAccessKey
   const canonicalRefreshSequenceRef = useRef(0)
+  const canonicalRefreshRequestRef = useRef({ key: '', promise: null })
   const navigationPreviewData = useMemo(
     () => buildMatterPreviewShell(location.state?.matterPreview, transactionId),
     [location.state?.matterPreview, transactionId],
@@ -16150,6 +16162,7 @@ function AttorneyTransactionDetail() {
   const transactionPerformanceBaselineRef = useRef(null)
   const attorneyMatterPerformanceBaselineRef = useRef(null)
   const initialDetailLoadKeyRef = useRef('')
+  const resetMatterScopeRef = useRef(null)
   if (transactionPerformanceBaselineRef.current?.transactionKey !== transactionId) {
     transactionPerformanceBaselineRef.current = {
       transactionKey: transactionId,
@@ -16282,6 +16295,7 @@ function AttorneyTransactionDetail() {
     }
 
     const startedAt = Date.now()
+    const loadScope = liveMatterScopeRef.current
     const telemetryUserId = profile?.id || ''
     const telemetryWorkspaceId = workspace?.id || currentMembership?.organisation_id || currentMembership?.organisationId || ''
     const backgroundSpan = background
@@ -16301,6 +16315,7 @@ function AttorneyTransactionDetail() {
       }
       setError('')
       const coreDetail = await fetchTransactionRouteCoreById(transactionId)
+      if (liveMatterScopeRef.current !== loadScope) return null
       if (coreDetail) {
         hasCoreData = true
         hasVerifiedCoreData = true
@@ -16349,6 +16364,7 @@ function AttorneyTransactionDetail() {
         }
       }
     } catch (coreError) {
+      if (liveMatterScopeRef.current !== loadScope) return null
       routeCoreLookupFailed = true
       if (!hasCoreData) {
         console.warn('[transaction-workspace] core data load deferred to full detail', {
@@ -16367,35 +16383,12 @@ function AttorneyTransactionDetail() {
       : Promise.resolve(null)
 
     if (!fullRefresh) {
-      if (!background && hasVerifiedCoreData) {
-        void fetchTransactionCoreById(transactionId)
-          .then((enrichedCore) => {
-            if (!enrichedCore) return
-            setData((previous) => {
-              const previousTransactionId = String(previous?.transaction?.id || '').trim()
-              const enrichedTransactionId = String(enrichedCore?.transaction?.id || '').trim()
-              if (previousTransactionId && enrichedTransactionId && previousTransactionId !== enrichedTransactionId) {
-                return previous
-              }
-              return {
-                ...mergeRouteCoreSnapshot(previous, enrichedCore),
-                unit: enrichedCore.unit || previous?.unit || null,
-                development: enrichedCore.development || previous?.development || null,
-                buyer: enrichedCore.buyer || previous?.buyer || null,
-                __isNavigationPreview: false,
-                __isRouteShell: false,
-                __coreHydrated: true,
-                __routeMetadataHydrated: true,
-              }
-            })
-          })
-          .catch((enrichmentError) => {
-            console.warn('[transaction-workspace] route metadata hydration deferred', {
-              transactionId,
-              message: enrichmentError?.message || 'Transaction metadata hydration failed.',
-            })
-          })
-      }
+      // The route-core projection already contains the header identity and
+      // access-critical fields. The historical "full core" enrichment fans
+      // out into every legacy overview query on first paint, even when the
+      // participant immediately opens Work. Those panels now hydrate through
+      // their own focused dataset loaders, so do not compete with the legal
+      // journey for the same database connections here.
       void initialRollupRequest.then((initialRollupResult) => {
         if (initialRollupResult) setTransactionRollupError(initialRollupResult.error?.message || '')
       })
@@ -16522,10 +16515,22 @@ function AttorneyTransactionDetail() {
 
   const loadWorkspaceDataset = useCallback(async (dataset, { force = false } = {}) => {
     const requestedTransactionId = String(transactionId || '').trim()
+    const requestScope = liveMatterScopeRef.current
     if (!isSupabaseConfigured || !requestedTransactionId || !dataset) return null
     const requestKey = `${requestedTransactionId}:${dataset}`
     const activeRequest = workspaceDatasetRequestRef.current.get(requestKey)
-    if (!force && activeRequest?.promise) return activeRequest.promise
+    if (activeRequest?.promise) {
+      if (!force) return activeRequest.promise
+      // A signal arriving during a read still needs a fresh read afterwards,
+      // but must not supersede the in-flight result and starve first paint.
+      if (!activeRequest.refreshPromise) {
+        activeRequest.refreshPromise = activeRequest.promise.catch(() => null).then(() => {
+          if (liveMatterScopeRef.current !== requestScope) return null
+          return loadWorkspaceDataset(dataset, { force: true })
+        })
+      }
+      return activeRequest.refreshPromise
+    }
     if (!force && activeRequest?.value) return activeRequest.value
 
     const sequence = (activeRequest?.sequence || 0) + 1
@@ -16534,12 +16539,38 @@ function AttorneyTransactionDetail() {
       [dataset]: { transactionId: requestedTransactionId, status: 'loading', error: '' },
     }))
     const startedAt = Date.now()
-    const promise = requestWorkspaceHydrationContext().then((hydrationContext) => dataset === 'workflow'
-      ? Promise.all([
-          loadTransactionWorkspaceDataset(dataset, requestedTransactionId, { hydrationContext }),
-          getAttorneyWorkflowOperationsForTransaction(requestedTransactionId, { initialize: false }),
-        ]).then(([detail, operations]) => ({ detail, operations }))
-      : loadTransactionWorkspaceDataset(dataset, requestedTransactionId, { hydrationContext }).then((detail) => ({ detail, operations: null })))
+    const promise = requestWorkspaceHydrationContext().then(async (hydrationContext) => {
+      if (dataset === 'workflow' && workspaceRole === 'attorney') {
+        // The attorney operations reader is the authoritative legal-workflow
+        // projection and already reads the lane/task rows. Loading the generic
+        // workflow dataset beside it issued a second RLS-protected task query
+        // for the same matter, which was the remaining hotspot on live refresh.
+        const operations = await getAttorneyWorkflowOperationsForTransaction(requestedTransactionId, { initialize: false })
+        return {
+          detail: {
+            transactionSubprocesses: (operations?.lanes || []).map((lane) => ({
+              id: lane.id || null,
+              process_type: lane.laneKey,
+              owner_type: 'attorney',
+              status: lane.laneStatus || 'not_started',
+              lane_status: lane.laneStatus || 'not_started',
+              current_stage: lane.currentStage || null,
+              steps: (lane.steps || []).map((step) => ({
+                id: step.id,
+                step_key: step.stepKey,
+                step_label: step.stepLabel,
+                status: step.status,
+                updated_at: step.updatedAt || null,
+              })),
+            })),
+          },
+          operations,
+        }
+      }
+
+      const detail = await loadTransactionWorkspaceDataset(dataset, requestedTransactionId, { hydrationContext })
+      return { detail, operations: null }
+    })
     workspaceDatasetRequestRef.current.set(requestKey, {
       promise,
       sequence,
@@ -16550,6 +16581,7 @@ function AttorneyTransactionDetail() {
     try {
       const result = await promise
       const latestRequest = workspaceDatasetRequestRef.current.get(requestKey)
+      if (liveMatterScopeRef.current !== requestScope) return null
       if (latestRequest?.sequence !== sequence) return result.detail
       if (!result.detail) throw new Error(`Transaction ${dataset} data was not found.`)
       setData((previous) => ({
@@ -16593,7 +16625,7 @@ function AttorneyTransactionDetail() {
         workspaceDatasetRequestRef.current.set(requestKey, { ...latestRequest, promise: null })
       }
     }
-  }, [requestWorkspaceHydrationContext, transactionId])
+  }, [requestWorkspaceHydrationContext, transactionId, workspaceRole])
 
   const refreshTransactionDatasets = useCallback(async (datasets, { reason = 'targeted_refresh' } = {}) => {
     const uniqueDatasets = [...new Set((Array.isArray(datasets) ? datasets : [datasets]).filter(Boolean))]
@@ -16622,7 +16654,7 @@ function AttorneyTransactionDetail() {
     }
   }, [currentMembership?.organisationId, currentMembership?.organisation_id, loadDocumentsWorkspace, loadWorkspaceDataset, profile?.id, workspace?.id])
 
-  const refreshActiveWorkspaceDataset = useCallback(async ({ reason = 'active_workspace_refresh' } = {}) => {
+  const refreshActiveWorkspaceDataset = useCallback(async ({ reason = 'active_workspace_refresh', includeDatasets = [] } = {}) => {
     const requestedMenu = String(workspaceMenu || '').toLowerCase()
     const dataset = requestedMenu === 'documents'
       ? 'documents'
@@ -16635,7 +16667,7 @@ function AttorneyTransactionDetail() {
             : ['today', 'tasks', 'transfer', 'workflow'].includes(requestedMenu)
               ? 'workflow'
               : 'activity'
-    return refreshTransactionDatasets([dataset], { reason })
+    return refreshTransactionDatasets([...includeDatasets, dataset], { reason })
   }, [refreshTransactionDatasets, workspaceMenu])
 
   // The transaction route shell is the canonical snapshot used by the header,
@@ -16648,25 +16680,64 @@ function AttorneyTransactionDetail() {
     const normalizedTransactionId = String(requestedTransactionId || '').trim()
     if (!normalizedTransactionId) return null
 
+    // A single workflow update publishes more than one browser signal (the
+    // task event, transaction update and refresh version).  Coalesce the
+    // corresponding canonical reads rather than letting every signal begin a
+    // fresh route/rollup query while the first one is still executing.
+    const activeRequest = canonicalRefreshRequestRef.current
+    if (activeRequest.key === normalizedTransactionId && activeRequest.promise) {
+      return activeRequest.promise
+    }
+
     const scope = liveMatterScopeRef.current
     const sequence = ++canonicalRefreshSequenceRef.current
     invalidateTransactionWorkspaceCoreCache(normalizedTransactionId)
-    const coreDetail = await fetchTransactionRouteCoreById(normalizedTransactionId)
-    if (liveMatterScopeRef.current !== scope || canonicalRefreshSequenceRef.current !== sequence) return null
-    if (coreDetail) {
-      setData((previous) => previous ? {
-        ...mergeRouteCoreSnapshot(previous, coreDetail),
-        __coreHydrated: true,
-      } : coreDetail)
+    const promise = (async () => {
+      const coreDetail = await fetchTransactionRouteCoreById(normalizedTransactionId)
+      if (liveMatterScopeRef.current !== scope || canonicalRefreshSequenceRef.current !== sequence) return null
+      if (coreDetail) {
+        setData((previous) => previous ? {
+          ...mergeRouteCoreSnapshot(previous, coreDetail),
+          __coreHydrated: true,
+        } : coreDetail)
+      }
+      if (refreshRollup && USE_TRANSACTION_ROLLUP_OVERVIEW) {
+        await requestTransactionRollup(normalizedTransactionId, { force: true })
+      }
+      return coreDetail
+    })()
+    canonicalRefreshRequestRef.current = { key: normalizedTransactionId, promise }
+    try {
+      return await promise
+    } finally {
+      if (canonicalRefreshRequestRef.current.promise === promise) {
+        canonicalRefreshRequestRef.current = { key: normalizedTransactionId, promise: null }
+      }
     }
-    if (refreshRollup && USE_TRANSACTION_ROLLUP_OVERVIEW) {
-      await requestTransactionRollup(normalizedTransactionId, { force: true })
-    }
-    return coreDetail
   }, [requestTransactionRollup, transactionId])
+
+  const refreshAttorneyMutationWorkspace = useCallback(async (reason) => {
+    const requestedTransactionId = String(transactionId || '').trim()
+    if (!requestedTransactionId) return null
+    // The workflow panel is the only panel whose content changed. Activity is
+    // refreshed on demand, and the overview rollup is not needed to repaint
+    // the work surface. Keeping this serial avoids an N×3 read burst across
+    // every participant subscribed to the matter.
+    await refreshCanonicalTransactionSnapshot({
+      requestedTransactionId,
+      refreshRollup: false,
+    })
+    return refreshTransactionDatasets(['workflow'], { reason })
+  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transactionId])
   backgroundRefreshHandlerRef.current = refreshActiveWorkspaceDataset
 
   useEffect(() => {
+    // Preview identity/HMR changes must not clear an already loaded matter
+    // while the initial-load guard suppresses its replacement request.
+    if (resetMatterScopeRef.current === currentMatterAccessKey) return
+    resetMatterScopeRef.current = currentMatterAccessKey
+    initialDetailLoadKeyRef.current = ''
+    foregroundLoadTransactionRef.current = ''
     setData(initialTransactionShell)
     setError('')
     setHydratingDetail(false)
@@ -16838,18 +16909,24 @@ function AttorneyTransactionDetail() {
     includeNotifications: true,
     scopeKey: currentMatterAccessKey,
     pollingIntervalMs: 15_000,
+    // `loadData` plus the active workspace loader already establish the first
+    // snapshot. Avoid starting an identical refresh as soon as realtime
+    // subscribes; updates are still picked up from signals and the first poll.
+    refreshOnMount: false,
     onRefresh: async ({ reason = 'unknown' } = {}) => {
       // A refresh signal represents an atomic transaction mutation. Reload the
-      // canonical route snapshot first, then refresh workflow/activity and the
-      // currently visible panel so every role sees the same lifecycle state.
+      // canonical route snapshot, then the panel the participant is actually
+      // viewing. Refreshing workflow *and* activity for every open role made a
+      // single task update fan out into duplicate hidden-panel reads; activity
+      // remains available when its tab is opened.
       const refreshed = await refreshCanonicalTransactionSnapshot({
         requestedTransactionId: transaction?.id || transactionId,
+        refreshRollup: String(workspaceMenu || '').toLowerCase() === 'overview',
       })
       if (!refreshed || liveMatterScopeRef.current !== currentMatterAccessKey) return false
-      await Promise.all([
-        refreshTransactionDatasets(['workflow', 'activity'], { reason: `live:${reason}` }),
-        refreshActiveWorkspaceDataset({ reason: `live:${reason}:active` }),
-      ])
+      await refreshActiveWorkspaceDataset({
+        reason: `live:${reason}`,
+      })
     },
   })
 
@@ -16938,12 +17015,9 @@ function AttorneyTransactionDetail() {
       .update({ matter_number: normalized })
       .eq('id', transaction.id)
     if (error) throw error
-    await Promise.all([
-      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
-      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_matter_number_saved' }),
-    ])
+    await refreshAttorneyMutationWorkspace('transfer_matter_number_saved')
     return true
-  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction?.id])
+  }, [refreshAttorneyMutationWorkspace, transaction?.id])
   const loadTransferMatterTeam = useCallback(async (requestedFirmId = '') => {
     if (!transaction?.id) throw new Error('Matter details are unavailable.')
     const [assignments, firms] = await Promise.all([
@@ -16972,12 +17046,9 @@ function AttorneyTransactionDetail() {
     const saved = assignmentId
       ? await updateTransactionAttorneyAssignment(assignmentId, payload)
       : await createTransactionAttorneyAssignment(payload)
-    await Promise.all([
-      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
-      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_matter_team_saved' }),
-    ])
+    await refreshAttorneyMutationWorkspace('transfer_matter_team_saved')
     return saved
-  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction?.id])
+  }, [refreshAttorneyMutationWorkspace, transaction?.id])
   const saveTransferSourceDetails = useCallback(async ({ purchasePrice, propertyDescription }) => {
     if (!transaction?.id) throw new Error('Matter details are unavailable.')
     const normalizedPrice = String(purchasePrice ?? '').trim()
@@ -16989,12 +17060,9 @@ function AttorneyTransactionDetail() {
       .update({ purchase_price: Number(normalizedPrice), property_description: normalizedDescription })
       .eq('id', transaction.id)
     if (error) throw error
-    await Promise.all([
-      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
-      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_source_details_saved' }),
-    ])
+    await refreshAttorneyMutationWorkspace('transfer_source_details_saved')
     return true
-  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction?.id])
+  }, [refreshAttorneyMutationWorkspace, transaction?.id])
   const saveTransferTitleDetails = useCallback(async ({ identifier, tenure }) => {
     if (!transaction?.id) throw new Error('Matter details are unavailable.')
     const normalizedIdentifier = String(identifier || '').trim()
@@ -17006,12 +17074,9 @@ function AttorneyTransactionDetail() {
       .update({ title_deed_number: normalizedIdentifier, property_tenure: normalizedTenure })
       .eq('id', transaction.id)
     if (error) throw error
-    await Promise.all([
-      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
-      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_title_details_saved' }),
-    ])
+    await refreshAttorneyMutationWorkspace('transfer_title_details_saved')
     return true
-  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction?.id])
+  }, [refreshAttorneyMutationWorkspace, transaction?.id])
   const saveTransferBondCancellationDecision = useCallback(async ({ existingBond, cancellationRequired }) => {
     if (!transaction?.id) throw new Error('Matter details are unavailable.')
     const profile = resolveTransactionRoutingProfile({ transaction })
@@ -17034,12 +17099,9 @@ function AttorneyTransactionDetail() {
     })
     if (nextDetail) setData(nextDetail)
     await reconcileAttorneyWorkflowPlanForTransaction(transaction.id)
-    await Promise.all([
-      refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id }),
-      refreshTransactionDatasets(['workflow', 'activity'], { reason: 'transfer_existing_bond_decision_saved' }),
-    ])
+    await refreshAttorneyMutationWorkspace('transfer_existing_bond_decision_saved')
     return true
-  }, [refreshCanonicalTransactionSnapshot, refreshTransactionDatasets, transaction, workspaceRole])
+  }, [refreshAttorneyMutationWorkspace, transaction, workspaceRole])
   const requiredDocumentChecklist = useMemo(() => {
     const rows = data?.requiredDocumentChecklist || EMPTY_ARRAY
     if (workspaceRole !== 'bond_originator') return rows
@@ -17060,7 +17122,7 @@ function AttorneyTransactionDetail() {
     const proposedProfile = resolveTransactionRoutingProfile({
       transaction: {
         ...transaction,
-        routing_profile_json: { ...transaction.routing_profile_json, mvpProfile: routingProfileDraft.mvpProfile },
+        routing_profile_json: { ...transaction.routing_profile_json, mvpProfile: routingProfileDraft.mvpProfile, scenarioProfile: routingProfileDraft.scenarioProfile },
         finance_type: routingProfileDraft.financeType === 'unknown' ? null : routingProfileDraft.financeType,
         transaction_type: routingProfileDraft.transactionType === 'unknown' ? null : routingProfileDraft.transactionType,
         property_type: routingProfileDraft.propertyType || null,
@@ -17253,7 +17315,7 @@ function AttorneyTransactionDetail() {
         ? 'finance'
         : ['stakeholders', 'parties'].includes(activeWorkspaceMenu)
           ? 'partners'
-          : ['today', 'overview', 'tasks', 'transfer'].includes(activeWorkspaceMenu)
+          : ['today', 'tasks', 'transfer'].includes(activeWorkspaceMenu)
             ? 'workflow'
             : ''
     const fullDatasetFields = {
@@ -17264,7 +17326,7 @@ function AttorneyTransactionDetail() {
     }
     const datasetHydrated = Boolean(
       data?.[`__${dataset}Hydrated`] ||
-      (data && !data.__isNavigationPreview && !data.__isRouteShell && Object.prototype.hasOwnProperty.call(data, fullDatasetFields[dataset])),
+      (dataset !== 'workflow' && data && !data.__isShell && !data.__isNavigationPreview && !data.__isRouteShell && Object.prototype.hasOwnProperty.call(data, fullDatasetFields[dataset])),
     )
     if (!dataset || datasetHydrated) return
     if (workspaceRole === 'attorney' && (!matterAccessAllowed || matterAccessKey !== currentMatterAccessKey)) return
@@ -17838,7 +17900,18 @@ function AttorneyTransactionDetail() {
     navigate(link.href)
   }, [navigate])
   const transferStageKey = getAttorneyTransferStage({ transaction, stage: transaction?.stage, unit, development })
-  const transferStageLabel = stageLabelFromAttorneyKey(transferStageKey)
+  const legalOverviewSummary = useMemo(() => {
+    if (!['attorney', 'agent', 'developer'].includes(workspaceRole)) return null
+    return buildLegalOverviewSummary(transaction?.id, transactionRollup?.transactionJourneySnapshot?.legalJourney) || {
+      source: 'shared-legal-journey',
+      stageLabel: transactionRollupLoading ? 'Legal journey loading' : 'Legal journey unavailable',
+      title: 'Review legal journey', description: 'Saved legal progress is not available yet.',
+      primaryActionLabel: 'Open Conveyancing', primaryActionTarget: 'transfer',
+      primaryLabel: 'Open Conveyancing', target: 'transfer', owner: 'Conveyancing',
+      secondaryLabel: 'View Documents', secondaryActionLabel: 'View Documents', secondaryActionTarget: 'documents',
+    }
+  }, [transaction?.id, transactionRollup, transactionRollupLoading, workspaceRole])
+  const transferStageLabel = legalOverviewSummary?.stageLabel || stageLabelFromAttorneyKey(transferStageKey)
   const lifecycleState = normalizeLifecycleState(
     transaction?.lifecycle_state || (transferStageKey === 'registered' ? 'registered' : 'active'),
   )
@@ -18226,7 +18299,7 @@ function AttorneyTransactionDetail() {
   )
   const overviewPrimaryNextAction = useMemo(
     () =>
-      USE_TRANSACTION_ROLLUP_OVERVIEW && transactionRollup
+      legalOverviewSummary || (USE_TRANSACTION_ROLLUP_OVERVIEW && transactionRollup
         ? buildOverviewPrimaryNextActionFromRollup({
             rollup: transactionRollup,
             transaction,
@@ -18240,7 +18313,7 @@ function AttorneyTransactionDetail() {
             isPrivateMatter,
             transferAttorney,
             documentRequests,
-          }),
+          })),
     [
       buyerEmail,
       documentRequests,
@@ -18251,6 +18324,7 @@ function AttorneyTransactionDetail() {
       transactionRollup,
       transaction,
       transferAttorney,
+      legalOverviewSummary,
     ],
   )
   const roleplayerIntroEvents = useMemo(
@@ -18772,8 +18846,7 @@ function AttorneyTransactionDetail() {
         },
       }))
     }
-    await refreshCanonicalTransactionSnapshot({ requestedTransactionId: transaction.id })
-    await refreshTransactionDatasets(['workflow', 'activity'], { reason: 'workflow_mutation' })
+    await refreshAttorneyMutationWorkspace('workflow_mutation')
   }
 
   async function handleResendProgressNotification(delivery) {
@@ -18798,7 +18871,7 @@ function AttorneyTransactionDetail() {
   }
 
   function openRoutingProfileModal() {
-    setRoutingProfileDraft(buildRoutingProfileDraft(transaction || {}, routingDiagnostics || {}))
+    setRoutingProfileDraft(buildRoutingProfileDraft(transaction || {}, routingDiagnostics || {}, transactionParticipants))
     setRoutingProfileError('')
     setRoutingProfileModalOpen(true)
   }
@@ -18824,7 +18897,9 @@ function AttorneyTransactionDetail() {
         sellerHasExistingBond: routingProfileDraft.sellerHasExistingBond === 'true',
         cancellationRequired: routingProfileDraft.cancellationRequired === 'true',
         vatTreatment: routingProfileDraft.vatTreatment,
+        transferTaxDecision: workspaceRole === 'attorney' ? routingProfileDraft.transferTaxDecision : undefined,
         mvpProfile: { ...routingProfileDraft.mvpProfile, sellerExistingBond: routingProfileDraft.sellerHasExistingBond },
+        scenarioProfile: routingProfileDraft.scenarioProfile,
         reason: routingProfileDraft.reason,
         actorRole: workspaceRole,
       })
@@ -19183,11 +19258,13 @@ function AttorneyTransactionDetail() {
       })
       setWorkflowStepDraft(null)
       setWorkflowInlineStepDraft(null)
-      try {
-        await refreshWorkflowAfterChange(next)
-      } catch {
-        setWorkflowError('Task saved. The workspace could not refresh; reload to see the latest progress.')
-      }
+      // The command has already committed atomically. Do not make the attorney
+      // wait for every route/workflow/activity read before closing the action
+      // dialog; those reads are refreshed in the background and a failure is
+      // reported explicitly rather than presenting the save as stuck.
+      void refreshWorkflowAfterChange(next).catch(() => {
+        setWorkflowError('Task saved. The workspace could not refresh yet; reload to see the latest progress.')
+      })
       return true
     } catch (stepError) {
       setWorkflowError(stepError?.message || 'Unable to update workflow step.')
@@ -20592,6 +20669,14 @@ function AttorneyTransactionDetail() {
     : archlineActiveLegalTaskWorkflowKey === 'bond'
       ? archlineDocumentsByWorkflow.finance || []
       : archlineDocumentsByWorkflow.cancellation || []
+  // The workflow request begins in an effect, after the route shell has painted.
+  // Until its result is known, this is loading—not a broken workflow requiring a
+  // retry. Treating the initial empty state as an error caused a yellow flash on
+  // every matter navigation.
+  const attorneyWorkflowIsLoading = workspaceRole === 'attorney' && !data?.__workflowHydrated && (
+    workspaceDatasetLoads.workflow?.status === 'loading' ||
+    (!data?.__workflowHydrated && workspaceDatasetLoads.workflow?.status !== 'error')
+  )
 
   function openTaskLinkedWorkspace(targetWorkspace, task = null) {
     if (workspaceRole === 'attorney' && activeWorkspaceMenu === 'transfer') {
@@ -20961,7 +21046,7 @@ function AttorneyTransactionDetail() {
       fallbackProgressPercent: displayedLifecycleProgress?.progressPercent,
       fallbackSource: 'agent-legacy',
     }), ...(isDeveloperTransactionView ? buildDeveloperJourneySnapshot({ transaction, rollup: transactionRollup,
-      plan: workflowOperations?.workflowPlan, financeType: normalizedFinanceType }) : {}) }),
+      plan: transaction?.routing_profile_json?.workflowPlan, financeType: normalizedFinanceType }) : {}) }),
     [agentOverviewJourneyStages, displayedLifecycleProgress?.progressPercent, transactionRollup, transaction, workflowOperations?.workflowPlan, normalizedFinanceType, isDeveloperTransactionView],
   )
   const agentOverviewJourneyLoading = Boolean(
@@ -20990,13 +21075,13 @@ function AttorneyTransactionDetail() {
   )
   const agentOverviewNextAction = useMemo(
     () =>
-      buildAgentOverviewNextAction({
+      legalOverviewSummary || buildAgentOverviewNextAction({
         outstandingItems: agentOverviewOutstandingItems,
         overviewNextActions,
         transactionContactRows,
         journeyStages: agentOverviewJourneyStages,
       }),
-    [agentOverviewJourneyStages, agentOverviewOutstandingItems, overviewNextActions, transactionContactRows],
+    [legalOverviewSummary, agentOverviewJourneyStages, agentOverviewOutstandingItems, overviewNextActions, transactionContactRows],
   )
   const agentOverviewPartyRows = useMemo(
     () =>
@@ -22250,7 +22335,11 @@ function AttorneyTransactionDetail() {
           }) || null
         : null
     const selectedVisibility = String(uploadDraft.visibility || 'client_visible').trim().toLowerCase()
-    const visibilityScope = selectedVisibility === 'internal' ? 'internal' : 'shared'
+    if (uploadDraft.satisfiesRequiredDocument === 'yes' && !linkedRequirement) {
+      setError('Select the required document this upload satisfies.')
+      return
+    }
+    const visibilityScope = selectedVisibility === 'internal' ? 'internal' : selectedVisibility === 'client_visible' ? 'client' : 'shared'
     const uploadedByParty = String(uploadDraft.uploadedByParty || 'client').trim()
     const isAttorneyUpload = String(workspaceRole || '').trim().toLowerCase() === 'attorney'
     const attorneyLane = isAttorneyUpload
@@ -22274,8 +22363,9 @@ function AttorneyTransactionDetail() {
       await uploadDocument({
         transactionId: transaction.id,
         file: uploadDraft.file,
+        inferCanonicalRequirement: uploadDraft.satisfiesRequiredDocument === 'yes',
         category: uploadDraft.category,
-        isClientVisible: visibilityScope !== 'internal',
+        isClientVisible: selectedVisibility === 'client_visible',
         visibilityScope,
         stageKey: uploadDraft.relatedWorkflow || attorneyLane?.laneKey || transferStageKey,
         requiredDocumentKey: linkedRequirement ? (uploadDraft.requiredDocumentKey || linkedRequirement?.key || null) : null,
@@ -22510,7 +22600,9 @@ function AttorneyTransactionDetail() {
   }
 
   if (!data || !transaction) {
-    return <p className="status-message error">{error || 'Transaction not found.'}</p>
+    return <div role="alert"><p className="status-message error">{error || 'Transaction not found.'}</p>
+      {error && error !== 'Transaction not found.' ? <Button type="button" onClick={() => void loadData()}>Retry matter</Button> : null}
+    </div>
   }
 
   return (
@@ -22711,14 +22803,9 @@ function AttorneyTransactionDetail() {
             result={agentOverviewJourneyModel?.legalJourney}
             loading={agentOverviewJourneyLoading}
             onOpenActivity={() => openWorkspaceMenu('activity')}
-          /> : <AgentConveyancingWorkspace
-            workflows={transferHubWorkflows}
-            activeDetailKey={activeLegalWorkflowDetailKey}
-            routingDiagnostics={routingDiagnostics}
-            activityFeed={overviewConversationEntries}
-            saving={workflowSaving}
-            onSelectWorkflow={openLegalWorkflowDetail}
-            onBackToLanes={closeLegalWorkflowDetail}
+          /> : <AgentConveyancingJourney
+            result={agentOverviewJourneyModel?.legalJourney}
+            loading={agentOverviewJourneyLoading}
             onOpenActivity={() => openWorkspaceMenu('activity')}
           />
         ) : null}
@@ -22751,9 +22838,15 @@ function AttorneyTransactionDetail() {
               })}
             </div>
 
-            {!archlineActiveLegalTaskWorkflow?.lane ? (
+            {attorneyWorkflowIsLoading ? (
+              <div className="rounded-xl border border-slate-200 bg-white p-5" role="status" aria-live="polite">
+                <div className="h-4 w-40 animate-pulse rounded bg-slate-100" />
+                <div className="mt-3 h-3 w-72 max-w-full animate-pulse rounded bg-slate-100" />
+                <span className="sr-only">Loading attorney workflow…</span>
+              </div>
+            ) : !archlineActiveLegalTaskWorkflow?.lane ? (
               <div role="alert" className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-slate-800">
-                <p>{workspaceDatasetLoads.workflow?.error || 'The attorney workflow is not available yet. Saved task progress cannot be displayed until it loads.'}</p>
+                <p>{workspaceDatasetLoads.workflow?.error || 'The attorney workflow could not be loaded. Retry to load the saved task progress.'}</p>
                 <Button type="button" variant="secondary" className="mt-3" onClick={() => loadWorkspaceDataset('workflow', { force: true }).catch(() => {})}>Retry workflow</Button>
               </div>
             ) : <ArchlineTransferWorkspace
@@ -22770,8 +22863,7 @@ function AttorneyTransactionDetail() {
               workflowError={workflowError}
               onUpdateStep={(step, status, note, workPacket, visibility) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket, visibility)}
               onUploadDocument={(task, documents = [], requirement = null) => {
-                const targetDocument = (documents || []).find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
-                const targetRequirement = requirement || targetDocument?.requirement || targetDocument?.requiredDocument || null
+                const targetRequirement = resolveLegalTaskUploadRequirement(documents || [], requirement)
                 if (targetRequirement) {
                   openDocumentUploadModal({ requirement: targetRequirement })
                 } else {
@@ -22817,8 +22909,7 @@ function AttorneyTransactionDetail() {
                 }
               }}
               onOpenDocuments={(task, taskDocuments = []) => {
-                const targetDocument = taskDocuments.find((document) => !document?.missing && (document?.requirement || document?.requiredDocument || document?.id)) || null
-                const targetRequirement = targetDocument?.requirement || targetDocument?.requiredDocument || null
+                const targetRequirement = resolveLegalTaskUploadRequirement(taskDocuments)
                 if (targetRequirement) {
                   openDocumentUploadModal({ requirement: targetRequirement })
                 } else {
@@ -22826,7 +22917,17 @@ function AttorneyTransactionDetail() {
                 }
               }}
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
-              onOpenFinance={(task) => openTaskLinkedWorkspace('finance', task)}
+              onOpenFinance={(task) => {
+                if ([
+                  'transfer_tax_route_confirmed', 'transfer_duty_tdc01_submission', 'sars_evidence_request_response',
+                  'transfer_duty_assessment_payment', 'vat_exemption_evidence_verified',
+                  'non_resident_seller_withholding_review', 'sars_transfer_tax_receipt_verified',
+                ].includes(String(task?.key || ''))) {
+                  openRoutingProfileModal()
+                  return
+                }
+                openTaskLinkedWorkspace('finance', task)
+              }}
               onOpenMatter={() => handleOpenDetailPanel('matter')}
               onSaveMatterNumber={saveTransferMatterNumber}
               onLoadMatterTeam={loadTransferMatterTeam}
@@ -22848,6 +22949,12 @@ function AttorneyTransactionDetail() {
 
         {(workspaceRole === 'attorney' || isTransactionOperatorView) && activeWorkspaceMenu === 'documents' ? (
           <section className="space-y-4">
+            {documentDataHydrated && documentWorkspaceLoad.status === 'error' ? (
+              <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Documents could not be refreshed. Showing the last loaded documents.
+                <button type="button" className="ml-2 underline" onClick={() => void loadDocumentsWorkspace({ force: true }).catch(() => {})}>Retry</button>
+              </div>
+            ) : null}
             <ArchlineDocumentsWorkspace
               loading={!documentDataHydrated && documentWorkspaceLoad.status !== 'error'}
               error={!documentDataHydrated ? documentWorkspaceLoad.error : ''}
@@ -22987,6 +23094,18 @@ function AttorneyTransactionDetail() {
                     <option value="yes">Yes</option>
                   </Field>
                 </label>
+                {uploadDraft.satisfiesRequiredDocument === 'yes' ? (
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Required document</span>
+                    <Field as="select" aria-label="Required document" value={uploadDraft.requiredDocumentKey || ''} onChange={(event) => {
+                      const requirement = requiredDocumentChecklist.find((item) => item.key === event.target.value)
+                      setUploadDraft((previous) => ({ ...previous, canonicalRequirementInstanceId: getRequirementCanonicalId(requirement) || '', requiredDocumentId: requirement?.id || '', requiredDocumentKey: requirement?.key || '', documentType: requirement?.key || previous.documentType }))
+                    }}>
+                      <option value="">Select required document</option>
+                      {requiredDocumentChecklist.map((item) => <option key={item.key} value={item.key}>{item.label || item.key}</option>)}
+                    </Field>
+                  </label>
+                ) : null}
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">Notes</span>
                   <Field as="textarea" rows={3} value={uploadDraft.notes} onChange={(event) => setUploadDraft((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Optional upload note" />
@@ -25593,6 +25712,15 @@ function AttorneyTransactionDetail() {
         )}
       >
         <form id="transaction-routing-profile-form" onSubmit={handleSaveRoutingProfile} className="grid gap-4">
+          <MatterScenarioProfileEditor value={routingProfileDraft.scenarioProfile} onChange={scenarioProfile => setRoutingProfileDraft(previous => ({ ...previous, scenarioProfile }))} />
+          <details className="rounded border border-borderSoft p-3">
+            <summary>Party profile change summary</summary>
+            <ul className="mt-2 space-y-1 text-sm">{describeScenarioChanges(
+              buildRoutingProfileDraft(transaction || {}, routingDiagnostics || {}, transactionParticipants).scenarioProfile,
+              routingProfileDraft.scenarioProfile,
+            ).map(change => <li key={change}>{change}</li>)}</ul>
+            <p className="mt-2 text-xs text-textMuted">Saving retains existing work and history. Changed facts require an applicability review.</p>
+          </details>
           {routingProfileError ? (
             <p className="rounded-[12px] border border-danger/25 bg-dangerSoft px-3 py-2 text-sm text-danger">
               {routingProfileError}
@@ -25762,6 +25890,74 @@ function AttorneyTransactionDetail() {
                 ))}
               </Field>
             </label>
+            <div className="md:col-span-2 rounded-xl border border-border bg-surfaceMuted/35 p-4">
+              <p className="text-sm font-semibold text-text">Transfer-tax decision</p>
+              <p className="mt-1 text-sm text-textMuted">Seller onboarding supplies the facts. The transfer attorney records the legal route and its basis.</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Confirmed route</span>
+                  <Field
+                    as="select"
+                    value={routingProfileDraft.transferTaxDecision?.route || 'needs_tax_advice'}
+                    onChange={(event) => setRoutingProfileDraft((previous) => ({
+                      ...previous,
+                      vatTreatment: ['transfer_duty', 'vat', 'zero_rated_going_concern'].includes(event.target.value) ? event.target.value : 'unknown',
+                      transferTaxDecision: { ...previous.transferTaxDecision, route: event.target.value },
+                    }))}
+                  >
+                    <option value="needs_tax_advice">Needs tax advice</option>
+                    <option value="transfer_duty">Transfer duty</option>
+                    <option value="vat">VAT</option>
+                    <option value="zero_rated_going_concern">Zero-rated going concern</option>
+                    <option value="exempt">Exempt</option>
+                  </Field>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Seller VAT registered</span>
+                  <Field as="select" value={routingProfileDraft.transferTaxDecision?.sellerVatRegistered || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, sellerVatRegistered: event.target.value } }))}>
+                    <option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option>
+                  </Field>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Seller VAT record reference</span>
+                  <Field value={routingProfileDraft.transferTaxDecision?.sellerVatNumberReference || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, sellerVatNumberReference: event.target.value } }))} placeholder="Onboarding record or document reference" />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Supply in course of enterprise</span>
+                  <Field as="select" value={routingProfileDraft.transferTaxDecision?.supplyInCourseOfEnterprise || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, supplyInCourseOfEnterprise: event.target.value } }))}>
+                    <option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option>
+                  </Field>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Non-resident seller review</span>
+                  <Field as="select" value={routingProfileDraft.transferTaxDecision?.sellerNonResidentReview || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, sellerNonResidentReview: event.target.value } }))}>
+                    <option value="unknown">Not yet reviewed</option><option value="yes">Required</option><option value="no">Not required</option>
+                  </Field>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">SARS evidence request</span>
+                  <Field as="select" value={routingProfileDraft.transferTaxDecision?.sarsEvidenceRequest || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, sarsEvidenceRequest: event.target.value } }))}>
+                    <option value="unknown">Not yet known</option><option value="yes">Requested by SARS</option><option value="no">No request</option>
+                  </Field>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">Duty payment required</span>
+                  <Field as="select" value={routingProfileDraft.transferTaxDecision?.dutyPaymentRequired || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, dutyPaymentRequired: event.target.value } }))}>
+                    <option value="unknown">Not yet known</option><option value="yes">Payment required</option><option value="no">No payment required</option>
+                  </Field>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-label font-semibold uppercase text-textMuted">SARS status</span>
+                  <Field as="select" value={routingProfileDraft.transferTaxDecision?.sarsStatus || 'not_started'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, sarsStatus: event.target.value } }))}>
+                    <option value="not_started">Not started</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="query">SARS query</option><option value="approved">Approved</option><option value="payment_pending">Payment pending</option><option value="receipted">Receipt verified</option>
+                  </Field>
+                </label>
+              </div>
+              <label className="mt-3 flex flex-col gap-1.5">
+                <span className="text-label font-semibold uppercase text-textMuted">Decision basis</span>
+                <Field as="textarea" rows={2} value={routingProfileDraft.transferTaxDecision?.basisNote || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, basisNote: event.target.value } }))} placeholder="Record the VAT, duty, exemption, or advice basis." />
+              </label>
+            </div>
           </div>
           <label className="flex flex-col gap-1.5">
             <span className="text-label font-semibold uppercase text-textMuted">Note</span>

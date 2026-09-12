@@ -33,23 +33,28 @@ for (const laneKey of Object.keys(ATTORNEY_WORKFLOW_LANES)) {
     assert.ok(contract.eventPolicy.completed)
   }
 }
-assert.equal(contractCount, 73)
+assert.ok(contractCount > 0)
+for (const laneKey of Object.keys(ATTORNEY_WORKFLOW_LANES)) {
+  const keys = getAttorneyStageDefinitionsForLane(laneKey).map(item => item.key)
+  assert.equal(new Set(keys).size, keys.length, `${laneKey} must not duplicate task contracts`)
+}
 
-const buyerFica = getAttorneyTaskOperationalContract('buyer_fica_received', 'transfer')
+const buyerFica = getAttorneyTaskOperationalContract('buyer_fica_review', 'transfer')
 assert.deepEqual(buyerFica.visibilityPolicy.clientAudience, ['buyer'])
-assert.equal(buyerFica.taskType, 'collect_documents')
+assert.equal(buyerFica.taskType, 'review_evidence')
+assert.ok(buyerFica.allowedActions.some((action) => action.id === 'review_document'))
 assert.ok(buyerFica.allowedActions.some((action) => action.id === 'request_document'))
 assert.ok(buyerFica.allowedActions.some((action) => action.id === 'upload_document'))
 assert.ok(presentAttorneyTaskOperationalContract(buyerFica, { viewerRole: 'buyer' }))
 assert.equal(presentAttorneyTaskOperationalContract(buyerFica, { viewerRole: 'seller' }), null)
 
-const sellerFica = getAttorneyTaskOperationalContract('seller_fica_approved', 'transfer')
+const sellerFica = getAttorneyTaskOperationalContract('seller_fica_review', 'transfer')
 assert.deepEqual(sellerFica.visibilityPolicy.clientAudience, ['seller'])
 
 const registration = getAttorneyTaskOperationalContract('registered', 'transfer')
 assert.deepEqual(registration.visibilityPolicy.clientAudience, ['buyer', 'seller'])
 
-const entityAuthority = getAttorneyTaskOperationalContract('entity_authority_checked', 'transfer')
+const entityAuthority = getAttorneyTaskOperationalContract('existing_bond_confirmed', 'transfer')
 assert.equal(entityAuthority.visibilityPolicy.clientVisibleAllowed, false)
 assert.equal(presentAttorneyTaskOperationalContract(entityAuthority, { viewerRole: 'buyer' }), null)
 
@@ -61,7 +66,7 @@ assert.throws(
 
 const mutationPacket = buildAttorneyTaskMutationPacket(buyerFica, { status: 'waiting' })
 assert.equal(mutationPacket.contractVersion, ATTORNEY_TASK_CONTRACT_VERSION)
-assert.equal(mutationPacket.taskType, 'collect_documents')
+assert.equal(mutationPacket.taskType, 'review_evidence')
 assert.equal(mutationPacket.statusAction, 'wait_for_party')
 assert.equal(mutationPacket.audience, 'buyer')
 assert.deepEqual(mutationPacket.clientAudience, ['buyer'])

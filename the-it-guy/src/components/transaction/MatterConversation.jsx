@@ -14,15 +14,18 @@ export default function MatterConversation({ transactionId, revision = 0, requir
   const active = useRef(true)
   currentScope.current = scope
   const sequence = useRef(0), pendingMessage = useRef(null)
+  const reading = useRef(null)
   const [loaded, setLoaded] = useState(null)
   const [error, setError] = useState('')
   const [draft, setDraft] = useState('')
   const [audience, setAudience] = useState('')
   const [saving, setSaving] = useState(false)
   const data = loaded?.scope === scope ? loaded.data : null
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(() => {
     if (!active.current) return false
+    if (reading.current?.scope === scope) return reading.current.promise
     const request = ++sequence.current
+    const promise = (async () => {
     try {
       if (requirePortal && !token) throw new Error('Portal credentials required.')
       const result = await readMatterConversation({ transactionId, token, sellerSession })
@@ -36,6 +39,9 @@ export default function MatterConversation({ transactionId, revision = 0, requir
       }
       return false
     }
+    })().finally(() => { if (reading.current?.promise === promise) reading.current = null })
+    reading.current = { scope, promise }
+    return promise
   }, [scope, transactionId, token, sellerSession, requirePortal])
   useEffect(() => {
     active.current = true
@@ -44,7 +50,7 @@ export default function MatterConversation({ transactionId, revision = 0, requir
   }, [scope])
   useEffect(() => { void refresh() }, [refresh, revision])
   const live = useTransactionLiveRefresh({ transactionId, onRefresh: refresh, scopeKey: scope,
-    enabled: !requirePortal || Boolean(token), realtime: false, pollingIntervalMs: 15_000 })
+    enabled: !requirePortal || Boolean(token), realtime: false, refreshOnMount: false, pollingIntervalMs: 15_000 })
   const selectedAudience = data?.audiences.includes(audience) ? audience : data?.audiences[0] || ''
   async function send(event) {
     event.preventDefault()
@@ -59,6 +65,8 @@ export default function MatterConversation({ transactionId, revision = 0, requir
       await postMatterMessage({ transactionId, token, sellerSession, ...message })
       if (!active.current || currentScope.current !== scope) return
       setDraft(''); pendingMessage.current = null
+      // A read begun before the post cannot prove that the new message is visible.
+      await reading.current?.promise
       await refresh()
     } catch {
       if (active.current && currentScope.current === scope) setError('Sending could not be confirmed. Retry the unchanged message safely.')

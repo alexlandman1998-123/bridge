@@ -46,6 +46,12 @@ create table transaction_workflow_steps(workflow_instance_id uuid,transaction_id
 `)
 await db.exec(migration('20260908181335_shared_journey_active_plan_manifest.sql'))
 await db.exec(migration('20260908183116_shared_journey_commercial_facts.sql'))
+// Apply the current reader/catalogue contract, not just September 8's baseline.
+await db.exec(migration('20260910080705_transfer_tax_conditional_workflow_phase3.sql'))
+await db.exec(migration('20260910092527_shared_journey_safe_tax_milestones.sql'))
+await db.exec(migration('20260910094209_transfer_tax_cross_role_safe_reader_phase7.sql'))
+await db.exec(migration('20260910153146_reconcile_attorney_journey_catalogue.sql'))
+await db.exec(migration('20260910153517_reconcile_shared_journey_reader_contract.sql'))
 // Exercise the real SQL migrations in isolated PostgreSQL with scoped permission fixtures.
 for (const [route, financeKeys] of Object.entries({ cash: ['proof_of_funds_reviewed','cash_confirmation_approved'],
   bond: ['quote_approved','instruction_sent'], hybrid: ['cash_portion_confirmed','quote_approved','instruction_sent'] })) {
@@ -75,7 +81,10 @@ for (const key of ['transfer','bond','cancellation']) {
     step_key:task,phase_key:phase.key,phase_label:phase.label,phase_order:i,task_order:j,
   }))).sort((a,b)=>a.step_key.localeCompare(b.step_key))
   const actual = (await db.query('select step_key,phase_key,phase_label,phase_order,task_order from journey_private.task_catalog where lane_key=$1 order by step_key',[key])).rows
-  assert.deepEqual(actual,expected)
+  // Legacy definitions are intentionally retained for saved historical plans.
+  // Every CURRENT task must nevertheless exist with exactly the current order.
+  const currentKeys = new Set(expected.map(task => task.step_key))
+  assert.deepEqual(actual.filter(task => currentKeys.has(task.step_key)),expected)
 }
 let scenarios = 0
 for (const finance of ['cash','bond','hybrid']) for (const buyer of ['individual','company']) {
@@ -102,7 +111,8 @@ for (const finance of ['cash','bond','hybrid']) for (const buyer of ['individual
     }
   }
   const read = async(id=matter)=>(await db.query('select bridge_read_shared_matter_journey($1) result',[id])).rows[0].result
-  const professionalSource=await read()
+  const professionalRead = async() => (await db.query('select bridge_read_professional_matter_journey($1) result',[matter])).rows[0].result
+  const professionalSource=await professionalRead()
   const projected=projectSharedMatterJourneyRead(professionalSource)
   const expected=buildPlannedSharedMatterJourney({transactionId:matter,revision:7,planRevision:7,routingProfile:{...profile,workflowPlan:plan},laneSnapshots:snapshots}).journey
   const { commercialFacts, requiredLaneKeys, ...legalProjection } = projected
@@ -110,7 +120,7 @@ for (const finance of ['cash','bond','hybrid']) for (const buyer of ['individual
   assert.deepEqual(requiredLaneKeys,plan.lanes.map(l=>l.laneKey))
   assert.equal(commercialFacts.revision,7)
   assert.doesNotMatch(JSON.stringify(professionalSource),/PRIVATE EVIDENCE|routing_profile|comment|note|email/)
-  const result={status:'ready',snapshot:projected}
+  const result={status:'ready',snapshot:projectSharedMatterJourneyRead(professionalSource,{audience:'attorney'})}
   const work=alignWorkStepsWithSharedJourney(raw,laneRows,result,plan)
   assert.deepEqual(work.map(r=>r.status),raw.map(r=>r.status))
   assert.throws(()=>alignWorkStepsWithSharedJourney(raw,laneRows,{status:'unavailable'},plan),/unavailable/)
@@ -120,7 +130,8 @@ for (const finance of ['cash','bond','hybrid']) for (const buyer of ['individual
     await db.query("select set_config('test.actor',$1,false),set_config('test.token',$2,false)",
       [['buyer','seller'].includes(role)?'':actor,['buyer','seller'].includes(role)?'valid':''])
     await db.exec(['buyer','seller'].includes(role) ? 'set role anon' : 'set role authenticated')
-    assert.deepEqual(projectSharedMatterJourneyRead(await read()),projected,role)
+    const source = ['buyer','seller'].includes(role) ? await read() : await professionalRead()
+    assert.deepEqual(projectSharedMatterJourneyRead(source),projected,role)
     await db.exec('reset role')
   }
   await db.query("select set_config('test.actor','',false),set_config('test.token','revoked',false)")
@@ -154,7 +165,8 @@ for (const [offset, status] of ['completed','not_applicable','not_started'].entr
   await db.query('update transaction_subprocess_steps set status=$2 where id=$1',[changedTask.id,status])
   await db.query('update transaction_refresh_signals set version=$2 where transaction_id=$1',[matter,8+offset])
   await db.exec('commit')
-  const updated = (await db.query('select bridge_read_shared_matter_journey($1) result',[matter])).rows[0].result
+  const updated = (await db.query('select bridge_read_professional_matter_journey($1) result',[matter])).rows[0].result
+  const updatedClient = (await db.query('select bridge_read_shared_matter_journey($1) result',[matter])).rows[0].result
   assert.equal(updated.revision,8+offset)
   assert.ok(updated.lanes.flatMap(l=>l.phases.flatMap(p=>p.tasks)).some(t=>t.key===changedTask.step_key && t.status===status))
   for (const role of ['attorney','agent','developer','buyer','seller']) {
@@ -163,8 +175,8 @@ for (const [offset, status] of ['completed','not_applicable','not_started'].entr
     await db.exec(portal ? 'set role anon' : 'set role authenticated')
     const read = role === 'seller'
       ? await db.query("select bridge_read_seller_shared_matter_journey('seller-valid','valid-session') result")
-      : await db.query('select bridge_read_shared_matter_journey($1) result',[matter])
-    assert.deepEqual(read.rows[0].result,updated,`${role} must observe ${status} at the committed revision`)
+      : await db.query(portal ? 'select bridge_read_shared_matter_journey($1) result' : 'select bridge_read_professional_matter_journey($1) result',[matter])
+    assert.deepEqual(read.rows[0].result,portal ? updatedClient : updated,`${role} must observe ${status} at the committed revision`)
     await db.exec('reset role')
   }
 }
@@ -173,4 +185,4 @@ await db.query("update transactions set routing_profile_json=jsonb_set(routing_p
 await assert.rejects(db.query('select bridge_read_shared_matter_journey($1)',[matter]),/reconciliation/)
 await db.close()
 assert.equal((await fetchSharedMatterJourney({rpc:async()=>({error:{code:'42501'}})},matter)).status,'unavailable')
-console.log(`Shared journey reader: ${scenarios} scenarios, 5 recipient projections, Work/header parity, missing rows, token denial, catalog and revision checks PASS (isolated permission fixtures)`)
+console.log(`Current journey reader: ${scenarios} scenarios, 5 recipient projections, Work/header parity, missing rows, token denial, current catalog and revision checks PASS (isolated permission fixtures)`)

@@ -234,6 +234,7 @@ export default function LegalTaskWorkbench({
   const [reviewReason, setReviewReason] = useState('')
   const [reviewFeedback, setReviewFeedback] = useState('')
   const [reviewError, setReviewError] = useState('')
+  const [utilityError, setUtilityError] = useState('')
   const reviewPending = useRef(false)
   const [taskResponses, setTaskResponses] = useState({ existingBond: '', cancellationInstruction: '' })
   const [expandedPhaseKey, setExpandedPhaseKey] = useState(selectedPhaseKey)
@@ -324,7 +325,11 @@ export default function LegalTaskWorkbench({
     { id: 'cancellationInstruction', label: 'Cancellation instructions confirmed' },
   ] : model.confirmationRequirements || []
   async function review(action) {
-    if (reviewPending.current || !previewDocument || !onReviewDocument) return
+    if (reviewPending.current) return
+    if (!previewDocument || !onReviewDocument) {
+      setReviewError('Select a linked document before reviewing it. If review is unavailable, reload the task and try again.')
+      return
+    }
     reviewPending.current = true
     setReviewBusy(true)
     setReviewFeedback('')
@@ -492,7 +497,14 @@ export default function LegalTaskWorkbench({
 
   function runUtilityAction(actionId, callback) {
     emitActionEvent({ id: actionId }, 'secondary')
-    callback?.()
+    setUtilityError('')
+    if (typeof callback !== 'function') {
+      setUtilityError('This action is unavailable. Reload the task and try again.')
+      return
+    }
+    return Promise.resolve().then(callback).catch(error => {
+      setUtilityError(error?.message || 'The action could not be opened. Please try again.')
+    })
   }
 
   return (
@@ -517,6 +529,7 @@ export default function LegalTaskWorkbench({
       >
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
           <header className="shrink-0 px-5 pb-3 pt-5 lg:px-6">
+            {utilityError ? <p role="alert" className="mb-2 text-sm text-red-700">{utilityError}</p> : null}
             <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Stage {phases.findIndex((phase) => phase.key === selectedPhaseKey) + 1} · {model.phaseLabel}</span>
             <h2 className="mt-2 min-w-0 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950 sm:text-3xl">{model.taskLabel}</h2>
           </header>

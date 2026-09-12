@@ -2,6 +2,7 @@
 // Never logs credentials, tokens, or unrestricted matter contents.
 import { readFileSync } from 'node:fs'
 import { createServer } from 'vite'
+import assert from 'node:assert/strict'
 
 const env = Object.fromEntries(readFileSync('.env.staging.local', 'utf8').split(/\r?\n/)
   .filter(line => /^[A-Z_]+=/.test(line)).map(line => {
@@ -17,6 +18,13 @@ try {
   if (error) throw Error(error.message)
   const { getAttorneyWorkflowOperationsForTransaction } = await server.ssrLoadModule('/src/services/attorneyWorkflow/attorneyWorkflowLaneService.js')
   const result = await getAttorneyWorkflowOperationsForTransaction('b27fc192-b5ff-471b-9da5-902409f78116', { initialize: false })
+  const { fetchSharedMatterJourney } = await server.ssrLoadModule('/src/services/sharedMatterJourneyReader.js')
+  const shared = await fetchSharedMatterJourney(supabase, 'b27fc192-b5ff-471b-9da5-902409f78116', { audience: 'attorney' })
+  assert.equal(shared.status, 'ready')
+  for (const lane of result.lanes) {
+    const tasks = shared.snapshot.lanes.find(item => item.key === lane.laneKey).phases.flatMap(phase => phase.tasks)
+    assert.deepEqual(lane.steps.map(step => [step.stepKey, step.status]).sort(), tasks.map(task => [task.key, task.status]).sort(), 'Work and shared journey must use identical saved tasks and outcomes')
+  }
   console.log(JSON.stringify({ status: 'PASS', lanes: result.lanes.map(lane => ({ laneKey: lane.laneKey, steps: lane.steps.length, completed: lane.steps.filter(step => step.status === 'completed').length, progress: lane.summary.completionPercent, instruction: lane.steps.find(step => step.stepKey === 'instruction_received')?.status })) }))
 } catch (error) {
   console.error(error.message)

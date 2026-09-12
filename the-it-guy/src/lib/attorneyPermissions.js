@@ -88,6 +88,8 @@ function isMissingColumnLikeError(error, columnName) {
 }
 
 function isAssignmentActive(assignment = {}) {
+  if ([assignment.assignment_status, assignment.status].some(value =>
+    ['removed', 'revoked', 'inactive', 'suspended'].includes(String(value || '').trim().toLowerCase()))) return false
   return String(assignment.assignment_status || assignment.status || '').trim().toLowerCase() === 'active'
 }
 
@@ -330,7 +332,7 @@ async function getAttorneyTransactionAssignmentsForPermission(client, transactio
 
   let query = client
     .from('transaction_attorney_assignments')
-    .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, can_update_workflow_lane')
+    .select('id, transaction_id, firm_id, attorney_firm_id, assignment_type, attorney_role, department_id, attorney_department_id, assigned_user_id, primary_attorney_id, attorney_user_id, secretary_id, admin_handler_id, status, assignment_status, is_primary, can_update_workflow_lane')
     .eq('transaction_id', resolvedTransactionId)
 
   const resolvedFirmId = normalizeText(firmId)
@@ -354,9 +356,7 @@ function findActiveLaneAssignment(assignments = [], attorneyRole = 'transfer') {
   return (
     assignments.find(
       (assignment) =>
-        isAssignmentActive({
-          status: assignment.assignment_status || assignment.status,
-        }) &&
+        isAssignmentActive(assignment) &&
         assignment.is_primary !== false &&
         assignmentCoversLane(assignment, laneRole),
     ) || null
@@ -454,12 +454,14 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
   const isAssignedAttorney = Boolean(
     activeLaneAssignment &&
       isAssignmentActive(activeLaneAssignment) &&
-      String(activeLaneAssignment.attorney_user_id || activeLaneAssignment.primary_attorney_id || '') === resolvedUserId,
+      [activeLaneAssignment.assigned_user_id, activeLaneAssignment.attorney_user_id, activeLaneAssignment.primary_attorney_id]
+        .some(candidate => candidate && String(candidate) === resolvedUserId),
   )
   const isAssignedParticipant = Boolean(
     activeLaneAssignment &&
       isAssignmentActive(activeLaneAssignment) &&
       [
+        activeLaneAssignment.assigned_user_id,
         activeLaneAssignment.attorney_user_id,
         activeLaneAssignment.primary_attorney_id,
         activeLaneAssignment.secretary_id,
@@ -592,7 +594,7 @@ export async function getUserAttorneyRolesForTransaction(userId, transactionId) 
 
   const query = await client
     .from('transaction_attorney_assignments')
-    .select('attorney_role, assignment_type, attorney_user_id, primary_attorney_id, secretary_id, admin_handler_id, assignment_status, status')
+    .select('attorney_role, assignment_type, assigned_user_id, attorney_user_id, primary_attorney_id, secretary_id, admin_handler_id, assignment_status, status')
     .eq('transaction_id', resolvedTransactionId)
     .neq('assignment_status', 'removed')
 
@@ -604,8 +606,8 @@ export async function getUserAttorneyRolesForTransaction(userId, transactionId) 
   return [
     ...new Set(
       (query.data || [])
-        .filter((assignment) =>
-          [assignment.attorney_user_id, assignment.primary_attorney_id, assignment.secretary_id, assignment.admin_handler_id].some(
+        .filter((assignment) => isAssignmentActive(assignment) &&
+          [assignment.assigned_user_id, assignment.attorney_user_id, assignment.primary_attorney_id, assignment.secretary_id, assignment.admin_handler_id].some(
             (candidate) => candidate && String(candidate) === String(resolvedUserId),
           ),
         )

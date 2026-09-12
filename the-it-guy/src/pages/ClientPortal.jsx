@@ -80,6 +80,8 @@ import {
   BuyerMobilePropertyHero,
 } from '../components/client-portal/BuyerMobileChrome'
 import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
+import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
+import { fetchClientPortalJourneySnapshotByToken } from '../lib/api'
 import {
   buyerPortalHexToRgba as portalHexToRgba,
   createBuyerPortalTheme,
@@ -129,6 +131,7 @@ import {
   getProspectDemoClientPortalWorkspaceData,
 } from '../services/clientPortalWorkspaceService'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
+import { shouldRefreshPortalDetails } from '../core/transactions/portalRefreshPolicy'
 import { MatterConversationAccess } from '../components/transaction/MatterConversation'
 import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
 import { selectStablePortalWorkspace } from '../core/transactions/stablePortalWorkspace.js'
@@ -215,7 +218,9 @@ function getClientPortalLoadErrorMessage(error, fallback = 'We could not load yo
   return message || fallback
 }
 
-const CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS = 7000
+// Core resolves several authorised reads, not one request. Cold staging reads
+// measured 17s; a 7s deadline rejected valid links before their data arrived.
+const CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS = 30000
 const CLIENT_PORTAL_FULL_LOAD_TIMEOUT_MS = 14000
 const CLIENT_PORTAL_BACKGROUND_LOAD_TIMEOUT_MS = 18000
 
@@ -8595,6 +8600,7 @@ function ClientPortal() {
   })
   const portalContextsRef = useRef({ contexts: [], hasBuyingContext: true, hasSellingContext: false })
   const portalLoadRequestRef = useRef(0)
+  const portalDetailsRefreshRef = useRef({ scope: null, at: 0 })
   const portalMessageRequestRef = useRef(null)
   const portalLoadScopeRef = useRef('')
   const portalDraftScopeRef = useRef('')
@@ -8685,8 +8691,24 @@ function ClientPortal() {
       setLoading(false)
       return
     }
-    const effectiveSellerPortalAccessToken = sellerPortalAccessTokenOverride || sellerPortalAccessToken
+    // State can briefly lag localStorage during a route reload. Prefer an
+    // explicit fresh login, then state, then the still-valid stored credential.
+    // This prevents a stale render from making a secure seller session look
+    // unauthenticated while the portal is recovering a read.
+    const effectiveSellerPortalAccessToken = sellerPortalAccessTokenOverride || sellerPortalAccessToken || (
+      isSellerPortalToken ? getStoredSellerPortalAccessToken(token) : ''
+    )
     const requireSellerReauthentication = ({ portalAuth = null, sessionExpired = false } = {}) => {
+      const confirmedExpiry = Boolean(sessionExpired || portalAuth?.sessionExpired === true)
+      // Only an explicit, server-confirmed expiry may discard a seller's
+      // credential. A 5xx/timeout or an incomplete auth payload must leave it
+      // in place so the next bounded refresh can recover.
+      if (!confirmedExpiry && effectiveSellerPortalAccessToken) {
+        setError('We could not verify your secure session just now. Please try again shortly.')
+        setLoading(false)
+        setHydratingPortal(false)
+        return false
+      }
       clearSellerPortalAccessToken(token)
       setSellerPortalAccessToken('')
       setSellerPortalAuth({
@@ -8700,6 +8722,7 @@ function ClientPortal() {
       setError('')
       setLoading(false)
       setHydratingPortal(false)
+      return true
     }
 
     if (background) {
@@ -8711,7 +8734,10 @@ function ClientPortal() {
           isDemoRoute
             ? getProspectDemoClientPortalWorkspaceData(token, portalDataWorkspace)
             : getClientPortalWorkspaceData(token, portalDataWorkspace, {
-                mode: 'full',
+                // Background refreshes keep the journey and shell fresh. Deep
+                // document, activity, and branding hydration belongs to the
+                // workspace that explicitly asks for it.
+                mode: 'core',
                 sellerPortalAccessToken: isSellerPortalToken ? effectiveSellerPortalAccessToken : '',
               }),
           { phase: 'background', timeoutMs: CLIENT_PORTAL_BACKGROUND_LOAD_TIMEOUT_MS },
@@ -8784,6 +8810,15 @@ function ClientPortal() {
       console.log('[perf][client-portal] core data loaded', {
         durationMs: Date.now() - startedAt,
       })
+
+      // Overview and progress render from the canonical journey in the core
+      // snapshot. Do not compete with that read by immediately loading every
+      // optional portal dataset. A direct document, account, or details route
+      // still requests the full workspace below.
+      if (['', 'overview', 'progress'].includes(String(requestedSection || '').toLowerCase())) {
+        markRouteMilestone('interactive_ready')
+        return coreData
+      }
     } catch (coreError) {
       if (!isCurrentLoad()) return
       if (isSellerPortalAuthRequiredError(coreError)) {
@@ -8793,10 +8828,8 @@ function ClientPortal() {
         })
         return
       }
-      if (isSellerPortalToken && effectiveSellerPortalAccessToken && isClientPortalLoadTimeoutError(coreError)) {
-        requireSellerReauthentication({ sessionExpired: true })
-        return
-      }
+      // A slow request does not prove session expiry. Keep the saved seller
+      // session; only the explicit auth-required branch above can clear it.
       if (!hasCoreData) {
         setError(getClientPortalLoadErrorMessage(coreError, 'We could not load your portal.'))
         if (isClientPortalLoadTimeoutError(coreError)) {
@@ -8843,10 +8876,11 @@ function ClientPortal() {
         })
         return
       }
-      if (isSellerPortalToken && effectiveSellerPortalAccessToken && isClientPortalLoadTimeoutError(loadError) && !hasCoreData) {
-        requireSellerReauthentication({ sessionExpired: true })
-        return
-      }
+      // A database/read timeout is not evidence that a seller password session
+      // has expired.  In particular, a cold reload under concurrent matter
+      // updates has no core snapshot yet; treating that timeout as expiry
+      // cleared a valid credential and stranded the seller at the password
+      // screen. Only an explicit server `sessionExpired` response may do that.
       if (!hasCoreData) {
         setError(getClientPortalLoadErrorMessage(loadError, 'We could not finish loading your portal.'))
       }
@@ -9041,9 +9075,51 @@ function ClientPortal() {
 
   useTransactionLiveRefresh({
     transactionId: workspaceData?.transaction?.id || portal?.transaction?.id,
-    onRefresh: () => hydratingPortal ? false : loadPortal({ background: true }),
+    onRefresh: async () => {
+      // Journey freshness must not depend on slower document/branding hydration.
+      const scope = portalLoadScopeRef.current
+      if (hydratingPortal) return false
+      if (portalDetailsRefreshRef.current.scope !== scope) {
+        portalDetailsRefreshRef.current = { scope, at: Date.now() }
+      }
+      let refreshDetails = false
+      try {
+        const snapshot = await fetchClientPortalJourneySnapshotByToken(token, portalDataWorkspace === 'selling' ? 'seller' : 'buyer', {
+          legalOnly: true, sellerPortalAccessToken,
+        })
+        if (portalLoadScopeRef.current !== scope) return false
+        if (!snapshot?.legalJourney || snapshot.legalJourney.status !== 'ready') {
+          // A denied/invalid response must not keep displaying an authorised
+          // success. A transient error does not trigger a heavier reload storm.
+          if (snapshot?.legalJourney && !snapshot.legalJourney.retryable) {
+            setWorkspaceData(previous => previous ? { ...previous, transactionJourneySnapshot: {
+              ...previous.transactionJourneySnapshot, legalJourney: snapshot.legalJourney,
+            } } : previous)
+          }
+          return false
+        }
+        refreshDetails = shouldRefreshPortalDetails({
+          previousRevision: workspaceData?.transactionJourneySnapshot?.legalJourney?.snapshot?.revision,
+          revision: snapshot.legalJourney.snapshot.revision,
+          lastFullReadAt: portalDetailsRefreshRef.current.at,
+        })
+        setWorkspaceData(previous => previous?.legacyPortalData?.transaction?.id === snapshot?.transactionId
+          ? selectStablePortalWorkspace(previous, { ...previous, transactionJourneySnapshot: { ...previous.transactionJourneySnapshot, transactionId: snapshot.transactionId, legalJourney: snapshot.legalJourney } })
+          : previous)
+      } catch {
+        // Let the full loader enforce expired seller sessions/denied access at
+        // the bounded reconciliation interval, not on every failing poll.
+        refreshDetails = Date.now() - portalDetailsRefreshRef.current.at >= 60_000
+        if (!refreshDetails) return false
+      }
+      if (!refreshDetails) return true
+      const refreshed = await loadPortal({ background: true })
+      if (refreshed && portalLoadScopeRef.current === scope) portalDetailsRefreshRef.current.at = Date.now()
+      return refreshed
+    },
     enabled: !isDemoRoute && !loading && !sellerPortalAuth?.authRequired,
     realtime: false,
+    refreshOnMount: false,
     scopeKey: `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`,
     includeNotifications: false,
     pollingIntervalMs: 15_000,

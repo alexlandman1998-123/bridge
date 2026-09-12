@@ -1,9 +1,11 @@
 import { resolveTransactionFacts } from './attorneyWorkflow/transactionFactsResolver.js'
+import { prepopulateMatterScenarioProfile, scenarioIssues, scenarioFingerprint } from './matterScenarioProfile.js'
 import {
   evaluateMvpLaunchScope,
   formatMvpLaunchScopeIssue,
 } from '../core/transactions/mvpLaunchScope.js'
 import { resolveMvpLaunchRolePlan } from '../core/transactions/mvpLaunchRoles.js'
+import { resolveTransferTaxDecision } from './transferTaxDecisionService.js'
 
 export const TRANSACTION_ROUTING_PROFILE_VERSION = 'transaction_routing_profile_v1'
 export const MATTER_PROFILE_VERSION = 'matter_profile_v1'
@@ -100,7 +102,7 @@ function readPersistedRoutingProfile(input = {}) {
 function stableMatterProfileFingerprint(facts = {}) {
   const source = MATTER_PROFILE_FACT_KEYS
     .map((key) => `${key}:${String(facts[key] ?? '')}`)
-    .join('|')
+    .join('|') + (facts.scenarioProfile ? scenarioFingerprint(facts.scenarioProfile) : '') + JSON.stringify(facts.transferTaxDecision || {})
   let hash = 2166136261
   for (let index = 0; index < source.length; index += 1) {
     hash ^= source.charCodeAt(index)
@@ -115,7 +117,7 @@ function buildMatterProfileMetadata(baseProfile, existingProfile = {}, requested
     : {}
   const requested = requestedMetadata && typeof requestedMetadata === 'object' ? requestedMetadata : {}
   const facts = Object.fromEntries(MATTER_PROFILE_FACT_KEYS.map((key) => [key, baseProfile[key]]))
-  const fingerprint = stableMatterProfileFingerprint(facts)
+  const fingerprint = stableMatterProfileFingerprint({ ...facts, scenarioProfile: baseProfile.scenarioProfile, transferTaxDecision: baseProfile.transferTaxDecision })
   const missingFactKeys = [
     baseProfile.financeType === 'unknown' ? 'finance_type' : '',
     baseProfile.transactionType === 'unknown' ? 'transaction_type' : '',
@@ -125,6 +127,7 @@ function buildMatterProfileMetadata(baseProfile, existingProfile = {}, requested
     (baseProfile.transactionType === 'commercial' || baseProfile.transactionType === 'development_sale') && baseProfile.vatTreatment === 'unknown'
       ? 'vat_treatment'
       : '',
+    ...(baseProfile.scenarioIssues || []),
   ].filter(Boolean)
   const confirmed = requested.status === 'confirmed'
     ? true
@@ -561,7 +564,7 @@ export function resolveTransactionRoutingProfile(input = {}) {
   const sellerEntityType = transactionType === 'development_sale' && facts.sellerEntityType === 'unknown'
     ? 'developer'
     : normalizeEntityType(facts.sellerEntityType)
-  const vatTreatment = normalizeVatTreatment(
+  const capturedVatTreatment = normalizeVatTreatment(
     firstValue(
       resolverInput.vat_treatment,
       context.transaction?.vat_treatment,
@@ -582,6 +585,18 @@ export function resolveTransactionRoutingProfile(input = {}) {
   const sellerSpouseConsentRequired = truthyFlag(resolverInput.seller_spouse_consent_required)
 
   const mvpProfile = parseJsonObject(context.transaction?.routing_profile_json)?.mvpProfile || {}
+  const transferTaxDecision = resolveTransferTaxDecision(
+    existingProfile.transferTaxDecision || existingProfile.transfer_tax_decision,
+  )
+  // A confirmed attorney decision is authoritative. Older scalar VAT fields remain
+  // as a compatibility projection for existing templates and reports.
+  const vatTreatment = transferTaxDecision.status === 'confirmed' && [
+    'transfer_duty',
+    'vat',
+    'zero_rated_going_concern',
+  ].includes(transferTaxDecision.route)
+    ? transferTaxDecision.route
+    : capturedVatTreatment
   const baseProfile = {
     mvpProfile,
     buyerMaritalRegime: mvpProfile.buyerMaritalRegime || 'unknown',
@@ -607,6 +622,7 @@ export function resolveTransactionRoutingProfile(input = {}) {
     sellerSpouseConsentRequired,
     foreignBuyer,
     vatTreatment,
+    transferTaxDecision,
     requiresTransferAttorney: true,
     // A configuration preference must never create a bond-registration lane
     // for a cash/unknown/developer-finance matter. The finance route is the
@@ -619,6 +635,23 @@ export function resolveTransactionRoutingProfile(input = {}) {
     isEstateHoa: propertyTenure === 'estate_hoa',
     rawFacts: facts,
     rawFieldSources: facts.rawFieldsUsed || {},
+  }
+  baseProfile.scenarioProfile = prepopulateMatterScenarioProfile({
+    saved: existingProfile.scenarioProfile,
+    legacy: baseProfile,
+    transaction: context.transaction,
+    participants: input.transactionParticipants || input.participants || [],
+  })
+  baseProfile.scenarioIssues = existingProfile.scenarioProfile ? scenarioIssues(baseProfile.scenarioProfile) : []
+  // Keep legacy consumers visible until the central requirements engine migrates.
+  // Never silently reduce mixed parties to a single entity type.
+  if (existingProfile.scenarioProfile) {
+    for (const role of ['buyer', 'seller']) {
+      const types = [...new Set(baseProfile.scenarioProfile.parties.filter(p => p.role === role).map(p => p.entityType))]
+      if (types.length > 1 || (types.length === 1 && types[0] !== baseProfile[`${role}EntityType`])) {
+        baseProfile.scenarioIssues.push(`${role}: per-party legal types differ from the legacy workflow classification; review applicability.`)
+      }
+    }
   }
   const matterProfile = buildMatterProfileMetadata(
     baseProfile,

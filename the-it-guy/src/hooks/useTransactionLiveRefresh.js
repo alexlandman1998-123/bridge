@@ -4,7 +4,7 @@ import { createLiveRefreshQueue } from '../core/transactions/liveRefreshQueue'
 
 export default function useTransactionLiveRefresh({
   transactionId, onRefresh, enabled = true, includeNotifications = true,
-  pollingIntervalMs = 30_000, debounceMs = 350, realtime = true, scopeKey = '',
+  pollingIntervalMs = 30_000, debounceMs = 350, realtime = true, scopeKey = '', refreshOnMount = true,
 } = {}) {
   const refreshRef = useRef(onRefresh)
   const [status, setStatus] = useState({ connectionState: 'idle', lastRefreshAt: null,
@@ -17,23 +17,34 @@ export default function useTransactionLiveRefresh({
     if (!enabled || !id || (realtime && !isSupabaseConfigured)) return undefined
     let active = true
     let timer = null
+    let pollStartTimer = null
     let pendingVersion = null
     let pendingForce = false
     let reconciling = false
     let lastFullReadAt = 0
+    let nextPollAt = 0
+    let failures = 0
+    const pollDelay = Math.max(10_000, Number(pollingIntervalMs) || 30_000)
     const queue = createLiveRefreshQueue({
       refresh: (context) => refreshRef.current?.(context),
       onSuccess: ({ reason }) => {
         lastFullReadAt = Date.now()
+        failures = 0
+        nextPollAt = Date.now() + pollDelay
         setStatus((previous) => ({ ...previous, lastRefreshAt: new Date().toISOString(),
           lastRefreshReason: reason, lastErrorAt: null, lastErrorMessage: '' }))
       },
-      onError: () => setStatus((previous) => ({ ...previous,
-        lastErrorAt: new Date().toISOString(), lastErrorMessage: 'Updates could not be refreshed. Retrying automatically.' })),
+      onError: () => {
+        failures++
+        nextPollAt = Date.now() + Math.min(60_000, pollDelay * 2 ** Math.min(failures, 3))
+        setStatus((previous) => ({ ...previous,
+          lastErrorAt: new Date().toISOString(), lastErrorMessage: 'Updates could not be refreshed. Retrying automatically.' }))
+      },
     })
     const canRead = () => active && document.visibilityState !== 'hidden' && navigator.onLine !== false
-    const schedule = (reason, version = null) => {
+    const schedule = (reason, version = null, idleOnly = false) => {
       if (!canRead()) return
+      if (idleOnly && (queue.busy || timer)) return
       pendingVersion = Math.max(pendingVersion ?? -1, Number.isSafeInteger(version) ? version : -1)
       pendingForce ||= !Number.isSafeInteger(version) || version < 0
       if (timer) window.clearTimeout(timer)
@@ -42,14 +53,14 @@ export default function useTransactionLiveRefresh({
         const nextVersion = pendingForce ? null : pendingVersion
         pendingVersion = null
         pendingForce = false
-        if (canRead()) void queue.request({ reason, version: nextVersion })
+        if (canRead()) void queue.request({ reason, version: nextVersion, idleOnly })
       }, Math.max(0, Number(debounceMs) || 0))
     }
     const reconcile = async (force = false) => {
-      if (!canRead() || reconciling) return
+      if (!canRead() || reconciling || (!force && (queue.busy || Date.now() < nextPollAt))) return
       // Portal headers do not authorise a WebSocket. Reuse the portal's secure
       // full loader, including seller session checks, on every visible poll.
-      if (!realtime) { schedule(force ? 'portal_reconnected' : 'portal_poll'); return }
+      if (!realtime) { schedule(force ? 'portal_reconnected' : 'portal_poll', null, !force); return }
       reconciling = true
       try {
         const result = await supabase.from('transaction_refresh_signals')
@@ -58,10 +69,10 @@ export default function useTransactionLiveRefresh({
         if (result.error) throw result.error
         const revision = result.data?.version == null ? null : Number(result.data.version)
         // Also recover changes which do not yet publish a version signal.
-        if (force || revision === null || Date.now() - lastFullReadAt >= 60_000) schedule('transaction_reconciled')
-        else if (revision > queue.acknowledged) schedule('transaction_version_changed', revision)
+        if (revision !== null && revision > queue.acknowledged) schedule('transaction_version_changed', revision, !force)
+        else if (force || revision === null || Date.now() - lastFullReadAt >= 60_000) schedule('transaction_reconciled', null, !force)
       } catch {
-        if (canRead()) schedule('transaction_poll_fallback')
+        if (canRead()) schedule('transaction_poll_fallback', null, !force)
       } finally { reconciling = false }
     }
     let channel = null
@@ -77,11 +88,22 @@ export default function useTransactionLiveRefresh({
         if (!active) return
         setStatus((previous) => ({ ...previous, connectionState: navigator.onLine === false ? 'offline'
           : state === 'SUBSCRIBED' ? 'live' : 'polling' }))
-        if (state === 'SUBSCRIBED') void reconcile(true)
+        if (state === 'SUBSCRIBED' && refreshOnMount) void reconcile(true)
       })
     }
-    void reconcile(true)
-    const interval = window.setInterval(() => void reconcile(), Math.max(10_000, Number(pollingIntervalMs) || 30_000))
+    // Five participants often open the same matter together. Spread their
+    // non-critical polls deterministically so a single journey update does not
+    // create a thundering herd of identical reads. Realtime subscribers still
+    // reconcile immediately when a signal arrives.
+    const intervalMs = Math.max(10_000, Number(pollingIntervalMs) || 30_000)
+    const jitterSeed = `${id}:${scopeKey}`.split('').reduce((total, character) => ((total * 31) + character.charCodeAt(0)) >>> 0, 0)
+    const jitterMs = jitterSeed % Math.min(3_000, Math.max(1_000, Math.floor(intervalMs / 4)))
+    let interval = null
+    pollStartTimer = window.setTimeout(() => {
+      if (!active) return
+      void reconcile()
+      interval = window.setInterval(() => void reconcile(), intervalMs)
+    }, (refreshOnMount ? 0 : intervalMs) + jitterMs)
     const recover = () => { if (canRead()) void reconcile(true) }
     const online = () => {
       setStatus((previous) => ({ ...previous, connectionState: 'polling' }))
@@ -96,13 +118,14 @@ export default function useTransactionLiveRefresh({
       active = false
       queue.stop()
       if (timer) window.clearTimeout(timer)
-      window.clearInterval(interval)
+      if (pollStartTimer) window.clearTimeout(pollStartTimer)
+      if (interval) window.clearInterval(interval)
       window.removeEventListener('focus', recover)
       window.removeEventListener('online', online)
       window.removeEventListener('offline', offline)
       document.removeEventListener('visibilitychange', recover)
       if (channel) void supabase.removeChannel(channel)
     }
-  }, [debounceMs, enabled, includeNotifications, pollingIntervalMs, realtime, scopeKey, transactionId])
+  }, [debounceMs, enabled, includeNotifications, pollingIntervalMs, realtime, refreshOnMount, scopeKey, transactionId])
   return status
 }

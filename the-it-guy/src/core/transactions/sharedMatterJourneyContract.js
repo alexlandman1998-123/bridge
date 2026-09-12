@@ -95,8 +95,13 @@ export function presentSharedMatterJourney(journey, audience) {
     legalProgress: { ...journey.legalProgress }, overallJourney: journey.overallJourney ? { ...journey.overallJourney } : null,
     lanes: journey.lanes.map(lane => ({ key: lane.key, progress: { ...lane.progress },
       phases: lane.phases.map(phase => ({ key: phase.key, label: client ? phase.clientLabel : phase.label,
-        progress: { ...phase.progress }, tasks: phase.tasks.map(task => ({
-          id: task.id, key: task.key, phaseKey: task.phaseKey, laneKey: task.laneKey,
+        progress: { ...phase.progress }, tasks: phase.tasks.map((task, taskIndex) => ({
+          // Client readers need stable identifiers for rendering, but must not
+          // receive internal task keys (which can disclose tax or compliance
+          // details even when the human-readable label is neutral).
+          id: client ? `client:${journey.transactionId}:${lane.key}:${phase.key}:${taskIndex}` : task.id,
+          key: client ? `task_${taskIndex + 1}` : task.key,
+          phaseKey: task.phaseKey, laneKey: task.laneKey,
           label: client ? task.clientLabel : task.label, status: task.status, revision: task.revision,
         })) })) })) })
 }

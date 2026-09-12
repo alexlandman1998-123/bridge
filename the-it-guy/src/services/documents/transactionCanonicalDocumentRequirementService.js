@@ -39,6 +39,7 @@ import {
 } from './canonicalDocumentResolverService'
 import { resolveTransactionFacts } from '../attorneyWorkflow/transactionFactsResolver'
 import { resolveLegalDocumentRequirements } from '../attorneyWorkflow/attorneyDocumentRequirementsResolver'
+import { mergeRequirementCandidates } from './mergeRequirementCandidates.js'
 
 export const TRANSACTION_CANONICAL_DOCUMENT_ENGINE_SOURCE = 'transaction_canonical_document_requirement_engine'
 export const TRANSACTION_CANONICAL_DOCUMENT_ENGINE_VERSION = 'transaction_canonical_document_requirement_engine_v1'
@@ -721,7 +722,14 @@ function buildAttorneyAdapterCandidates({
     return {
       generated,
       definition,
-      trace: [{ adapter: 'attorney_document_requirements_resolver', requirement_id: requirement.id }],
+      trace: [{
+        adapter: 'attorney_document_requirements_resolver', requirement_id: requirement.id,
+        scenario_rule_version: requirement.scenarioRuleVersion,
+        applicability: requirement.applicability,
+        // Retain stable scope identifiers, not names or representative details,
+        // in the canonical explanation shared by document views.
+        party_requirements: (requirement.partyRequirements || []).map(item => ({ key: item.key, party_id: item.partyId, role: item.role })),
+      }],
       source: 'attorney_document_requirements_adapter',
       explicitMeta: attorneyRequirementMeta(requirement, definition, facts),
     }
@@ -790,14 +798,7 @@ function attorneyRequirementMeta(requirement = {}, definition = {}, facts = {}) 
 }
 
 function dedupeCandidateRows(candidates = []) {
-  const bySignature = new Map()
-  for (const candidate of candidates) {
-    const signature = buildInstanceSignature(candidate.generated)
-    if (!bySignature.has(signature) || candidate.source === 'canonical_rule') {
-      bySignature.set(signature, candidate)
-    }
-  }
-  return [...bySignature.values()]
+  return mergeRequirementCandidates(candidates, buildInstanceSignature)
 }
 
 export function mapProjectionRowToRequirement(row = {}) {
@@ -1014,9 +1015,7 @@ export function buildProjectedTransactionRequirementCandidates({
 
   const candidates = dedupeCandidateRows([
     ...canonicalCandidates,
-    ...adapterCandidates.filter((candidate) => !canonicalCandidates.some((ruleCandidate) => (
-      buildInstanceSignature(ruleCandidate.generated) === buildInstanceSignature(candidate.generated)
-    ))),
+    ...adapterCandidates,
   ])
 
   return {
@@ -1183,6 +1182,7 @@ export async function maybeResolveTransactionDocumentRequirements({
   subprocesses = null,
   client = supabase,
   rolloutOptions = {},
+  readOnly = false,
 } = {}) {
   const rolloutMode = getCanonicalDocumentRolloutMode({
     transactionId,
@@ -1197,6 +1197,12 @@ export async function maybeResolveTransactionDocumentRequirements({
       reason: 'legacy_primary_mode',
       requirements: [],
     }
+  }
+
+  if (readOnly) {
+    const saved = await fetchTransactionDocumentRequirementsByTransactionIds({ transactionIds: [transactionId], client })
+    const requirements = saved[transactionId] || []
+    return { rolloutMode, requirements, skipped: requirements.length === 0, reason: 'saved_projection_read' }
   }
 
   const writeLegacyProjection = rolloutMode !== DOCUMENT_ROLLOUT_MODES.canonicalOnly || isLegacyDocumentAdapterWritebackEnabled(rolloutOptions)

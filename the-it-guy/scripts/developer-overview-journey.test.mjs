@@ -24,5 +24,6 @@ try {
   const page=readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx',import.meta.url),'utf8')
   assert.match(page,/developerOverview=\{isDeveloperTransactionView\}/)
   assert.match(page,/developerOverview \? <DeveloperOverviewJourney/)
+  assert.match(page,/plan: transaction\?\.routing_profile_json\?\.workflowPlan/, 'Developer journey must use persisted plan without waiting for attorney operations')
   console.log('Developer Overview: five milestones, navigation, loading, empty state and no legal detail PASS')
 }finally{await server.close()}

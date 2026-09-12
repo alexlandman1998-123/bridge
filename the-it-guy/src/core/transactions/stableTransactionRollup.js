@@ -46,6 +46,14 @@ export function selectStableTransactionRollup(previous, incoming, { transactionI
 
   const oldLegal = previous.transactionJourneySnapshot?.legalJourney
   const newLegal = incoming.transactionJourneySnapshot?.legalJourney
+  // Keep a same-matter snapshot during a transient transport/database failure,
+  // but never retain it after an authorization or invalid-plan response.
+  if (oldLegal?.status === 'ready' && newLegal?.status === 'unavailable' && newLegal.retryable &&
+      oldLegal.snapshot?.transactionId === incomingTransactionId) {
+    incoming = { ...incoming, transactionJourneySnapshot: {
+      ...incoming.transactionJourneySnapshot, legalJourney: { ...oldLegal, stale: true },
+    } }
+  }
   if (oldLegal?.status === 'ready' && newLegal?.status === 'ready' &&
       oldLegal.snapshot.transactionId === newLegal.snapshot.transactionId &&
       oldLegal.snapshot.revision > newLegal.snapshot.revision) {

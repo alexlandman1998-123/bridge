@@ -50,3 +50,19 @@ test('rejects a stale response from a previous transaction route', () => {
   const stale = createRollup({ transactionId: 'tx-1', derivedAt: '2026-08-29T08:06:00.000Z' })
   assert.equal(selectStableTransactionRollup(current, stale, { transactionId: 'tx-2' }), current)
 })
+
+test('retains same-matter legal data only for retryable failures and clears stale on recovery', () => {
+  const previous = createRollup()
+  const legal = { status: 'ready', snapshot: { transactionId: 'tx-1', revision: 2, lanes: [] } }
+  previous.transactionJourneySnapshot.legalJourney = legal
+  const failed = createRollup()
+  failed.transactionJourneySnapshot.legalJourney = { status: 'unavailable', snapshot: null, retryable: true }
+  const retained = selectStableTransactionRollup(previous, failed, { transactionId: 'tx-1' })
+  assert.equal(retained.transactionJourneySnapshot.legalJourney.stale, true)
+  assert.equal(retained.transactionJourneySnapshot.legalJourney.snapshot, legal.snapshot)
+  const recovered = createRollup()
+  recovered.transactionJourneySnapshot.legalJourney = legal
+  assert.equal(selectStableTransactionRollup(retained, recovered).transactionJourneySnapshot.legalJourney.stale, undefined)
+  failed.transactionJourneySnapshot.legalJourney.retryable = false
+  assert.equal(selectStableTransactionRollup(previous, failed).transactionJourneySnapshot.legalJourney.status, 'unavailable')
+})

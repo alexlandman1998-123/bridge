@@ -40,7 +40,14 @@ for (const scenario of scenarios) {
       const workbench = buildLegalTaskWorkbenchModel({ task: initial.selectedTask,
         taskContext: initial.selectedTaskContext, workActions: initial.selectedTaskContext.workActions,
         statusActions: initial.availableActions.primary })
-      assert.equal(workbench.canComplete, true, `${scenario.name}/${stepKey}: work ahead is available`)
+      const isTransferTaxLodgementGate = lane.laneKey === 'transfer' && stepKey === 'lodgement_ready'
+      // Attorneys can work ahead across the workflow. The sole deliberate
+      // exception is lodging a transfer before the applicable SARS route is
+      // confirmed: that is a statutory readiness gate, not a generic UI lock.
+      assert.equal(workbench.canComplete, !isTransferTaxLodgementGate, `${scenario.name}/${stepKey}: completion availability must match the tax-lodgement rule`)
+      if (isTransferTaxLodgementGate) {
+        assert(workbench.outcomeActions.some(action => action.id === 'mark_not_applicable' && !action.disabled), `${scenario.name}/${stepKey}: attorney retains an explicit N/A route`)
+      }
       assert(workbench.outcomeActions.some(action => action.id === 'complete_externally' && action.requiresReason))
       assert(workbench.outcomeActions.some(action => action.id === 'mark_not_applicable' && action.requiresReason))
       assert.equal(make(stepKey, snapshot, false).availableActions.primary.length, 0, 'read-only users have no mutation actions')

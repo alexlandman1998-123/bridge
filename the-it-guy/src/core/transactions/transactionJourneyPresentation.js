@@ -18,7 +18,7 @@ export function buildTransactionJourneyPresentation({
   fallbackProgressPercent,
   fallbackSource = 'legacy',
 } = {}) {
-  if (snapshot?.legalJourney || snapshot?.highLevelJourney?.ruleVersion === 1) {
+  if (!snapshot?.legalOnly && (snapshot?.legalJourney || snapshot?.highLevelJourney?.ruleVersion === 1)) {
     const highLevelJourney = buildSharedHighLevelJourney(snapshot)
     const steps = highLevelJourney.milestones.map(m => ({ ...m, key: m.id,
       isCurrent: ['in_progress', 'waiting', 'blocked'].includes(m.status),

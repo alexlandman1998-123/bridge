@@ -545,7 +545,7 @@ async function fetchDirectParticipantRowsByIdentity(
       'transaction_id',
       'role_type',
       ...(includeStatus ? ['status', 'removed_at'] : []),
-      ...(normalizedOrganisationId ? ['transaction:transactions!inner(organisation_id)'] : []),
+      ...(normalizedOrganisationId ? ['transaction:transactions!transaction_participants_transaction_id_fkey!inner(organisation_id)'] : []),
     ].join(', ')
     let builder = client.from('transaction_participants').select(selectFields).eq(identityColumn, identityValue)
     if (normalizedOrganisationId) {

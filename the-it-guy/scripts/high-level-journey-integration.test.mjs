@@ -5,8 +5,14 @@ import { createServer } from 'vite'
 import { buildDeveloperJourneySnapshot } from '../src/core/transactions/highLevelJourneyAdapter.js'
 import { projectSharedMatterJourneyRead } from '../src/services/sharedMatterJourneyReader.js'
 const keys=['lodgement_ready','lodged_at_deeds_office','registered']
-const input={transaction:{id:'matter',lifecycle_state:'active'},financeType:'cash',plan:{status:'active',lanes:[{laneKey:'transfer',stepKeys:keys}]},rollup:{transactionId:'matter',usedLegacyFallback:false,workflows:{sales_otp:{requiredSteps:[{key:'signed_otp_received',status:'complete'}]},finance_cash:{requiredSteps:[{key:'proof_of_funds_reviewed',status:'completed'},{key:'cash_confirmation_approved',status:'waiting'}]}},transactionJourneySnapshot:{legalJourney:{status:'ready',snapshot:projectSharedMatterJourneyRead({schemaVersion:1,transactionId:'matter',revision:10,planRevision:10,lanes:[{key:'transfer',phases:[{key:'registration',label:'Registration',clientLabel:'Registration',tasks:keys.map(key=>({key,label:key,clientLabel:key,status:'completed',revision:10}))}]}]})}}}}
+const input={transaction:{id:'matter',lifecycle_state:'active'},financeType:'cash',plan:{status:'active',lanes:[{laneKey:'transfer',stepKeys:keys}]},rollup:{transactionId:'matter',usedLegacyFallback:false,workflows:{sales_otp:{requiredSteps:[{key:'signed_otp_received',status:'complete'}]},finance_cash:{requiredSteps:[{key:'proof_of_funds_reviewed',status:'completed'},{key:'cash_confirmation_approved',status:'waiting'}]}},transactionJourneySnapshot:{legalJourney:{status:'ready',snapshot:projectSharedMatterJourneyRead({schemaVersion:1,transactionId:'matter',revision:10,planRevision:10,lanes:[{key:'transfer',phases:[{key:'registration',label:'Registration',clientLabel:'Registration',tasks:keys.map(key=>({key,label:key,clientLabel:key,status:'completed',revision:10}))}]}]}, {audience:'developer'})}}}}
 const result=buildDeveloperJourneySnapshot(input)
+const readerManifest=structuredClone(input)
+readerManifest.plan=null
+readerManifest.rollup.transactionJourneySnapshot.legalJourney.snapshot.requiredLaneKeys=['transfer']
+assert.equal(buildDeveloperJourneySnapshot(readerManifest).legalJourney.status,'ready','Active reader manifest must not depend on attorney operations or route enrichment')
+readerManifest.rollup.transactionJourneySnapshot.legalJourney.snapshot.requiredLaneKeys=['transfer','bond']
+assert.equal(buildDeveloperJourneySnapshot(readerManifest).legalJourney.status,'unavailable','Incomplete manifest must remain unavailable')
 assert.equal(result.legalJourney,input.rollup.transactionJourneySnapshot.legalJourney)
 assert.deepEqual(result.highLevelJourney.milestones.map(m=>m.status),['complete','waiting','complete','complete','complete'])
 for(const mutate of [

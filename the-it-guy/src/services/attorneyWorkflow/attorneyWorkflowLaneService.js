@@ -7,6 +7,7 @@ import {
   canSeeAttorneyUpdateVisibility,
   canUpdateAttorneyLanePermission,
   getAttorneyLegalPermissionContext,
+  getAttorneyLegalPermissionContexts,
 } from '../permissions/attorneyPermissionService'
 import { DOCUMENTS_BUCKET_CANDIDATES } from '../../lib/supabaseClient'
 import { uploadToStorageCandidateBuckets } from '../../lib/storageFallbacks.js'
@@ -68,6 +69,7 @@ import {
   resolveMatterWorkflowPlan,
 } from './matterWorkflowPlanService.js'
 import { isAttorneyTaskResolved, isAttorneyTaskCompleted } from '../../core/transactions/attorneyTaskOutcomes.js'
+import { assertTransferTaxLodgementReadiness } from './transferTaxLodgementGate.js'
 
 const LANE_META = {
   transfer: {
@@ -94,6 +96,25 @@ const UPDATE_TYPE_BY_VISIBILITY = {
   internal: 'internal_note',
   professional_shared: 'shared_professional_update',
   client_visible: 'client_safe_update',
+}
+
+// The atomic RPC is the source of truth for an attorney action.  Its follow-up
+// operational projection is useful for an optimistic refresh, but must never
+// keep a completed task button spinning indefinitely when a read is slow.
+const POST_COMMIT_OPERATIONS_READ_TIMEOUT_MS = 3500
+
+async function readOperationsWithinBudget(operation) {
+  let timeoutId = null
+  try {
+    return await Promise.race([
+      Promise.resolve().then(operation),
+      new Promise((resolve) => {
+        timeoutId = setTimeout(() => resolve(null), POST_COMMIT_OPERATIONS_READ_TIMEOUT_MS)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
 }
 
 const TIMELINE_FILTERS = [
@@ -958,7 +979,7 @@ async function createLane(client, { transactionId, laneKey, assignment, actorId 
 function buildMissingStepRows(laneRow, laneKey, existingSteps = [], workflowPlan = null) {
   const plannedStageKeys = getMatterWorkflowPlanStepKeys(workflowPlan, laneKey)
   const stages = plannedStageKeys.length ? plannedStageKeys : getLaneStages(laneKey)
-  const existingCanonicalKeys = new Set((existingSteps || []).map((step) => normalizeAttorneyStageKey(step.step_key, laneKey)))
+  const existingCanonicalKeys = new Set((existingSteps || []).map((step) => step.step_key))
   return stages
     .filter((stageKey) => !existingCanonicalKeys.has(stageKey))
     .map((stageKey, index) => ({
@@ -1021,11 +1042,13 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   const routingProfile = transaction.routing_profile_json || transaction.routingProfile || {}
   const storedWorkflowPlan = readMatterWorkflowPlan(routingProfile)
   // Generated provisional templates are not the persisted shared plan.
-  const workflowPlan = storedWorkflowPlan?.status === 'active' ? resolveMatterWorkflowPlan(routingProfile) : null
-  const assignments = await getTransactionAttorneyAssignments(normalizedTransactionId).catch(() => [])
-  const delegations = actor?.id
-    ? await getAttorneyLaneDelegations({ transactionId: normalizedTransactionId }, { client }).catch(() => [])
-    : []
+  // Read exactly the manifest used by the shared journey. Scenario updates
+  // reconcile it explicitly; reads must not silently regenerate another plan.
+  const workflowPlan = storedWorkflowPlan?.status === 'active' ? storedWorkflowPlan : null
+  const [assignments, delegations] = await Promise.all([
+    getTransactionAttorneyAssignments(normalizedTransactionId).catch(() => []),
+    actor?.id ? getAttorneyLaneDelegations({ transactionId: normalizedTransactionId }, { client }).catch(() => []) : [],
+  ])
   const workflow = resolveAttorneyWorkflowForTransaction(transaction, assignments)
   const legalDocuments = resolveLegalDocumentRequirements(transaction)
   const requiredLaneKeys = workflowPlan?.status === 'active' ? workflowPlan.laneKeys : Object.entries(workflow.lanes)
@@ -1033,16 +1056,14 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     .map(([laneKey]) => laneKey)
   const assignmentLaneKeys = assignments.map(getLaneKeyForAssignment).filter(Boolean)
   const permissionLaneKeys = [...new Set([...requiredLaneKeys, ...assignmentLaneKeys])]
-  const laneContexts = {}
+  const laneContexts = Object.fromEntries(permissionLaneKeys.map(laneKey => [laneKey, null]))
 
-  for (const laneKey of permissionLaneKeys) {
-    const meta = LANE_META[laneKey]
-    if (!meta) continue
-    laneContexts[laneKey] = await getAttorneyLegalPermissionContext({
-      userId: actor?.id || null,
-      transactionId: normalizedTransactionId,
-      attorneyRole: meta.attorneyRole,
-    }).catch(async (error) => {
+  const permissionContexts = await getAttorneyLegalPermissionContexts({
+    userId: actor?.id || null,
+    transactionId: normalizedTransactionId,
+    attorneyRoles: permissionLaneKeys.map((laneKey) => LANE_META[laneKey]?.attorneyRole).filter(Boolean),
+  }).catch(async (error) => {
+    await Promise.all(permissionLaneKeys.map(async (laneKey) => {
       await recordAttorneySecurityEvent(client, {
         transactionId: normalizedTransactionId,
         actorId: actor?.id || null,
@@ -1052,9 +1073,13 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
           message: sanitizeError(error, 'Unable to resolve permissions.'),
         },
       })
-      return null
-    })
-  }
+    }))
+    return []
+  })
+  permissionContexts.forEach((context) => {
+    const laneKey = Object.entries(LANE_META).find(([, meta]) => meta.attorneyRole === context?.attorneyRole)?.[0]
+    if (laneKey) laneContexts[laneKey] = context
+  })
 
   const authorizedContexts = Object.values(laneContexts).filter((context) => context?.canViewLegalWorkspace)
   const baselineContext = authorizedContexts[0] || null
@@ -1139,7 +1164,7 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
     }
   }
 
-  const sharedJourney = await fetchSharedMatterJourney(client, normalizedTransactionId)
+  const sharedJourney = await fetchSharedMatterJourney(client, normalizedTransactionId, { audience: 'attorney' })
   steps = alignWorkStepsWithSharedJourney(steps, laneRows, sharedJourney, workflowPlan)
   stepsBySubprocessId = steps.reduce((groups, step) => {
     ;(groups[step.subprocess_id] ||= []).push(step)
@@ -1709,6 +1734,24 @@ async function fetchLaneForUpdate(client, transactionId, laneKey) {
   return query.data
 }
 
+async function assertTransferTaxGateBeforeLodgement(client, { transactionId, lane, laneKey, stepKey, status } = {}) {
+  if (laneKey !== 'transfer' || status !== 'completed') return
+  if (!['lodgement_ready', 'lodged_at_deeds_office'].includes(stepKey)) return
+
+  const [transaction, stepsResult] = await Promise.all([
+    fetchTransaction(client, transactionId),
+    client
+      .from('transaction_subprocess_steps')
+      .select('step_key, status')
+      .eq('subprocess_id', lane.id),
+  ])
+  if (stepsResult.error) throw stepsResult.error
+  assertTransferTaxLodgementReadiness({
+    transferTaxDecision: transaction.routing_profile_json?.transferTaxDecision || transaction.routing_profile_json?.transfer_tax_decision || {},
+    steps: stepsResult.data || [],
+  })
+}
+
 export async function updateAttorneyWorkflowLaneStage({ transactionId, laneKey, stageKey, note = '', laneStatus = 'in_progress', visibility = 'internal' } = {}) {
   // Legacy stage controls now update only the selected task. Working ahead must
   // never complete earlier work or erase external/not-applicable outcomes.
@@ -1746,7 +1789,9 @@ export async function updateAttorneyWorkflowStepStatus({
     .select('id, subprocess_id, step_key, step_label, status, completed_at, comment, owner_type, sort_order, updated_at, created_at')
     .eq('subprocess_id', lane.id)
 
-  stepQuery = stepId ? stepQuery.eq('id', stepId) : stepQuery.in('step_key', getAttorneyStageAliases(normalizedStepKey, normalizedLaneKey)).limit(1)
+  // Aliases identify historical evidence, not the row an active task may edit.
+  // An unordered alias lookup could update a retired row instead of the task.
+  stepQuery = stepId ? stepQuery.eq('id', stepId) : stepQuery.eq('step_key', normalizedStepKey)
   const stepResult = await stepQuery.maybeSingle()
   if (stepResult.error) {
     if (isMissingSchemaError(stepResult.error)) throw new Error('Attorney workflow steps are not set up yet.')
@@ -1779,6 +1824,13 @@ export async function updateAttorneyWorkflowStepStatus({
   if (['completed_externally', 'not_applicable'].includes(normalizedStatus) && !normalizedNote) {
     throw new Error('Record a reason for this task outcome.')
   }
+  await assertTransferTaxGateBeforeLodgement(client, {
+    transactionId: normalizedTransactionId,
+    lane,
+    laneKey: normalizedLaneKey,
+    stepKey: resolvedStepKey,
+    status: normalizedStatus,
+  })
   const atomicUpdate = await commitSharedJourneyTask(client, {
     p_transaction_id: normalizedTransactionId,
     p_lane_key: normalizedLaneKey,
@@ -1804,9 +1856,14 @@ export async function updateAttorneyWorkflowStepStatus({
   }
 
   // Dispatch already-queued delivery only; no second publication/write RPC.
-  await dispatchCommittedProgressNotifications(client, normalizedTransactionId)
+  // Delivery is deliberately non-blocking: the shared command above is the
+  // durable outcome and an email/provider delay must not leave the attorney's
+  // task dialog in a perpetual saving state.
+  void dispatchCommittedProgressNotifications(client, normalizedTransactionId).catch(() => {})
   // The command has committed. A failed follow-up read is not a failed save.
-  const operations = await getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false }).catch(() => null)
+  const operations = await readOperationsWithinBudget(() => (
+    getAttorneyWorkflowOperationsForTransaction(normalizedTransactionId, { initialize: false }).catch(() => null)
+  ))
   const canonicalTransaction = operations?.transaction || {
     id: normalizedTransactionId,
     current_main_stage: atomicUpdate.data?.matterStage,

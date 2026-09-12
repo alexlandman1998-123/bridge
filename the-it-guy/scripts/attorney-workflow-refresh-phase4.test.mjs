@@ -20,7 +20,11 @@ assert.match(detailPage, /const refreshCanonicalTransactionSnapshot = useCallbac
 assert.match(detailPage, /invalidateTransactionWorkspaceCoreCache\(normalizedTransactionId\)/i)
 assert.match(detailPage, /fetchTransactionRouteCoreById\(normalizedTransactionId\)/i)
 assert.match(detailPage, /requestTransactionRollup\(normalizedTransactionId, \{ force: true \}\)/i)
-assert.match(detailPage, /refreshTransactionDatasets\(\['workflow', 'activity'\], \{ reason: `live:\$\{reason\}` \}\)/i)
+assert.match(detailPage, /const refreshAttorneyMutationWorkspace = useCallback/i)
+assert.match(detailPage, /canonicalRefreshRequestRef/i)
+assert.match(detailPage, /refreshRollup: String\(workspaceMenu \|\| ''\)\.toLowerCase\(\) === 'overview'/i)
+assert.match(detailPage, /await refreshAttorneyMutationWorkspace\('workflow_mutation'\)/i)
+assert.doesNotMatch(detailPage, /refreshTransactionDatasets\(\['workflow', 'activity'\], \{ reason: `live:\$\{reason\}` \}\)/i)
 assert.match(detailPage, /new CustomEvent\('itg:transaction-updated'/i)
 assert.match(detailPage, /source: 'attorney_workflow_atomic_update'/i)
 
