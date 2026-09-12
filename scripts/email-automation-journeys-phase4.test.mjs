@@ -17,6 +17,6 @@ for (const item of [
   'enable row level security',
 ]) assert.ok(migration.includes(item), `Missing migration contract: ${item}`)
 for (const item of ['saveEmailAutomation', 'email_automation_journeys', 'email_automation_steps']) assert.ok(service.includes(item), `Missing service contract: ${item}`)
-for (const item of ['EmailAutomationStudio', 'JOURNEY BLUEPRINT', 'Save journey draft', 'Activation and event processing']) assert.ok(component.includes(item), `Missing UI contract: ${item}`)
+for (const item of ['EmailAutomationStudio', 'JOURNEY BLUEPRINT', 'Save journey draft', 'LIVE CONTROL', 'Journey status', 'Activate', 'Pause']) assert.ok(component.includes(item), `Missing UI contract: ${item}`)
 assert.ok(page.includes('view: "automation"'), 'Automation route is not wired')
 console.log('Email automation journeys Phase 4 checks passed.')
