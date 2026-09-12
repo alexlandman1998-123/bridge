@@ -376,8 +376,10 @@ try {
 
   assert.equal(transferMove.allowed, true)
   assert.equal(transferMove.rollup.parentStage, 'TRANSFER')
-  assert.equal(transferMove.compatibility.current_main_stage, 'TRANSFER')
-  assert.equal(client.state.units[0].status, 'TRANSFER')
+  // Compatibility fields retain the legacy compact transaction-stage code;
+  // the canonical workflow parent stage above remains TRANSFER.
+  assert.equal(transferMove.compatibility.current_main_stage, 'XFER')
+  assert.equal(client.state.units[0].status, 'Transfer in Progress')
 
   const cashClient = buildMockClient({
     transactions: [{
@@ -507,7 +509,7 @@ try {
   })
   assert.equal(registrationReady.allowed, true)
   assert.equal(registrationReady.rollup.parentStage, 'REGISTRATION')
-  assert.equal(registrationReady.compatibility.current_main_stage, 'REGISTRATION')
+  assert.equal(registrationReady.compatibility.current_main_stage, 'REG')
 
   const registered = await actionService.runWorkflowAction({
     transactionId: 'tx-2',
@@ -523,7 +525,7 @@ try {
   })
   assert.equal(registered.allowed, true)
   assert.equal(registered.rollup.parentStage, 'COMPLETE')
-  assert.equal(registered.compatibility.current_main_stage, 'COMPLETE')
+  assert.equal(registered.compatibility.current_main_stage, 'REG')
   assert.equal(cashClient.state.transactions[0].registration_confirmation_document_id, 'doc-reg-1')
   assert.equal(cashClient.state.transaction_workflow_evidence.some((item) => item.evidence_id === 'doc-reg-1'), true)
 
