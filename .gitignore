@@ -4,6 +4,7 @@ node_modules
 dist
 build
 .vite
+.next/
 test-results
 supabase/.temp/
 .vercel
