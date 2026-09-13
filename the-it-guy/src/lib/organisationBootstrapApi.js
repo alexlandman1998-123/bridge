@@ -1038,6 +1038,7 @@ export async function fetchAgencyOnboardingSettings({ forceRefresh = false } = {
     const response = {
       onboarding: hydratedOnboarding,
       organisation: context.organisation,
+      organisationSettings: context.organisationSettings,
       membershipRole: context.membershipRole,
       membershipStatus: context.membershipStatus,
       onboardingMode: context.onboardingMode,
