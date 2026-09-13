@@ -1,3 +1,4 @@
+import { DOCUMENT_GENERATOR_RETIRED_MESSAGE } from '../documents/documentGeneratorRetirement.js'
 export const KINGSTONS_BUYER_OTP_READINESS_VERSION = 'kingstons_buyer_otp_readiness_phase1_v1'
 export const KINGSTONS_BUYER_OTP_OFFER_LINK_VERSION = 'kingstons_buyer_otp_offer_link_phase3_v1'
 export const KINGSTONS_BUYER_OTP_TRANSACTION_HANDOFF_SOURCE = 'kingstons_buyer_otp_phase4_transaction_handoff'
@@ -6,7 +7,7 @@ export const KINGSTONS_BUYER_OTP_DIGITAL_DECISION_VERSION = 'kingstons_buyer_otp
 
 export const KINGSTONS_BUYER_OTP_DIGITAL_DECISION = Object.freeze({
   version: KINGSTONS_BUYER_OTP_DIGITAL_DECISION_VERSION,
-  status: 'paused',
+  status: 'retired',
   livePath: 'manual_buyer_otp_upload',
   label: 'Signed OTP upload',
   reason: '',
@@ -297,27 +298,14 @@ export function buildKingstonsBuyerPortalDecision({
 }
 
 export function buildKingstonsBuyerOtpDigitalDecision({
-  isKingstons = false,
   requestedAction = '',
 } = {}) {
-  if (!isKingstons) {
-    return {
-      version: KINGSTONS_BUYER_OTP_DIGITAL_DECISION_VERSION,
-      status: 'available',
-      livePath: 'digital_or_manual',
-      blocked: false,
-      requestedAction,
-      digitalOtpEnabled: true,
-      message: '',
-    }
-  }
-
   return {
     ...KINGSTONS_BUYER_OTP_DIGITAL_DECISION,
     blocked: true,
     requestedAction,
     digitalOtpEnabled: false,
-    message: '',
+    message: DOCUMENT_GENERATOR_RETIRED_MESSAGE,
   }
 }
 

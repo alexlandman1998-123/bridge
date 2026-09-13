@@ -808,14 +808,6 @@ function AttorneyWorkflowLanesPanel({ transactionId, onChanged }) {
                             Upload Document
                           </Button>
                         ) : null}
-                        {lane.permissions?.canManageSigning ? (
-                          <Button asChild type="button" variant="secondary" className="w-full">
-                            <Link to={`/transactions/${transactionId}/legal/mandate`}>
-                              <ExternalLink size={16} />
-                              Open Signing Packets
-                            </Link>
-                          </Button>
-                        ) : null}
                       </>
                     ) : (
                       <span className="rounded-control border border-borderSoft bg-surface px-4 py-3 text-sm text-textMuted">

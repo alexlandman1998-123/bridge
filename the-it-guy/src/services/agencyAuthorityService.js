@@ -139,6 +139,7 @@ export function canPerformAgencyAuthorityAction(action, actor = {}, target = {},
   const actorRole = normalizeAgencyAuthorityRole(actor.authorityRole || actor.role || actor.membershipRole || actor.organisationRole)
   const targetRole = normalizeAgencyAuthorityRole(target.authorityRole || target.role || target.membershipRole || target.organisationRole)
   const rule = AGENCY_AUTHORITY_MATRIX[action]
+  if (['agency', 'residential'].includes(actor.workspaceType) && !hasOpenAgencyOperations(actor)) return false
   if (hasOpenAgencyOperations(actor) && rule && getUserId(actor) &&
       ![AGENCY_AUTHORITY_ACTIONS.deleteOrganisation, AGENCY_AUTHORITY_ACTIONS.manageBilling].includes(action)) {
     return true

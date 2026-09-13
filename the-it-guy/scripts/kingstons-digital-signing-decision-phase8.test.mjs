@@ -18,7 +18,7 @@ function assertIncludes(source, snippet, message) {
 }
 
 assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION_VERSION, 'kingstons_digital_signing_decision_phase8_v1')
-assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.status, 'paused')
+assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.status, 'retired')
 assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.livePath, 'manual_seller_pack')
 assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.label, '')
 assert.equal(KINGSTONS_DIGITAL_SIGNING_DECISION.agentAction, '')
@@ -28,15 +28,15 @@ const kingstonsDecision = buildKingstonsDigitalSigningDecision({
   requestedAction: 'mandate_signing',
 })
 assert.equal(kingstonsDecision.blocked, true)
-assert.equal(kingstonsDecision.status, 'paused')
-assert.equal(kingstonsDecision.message, '')
+assert.equal(kingstonsDecision.status, 'retired')
+assert.match(kingstonsDecision.message, /retired/)
 
 const ordinaryDecision = buildKingstonsDigitalSigningDecision({
   isKingstons: false,
   requestedAction: 'mandate_signing',
 })
-assert.equal(ordinaryDecision.blocked, false)
-assert.equal(ordinaryDecision.status, 'available')
+assert.equal(ordinaryDecision.blocked, true)
+assert.equal(ordinaryDecision.status, 'retired')
 
 assertIncludes(
   agencyPage,
@@ -47,11 +47,6 @@ assertIncludes(
   agencyPage,
   'const selectedLeadKingstonsDigitalSigningDecision = useMemo',
   'Lead workspace must memoize the Kingston digital signing decision.',
-)
-assertIncludes(
-  agencyPage,
-  'if (selectedLeadKingstonsDigitalSigningDecision.blocked)',
-  'Lead digital mandate actions must be blocked by the shared decision.',
 )
 assertIncludes(
   agencyPage,

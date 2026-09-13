@@ -1,3 +1,4 @@
+import InlineCommissionStructure from '../components/commission/InlineCommissionStructure'
 import {
   AlertTriangle,
   Archive,
@@ -340,28 +341,29 @@ function AgentInviteModal({
   commissionStructureOptions = [],
   defaultCommissionStructure = null,
   showOrganisationSelect = false,
-  onManageCommissionStructures,
+  onCommissionStructureCreated,
 }) {
   const hasCommissionStructures = commissionStructureOptions.length > 0
+  const [commissionSaving, setCommissionSaving] = useState(false)
   return (
     <Modal
       open={open}
-      onClose={submitting ? undefined : onClose}
+      onClose={submitting || commissionSaving ? undefined : onClose}
       title="Add Agent"
       subtitle="Invite an agent to your organisation. They will receive an onboarding link by email and WhatsApp."
       className="max-w-4xl"
       footer={
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting || commissionSaving}>
             Cancel
           </Button>
-          <Button type="submit" form="agent-invite-form" disabled={submitting}>
+          <Button type="submit" form="agent-invite-form" disabled={submitting || commissionSaving}>
             {submitting ? 'Sending Invite…' : 'Send Invite'}
           </Button>
         </div>
       }
     >
-      <form id="agent-invite-form" className="space-y-5" onSubmit={onSubmit}>
+      <form id="agent-invite-form" className="space-y-5" onSubmit={(event) => { if (commissionSaving) event.preventDefault(); else onSubmit(event) }}>
         <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
           <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Agent Details</p>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -390,12 +392,8 @@ function AgentInviteModal({
               <p className="text-[0.74rem] font-semibold uppercase tracking-[0.1em] text-[#7a8ca2]">Commercial Details</p>
               <p className="mt-1 text-sm text-[#61748d]">Optionally set a sales commission structure now. You can assign or change it later, before any commissionable transaction is created.</p>
             </div>
-            {!hasCommissionStructures ? (
-              <Button type="button" variant="ghost" onClick={onManageCommissionStructures}>
-                Set Up
-              </Button>
-            ) : null}
           </div>
+          <InlineCommissionStructure onCreated={onCommissionStructureCreated} onSavingChange={setCommissionSaving} disabled={submitting} />
           {hasCommissionStructures ? (
             <label className="mt-3 grid gap-1.5">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sales Commission Structure</span>
@@ -403,8 +401,9 @@ function AgentInviteModal({
                 <option value="">
                   {defaultCommissionStructure
                     ? `Use agency default: ${defaultCommissionStructure.name}`
-                    : 'Select sales commission structure'}
+                    : 'Save agent without a commission structure'}
                 </option>
+                {defaultCommissionStructure ? <option value="__unassigned__">Save agent without a commission structure</option> : null}
                 {commissionStructureOptions.map((structure) => (
                   <option key={structure.id} value={structure.id}>
                     {structure.name} ({formatPercent(structure.agentSplitPercentage)} agent / {formatPercent(structure.agencySplitPercentage)} agency)
@@ -1334,7 +1333,7 @@ function resolveOrganisationOptions({ directory = null, invites = [], profile = 
     }
 
     const existing = deduped.get(normalizedId)
-    if (!existing.name && normalizedName) {
+    if ((!existing.name || existing.name === 'Arch9 Organisation') && normalizedName !== 'Arch9 Organisation') {
       deduped.set(normalizedId, { id: normalizedId, name: normalizedName })
     }
   }
@@ -6405,7 +6404,7 @@ export function AgentsPage() {
       if (matched) {
         return {
           ...previous,
-          organisationName: previous.organisationName || matched.name,
+          organisationName: matched.name,
         }
       }
 
@@ -6456,7 +6455,7 @@ export function AgentsPage() {
   useEffect(() => {
     setInviteForm((previous) => {
       const structureId = String(previous?.commissionStructureId || '').trim()
-      if (!structureId || activeCommissionStructureOptions.some((structure) => structure.id === structureId)) return previous
+      if (!structureId || structureId === '__unassigned__' || activeCommissionStructureOptions.some((structure) => structure.id === structureId)) return previous
       return { ...previous, commissionStructureId: '' }
     })
   }, [activeCommissionStructureOptions])
@@ -6587,7 +6586,11 @@ export function AgentsPage() {
   }
 
   function resetInviteForm() {
-    setInviteForm(buildAgentInviteForm({ profile, directory: readAgentDirectory() }))
+    const organisation = organisationOptions.find((option) => option.id === workspaceOrganisation?.id) || organisationOptions[0]
+    setInviteForm({
+      ...buildAgentInviteForm({ profile, directory: readAgentDirectory() }),
+      ...(organisation ? { organisationId: organisation.id, organisationName: organisation.name } : {}),
+    })
     setInviteError('')
   }
 
@@ -6727,7 +6730,7 @@ export function AgentsPage() {
 
       const selectedOrganisation = organisationOptions.find((option) => option.id === String(inviteForm.organisationId || '').trim().toLowerCase())
       const selectedBranch = inviteBranchOptions.find((branch) => branch.id === String(inviteForm.branchId || '').trim())
-      const selectedCommissionStructure =
+      const selectedCommissionStructure = inviteForm.commissionStructureId === '__unassigned__' ? null :
         activeCommissionStructureOptions.find((structure) => structure.id === String(inviteForm.commissionStructureId || '').trim()) ||
         defaultCommissionStructure
       const created = await createWorkspaceUserInvite({
@@ -7324,9 +7327,9 @@ export function AgentsPage() {
             commissionStructureOptions={activeCommissionStructureOptions}
             defaultCommissionStructure={defaultCommissionStructure}
             showOrganisationSelect={organisationOptions.length > 1}
-            onManageCommissionStructures={() => {
-              setInviteModalOpen(false)
-              navigate('/agency/commission')
+            onCommissionStructureCreated={(structure) => {
+              setCommissionStructures((previous) => [...previous.filter((row) => row.id !== structure.id), structure])
+              setInviteForm((previous) => ({ ...previous, commissionStructureId: structure.id }))
             }}
           />
 

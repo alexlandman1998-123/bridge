@@ -4,6 +4,7 @@ import { hasOpenAgencyOperations } from '../../lib/agencyOperationsAccess'
 import Button from '../../components/ui/Button'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Field from '../../components/ui/Field'
+import InlineCommissionStructure from '../../components/commission/InlineCommissionStructure'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { PERMISSIONS } from '../../auth/permissions/permissionRegistry'
 import { isPlatformAdmin } from '../../auth/permissions/permissionResolver'
@@ -303,7 +304,7 @@ export default function SettingsUsersPage() {
   )
   const [membershipRole, setMembershipRole] = useState('viewer')
   const canEdit = can(PERMISSIONS.manageUsers)
-  const openAgencyOperations = hasOpenAgencyOperations({ workspaceType: resolvedWorkspaceType, hasActiveMembership: canEdit })
+  const openAgencyOperations = hasOpenAgencyOperations({ workspaceType: resolvedWorkspaceType, membershipRole, hasActiveMembership: canEdit })
   const canManageOwnership = openAgencyOperations || isPrimaryOrganisationOwner
   const canManageJobTitles = openAgencyOperations || isOrganisationOwner
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
@@ -317,6 +318,7 @@ export default function SettingsUsersPage() {
   )
   const [users, setUsers] = useState([])
   const [commissionStructures, setCommissionStructures] = useState([])
+  const [commissionSaving, setCommissionSaving] = useState(false)
   const [commissionProfiles, setCommissionProfiles] = useState([])
   const [pendingPrincipalClaimInvites, setPendingPrincipalClaimInvites] = useState([])
   const [principalClaimInviteHistory, setPrincipalClaimInviteHistory] = useState([])
@@ -539,12 +541,13 @@ export default function SettingsUsersPage() {
 
   async function handleInvite(event) {
     event.preventDefault()
-    if (!canEdit) return
+    if (!canEdit || commissionSaving) return
     try {
       setSaving(true)
       setError('')
       setMessage('')
       const selectedCommissionStructure =
+        inviteForm.commissionStructureId === '__unassigned__' ? null :
         commissionStructureById.get(String(inviteForm.commissionStructureId || '').trim()) ||
         defaultCommissionStructure ||
         null
@@ -967,6 +970,7 @@ export default function SettingsUsersPage() {
               onChange={(event) => setInviteForm((previous) => ({ ...previous, commissionStructureId: event.target.value }))}
             >
               <option value="">Use default / unassigned</option>
+              {defaultCommissionStructure ? <option value="__unassigned__">Save user without a commission structure</option> : null}
               {commissionStructures
                 .filter((item) => item.isActive)
                 .map((item) => (
@@ -986,9 +990,15 @@ export default function SettingsUsersPage() {
               </span>
             ) : null}
           </label>
+          {canEdit && !principalInviteSelected && ['agency', 'residential'].includes(resolvedWorkspaceType) ? (
+            <InlineCommissionStructure disabled={saving} onSavingChange={setCommissionSaving} onCreated={(structure) => {
+              setCommissionStructures((previous) => [...previous.filter((item) => item.id !== structure.id), structure])
+              setInviteForm((previous) => ({ ...previous, commissionStructureId: structure.id }))
+            }} />
+          ) : null}
           {canEdit ? (
             <div className={`${settingsActionRowClass} md:col-span-2`}>
-              <Button type="submit" disabled={saving}>
+              <Button type="submit" disabled={saving || commissionSaving}>
                 {saving ? 'Inviting…' : principalInviteSelected ? 'Send Principal Claim' : 'Invite User'}
               </Button>
             </div>

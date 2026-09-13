@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ArrowLeft, ArrowUpRight, CheckCircle2, Globe2, LayoutTemplate, LockKeyhole, Megaphone, MonitorSmartphone, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ArrowUpRight, CalendarDays, CheckCircle2, ChevronRight, FileText, Globe2, LayoutTemplate, LockKeyhole, Megaphone, MessageCircle, MonitorSmartphone, Pencil, RefreshCw, UserPlus, Users } from 'lucide-react'
 import { useAuthSession } from '../../context/AuthSessionContext'
 import { createWebsiteCampaignPage, createWebsiteDraft, createWebsiteSite, deleteWebsiteDraftCampaign, discardWebsiteDraft, getWebsiteWorkspaceOverview, manageWebsiteDomain, publishWebsiteDraft, resetWebsiteDraftBrand, rollbackWebsiteRevision, saveWebsiteDraftBrand, saveWebsiteDraftPage } from '../../services/websiteWorkspaceService'
 import WebsiteBrandEditor from './WebsiteBrandEditor'
@@ -35,6 +35,36 @@ function isRepairableBrandBlocker(value) {
 
 function getOrganisationId(authState) {
   return String(authState?.currentWorkspace?.id || authState?.currentMembership?.workspaceId || authState?.currentMembership?.workspace_id || '').trim()
+}
+
+function websiteName(authState, overview) {
+  return String(authState?.currentWorkspace?.name || authState?.currentWorkspace?.organisationName || authState?.currentMembership?.workspaceName || overview.site?.previewSlug || 'Your agency website').replace(/[-_]+/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function WebsiteStats({ analytics }) {
+  const stats = [
+    { label: 'Visits', value: analytics?.visits, icon: Users, trend: '—' },
+    { label: 'Enquiries', value: analytics?.submissions, icon: MessageCircle, trend: '—' },
+    { label: 'Listing views', value: analytics?.listingViews, icon: FileText, trend: '—' },
+    { label: 'Leads created', value: analytics?.leadsCreated, icon: UserPlus, trend: '—' },
+  ]
+  return <section className="wlo-stats" aria-label="Website performance in the last 30 days">{stats.map(({ label, value, icon: Icon, trend }) => <article key={label}><Icon size={22} /><div><small>{label}</small><strong>{Number.isFinite(Number(value)) ? Number(value).toLocaleString() : '—'}</strong><span>{trend === '—' ? 'vs. last 30 days' : `↑ ${trend} · vs. last 30 days`}</span></div></article>)}</section>
+}
+
+function WebsiteLandingPreview({ previewUrl, websiteName: agencyName, primaryDomain, device, setDevice }) {
+  return <div className="wlo-preview"><div className="wlo-preview-head"><div className="wwo-device-toggle"><button type="button" className={device === 'desktop' ? 'active' : ''} onClick={() => setDevice('desktop')}>Desktop</button><button type="button" className={device === 'mobile' ? 'active' : ''} onClick={() => setDevice('mobile')}>Mobile</button></div>{previewUrl && <a href={previewUrl} target="_blank" rel="noreferrer">Open live site <ArrowUpRight size={14} /></a>}</div><div className={`wlo-browser ${device}`}>{previewUrl ? <iframe title="Latest published website" src={previewUrl} /> : <div className="wlo-preview-fallback"><Globe2 size={26} /><strong>{agencyName}</strong><span>{primaryDomain?.hostname || 'Managed preview is being prepared'}</span>{previewUrl && <a className="ww-publish" href={previewUrl} target="_blank" rel="noreferrer">Open preview <ArrowUpRight size={14} /></a>}</div>}</div></div>
+}
+
+function WebsitePerformance({ analytics }) {
+  const daily = Array.isArray(analytics?.dailyTraffic) ? analytics.dailyTraffic : []
+  const topPages = Array.isArray(analytics?.topPages) ? analytics.topPages : []
+  const max = Math.max(1, ...daily.map((item) => Number(item.pageViews || 0)))
+  return <section className="wlo-performance"><div className="wlo-card-heading"><div><h2>Performance</h2><p>Website visits (last 30 days)</p></div><button type="button">View details <ArrowUpRight size={14} /></button></div>{daily.length ? <div className="wlo-performance-body"><div className="wlo-line-chart" aria-label="Daily website visits">{daily.map((item) => <span key={item.date} title={`${item.date}: ${item.pageViews} views`} style={{ height: `${Math.max(6, Number(item.pageViews || 0) * 100 / max)}%` }} />)}</div><ol className="wlo-top-pages">{topPages.slice(0, 5).map((item, index) => <li key={`${item.label}-${index}`}><span>{index + 1}</span><strong>{item.label}</strong><b>{item.views}</b></li>)}</ol></div> : <p className="wlo-compact-empty">Website traffic will appear here once tracking is active.</p>}</section>
+}
+
+function WebsiteActivity({ publicationEvents, managementEvents }) {
+  const activity = [...(publicationEvents || []).map((event) => ({ id: `p-${event.id}`, title: PUBLICATION_LABELS[event.action] || event.action, detail: 'Website publishing', at: event.created_at, icon: FileText })), ...(managementEvents || []).map((event) => ({ id: `m-${event.id}`, title: MANAGEMENT_LABELS[event.action] || event.action, detail: event.metadata_json?.hostname || 'Website domain', at: event.created_at, icon: Globe2 }))].sort((a, b) => String(b.at || '').localeCompare(String(a.at || ''))).slice(0, 3)
+  return <section className="wlo-activity"><div className="wlo-card-heading"><h2>Website activity</h2><button type="button">View all activity <ArrowUpRight size={14} /></button></div>{activity.length ? <ol>{activity.map((event) => { const Icon = event.icon; return <li key={event.id}><Icon size={19} /><span><strong>{event.title}</strong><small>{event.detail}</small></span><time>{event.at ? new Date(event.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</time></li> })}</ol> : <p className="wlo-compact-empty">No recent website activity.</p>}</section>
 }
 
 function WebsiteAnalytics({ analytics, error }) {
@@ -94,6 +124,8 @@ export default function WebsiteWorkspace({ onBack }) {
   const { authState } = useAuthSession()
   const organisationId = useMemo(() => getOrganisationId(authState), [authState])
   const [showStudio, setShowStudio] = useState(false)
+  const [showDomainManager, setShowDomainManager] = useState(false)
+  const [previewDevice, setPreviewDevice] = useState('desktop')
   const [overview, setOverview] = useState({ mode: 'loading', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '' })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -134,6 +166,7 @@ export default function WebsiteWorkspace({ onBack }) {
   const lastPublished = overview.publishedRevision?.published_at
     ? new Date(overview.publishedRevision.published_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
     : 'Not published yet'
+  const agencyName = websiteName(authState, overview)
   const publicationBlockers = Array.isArray(overview.publicationReadiness?.blockers) ? overview.publicationReadiness.blockers : []
   const publicationReady = overview.publicationReadiness?.ready === true || (publicationBlockers.length > 0 && publicationBlockers.every(isRepairableBrandBlocker))
   const createSite = async () => {
@@ -249,24 +282,17 @@ export default function WebsiteWorkspace({ onBack }) {
       setAction('')
     }
   }
+  if (showDomainManager) return <div className="wa-page website-workspace website-overview"><button className="ww-back" type="button" onClick={() => setShowDomainManager(false)}><ArrowLeft size={16} /> Websites</button>{overview.site ? <WebsiteDomainManager siteId={overview.site.id} domains={overview.domains} onChanged={refresh} /> : <p className="ww-error">A website must be created before its domain can be managed.</p>}</div>
+
   if (!showStudio) return (
     <div className="wa-page website-workspace website-overview">
-      <button className="ww-back" type="button" onClick={onBack}><ArrowLeft size={16} /> Marketing overview</button>
-      <section className="wwo-heading">
-        <div><span className="md-eyebrow">MARKETING · WEBSITES</span><h1>Websites</h1><p>Manage your public property website, preview its current version and keep its release status visible.</p></div>
-        <button className="ww-refresh" type="button" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>
-      </section>
+      <section className="wlo-header"><div><span className="md-eyebrow">WEBSITE</span><div className="wlo-title"><h1>{agencyName}</h1><span className={hasPublishedSite ? 'live' : 'preview'}><i /> {hasPublishedSite ? 'Live' : 'Preview'}</span></div>{primaryDomain?.hostname && <p>{primaryDomain.hostname}</p>}</div><div className="wlo-header-actions">{previewUrl ? <a className="ww-rollback" href={previewUrl} target="_blank" rel="noreferrer">{hasPublishedSite ? 'Open live site' : 'Open preview'} <ArrowUpRight size={15} /></a> : null}{overview.mode === 'ready_to_create' ? <button className="ww-publish" type="button" disabled={Boolean(action) || !organisationId} onClick={() => void createSite()}>{action === 'create' ? 'Creating…' : 'Create website'}</button> : <button className="ww-publish" type="button" disabled={overview.mode !== 'connected'} onClick={() => setShowStudio(true)}>Manage website</button>}</div></section>
       {error && <p className="ww-error" role="status">{error}</p>}
       {notice && <p className="ww-notice" role="status">{notice}</p>}
-      <section className="wwo-site-card" aria-label="Agency website">
-        <div className="wwo-site-visual"><div className="wwo-browser"><i /><i /><i /><span>{primaryDomain?.hostname || 'preview.arch9.co.za'}</span></div><div className="wwo-browser-page"><small>{overview.site?.templateKey || 'PROPERTY WEBSITE'}</small><strong>{overview.mode === 'loading' ? 'Preparing your website' : overview.site?.previewSlug || 'Your agency website'}</strong><span>Property search, published listings and Arch9 enquiries.</span></div></div>
-        <div className="wwo-site-copy"><div className="wwo-site-title"><div><span className="md-eyebrow">AGENCY WEBSITE</span><h2>{overview.site?.previewSlug || 'Your Arch9 website'}</h2></div><span className={`wwo-status wwo-status-${siteState.toLowerCase().replaceAll(' ', '-')}`}>{siteState}</span></div><p>{overview.mode === 'connected' ? 'Your configured website is ready to manage. Content and releases remain safely organisation-scoped.' : overview.mode === 'ready_to_create' ? 'Create a private draft using your organisation identity. No client domain or DNS record will be changed.' : overview.mode === 'loading' ? 'Loading the current site, domain and publishing status.' : 'Website access is not enabled for this workspace yet. Existing CRM and branding data are unchanged.'}</p><dl className="wwo-site-details"><div><dt>Primary domain</dt><dd>{primaryDomain?.hostname || 'Preview domain pending'}</dd></div><div><dt>Template</dt><dd>{overview.site?.templateKey || 'Property Standard v1'}</dd></div><div><dt>Last published</dt><dd>{lastPublished}</dd></div></dl><div className="wwo-actions">{previewUrl ? <a className="ww-publish" href={previewUrl} target="_blank" rel="noreferrer">Preview site <ArrowUpRight size={15} /></a> : <button className="ww-rollback" type="button" disabled>Preview unavailable</button>}{overview.mode === 'ready_to_create' ? <button className="ww-publish" type="button" disabled={Boolean(action) || !organisationId} onClick={() => void createSite()}>{action === 'create' ? 'Creating website…' : 'Create website'}</button> : <button className="ww-rollback" type="button" disabled={overview.mode !== 'connected'} onClick={() => setShowStudio(true)}>Manage website</button>}</div></div>
-      </section>
-      {overview.mode === 'connected' && <WebsiteAnalytics analytics={overview.analytics} error={overview.analyticsError} />}
-      {overview.mode === 'connected' && <WebsiteReleasePreview previewUrl={previewUrl} draftRevision={overview.draftRevision} publishedRevision={overview.publishedRevision} publicationReadiness={overview.publicationReadiness} onManage={() => setShowStudio(true)} />}
-      {overview.mode === 'connected' && <WebsiteDomainManager siteId={overview.site.id} domains={overview.domains} onChanged={refresh} />}
-      {overview.mode === 'connected' && <WebsiteOperations analytics={overview.analytics} analyticsError={overview.analyticsError} domains={overview.domains} publicationEvents={overview.publicationEvents} managementEvents={overview.managementEvents} previewUrl={previewUrl} onManage={() => setShowStudio(true)} />}
-      <section className="wwo-next"><article><Globe2 size={19} /><div><strong>Domain management</strong><p>Coming next: connect and verify website-only DNS records without touching email.</p></div></article><article><MonitorSmartphone size={19} /><div><strong>Visitor tracking</strong><p>Phase 3 will add privacy-conscious visitor, page-view and listing-view measurement.</p></div></article></section>
+      <WebsiteStats analytics={overview.analytics} />
+      <section className="wlo-main-card"><WebsiteLandingPreview previewUrl={previewUrl} websiteName={agencyName} primaryDomain={primaryDomain} device={previewDevice} setDevice={setPreviewDevice} /><aside className="wlo-status"><h2>Website status</h2><span className={hasPublishedSite ? 'live' : 'preview'}><i /> {hasPublishedSite ? 'Live' : siteState}</span><dl><div><dt>Primary domain</dt><dd>{primaryDomain?.hostname || 'Preview domain pending'}</dd></div><div><dt><CalendarDays size={16} /> Published</dt><dd>{lastPublished}</dd></div></dl><p className={overview.draftRevision ? 'attention' : ''}>{overview.draftRevision ? 'Draft changes ready for review' : 'No changes awaiting review'}</p><button className="ww-publish" type="button" disabled={overview.mode !== 'connected'} onClick={() => setShowStudio(true)}>{overview.draftRevision ? 'Review changes' : 'Open Website Studio'}</button></aside></section>
+      <section className="wlo-lower"><WebsitePerformance analytics={overview.analytics} /><WebsiteActivity publicationEvents={overview.publicationEvents} managementEvents={overview.managementEvents} /></section>
+      <section className="wlo-quick"><h2>Quick actions</h2><div><button type="button" onClick={() => setShowStudio(true)}><Pencil size={24} /><span><strong>Edit website</strong><small>Make content and design changes</small></span><ChevronRight size={19} /></button><button type="button" onClick={() => setShowDomainManager(true)}><Globe2 size={24} /><span><strong>Manage domain</strong><small>View or update domain settings</small></span><ChevronRight size={19} /></button><button type="button" onClick={() => { window.location.assign('/clients?source=website') }}><Users size={24} /><span><strong>View enquiries</strong><small>See all website enquiries</small></span><ChevronRight size={19} /></button></div></section>
     </div>
   )
 

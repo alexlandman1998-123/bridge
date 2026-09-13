@@ -216,7 +216,7 @@ function assertBranchOperationalAccess(context, action = 'operate this branch') 
 }
 
 function hasAllBranchAccess(context = {}) {
-  if (context?.organisationId && hasOpenAgencyOperations(context)) return true
+  if (['agency', 'residential'].includes(context?.workspaceType)) return Boolean(context?.organisationId && hasOpenAgencyOperations(context))
   return ['owner', 'principal', 'super_admin', 'admin'].includes(normalizeLower(context?.membershipRole)) ||
     normalizeBranchScope(context?.membershipBranchScope, '') === BRANCH_SCOPES.allBranches
 }

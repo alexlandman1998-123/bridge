@@ -443,12 +443,7 @@ export function canAccessAgentsModule({ role, baseRole = null, profile = null, m
     return false
   }
   // Active membership and organisation isolation are enforced by route/service access.
-  if (hasOpenAgencyOperations({ appRole: normalizedRole, membershipStatus: membershipRole ? 'active' : '' })) return true
-  const normalizedMembershipRole = normalizeMembershipRole(membershipRole)
-  if (MANAGEMENT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
-    return true
-  }
-  return hasAgentLeadershipSignals(profile)
+  return hasOpenAgencyOperations({ appRole: normalizedRole, membershipRole, membershipStatus: membershipRole ? 'active' : '' })
 }
 
 export function canManageAgentOrganisations({ role, baseRole = null, profile = null, membershipRole = null } = {}) {
@@ -459,12 +454,7 @@ export function canManageAgentOrganisations({ role, baseRole = null, profile = n
   if (normalizedRole !== 'agent') {
     return false
   }
-  if (hasOpenAgencyOperations({ appRole: normalizedRole, membershipStatus: membershipRole ? 'active' : '' })) return true
-  const normalizedMembershipRole = normalizeMembershipRole(membershipRole)
-  if (MANAGEMENT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
-    return true
-  }
-  return hasAgentLeadershipSignals(profile)
+  return hasOpenAgencyOperations({ appRole: normalizedRole, membershipRole, membershipStatus: membershipRole ? 'active' : '' })
 }
 
 export function getRoleNavItems(role, { baseRole = null, profile = null, membershipRole = null, currentMembership = null, businessWorkspace = BUSINESS_WORKSPACES.sales, rentalOperatingMode = RENTAL_OPERATING_MODES.longTerm } = {}) {

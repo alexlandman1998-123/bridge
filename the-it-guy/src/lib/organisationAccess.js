@@ -1,4 +1,5 @@
 import { normalizeAppRole } from './appRoleMetadata'
+import { isAgencySeniorRole } from './agencyOperationsAccess'
 import { FEATURE_FLAGS } from './featureFlags'
 import { can } from '../auth/permissions/permissionResolver'
 import { PERMISSIONS } from '../auth/permissions/permissionRegistry'
@@ -88,5 +89,5 @@ export function canAccessPrincipalExperience({ appRole, membershipRole } = {}) {
     return normalizeAppRole(appRole) !== 'client'
   }
   if (normalizeAppRole(appRole) !== 'agent') return false
-  return isOrganisationAdminMembershipRole(membershipRole)
+  return isAgencySeniorRole(membershipRole)
 }

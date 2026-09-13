@@ -418,7 +418,7 @@ async function notifySellerOnboardingSubmitted(updated = {}, form = {}) {
   const hasValidSellerEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sellerEmail)
   if (!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId && !hasValidSellerEmail) return
   const actionLink = typeof window !== 'undefined' && leadId
-    ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(leadId)}/legal/mandate`
+    ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(leadId)}?tab=documents`
     : ''
 
   let timeoutId = null

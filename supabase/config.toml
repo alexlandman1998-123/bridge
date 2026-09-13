@@ -85,7 +85,7 @@ verify_jwt = true
 entrypoint = "./functions/marketing-event-worker/index.ts"
 
 [functions.send-mandate-signing-email]
-enabled = true
+enabled = false
 verify_jwt = true
 import_map = "./functions/send-mandate-signing-email/deno.json"
 entrypoint = "./functions/send-mandate-signing-email/index.ts"
@@ -107,6 +107,30 @@ enabled = true
 verify_jwt = false
 import_map = "./functions/whatsapp-webhook/deno.json"
 entrypoint = "./functions/whatsapp-webhook/index.ts"
+
+[functions.revo-microsoft-inbox]
+enabled = true
+verify_jwt = false
+import_map = "./functions/revo-microsoft-inbox/deno.json"
+entrypoint = "./functions/revo-microsoft-inbox/index.ts"
+
+[functions.revo-google-workspace-inbox]
+enabled = true
+verify_jwt = false
+import_map = "./functions/revo-google-workspace-inbox/deno.json"
+entrypoint = "./functions/revo-google-workspace-inbox/index.ts"
+
+[functions.revo-inbox-connection-lifecycle]
+enabled = true
+verify_jwt = false
+import_map = "./functions/revo-inbox-connection-lifecycle/deno.json"
+entrypoint = "./functions/revo-inbox-connection-lifecycle/index.ts"
+
+[functions.revo-inbox-sync]
+enabled = true
+verify_jwt = false
+import_map = "./functions/revo-inbox-sync/deno.json"
+entrypoint = "./functions/revo-inbox-sync/index.ts"
 
 [functions.meta-lead-ads-webhook]
 enabled = true
@@ -132,25 +156,25 @@ import_map = "./functions/inbound-lead-email/deno.json"
 entrypoint = "./functions/inbound-lead-email/index.ts"
 
 [functions.generate-mandate]
-enabled = true
+enabled = false
 verify_jwt = true
 import_map = "./functions/generate-mandate/deno.json"
 entrypoint = "./functions/generate-mandate/index.ts"
 
 [functions.generate-otp]
-enabled = true
+enabled = false
 verify_jwt = true
 import_map = "./functions/generate-otp/deno.json"
 entrypoint = "./functions/generate-otp/index.ts"
 
 [functions.document-conversion-health]
-enabled = true
+enabled = false
 verify_jwt = true
 import_map = "./functions/document-conversion-health/deno.json"
 entrypoint = "./functions/document-conversion-health/index.ts"
 
 [functions.generate-final-signed-document]
-enabled = true
+enabled = false
 verify_jwt = true
 import_map = "./functions/generate-final-signed-document/deno.json"
 entrypoint = "./functions/generate-final-signed-document/index.ts"
@@ -168,13 +192,13 @@ import_map = "./functions/legal-document-job-runner/deno.json"
 entrypoint = "./functions/legal-document-job-runner/index.ts"
 
 [functions.resolve-signer-token]
-enabled = true
+enabled = false
 verify_jwt = false
 import_map = "./functions/resolve-signer-token/deno.json"
 entrypoint = "./functions/resolve-signer-token/index.ts"
 
 [functions.signer-signing-action]
-enabled = true
+enabled = false
 verify_jwt = false
 import_map = "./functions/signer-signing-action/deno.json"
 entrypoint = "./functions/signer-signing-action/index.ts"
@@ -204,7 +228,7 @@ import_map = "./functions/seller-viewing-coordination/deno.json"
 entrypoint = "./functions/seller-viewing-coordination/index.ts"
 
 [functions.retry-final-document-completion]
-enabled = true
+enabled = false
 verify_jwt = false
 import_map = "./functions/retry-final-document-completion/deno.json"
 entrypoint = "./functions/retry-final-document-completion/index.ts"

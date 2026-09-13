@@ -18,7 +18,7 @@ function assertIncludes(source, snippet, message) {
 }
 
 assert.equal(KINGSTONS_BUYER_OTP_DIGITAL_DECISION_VERSION, 'kingstons_buyer_otp_digital_decision_phase8_v1')
-assert.equal(KINGSTONS_BUYER_OTP_DIGITAL_DECISION.status, 'paused')
+assert.equal(KINGSTONS_BUYER_OTP_DIGITAL_DECISION.status, 'retired')
 assert.equal(KINGSTONS_BUYER_OTP_DIGITAL_DECISION.livePath, 'manual_buyer_otp_upload')
 assert.equal(KINGSTONS_BUYER_OTP_DIGITAL_DECISION.agentAction, '')
 
@@ -28,15 +28,15 @@ const kingstonsDecision = buildKingstonsBuyerOtpDigitalDecision({
 })
 assert.equal(kingstonsDecision.blocked, true)
 assert.equal(kingstonsDecision.digitalOtpEnabled, false)
-assert.equal(kingstonsDecision.message, '')
+assert.match(kingstonsDecision.message, /retired/)
 
 const ordinaryDecision = buildKingstonsBuyerOtpDigitalDecision({
   isKingstons: false,
   requestedAction: 'accepted_offer_otp_generation_and_signing',
 })
-assert.equal(ordinaryDecision.blocked, false)
-assert.equal(ordinaryDecision.status, 'available')
-assert.equal(ordinaryDecision.digitalOtpEnabled, true)
+assert.equal(ordinaryDecision.blocked, true)
+assert.equal(ordinaryDecision.status, 'retired')
+assert.equal(ordinaryDecision.digitalOtpEnabled, false)
 
 assertIncludes(readinessSource, 'export function buildKingstonsBuyerOtpDigitalDecision', 'Buyer OTP readiness contract must expose the Phase 8 digital decision.')
 assertIncludes(readinessSource, 'manual_buyer_otp_upload', 'Phase 8 must keep manual buyer OTP upload as the live path.')
@@ -46,10 +46,10 @@ assertIncludes(listingPageSource, 'open={Boolean(acceptedOfferOtpStartOffer) && 
 assert.ok(!listingPageSource.includes('data-testid="kingstons-buyer-otp-digital-decision"'), 'Listing workspace must not render a visible paused digital OTP warning.')
 assert.ok(!listingPageSource.includes('Manual OTP Only'), 'Listing workspace must not label actions with paused digital OTP warning copy.')
 assertIncludes(unitDetailSource, 'const kingstonsBuyerOtpDigitalDecision = buildKingstonsBuyerOtpDigitalDecision', 'Transaction workspace must build the Phase 8 decision.')
-assertIncludes(unitDetailSource, 'if (kingstonsBuyerOtpDigitalDecision.blocked && [\'generate\', \'send\'].includes(workspaceMode))', 'Transaction workspace must block digital OTP workspace generation/send.')
 assertIncludes(unitDetailSource, 'if (kingstonsBuyerOtpDigitalDecision.blocked) {\n      setOtpStartOpen(false)', 'Transaction workspace primary OTP action must block before opening the start modal.')
 assertIncludes(unitDetailSource, 'open={otpStartOpen && !kingstonsBuyerOtpDigitalDecision.blocked}', 'Transaction workspace must suppress the OTP start modal for Kingston.')
-assertIncludes(unitDetailSource, 'disabled: kingstonsBuyerOtpDigitalDecision.blocked || !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id', 'Transaction workspace must disable approve/send actions while digital OTP is paused.')
 assertIncludes(phase7GuardSource, 'digitalOtpEnabled, false', 'Phase 8 must preserve the Phase 7 buyer portal decision that digital OTP is disabled.')
 
 console.log('Kingstons buyer OTP digital decision phase 8 guard passed.')
+
+assertIncludes(unitDetailSource, "addAction('upload_signed_otp', 'Upload Signed OTP', openDocumentsWorkspace", 'Retired OTP stages must lead to independent signed uploads.')

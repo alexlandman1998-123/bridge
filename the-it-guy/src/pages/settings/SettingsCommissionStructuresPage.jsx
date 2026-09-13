@@ -322,13 +322,13 @@ function CommissionOverviewDashboard({ levels, referralRules, structures, assign
     if (!defaultLevelId) return !row.assignedLevelId
     return normalizeText(row.effectiveLevelId) === defaultLevelId
   })
-  const defaultUsage = defaultRows.length || Number(defaultLevel.assignedAgentsCount || 0) || totalAgents
+  const defaultUsage = defaultRows.length
   const levelRows = levels.map((level) => {
     const levelId = normalizeText(level.id)
     const assignedCount = assignableRows.filter((row) => normalizeText(row.effectiveLevelId) === levelId).length
     return {
       ...level,
-      overviewAssignedCount: assignedCount || Number(level.assignedAgentsCount || 0),
+      overviewAssignedCount: assignedCount,
     }
   })
   const featuredLevels = levelRows.slice(0, 4)
@@ -902,22 +902,24 @@ function TemplateEditor({ draft, updateDraft, onSubmit, onCancel, saving }) {
   )
 }
 
-function AgentCommissionDrawer({ row, levels, onAssign, onCancel, saving }) {
+function AgentCommissionDrawer({ row, levels, defaultLevel, onAssign, onCancel, saving }) {
   const [levelId, setLevelId] = useState(row?.assignedLevelId || row?.effectiveLevelId || levels[0]?.id || '')
   const [overrideEnabled, setOverrideEnabled] = useState(Boolean(row?.assignedLevelId))
-  const selectedLevel = levels.find((level) => normalizeText(level.id) === normalizeText(levelId)) || row || {}
-  const agentSplit = normalizePercentage(selectedLevel.agentPercentage ?? row?.agentPercentage, 70)
-  const agencySplit = normalizePercentage(selectedLevel.agencyPercentage ?? (100 - agentSplit), 30)
+  const [customSplit, setCustomSplit] = useState(row?.profile?.override_agent_split_percentage ?? '')
+  const selectedLevel = (overrideEnabled ? levels.find((level) => normalizeText(level.id) === normalizeText(levelId)) : defaultLevel) || row || {}
+  const agentSplit = overrideEnabled && customSplit !== '' ? Number(customSplit) : normalizePercentage(selectedLevel.agentPercentage ?? row?.agentPercentage, 70)
+  const agencySplit = 100 - agentSplit
 
   useEffect(() => {
     setLevelId(row?.assignedLevelId || row?.effectiveLevelId || levels[0]?.id || '')
     setOverrideEnabled(Boolean(row?.assignedLevelId))
+    setCustomSplit(row?.profile?.override_agent_split_percentage ?? '')
   }, [levels, row])
 
   return (
     <form className="grid gap-6" onSubmit={(event) => {
       event.preventDefault()
-      if (row) onAssign(row.user, overrideEnabled ? levelId : '')
+      if (row) onAssign(row.user, overrideEnabled ? levelId : '', overrideEnabled && customSplit !== '' ? Number(customSplit) : null)
     }}>
       <div className="flex items-center gap-4">
         <AgentAvatar row={row} size="lg" />
@@ -933,6 +935,7 @@ function AgentCommissionDrawer({ row, levels, onAssign, onCancel, saving }) {
         <Field as="select" id="agent-commission-level" className={INPUT_CLASS} value={levelId} onChange={(event) => {
           setLevelId(event.target.value)
           setOverrideEnabled(true)
+          setCustomSplit('')
         }}>
           {levels.map((level) => <option key={level.id} value={level.id}>{level.name}</option>)}
         </Field>
@@ -944,7 +947,7 @@ function AgentCommissionDrawer({ row, levels, onAssign, onCancel, saving }) {
         <label className="flex items-center justify-between gap-3 rounded-[18px] bg-[#fbfdff] p-4 shadow-[inset_0_0_0_1px_rgba(226,235,244,0.95)]">
           <span>
             <span className="block text-sm font-semibold text-[#17233a]">Override Split</span>
-            <span className="mt-1 block text-sm text-[#60758d]">Use an agent-specific assignment.</span>
+            <span className="mt-1 block text-sm text-[#60758d]">Choose a level and optionally enter a custom agent share. The agency receives the remainder.</span>
           </span>
           <input
             type="checkbox"
@@ -955,7 +958,7 @@ function AgentCommissionDrawer({ row, levels, onAssign, onCancel, saving }) {
         </label>
         <div className="grid grid-cols-2 gap-3">
           <FieldLabel label="Agent" id="agent-split-percentage">
-            <Field id="agent-split-percentage" className={INPUT_CLASS} value={formatPercent(agentSplit)} disabled />
+            <Field id="agent-split-percentage" type="number" min="0" max="100" step="0.01" required className={INPUT_CLASS} value={overrideEnabled ? (customSplit === '' ? agentSplit : customSplit) : agentSplit} onChange={(event) => setCustomSplit(event.target.value)} disabled={!overrideEnabled || saving} />
           </FieldLabel>
           <FieldLabel label="Agency" id="agency-split-percentage">
             <Field id="agency-split-percentage" className={INPUT_CLASS} value={formatPercent(agencySplit)} disabled />
@@ -1127,8 +1130,8 @@ export default function SettingsCommissionStructuresPage() {
         assignedLevelId,
         effectiveLevelId: effectiveLevel.id || '',
         levelName: effectiveLevel.name || 'Standard',
-        agentPercentage: effectiveLevel.agentPercentage || 70,
-        agencyPercentage: effectiveLevel.agencyPercentage ?? 30,
+        agentPercentage: profile?.override_agent_split_percentage ?? effectiveLevel.agentPercentage ?? 70,
+        agencyPercentage: profile?.override_agent_split_percentage != null ? 100 - Number(profile.override_agent_split_percentage) : effectiveLevel.agencyPercentage ?? 30,
         monthlyCommission: effectiveLevel.monthlyTarget || DEFAULT_AGENT_MONTHLY_TARGET,
         effectiveFrom: profile?.effective_from || profile?.effectiveFrom || '',
       }
@@ -1288,7 +1291,7 @@ export default function SettingsCommissionStructuresPage() {
     }
   }
 
-  async function assignLevel(user, commissionLevelId) {
+  async function assignLevel(user, commissionLevelId, overrideAgentSplitPercentage = null) {
     if (!canEdit) return
     try {
       setSaving(true)
@@ -1299,6 +1302,7 @@ export default function SettingsCommissionStructuresPage() {
         userId: user.userId || user.user_id || '',
         email: user.email || '',
         commissionLevelId,
+        overrideAgentSplitPercentage,
       })
       setMessage(commissionLevelId ? 'Agent commission level saved.' : 'Agent commission override removed.')
       closeModal()
@@ -1349,7 +1353,7 @@ export default function SettingsCommissionStructuresPage() {
 
         {activeTab === 'levels' ? (
           <CommissionLevelsWorkspace
-            levels={levels}
+            levels={levels.map((level) => ({ ...level, assignedAgentsCount: assignableRows.filter((row) => row.effectiveLevelId === level.id).length }))}
             openModal={openModal}
           />
         ) : null}
@@ -1392,7 +1396,7 @@ export default function SettingsCommissionStructuresPage() {
 
       {modal.type === 'agent' ? (
         <CommissionModal title="Edit Commission" onClose={closeModal} variant="drawer">
-          <AgentCommissionDrawer row={modal.payload} levels={levels} onAssign={assignLevel} onCancel={closeModal} saving={saving} />
+          <AgentCommissionDrawer row={modal.payload} levels={levels} defaultLevel={defaultLevel} onAssign={assignLevel} onCancel={closeModal} saving={saving} />
         </CommissionModal>
       ) : null}
 

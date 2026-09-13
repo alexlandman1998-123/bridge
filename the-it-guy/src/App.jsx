@@ -432,7 +432,7 @@ const Documents = lazy(() => import('./pages/Documents'))
 const ExecutiveSnapshot = lazy(() => import('./pages/ExecutiveSnapshot'))
 const ExternalTransactionPortal = lazy(() => import('./pages/ExternalTransactionPortal'))
 const Financials = lazy(() => import('./pages/Financials'))
-const LegalDocumentWorkspacePage = lazy(() => import('./pages/LegalDocumentWorkspacePage'))
+const RetiredDocumentGeneratorPage = lazy(() => import('./pages/RetiredDocumentGeneratorPage'))
 const MobileDemoLayout = lazy(() => import('./components/mobile-shell/MobileDemoLayout'))
 const MobileLayout = lazy(() => import('./components/mobile-shell/MobileLayout'))
 const MobileDevelopmentDetailPage = lazy(() => import('./pages/mobile/MobileDevelopmentDetailPage'))
@@ -491,10 +491,8 @@ const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/Sett
 const SettingsProperty24Page = lazy(() => import('./pages/settings/SettingsProperty24Page'))
 const SettingsPrivatePropertyPage = lazy(() => import('./pages/settings/SettingsPrivatePropertyPage'))
 const SettingsSyndicationPage = lazy(() => import('./pages/settings/SettingsSyndicationPage'))
-const SettingsSigningTemplatesPage = lazy(() => import('./pages/settings/SettingsSigningTemplatesPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
-const SignerPortal = lazy(() => import('./pages/SignerPortal'))
 const Snags = lazy(() => import('./pages/Snags'))
 const Team = lazy(() => import('./pages/Team'))
 const TransactionStatusShare = lazy(() => import('./pages/TransactionStatusShare'))
@@ -2586,7 +2584,7 @@ function AppRoutes() {
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                       <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                        <LegalDocumentWorkspacePage />
+                        <RetiredDocumentGeneratorPage />
                       </AppErrorBoundary>
                     </RoleRoute>
                   </SalesWorkspaceGuard>
@@ -2597,7 +2595,7 @@ function AppRoutes() {
                 element={
                   <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
                     <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                      <LegalDocumentWorkspacePage />
+                      <RetiredDocumentGeneratorPage />
                     </AppErrorBoundary>
                   </RoleRoute>
                 }
@@ -3306,7 +3304,7 @@ function AppRoutes() {
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['developer', 'agent']}>
                       <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                        <LegalDocumentWorkspacePage />
+                        <RetiredDocumentGeneratorPage />
                       </AppErrorBoundary>
                     </RoleRoute>
                   </SalesWorkspaceGuard>
@@ -3450,7 +3448,7 @@ function AppRoutes() {
                   <SalesWorkspaceGuard>
                     <RoleRoute allowedRoles={['agent']}>
                       <AppErrorBoundary scope="legal-document-workspace" title="Legal document workspace failed to load">
-                        <LegalDocumentWorkspacePage />
+                        <RetiredDocumentGeneratorPage />
                       </AppErrorBoundary>
                     </RoleRoute>
                   </SalesWorkspaceGuard>
@@ -3979,7 +3977,7 @@ function AppRoutes() {
           <Route path="/commercial/portal/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-portal-route" title="Commercial portal failed to load"><CommercialExternalPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/commercial/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-onboarding-route" title="Commercial onboarding failed to load"><CommercialOnboardingPortalPage /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/commercial/landlord-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="commercial-landlord-onboarding-route" title="Landlord onboarding failed to load"><CommercialLandlordOnboardingPage /></AppErrorBoundary></TokenRouteGate>} />
-          <Route path="/sign/:token" element={<SignerPortal />} />
+          <Route path="/sign/:token" element={<RetiredDocumentGeneratorPage />} />
           <Route path="/appointment-rsvp/:token" element={<AppointmentRsvpPage />} />
           <Route path="/marketing/rsvp/:token" element={<MarketingEventRsvpPage />} />
           <Route path="/journey/:slug" element={<AppErrorBoundary scope="attorney-public-intake" title="Attorney enquiry page failed to load"><AttorneyPublicIntakePage /></AppErrorBoundary>} />

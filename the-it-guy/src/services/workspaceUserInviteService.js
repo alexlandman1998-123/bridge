@@ -244,6 +244,7 @@ async function assertWorkspaceUserInviteAuthority({ workspaceId = '', role = '',
   // The canonical invite flow still validates the target workspace and invite data.
   // Agency launch mode removes inviter/recipient rank comparisons.
   if (hasOpenAgencyContext(context)) return
+  if (['agency', 'residential'].includes(workspaceType)) throw new Error('Only an owner or principal can invite agency members.')
 
   const actor = {
     role: context?.membershipRole || 'viewer',

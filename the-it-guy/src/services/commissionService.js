@@ -424,6 +424,9 @@ export async function assignUserCommissionLevel({
   const normalizedUserId = normalizeText(userId)
   const normalizedEmail = normalizeText(email).toLowerCase()
   const normalizedLevelId = normalizeText(commissionLevelId)
+  if (overrideAgentSplitPercentage != null && (!Number.isFinite(Number(overrideAgentSplitPercentage)) || Number(overrideAgentSplitPercentage) < 0 || Number(overrideAgentSplitPercentage) > 100)) {
+    throw new Error('The agent split must be between 0 and 100 percent.')
+  }
   if (!normalizedOrganisationUserId && !normalizedUserId && !normalizedEmail) {
     throw new Error('A target user is required to assign a commission level.')
   }

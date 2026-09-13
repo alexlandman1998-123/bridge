@@ -3840,7 +3840,7 @@ function looksLikeUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
-export async function listOrganisationPreferredPartners() {
+export async function listOrganisationPreferredPartners({ includeInactive = false } = {}) {
   if (!isSupabaseConfigured || !supabase) {
     return []
   }
@@ -3855,7 +3855,7 @@ export async function listOrganisationPreferredPartners() {
     .from('organisation_preferred_partners')
     .select(ORGANISATION_PREFERRED_PARTNER_SELECT)
     .eq('organisation_id', context.organisation.id)
-    .eq('is_active', true)
+    .in('is_active', includeInactive ? [true, false] : [true])
     .order('company_name', { ascending: true })
 
   if (
@@ -3872,7 +3872,7 @@ export async function listOrganisationPreferredPartners() {
       .from('organisation_preferred_partners')
       .select(ORGANISATION_PREFERRED_PARTNER_LEGACY_SELECT)
       .eq('organisation_id', context.organisation.id)
-      .eq('is_active', true)
+      .in('is_active', includeInactive ? [true, false] : [true])
       .order('company_name', { ascending: true })
   }
 
@@ -3905,7 +3905,7 @@ export async function saveOrganisationPreferredPartner(input = {}) {
     return normalizedInput
   }
 
-  const existing = await listOrganisationPreferredPartners()
+  const existing = await listOrganisationPreferredPartners({ includeInactive: true })
   const hasExistingPartner = existing.some((item) => String(item.id) === String(normalizedInput.id))
   const withUpdated = (() => {
     const rows = hasExistingPartner
@@ -3996,7 +3996,7 @@ export async function removeOrganisationPreferredPartner(partnerId) {
     return true
   }
 
-  const existingPartners = await listOrganisationPreferredPartners()
+  const existingPartners = await listOrganisationPreferredPartners({ includeInactive: true })
   const existingPartner = existingPartners.find((item) => String(item.id) === normalizedId)
   if (existingPartner) {
     const canonicalRemoval = await savePreferredPartnerViaCanonicalRpc(

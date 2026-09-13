@@ -43,6 +43,7 @@
     "test:revo-extension-foundation": "node src/modules/revo/__tests__/revoExtensionRegistry.test.js",
     "test:revo-shared-inbox-foundation": "node src/modules/revo/sharedInbox/__tests__/sharedInboxModel.test.js",
     "test:revo-shared-inbox-operations": "node src/modules/revo/sharedInbox/__tests__/revoSharedInboxService.test.js",
+    "test:revo-inbox-connection-core": "node src/modules/revo/sharedInbox/__tests__/connectionCore.test.js",
     "test:development-site-plan-foundation": "node scripts/development-site-plan-foundation.test.mjs",
     "test:development-site-plan-syndication": "node src/core/developments/__tests__/developmentSitePlanSyndication.test.js",
     "test:development-site-plan-suggestions": "node src/core/developments/__tests__/developmentSitePlanSuggestions.test.js",

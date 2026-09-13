@@ -1,3 +1,4 @@
+import { assertDocumentGeneratorAvailable } from '../core/documents/documentGeneratorRetirement'
 import { isOrganisationAdminMembershipRole, normalizeOrganisationMembershipRole } from './organisationAccess'
 import {
   filterMandateSigningRows,
@@ -1862,6 +1863,8 @@ export async function replaceDocumentTemplateSections(templateId, sections = [],
 }
 
 export async function createDocumentPacket(input = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   const context = await resolvePacketContext(client, { organisationId: input.organisationId || null })
   const packetType = assertPacketType(input.packetType)
@@ -1939,6 +1942,8 @@ export async function createDocumentPacket(input = {}) {
 }
 
 export async function createEditableDocumentDraftFromTemplate(input = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   const templateId = normalizeNullableUuid(input.templateId)
   if (!templateId) throw new Error('A published template revision is required.')
@@ -2441,6 +2446,8 @@ export async function saveEditableDocumentDraftRevision({
   validationSummary = {},
   reviewState = 'draft',
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
   if (!normalizeNullableUuid(baseVersionId)) throw new Error('baseVersionId is required.')
@@ -2523,6 +2530,8 @@ export async function restoreEditableDocumentDraftRevision({
 }
 
 export async function freezeEditableDocumentRevisionForRender({ packetId, versionId, expectedEditSequence = 0 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
   if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
@@ -2709,6 +2718,8 @@ export async function getFinalDocumentCompletionStatus({ packetId, versionId } =
 }
 
 export async function retryFinalDocumentCompletion({ packetId, versionId } = {}) {
+  assertDocumentGeneratorAvailable()
+
   if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
   if (!normalizeNullableUuid(versionId)) throw new Error('versionId is required.')
   const { data, error } = await invokeEdgeFunction('retry-final-document-completion', {
@@ -2746,18 +2757,8 @@ export async function getDocumentGeneratorLaunchChain({ packetId, versionId } = 
   return data
 }
 
-export async function listLegalDocumentJobsForPacket({ packetId, limit = 10 } = {}) {
-  const client = requireClient()
-  if (!normalizeNullableUuid(packetId)) throw new Error('packetId is required.')
-  const { data, error } = await client.rpc('bridge_list_legal_document_jobs_for_packet_phase1', {
-    p_packet_id: packetId,
-    p_limit: Math.min(Math.max(1, Math.trunc(Number(limit || 10))), 50),
-  })
-  if (error) throw error
-  if (data?.contract !== 'legal-document-job-phase1-list-v1' || !Array.isArray(data?.jobs)) {
-    throw new Error('Legal document job list returned an invalid result.')
-  }
-  return data.jobs
+export async function listLegalDocumentJobsForPacket() {
+  return []
 }
 
 export async function fetchSigningFieldLayout({ packetId, versionId } = {}) {
@@ -2880,6 +2881,8 @@ export async function applySigningFieldLayout({ packetId, versionId, layoutRevis
 }
 
 export async function authorizeAppliedEnvelopeDispatch({ packetId, versionId, regenerate = false, targetSignerRole = '' } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   const { data: result, error } = await client.rpc('bridge_authorize_applied_envelope_dispatch_e4', {
     p_packet_id: packetId,
@@ -2912,6 +2915,8 @@ export async function uploadFinalSignedPacketArtifact({
   file,
   fileName = '',
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   if (!packetId) throw new Error('packetId is required.')
   if (!file) throw new Error('Select a signed document to upload.')
@@ -2964,6 +2969,8 @@ export async function completePhysicalSignedPacketUpload({
   note = '',
   signingMethod = 'physical',
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const resolvedPacketId = normalizeText(packetId)
   const resolvedVersionId = normalizeText(packetVersionId)
   if (!resolvedPacketId) throw new Error('packetId is required.')
@@ -3109,6 +3116,8 @@ export async function replacePhysicalSignedPacketArtifact({
   reason = '',
   note = '',
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const resolvedPacketId = normalizeText(packetId)
   const resolvedVersionId = normalizeText(packetVersionId)
   const replacementReason = normalizeText(reason)
@@ -3239,6 +3248,8 @@ export async function replacePhysicalSignedPacketArtifact({
 }
 
 export async function createDocumentPacketVersion(input = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   if (!input.packetId) throw new Error('packetId is required.')
 
@@ -3282,6 +3293,8 @@ export async function createDocumentPacketVersion(input = {}) {
 }
 
 export async function claimDocumentPacketGenerationLease({ packetId, generationAttemptId, ttlSeconds = 300 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   if (!packetId || !generationAttemptId) throw new Error('packetId and generationAttemptId are required.')
   const { data, error } = await client.rpc('bridge_claim_generation_lease_i3', {
@@ -3755,6 +3768,8 @@ export async function createDocumentPacketSigners({
   organisationId = null,
   markSigningPrep = true,
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
   if (!canManagePacketSigning(context, packet)) {
@@ -3873,6 +3888,8 @@ export async function createDocumentSigningFields({
   organisationId = null,
   markSigningPrep = true,
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
   if (!canManagePacketSigning(context, packet)) {
@@ -4108,6 +4125,8 @@ export async function generateDocumentPacketSigningLinks({
   regenerate = false,
   targetSignerRole = '',
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   const signingContext = await fetchPacketForSigningContext(client, packetId, organisationId)
   let packet = signingContext.packet
@@ -4365,6 +4384,8 @@ export async function generateFinalSignedDocument({
   outputBucket = '',
   organisationId = null,
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const client = requireClient()
   const { packet, context } = await fetchPacketForSigningContext(client, packetId, organisationId)
   if (!canManagePacketSigning(context, packet)) {

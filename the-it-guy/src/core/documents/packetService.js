@@ -1,3 +1,4 @@
+import { assertDocumentGeneratorAvailable } from './documentGeneratorRetirement'
 import { generateMandateDocumentFromTemplate } from '../../lib/generateMandateDocument'
 import { invokeEdgeFunction } from '../../lib/supabaseClient'
 import { validateDocumentGenerationPreflight } from '../../lib/documentGenerationContract'
@@ -3578,6 +3579,8 @@ export async function savePacketDraft({
   template = null,
   validationAction = 'preview',
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const resolutionContext = {
     ...context,
     validationAction: context?.validationAction || validationAction || 'preview',
@@ -3687,6 +3690,8 @@ export async function generatePacketVersion({
   template = null,
   allowWarnings = true,
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const normalizedPacketType = requirePdfRenderablePacketType(packetType)
   context = applyFrozenEditableRenderInput(context)
   const phase2DraftReusePreparation = buildPhase2FrozenDraftReusePreparation({
@@ -4652,6 +4657,8 @@ export async function createPacketSigners({
   organisationId = null,
   markSigningPrep = true,
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   return createPacketSignersRecord({
     packetId,
     packetVersionId,
@@ -4670,6 +4677,8 @@ export async function createPacketSigningFields({
   organisationId = null,
   markSigningPrep = true,
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   return createPacketSigningFieldRecords({
     packetId,
     packetVersionId,
@@ -4706,6 +4715,8 @@ export async function prepareSigningFields({
   placeholders = {},
   organisationId = null,
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const resolvedPacketId = normalizeText(packetId)
   if (!resolvedPacketId) throw new Error('packetId is required.')
   const requestedPacketVersionId = normalizeText(packetVersionId)
@@ -4965,6 +4976,8 @@ export async function prepareSigningFields({
 }
 
 export async function resetSigningFields({ packetId, packetVersionId = null, organisationId = null } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const resolvedPacketId = normalizeText(packetId)
   if (!resolvedPacketId) throw new Error('packetId is required.')
 
@@ -5048,6 +5061,8 @@ export async function generateSigningLinks({
   regenerate = false,
   targetSignerRole = '',
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const resolvedPacketId = normalizeText(packetId)
   if (!resolvedPacketId) throw new Error('packetId is required.')
   const packet = await fetchDocumentPacket(resolvedPacketId, { includeVersions: true, includeEvents: false })
@@ -5121,6 +5136,8 @@ export async function generateFinalSignedPacketDocument({
   organisationId = null,
   outputBucket = '',
 } = {}) {
+  assertDocumentGeneratorAvailable()
+
   const resolvedPacketId = normalizeText(packetId)
   if (!resolvedPacketId) throw new Error('packetId is required.')
 

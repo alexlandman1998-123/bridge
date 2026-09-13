@@ -140,7 +140,6 @@ import {
 import { buildDeveloperTransactionRelationshipSummary } from '../core/transactions/developerTransactionRelationshipProfile.js'
 import { buildDeveloperTransactionOperationsSummary } from '../core/transactions/developerTransactionOperationsProfile.js'
 import {
-  buildDeveloperAgentMandatePacketContext,
   buildDeveloperTransactionMandateProfile,
 } from '../core/transactions/developerTransactionMandateProfile.js'
 import { buildDeveloperTransactionReadinessProfile } from '../core/transactions/developerTransactionReadinessProfile.js'
@@ -153,9 +152,7 @@ import {
 } from '../core/documents/documentStartRules'
 import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
 import { resolveSellerProcessProfileForOrganisation } from '../services/sellerProcessProfileService'
-import { listPacketTemplates } from '../core/documents/packetService'
 import { resolveDocumentPacketActionState, resolveDocumentPacketStatus } from '../core/documents/packetStatusResolver'
-import { createDocumentPacket, listDocumentPackets } from '../lib/documentPacketsApi'
 
 const AlterationRequestsPanel = lazy(() => import('../components/AlterationRequestsPanel'))
 const AttorneyCloseoutPanel = lazy(() => import('../components/AttorneyCloseoutPanel'))
@@ -5061,18 +5058,7 @@ function UnitDetail() {
   }
 
   function openOtpLegalWorkspace(mode = 'view') {
-    const workspaceMode = resolveWorkspaceModeFromAction(mode)
-    if (kingstonsBuyerOtpDigitalDecision.blocked && ['generate', 'send'].includes(workspaceMode)) {
-      setError('')
-      return
-    }
-
-    const path = buildOtpLegalWorkspacePath(mode)
-    if (!path) {
-      setError('Transaction data is not available for the legal document workspace.')
-      return
-    }
-    navigate(path)
+    setWorkspaceMenu('documents')
   }
 
   function buildDeveloperMandateLegalWorkspacePath(packetId = '', mode = 'view') {
@@ -5087,79 +5073,7 @@ function UnitDetail() {
   }
 
   async function openDeveloperAgentMandateWorkspace(mode = 'view') {
-    if (!transaction?.id) {
-      setError('Transaction data is not available for the mandate workspace.')
-      return
-    }
-    if (!developerMandateProfile?.developerAgentMandateRequired) {
-      setError('This developer transaction does not require a developer-agent mandate.')
-      return
-    }
-    if (!developerMandateProfile.readyForMandate) {
-      setError('Add the developer and selling agent details before opening the developer-agent mandate.')
-      return
-    }
-
-    try {
-      setSalesActionLoading('developer_agent_mandate')
-      setError('')
-      const existingPackets = await listDocumentPackets({
-        organisationId: transaction?.organisation_id || null,
-        packetType: 'mandate',
-        transactionId: transaction.id,
-        limit: 10,
-      }).catch((packetError) => {
-        if (['PACKETS_SCHEMA_MISSING', 'PACKETS_RLS_DENIED'].includes(packetError?.code)) return []
-        throw packetError
-      })
-      let packet = (Array.isArray(existingPackets) ? existingPackets : []).find((item) => {
-        const context = item?.source_context_json && typeof item.source_context_json === 'object' ? item.source_context_json : {}
-        return context.mandateType === 'developer_agent_mandate' || context.contextType === 'developer_agent_mandate'
-      }) || null
-
-      if (!packet?.id) {
-        const templates = await listPacketTemplates({
-          packetType: 'mandate',
-          moduleType: 'agency',
-          includeInactive: false,
-          organisationId: transaction?.organisation_id || null,
-        }).catch(() => [])
-        const template = Array.isArray(templates) ? templates[0] : null
-        const sourceContextJson = buildDeveloperAgentMandatePacketContext({
-          mandateProfile: developerMandateProfile,
-          transaction,
-          unit,
-          buyer,
-          sellerDetails: developmentSellerSnapshot,
-        })
-
-        packet = await createDocumentPacket({
-          organisationId: transaction?.organisation_id || null,
-          packetType: 'mandate',
-          title: `Developer-Agent Mandate - ${unit?.unit_number ? `Unit ${unit.unit_number}` : unit?.development?.name || 'Development Transaction'}`,
-          transactionId: transaction.id,
-          dealId: transaction.id,
-          unitId: unit?.id || null,
-          status: 'ready_for_generation',
-          templateId: isUuidLike(template?.id) ? normalizeText(template?.id) : null,
-          templateKeySnapshot: normalizeText(template?.template_key || template?.templateKey || template?.key || 'developer_agent_mandate'),
-          templateLabelSnapshot: normalizeText(template?.template_label || template?.templateLabel || template?.label || 'Developer-Agent Mandate'),
-          assignedAgentId: isUuidLike(transaction?.assigned_user_id) ? transaction.assigned_user_id : null,
-          sourceContextJson,
-        })
-      }
-
-      setDeveloperMandatePacketId(normalizeText(packet?.id))
-      const path = buildDeveloperMandateLegalWorkspacePath(packet?.id, mode)
-      if (!path) {
-        throw new Error('Unable to open developer-agent mandate workspace for this transaction.')
-      }
-      navigate(path)
-    } catch (mandateError) {
-      setError(mandateError?.message || 'Unable to open developer-agent mandate workspace.')
-    } finally {
-      setSalesActionLoading('')
-    }
+    setWorkspaceMenu('documents')
   }
 
   function handleOtpPrimaryAction() {
@@ -7527,9 +7441,9 @@ function UnitDetail() {
                 variant="ghost"
                 size="sm"
                 onClick={() => void openDeveloperAgentMandateWorkspace('view')}
-                disabled={!developerMandateProfile.readyForMandate || salesActionLoading === 'developer_agent_mandate'}
+                disabled={!transaction?.id}
               >
-                {salesActionLoading === 'developer_agent_mandate' ? 'Opening...' : 'Open Mandate'}
+                Upload Signed Mandate
               </Button>
               <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${getDeveloperOperationToneClasses(developerMandateProfile.readyForMandate ? 'success' : 'warning')}`}>
                 {developerMandateProfile.readyForMandate ? 'Ready' : `${developerMandateProfile.missingSignerRoles.length} missing`}
@@ -7583,9 +7497,9 @@ function UnitDetail() {
               type="button"
               size="sm"
               onClick={() => void openDeveloperAgentMandateWorkspace('generate')}
-              disabled={!developerMandateProfile.readyForMandate || salesActionLoading === 'developer_agent_mandate'}
+              disabled={!transaction?.id}
             >
-              {salesActionLoading === 'developer_agent_mandate' ? 'Opening...' : 'Prepare Mandate'}
+              Upload Signed Mandate
             </Button>
             <Button type="button" variant="ghost" size="sm" onClick={() => setWorkspaceMenu('documents')}>
               Document Library
@@ -7979,43 +7893,9 @@ function UnitDetail() {
         )
         break
       case 'generate_otp':
-        addAction(
-          'generate_otp',
-          salesActionLoading === 'generate_otp' ? 'Generating OTP…' : otpPacketActionState.label,
-          handleOtpPrimaryAction,
-          {
-            variant: 'primary',
-            disabled: kingstonsBuyerOtpDigitalDecision.blocked || !transaction?.id || otpPacketStatusLoading,
-          },
-        )
-        break
       case 'approve_otp':
-        addAction(
-          'approve_otp',
-          salesActionLoading === 'approve_otp' ? 'Approving…' : 'Approve OTP',
-          () => void handleApproveOtpDraft(),
-          {
-            variant: 'primary',
-            disabled: kingstonsBuyerOtpDigitalDecision.blocked || !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
-          },
-        )
-        if (generatedOtpUrl) {
-          addAction('view_generated_otp', 'View OTP', () => openOtpLegalWorkspace('view'))
-        }
-        break
       case 'share_otp':
-        addAction(
-          'share_otp',
-          salesActionLoading === 'share_otp' ? 'Publishing…' : 'Make OTP Available',
-          () => openOtpLegalWorkspace('send'),
-          {
-            variant: 'primary',
-            disabled: kingstonsBuyerOtpDigitalDecision.blocked || !salesWorkflowSnapshot.latestGeneratedOtpDocument?.id,
-          },
-        )
-        if (generatedOtpUrl) {
-          addAction('view_generated_otp', 'View OTP', () => openOtpLegalWorkspace('view'))
-        }
+        addAction('upload_signed_otp', 'Upload Signed OTP', openDocumentsWorkspace, { variant: 'primary' })
         break
       case 'complete_supporting_documents':
         addAction('open_documents', 'Open Documents', openDocumentsWorkspace, { variant: 'primary' })

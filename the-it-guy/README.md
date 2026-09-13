@@ -2,6 +2,18 @@
 
 High-end React + Vite + Supabase transaction workspace for Samlin Construction.
 
+## Retired document generator
+
+The legacy mandate/OTP generator, template workspace, packet signing endpoints,
+and background generation jobs are permanently retired. Seller onboarding must
+not create a mandate packet. Signed mandates and OTPs use the normal listing or
+transaction document upload paths; the onboarding defects/compliance form remains
+independent. Existing document records and final-file access are preserved.
+
+Run `node --test scripts/document-generator-retirement.test.mjs` from this package
+to check the retirement boundary and independent upload behavior. Server handler
+changes require an explicit deployment before they affect an existing environment.
+
 ## Current Workflow Layer
 
 - Multi-development SaaS layout

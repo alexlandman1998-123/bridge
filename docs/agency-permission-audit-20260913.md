@@ -121,3 +121,62 @@ Passing existing ownership tests verifies the old restrictive contract, not the 
 The requested production rollout is complete. The deploy depended on the reviewed agency migration only; other pending migrations and unrelated source changes were excluded.
 
 An actual separate ordinary-agent browser login, invitation delivery, and the broken Assign Lead entry point are not fully verified end-to-end. Production database tests covered ordinary-agent permissions with transaction-local authenticated role impersonation; the live browser session remained Kingdom Demo. The legacy primary-principal inconsistency is intentionally not silently rewritten: use the now-enabled ownership controls to choose the desired ownership. The full “every action works” acceptance check remains incomplete because the unrelated unfinished actions documented above still exist.
+
+## Superseding two-tier release — 13 September 2026
+
+The user subsequently approved reinstating an assigned-record boundary and explicitly approved applying/deploying after checks pass. This supersedes the unrestricted agency mode described above.
+
+- Owner and Principal retain organisation management, ownership sharing/claiming, assignment and reassignment.
+- Other agency roles, including branch managers/admin/managers, use assigned-record permissions. Descriptive titles do not grant senior access. Direct member/commission-management writes and self-promotion are restricted; members can read their own membership/profile, not the organisation directory.
+- Restrictive lead/transaction policies intersect legacy membership-wide grants. Related canonical records use the same parent boundary; foreign keys to other product tables are excluded. Existing external legal/client grants remain subject to their original policies.
+- Add Agent in the agent directory, branch workspace and Settings supports inline commission creation, selection, retry without lost form data, and explicitly unassigned invitations. Inline creation does not change the organisation default.
+- Assign Lead now opens a target-agent assignment control with lead selection and a verified update. Branch archive/reactivate uses confirmation and preserves records. Inert overflow controls were removed.
+- Commission counts derive from current effective assignments; overrides allow an agent split with the complementary agency share. Invalid percentages are rejected before profile changes.
+- Inactive partners can be displayed and reactivated. The unfinished branch Clients view is explicitly labelled unavailable. Unconnected communication integrations are not presented as delivered integrations.
+
+### Verification and production database evidence
+
+- `npm run check:app`: passed (lint: 0 errors, 426 warnings; nine standard service suites passed; Vite build passed).
+- `node scripts/agency-open-operations.test.mjs`: passed, including eight roles, other-organisation denial, assigned lead/transaction/related-record isolation, management-write denial, self-promotion denial, and organisation/member RLS recursion regression.
+- `node scripts/agency-inline-commission.test.mjs`: passed validation, error/retry, preserved parent fields, saved selection, complementary percentages and unchanged default.
+- `npm run test:agent-invite-commission-readiness` and `node src/services/__tests__/commissionService.test.js`: passed.
+- Targeted changed-file lint and `git diff --check`: passed.
+- Guard: `supabase:guard` passed; `supabase:push:lock-recovery` reported RECOVERY_LOCKED. No broad push, reset or migration repair.
+- Applied `agency_two_tier_access` and `agency_two_tier_policy_lookup_fix` through the migration connector. The first live read detected recursion through the existing organisations RLS; the immediate follow-up moves organisation-type lookup into a scoped SECURITY DEFINER helper. Both principal and branch-manager live reads then passed.
+- Live Kingdom principal: senior helper true, all 3 memberships visible. Branch manager: senior helper false, own membership only; own-record scope true, unassigned-record scope false.
+- Live rollback-only lead smoke: branch manager saw only their assigned fixture; principal saw both; branch-manager reassignment was denied. Verified 0 remaining test leads and all 3 existing agents preserved. No invitations or emails sent.
+- Live rollback-only transaction smoke: branch manager saw only their assigned transaction and the direct transaction-access helper denied the colleague's transaction; principal saw both. Fixture initially hit the existing incomplete-creation guard, then passed with inactive initialising fixtures; no production guard was bypassed. All transaction writes rolled back.
+- Local append-only migration filenames retain CLI creation timestamps. The connector assigns application timestamps in the live ledger; reconcile by name/equivalent content during the controlled recovery workflow, not by broad replay or migration repair.
+- Recovery definitions captured before patch; rollback SQL at `docs/agency-two-tier-rollback-20260913.sql`. Not executed. Reverting the database would reinstate the old permissive model and requires deliberate approval.
+
+### App rollout
+
+Isolated source: `/tmp/arch9-agency-tier-release.cKjU5O`, base `2741cc698318c6c65fd5d9aef5cd00a3f173d78d` (verified currently-live Git deployment) plus the 16 agency source edits and new inline component. Unrelated Revo/inbox/config/package changes were excluded. No commit or push.
+
+Deployment candidate: `dpl_77qTuqzrn7m1jw3rRjrRxU4RrL3p`, `bridge-hl27xydoc-alexs-projects-f5496a21.vercel.app`. Production-domain promotion and final browser verification are recorded below when complete.
+
+### Live workflow regression checks
+
+- Initial two-tier deployment promoted successfully. No error/fatal runtime logs in the immediate 15-minute scoped scan (not a long-term reliability claim; drains not inspected).
+- Live inline commission creation saved a new 60/40 nondefault structure, selected it, disabled invitation submission while saving and retained the entered agent name. The unsent form was cancelled. The exact unreferenced test structure was deleted afterward; existing structures untouched.
+- Overview and Levels both display 3 default assignments and 0 for the other levels. The custom split input accepted 65 and computed agency share 35; cancelled without altering an existing agent's agreement.
+- Assign Lead shortcut resolved the membership ID to Kingdom Demo and displayed the lead-selection control. Kingdom has no current leads; no assignment notification was sent. Database assignment/isolation behavior was verified separately.
+- Disposable branch `abff60f4-1254-4a8f-a69b-19dbb6ffc825`: archive and reactivate both saved through the live UI, independently verified false/true in storage. Branch invitation showed Kingdom Real Estate and the inline/assign-later options. Clients tab explicitly shows its unavailable status. Deleted this empty test branch afterward; no existing agents, branches or transactions removed.
+- Reopening the main Add Agent form exposed a reset that overwrote the resolved organisation name; corrected reset to use current organisation options. Updated the invitation readiness regression check.
+- Reactivating the earlier disposable referral partner exposed an active-only save lookup that created a duplicate. Corrected both save/remove lookups to include inactive rows. Added `agency-partner-reactivation.test.mjs`, which executes the real save function with mocked boundaries and verifies identity preservation. Passed. Deleted only the newly created unreferenced duplicate `5f624ddf-2599-4595-9eb0-b6e952a355e1` and its cascading role row; original inactive identity retained.
+- Readiness contract and partner repository tests rerun after these corrections: passed. Follow-up source lint: no errors. Final candidate includes both workflow corrections; the intermediate name-only candidate was not promoted.
+
+### Final production handover
+
+- **URL:** https://app.arch9.co.za
+- **Final deployment:** https://bridge-p42muudin-alexs-projects-f5496a21.vercel.app (`dpl_ABcMGvcP1iBRuxCatPEfEhgYpjiL`). Production / READY; promoted successfully and domain deployment lookup verified this ID.
+- **Source:** base `2741cc698318c6c65fd5d9aef5cd00a3f173d78d` plus the isolated agency patch; metadata `agencyRelease=two-tier-final-workflow-fixes`. No unrelated working-tree changes deployed.
+- **Framework / build:** Vite; approximately 2 minutes 41 seconds. Remote build and associated compatibility/budget checks passed. Release endpoint returned HTTP 200 before promotion. Manifest retains the known `local-unknown` release ID; deployment ID and metadata identify this release.
+- Final live Add Agent modal independently verified `ORGANISATION: Kingdom Real Estate`, inline commission creation and save-without-structure option. Cancelled without sending an invitation.
+- Final live partner activation retained original identity `88a83299-d341-4ab1-bed6-92f4e46853f7`; directory stayed at four rows. Independently verified the same row became active, then restored it to inactive using the UI and verified storage again. No duplicate remained.
+- Final cleanup: all three original Kingdom agents preserved; disposable branch and commission structure absent; referral test identity count one. Only disposable test records created during verification were permanently removed; no normal product recovery is promised for those test deletions.
+- Final deployment error/fatal runtime-log scan over the immediate 15-minute window returned no matching logs. This does not cover all browser errors or establish long-term reliability. Drains were not inspected and no recurring monitor was configured.
+
+### Explicit remaining limits
+
+The agreed two-tier permissions and scoped agency workflow fixes are live. Branch Clients remains an explicitly unavailable view, and disconnected communication integrations remain unavailable; neither is represented as a completed integration. Actual invitation/email/WhatsApp delivery was not exercised. Assign Lead navigation was checked live, while mutation and isolation were checked using rollback-only database fixtures because Kingdom had no live leads to assign. An independent ordinary-agent browser login was not exercised; authenticated database tests covered the role boundary. The historical primary-principal ownership mismatch was not silently rewritten. This is not a claim that every action across the entire platform has been verified.

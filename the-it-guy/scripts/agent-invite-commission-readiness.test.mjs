@@ -30,7 +30,10 @@ for (const [label, source] of [
   assert.match(source, /assign one later before creating a commissionable transaction/i, `${label} invite UI must explain the deferred assignment path.`)
 }
 
-assert.match(agentsPage, /<Button type="submit" form="agent-invite-form" disabled=\{submitting\}>/, 'Organisation invite action should only be disabled while submitting.')
-assert.match(branchWorkspacePage, /<Button type="submit" form="branch-agent-invite-form" disabled=\{submitting\}>/, 'Branch invite action should only be disabled while submitting.')
+assert.match(agentsPage, /<Button type="submit" form="agent-invite-form" disabled=\{submitting \|\| commissionSaving\}>/, 'Organisation invitation waits for its in-flight commission save, not commission availability.')
+assert.match(branchWorkspacePage, /<Button type="submit" form="branch-agent-invite-form" disabled=\{submitting \|\| commissionSaving\}>/, 'Branch invitation waits for its in-flight commission save, not commission availability.')
+const reset = functionBody(agentsPage, 'function resetInviteForm()', 'async function handleCreateOrganisation')
+assert.match(reset, /organisationOptions\.find/, 'Reopening Add Agent resolves the live organisation, not stale local directory names.')
+assert.match(reset, /organisationName: organisation\.name/)
 
 console.log('Agent invite commission readiness contract passed.')

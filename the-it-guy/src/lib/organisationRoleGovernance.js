@@ -1,7 +1,7 @@
 import { ACCESS_SCOPES, PERMISSIONS, permissionsByWorkspaceRole } from '../auth/permissions/permissionRegistry'
 import { normalizeOrgRole } from '../constants/orgRoles'
 import { WORKSPACE_TYPES, normalizeWorkspaceType } from '../constants/workspaceTypes'
-import { hasOpenAgencyOperations } from './agencyOperationsAccess'
+import { hasOpenAgencyOperations, isAgencySeniorRole } from './agencyOperationsAccess'
 
 const ROLE_OPTION_SETS = Object.freeze({
   [WORKSPACE_TYPES.agency]: Object.freeze([
@@ -133,7 +133,10 @@ export function getOrganisationRoleLabel(role = '', workspaceType = '') {
 export function getOrganisationRolePermissionSummary(role = '', workspaceType = '') {
   const resolvedType = resolveWorkspaceType(workspaceType)
   const normalizedRole = normalizeOrgRole(role, { workspaceType: resolvedType })
-  const grants = permissionsByWorkspaceRole[resolvedType]?.[normalizedRole] || Object.freeze({})
+  const effectiveRole = resolvedType === WORKSPACE_TYPES.agency && !isAgencySeniorRole(normalizedRole)
+    ? normalizedRole === 'viewer' ? 'viewer' : 'agent'
+    : normalizedRole
+  const grants = permissionsByWorkspaceRole[resolvedType]?.[effectiveRole] || Object.freeze({})
   const permissionEntries = Object.entries(grants).filter(([, scope]) => scope && scope !== ACCESS_SCOPES.none)
   const scopeLabels = [...new Set(permissionEntries.map(([, scope]) => SCOPE_LABELS[scope] || scope))]
   const capabilities = CAPABILITY_LABELS
@@ -154,6 +157,7 @@ export function getOrganisationRoleAuthorityLevel(role = '') {
 }
 
 export function canGovernOrganisationRoleChange({ actor = {}, target = {}, nextRole = '' } = {}) {
+  if (['agency', 'residential'].includes(actor.workspaceType) && !hasOpenAgencyOperations(actor)) return false
   if (hasOpenAgencyOperations(actor)) {
     return getOrganisationRoleOptions(WORKSPACE_TYPES.agency).some((option) => option.value === nextRole)
   }

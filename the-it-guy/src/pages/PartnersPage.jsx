@@ -2504,6 +2504,7 @@ export default function PartnersPage() {
   const [inviteSubmitting, setInviteSubmitting] = useState(false)
   const [isThirdPartyModalOpen, setIsThirdPartyModalOpen] = useState(false)
   const [thirdPartyDirectoryRows, setThirdPartyDirectoryRows] = useState([])
+  const [showInactiveThirdParties, setShowInactiveThirdParties] = useState(false)
   const [thirdPartyDirectoryLoading, setThirdPartyDirectoryLoading] = useState(false)
   const [thirdPartySaving, setThirdPartySaving] = useState(false)
   const [editingThirdPartyId, setEditingThirdPartyId] = useState('')
@@ -2640,7 +2641,7 @@ export default function PartnersPage() {
     }
     try {
       setThirdPartyDirectoryLoading(true)
-      const rows = await listOrganisationPreferredPartners()
+      const rows = await listOrganisationPreferredPartners({ includeInactive: true })
       setThirdPartyDirectoryRows(Array.isArray(rows) ? rows : [])
     } catch (loadError) {
       const message = loadError?.message || 'Unable to load third parties.'
@@ -2926,7 +2927,7 @@ export default function PartnersPage() {
     [invitationFilters.direction, invitationFilters.query, invitationFilters.status, invitationFilters.type],
   )
   const thirdPartyGroups = useMemo(() => {
-    const groups = thirdPartyDirectoryRows.reduce((accumulator, row) => {
+    const groups = thirdPartyDirectoryRows.filter((row) => showInactiveThirdParties || row.isActive !== false).reduce((accumulator, row) => {
       const key = getThirdPartyGroupLabel(row)
       if (!accumulator[key]) accumulator[key] = []
       accumulator[key].push(row)
@@ -2936,7 +2937,7 @@ export default function PartnersPage() {
     return ['Attorneys', 'Bond Originators', 'Referral Agencies', 'Other Third Parties']
       .map((label) => ({ label, rows: groups[label] || [] }))
       .filter((group) => group.rows.length)
-  }, [thirdPartyDirectoryRows])
+  }, [thirdPartyDirectoryRows, showInactiveThirdParties])
   const thirdPartyCounts = useMemo(() => {
     const counts = { attorneys: 0, bondOriginators: 0, referralAgencies: 0, active: 0 }
     thirdPartyDirectoryRows.forEach((row) => {
@@ -4132,6 +4133,7 @@ export default function PartnersPage() {
         </section>
       ) : isSimplifiedThirdPartyWorkspace && activeTab === 'preferred' ? (
         <section className="mt-5 space-y-5">
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={showInactiveThirdParties} onChange={(event) => setShowInactiveThirdParties(event.target.checked)} />Show inactive third parties (you can reactivate them)</label>
           {thirdPartyGroups.length ? (
             thirdPartyGroups.map((group) => (
               <section key={group.label} className="space-y-3">

@@ -11,7 +11,6 @@ import {
   Files,
   Mail,
   MapPin,
-  MoreHorizontal,
   Plus,
   Settings,
   ShieldCheck,
@@ -25,6 +24,8 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
+import ConfirmDialog from '../../components/ui/ConfirmDialog'
+import InlineCommissionStructure from '../../components/commission/InlineCommissionStructure'
 import {
   AGENT_ROLE_OPTIONS,
   buildAgentInviteLink,
@@ -443,10 +444,12 @@ function BranchAgentInviteModal({
   organisation,
   profile,
   commissionStructures = [],
+  onCommissionStructureCreated,
   onClose,
   onSent,
 }) {
   const defaultCommissionStructure = commissionStructures.find((structure) => structure?.isDefault) || null
+  const [commissionSaving, setCommissionSaving] = useState(false)
   const branchAgentRoleOptions = useMemo(() => getBranchAgentRoleOptions(), [])
   const [form, setForm] = useState({
     firstName: '',
@@ -468,11 +471,11 @@ function BranchAgentInviteModal({
       email: '',
       mobile: '',
       role: 'agent',
-      commissionStructureId: defaultCommissionStructure?.id || '',
+      commissionStructureId: '',
       notes: '',
     })
     setError('')
-  }, [defaultCommissionStructure?.id, open])
+  }, [open])
 
   function updateField(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }))
@@ -480,13 +483,14 @@ function BranchAgentInviteModal({
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (commissionSaving) return
     if (!normalizeText(form.firstName) || !normalizeText(form.surname) || !normalizeText(form.email) || !normalizeText(form.mobile)) {
       setError('First name, surname, email, and mobile number are required.')
       return
     }
     const selectedCommissionStructure =
-      commissionStructures.find((structure) => structure.id === form.commissionStructureId) ||
-      defaultCommissionStructure
+      form.commissionStructureId === '__unassigned__' ? null :
+      commissionStructures.find((structure) => structure.id === form.commissionStructureId) || defaultCommissionStructure
 
     try {
       setSubmitting(true)
@@ -532,8 +536,8 @@ function BranchAgentInviteModal({
       className="max-w-4xl"
       footer={(
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting}>Cancel</Button>
-          <Button type="submit" form="branch-agent-invite-form" disabled={submitting}>{submitting ? 'Sending Invite...' : 'Send Invite'}</Button>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={submitting || commissionSaving}>Cancel</Button>
+          <Button type="submit" form="branch-agent-invite-form" disabled={submitting || commissionSaving}>{submitting ? 'Sending Invite...' : 'Send Invite'}</Button>
         </div>
       )}
     >
@@ -583,6 +587,7 @@ function BranchAgentInviteModal({
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Commission Structure (Optional)</span>
               <Field as="select" value={form.commissionStructureId} onChange={(event) => updateField('commissionStructureId', event.target.value)}>
                 <option value="">{defaultCommissionStructure ? `Use agency default: ${defaultCommissionStructure.name}` : 'Assign later'}</option>
+                {defaultCommissionStructure ? <option value="__unassigned__">Save agent without a commission structure</option> : null}
                 {commissionStructures.map((structure) => (
                   <option key={structure.id} value={structure.id}>
                     {structure.name} ({formatPercent(structure.agentSplitPercentage)} agent / {formatPercent(structure.agencySplitPercentage)} agency)
@@ -596,6 +601,10 @@ function BranchAgentInviteModal({
               No commission structure is configured yet. You can invite this agent now and assign one later before creating a commissionable transaction.
             </div>
           ) : null}
+          <InlineCommissionStructure disabled={submitting} onSavingChange={setCommissionSaving} onCreated={(structure) => {
+            onCommissionStructureCreated?.(structure)
+            updateField('commissionStructureId', structure.id)
+          }} />
         </section>
 
         <section className="rounded-[16px] border border-[#e1e8f2] bg-[#fbfcfe] p-4">
@@ -792,6 +801,9 @@ export default function AgencyBranchWorkspacePage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [archiveOpen, setArchiveOpen] = useState(false)
+  const [archiveSaving, setArchiveSaving] = useState(false)
+  const [actionError, setActionError] = useState('')
   const [agentInviteOpen, setAgentInviteOpen] = useState(false)
   const [selectedAgentRow, setSelectedAgentRow] = useState(null)
   const [organisationContext, setOrganisationContext] = useState({ organisation: null, profile: null })
@@ -963,6 +975,7 @@ export default function AgencyBranchWorkspacePage() {
 
   return (
     <section className="flex flex-col gap-4">
+      {actionError ? <p role="alert" className="text-sm text-red-700">{actionError}</p> : null}
       <section className="rounded-[24px] border border-[#dfe8f1] bg-white px-5 py-4 shadow-[0_14px_34px_rgba(24,45,68,0.06)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
@@ -1006,7 +1019,6 @@ export default function AgencyBranchWorkspacePage() {
             </button>
             <ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Add Agent</ActionButton>
             <ActionButton icon={Settings} onClick={() => setSettingsOpen(true)} aria-label="Branch settings" />
-            <ActionButton aria-label="More branch actions"><MoreHorizontal size={17} /></ActionButton>
           </div>
         </div>
       </section>
@@ -1030,8 +1042,7 @@ export default function AgencyBranchWorkspacePage() {
             <ActionButton icon={Settings} onClick={() => setSettingsOpen(true)}>Branch Settings</ActionButton>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <ActionButton variant="danger">Archive Branch</ActionButton>
-            <ActionButton aria-label="More branch actions"><MoreHorizontal size={17} /></ActionButton>
+            <ActionButton variant="danger" onClick={() => setArchiveOpen(true)}>{branch?.isActive === false ? 'Reactivate Branch' : 'Archive Branch'}</ActionButton>
           </div>
         </div>
       </section>
@@ -1199,7 +1210,7 @@ export default function AgencyBranchWorkspacePage() {
         ) : null}
 
         {activeTab === 'clients' ? (
-          <EmptyState title="Client workspace coming next" copy="Client rollups per branch will be wired into the branch operating cockpit." icon={Users} />
+          <EmptyState title="Branch client view is not available yet" copy="Use the Clients workspace for current client records. This tab does not contain a branch-specific client list." icon={Users} />
         ) : null}
 
         {activeTab === 'reporting' ? (
@@ -1255,6 +1266,18 @@ export default function AgencyBranchWorkspacePage() {
           </section>
         ) : null}
       </section>
+      <ConfirmDialog open={archiveOpen} title={branch?.isActive === false ? 'Reactivate branch?' : 'Archive branch?'}
+        description="This changes the branch's active status. Existing agents and transactions are not deleted. You can reactivate it later."
+        confirming={archiveSaving} onCancel={() => setArchiveOpen(false)} onConfirm={async () => {
+          setArchiveSaving(true)
+          setActionError('')
+          try {
+            const updated = await updateBranch(branchId, { isActive: branch?.isActive === false })
+            setBranch(updated)
+            setArchiveOpen(false)
+          } catch (saveError) { setActionError(saveError.message || 'Unable to change branch status.') }
+          finally { setArchiveSaving(false) }
+        }} />
       <BranchSettingsModal
         open={settingsOpen}
         branch={branch}
@@ -1275,6 +1298,7 @@ export default function AgencyBranchWorkspacePage() {
         organisation={organisationContext.organisation}
         profile={organisationContext.profile}
         commissionStructures={commissionStructures}
+        onCommissionStructureCreated={(structure) => setCommissionStructures((previous) => [...previous.filter((item) => item.id !== structure.id), structure])}
         onClose={() => setAgentInviteOpen(false)}
         onSent={() => {
           setAgentInviteOpen(false)

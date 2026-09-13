@@ -10,7 +10,7 @@ const server = await createServer({ root: appRoot.pathname, logLevel: 'silent', 
 const db = new PGlite()
 
 try {
-  const { can, getPermissionScope } = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
+  const { can, getPermissionScope, canAccessWorkspaceRecord } = await server.ssrLoadModule('/src/auth/permissions/permissionResolver.js')
   const { PERMISSIONS } = await server.ssrLoadModule('/src/auth/permissions/permissionRegistry.js')
   const { canAccessAgentsModule, canManageAgentOrganisations } = await server.ssrLoadModule('/src/lib/roles.js')
   const { canPerformAgencyAuthorityAction, AGENCY_AUTHORITY_ACTIONS } = await server.ssrLoadModule('/src/services/agencyAuthorityService.js')
@@ -24,14 +24,18 @@ try {
     currentMembership: { id: 'member', role, status, workspaceType, workspace: { id: 'agency', type: workspaceType } },
   })
   for (const role of roles) {
-    for (const permission of required) assert.equal(getPermissionScope(permission, context(role)), 'all_workspace', `${role}: ${permission}`)
-    assert.equal(canAccessAgentsModule({ role: 'agent', membershipRole: role }), true)
-    assert.equal(canManageAgentOrganisations({ role: 'agent', membershipRole: role }), true)
+    const senior = ['owner', 'principal'].includes(role)
+    for (const permission of required) assert.equal(can(permission, context(role)), senior, `${role}: ${permission}`)
+    assert.equal(canAccessAgentsModule({ role: 'agent', membershipRole: role }), senior)
+    assert.equal(canManageAgentOrganisations({ role: 'agent', membershipRole: role }), senior)
     const actor = { userId: 'actor', role, workspaceType: 'agency', membershipStatus: 'active' }
     for (const action of ['assignBranch', 'transferAgent', 'assignLead', 'transferOwnership', 'reassignAssets']) {
-      assert.equal(canPerformAgencyAuthorityAction(AGENCY_AUTHORITY_ACTIONS[action], actor, { userId: 'other', role: 'owner', branchId: 'another-branch' }), true)
+      assert.equal(canPerformAgencyAuthorityAction(AGENCY_AUTHORITY_ACTIONS[action], actor, { userId: 'other', role: 'owner', branchId: 'another-branch' }), senior)
     }
-    assert.equal(canGovernOrganisationRoleChange({ actor, target: { userId: 'actor', role }, nextRole: 'principal' }), true)
+    assert.equal(canGovernOrganisationRoleChange({ actor, target: { userId: 'actor', role }, nextRole: 'principal' }), senior)
+    const recordContext = { ...context(role), userId: 'actor', branchScope: 'all_branches' }
+    assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewTransactions, recordContext, { assigned_user_id: 'other' }), senior, `${role}: colleague record`)
+    if (role !== 'viewer') assert.equal(canAccessWorkspaceRecord(PERMISSIONS.viewTransactions, recordContext, { assigned_user_id: 'actor' }), true, `${role}: own record`)
   }
   for (const status of ['invited', 'pending', 'suspended', 'removed', 'deactivated']) {
     for (const permission of required) assert.equal(can(permission, context('agent', status)), false, status)
@@ -39,7 +43,7 @@ try {
   assert.equal(can(PERMISSIONS.manageUsers, context('viewer', 'active', 'attorney_firm', 'attorney')), false)
   assert.equal(can(PERMISSIONS.manageUsers, context('viewer', 'active', 'developer_company', 'developer')), false)
   assert.equal(can(PERMISSIONS.manageUsers, context('agent', 'active', 'agency', 'client')), false)
-  console.log('PASS: frontend operations across eight agency roles; inactive, client and other-product boundaries retained')
+  console.log('PASS: frontend two-tier access across eight agency roles; inactive, client and other-product boundaries retained')
 
   // Execute the actual migration in isolated PostgreSQL. No live records or credentials.
   const org = randomUUID(), otherOrg = randomUUID(), legalOrg = randomUUID()
@@ -82,6 +86,7 @@ try {
       grant select,insert,update,delete on ${table} to authenticated;`)
   }
   await db.exec(`alter table organisation_branches add column region_id uuid;
+    alter table organisation_user_commission_profiles add column user_id uuid, add column organisation_user_id uuid;
     insert into organisation_branches(id,organisation_id,name) values ('${branchId}','${org}','Own'),('${otherBranchId}','${otherOrg}','Unrelated');`)
   await db.exec(await migration('20260907131142_organisation_multi_owner_contract_phase1.sql'))
   await db.exec(await migration('20260907155543_organisation_primary_owner_control_phase4.sql'))
@@ -148,6 +153,68 @@ try {
   await asUser(null)
   await assert.rejects(db.query('select bridge_grant_organisation_owner($1,false)', [actorMember]), /Authentication is required/)
   console.log('PASS: actual SQL CRUD policies across six tables; unrelated agencies, suspended users and signed-out ownership denied')
+
+  // Upgrade the historical open-mode fixture to the new two-tier contract.
+  await db.exec('reset role')
+  await db.exec(`
+    create function bridge_is_active_member(target_org uuid) returns boolean language sql stable security definer as $$
+      select exists(select 1 from organisation_users where organisation_id=target_org and user_id=auth.uid() and status='active')
+    $$;
+    create function auth.jwt() returns jsonb language sql stable as $$ select nullif(current_setting('request.jwt.claims',true),'')::jsonb $$;
+    create table leads(lead_id uuid primary key, organisation_id uuid, assigned_user_id uuid, assigned_agent_id uuid);
+    create table transactions(id uuid primary key, organisation_id uuid, assigned_user_id uuid, assigned_agent_id uuid, owner_user_id uuid);
+    create table lead_notes(id uuid primary key default gen_random_uuid(),lead_id uuid,note text);
+    create table commercial_transactions(id uuid primary key);
+    create table commercial_notes(id uuid primary key,transaction_id uuid references commercial_transactions(id));
+    alter table commercial_notes enable row level security;
+    alter table leads enable row level security;
+    alter table transactions enable row level security;
+    alter table lead_notes enable row level security;
+    create policy legacy_member on leads for all to authenticated using(bridge_is_active_member(organisation_id)) with check(bridge_is_active_member(organisation_id));
+    create policy legacy_member on transactions for all to authenticated using(bridge_is_active_member(organisation_id)) with check(bridge_is_active_member(organisation_id));
+    create policy legacy_notes on lead_notes for all to authenticated using(true) with check(true);
+    grant select,insert,update,delete on leads,transactions,lead_notes to authenticated;
+  `)
+  await db.exec(await migration('20260913075746_agency_two_tier_access.sql'))
+  await db.exec(await migration('20260913082015_agency_two_tier_policy_lookup_fix.sql'))
+  await db.exec(`
+    alter table organisations enable row level security;
+    alter table organisation_users enable row level security;
+    create policy org_member_visibility on organisations to authenticated using(exists(select 1 from organisation_users m where m.organisation_id=organisations.id and m.user_id=auth.uid()));
+    create policy member_visibility on organisation_users to authenticated using(bridge_is_active_member(organisation_id));
+  `)
+  assert.equal((await db.query("select policyname from pg_policies where tablename='commercial_notes' and policyname like 'agency_two_tier%'")).rows.length,0,'Different product parent is unchanged')
+  const ownLead = randomUUID(), otherLead = randomUUID(), ownTx = randomUUID(), otherTx = randomUUID()
+  await db.query('insert into leads values ($1,$2,$3,null),($4,$2,$5,null)', [ownLead,org,peerId,otherLead,actorId])
+  await db.query('insert into transactions values ($1,$2,$3,null,$5),($4,$2,$5,null,$3)', [ownTx,org,peerId,otherTx,actorId])
+  await db.query('insert into lead_notes(lead_id,note) values ($1,$2),($3,$4)', [ownLead,'own',otherLead,'other'])
+  for (const role of roles) {
+    await asUser(null)
+    await db.exec('reset role')
+    // Disable the ownership integrity trigger only in this isolated fixture to exercise every role.
+    await db.exec('alter table organisation_users disable trigger user')
+    await db.query('update organisation_users set role=$1,workspace_role=$1,organisation_role=$1,organization_role=$1,is_primary_owner=false where id=$2', [role,peerMember])
+    await db.exec('alter table organisation_users enable trigger user')
+    await asUser(peerId)
+    const senior = ['owner','principal'].includes(role)
+    assert.equal((await db.query('select id from organisation_users where organisation_id=$1',[org])).rows.length,senior ? 3 : 1,`${role}: member read without recursion`)
+    assert.equal((await db.query('select lead_id from leads')).rows.length, senior ? 2 : 1, `${role}: lead isolation`)
+    assert.equal((await db.query('select id from transactions')).rows.length, senior ? 2 : 1, `${role}: transaction isolation`)
+    assert.equal((await db.query('select id from lead_notes')).rows.length, senior ? 2 : 1, `${role}: related-record isolation`)
+    assert.equal((await db.query('select bridge_can_access_transaction_org_member($1) as allowed',[otherTx])).rows[0].allowed,senior)
+    assert.equal((await db.query('select bridge_phase5_can_manage_branch($1,$2) as allowed',[org,branchId])).rows[0].allowed,senior)
+    if (!senior) {
+      await assert.rejects(db.query("select bridge_set_organisation_user_role($1,'principal')",[peerMember]))
+      await assert.rejects(db.query('select bridge_grant_organisation_owner($1,false)',[peerMember]))
+      await assert.rejects(db.query('update leads set assigned_user_id=$1 where lead_id=$2',[actorId,ownLead]),/row-level security/)
+      for (const table of managedTables) await assert.rejects(db.query(`insert into ${table}(organisation_id,name) values ($1,'forbidden')`,[org]),/row-level security/)
+    }
+  }
+  await asUser(suspendedId)
+  assert.equal((await db.query('select lead_id from leads')).rows.length,0)
+  await asUser(outsiderId)
+  assert.equal((await db.query('select lead_id from leads')).rows.length,0)
+  console.log('PASS: new SQL migration restricts all non-senior roles, direct related reads, reassignment and self-promotion; senior access retained')
 } finally {
   await server.close()
   await db.close()

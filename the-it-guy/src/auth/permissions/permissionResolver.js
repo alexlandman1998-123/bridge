@@ -411,6 +411,13 @@ function getPermissionMap(context = {}) {
       ...Object.fromEntries(operationalPermissions.map((permission) => [permission, ACCESS_SCOPES.allWorkspace])),
     }
   }
+  if (resolved.workspaceType === WORKSPACE_TYPES.agency) {
+    // Non-senior job titles share an assigned-record boundary, never branch/HQ scope.
+    const ownPermissions = permissionsByWorkspaceRole[WORKSPACE_TYPES.agency]?.[
+      resolved.organisationRole === 'viewer' ? 'viewer' : 'agent'
+    ] || {}
+    return Object.fromEntries(Object.entries(ownPermissions).map(([permission, scope]) => [permission, scope === ACCESS_SCOPES.none ? ACCESS_SCOPES.none : ACCESS_SCOPES.assignedOnly]))
+  }
   return permissionsByWorkspaceRole[resolved.workspaceType]?.[resolved.organisationRole] || Object.freeze({})
 }
 
@@ -427,6 +434,12 @@ export function canAccessWorkspaceRecord(permission, context = {}, record = {}) 
   const recordRegionId = getRecordRegionId(record)
   const recordUnitId = getRecordWorkspaceUnitId(record)
   const assignedUserId = getRecordAssignedUserId(record)
+
+  if (resolved.workspaceType === WORKSPACE_TYPES.agency) {
+    if (permissionScope === ACCESS_SCOPES.allWorkspace) return true
+    const assignedId = normalizeText(record.assigned_user_id || record.assignedUserId || record.assigned_agent_id || record.assignedAgentId || record.owner_user_id || record.ownerUserId)
+    return Boolean(assignedId && [userId, resolved.membership?.id].filter(Boolean).includes(assignedId))
+  }
 
   if (isBondWorkspace) {
     if (permissionScope === ACCESS_SCOPES.allWorkspace) return true

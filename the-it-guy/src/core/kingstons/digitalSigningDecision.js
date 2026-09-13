@@ -1,8 +1,9 @@
+import { DOCUMENT_GENERATOR_RETIRED_MESSAGE } from '../documents/documentGeneratorRetirement.js'
 export const KINGSTONS_DIGITAL_SIGNING_DECISION_VERSION = 'kingstons_digital_signing_decision_phase8_v1'
 
 export const KINGSTONS_DIGITAL_SIGNING_DECISION = Object.freeze({
   version: KINGSTONS_DIGITAL_SIGNING_DECISION_VERSION,
-  status: 'paused',
+  status: 'retired',
   livePath: 'manual_seller_pack',
   label: '',
   reason: '',
@@ -11,25 +12,14 @@ export const KINGSTONS_DIGITAL_SIGNING_DECISION = Object.freeze({
 })
 
 export function buildKingstonsDigitalSigningDecision({
-  isKingstons = false,
   requestedAction = '',
 } = {}) {
-  if (!isKingstons) {
-    return {
-      version: KINGSTONS_DIGITAL_SIGNING_DECISION_VERSION,
-      status: 'available',
-      livePath: 'digital_or_physical',
-      blocked: false,
-      requestedAction,
-      message: '',
-    }
-  }
-
   return {
     ...KINGSTONS_DIGITAL_SIGNING_DECISION,
     blocked: true,
     requestedAction,
-    message: '',
+    digitalOtpEnabled: false,
+    message: DOCUMENT_GENERATOR_RETIRED_MESSAGE,
   }
 }
 

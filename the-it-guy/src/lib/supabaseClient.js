@@ -1,3 +1,4 @@
+import { isRetiredDocumentFunction, DOCUMENT_GENERATOR_RETIRED_CODE, DOCUMENT_GENERATOR_RETIRED_MESSAGE } from '../core/documents/documentGeneratorRetirement'
 import { createClient } from '@supabase/supabase-js'
 
 const viteEnv = typeof import.meta !== 'undefined' && import.meta?.env ? import.meta.env : {}
@@ -537,6 +538,9 @@ async function invokeEdgeFunctionWithAccessToken(functionName, body, accessToken
 }
 
 export async function invokeEdgeFunction(functionName, { body, headers = {}, client = supabase } = {}) {
+  if (isRetiredDocumentFunction(functionName)) {
+    return { data: null, error: { code: DOCUMENT_GENERATOR_RETIRED_CODE, message: DOCUMENT_GENERATOR_RETIRED_MESSAGE } }
+  }
   if (!client) {
     return {
       data: null,

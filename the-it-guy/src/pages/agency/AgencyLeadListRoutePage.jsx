@@ -1,6 +1,6 @@
 import { RefreshCw, X } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import AgentAssignmentSelect from '../../components/AgentAssignmentSelect'
 import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
@@ -117,6 +117,7 @@ function mapAgent(row = {}) {
   const lastName = normalizeText(row?.lastName || row?.last_name)
   const email = normalizeText(row?.email).toLowerCase()
   return {
+    membershipId: normalizeText(row?.id),
     id: normalizeText(row?.userId || row?.user_id || row?.id || email),
     userId: normalizeText(row?.userId || row?.user_id || row?.id),
     name: normalizeText(row?.fullName || row?.full_name || [firstName, lastName].filter(Boolean).join(' ')) || email || 'Team member',
@@ -210,6 +211,9 @@ export default function AgencyLeadListRoutePage() {
   const [archiving, setArchiving] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState({ open: false, leadId: '' })
   const [deleting, setDeleting] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [assignmentLeadId, setAssignmentLeadId] = useState('')
+  const [assigning, setAssigning] = useState(false)
   const loadRequestRef = useRef(0)
   const performanceRef = useRef(null)
   if (!performanceRef.current) performanceRef.current = createSellerLeadsPerformanceBaseline({ route: '/pipeline/leads' })
@@ -228,6 +232,14 @@ export default function AgencyLeadListRoutePage() {
   }), [currentMembership?.branchId, currentMembership?.branch_id, profile])
   const agentOptions = agents.length ? agents : [currentAgent]
   const isPrincipal = canAccessPrincipalExperience({ appRole: role, membershipRole })
+  const requestedAgentId = searchParams.get('assignAgent') || ''
+  const assignmentTarget = isPrincipal ? agentOptions.find((agent) => [agent.id, agent.membershipId].includes(requestedAgentId)) : null
+  const closeAssignment = () => {
+    const next = new URLSearchParams(searchParams)
+    next.delete('assignAgent')
+    setSearchParams(next, { replace: true })
+    setAssignmentLeadId('')
+  }
   const deferredFilters = useDeferredValue(filters)
 
   useEffect(() => {
@@ -385,6 +397,29 @@ export default function AgencyLeadListRoutePage() {
     }
   }
 
+  const handleAssignLead = async () => {
+    if (!isPrincipal || !assignmentTarget || !assignmentLeadId || assigning) return
+    setAssigning(true)
+    setError('')
+    try {
+      const { updateAgencyCrmLeadRecord } = await loadLeadMutationActions()
+      await updateAgencyCrmLeadRecord(organisationId, assignmentLeadId, {
+        assignedAgent: assignmentTarget,
+        assignedUserId: assignmentTarget.userId || assignmentTarget.id,
+        assignedAgentId: assignmentTarget.userId || assignmentTarget.id,
+        assignedAgentEmail: assignmentTarget.email,
+      }, { actor: currentAgent })
+      invalidateAgencyLeadListCache(organisationId, assignmentLeadId)
+      setMessage(`Lead assigned to ${assignmentTarget.name}.`)
+      closeAssignment()
+      await loadLeads({ forceRefresh: true })
+    } catch (assignmentError) {
+      setError(assignmentError?.message || 'Unable to assign this lead.')
+    } finally {
+      setAssigning(false)
+    }
+  }
+
   const handleDeleteLead = async (leadId) => {
     if (!leadId || deleting) return
     setDeleting(true)
@@ -430,6 +465,21 @@ export default function AgencyLeadListRoutePage() {
 
   return (
     <section className="min-w-0 space-y-4">
+      {requestedAgentId ? (
+        <section className="rounded-xl border border-[#dbe4ee] bg-white p-4 space-y-3" aria-label="Assign lead">
+          <p className="font-semibold">{assignmentTarget ? `Assign a lead to ${assignmentTarget.name}` : 'The selected agent is unavailable or you do not have assignment access.'}</p>
+          {assignmentTarget ? <label className="grid gap-2 text-sm">Choose a lead from this page (use the filters or pagination below to find another)
+            <select className="rounded-lg border p-2" value={assignmentLeadId} onChange={(event) => setAssignmentLeadId(event.target.value)} disabled={assigning}>
+              <option value="">Select a lead</option>
+              {pageRows.map((row) => <option key={row.leadId || row.id} value={row.leadId || row.id}>{row.name}</option>)}
+            </select>
+          </label> : null}
+          <div className="flex gap-3">
+            {assignmentTarget ? <button type="button" className="rounded-lg border px-3 py-2 disabled:opacity-50" disabled={assigning || !assignmentLeadId} onClick={() => void handleAssignLead()}>{assigning ? 'Assigning…' : 'Assign lead'}</button> : null}
+            <button type="button" disabled={assigning} onClick={closeAssignment}>Cancel assignment</button>
+          </div>
+        </section>
+      ) : null}
       <div className="flex min-h-10 items-center justify-between gap-3">
         <div className="min-w-0">{error ? <p className="rounded-[14px] border border-[#f2cccc] bg-[#fff5f4] px-4 py-2 text-sm text-[#9f3028]">{error}</p> : message ? <p className="rounded-[14px] border border-[#cfe8dc] bg-[#effaf3] px-4 py-2 text-sm text-[#26724c]">{message}</p> : null}</div>
         <button type="button" disabled={refreshing} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads({ forceRefresh: true, requestedPage: currentPage })}><RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Refresh</button>
