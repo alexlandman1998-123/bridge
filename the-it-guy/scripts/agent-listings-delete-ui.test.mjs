@@ -36,6 +36,15 @@ assert(
 )
 
 assert(
+  source.includes('function requestListingDeletion(card, event)') &&
+    source.includes('setListingPendingDeletion(card)') &&
+    source.includes('role="dialog"') &&
+    source.includes('Delete permanently') &&
+    !source.includes('window.confirm('),
+  'listing deletion should use the in-app confirmation dialog instead of the browser confirmation prompt.',
+)
+
+assert(
   source.includes('...getListingIdentityKeys(card?.listingRecord || {})'),
   'handleDeleteListing should include canonical listing record identity keys.',
 )

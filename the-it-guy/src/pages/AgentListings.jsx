@@ -2153,6 +2153,35 @@ function getListingAddress(listing = {}) {
   )
 }
 
+function getListingCardAddressLabel(listing = {}) {
+  const unitNumber = normalizeText(listing.unitNumber || listing.unit_number || listing.propertyDetails?.unitNumber)
+  const complexOrEstate = normalizeText(
+    listing.complexName ||
+      listing.complex_name ||
+      listing.estateName ||
+      listing.estate_name ||
+      listing.propertyDetails?.complexName ||
+      listing.propertyDetails?.estateName,
+  )
+  const streetAddress = normalizeText(
+    listing.streetAddress ||
+      listing.street_address ||
+      listing.addressLine1 ||
+      listing.address_line_1 ||
+      listing.propertyDetails?.addressLine1 ||
+      listing.propertyAddress,
+  )
+  const unitLabel = unitNumber
+    ? (/^unit\s/i.test(unitNumber) ? unitNumber : `Unit ${unitNumber}`)
+    : ''
+
+  if (unitLabel && complexOrEstate) return `${unitLabel}, ${complexOrEstate}`
+  if (unitLabel && streetAddress) return `${unitLabel}, ${streetAddress}`
+  if (streetAddress) return streetAddress
+  if (complexOrEstate) return complexOrEstate
+  return normalizeText(listing.listingTitle || listing.title) || 'Address pending'
+}
+
 function getListingDocuments(listing = {}) {
   return [
     ...(Array.isArray(listing.documents) ? listing.documents : []),
@@ -3525,6 +3554,7 @@ function AgentListings({ initialTab = null } = {}) {
   }, [getCurrentDeletedListingIds])
   const [organisationId, setOrganisationId] = useState('')
   const [deletingListingId, setDeletingListingId] = useState('')
+  const [listingPendingDeletion, setListingPendingDeletion] = useState(null)
   const [openListingMenuId, setOpenListingMenuId] = useState('')
   const [shareModalListing, setShareModalListing] = useState(null)
   const [shareOptions, setShareOptions] = useState([])
@@ -6293,8 +6323,19 @@ function AgentListings({ initialTab = null } = {}) {
     }
   }
 
-  async function handleDeleteListing(card, event) {
+  function requestListingDeletion(card, event) {
     event.stopPropagation()
+    setOpenListingMenuId('')
+    setError('')
+    setListingPendingDeletion(card)
+  }
+
+  function cancelListingDeletion() {
+    if (deletingListingId) return
+    setListingPendingDeletion(null)
+  }
+
+  async function handleDeleteListing(card) {
     const listingIdentityKeys = Array.from(new Set([
       ...(Array.isArray(card?.identityKeys) ? card.identityKeys : []),
       ...getListingIdentityKeys(card?.listingRecord || {}),
@@ -6308,10 +6349,6 @@ function AgentListings({ initialTab = null } = {}) {
     }
 
     const listingTitle = String(card?.title || 'this listing').trim()
-    const confirmed = window.confirm(
-      `Permanently delete "${listingTitle}"?\n\nThis removes the listing from Arch9, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.`,
-    )
-    if (!confirmed) return
 
     setDeletingListingId(listingId)
     setError('')
@@ -6343,6 +6380,7 @@ function AgentListings({ initialTab = null } = {}) {
       setPrivateListings((rows) => rows.filter((row) => !rowMatchesDeletedListing(row, currentDeletedIds)))
       await loadData({ showLoading: false, deletedIdsOverride: currentDeletedIds })
       setWorkflowMessage(`"${listingTitle}" was permanently deleted.`)
+      setListingPendingDeletion(null)
     } catch (deleteError) {
       setError(deleteError?.message || 'Unable to delete this listing.')
     } finally {
@@ -6473,6 +6511,7 @@ function AgentListings({ initialTab = null } = {}) {
         propertyStructureType,
         propertyStructureTypeLabel: getPropertyStructureTypeLabel(propertyStructureType),
         title: listing.listingTitle || listing.title || getListingAddress(listing) || 'Untitled listing',
+        addressLabel: getListingCardAddressLabel(listing),
         suburb: [listing.suburb, listing.city].filter(Boolean).join(', ') || 'Location pending',
         address: [listing.addressLine1 || listing.propertyAddress, listing.suburb, listing.city].filter(Boolean).join(', ') || 'Address pending',
         price: Number(listing.askingPrice || 0),
@@ -6537,7 +6576,7 @@ function AgentListings({ initialTab = null } = {}) {
     if (isDeveloperWorkspace) {
       return sortListingCards(privateListingCards.filter((card) => (
         query
-          ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel, card.listingSourceLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
+          ? [card.title, card.addressLabel, card.suburb, card.typeLabel, card.agentName, card.originLabel, card.listingSourceLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
           : true
       )), filters.sortBy)
     }
@@ -6549,7 +6588,7 @@ function AgentListings({ initialTab = null } = {}) {
     return sortListingCards(privateListingCards.filter((card) => {
       const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
       const searchMatch = query
-        ? [card.title, card.suburb, card.typeLabel, card.agentName, card.originLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
+        ? [card.title, card.addressLabel, card.suburb, card.typeLabel, card.agentName, card.originLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
         : true
       return categoryMatch && searchMatch
     }), filters.sortBy)
@@ -7927,8 +7966,7 @@ function AgentListings({ initialTab = null } = {}) {
                           <button
                             type="button"
                             onClick={(event) => {
-                              setOpenListingMenuId('')
-                              handleDeleteListing(card, event)
+                              requestListingDeletion(card, event)
                             }}
                             disabled={deletingListingId === card.id}
                             className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#a13b35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-60"
@@ -7943,7 +7981,7 @@ function AgentListings({ initialTab = null } = {}) {
 
                   <div className="flex flex-1 flex-col gap-3 p-4">
                     <div>
-                      <h3 className="line-clamp-2 text-[1.02rem] font-semibold leading-6 text-[#142132]">{card.title}</h3>
+                      <h3 className="truncate text-[1.02rem] font-semibold leading-6 text-[#142132]" title={card.addressLabel}>{card.addressLabel}</h3>
                       <p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{formatCurrency(card.price)}</p>
                     </div>
 
@@ -8259,6 +8297,69 @@ function AgentListings({ initialTab = null } = {}) {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {listingPendingDeletion ? (
+        <div
+          className="fixed inset-0 z-[80] grid place-items-center bg-[#091322]/45 p-5 backdrop-blur-[1.5px]"
+          role="presentation"
+          onMouseDown={cancelListingDeletion}
+        >
+          <div
+            className="w-full max-w-lg rounded-[22px] border border-[#efd0ce] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.28)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-listing-title"
+            aria-describedby="delete-listing-description"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#a13b35]">Permanent action</p>
+                <h3 id="delete-listing-title" className="mt-2 text-xl font-semibold text-[#142132]">Delete Listing?</h3>
+              </div>
+              <button
+                type="button"
+                onClick={cancelListingDeletion}
+                disabled={Boolean(deletingListingId)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#dce6f2] text-[#607387] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
+                aria-label="Close delete listing confirmation"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div id="delete-listing-description" className="mt-5 rounded-[16px] border border-[#efd0ce] bg-[#fff7f6] p-4 text-sm leading-6 text-[#6f3935]">
+              <p>
+                Permanently delete <span className="font-semibold">“{String(listingPendingDeletion.title || 'this listing').trim()}”</span>?
+              </p>
+              <p className="mt-2">
+                This removes the listing, local fallback storage, seller workflow drafts, onboarding-linked listing records, documents, and activity. This cannot be undone.
+              </p>
+            </div>
+
+            {error ? (
+              <div className="mt-4 rounded-[14px] border border-[#efd0ce] bg-[#fff7f6] px-4 py-3 text-sm font-semibold text-[#a13b35]">
+                {error}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={cancelListingDeletion} disabled={Boolean(deletingListingId)}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={() => handleDeleteListing(listingPendingDeletion)}
+                disabled={Boolean(deletingListingId)}
+                className="!border-[#a13b35] !bg-[#a13b35] hover:!bg-[#842f2a]"
+              >
+                {deletingListingId ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {deletingListingId ? 'Deleting...' : 'Delete permanently'}
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}
