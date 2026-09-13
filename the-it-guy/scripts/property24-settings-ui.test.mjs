@@ -105,8 +105,8 @@ const canonicalProfile = getCanonicalArch9AgentProfile({
 assert.equal(canonicalProfile.email, 'alex@arch9.co.za')
 assert.equal(canonicalProfile.phone, '0825551123')
 assert.equal(canonicalProfile.avatarUrl, 'https://cdn.example.com/alex.jpg')
-assert.deepEqual(getProperty24ListingStatusOptions('rental'), ['Active', 'Pending', 'Rented', 'Withdrawn'])
-assert.deepEqual(getProperty24ListingStatusOptions('sale'), ['Active', 'Pending', 'Sold', 'Withdrawn'])
+assert.deepEqual(getProperty24ListingStatusOptions('rental'), ['Active', 'Pending', 'Rented', 'Withdrawn', 'Expired'])
+assert.deepEqual(getProperty24ListingStatusOptions('sale'), ['Active', 'Pending', 'Sold', 'Withdrawn', 'Expired'])
 
 const persistedSettings = serializeProperty24SettingsForPersistence({
   ...readySettings,

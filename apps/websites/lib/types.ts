@@ -72,6 +72,17 @@ export type PublicBlogPost = {
   slug: string
   summary: string
   body: string
+  contentBlocks: Array<{
+    id: string
+    type: 'paragraph' | 'heading_2' | 'heading_3' | 'bullet_list' | 'numbered_list' | 'quote' | 'divider' | 'image' | 'tip' | 'listing_card'
+    text?: string
+    assetId?: string
+    imageUrl?: string
+    imageAlt?: string
+    caption?: string
+    tipRole?: 'buyer' | 'seller'
+    listingId?: string
+  }>
   authorName?: string
   coverImageUrl?: string
   coverImageAlt?: string

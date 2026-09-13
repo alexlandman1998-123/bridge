@@ -1,6 +1,8 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
+import { buildFicaDeclarationDocumentMarkup } from '../core/documents/ficaDeclarationDocumentMarkup.js'
+import { buildFicaDeclarationDocumentModel } from '../core/documents/ficaDeclarationDocumentModel.js'
 import {
   getSellerBasePackAliases,
   normalizeSellerBasePackKey,
@@ -2307,25 +2309,30 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing
     signing: complianceSigning,
     generatedAt: completedAt || new Date().toISOString(),
   })
-  const generatedHtml = buildPropertyDisclosureDocumentMarkup(propertyDisclosure, {
-    sellerName: normalizeText(formData.sellerName || [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ')),
-    sellerIdNumber: normalizeText(formData.sellerIdNumber || formData.idNumber || formData.id_number),
-    sellerId: normalizeText(listing?.sellerProfileId || listing?.seller_profile_id),
-    propertyId: normalizeText(listing?.propertyProfileId || listing?.property_profile_id),
-    listingId: normalizeText(listing?.id || listing?.private_listing_id),
-    transactionId: normalizeText(listing?.transactionId || listing?.transaction_id),
-    propertyAddress: resolveSellerDocumentPropertyAddress(listing, formData),
-    documentReference: normalizeText(firstPresent(
-      listing?.listingReference,
-      listing?.listing_reference,
-      listing?.reference,
-      listing?.privateListingReference,
-      listing?.private_listing_reference,
-      listing?.id,
-    )),
+  const declarationModel = buildFicaDeclarationDocumentModel({
+    partyType: 'seller',
+    transaction: {
+      id: normalizeText(listing?.transactionId || listing?.transaction_id),
+      reference: normalizeText(firstPresent(
+        listing?.listingReference,
+        listing?.listing_reference,
+        listing?.reference,
+        listing?.privateListingReference,
+        listing?.private_listing_reference,
+        listing?.id,
+      )),
+    },
+    property: { address: resolveSellerDocumentPropertyAddress(listing, formData) },
+    signing: sellerCompliancePack.signingSummary,
+    sections: sellerCompliancePack.ficaSections,
     branding: resolveSellerDocumentBranding(listing, formData),
-    sellerCompliancePack,
+    declaration: {
+      wording: firstPresent(formData?.ficaDeclarationWording, formData?.fica_declaration_wording),
+      wordingVersion: firstPresent(formData?.ficaDeclarationWordingVersion, formData?.fica_declaration_wording_version),
+    },
+    generatedAt: completedAt || new Date().toISOString(),
   })
+  const generatedHtml = buildFicaDeclarationDocumentMarkup(declarationModel)
 
   return {
     id: `seller-fica-declaration-${normalizeText(listing?.id || listing?.private_listing_id || onboarding?.token || 'onboarding')}`,
@@ -2335,8 +2342,8 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing
     documentType: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
     category: 'fica_declaration',
     document_category: 'fica_declaration',
-    document_name: 'Signed FICA Declaration',
-    name: 'Signed FICA Declaration',
+    document_name: 'Seller FICA Declaration',
+    name: 'Seller FICA Declaration',
     generatedHtml,
     generated_html: generatedHtml,
     generatedFileName: 'signed-fica-declaration.pdf',
@@ -2358,6 +2365,7 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing
       completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
       supportingFicaDocumentsDynamic: true,
       sellerType,
+      ficaDeclarationModel: declarationModel,
     },
   }
 }

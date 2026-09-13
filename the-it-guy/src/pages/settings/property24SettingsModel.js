@@ -23,8 +23,8 @@ export const PROPERTY24_SETTINGS_DEFAULTS = {
 }
 
 export const PROPERTY24_LISTING_STATUS_OPTIONS = Object.freeze({
-  sale: Object.freeze(['Active', 'Pending', 'Sold', 'Withdrawn']),
-  rental: Object.freeze(['Active', 'Pending', 'Rented', 'Withdrawn']),
+  sale: Object.freeze(['Active', 'Pending', 'Sold', 'Withdrawn', 'Expired']),
+  rental: Object.freeze(['Active', 'Pending', 'Rented', 'Withdrawn', 'Expired']),
 })
 
 export function normalizeProperty24SettingsText(value = '') {

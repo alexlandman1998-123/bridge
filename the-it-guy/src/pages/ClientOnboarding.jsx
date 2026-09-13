@@ -13,6 +13,11 @@ import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { deriveFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
 import {
+  buildBuyerFicaDeclarationSigningState,
+  buildBuyerFicaDeclarationSnapshot,
+  isBuyerFicaDeclarationSigned,
+} from '../core/documents/buyerFicaDeclarationSigning'
+import {
   OnboardingStepHeader,
   OnboardingVisualStep,
   StickyOnboardingActions,
@@ -2378,6 +2383,11 @@ function ClientOnboarding() {
     () => [
       ...baseStepDefinitions.filter((step) => step.key !== 'review'),
       {
+        key: 'fica_declaration',
+        title: 'FICA Declaration',
+        description: 'Review the pre-filled compliance information and sign the declaration.',
+      },
+      {
         key: 'review',
         title: 'Review & Submit',
         description: 'Check your buyer, property, finance, and document next steps before submitting.',
@@ -2401,6 +2411,36 @@ function ClientOnboarding() {
   const mobileStepLabel = journeySteps[mobileProgressStepIndex]?.shortLabel || journeySteps[0]?.shortLabel || 'Step'
   const submissionComplete = completionBannerVisible || payload?.onboarding?.status === 'Submitted'
   const onboardingBrand = useMemo(() => resolveBuyerLandingBrand(payload), [payload])
+  const buyerFicaSigningState = useMemo(
+    () =>
+      buildBuyerFicaDeclarationSigningState(
+        {
+          purchaserEntityType,
+          purchasers: structuredPurchasers,
+          company: structuredCompany,
+          trust: structuredTrust,
+        },
+        formData.buyer_fica_declaration,
+      ),
+    [formData.buyer_fica_declaration, purchaserEntityType, structuredCompany, structuredPurchasers, structuredTrust],
+  )
+  const buyerFicaDeclarationModel = useMemo(
+    () =>
+      buildBuyerFicaDeclarationSnapshot({
+        purchaserEntityType,
+        purchasers: structuredPurchasers,
+        company: structuredCompany,
+        trust: structuredTrust,
+        signingState: buyerFicaSigningState,
+        transaction: {
+          id: payload?.transaction?.id,
+          transactionReference: payload?.transaction?.transaction_reference || payload?.transaction?.matter_number,
+        },
+        property: { address: onboardingLocationLabel },
+        branding: { agencyName: onboardingBrand.name, logoUrl: onboardingBrand.logoUrl },
+      }),
+    [buyerFicaSigningState, onboardingBrand.logoUrl, onboardingBrand.name, onboardingLocationLabel, payload?.transaction?.id, payload?.transaction?.matter_number, payload?.transaction?.transaction_reference, purchaserEntityType, structuredCompany, structuredPurchasers, structuredTrust],
+  )
   const onboardingTheme = useMemo(() => resolveBuyerOnboardingTheme(onboardingBrand), [onboardingBrand])
   const onboardingQuestionHeaderIdentity = useMemo(() => resolveBuyerQuestionHeaderIdentity(payload), [payload])
   const buyerLandingName = useMemo(() => resolveBuyerLandingName(payload, formData), [payload, formData])
@@ -2727,6 +2767,29 @@ function ClientOnboarding() {
             accepted_at: '',
           },
     }))
+  }
+
+  function updateBuyerFicaDeclaration(update) {
+    setFormData((previous) => {
+      const current = buildBuyerFicaDeclarationSigningState(
+        {
+          purchaserEntityType,
+          purchasers: structuredPurchasers,
+          company: structuredCompany,
+          trust: structuredTrust,
+        },
+        previous.buyer_fica_declaration,
+      )
+      const next = typeof update === 'function' ? update(current) : update
+      return {
+        ...previous,
+        buyer_fica_declaration: {
+          ...next,
+          acknowledgementAccepted: Boolean(next.acknowledgementAccepted),
+          acknowledgedAt: next.acknowledgementAccepted ? next.acknowledgedAt || new Date().toISOString() : '',
+        },
+      }
+    })
   }
 
   function isDetailFieldVisible(fieldConfig, context) {
@@ -3396,6 +3459,9 @@ function ClientOnboarding() {
         submissionData,
         { transaction: payload?.transaction },
       )
+      if (!isBuyerFicaDeclarationSigned(submissionData.buyer_fica_declaration)) {
+        throw new Error('Review and sign the FICA declaration before submitting.')
+      }
       if (!isPlatformFeeConsentAccepted(submissionData, 'buyer')) {
         const message = getPlatformFeeConsentConfig('buyer').validationMessage
         setPlatformFeeConsentError(message)
@@ -3746,7 +3812,7 @@ function ClientOnboarding() {
         throw new Error('Select the finance type to continue.')
       }
 
-      if (activeStep?.key === 'details' || activeStep?.key === 'review') {
+      if (activeStep?.key === 'details' || activeStep?.key === 'fica_declaration' || activeStep?.key === 'review') {
         const detailsErrors = validateDetailsStep(formData)
         setFieldErrors(detailsErrors)
 
@@ -3770,6 +3836,10 @@ function ClientOnboarding() {
           submissionData,
           { transaction: payload?.transaction },
         )
+
+        if (activeStep?.key === 'fica_declaration' && !isBuyerFicaDeclarationSigned(submissionData.buyer_fica_declaration)) {
+          throw new Error('Tick the declaration acknowledgement and enter each required signature to continue.')
+        }
 
         if (activeStep?.key === 'review' && !isPlatformFeeConsentAccepted(submissionData, 'buyer')) {
           const message = getPlatformFeeConsentConfig('buyer').validationMessage
@@ -4789,6 +4859,18 @@ function ClientOnboarding() {
             icon: FileText,
             rows: documentRows,
           })}
+
+          {renderReviewSection({
+            title: 'FICA Declaration',
+            description: 'The signed declaration captured with this onboarding submission.',
+            icon: FileText,
+            editTarget: { stepKey: 'fica_declaration' },
+            rows: [
+              { label: 'Status', value: isBuyerFicaDeclarationSigned(buyerFicaSigningState) ? 'Signed and ready for review' : 'Awaiting signatures' },
+              { label: 'Signers', value: buyerFicaSigningState.signers.map((signer) => signer.name).filter(Boolean).join(', ') || 'Not captured' },
+              { label: 'Version', value: buyerFicaSigningState.wordingVersion },
+            ],
+          })}
         </div>
 
         <section className="rounded-[20px] border border-[#dbe5ef] bg-white p-4 md:p-5">
@@ -4820,6 +4902,80 @@ function ClientOnboarding() {
           <p className="mt-2 text-sm leading-6 text-[#5f738a]">
             Submitting notifies the transaction team and keeps the document checklist connected to your client portal.
           </p>
+        </section>
+      </div>
+    )
+  }
+
+  function renderFicaDeclarationStep() {
+    const declaration = buyerFicaDeclarationModel.declaration
+    const signerCount = buyerFicaSigningState.signers.length
+    return (
+      <div className="space-y-4">
+        <section className="rounded-[20px] border border-[#d7eadf] bg-[#f4fbf7] p-4 md:p-5">
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#22824d] text-white">
+              <FileText size={20} />
+            </span>
+            <div>
+              <h4 className="text-lg font-semibold tracking-normal text-[#142132]">Buyer FICA Declaration</h4>
+              <p className="mt-2 text-sm leading-6 text-[#496176]">
+                This declaration is prepared from the buyer information already supplied. It is separate from your supporting-document checklist.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section className={`${INNER_PANEL_CLASS} space-y-4`}>
+          <div>
+            <h4 className="text-base font-semibold text-[#142132]">Declaration summary</h4>
+            <p className="mt-1 text-sm leading-6 text-[#61748a]">Review the purchaser and transaction information that will appear on the declaration.</p>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {buyerFicaDeclarationModel.sections.flatMap((section) => section.rows.map((row) => ({ ...row, section: section.title }))).map((row) => (
+              <div key={`${row.section}-${row.label}`} className="rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718399]">{row.label}</p>
+                <p className="mt-1 text-sm font-semibold text-[#223449]">{row.value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className={`${INNER_PANEL_CLASS} space-y-4`}>
+          <div>
+            <h4 className="text-base font-semibold text-[#142132]">Declaration and signatures</h4>
+            <p className="mt-2 text-sm leading-6 text-[#5f738a]">{declaration.wording}</p>
+            <p className="mt-2 text-xs text-[#718399]">Declaration version: {declaration.wordingVersion}</p>
+          </div>
+          <label className="flex items-start gap-3 rounded-[14px] border border-[#e3ebf4] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#324559]">
+            <input
+              type="checkbox"
+              checked={buyerFicaSigningState.acknowledgementAccepted}
+              onChange={(event) => updateBuyerFicaDeclaration((current) => ({ ...current, acknowledgementAccepted: event.target.checked }))}
+              className="mt-1 h-4 w-4 rounded border-[#c7d4e3]"
+            />
+            <span>I confirm that the information above is accurate and I accept this FICA declaration.</span>
+          </label>
+          <div className="grid gap-3">
+            {buyerFicaSigningState.signers.map((signer, index) => (
+              <label key={signer.id} className="rounded-[14px] border border-[#e3ebf4] bg-white p-3">
+                <span className="block text-sm font-semibold text-[#223449]">{signer.roleLabel}: {signer.name}</span>
+                <span className="mt-1 block text-xs text-[#718399]">Type your full name as your signature.</span>
+                <input
+                  value={signer.signature}
+                  onChange={(event) => updateBuyerFicaDeclaration((current) => ({
+                    ...current,
+                    signers: current.signers.map((item, itemIndex) => itemIndex === index
+                      ? { ...item, signature: event.target.value, signedAt: event.target.value.trim() ? new Date().toISOString() : '' }
+                      : item),
+                  }))}
+                  placeholder={signer.name || 'Full name'}
+                  className={`${DETAIL_INPUT_CLASS} mt-3`}
+                />
+              </label>
+            ))}
+          </div>
+          {!signerCount ? <p className="text-sm font-semibold text-[#b42318]">Return to buyer details and add the required signatory before continuing.</p> : null}
         </section>
       </div>
     )
@@ -4894,6 +5050,10 @@ function ClientOnboarding() {
 
     if (activeStep.key === 'details') {
       return renderDetailsStep()
+    }
+
+    if (activeStep.key === 'fica_declaration') {
+      return renderFicaDeclarationStep()
     }
 
     if (activeStep.key === 'review') {

@@ -162,6 +162,7 @@ const PROPERTY24_RENTAL_STATUS_BY_KEY = Object.freeze({
   pending: 'Pending',
   rented: 'Rented',
   withdrawn: 'Withdrawn',
+  expired: 'Expired',
   backonmarket: 'BackOnMarket',
   back_on_market: 'BackOnMarket',
 })
@@ -1285,7 +1286,7 @@ export async function createProperty24ApiResponse({
       if (updatingRentalStatus && config.status && !rentalStatus) {
         return buildJsonResponse(400, {
           error: 'invalid_rental_listing_status',
-          message: 'Rental listings support Active, Pending, Rented, Withdrawn, or BackOnMarket.',
+          message: 'Rental listings support Active, Pending, Rented, Withdrawn, Expired, or BackOnMarket.',
         })
       }
       if (missing.length) return buildJsonResponse(400, { error: 'missing_configuration', missingConfiguration: missing })

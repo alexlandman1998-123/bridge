@@ -1,4 +1,8 @@
 import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
+import {
+  buildKnowledgeFactoryFicaHandoff,
+  getKnowledgeFactoryFicaVerificationAvailability,
+} from './knowledgeFactoryFicaVerificationService.js'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const ITEMS = ['identity', 'proof_of_address', 'source_of_funds']
@@ -6,7 +10,21 @@ const ITEMS = ['identity', 'proof_of_address', 'source_of_funds']
 function text(value) { return String(value || '').trim() }
 function organisationId(value) { if (!UUID.test(text(value))) throw new Error('Select a valid organisation workspace.'); return text(value) }
 function checklist(value = {}) { return Object.fromEntries(ITEMS.map((key) => [key, ['not_requested', 'requested', 'received', 'verified', 'rejected'].includes(text(value[key])) ? text(value[key]) : 'not_requested'])) }
-function map(row = {}) { return { ...row, documentChecklist: checklist(row.document_checklist), consentCapturedAt: row.consent_captured_at, verificationProviderStatus: row.verification_provider_status } }
+function map(row = {}) {
+  return {
+    ...row,
+    documentChecklist: checklist(row.document_checklist),
+    consentCapturedAt: row.consent_captured_at,
+    verificationProviderStatus: row.verification_provider_status,
+    documentReadiness: row.document_readiness || {},
+    providerCheckStatuses: row.provider_check_statuses || {},
+    providerOverallStatus: row.provider_overall_status,
+    providerResultExpiresAt: row.provider_result_expires_at,
+    staffApprovalStatus: row.staff_approval_status || 'not_ready',
+    certificateDocumentId: row.certificate_document_id,
+    certificateSupersededAt: row.certificate_superseded_at,
+  }
+}
 
 export async function listKnowledgeFactoryFicaCases({ organisationId: value } = {}) {
   if (!isSupabaseConfigured || !supabase) throw new Error('FICA case storage is not configured.')
@@ -32,4 +50,20 @@ export async function updateKnowledgeFactoryFicaChecklist({ id, documentChecklis
   const { data, error } = await supabase.from('knowledge_factory_fica_cases').update({ document_checklist: checklist(documentChecklist), status, updated_at: new Date().toISOString() }).eq('id', text(id)).select('*').single()
   if (error || !data) throw new Error(error?.message || 'FICA checklist could not be updated.')
   return map(data)
+}
+
+export async function startKnowledgeFactoryFicaVerification({ id, handoff } = {}) {
+  if (!isSupabaseConfigured || !supabase || !UUID.test(text(id))) throw new Error('A valid FICA case is required.')
+  const normalizedHandoff = buildKnowledgeFactoryFicaHandoff(handoff)
+  const availability = getKnowledgeFactoryFicaVerificationAvailability(normalizedHandoff, 'ready')
+  if (!availability.enabled) throw new Error(availability.reason)
+  const { data, error } = await supabase.functions.invoke('knowledge-factory-fica', { body: { caseId: text(id) } })
+  if (error) {
+    const message = text(data?.error) || 'Knowledge Factory verification is not configured.'
+    throw new Error(message)
+  }
+  if (data?.status !== 'submitted') {
+    throw new Error(text(data?.error) || 'Knowledge Factory verification is not configured.')
+  }
+  return data
 }

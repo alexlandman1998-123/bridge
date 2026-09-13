@@ -1846,7 +1846,8 @@
     "test:property24-listing-performance": "node scripts/property24-listing-performance.test.mjs",
     "test:property24-statistics-operations": "node scripts/property24-statistics-operations.test.mjs",
     "test:property24-performance-insights": "node scripts/property24-performance-insights.test.mjs",
-    "test:property24-analytics-export": "node scripts/property24-analytics-export.test.mjs"
+    "test:property24-analytics-export": "node scripts/property24-analytics-export.test.mjs",
+    "test:property24-expire-listing": "node scripts/property24-expire-listing.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.12",

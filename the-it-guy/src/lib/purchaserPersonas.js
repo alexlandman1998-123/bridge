@@ -1966,6 +1966,14 @@ export function deriveOnboardingConfiguration(formData = {}, options = {}) {
     ...getSaleAndTransferDocuments({ reservationRequired }),
     ...getPurchaserDocumentDefinitions(purchaserType, formData),
     ...getFinanceDocumentDefinitions(formData, financeType),
+    {
+      key: 'buyer_fica_declaration',
+      label: 'Buyer FICA Declaration',
+      groupKey: 'buyer_fica',
+      description: 'System-generated from the signed buyer onboarding declaration, or uploaded manually by the transaction team.',
+      expectedFromRole: 'client',
+      defaultVisibility: 'client',
+    },
   ])
 
   const requiredDocuments = documentDefinitions.map((item, index) =>

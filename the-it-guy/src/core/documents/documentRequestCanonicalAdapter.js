@@ -5,6 +5,10 @@ import {
 export const DOCUMENT_REQUEST_CANONICAL_ADAPTER_VERSION = 'document_request_canonical_adapter_v1'
 
 const BUYER_KEY_ALIASES = Object.freeze({
+  buyer_fica_declaration: 'buyer_fica_declaration',
+  signed_buyer_fica_declaration: 'buyer_fica_declaration',
+  signed_fica_declaration: 'buyer_fica_declaration',
+  signed_fica_form: 'buyer_fica_declaration',
   information_sheet: '',
   otp: 'signed_otp',
   transfer_documents: 'transfer_documents',
@@ -62,6 +66,7 @@ const BUYER_KEY_ALIASES = Object.freeze({
 })
 
 const SELLER_KEY_ALIASES = Object.freeze({
+  seller_fica_declaration: 'seller_fica_declaration',
   signed_mandate: 'signed_mandate',
   signed_disclosure_form: 'property_condition_disclosure',
   signed_mandatory_disclosure: 'property_condition_disclosure',

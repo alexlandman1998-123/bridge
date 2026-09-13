@@ -67,7 +67,7 @@ for (const path of [
 ]) {
   assert.ok(fs.existsSync(new URL(`../${path}`, import.meta.url)), `${path} should exist`)
 }
-assert.ok(fs.existsSync(new URL('../../supabase/migrations/20260820114528_property24_sync_attempts.sql', import.meta.url)))
+assert.ok(fs.existsSync(new URL('../../supabase/migrations/20260820123628_property24_sync_attempts.sql', import.meta.url)))
 assert.ok(fs.existsSync(new URL('../api/property24/listings/[listingId]/status-update.js', import.meta.url)))
 
 const payload = {

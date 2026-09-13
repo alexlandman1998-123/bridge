@@ -57,7 +57,7 @@ export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDa
   if (!siteResult.data) return { mode: 'ready_to_create', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '' }
 
   const site = siteResult.data
-  const [domainsResult, revisionsResult, pagesResult, eventsResult, managementEventsResult, analyticsResult, leadsResult, blogPostsResult] = await Promise.all([
+  const [domainsResult, revisionsResult, pagesResult, eventsResult, managementEventsResult, analyticsResult, leadsResult, blogPostsResult, mediaAssetsResult, websiteListingsResult] = await Promise.all([
     supabase.from('website_domains').select('id, hostname, domain_kind, status, is_primary, dns_instructions, verified_at, created_at, updated_at').eq('website_site_id', site.id).order('created_at'),
     supabase.from('website_site_revisions').select('id, revision_number, status, brand_json, source_revision_id, content_fingerprint, published_at, published_by, archived_at, updated_at').eq('website_site_id', site.id).order('revision_number', { ascending: false }),
     supabase.from('website_pages').select('id, slug, page_kind, title, seo_title, seo_description, social_image_url, content_blocks, revision_id, updated_at').eq('website_site_id', site.id).order('page_kind').order('slug'),
@@ -65,7 +65,9 @@ export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDa
     supabase.from('website_management_events').select('id, action, metadata_json, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }).limit(12),
     supabase.rpc('website_dashboard_analytics', { p_website_site_id: site.id, p_days: 30 }),
     supabase.rpc('website_workspace_leads', { p_website_site_id: site.id, p_days: Math.max(1, Math.min(Number(leadWindowDays) || 30, 90)) }),
-    supabase.from('website_blog_posts').select('id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, author_name, status, published_at, seo_title, seo_description, created_at, updated_at').eq('website_site_id', site.id).order('updated_at', { ascending: false }),
+    supabase.from('website_blog_posts').select('id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, content_blocks, author_name, status, lifecycle_status, scheduled_for, published_at, seo_title, seo_description, created_at, updated_at').eq('website_site_id', site.id).order('updated_at', { ascending: false }),
+    supabase.from('website_media_assets').select('id, website_site_id, storage_path, public_url, alt_text, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }),
+    supabase.rpc('website_blog_available_listings', { p_website_site_id: site.id }),
   ])
   if (domainsResult.error) throw domainsResult.error
   if (revisionsResult.error) throw revisionsResult.error
@@ -111,7 +113,41 @@ export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDa
     draftBlogPosts: (blogPostsResult.data || []).filter((post) => post.revision_id === draftRevision?.id),
     publishedBlogPosts: (blogPostsResult.data || []).filter((post) => post.revision_id === publishedRevision?.id),
     blogPostsError: blogPostsResult.error?.message || '',
+    mediaAssets: mediaAssetsResult.data || [],
+    mediaAssetsError: mediaAssetsResult.error?.message || '',
+    websiteListings: websiteListingsResult.data || [],
+    websiteListingsError: websiteListingsResult.error?.message || '',
   }
+}
+
+function safeMediaFileName(name) {
+  const extension = text(name).split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg'
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${extension}`
+}
+
+export async function uploadWebsiteBlogMedia({ siteId, organisationId, file, altText }) {
+  assertWebsiteControlReady(siteId)
+  const safeOrganisationId = text(organisationId)
+  const safeAltText = text(altText).slice(0, 240)
+  if (!safeOrganisationId) throw new Error('An organisation is required to upload website media.')
+  if (!(file instanceof File)) throw new Error('Choose an image to upload.')
+  if (!['image/jpeg', 'image/png', 'image/webp', 'image/avif'].includes(file.type)) throw new Error('Upload a JPG, PNG, WebP, or AVIF image.')
+  if (file.size > 10 * 1024 * 1024) throw new Error('Images must be 10 MB or smaller.')
+  if (!safeAltText) throw new Error('Add alt text describing the image.')
+  const storagePath = `organisations/${safeOrganisationId}/${siteId}/${safeMediaFileName(file.name)}`
+  const uploadResult = await supabase.storage.from('website-media').upload(storagePath, file, { cacheControl: '3600', contentType: file.type, upsert: false })
+  if (uploadResult.error) throw uploadResult.error
+  const publicUrlResult = supabase.storage.from('website-media').getPublicUrl(storagePath)
+  const publicUrl = text(publicUrlResult.data?.publicUrl)
+  if (!publicUrl) throw new Error('The uploaded image could not be prepared for the website.')
+  const { data, error } = await supabase.from('website_media_assets').insert({
+    organisation_id: safeOrganisationId, website_site_id: siteId, storage_path: storagePath, public_url: publicUrl, alt_text: safeAltText,
+  }).select('id, website_site_id, storage_path, public_url, alt_text, created_at').single()
+  if (error) {
+    await supabase.storage.from('website-media').remove([storagePath])
+    throw error
+  }
+  return data
 }
 
 export async function manageWebsiteDomain({ action, siteId, hostname, domainId }) {
@@ -178,13 +214,19 @@ function blogPostPayload(post) {
   if (!title || !postSlug) throw new Error('An article title and URL slug are required.')
   if (coverImageUrl && !/^https:\/\/[^\s]+$/i.test(coverImageUrl)) throw new Error('Use a secure https URL for the cover image.')
   if (coverImageUrl && !coverImageAlt) throw new Error('Add alt text describing the cover image.')
+  const allowedBlockTypes = new Set(['paragraph', 'heading_2', 'heading_3', 'bullet_list', 'numbered_list', 'quote', 'divider', 'image', 'tip', 'listing_card'])
+  const content_blocks = (Array.isArray(post?.contentBlocks || post?.content_blocks) ? (post.contentBlocks || post.content_blocks) : [])
+    .map((block, index) => ({ id: text(block?.id) || `block-${index + 1}`, type: text(block?.type), text: text(block?.text).slice(0, 10000), assetId: text(block?.assetId || block?.asset_id) || null, listingId: text(block?.listingId || block?.listing_id) || null, caption: text(block?.caption).slice(0, 600), tipRole: text(block?.tipRole || block?.tip_role) === 'seller' ? 'seller' : 'buyer', order: index }))
+    .filter((block) => allowedBlockTypes.has(block.type))
+  const body = content_blocks.filter((block) => !['divider', 'image', 'listing_card'].includes(block.type)).map((block) => block.text).filter(Boolean).join('\n\n').slice(0, 50000)
   return {
     title,
     slug: postSlug,
     summary: text(post?.summary).slice(0, 600),
     cover_image_url: coverImageUrl || null,
     cover_image_alt: coverImageUrl ? coverImageAlt.slice(0, 240) : null,
-    body: text(post?.body).slice(0, 50000),
+    body,
+    content_blocks,
     author_name: text(post?.authorName || post?.author_name).slice(0, 160),
     seo_title: text(post?.seoTitle || post?.seo_title).slice(0, 180) || null,
     seo_description: text(post?.seoDescription || post?.seo_description).slice(0, 320) || null,
@@ -199,7 +241,7 @@ export async function createWebsiteBlogPost({ siteId, revisionId, post }) {
     p_website_site_id: siteId, p_revision_id: revisionId, p_post_id: null,
     p_title: payload.title, p_slug: payload.slug, p_summary: payload.summary,
     p_cover_image_url: payload.cover_image_url, p_cover_image_alt: payload.cover_image_alt,
-    p_body: payload.body, p_author_name: payload.author_name,
+    p_body: payload.body, p_content_blocks: payload.content_blocks, p_author_name: payload.author_name,
     p_seo_title: payload.seo_title, p_seo_description: payload.seo_description,
   })
   if (error) throw error
@@ -216,8 +258,21 @@ export async function updateWebsiteBlogPost({ siteId, revisionId, postId, post }
     p_website_site_id: siteId, p_revision_id: revisionId, p_post_id: safePostId,
     p_title: payload.title, p_slug: payload.slug, p_summary: payload.summary,
     p_cover_image_url: payload.cover_image_url, p_cover_image_alt: payload.cover_image_alt,
-    p_body: payload.body, p_author_name: payload.author_name,
+    p_body: payload.body, p_content_blocks: payload.content_blocks, p_author_name: payload.author_name,
     p_seo_title: payload.seo_title, p_seo_description: payload.seo_description,
+  })
+  if (error) throw error
+  return data
+}
+
+export async function manageWebsiteBlogPost({ siteId, revisionId, postId, action, scheduledFor = null }) {
+  assertWebsiteControlReady(siteId)
+  if (!text(revisionId) || !text(postId)) throw new Error('Choose an article in the current website draft.')
+  const safeAction = text(action)
+  if (!['draft', 'ready_for_review', 'schedule', 'archive', 'duplicate', 'delete'].includes(safeAction)) throw new Error('Choose a valid article action.')
+  const { data, error } = await supabase.rpc('website_manage_draft_blog_post', {
+    p_website_site_id: siteId, p_revision_id: revisionId, p_post_id: postId, p_action: safeAction,
+    p_scheduled_for: safeAction === 'schedule' ? scheduledFor : null,
   })
   if (error) throw error
   return data

@@ -19,6 +19,7 @@ import { useWorkspace } from '../../context/WorkspaceContext'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
 import { markRouteMilestone } from '../../lib/performanceTrace'
 import { buildSellerLeadListingPrefill } from '../../lib/sellerLeadListingPrefill'
+import { buildManualFicaPackDocument } from '../../services/documents/ficaManualPackService'
 import {
   SELLER_BASE_PACK_COMPLETION_ROUTES,
   SELLER_BASE_PACK_KEYS,
@@ -785,6 +786,7 @@ const BUYER_AGENT_DOCUMENT_TYPES = [
   { key: 'proof_of_funds', label: 'Proof of funds' },
   { key: 'bank_statements', label: 'Bank statements' },
   { key: 'bond_pre_approval', label: 'Bond pre-approval' },
+  { key: 'buyer_fica_declaration', label: 'Signed Buyer FICA Declaration' },
 ]
 const BUYER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
   { key: 'buyer', label: 'Buyer Documents', description: 'Identity and buyer verification', Icon: UserRound, iconClass: 'border-[#dbeafe] bg-[#eff6ff] text-[#2563a6]' },
@@ -3003,11 +3005,11 @@ function getKingstonsSellerPackListingRequirementMeta(documentKey = '', document
   }
   if (basePackKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION) {
     return {
-      requirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
-      requirementName: 'Signed FICA Declaration',
+      requirementKey: 'seller_fica_declaration',
+      requirementName: 'Seller FICA Declaration',
       requirementDescription: 'Signed FICA declaration pack for the selected seller type.',
       requirementGroup: 'fica',
-      documentType: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+      documentType: 'seller_fica_declaration',
       documentCategory: 'fica',
     }
   }
@@ -11551,6 +11553,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [buyerOfferDocumentUploading, setBuyerOfferDocumentUploading] = useState(false)
   const [agentBuyerDocumentUploading, setAgentBuyerDocumentUploading] = useState(false)
   const [agentBuyerDocumentType, setAgentBuyerDocumentType] = useState(BUYER_AGENT_DOCUMENT_TYPES[0]?.key || '')
+  const [agentBuyerFicaSignerName, setAgentBuyerFicaSignerName] = useState('')
+  const [agentBuyerFicaSignerCapacity, setAgentBuyerFicaSignerCapacity] = useState('')
   const [activeSellerFicaRoleplayerId, setActiveSellerFicaRoleplayerId] = useState('')
   const [activeBuyerFicaRoleplayerId, setActiveBuyerFicaRoleplayerId] = useState('')
   const [activeSellerProfileRoleplayerId, setActiveSellerProfileRoleplayerId] = useState('')
@@ -30178,6 +30182,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const workspaceId = organisationId
     const leadId = selectedLeadRecordId || selectedLead.leadId
     const documentType = BUYER_AGENT_DOCUMENT_TYPES.find((item) => item.key === agentBuyerDocumentType) || BUYER_AGENT_DOCUMENT_TYPES[0]
+    const manualFicaPack = documentType.key === 'buyer_fica_declaration'
+      ? buildManualFicaPackDocument({
+          party: 'buyer',
+          partyType: selectedLeadFinanceFormData?.purchaser_entity_type || selectedLeadFinanceFormData?.purchaser_type || selectedLead?.purchaserType || selectedLead?.buyerType || 'individual',
+          signerName: agentBuyerFicaSignerName,
+          signerCapacity: agentBuyerFicaSignerCapacity,
+          leadId,
+          transactionId: selectedLeadLinkedTransaction?.transaction?.id || selectedLeadLinkedTransaction?.id,
+        })
+      : null
     const uploadedAt = new Date().toISOString()
     try {
       setAgentBuyerDocumentUploading(true)
@@ -30194,17 +30208,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         context: 'buyer lead document upload',
       })
       const uploadedDocument = {
-        key: documentType.key,
-        requirementKey: documentType.key,
-        requirement_key: documentType.key,
-        documentType: documentType.key,
-        document_type: documentType.key,
-        label: documentType.label,
-        title: documentType.label,
+        key: manualFicaPack?.key || documentType.key,
+        requirementKey: manualFicaPack?.requirementKey || documentType.key,
+        requirement_key: manualFicaPack?.requirementKey || documentType.key,
+        documentType: manualFicaPack?.documentType || documentType.key,
+        document_type: manualFicaPack?.documentType || documentType.key,
+        label: manualFicaPack?.label || documentType.label,
+        title: manualFicaPack?.label || documentType.label,
         category: 'buyer',
         document_category: 'buyer',
-        source: 'agent_buyer_document_upload',
-        uploadSource: 'agent_buyer_document_upload',
+        source: manualFicaPack?.source || 'agent_buyer_document_upload',
+        uploadSource: manualFicaPack?.uploadSource || 'agent_buyer_document_upload',
+        ...(manualFicaPack ? { compliancePackKey: manualFicaPack.compliancePackKey, ficaManualContext: manualFicaPack.ficaManualContext } : {}),
         status: 'uploaded',
         statusLabel: 'Uploaded',
         uploadedAt,
@@ -30243,6 +30258,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         activityDate: uploadedAt,
       }, { actor: currentAgent })
       setMessage(`${documentType.label} uploaded for this buyer.`)
+      if (manualFicaPack) {
+        setAgentBuyerFicaSignerName('')
+        setAgentBuyerFicaSignerCapacity('')
+      }
       setLeadWorkspaceTab('documents')
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the buyer document.')
@@ -39379,6 +39398,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               onChange={(event) => void uploadAgentBuyerLeadDocument(event)}
                             />
                           </div>
+                          {agentBuyerDocumentType === 'buyer_fica_declaration' ? (
+                            <div className="mt-3 grid gap-3 rounded-[14px] border border-[#dbe7f2] bg-white p-3 md:grid-cols-2">
+                              <Field
+                                label="Signer name"
+                                value={agentBuyerFicaSignerName}
+                                onChange={(event) => setAgentBuyerFicaSignerName(event.target.value)}
+                                placeholder="Name on the signed declaration"
+                              />
+                              <Field
+                                label="Signer capacity"
+                                value={agentBuyerFicaSignerCapacity}
+                                onChange={(event) => setAgentBuyerFicaSignerCapacity(event.target.value)}
+                                placeholder="Buyer, director, trustee…"
+                              />
+                              <p className="text-xs leading-5 text-[#6a8098] md:col-span-2">This records a physical declaration against the buyer FICA pack. It remains evidence awaiting compliance review.</p>
+                            </div>
+                          ) : null}
                           {selectedLeadAgentUploadedBuyerDocuments.length ? (
                             <div className="mt-4 grid gap-2">
                               {selectedLeadAgentUploadedBuyerDocuments.slice(-5).reverse().map((documentRow, index) => (

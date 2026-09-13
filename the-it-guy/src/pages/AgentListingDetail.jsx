@@ -4832,6 +4832,50 @@ function AgentListingDetail() {
     }
   }
 
+  async function expireProperty24Listing() {
+    if (!property24Reference) return null
+    const confirmed = window.confirm('Expire this listing on Property24? It will no longer be advertised on the portal. You can reactivate or republish it later if needed.')
+    if (!confirmed) return null
+    setProperty24Action('expire')
+    setDetailError('')
+    setDetailMessage('Expiring on Property24...')
+    try {
+      const payload = await callProperty24ListingAction('status-update', {
+        status: 'Expired',
+        listingNumber: property24Reference,
+      }, {
+        fallbackMessage: 'Property24 expiry failed.',
+      })
+      const databaseStatus = payload?.report?.databaseWrite?.property24Status || 'expired'
+      const listingNumber = payload?.report?.databaseWrite?.listingNumber || payload?.report?.listingNumber || property24Reference
+      setMarketingDraft((previous) => ({
+        ...previous,
+        property24Reference: listingNumber ? String(listingNumber) : previous.property24Reference,
+        property24Status: databaseStatus,
+      }))
+      setProperty24StatusCheck({
+        route: 'listingStatus',
+        status: {
+          listingNumber: listingNumber || property24Reference || null,
+          listing: { property24_status: databaseStatus, updated_at: payload?.report?.generatedAt || new Date().toISOString() },
+          portalCheck: payload?.report?.portalCheck
+            ? { ...payload.report.portalCheck, isOnPortal: Boolean(payload.report.portalCheck?.data), databaseWrite: payload.report.databaseWrite || null }
+            : null,
+        },
+      })
+      await loadListingData()
+      setDetailError('')
+      setDetailMessage(`Expired on Property24. Listing number ${listingNumber}.`)
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Property24 expiry failed.')
+      return null
+    } finally {
+      setProperty24Action('')
+    }
+  }
+
   async function withdrawProperty24Listing() {
     if (!property24Reference) return null
     const confirmed = window.confirm('Withdraw this listing from Property24? This removes it from the portal lifecycle until you publish/update it again.')
@@ -9915,6 +9959,10 @@ function AgentListingDetail() {
             {property24Action === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}
             Check readiness
           </button>,
+          property24HasReference && !['expired', 'removed', 'withdrawn'].includes(property24StatusKey) ? <button key="expire" type="button" onClick={expireProperty24Listing} disabled={Boolean(property24Action)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#a43d35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-50">
+            {property24Action === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}
+            Expire listing
+          </button> : null,
           <button key="more" type="button" onClick={() => setProperty24ManageOpen(true)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]">
             <SlidersHorizontal size={15} />
             More actions

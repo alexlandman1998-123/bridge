@@ -86,6 +86,8 @@ const CANONICAL_STATUS_STRENGTH = Object.freeze({
 })
 
 export const CANONICAL_TO_LEGACY_REQUIREMENT_KEYS = Object.freeze({
+  buyer_fica_declaration: 'buyer_fica_declaration',
+  seller_fica_declaration: 'signed_fica_declaration',
   signed_mandate: 'mandate_signature',
   generated_mandate: 'generated_mandate',
   generated_otp: 'generated_otp',
@@ -132,6 +134,10 @@ export const CANONICAL_TO_LEGACY_REQUIREMENT_KEYS = Object.freeze({
 })
 
 export const LEGACY_TO_CANONICAL_REQUIREMENT_KEYS = Object.freeze({
+  buyer_fica_declaration: 'buyer_fica_declaration',
+  signed_buyer_fica_declaration: 'buyer_fica_declaration',
+  seller_fica_declaration: 'seller_fica_declaration',
+  signed_fica_declaration: 'seller_fica_declaration',
   mandate_signature: 'signed_mandate',
   signed_mandate: 'signed_mandate',
   generated_mandate: 'generated_mandate',

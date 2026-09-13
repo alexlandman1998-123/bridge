@@ -45,6 +45,7 @@ import {
   validateOnboardingSubmission,
 } from './purchaserPersonas'
 import { resolveBuyerOnboardingFlow } from './buyerOnboardingFlow.js'
+import { isBuyerFicaDeclarationSigned } from '../core/documents/buyerFicaDeclarationSigning.js'
 import { resolveOnboardingBranding } from './onboardingBranding.js'
 import {
   PLATFORM_FEE_CONSENT_TYPE,
@@ -44219,6 +44220,9 @@ async function upsertClientOnboardingForm({ token, formData = {}, submit = false
   let fundingSources = getOnboardingFundingSources(normalizedFormData)
   if (submit) {
     validateOnboardingSubmission(normalizedFormData, { transaction })
+    if (!isBuyerFicaDeclarationSigned(normalizedFormData.buyer_fica_declaration)) {
+      throw new Error('Review and sign the FICA declaration before submitting.')
+    }
     validateOnboardingFinanceAndReservation({
       formData: normalizedFormData,
       transaction,

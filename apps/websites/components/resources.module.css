@@ -45,6 +45,16 @@
 .page .prose section { margin-bottom: 44px; }
 .page .prose p, .page .prose li { color: #58634f; font-size: 16px; line-height: 1.85; }
 .page .prose li { margin-bottom: 12px; }
+.page .articleImage { margin: 40px 0; }
+.page .articleImage img { border-radius: 6px; height: auto; width: 100%; }
+.page .articleImage figcaption { color: #65715f; font-size: 12px; line-height: 1.6; margin-top: 10px; }
+.page .articleTip { background: #eaece3; border-left: 3px solid #718164; margin: 40px 0; padding: 24px 28px; }
+.page .articleTip p:last-child { margin: 0; }
+.page .articleProperty { align-items: center; border: 1px solid #d9dfd2; color: inherit; display: grid; gap: 24px; grid-template-columns: 180px minmax(0, 1fr); margin: 40px 0; padding: 16px; text-decoration: none; }
+.page .articleProperty img { height: 125px; object-fit: cover; width: 100%; }
+.page .articleProperty h3 { font: 400 25px/1.2 Georgia, serif; letter-spacing: -.03em; margin: 8px 0; }
+.page .articleProperty p:not(.eyebrow) { font-size: 14px; margin: 0 0 14px; }
+.page .articleProperty b { font-size: 13px; }
 .page .articleCta { background: #eaece3; margin-top: 56px; padding: 32px; border-radius: 5px; }
 .page .related { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
 .page .related a { border-top: 1px solid #d9dfd2; padding: 24px 0; color: inherit; text-decoration: none; }
@@ -82,7 +92,7 @@
   .page .search button { padding: 15px 18px; }
   .page .articleGrid { grid-template-columns: 1fr; gap: 36px; }
   .page .cardImage { aspect-ratio: 1.6; }
-  .page .prose { padding: 36px 20px; } .page .articleCta { padding: 24px; }
+  .page .prose { padding: 36px 20px; } .page .articleCta { padding: 24px; } .page .articleProperty { grid-template-columns: 1fr; } .page .articleProperty img { height: auto; }
   .page .preapproval { padding-top: 44px; } .page .application { border-left: 0; border-top: 1px solid #d3dacb; padding: 32px 0 0; }
 }
 @media (max-width: 380px) { .page .fields { grid-template-columns: 1fr; } .page .result dl div { gap: 10px; } }

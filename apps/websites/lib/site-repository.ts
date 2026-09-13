@@ -250,7 +250,7 @@ export async function getPublicBlogPosts(site: ResolvedSite): Promise<PublicBlog
   if (site.preview && site.id === demoSite.id) return []
   const supabase = getServerSupabase()
   const { data, error } = await supabase.from('website_blog_posts')
-    .select('id, organisation_id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, author_name, status, published_at, seo_title, seo_description')
+    .select('id, organisation_id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, content_blocks, author_name, status, lifecycle_status, scheduled_for, published_at, seo_title, seo_description')
     .eq('website_site_id', site.id)
     .eq('organisation_id', site.organisationId)
     .eq('revision_id', site.publishedRevisionId)
@@ -258,7 +258,20 @@ export async function getPublicBlogPosts(site: ResolvedSite): Promise<PublicBlog
     .lte('published_at', new Date().toISOString())
     .order('published_at', { ascending: false })
   if (error) throw error
-  return visiblePublishedBlogPosts((data || []) as Record<string, unknown>[], site.id, site.organisationId, site.publishedRevisionId)
+  const posts = visiblePublishedBlogPosts((data || []) as Record<string, unknown>[], site.id, site.organisationId, site.publishedRevisionId)
+  const assetIds = [...new Set(posts.flatMap((post) => post.contentBlocks.map((block) => block.assetId).filter(Boolean) as string[]))]
+  if (!assetIds.length) return posts
+  const { data: assets, error: assetsError } = await supabase.from('website_media_assets')
+    .select('id, public_url, alt_text')
+    .eq('website_site_id', site.id)
+    .eq('organisation_id', site.organisationId)
+    .in('id', assetIds)
+  if (assetsError) throw assetsError
+  const byId = new Map((assets || []).map((asset) => [String(asset.id), { url: String(asset.public_url || ''), alt: String(asset.alt_text || '') }]))
+  return posts.map((post) => ({ ...post, contentBlocks: post.contentBlocks.map((block) => {
+    const asset = block.assetId ? byId.get(block.assetId) : null
+    return asset && /^https:\/\/[^\s]+$/i.test(asset.url) ? { ...block, imageUrl: asset.url, imageAlt: asset.alt || undefined } : block
+  }) }))
 }
 
 export async function getPublicBlogPost(site: ResolvedSite, slug: string): Promise<PublicBlogPost | null> {
@@ -266,11 +279,26 @@ export async function getPublicBlogPost(site: ResolvedSite, slug: string): Promi
   return posts.find((post) => post.slug === slug) || null
 }
 
+export async function getPublicBlogRedirect(site: ResolvedSite, slug: string): Promise<string | null> {
+  if (site.preview && site.id === demoSite.id) return null
+  const supabase = getServerSupabase()
+  const { data, error } = await supabase.from('website_blog_slug_redirects')
+    .select('to_slug')
+    .eq('website_site_id', site.id)
+    .eq('organisation_id', site.organisationId)
+    .eq('revision_id', site.publishedRevisionId)
+    .eq('from_slug', slug)
+    .maybeSingle()
+  if (error) throw error
+  const target = String(data?.to_slug || '')
+  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(target) ? target : null
+}
+
 export async function hasPublishedBlogPosts(site: ResolvedSite): Promise<boolean> {
   if (site.preview && site.id === demoSite.id) return false
   const supabase = getServerSupabase()
   const { data, error } = await supabase.from('website_blog_posts')
-    .select('id')
+    .select('id, lifecycle_status, scheduled_for')
     .eq('website_site_id', site.id)
     .eq('organisation_id', site.organisationId)
     .eq('revision_id', site.publishedRevisionId)
@@ -278,7 +306,8 @@ export async function hasPublishedBlogPosts(site: ResolvedSite): Promise<boolean
     .lte('published_at', new Date().toISOString())
     .limit(1)
   if (error) throw error
-  return Boolean(data?.length)
+  const now = Date.now()
+  return (data || []).some((post) => String(post.lifecycle_status || '') !== 'archived' && (String(post.lifecycle_status || '') !== 'scheduled' || Date.parse(String(post.scheduled_for || '')) <= now))
 }
 
 export async function getPublicPage(site: ResolvedSite, slug: string): Promise<PublicPage | null> {
