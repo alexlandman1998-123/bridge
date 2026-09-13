@@ -46,7 +46,7 @@ function activityCopy(item) {
 
 export default function RevoSharedInboxPage() {
   const { organisation } = useOrganisation()
-  const { user } = useAuthSession()
+  const { user, profile } = useAuthSession()
   const [data, setData] = useState({ conversations: [], messages: [], activity: [], associations: [] })
   const [mode, setMode] = useState('loading')
   const [selectedId, setSelectedId] = useState('')
@@ -56,6 +56,7 @@ export default function RevoSharedInboxPage() {
   const [draft, setDraft] = useState('')
   const [notice, setNotice] = useState('')
   const [saving, setSaving] = useState(false)
+  const agentName = text(profile?.fullName || profile?.full_name || profile?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split('@')[0]) || 'Agent'
 
   const load = useCallback(async () => {
     if (!organisation?.id) return
@@ -151,7 +152,7 @@ export default function RevoSharedInboxPage() {
   }
 
   return <main className="revo-inbox-page">
-    <header className="revo-inbox-topbar"><div className="revo-title"><h1>Inbox</h1><span /><p>Conversations. Opportunities. Closer together.</p></div><div><span className="revo-preview"><Sparkles size={14} /> {isLive ? 'Revo workspace' : 'Preview workspace'}</span><Link className="revo-icon" to="/revo/inbox/settings" aria-label="Channel setup"><SlidersHorizontal size={18} /></Link><button className="revo-compose" type="button" onClick={() => setNotice('New conversations will be created when a Revo channel is connected.')}><Plus size={18} /> New message</button></div></header>
+    <header className="revo-inbox-topbar"><div className="revo-title"><h1>Inbox</h1><span /><p>{agentName}</p></div><div><span className="revo-preview"><Sparkles size={14} /> {isLive ? 'Revo workspace' : 'Preview workspace'}</span><Link className="revo-icon" to="/revo/inbox/settings" aria-label="Channel setup"><SlidersHorizontal size={18} /></Link><button className="revo-compose" type="button" onClick={() => setNotice('New conversations will be created when a Revo channel is connected.')}><Plus size={18} /> New message</button></div></header>
     <section className="revo-inbox-shell" aria-label="Revo shared inbox">
       <aside className="revo-views"><label><Search size={17} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search" aria-label="Search conversations" /></label><nav><small>INBOX</small>{VIEWS.map((item) => <button type="button" className={view === item.key ? 'active' : ''} key={item.key} onClick={() => setView(item.key)}><span>{item.label}</span><b>{countFor(item.key)}</b></button>)}</nav><nav><small>CHANNELS</small><button type="button"><span><Mail size={16} /> Email</span><b>{conversations.filter((item) => item.channel === 'email').length}</b></button><button type="button"><span><MessageCircle size={16} /> WhatsApp</span><b>{conversations.filter((item) => item.channel === 'whatsapp').length}</b></button></nav><p className="revo-connection"><Clock3 size={15} /> {isLive ? 'Channels can connect when Revo is ready.' : 'Preview data — no channel is connected.'}</p></aside>
       <section className="revo-list"><header><div><strong>{VIEWS.find((item) => item.key === view)?.label}</strong><span>{visible.length} conversations</span></div><button className="revo-sort" type="button" aria-label="Sort conversations">Latest first <ChevronDown size={15} /></button></header><div>{mode === 'loading' ? <p className="revo-empty"><Clock3 size={22} /> Loading conversations</p> : visible.map((item) => <button type="button" className={`revo-row ${item.id === selected?.id ? 'selected' : ''}`} key={item.id} onClick={() => void selectConversation(item.id)}><span className={`revo-channel ${item.channel}`}><ChannelIcon channel={item.channel} /></span><span><span><strong>{item.name}</strong><time>{item.updated}</time></span><em>{item.subject}</em><small>{item.preview}</small></span>{item.unreadCount || item.unread ? <i aria-label={`${item.unreadCount || 1} unread messages`}>{item.unreadCount || 1}</i> : null}</button>)}{mode !== 'loading' && !visible.length ? <p className="revo-empty"><Inbox size={22} /> No conversations found</p> : null}</div></section>
