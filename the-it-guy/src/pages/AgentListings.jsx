@@ -51,7 +51,7 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListingSummaries, getAgentPrivateListings, persistSellerProfileOnboardingFormData, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListingSummaries, getAgentPrivateListings, persistSellerProfileOnboardingFormData, resolvePrivateListingIdForDeletion, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
 import { reassignListingAgent } from '../services/listingAgentReassignmentService'
 import {
   createAgencyIntroducedDeveloperLead,
@@ -1884,6 +1884,10 @@ function getRemotePrivateListingId(row = {}) {
     source.listingId,
     source.listing_id,
     source.id,
+    source.privateListing?.id,
+    source.private_listing?.id,
+    source.listing?.id,
+    source.raw?.id,
   ].map((value) => String(value || '').trim()).find((value) => isUuidLike(value)) || ''
 }
 
@@ -6342,14 +6346,24 @@ function AgentListings({ initialTab = null } = {}) {
       card?.id,
     ].map((value) => String(value || '').trim()).filter(Boolean)))
     const listingId = listingIdentityKeys[0] || ''
-    const remoteListingId = getRemotePrivateListingId(card?.listingRecord || card) || listingIdentityKeys.find((value) => isUuidLike(value)) || ''
+    const listingRecord = card?.listingRecord || card || {}
+    const deletionOrganisationId = listingRecord?.organisationId || listingRecord?.organisation_id || organisationId
+    let remoteListingId = getRemotePrivateListingId(listingRecord) || listingIdentityKeys.find((value) => isUuidLike(value)) || ''
     if (!listingId) {
       setError('Unable to delete this listing because it is missing a listing id.')
       return
     }
     if (isSupabaseConfigured && !remoteListingId) {
-      setError('Unable to permanently delete this listing because its database record could not be identified. Refresh the page and try again.')
-      return
+      try {
+        remoteListingId = await resolvePrivateListingIdForDeletion(listingRecord, { organisationId: deletionOrganisationId })
+      } catch (resolutionError) {
+        setError(resolutionError?.message || 'Unable to identify this listing in the database for permanent deletion.')
+        return
+      }
+      if (!remoteListingId) {
+        setError('Unable to permanently delete this listing because its database record could not be identified. Refresh the page and try again.')
+        return
+      }
     }
 
     const listingTitle = String(card?.title || 'this listing').trim()
@@ -6362,7 +6376,7 @@ function AgentListings({ initialTab = null } = {}) {
       let remoteDelete = null
       if (isSupabaseConfigured) {
         remoteDelete = await deletePrivateListing(remoteListingId, {
-          organisationId: card?.listingRecord?.organisationId || card?.listingRecord?.organisation_id || organisationId,
+          organisationId: deletionOrganisationId,
         })
         if (!remoteDelete?.deleted) {
           throw new Error('Could not delete listing. Please try again.')

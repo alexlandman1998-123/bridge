@@ -22595,6 +22595,18 @@ function AttorneyTransactionDetail() {
     return <p className="status-message error">You do not have access to this matter.</p>
   }
 
+  // A navigation preview is useful for carrying context between routes, but it
+  // is not the persisted transaction. Never paint it (or the lightweight route
+  // shell, or the previous route's record) as a real workspace before the
+  // matching route-core result is available.
+  const dataTransactionId = String(data?.transaction?.id || '').trim()
+  const routeTransactionId = String(transactionId || '').trim()
+  const hasUnverifiedRouteData = Boolean(data?.__isNavigationPreview || data?.__isRouteShell)
+  const isStaleTransactionData = Boolean(dataTransactionId && routeTransactionId && dataTransactionId !== routeTransactionId)
+  if (hasUnverifiedRouteData || isStaleTransactionData) {
+    return <TransactionDetailRouteShell />
+  }
+
   if (loading) {
     return <TransactionDetailRouteShell />
   }

@@ -6097,6 +6097,34 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
   return result.data
 }
 
+// Some older local/imported listing projections predate the canonical listing
+// id. Resolve only an unambiguous, organisation-scoped record before a delete;
+// a missing or ambiguous match must never turn into a browser-only deletion.
+export async function resolvePrivateListingIdForDeletion(listing = {}, { organisationId = null } = {}) {
+  const client = requireClient()
+  const normalizedOrganisationId = normalizeUuid(organisationId)
+  if (!normalizedOrganisationId) return ''
+  const source = listing && typeof listing === 'object' ? listing : {}
+  const candidates = [
+    ['listing_reference', normalizeText(source.listingReference || source.listing_reference || source.listingCode || source.listing_code)],
+    ['seller_lead_id', normalizeUuid(source.sellerLeadId || source.seller_lead_id || source.originatingCrmLeadId || source.originating_crm_lead_id)],
+  ].filter(([, value]) => value)
+  const address = normalizeText(source.addressLine1 || source.address_line_1 || source.propertyAddress || source.property_address)
+  if (address) candidates.push(['address_line_1', address])
+
+  for (const [column, value] of candidates) {
+    let query = client.from('private_listings').select('id').eq('organisation_id', normalizedOrganisationId).eq(column, value).limit(2)
+    if (column === 'address_line_1') {
+      const suburb = normalizeText(source.suburb)
+      if (suburb) query = query.eq('suburb', suburb)
+    }
+    const { data, error } = await query
+    if (error) throw error
+    if ((data || []).length === 1) return normalizeUuid(data[0]?.id) || ''
+  }
+  return ''
+}
+
 export async function updatePrivateListingOnboardingFormData(listingId, formData = {}, options = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)

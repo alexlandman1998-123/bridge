@@ -50,8 +50,9 @@ assert(
 )
 
 assert(
-  source.includes('const remoteListingId = getRemotePrivateListingId(card?.listingRecord || card) || listingIdentityKeys.find((value) => isUuidLike(value)) ||'),
-  'handleDeleteListing should prefer the typed private listing id and fall back to a UUID identity for remote Supabase deletion.',
+  source.includes("let remoteListingId = getRemotePrivateListingId(listingRecord) || listingIdentityKeys.find((value) => isUuidLike(value)) || ''") &&
+    source.includes('resolvePrivateListingIdForDeletion(listingRecord, { organisationId: deletionOrganisationId })'),
+  'handleDeleteListing should prefer a canonical id and reconcile an organisation-scoped legacy card before remote deletion.',
 )
 
 assert(
@@ -97,6 +98,19 @@ assert(
   serviceSource.includes('isMissingTableError(error, tableName) || isMissingColumnError(error, columnName)') &&
     !serviceSource.includes('isMissingTableError(error, tableName) || isMissingColumnError(error, columnName) || isPermissionDeniedError(error)'),
   'private listing cleanup must not hide a row-level-security failure as a recoverable schema issue.',
+)
+
+const deletionResolutionSource = serviceSource.match(
+  /export async function resolvePrivateListingIdForDeletion\([\s\S]*?\n}\n\nexport async function updatePrivateListingOnboardingFormData/,
+)?.[0] || ''
+
+assert(
+  deletionResolutionSource.includes(".from('private_listings').select('id').eq('organisation_id', normalizedOrganisationId)") &&
+    deletionResolutionSource.includes("['listing_reference'") &&
+    deletionResolutionSource.includes("['seller_lead_id'") &&
+    deletionResolutionSource.includes("['address_line_1'") &&
+    deletionResolutionSource.includes("if ((data || []).length === 1)"),
+  'legacy deletion identity resolution must remain organisation-scoped and require exactly one matching database row.',
 )
 
 const deletePrivateListingSource = serviceSource.match(
