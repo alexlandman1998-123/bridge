@@ -67,7 +67,7 @@ function participantIssues(participant, { role, path, required }) {
   if (!personName(personal)) issues.push({ code: `${role}_name_required`, path: `${path}.personal`, message: `Add the ${role.replaceAll('_', ' ')} name.` })
   if (!identity(personal)) issues.push({ code: `${role}_identity_required`, path: `${path}.personal`, message: `Add the ${role.replaceAll('_', ' ')} identity or passport number.` })
   if (!first(contact.email, personal.email)) issues.push({ code: `${role}_email_required`, path: `${path}.contact.email`, message: `Add the ${role.replaceAll('_', ' ')} email address.` })
-  if (!first(participant.employment?.employmentType, participant.employment?.employment_type, participant.employment?.status)) {
+  if (!first(participant.employment?.occupation_status, participant.employment?.employmentType, participant.employment?.employment_type, participant.employment?.status)) {
     issues.push({ code: `${role}_employment_required`, path: `${path}.employment`, message: `Complete the ${role.replaceAll('_', ' ')} employment status.` })
   }
   if (!financialValue(participant)) issues.push({ code: `${role}_income_required`, path: `${path}.incomeSources`, message: `Capture the ${role.replaceAll('_', ' ')} income information.` })

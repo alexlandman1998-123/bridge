@@ -2,6 +2,7 @@ import {
   getBondApplicationDocumentBuyerStatus,
   getBondApplicationDocumentBuyerStatusLabel,
   isBuyerVisibleDocument,
+  isDocumentUploaded,
   normalizeBondApplicationDocumentKey,
 } from './bondApplicationDocumentStatus.js'
 import { BOND_APPLICATION_DOCUMENT_SATISFACTION_MODES, BOND_APPLICATION_DOCUMENT_TIMING } from './bondApplicationDocumentRules.js'
@@ -34,6 +35,15 @@ function matchesRequirement(requirement, document, requirementRow = null) {
   const documentId = String(document?.id || '').trim()
   const linkedIds = getLinkedDocumentIds(requirementRow || {})
   if (documentId && linkedIds.includes(documentId)) return true
+  if (requirement.scope === 'participant') {
+    const participantKey = document.participant_key || document.participantKey || document.metadata?.participant_key || document.metadata?.participantKey
+    const explicitRole = document.participant_role || document.participantRole || document.metadata?.participant_role || (participantKey ? String(participantKey).split(':')[0] : null) || document.uploaded_by_role
+    const role = ['co_applicant', 'surety'].includes(explicitRole) ? explicitRole : 'primary_applicant'
+    if (participantKey && requirement.participantKey && participantKey !== requirement.participantKey) return false
+    if (role !== requirement.participantRole) return false
+    // Unscoped evidence may serve the primary applicant only; sureties require an exact link/key.
+    if (requirement.participantRole === 'surety' && participantKey !== requirement.participantKey) return false
+  }
   const documentTypes = new Set(getDocumentTypeKeys(document))
   const aliases = new Set((requirement.matching?.canonicalTypes || []).map(normalizeBondApplicationDocumentKey).filter(Boolean))
   return [...aliases].some((alias) => documentTypes.has(alias))
@@ -62,7 +72,7 @@ export function matchBondApplicationDocumentsToRequirement({
     requirementRow,
     documents,
     ambiguous: !allowsMultipleFiles &&
-      documents.length > Math.max(Number(requirement.minimumFileCount || 1), 1) &&
+      documents.filter(isDocumentUploaded).length > Math.max(Number(requirement.minimumFileCount || 1), 1) &&
       !getLinkedDocumentIds(requirementRow || {}).length,
   }
 }
@@ -128,7 +138,7 @@ export function buildBondApplicationDocumentChecklist({
         requirement.requiredBefore === BOND_APPLICATION_DOCUMENT_TIMING.requiredBeforeSignature &&
         !complete,
       complete,
-      uploadedCount: match.ambiguous ? 0 : match.documents.length,
+      uploadedCount: match.ambiguous ? 0 : match.documents.filter(isDocumentUploaded).length,
       requiredCount: Math.max(Number(requirement.minimumFileCount || 1), 1),
     }
   })

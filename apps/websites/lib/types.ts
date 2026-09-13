@@ -65,3 +65,17 @@ export type PublicPage = {
   socialImageUrl?: string
   blocks: WebsiteBlock[]
 }
+
+export type PublicBlogPost = {
+  id: string
+  title: string
+  slug: string
+  summary: string
+  body: string
+  authorName?: string
+  coverImageUrl?: string
+  coverImageAlt?: string
+  publishedAt: string
+  seoTitle?: string
+  seoDescription?: string
+}

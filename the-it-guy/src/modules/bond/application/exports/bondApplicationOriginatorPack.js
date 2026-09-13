@@ -31,8 +31,12 @@ export function buildBondApplicationOriginatorPackManifest({
   brand = {},
   generatedAt = new Date().toISOString(),
   mode = 'draft',
+  readiness = null,
 } = {}) {
   const blockers = []
+  if (readiness?.stage !== 'bank_submission' || readiness?.ready !== true || readiness?.issues?.length) {
+    blockers.push(...(readiness?.issues?.length ? readiness.issues : [issue('submission_readiness_required', 'Complete the application, documents, declarations and signatures before producing a submission-ready pack.')]))
+  }
   const completenessIssues = applicationState?.participantEntityCompleteness?.blockingIssues || []
   if (!text(brand.name)) blockers.push(issue('originator_name_required', 'Assign the bond originator before producing an originator-ready pack.', 'brand.name'))
   if (!text(brand.logoUrl)) blockers.push(issue('originator_logo_required', 'Upload the originator logo before producing an originator-ready pack.', 'brand.logoUrl'))
@@ -57,8 +61,8 @@ export function buildBondApplicationOriginatorPackManifest({
   }
   return {
     ...payload,
-    ready: blockers.length === 0,
-    status: blockers.length === 0 ? 'ready' : requestedReady ? 'blocked' : 'draft_with_blockers',
+    ready: blockers.length === 0 && requestedReady,
+    status: blockers.length === 0 && requestedReady ? 'ready' : requestedReady ? 'blocked' : 'draft_with_blockers',
     blockers,
     fingerprint: `${BOND_APPLICATION_ORIGINATOR_PACK_VERSION}:${canonicalizeBondApplicationSnapshot(payload)}`,
   }

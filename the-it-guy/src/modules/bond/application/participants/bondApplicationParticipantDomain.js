@@ -1235,6 +1235,8 @@ export function isSectionSaveAllowedByRevisionScope({
   const revisionStatus = normalizedApplication.revisionStatus || normalizedApplication.metadata?.revisionStatus || 'none'
   if (!revisionStatus || revisionStatus === 'none') return { allowed: true }
   const editScope = normalizedApplication.metadata?.revisionEditScope || {}
+  // A general application correction reopens all sections; viewer ownership is still enforced by the save API.
+  if (editScope.allSections === true) return { allowed: true }
   const scopeKey = scope === 'application' ? 'application' : participantKey
   const permitted = editScope[scopeKey]?.sections || []
   if (permitted.includes(sectionKey)) return { allowed: true }
@@ -1412,7 +1414,9 @@ export function buildJointBondApplicationSubmissionSnapshot({
       revision: normalizedApplication.revision || 1,
       reviewContextHash,
     },
+    applicationIntent: fullState.application.intent || 'bond_application',
     shared: {
+      purchaserEntity: cloneBondApplicationValue(fullState.application.buyerEntity || {}),
       property: cloneBondApplicationValue(fullState.application.property || {}),
       finance: cloneBondApplicationValue(fullState.application.finance || {}),
       applicantStructure: fullState.application.applicantStructure || 'joint',

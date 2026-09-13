@@ -21,20 +21,30 @@ export function isBuyerVisibleDocument(document = {}) {
   const party = normalizeKey(document.uploaded_by_party || document.uploadedByParty || document.requested_from || document.requestedFrom)
   const scope = normalizeKey(document.visibility_scope || document.visibilityScope)
   const category = normalizeKey(document.category || document.group_key || document.groupKey)
-  if (role && !['client', 'buyer', 'primary_applicant'].includes(role)) return false
-  if (party && !['buyer', 'client', 'primary_applicant'].includes(party)) return false
+  if (role && !['client', 'buyer', 'primary_applicant', 'co_applicant', 'surety'].includes(role)) return false
+  if (party && !['buyer', 'client', 'primary_applicant', 'co_applicant', 'surety'].includes(party)) return false
   if (category.includes('seller') || category.includes('attorney')) return false
   if (scope && ['internal', 'admin', 'seller'].includes(scope)) return false
   if (document.is_client_visible === false || document.clientVisible === false) return false
   return true
 }
 
+function documentStatus(document = {}) {
+  if (document.archived_at || document.deleted_at) return 'not_currently_required'
+  const statuses = [document.status, document.requiredDocumentStatus, document.review_status]
+    .filter((value) => String(value || '').trim()).map(normalizeBondApplicationDocumentStatus)
+  if (statuses.includes('not_currently_required')) return 'not_currently_required'
+  if (statuses.includes('rejected')) return 'rejected'
+  return normalizeBondApplicationDocumentStatus(document.review_status || document.status || document.requiredDocumentStatus)
+}
+
 export function isDocumentAccepted(document = {}) {
-  return normalizeBondApplicationDocumentStatus(document.status || document.requiredDocumentStatus || document.review_status) === 'accepted'
+  return documentStatus(document) === 'accepted'
 }
 
 export function isDocumentUploaded(document = {}) {
-  const status = normalizeBondApplicationDocumentStatus(document.status || document.requiredDocumentStatus || document.review_status)
+  const status = documentStatus(document)
+  if (['rejected', 'not_currently_required'].includes(status)) return false
   return ['accepted', 'uploaded', 'uploaded_pending_review'].includes(status) || Boolean(document.id || document.file_path || document.storage_path)
 }
 
@@ -45,7 +55,7 @@ export function getBondApplicationDocumentBuyerStatus({ requirement, matchedDocu
   const acceptedCount = documents.filter(isDocumentAccepted).length
   const uploadedCount = documents.filter(isDocumentUploaded).length
   const rejectedCount = documents.filter((document) =>
-    normalizeBondApplicationDocumentStatus(document.status || document.requiredDocumentStatus || document.review_status) === 'rejected',
+    documentStatus(document) === 'rejected',
   ).length
   const minimum = Math.max(Number(requirement.minimumFileCount || 1), 1)
   if (rejectedCount > 0 && uploadedCount < minimum) return 'rejected'
@@ -55,7 +65,7 @@ export function getBondApplicationDocumentBuyerStatus({ requirement, matchedDocu
     return 'missing'
   }
   if (uploadedCount >= minimum) return documents.some((document) =>
-    normalizeBondApplicationDocumentStatus(document.status || document.requiredDocumentStatus || document.review_status) === 'uploaded_pending_review',
+    documentStatus(document) === 'uploaded_pending_review',
   ) ? 'uploaded_pending_review' : 'satisfied'
   return uploadedCount > 0 ? 'partially_satisfied' : 'missing'
 }

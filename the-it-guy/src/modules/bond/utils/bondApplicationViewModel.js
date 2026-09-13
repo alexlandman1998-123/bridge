@@ -2,6 +2,10 @@ import {
   BOND_APPLICATION_PREFILL_CONFIRMATION_CARD_DEFINITIONS,
   buildApplicationStateFromNormalizedApplication,
   buildBondApplicationPrefillReviewModel,
+  resolveBondApplicationDocumentRequirements,
+  buildBondApplicationDocumentChecklist,
+  validateBondApplicationSubmissionReadiness,
+  resolveBondApplicationSignerIdentities,
 } from '../application/index.js'
 import { buildBondApplicationState as buildLegacyBondApplicationState } from '../application/legacy/bondApplicationLegacyAdapter.js'
 
@@ -753,12 +757,6 @@ function buildReadinessItems({ applicant, property, financials, documents, conse
   ]
 }
 
-function classifyReadiness(percent) {
-  if (percent >= 85) return { label: 'Ready for Submission', tone: 'success' }
-  if (percent >= 65) return { label: 'Almost Ready', tone: 'warning' }
-  return { label: 'Not Ready', tone: 'danger' }
-}
-
 function buildActions(readinessItems, financials) {
   const missing = readinessItems.filter((item) => !item.complete)
   const actions = missing.map((item) => {
@@ -995,21 +993,31 @@ export function buildBondApplicationViewModel({
     onboardingFormData?.declarations_consents?.credit_bureau_fraud_bank_data_consent,
     onboardingFormData?.declarations_consents?.declaration_accepted,
   ))
-  const readinessItems = buildReadinessItems({
-    applicant: { fullName, email, phone },
-    property: { label: propertyLabel },
-    financials: {
-      purchasePrice: { raw: purchasePrice },
-      monthlyExpenses: { raw: monthlyExpenses },
-      deposit: { raw: deposit },
-    },
-    documents,
-    consentCaptured,
+  const resolvedRequirements = resolveBondApplicationDocumentRequirements({ applicationState, includeAllParticipants: true })
+  const checklist = buildBondApplicationDocumentChecklist({
+    activeRequirements: resolvedRequirements.activeRequirements,
+    existingRequiredDocuments: requiredDocumentRows,
+    existingDocuments: documentRows.map((row) => row.raw ? { ...row.raw, requiredDocumentStatus: row.requiredDocumentStatus } : row),
   })
-  const completedRequiredItems = readinessItems.filter((item) => item.complete).length
-  const readinessPercent = readinessItems.length ? Math.round((completedRequiredItems / readinessItems.length) * 100) : 0
+  const submissionReadiness = validateBondApplicationSubmissionReadiness({
+    applicationState,
+    documentChecklist: checklist,
+    signerIdentity: resolveBondApplicationSignerIdentities(applicationState),
+    submission: bondApplication?.activeSubmission || null,
+    stage: 'bank_submission',
+  })
+  const readinessItems = submissionReadiness.issues.map((item, index) => ({
+    key: `${item.code}:${item.path || item.target || index}`,
+    label: item.message,
+    section: item.category,
+    complete: false,
+  }))
+  if (!readinessItems.length) readinessItems.push({ key: 'submission_ready', label: 'Ready for submission', complete: true })
+  // Completion is informational; only the shared assessment determines readiness.
+  const summaryItems = buildReadinessItems({ applicant: { fullName, email, phone }, property: { label: propertyLabel }, financials: { purchasePrice: { raw: purchasePrice } }, documents, consentCaptured })
+  const readinessPercent = Math.round(summaryItems.filter((item) => item.complete).length / summaryItems.length * 100)
   const completionPercent = number(transaction?.completion_percent || onboardingFormData?.completionPercent || onboardingFormData?.completion_percent || documentReadiness?.score) || readinessPercent
-  const readiness = classifyReadiness(readinessPercent)
+  const readiness = { label: submissionReadiness.label, tone: submissionReadiness.ready ? 'success' : 'warning' }
   const applicationActions = buildActions(readinessItems, {
     monthlyExpenses: { raw: monthlyExpenses },
   })
@@ -1114,6 +1122,7 @@ export function buildBondApplicationViewModel({
     },
     documents,
     readinessItems,
+    submissionReadiness,
     actions: applicationActions,
     fieldAlignment,
     originatorFieldAlignment: fieldAlignment,

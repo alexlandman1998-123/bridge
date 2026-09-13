@@ -1,3 +1,4 @@
+import { cloneBondApplicationValue } from '../bondApplicationState.js'
 import { normalizeFinanceType } from '../../../../core/transactions/financeType.js'
 import { getPurchaserEntityType, normalizePurchaserType } from '../../../../lib/purchaserPersonas.js'
 
@@ -186,6 +187,7 @@ export function buildLegacyBondApplicationDraft(portal) {
   }
 
   return {
+    _meta: existing._meta && typeof existing._meta === 'object' && !Array.isArray(existing._meta) ? cloneBondApplicationValue(existing._meta) : {},
     status: resolveBondApplicationStatus(existing.status),
     submitted_at: existing.submitted_at || '',
     selected_banks: Array.isArray(existing.selected_banks)

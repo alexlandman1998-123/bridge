@@ -1,3 +1,5 @@
+import { assertBondApplicationSigningAvailable } from '../modules/bond/application/submission/bondApplicationSigningAvailability.js'
+import { isBondCorrectionResubmission } from '../modules/bond/application/submission/bondApplicationCorrection.js'
 import { DOCUMENTS_BUCKET_CANDIDATES, createScopedSupabaseClient, invokeEdgeFunction, supabase } from './supabaseClient'
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { validateDocumentUploadFile } from './documentUploadPolicy'
@@ -45381,10 +45383,29 @@ async function upsertClientPortalOnboardingForm({ token, formData = {} }) {
 }
 
 export async function saveClientPortalOnboardingDraft({ token, formData }) {
-  return upsertClientPortalOnboardingForm({
-    token,
-    formData,
-  })
+  const result = await upsertClientPortalOnboardingForm({ token, formData })
+  if (formData?.bond_application?._meta?.originator_correction_id) {
+    const client = requireClientPortalTokenClient(token)
+    const context = await fetchBondApplicationPortalSubmissionContext(client, token)
+    const application = await fetchNormalizedBondApplicationBundle(client, context.transaction.id)
+    if (application?.activeChangeRequestId) {
+      // Sync only the buyer's own sections and shared answers. Other participants retain their private answers.
+      const draft = buildNormalizedBondApplicationFromState({ applicationState: context.applicationState })
+      const primary = application.participants.find((item) => item.role === BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant)
+      const draftPrimary = draft.participants.find((item) => item.role === BOND_APPLICATION_PARTICIPANT_ROLES.primaryApplicant)
+      for (const [sectionKey, answers] of Object.entries(draft.sharedSections || {})) {
+        if (JSON.stringify(answers) !== JSON.stringify(application.sharedSections?.[sectionKey])) {
+          await saveClientPortalBondApplicationSection({ token, scope: 'application', sectionKey, answers })
+        }
+      }
+      for (const [sectionKey, answers] of Object.entries(draft.participantSections?.[draftPrimary?.participantKey] || {})) {
+        if (JSON.stringify(answers) !== JSON.stringify(application.participantSections?.[primary?.participantKey]?.[sectionKey])) {
+          await saveClientPortalBondApplicationSection({ token, participantKey: primary?.participantKey, sectionKey, answers })
+        }
+      }
+    }
+  }
+  return result
 }
 
 export async function uploadOnboardingRequiredDocument({ token, documentKey, file }) {
@@ -54541,6 +54562,8 @@ function mapNormalizedBondApplicationRows(applicationRow, participantRows = [], 
     compatibilityProjectionHash: applicationRow.compatibility_projection_hash || null,
     compatibilityProjectedAt: applicationRow.compatibility_projected_at || null,
     activeSubmissionId: applicationRow.active_submission_id || null,
+    activeChangeRequestId: applicationRow.active_change_request_id || null,
+    revisionBaseSubmissionId: applicationRow.revision_base_submission_id || null,
     lockedAt: applicationRow.locked_at || null,
     submittedAt: applicationRow.submitted_at || null,
     participants,
@@ -54585,7 +54608,15 @@ async function fetchNormalizedBondApplicationBundle(client, transactionId) {
   for (const result of [participants, sections, requirements]) {
     if (result.error && !isPermissionDeniedError(result.error) && !isMissingSchemaError(result.error)) throw result.error
   }
-  return mapNormalizedBondApplicationRows(appQuery.data, participants.data || [], sections.data || [], requirements.data || [])
+  const bundle = mapNormalizedBondApplicationRows(appQuery.data, participants.data || [], sections.data || [], requirements.data || [])
+  if (appQuery.data.active_submission_id) {
+    const submission = await client.from('transaction_bond_application_submissions').select('*')
+      .eq('id', appQuery.data.active_submission_id).eq('transaction_id', transactionId).maybeSingle()
+    if (submission.error && !isPermissionDeniedError(submission.error) && !isMissingSchemaError(submission.error)) throw submission.error
+    // Missing/inaccessible signing evidence must never imply submission readiness.
+    bundle.activeSubmission = submission.data || null
+  }
+  return bundle
 }
 
 async function persistNormalizedCompatibilityProjection(client, normalizedApplication, existingFormData = {}) {
@@ -55280,6 +55311,13 @@ export async function saveBondApplicationPortalDraft({ accessToken, draft, expec
   return result.data || null
 }
 
+export async function fetchBondApplicationBuyerNotices({ accessToken, token } = {}) {
+  const client = accessToken ? requireBondApplicationPortalTokenClient(accessToken) : requireClientPortalTokenClient(token)
+  const result = await client.rpc('bridge_bond_handoff_buyer_notices')
+  if (result.error) throw result.error
+  return result.data || { corrections: [], documents: [] }
+}
+
 export async function fetchBondApplicationPortalDocumentContinuity({ accessToken } = {}) {
   const client = requireBondApplicationPortalTokenClient(accessToken)
   const result = await client.rpc('bridge_bond_application_portal_document_continuity')
@@ -55358,22 +55396,137 @@ export async function fetchBondApplicationPortalOriginatorDocumentContinuity() {
   return result.data || { version: 'bond_application_portal_phase6', items: [] }
 }
 
+export async function fetchBondApplicationDownloadContext({ transactionId } = {}) {
+  const client = requireClient()
+  const transaction = await client.from('transactions').select('id, reference, transaction_reference').eq('id', transactionId).maybeSingle()
+  if (transaction.error) throw transaction.error
+  if (!transaction.data) throw new Error('This application is not accessible.')
+  const [bundle, documents, required, onboarding] = await Promise.all([
+    fetchNormalizedBondApplicationBundle(client, transactionId),
+    client.from('documents').select('*').eq('transaction_id', transactionId),
+    client.from('transaction_required_documents').select('*').eq('transaction_id', transactionId),
+    client.from('onboarding_form_data').select('*').eq('transaction_id', transactionId).maybeSingle(),
+  ])
+  for (const result of [documents, required, onboarding]) if (result.error) throw result.error
+  // Older signing flows link the final evidence through the exact packet version.
+  // Resolve that existing link read-only; never substitute a later packet revision.
+  const activeSubmission = bundle?.activeSubmission
+  if (activeSubmission && !activeSubmission.signed_document_id && activeSubmission.generated_document_id && activeSubmission.signing_request_id) {
+    const version = await client.from('document_packet_versions').select('id, packet_id, final_signed_document_id, finalised_at')
+      .eq('id', activeSubmission.generated_document_id).eq('packet_id', activeSubmission.signing_request_id).maybeSingle()
+    if (!version.error) {
+      const { resolveBondSignedDocumentId } = await import('../modules/bond/application/exports/bondApplicationDownloadPack.js')
+      bundle.activeSubmission = { ...activeSubmission, signed_document_id: resolveBondSignedDocumentId(activeSubmission, version.data) }
+    }
+  }
+  const applicationState = bundle ? buildApplicationStateFromNormalizedApplication(bundle) : buildBondApplicationState({ transaction: transaction.data, onboardingFormData: onboarding.data || {} })
+  const resolved = resolveBondApplicationDocumentRequirements({ applicationState, includeAllParticipants: true })
+  const documentChecklist = buildBondApplicationDocumentChecklist({ activeRequirements: resolved.activeRequirements, existingDocuments: documents.data || [], existingRequiredDocuments: required.data || [] })
+  const draftSnapshot = buildBondApplicationSubmissionSnapshot({ applicationState, documentChecklist, signerIdentity: resolveBondApplicationSignerIdentities(applicationState), transaction: transaction.data })
+  draftSnapshot.draftDeclarations = [
+    { participantRole: 'primary_applicant', answers: applicationState.participants?.primaryApplicant?.declarations || {} },
+    ...(applicationState.participants?.coApplicant ? [{ participantRole: 'co_applicant', answers: applicationState.participants.coApplicant.declarations || {} }] : []),
+    ...(applicationState.participants?.sureties || []).map((participant) => ({ participantRole: 'surety', answers: participant.declarations || {} })),
+  ]
+  return {
+    transactionId,
+    draftSnapshot,
+    submission: bundle?.activeSubmission || null,
+    documents: documents.data || [],
+    documentChecklist,
+    readiness: validateBondApplicationSubmissionReadiness({ applicationState, documentChecklist, submission: bundle?.activeSubmission || null, stage: 'bank_submission' }),
+  }
+}
+
+export async function fetchBondApplicationPackDocumentUrl({ transactionId, documentId, expectedPath, expectedBucket } = {}) {
+  const client = requireClient()
+  const result = await client.from('documents').select('*').eq('id', documentId).eq('transaction_id', transactionId).maybeSingle()
+  if (result.error) throw result.error
+  const document = result.data
+  if (!document || document.archived_at || document.deleted_at || ['rejected', 'superseded', 'cancelled'].includes(document.review_status || document.status)) throw new Error('A pack document is no longer available. Refresh the application.')
+  const path = document.file_path || document.storage_path
+  if (!path || (expectedPath && path !== expectedPath)) throw new Error('A supporting file changed. Refresh the application before downloading.')
+  const bucket = document.file_bucket || document.bucket || DOCUMENTS_BUCKET_CANDIDATES[0]
+  if (expectedBucket && bucket !== expectedBucket) throw new Error('A supporting file location changed. Refresh and retry.')
+  const signed = await client.storage.from(bucket).createSignedUrl(path, 120)
+  if (signed.error || !signed.data?.signedUrl) throw new Error('A supporting document could not be accessed. No partial pack was downloaded.')
+  return signed.data.signedUrl
+}
+
+async function readBondPackageReadiness(exportPackageId) {
+  const client = requireClient()
+  const packageResult = await client.from('transaction_bond_application_export_packages')
+    .select('transaction_id').eq('id', exportPackageId).maybeSingle()
+  if (packageResult.error) throw packageResult.error
+  if (!packageResult.data?.transaction_id) throw new Error('Application package is not accessible.')
+  const transactionId = packageResult.data.transaction_id
+  const [bundle, documents, required] = await Promise.all([
+    fetchNormalizedBondApplicationBundle(client, transactionId),
+    client.from('documents').select('*').eq('transaction_id', transactionId),
+    client.from('transaction_required_documents').select('*').eq('transaction_id', transactionId),
+  ])
+  if (documents.error) throw documents.error
+  if (required.error) throw required.error
+  const applicationState = bundle ? buildApplicationStateFromNormalizedApplication(bundle) : {}
+  const resolved = resolveBondApplicationDocumentRequirements({ applicationState, includeAllParticipants: true })
+  const documentChecklist = buildBondApplicationDocumentChecklist({ activeRequirements: resolved.activeRequirements, existingDocuments: documents.data || [], existingRequiredDocuments: required.data || [] })
+  return validateBondApplicationSubmissionReadiness({ applicationState, documentChecklist, submission: bundle?.activeSubmission, stage: 'bank_submission' })
+}
+
+function mergeBondSubmissionAssessment(assessment, readiness) {
+  const blockers = [...(assessment?.blockers || []), ...readiness.issues.map((item) => ({ ...item, key: item.code }))]
+  const ready = assessment?.status === 'ready' && readiness.ready && blockers.length === 0
+  return { ...assessment, status: ready ? 'ready' : 'blocked', label: ready ? readiness.label : (readiness.ready ? 'Awaiting originator review' : readiness.label), blockers }
+}
+
 export async function fetchBondApplicationSubmissionReadiness() {
   const result = await requireClient().rpc('bridge_bond_application_submission_readiness_view_phase7')
   if (result.error) throw result.error
-  return result.data || { version: 'bond_application_portal_phase7', items: [] }
+  const data = result.data || { version: 'bond_application_portal_phase7', items: [] }
+  return { ...data, items: await Promise.all((data.items || []).map(async (item) => ({
+    ...item, assessment: mergeBondSubmissionAssessment(item.assessment, await readBondPackageReadiness(item.exportPackageId)),
+  }))) }
 }
 
 export async function assessBondApplicationSubmissionReadiness({ exportPackageId } = {}) {
+  const readiness = await readBondPackageReadiness(exportPackageId)
   const result = await requireClient().rpc('bridge_assess_bond_application_submission_readiness_phase7', { p_export_package_id: String(exportPackageId || '').trim() })
+  if (result.error) throw result.error
+  return mergeBondSubmissionAssessment(result.data, readiness)
+}
+
+export async function recordBondApplicationExternalSubmission({ exportPackageId, expectedSubmissionId, submittedAt, lenderNames = [], externalReference = '', notes = '' } = {}) {
+  const assessment = await assessBondApplicationSubmissionReadiness({ exportPackageId })
+  if (assessment.status !== 'ready') {
+    const error = new Error('Resolve the outstanding application requirements before recording submission.')
+    error.issues = assessment.blockers
+    throw error
+  }
+  const result = await requireClient().rpc('bridge_record_bond_handoff_submission', { p_export_package_id: String(exportPackageId || '').trim(), p_expected_submission_id: expectedSubmissionId, p_submitted_at: submittedAt, p_lender_names: lenderNames, p_external_reference: externalReference || null, p_notes: notes || null })
   if (result.error) throw result.error
   return result.data || null
 }
 
-export async function recordBondApplicationExternalSubmission({ exportPackageId, lenderNames = [], externalReference = '', notes = '' } = {}) {
-  const result = await requireClient().rpc('bridge_record_bond_application_external_submission_phase8', { p_export_package_id: String(exportPackageId || '').trim(), p_lender_names: lenderNames, p_external_reference: externalReference || null, p_notes: notes || null })
+export async function fetchBondApplicationHandoff({ exportPackageId } = {}) {
+  const result = await requireClient().rpc('bridge_bond_handoff_view', { p_export_package_id: exportPackageId })
   if (result.error) throw result.error
-  return result.data || null
+  return result.data || { requests: [], corrections: [] }
+}
+
+export async function reviewBondApplicationHandoffDocument({ requestId, documentId, action, feedback = '' } = {}) {
+  const result = await requireClient().rpc('bridge_review_bond_handoff_document', {
+    p_request_id: requestId, p_expected_document_id: documentId || null, p_action: action, p_feedback: feedback.trim() || null,
+  })
+  if (result.error) throw result.error
+  return result.data
+}
+
+export async function updateBondApplicationCorrection({ exportPackageId, action, instruction = '', requestId = null } = {}) {
+  const result = await requireClient().rpc('bridge_bond_handoff_correction', {
+    p_export_package_id: exportPackageId, p_action: action, p_instruction: instruction.trim() || null, p_request_id: requestId,
+  })
+  if (result.error) throw result.error
+  return result.data
 }
 
 export async function fetchBondApplicationExternalSubmissions() {
@@ -55744,6 +55897,7 @@ export async function prepareClientPortalJointBondApplicationSubmission({
   token,
   idempotencyKey = '',
 } = {}) {
+  assertBondApplicationSigningAvailable()
   const client = requireClientPortalTokenClient(token)
   const portalContext = await fetchBondApplicationPortalSubmissionContext(client, token)
   const normalizedApplication = await fetchNormalizedBondApplicationBundle(client, portalContext.transaction.id)
@@ -55770,15 +55924,19 @@ export async function prepareClientPortalJointBondApplicationSubmission({
   const signerManifest = buildJointSignerManifest({ normalizedApplication, signerIdentities })
   const sourceHash = await hashBondApplicationSnapshot(projectNormalizedBondApplicationToLegacy({ normalizedApplication }))
   const existing = await fetchLatestClientPortalBondApplicationSubmissionRow(client, portalContext.transaction.id)
-  if (existing?.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted) {
+  if (existing?.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted && !(isBondCorrectionResubmission(normalizedApplication, existing))) {
     throw new Error('This bond application has already been submitted.')
   }
   if (existing?.status === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature && existing.bond_application_id === normalizedApplication.id) {
     return { submission: existing }
   }
   const latestVersion = Number(existing?.submission_version || 0) + 1
+  const jointDocumentRequirements = resolveBondApplicationDocumentRequirements({ applicationState, includeAllParticipants: true })
+  const jointChecklist = buildBondApplicationDocumentChecklist({ activeRequirements: jointDocumentRequirements.activeRequirements, existingDocuments: portalContext.documents || [], existingRequiredDocuments: portalContext.requiredDocuments || [] })
+  const jointDocumentManifest = buildBondApplicationSubmissionSnapshot({ applicationState, documentChecklist: jointChecklist }).documentManifest
   const snapshot = buildJointBondApplicationSubmissionSnapshot({
     normalizedApplication,
+    documentManifest: jointDocumentManifest,
     signerManifest,
     submissionVersion: latestVersion,
     reviewContextHash,
@@ -55882,6 +56040,7 @@ async function createOrReuseBondApplicationSigningPacket(client, {
   snapshotHash,
   signerIdentity,
 } = {}) {
+  assertBondApplicationSigningAvailable()
   const sourceContext = {
     domain: 'guided_bond_application_v2',
     bondApplicationSubmissionId: submission.id,
@@ -56112,6 +56271,8 @@ export async function fetchClientPortalBondApplicationSubmission({ token } = {})
   }
   const submission = await fetchLatestClientPortalBondApplicationSubmissionRow(client, context.transaction.id)
   if (!submission?.id) return { submission: null }
+  const normalized = await fetchNormalizedBondApplicationBundle(client, context.transaction.id)
+  if (isBondCorrectionResubmission(normalized, submission)) return { submission: null, previousSubmissionId: submission.id }
   let signPath = ''
   if (submission.signing_request_id) {
     const signerRole = participantRole === BOND_APPLICATION_PARTICIPANT_ROLES.coApplicant ? 'purchaser_2' : 'purchaser_1'
@@ -56140,9 +56301,11 @@ export async function prepareClientPortalBondApplicationSubmission({
   expectedSourceHash = '',
   idempotencyKey = '',
 } = {}) {
+  assertBondApplicationSigningAvailable()
   const client = requireClientPortalTokenClient(token)
   const context = await fetchBondApplicationPortalSubmissionContext(client, token)
-  const applicationState = context.applicationState
+  const normalizedApplication = await fetchNormalizedBondApplicationBundle(client, context.transaction.id)
+  const applicationState = normalizedApplication?.activeChangeRequestId ? buildApplicationStateFromNormalizedApplication(normalizedApplication) : context.applicationState
   const resolvedDocs = resolveBondApplicationDocumentRequirements({ applicationState })
   const documentChecklist = buildBondApplicationDocumentChecklist({
     activeRequirements: resolvedDocs.activeRequirements,
@@ -56175,7 +56338,7 @@ export async function prepareClientPortalBondApplicationSubmission({
   }
 
   const existingSubmitted = await fetchLatestClientPortalBondApplicationSubmissionRow(client, context.transaction.id)
-  if (existingSubmitted?.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted) {
+  if (existingSubmitted?.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted && !(isBondCorrectionResubmission(normalizedApplication, existingSubmitted))) {
     const error = new Error('This bond application has already been submitted.')
     error.code = 'BOND_APPLICATION_ALREADY_SUBMITTED'
     throw error
@@ -56222,6 +56385,8 @@ export async function prepareClientPortalBondApplicationSubmission({
     .insert({
       transaction_id: context.transaction.id,
       onboarding_form_data_id: context.onboardingFormData?.id || null,
+      bond_application_id: normalizedApplication?.activeChangeRequestId ? normalizedApplication.id : null,
+      source_application_revision: normalizedApplication?.activeChangeRequestId ? normalizedApplication.revision : null,
       submission_version: nextVersion,
       application_schema_version: String(snapshot.versions.applicationSchemaVersion),
       flow_version: BOND_APPLICATION_SUBMISSION_FLOW_VERSION,
@@ -56267,6 +56432,10 @@ export async function prepareClientPortalBondApplicationSubmission({
       .single()
     if (update.error) throw update.error
     submission = { ...update.data, signPath: signing.signPath, sign_path: signing.signPath }
+    if (normalizedApplication?.activeChangeRequestId) {
+      const appUpdate = await client.from('bond_applications').update({ active_submission_id: submission.id, status: BOND_APPLICATION_STATUSES.awaitingSignatures, updated_at: new Date().toISOString() }).eq('id', normalizedApplication.id)
+      if (appUpdate.error) throw appUpdate.error
+    }
   } catch (signingError) {
     await client
       .from('transaction_bond_application_submissions')

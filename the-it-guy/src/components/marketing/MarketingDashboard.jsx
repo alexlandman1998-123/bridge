@@ -1,152 +1,75 @@
-import {
-  ArrowRight,
-  CalendarDays,
-  Eye,
-  Mail,
-  Megaphone,
-  MessageCircle,
-  Plus,
-  Sparkles,
-  Globe2,
-  UsersRound,
-} from 'lucide-react'
-import {
-  channelPerformance,
-  marketingDashboardStats,
-  marketingSources,
-  marketingTrend,
-  recentMarketingActivity,
-  upcomingMarketingEvents,
-} from '../../data/marketingDashboard'
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowRight, BarChart3, CalendarDays, ChevronDown, Eye, Mail, Megaphone, Plus, UsersRound } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { useWorkspace } from '../../context/WorkspaceContext'
+import { getMarketingOverviewDashboard, MARKETING_DATE_RANGES } from '../../services/marketingOverviewService'
 
-const statIcons = { campaigns: Megaphone, reach: UsersRound, engagement: Eye, leads: Sparkles }
-const channelIcons = { Email: Mail, WhatsApp: MessageCircle }
+const metricIcons = { totalLeads: UsersRound, qualifiedLeads: UsersRound, websiteVisits: Eye, campaignReach: BarChart3, activeCampaigns: Megaphone }
+const metricLabels = { totalLeads: 'Total leads', qualifiedLeads: 'Qualified leads', websiteVisits: 'Website visits', campaignReach: 'Campaign reach', activeCampaigns: 'Active campaigns' }
+const sourceColours = ['#2463d7', '#7854e8', '#13a875', '#70a8ef', '#b297f5', '#e7994d']
+const number = (value) => Number(value || 0).toLocaleString()
+const dateLabel = (value) => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '—' }
+const relativeTime = (value) => { const hours = Math.floor(Math.max(0, Date.now() - new Date(value || 0).getTime()) / 3600000); return hours < 1 ? 'Just now' : hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago` }
+const inputDate = (value) => new Date(value).toISOString().slice(0, 10)
 
-function MarketingStats() {
-  return (
-    <section className="md-stats" aria-label="Marketing performance summary">
-      {marketingDashboardStats.map((stat) => {
-        const Icon = statIcons[stat.id]
-        return (
-          <article className={`md-stat md-tone-${stat.tone}`} key={stat.id}>
-            <span className="md-stat-icon"><Icon size={19} /></span>
-            <span className="md-stat-copy"><strong>{stat.value}</strong><span>{stat.label}</span><small>{stat.change}</small></span>
-          </article>
-        )
-      })}
-    </section>
-  )
+function organisationIdFrom(workspace = {}, membership = {}) { return String(workspace?.organisationId || workspace?.organisation_id || workspace?.raw?.organisation_id || membership?.organisationId || membership?.organisation_id || workspace?.id || '').trim() }
+
+function EmptyCard({ children }) { return <div className="mo-empty">{children}</div> }
+
+function LineChart({ rows = [], first = 'totalLeads', second = 'qualifiedLeads', labels = ['Total leads', 'Qualified leads'], emptyCopy }) {
+  const usable = rows.filter((row) => Number.isFinite(Number(row[first])))
+  if (!usable.length || usable.every((row) => !Number(row[first]) && !Number(row[second]))) return <EmptyCard>{emptyCopy || 'No activity in this period.'}</EmptyCard>
+  const hasSecondSeries = Boolean(second) && usable.some((row) => row[second] !== null && row[second] !== undefined)
+  const max = Math.max(1, ...usable.flatMap((row) => hasSecondSeries ? [Number(row[first] || 0), Number(row[second] || 0)] : [Number(row[first] || 0)]))
+  const points = (key) => usable.map((row, index) => `${usable.length === 1 ? 0 : (index / (usable.length - 1)) * 100},${92 - ((Number(row[key] || 0) / max) * 82)}`).join(' ')
+  return <><div className="mo-chart" role="img" aria-label={`${labels[0]}${hasSecondSeries ? ` and ${labels[1]}` : ''} over time`}><span className="mo-chart-scale">{max}</span><span className="mo-chart-scale mo-chart-scale-bottom">0</span><svg viewBox="0 0 100 100" preserveAspectRatio="none"><polyline points={points(first)} className="mo-line mo-line-primary" />{hasSecondSeries ? <polyline points={points(second)} className="mo-line mo-line-secondary" /> : null}</svg><div className="mo-chart-labels">{usable.filter((_, index) => index === 0 || index === usable.length - 1 || index % Math.max(1, Math.floor(usable.length / 4)) === 0).map((row) => <span key={row.date}>{dateLabel(row.date)}</span>)}</div></div><div className="mo-legend"><span><i className="mo-dot-primary" />{labels[0]}</span>{hasSecondSeries ? <span><i className="mo-dot-secondary" />{labels[1]}</span> : null}</div></>
 }
 
-function TrendChart() {
-  const points = (key) => marketingTrend.map((item, index) => `${index * 25},${100 - item[key]}`).join(' ')
-  return (
-    <article className="md-card md-trend-card">
-      <header className="md-card-header">
-        <div><span className="md-eyebrow">PERFORMANCE</span><h2>Campaign engagement</h2><p>Email opens and WhatsApp reads over the last 30 days</p></div>
-        <button className="md-period" type="button">Last 30 days <CalendarDays size={15} /></button>
-      </header>
-      <div className="md-chart-wrap">
-        <div className="md-chart-y" aria-hidden="true"><span>80%</span><span>60%</span><span>40%</span><span>20%</span><span>0%</span></div>
-        <div className="md-chart">
-          <div className="md-chart-grid" aria-hidden="true"><i /><i /><i /><i /><i /></div>
-          <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Email and WhatsApp engagement both increased during the last 30 days">
-            <defs><linearGradient id="mdGreenArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#1a9364" stopOpacity=".2" /><stop offset="1" stopColor="#1a9364" stopOpacity="0" /></linearGradient></defs>
-            <polygon points={`0,100 ${points('whatsapp')} 100,100`} fill="url(#mdGreenArea)" />
-            <polyline points={points('email')} className="md-line md-line-email" />
-            <polyline points={points('whatsapp')} className="md-line md-line-whatsapp" />
-          </svg>
-          <div className="md-chart-x" aria-hidden="true">{marketingTrend.map((item) => <span key={item.label}>{item.label}</span>)}</div>
-        </div>
-      </div>
-      <div className="md-legend"><span><i className="md-legend-email" /> Email open rate</span><span><i className="md-legend-whatsapp" /> WhatsApp read rate</span></div>
-    </article>
-  )
-}
-
-function ChannelPerformance() {
-  return (
-    <article className="md-card md-channel-card">
-      <header className="md-card-header"><div><span className="md-eyebrow">CHANNELS</span><h2>Channel performance</h2><p>Current month at a glance</p></div></header>
-      <div className="md-channel-list">
-        {channelPerformance.map((channel) => {
-          const Icon = channelIcons[channel.label]
-          return (
-            <section className={`md-channel md-channel-${channel.id}`} key={channel.id}>
-              <div className="md-channel-title"><span><Icon size={17} /></span><strong>{channel.label}</strong></div>
-              <dl><div><dt>Sent</dt><dd>{channel.sent}</dd></div><div><dt>Engagement</dt><dd>{channel.engagement}</dd></div><div><dt>Leads</dt><dd>{channel.leads}</dd></div></dl>
-              <div className="md-progress" aria-label={`${channel.label} relative performance ${channel.progress}%`}><span style={{ width: `${channel.progress}%` }} /></div>
-            </section>
-          )
-        })}
-      </div>
-    </article>
-  )
-}
-
-function RecentCampaigns({ onNavigate }) {
-  return (
-    <article className="md-card md-recent-card">
-      <header className="md-card-header"><div><span className="md-eyebrow">RECENT ACTIVITY</span><h2>Recent campaigns</h2></div><button className="md-text-button" type="button" onClick={() => onNavigate('email')}>View campaigns <ArrowRight size={14} /></button></header>
-      <div className="md-table-wrap">
-        <table className="md-table">
-          <thead><tr><th>Campaign</th><th>Channel</th><th>Sent</th><th>Engagement</th><th>Status</th></tr></thead>
-          <tbody>{recentMarketingActivity.map((campaign) => { const Icon = channelIcons[campaign.type]; return <tr key={campaign.id}><td><strong>{campaign.title}</strong><span>{campaign.audience}</span></td><td><span className={`md-type md-type-${campaign.type.toLowerCase()}`}><Icon size={13} /> {campaign.type}</span></td><td>{campaign.date}</td><td><strong>{campaign.engagement}</strong></td><td><span className="md-status">{campaign.status}</span></td></tr> })}</tbody>
-        </table>
-      </div>
-    </article>
-  )
-}
-
-function UpcomingActivity({ onNavigate }) {
-  return (
-    <article className="md-card md-upcoming-card">
-      <header className="md-card-header"><div><span className="md-eyebrow">UP NEXT</span><h2>Upcoming activity</h2></div></header>
-      <div className="md-upcoming-list">
-        {upcomingMarketingEvents.map((event) => <button type="button" onClick={() => onNavigate(event.type === 'Show Day' ? 'show-days' : 'launches')} key={event.id}><span className="md-event-date"><CalendarDays size={17} /></span><span className="md-event-copy"><small>{event.type}</small><strong>{event.title}</strong><span>{event.meta}</span></span><span className="md-event-count">{event.registrations}</span><ArrowRight size={15} /></button>)}
-      </div>
-    </article>
-  )
-}
-
-function SourceBreakdown() {
-  return (
-    <article className="md-card md-source-card">
-      <header className="md-card-header"><div><span className="md-eyebrow">ATTRIBUTION</span><h2>Leads by source</h2><p>67 marketing-generated leads this month</p></div></header>
-      <div className="md-source-total"><span>67</span><small>Total leads</small></div>
-      <div className="md-source-list">{marketingSources.map((source) => <div key={source.label}><div><span>{source.label}</span><strong>{source.value}</strong></div><div className={`md-source-bar md-source-${source.tone}`}><span style={{ width: `${source.percentage}%` }} /></div></div>)}</div>
-    </article>
-  )
-}
-
-function QuickActions({ onNavigate }) {
-  const actions = [
-    { label: 'Email campaign', detail: 'Create an email', icon: Mail, section: 'email' },
-    { label: 'WhatsApp campaign', detail: 'Start a message', icon: MessageCircle, section: 'whatsapp' },
-    { label: 'Show day', detail: 'Plan an open home', icon: CalendarDays, section: 'show-days' },
-    { label: 'Launch', detail: 'Create a launch', icon: Sparkles, section: 'launches' },
-    { label: 'Website & landing pages', detail: 'Manage your agency site and campaign pages', icon: Globe2, section: 'website' },
-  ]
-  return (
-    <section className="md-quick-actions" aria-label="Quick actions">
-      <div className="md-quick-actions-heading"><span className="md-eyebrow">QUICK ACTIONS</span><h2>Create new marketing</h2></div>
-      <div className="md-quick-actions-grid">
-        {actions.map((action) => {
-          const ActionIcon = action.icon
-          return <button type="button" onClick={() => onNavigate(action.section)} key={action.label}><span><ActionIcon size={16} /></span><span><strong>{action.label}</strong><small>{action.detail}</small></span><Plus size={15} /></button>
-        })}
-      </div>
-    </section>
-  )
+function Metric({ id, item }) {
+  const Icon = metricIcons[id]
+  const change = item?.change
+  const detail = change === null || change === undefined ? (item?.note || 'No comparison available') : `${change > 0 ? '↑' : change < 0 ? '↓' : '—'} ${Math.abs(change)}% vs previous period`
+  return <article className="mo-metric"><span className="mo-metric-icon"><Icon size={19} /></span><div><span>{metricLabels[id]}</span><strong>{item?.available ? number(item.value) : '—'}</strong><small className={change > 0 ? 'is-positive' : change < 0 ? 'is-negative' : ''}>{detail}</small></div></article>
 }
 
 export default function MarketingDashboard({ onNavigate }) {
-  return (
-    <div className="wa-page marketing-dashboard">
-      <MarketingStats />
-      <QuickActions onNavigate={onNavigate} />
-      <section className="md-primary-grid"><TrendChart /><ChannelPerformance /></section>
-      <section className="md-secondary-grid"><RecentCampaigns onNavigate={onNavigate} /><div className="md-side-stack"><UpcomingActivity onNavigate={onNavigate} /><SourceBreakdown /></div></section>
-    </div>
-  )
+  const navigate = useNavigate()
+  const { currentWorkspace, currentMembership } = useWorkspace()
+  const organisationId = organisationIdFrom(currentWorkspace, currentMembership)
+  const [range, setRange] = useState('30d')
+  const [customRange, setCustomRange] = useState(() => ({ start: inputDate(Date.now() - (29 * 86400000)), end: inputDate(new Date()) }))
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [reloadKey, setReloadKey] = useState(0)
+  useEffect(() => {
+    let active = true
+    void (async () => {
+      await Promise.resolve()
+      if (!active) return
+      setLoading(true)
+      setError('')
+      try {
+        const next = await getMarketingOverviewDashboard({ organisationId, range, customStart: customRange.start, customEnd: customRange.end })
+        if (active) setData(next)
+      } catch (reason) {
+        if (active) setError(reason?.message || 'Marketing analytics could not be loaded.')
+      } finally {
+        if (active) setLoading(false)
+      }
+    })()
+    return () => { active = false }
+  }, [organisationId, range, customRange.end, customRange.start, reloadKey])
+  const sourceTotal = useMemo(() => (data?.leadSources || []).reduce((sum, row) => sum + row.count, 0), [data])
+  const metrics = data?.summary || {}
+  const createCampaign = () => onNavigate('email')
+  return <div className="wa-page marketing-dashboard mo-dashboard">
+    <header className="mo-header"><div><h1>Marketing overview</h1><p>See what is bringing people to your business.</p></div><div className="mo-header-actions"><label className="mo-period"><CalendarDays size={15} /><span className="sr-only">Date range</span><select value={range} onChange={(event) => setRange(event.target.value)}>{MARKETING_DATE_RANGES.map((item) => <option value={item.key} key={item.key}>{item.label}</option>)}</select><ChevronDown size={14} /></label>{range === 'custom' ? <div className="mo-custom-range"><label>From<input type="date" value={customRange.start} max={customRange.end} onChange={(event) => setCustomRange((value) => ({ ...value, start: event.target.value }))} /></label><label>To<input type="date" value={customRange.end} min={customRange.start} max={inputDate(new Date())} onChange={(event) => setCustomRange((value) => ({ ...value, end: event.target.value }))} /></label></div> : null}<button className="mo-create" type="button" onClick={createCampaign}><Plus size={17} />Create campaign</button></div></header>
+    {error ? <section className="mo-error">{error}<button type="button" onClick={() => setReloadKey((value) => value + 1)}>Retry</button></section> : null}
+    {!organisationId && !loading ? <section className="mo-error">Choose an agency workspace to see marketing reporting.</section> : null}
+    <section className="mo-metrics" aria-label="Marketing summary">{Object.keys(metricLabels).map((id) => <Metric id={id} item={metrics[id]} key={id} />)}</section>
+    <section className="mo-grid mo-grid-primary"><article className="mo-card"><header><h2>Leads over time</h2><p>New leads created during {data?.period?.label?.toLowerCase() || 'this period'}.</p></header>{loading ? <EmptyCard>Loading lead activity…</EmptyCard> : <><LineChart rows={data?.leadsOverTime} emptyCopy="No leads were created in this period." /><p className="mo-unavailable">Qualified-lead timing is not recorded yet.</p></>}</article><article className="mo-card"><header><div><h2>Lead sources</h2><p>{number(sourceTotal)} total leads</p></div></header>{loading ? <EmptyCard>Loading sources…</EmptyCard> : data?.leadSources?.length ? <div className="mo-source-list">{data.leadSources.map((source, index) => <div className="mo-source-row" key={source.key}><i style={{ backgroundColor: sourceColours[index % sourceColours.length] }} /><span>{source.label}</span><strong>{number(source.count)}</strong><small>{source.percentage}%</small></div>)}</div> : <EmptyCard>Lead sources will appear when new leads are captured.</EmptyCard>}</article></section>
+    <section className="mo-grid mo-grid-secondary"><article className="mo-card"><header><h2>Channel performance</h2><p>Comparable results from connected channels.</p></header><div className="mo-table-wrap"><table className="mo-table"><thead><tr><th>Channel</th><th>Visits / reach</th><th>Engagement</th><th>Leads</th><th>Cost per lead</th></tr></thead><tbody>{(data?.channelPerformance || []).map((channel) => <tr key={channel.key}><td><strong>{channel.label}</strong>{!channel.connected ? <small>{channel.note}</small> : null}</td><td>{channel.volume === null ? '—' : `${number(channel.volume)} ${channel.volumeLabel.toLowerCase()}`}</td><td>{channel.engagement}</td><td>{number(channel.leads)}</td><td>—</td></tr>)}</tbody></table></div></article><article className="mo-card"><header><div><h2>Website performance</h2><p>{data?.websitePerformance?.connected ? 'First-party, privacy-safe analytics' : 'Website analytics unavailable'}</p></div><strong className="mo-header-metric">{data?.websitePerformance?.connected ? `${number(data.websitePerformance.websiteLeads)} leads` : '—'}</strong></header>{data?.websitePerformance?.connected ? <><LineChart rows={data.websitePerformance.series.map((row) => ({ ...row, totalLeads: row.visits, qualifiedLeads: row.pageViews }))} labels={['Website visits', 'Page views']} /><ol className="mo-top-pages">{data.websitePerformance.topPages.map((page, index) => <li key={`${page.label}-${index}`}><span>{index + 1}</span><strong>{page.label}</strong><small>{number(page.views)} views</small></li>)}</ol></> : <EmptyCard>{data?.websitePerformance?.error || 'Connect website tracking to see visits and top pages.'}</EmptyCard>}</article></section>
+    <section className="mo-grid mo-grid-secondary"><article className="mo-card"><header><div><h2>Recent campaigns</h2><p>Latest email and WhatsApp campaigns.</p></div><button className="mo-link" type="button" onClick={() => onNavigate('email')}>View campaigns <ArrowRight size={14} /></button></header>{data?.recentCampaigns?.length ? <div className="mo-table-wrap"><table className="mo-table"><thead><tr><th>Campaign</th><th>Channel</th><th>Audience</th><th>Sent</th><th>Delivery / engagement</th></tr></thead><tbody>{data.recentCampaigns.map((campaign) => { const performance = campaign.performance || {}; const delivery = Number(performance.recipients) ? `${Math.round((Number(performance.delivered) / Number(performance.recipients)) * 100)}% delivered` : 'Not sent'; return <tr key={campaign.id}><td><strong>{campaign.name}</strong><small>{campaign.preview_text || campaign.subject}</small></td><td><span className="mo-badge"><Mail size={13} />Email</span></td><td>{campaign.audience}</td><td>{dateLabel(campaign.sent_at || campaign.scheduled_for || campaign.created_at)}</td><td>{delivery}</td></tr> })}</tbody></table></div> : <EmptyCard>No campaigns yet. <button type="button" onClick={createCampaign}>Create a campaign</button></EmptyCard>}</article><article className="mo-card"><header><div><h2>New leads</h2><p>Most recent leads in this period.</p></div><button className="mo-link" type="button" onClick={() => navigate('/pipeline/leads')}>View all leads <ArrowRight size={14} /></button></header>{data?.recentLeads?.length ? <div className="mo-lead-list">{data.recentLeads.map((lead) => <button type="button" onClick={() => navigate(`/pipeline/leads?lead=${encodeURIComponent(lead.id)}`)} key={lead.id}><div><strong>{lead.name}</strong><span className="mo-badge">{lead.source.label}</span><small>{lead.enquiry}</small></div><time>{relativeTime(lead.createdAt)}</time></button>)}</div> : <EmptyCard>No new leads in this period.</EmptyCard>}</article></section>
+  </div>
 }

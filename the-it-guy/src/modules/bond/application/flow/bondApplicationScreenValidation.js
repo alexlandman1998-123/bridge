@@ -3,6 +3,7 @@ import { resolveBondApplicationFlow } from './resolveBondApplicationFlow.js'
 import {
   getBondApplicationPathValue,
   isBondApplicationValuePresent,
+  evaluateBondApplicationRule,
 } from './bondApplicationRuleEvaluator.js'
 
 function issue(path, code, message, questionKey = null) {
@@ -11,7 +12,7 @@ function issue(path, code, message, questionKey = null) {
 
 function parseNumber(value) {
   if (value === null || value === undefined || value === '') return null
-  const number = typeof value === 'number' ? value : Number(String(value).replace(/[^\d.-]/g, ''))
+  const number = typeof value === 'number' ? value : Number(String(value).replace(/[ ,]/g, ''))
   return Number.isFinite(number) ? number : null
 }
 
@@ -32,12 +33,21 @@ function validateScalarQuestion(question, state) {
     if (number === null) {
       issues.push(issue(question.path, 'number', `Enter a valid ${question.type === 'currency' ? 'amount' : 'number'}.`, question.key))
     }
+    if (number !== null && ['currency', 'percentage'].includes(question.type) && number < 0) {
+      issues.push(issue(question.path, 'negative_amount', `${question.label} cannot be negative.`, question.key))
+    }
+    if (number !== null && question.type === 'integer' && !Number.isInteger(number)) {
+      issues.push(issue(question.path, 'integer', 'Enter a whole number.', question.key))
+    }
     if (number !== null && question.validation?.min !== undefined && number < question.validation.min) {
       issues.push(issue(question.path, 'min', `${question.label} cannot be less than ${question.validation.min}.`, question.key))
     }
     if (number !== null && question.validation?.max !== undefined && number > question.validation.max) {
       issues.push(issue(question.path, 'max', `${question.label} cannot be more than ${question.validation.max}.`, question.key))
     }
+  }
+  if (Array.isArray(question.options) && !question.options.some((option) => String(option.value ?? option) === String(value))) {
+    issues.push(issue(question.path, 'option', `Choose a valid ${String(question.label || 'option').toLowerCase()}.`, question.key))
   }
   if (question.type === 'date' && Number.isNaN(Date.parse(String(value)))) {
     issues.push(issue(question.path, 'date', 'Enter a valid date.', question.key))
@@ -60,13 +70,14 @@ function validateRepeatableQuestion(question, state, contract) {
   }
   if (!Array.isArray(records)) return issues
   const group = contract.repeatableGroups[question.groupKey]
-  const requiredFields = (group?.itemFields || []).filter((field) => field.requiredWhen === true)
   records.forEach((record, index) => {
-    requiredFields.forEach((field) => {
-      const value = getBondApplicationPathValue(record, field.path)
-      if (!isBondApplicationValuePresent(value)) {
-        issues.push(issue(`${question.path}.${index}.${field.path}`, 'required', `Enter ${String(field.label || 'this information').toLowerCase()}.`, question.key))
-      }
+    (group?.itemFields || []).forEach((field) => {
+      if (!evaluateBondApplicationRule(field.visibleWhen, record)) return
+      const validation = validateScalarQuestion({
+        ...field,
+        required: Boolean(evaluateBondApplicationRule(field.requiredWhen, record)),
+      }, record)
+      issues.push(...validation.map((item) => ({ ...item, path: `${question.path}.${index}.${item.path}` })))
     })
   })
   return issues

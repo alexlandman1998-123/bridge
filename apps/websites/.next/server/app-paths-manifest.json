@@ -6,6 +6,7 @@
   "/api/health/route": "app/api/health/route.js",
   "/api/leads/route": "app/api/leads/route.js",
   "/api/preapproval/route": "app/api/preapproval/route.js",
+  "/blog/[slug]/opengraph-image/route": "app/blog/[slug]/opengraph-image/route.js",
   "/blog/[slug]/page": "app/blog/[slug]/page.js",
   "/blog/page": "app/blog/page.js",
   "/calculators/page": "app/calculators/page.js",

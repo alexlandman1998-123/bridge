@@ -1,3 +1,4 @@
+import { getBondApplicationSigningAvailability } from '../../submission/bondApplicationSigningAvailability.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BOND_APPLICATION_SUBMISSION_STATUSES,
@@ -114,6 +115,8 @@ export function useBondApplicationSubmission({
 
   const prepareForSignature = useCallback(async () => {
     setReadinessAttempted(true)
+    const availability = getBondApplicationSigningAvailability()
+    if (!availability.available) { setError(availability.message); return { ok: false, reason: availability.code } }
     setError('')
     if (!readiness.ready) return { ok: false, reason: 'readiness', issues: readiness.issues }
     setPreparing(true)
@@ -137,6 +140,8 @@ export function useBondApplicationSubmission({
   }, [acceptedDeclarationEvidence, declarationValues, localSnapshotPreview, onPrepareSubmission, readiness, saveLatestApplication])
 
   const startSigning = useCallback(() => {
+    const availability = getBondApplicationSigningAvailability()
+    if (!availability.available) { setError(availability.message); return false }
     const signPath = submission?.signPath || submission?.sign_path || submission?.signing?.signPath || ''
     if (!signPath) {
       setError('The signing link is not ready yet. Refresh the signing status and try again.')
@@ -161,6 +166,7 @@ export function useBondApplicationSubmission({
   }, [onCancelPendingSubmission, submission])
 
   return {
+    signingAvailability: getBondApplicationSigningAvailability(),
     reviewSections,
     readiness,
     readinessAttempted,

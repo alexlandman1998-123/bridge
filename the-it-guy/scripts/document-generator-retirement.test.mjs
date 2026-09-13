@@ -1,3 +1,4 @@
+import { assertBondApplicationSigningAvailable } from '../src/modules/bond/application/submission/bondApplicationSigningAvailability.js'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
@@ -117,5 +118,13 @@ test('signed mandate and OTP uploads persist files and requirement links with no
     assert.equal(result.url, 'https://example.test/signed-file')
     if (documentType === 'signed_mandate') assert.equal(savedListing.mandateStatus, 'signed_uploaded')
     else assert.equal(savedListing, undefined)
+  }
+})
+
+
+test('bond signing refuses before accessing clients, writing submissions or creating signing links', async () => {
+  for (const name of ['prepareClientPortalBondApplicationSubmission', 'prepareClientPortalJointBondApplicationSubmission', 'createOrReuseBondApplicationSigningPacket']) {
+    const fn = vm.runInNewContext(`(${functionSource('../src/lib/api.js', name)})`, { assertBondApplicationSigningAvailable })
+    await assert.rejects(fn(), { code: 'bond_application_signing_unavailable' })
   }
 })

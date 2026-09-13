@@ -1,3 +1,4 @@
+import { isDocumentUploaded } from '../documents/bondApplicationDocumentStatus.js'
 import { BOND_APPLICATION_SCHEMA_VERSION, cloneBondApplicationValue } from '../bondApplicationState.js'
 import { BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION } from '../documents/bondApplicationDocumentRules.js'
 import { BOND_APPLICATION_DECLARATION_CONTRACT_VERSION } from './bondApplicationDeclarations.js'
@@ -5,11 +6,16 @@ import { BOND_APPLICATION_SUBMISSION_FLOW_VERSION } from './bondApplicationSubmi
 
 function activeDocumentManifestItem(item = {}) {
   const requirement = item.requirement || item
-  const document = Array.isArray(item.documents) ? item.documents[0] || null : null
+  const documents = (Array.isArray(item.documents) ? item.documents : []).filter(isDocumentUploaded)
+  const document = documents[0] || null
   return {
     requirementKey: requirement.key || null,
     canonicalDocumentType: requirement.canonicalDocumentType || null,
     participantRole: requirement.participantRole || 'primary_applicant',
+    participantKey: requirement.participantKey || null,
+    title: requirement.title || requirement.key || 'Supporting document',
+    minimumFileCount: requirement.minimumFileCount || 1,
+    documents: documents.map((file) => ({ id: file.id, name: file.name || file.file_name || null, filePath: file.file_path || file.storage_path || null, fileBucket: file.file_bucket || file.bucket || null, status: file.review_status || file.status || null, uploadedAt: file.uploaded_at || file.created_at || null })),
     requiredBefore: requirement.requiredBefore || null,
     satisfactionMode: requirement.satisfactionMode || null,
     required: Boolean(requirement.required),
@@ -135,6 +141,7 @@ export function buildBondApplicationSubmissionSnapshot({
   return {
     snapshotSchemaVersion: coApplicant || participantSnapshots.length > 1 ? '2' : '1',
     submissionVersion,
+    applicationIntent: applicationState?.application?.intent || 'bond_application',
     transaction: {
       id: applicationState?.application?.transactionId || transaction?.id || null,
       reference: transaction?.reference || transaction?.transaction_reference || null,

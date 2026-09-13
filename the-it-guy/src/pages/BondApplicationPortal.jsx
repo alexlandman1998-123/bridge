@@ -1,3 +1,4 @@
+import BondApplicationBuyerNotices from '../components/bond/BondApplicationBuyerNotices'
 import { AlertCircle, ArrowLeft, CheckCircle2, FileText, LockKeyhole, RefreshCw } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
@@ -56,7 +57,7 @@ export default function BondApplicationPortal() {
     try {
       setState({ status: 'loading', result: null, error: '' })
       const result = usesApplicationAccessToken
-        ? (() => Promise.all([fetchBondApplicationPortalProjection({ accessToken }), fetchBondApplicationPortalDraft({ accessToken }), fetchBondApplicationPortalDocumentContinuity({ accessToken })]).then(([projection, draftContext, documentContinuity]) => ({ ...projection, draftContext, documentContinuity })))()
+        ? await (() => Promise.all([fetchBondApplicationPortalProjection({ accessToken }), fetchBondApplicationPortalDraft({ accessToken }), fetchBondApplicationPortalDocumentContinuity({ accessToken })]).then(([projection, draftContext, documentContinuity]) => ({ ...projection, draftContext, documentContinuity })))()
         : await fetchClientPortalNormalizedBondApplication({ token })
       setState({ status: 'ready', result, error: '' })
     } catch (error) {
@@ -106,6 +107,7 @@ export default function BondApplicationPortal() {
 
         {state.status === 'ready' ? (
           <>
+            <BondApplicationBuyerNotices accessToken={accessToken} token={token} />
             <section className="mt-8 rounded-3xl bg-slate-900 p-7 text-white shadow-xl sm:p-10">
               <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-300">Bond application</p>
               <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">{applicantName(applicationState)}</h1>
@@ -123,7 +125,7 @@ export default function BondApplicationPortal() {
             ) : (
               <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-6"><h2 className="text-lg font-semibold text-amber-950">Your application is being prepared</h2><p className="mt-2 text-sm leading-6 text-amber-900">Your finance team will let you know as soon as the guided application is ready to complete here.</p></section>
             )}
-            {usesApplicationAccessToken && hasApplication ? <section className="mt-6"><GuidedBondApplication portal={phase3Portal} token={activeToken} saveClientPortalOnboardingDraft={savePhase3Draft} onBackToPortal={() => window.scrollTo({ top: 0, behavior: 'smooth' })} onSaveAndExit={() => window.scrollTo({ top: 0, behavior: 'smooth' })} /></section> : null}
+            {usesApplicationAccessToken && hasApplication ? <section className="mt-6"><GuidedBondApplication showHandoffNotices={false} portal={phase3Portal} token={activeToken} saveClientPortalOnboardingDraft={savePhase3Draft} onBackToPortal={() => window.scrollTo({ top: 0, behavior: 'smooth' })} onSaveAndExit={() => window.scrollTo({ top: 0, behavior: 'smooth' })} /></section> : null}
           </>
         ) : null}
       </div>

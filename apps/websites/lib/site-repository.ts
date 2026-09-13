@@ -1,6 +1,7 @@
 import { additionalMockProperties } from '@/lib/mock-properties'
+import { visiblePublishedBlogPosts } from '@/lib/blog-publication'
 import { getServerSupabase } from '@/lib/supabase-server'
-import type { PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
+import type { PublicBlogPost, PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
 
 const demoSite: ResolvedSite = {
   id: '00000000-0000-0000-0000-000000000001',
@@ -243,6 +244,41 @@ export async function getPublicProperties(site: ResolvedSite, query: Record<stri
 export async function getPublicProperty(site: ResolvedSite, slug: string): Promise<PublicProperty | null> {
   const properties = await getPublicProperties(site)
   return properties.find((property) => propertySlug(property) === slug) || null
+}
+
+export async function getPublicBlogPosts(site: ResolvedSite): Promise<PublicBlogPost[]> {
+  if (site.preview && site.id === demoSite.id) return []
+  const supabase = getServerSupabase()
+  const { data, error } = await supabase.from('website_blog_posts')
+    .select('id, organisation_id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, author_name, status, published_at, seo_title, seo_description')
+    .eq('website_site_id', site.id)
+    .eq('organisation_id', site.organisationId)
+    .eq('revision_id', site.publishedRevisionId)
+    .eq('status', 'published')
+    .lte('published_at', new Date().toISOString())
+    .order('published_at', { ascending: false })
+  if (error) throw error
+  return visiblePublishedBlogPosts((data || []) as Record<string, unknown>[], site.id, site.organisationId, site.publishedRevisionId)
+}
+
+export async function getPublicBlogPost(site: ResolvedSite, slug: string): Promise<PublicBlogPost | null> {
+  const posts = await getPublicBlogPosts(site)
+  return posts.find((post) => post.slug === slug) || null
+}
+
+export async function hasPublishedBlogPosts(site: ResolvedSite): Promise<boolean> {
+  if (site.preview && site.id === demoSite.id) return false
+  const supabase = getServerSupabase()
+  const { data, error } = await supabase.from('website_blog_posts')
+    .select('id')
+    .eq('website_site_id', site.id)
+    .eq('organisation_id', site.organisationId)
+    .eq('revision_id', site.publishedRevisionId)
+    .eq('status', 'published')
+    .lte('published_at', new Date().toISOString())
+    .limit(1)
+  if (error) throw error
+  return Boolean(data?.length)
 }
 
 export async function getPublicPage(site: ResolvedSite, slug: string): Promise<PublicPage | null> {

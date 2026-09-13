@@ -242,9 +242,7 @@ import {
   resendTransactionPartnerInvitation,
 } from '../services/transactionPartnerInvitationService'
 import {
-  buildBondApplicationPdfHtml,
   buildBondApplicationViewModel,
-  getBondApplicationPdfFilename,
 } from '../modules/bond/utils/bondApplicationViewModel'
 import {
   resolvePortalBuyerName,
@@ -18660,66 +18658,15 @@ function AttorneyTransactionDetail() {
       null,
     [bondQuoteRows, transactionFinanceWorkflow],
   )
-  async function handleDownloadBondApplicationForm() {
-    if (typeof window === 'undefined' || typeof window.document === 'undefined') return
-
+  async function handleDownloadBondApplicationForm(mode = 'draft') {
     setBondApplicationPdfBusy(true)
-    let pdfContainer = null
     try {
-      const { default: html2pdf } = await import('html2pdf.js/src/index.js')
-      const pdfDocument = new window.DOMParser().parseFromString(
-        buildBondApplicationPdfHtml(bondApplicationViewModel, new Date().toISOString(), {
-          bondBrand: bondApplicationPdfBondBrand,
-          referringAgency: bondHeaderReferringAgency,
-          packManifest: bondApplicationOriginatorPackManifest,
-        }),
-        'text/html',
-      )
-      const container = window.document.createElement('div')
-      pdfContainer = container
-      const style = pdfDocument.head.querySelector('style')
-      const page = pdfDocument.body.querySelector('[data-bond-application-pdf-page]') || pdfDocument.body.firstElementChild
-      if (style) container.appendChild(style.cloneNode(true))
-      if (page) container.appendChild(page.cloneNode(true))
-      container.setAttribute('aria-hidden', 'true')
-      container.style.position = 'fixed'
-      container.style.left = '0'
-      container.style.top = '0'
-      container.style.width = '794px'
-      container.style.minHeight = '1123px'
-      container.style.zIndex = '-1'
-      container.style.pointerEvents = 'none'
-      container.style.background = '#ffffff'
-      window.document.body.appendChild(container)
-      const imageLoads = Array.from(container.querySelectorAll('img')).map((image) => {
-        if (image.complete) return Promise.resolve()
-        return new Promise((resolve) => {
-          const timeout = window.setTimeout(resolve, 2500)
-          image.onload = () => {
-            window.clearTimeout(timeout)
-            resolve()
-          }
-          image.onerror = () => {
-            image.style.display = 'none'
-            window.clearTimeout(timeout)
-            resolve()
-          }
-        })
-      })
-      await Promise.all(imageLoads)
-      await html2pdf()
-        .set({
-          margin: 0,
-          filename: getBondApplicationPdfFilename(bondApplicationViewModel),
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, allowTaint: false, backgroundColor: '#ffffff', logging: false },
-          jsPDF: { unit: 'pt', format: 'a4', orientation: 'portrait' },
-          pagebreak: { mode: ['css', 'legacy'] },
-        })
-        .from(container.querySelector('[data-bond-application-pdf-page]') || container)
-        .save()
+      const { downloadBondApplication } = await import('../services/bondApplicationDownloadService.js')
+      await downloadBondApplication({ transactionId: transaction?.id, mode, brand: bondApplicationPdfBondBrand })
+      setOnboardingActionMessage(mode === 'final' ? 'Application pack downloaded with signed evidence, supporting files and a document index.' : 'Draft application PDF downloaded.')
+    } catch (downloadError) {
+      setError(downloadError?.message || 'Unable to download this application. Please retry.')
     } finally {
-      pdfContainer?.remove()
       setBondApplicationPdfBusy(false)
     }
   }
@@ -20945,6 +20892,7 @@ function AttorneyTransactionDetail() {
         participants: bondApplicationViewModel.applicants || [],
       },
       brand: bondApplicationPdfBondBrand,
+      readiness: bondApplicationViewModel.submissionReadiness,
       mode: bondApplicationViewModel.canonical?.participantEntityCompleteness?.complete === false ? 'draft' : 'originator_ready',
     }),
     [bondApplicationPdfBondBrand, bondApplicationViewModel, transaction?.id],
@@ -24396,9 +24344,12 @@ function AttorneyTransactionDetail() {
                     <ChevronRight size={14} className="rotate-90" />
                   </summary>
                   <div className="absolute right-0 z-20 mt-2 w-56 overflow-hidden rounded-[12px] border border-borderDefault bg-white py-1 shadow-[0_18px_40px_rgba(15,23,42,0.14)]">
-                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-textBody hover:bg-surfaceAlt" onClick={handleDownloadBondApplicationForm} disabled={bondApplicationPdfBusy}>
+                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-textBody hover:bg-surfaceAlt" onClick={() => void handleDownloadBondApplicationForm('draft')} disabled={bondApplicationPdfBusy}>
                       <Download size={14} />
-                      {bondApplicationPdfBusy ? 'Preparing PDF...' : 'Download Application'}
+                      {bondApplicationPdfBusy ? 'Preparing download...' : 'Download draft PDF'}
+                    </button>
+                    <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-textBody hover:bg-surfaceAlt disabled:opacity-50" onClick={() => void handleDownloadBondApplicationForm('final')} disabled={bondApplicationPdfBusy || !bondApplicationOriginatorPackManifest.ready} title={bondApplicationOriginatorPackManifest.ready ? 'Includes the application PDF, original signed evidence and supporting documents' : 'Resolve the outstanding application requirements before downloading a final pack'}>
+                      <Download size={14} /> Download final pack (.zip)
                     </button>
                     <button type="button" className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-textBody hover:bg-surfaceAlt" onClick={() => void handleShareBondApplication()}>
                       <Send size={14} />

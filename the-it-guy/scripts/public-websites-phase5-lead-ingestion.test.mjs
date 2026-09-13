@@ -44,7 +44,7 @@ assert.doesNotMatch(route, /NextResponse\.json\(\{\s*accepted:\s*true,\s*leadId/
 assert.match(form, /useRef<string \| null>/, 'form keeps one idempotency key across retries')
 assert.match(form, /pageId,/, 'form sends its published page identity')
 assert.match(form, /marketingConsent/, 'form captures separate optional marketing consent')
-assert.match(form, /Email \(email or mobile required\)/, 'form allows a minimal reachable contact method')
+assert.match(form, /name="email"[\s\S]*name="phone"/, 'form allows a minimal reachable contact method')
 assert.match(emailHandler, /idempotencyKey:[\s\S]*payload\.idempotencyKey/, 'email provider calls are idempotent')
 assert.match(environment, /WEBSITES_LEAD_FINGERPRINT_SECRET/, 'production environment documents the abuse-control secret')
 

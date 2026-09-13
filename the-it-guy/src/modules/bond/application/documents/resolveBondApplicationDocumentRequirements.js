@@ -119,7 +119,16 @@ export function resolveBondApplicationDocumentRequirements({
   documentRuleContract = BOND_APPLICATION_DOCUMENT_RULES,
   participantRole = 'primary_applicant',
   participantContext = null,
+  includeAllParticipants = false,
 } = {}) {
+  if (includeAllParticipants) {
+    const contexts = [{ participantRole: 'primary_applicant' }]
+    if (applicationState.participants?.coApplicant) contexts.push({ participantRole: 'co_applicant' })
+    ;(applicationState.participants?.sureties || []).forEach((participant, index) => contexts.push({ participantRole: 'surety', participantKey: participant.participantKey || `surety:${index + 1}`, participantPath: `participants.sureties.${index}`, canEditShared: false }))
+    const results = contexts.map((context) => resolveBondApplicationDocumentRequirements({ applicationState, documentRuleContract, participantRole: context.participantRole, participantContext: context }))
+    const activeRequirements = [...new Map(results.flatMap((result) => result.activeRequirements).map((requirement) => [requirement.key, requirement])).values()]
+    return { ...results[0], activeRequirements, requiredRequirements: activeRequirements.filter((item) => item.required), optionalRequirements: activeRequirements.filter((item) => !item.required), diagnostics: results.flatMap((result) => result.diagnostics) }
+  }
   const requirementProfileResolution = applicationState?.requirementProfile || resolveBondOriginatorRequirementProfile()
   const profiledContract = applyBondOriginatorRequirementProfile({
     baselineRules: documentRuleContract,

@@ -56,6 +56,7 @@ const readyManifest = buildBondApplicationOriginatorPackManifest({
   snapshot,
   brand,
   generatedAt: '2026-08-28T12:00:00.000Z',
+  readiness: { stage: 'bank_submission', ready: true, issues: [] },
   mode: 'originator_ready',
 })
 assert.equal(BOND_APPLICATION_ORIGINATOR_PACK_VERSION, 'phase-5-v1')
@@ -97,3 +98,7 @@ assert.match(draftHtml, /Another Originator/)
 assert.doesNotMatch(draftHtml, /aria-label="BetterBond"/)
 
 console.log('Phase 5 downloadable originator application pack passed')
+
+const unassessed = buildBondApplicationOriginatorPackManifest({ applicationState: state, snapshot, brand, mode: 'originator_ready' })
+assert.equal(unassessed.ready, false)
+assert.ok(unassessed.blockers.some((item) => item.code === 'submission_readiness_required'))

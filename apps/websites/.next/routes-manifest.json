@@ -31,6 +31,14 @@
       "namedRegex": "^/blog/(?<nxtPslug>[^/]+?)(?:/)?$"
     },
     {
+      "page": "/blog/[slug]/opengraph-image",
+      "regex": "^/blog/([^/]+?)/opengraph\\-image(?:/)?$",
+      "routeKeys": {
+        "nxtPslug": "nxtPslug"
+      },
+      "namedRegex": "^/blog/(?<nxtPslug>[^/]+?)/opengraph\\-image(?:/)?$"
+    },
+    {
       "page": "/properties/[slug]",
       "regex": "^/properties/([^/]+?)(?:/)?$",
       "routeKeys": {

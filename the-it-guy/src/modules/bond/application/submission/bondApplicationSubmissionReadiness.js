@@ -1,7 +1,14 @@
+import { mergeParticipantSectionsToParticipant } from '../participants/bondApplicationParticipantDomain.js'
+import { buildBondApplicationParticipantEntityCompleteness } from '../participants/bondApplicationParticipantEntityCompleteness.js'
 import { validateBondApplicationSteps } from '../flow/bondApplicationScreenValidation.js'
+import { resolveBondApplicationDocumentRequirements } from '../documents/resolveBondApplicationDocumentRequirements.js'
+import { buildBondApplicationDocumentChecklist } from '../documents/buildBondApplicationDocumentChecklist.js'
 import { calculateBondApplicationDocumentProgress } from '../documents/bondApplicationDocumentProgress.js'
 import { BOND_APPLICATION_INTENTS } from '../bondApplicationState.js'
-import { validateBondApplicationDeclarationAcceptance } from './bondApplicationDeclarations.js'
+import { resolveBondApplicationDeclarations, validateBondApplicationDeclarationAcceptance } from './bondApplicationDeclarations.js'
+import { buildBondApplicationSubmissionSnapshot } from './buildBondApplicationSubmissionSnapshot.js'
+import { canonicalizeBondApplicationSnapshot } from './bondApplicationSnapshotHash.js'
+import { BOND_APPLICATION_DOCUMENT_TIMING } from '../documents/bondApplicationDocumentRules.js'
 import { BOND_APPLICATION_SUBMISSION_STATUSES } from './bondApplicationSubmissionLifecycle.js'
 
 function present(value) {
@@ -80,18 +87,22 @@ export function resolveBondApplicationSignerIdentities(applicationState = {}) {
 
 export function validateBondApplicationSubmissionReadiness({
   applicationState = {},
-  documentChecklist = {},
+  documentChecklist = null,
   selectedBankIds = applicationState?.application?.selectedBankIds || [],
   signerIdentity = resolveBondApplicationSignerIdentity(applicationState),
-  declarations = [],
+  declarations = resolveBondApplicationDeclarations({ applicationState }),
   declarationValues = {},
   latestSaveStatus = 'saved',
   submission = null,
   requireSelectedBank = !isPreApprovalOnlyApplication(applicationState),
   participantReadiness = [],
   reviewContextHash = null,
+  stage = 'signature',
 } = {}) {
   const issues = []
+  if (!['signature', 'bank_submission'].includes(stage)) throw new Error('Unknown bond readiness stage.')
+  const bankSubmission = stage === 'bank_submission'
+  documentChecklist ||= buildBondApplicationDocumentChecklist({ activeRequirements: resolveBondApplicationDocumentRequirements({ applicationState, includeAllParticipants: bankSubmission }).activeRequirements })
   const interpretationIssues = Array.isArray(applicationState?.interpretation?.blockingIssues)
     ? applicationState.interpretation.blockingIssues
     : []
@@ -115,9 +126,7 @@ export function validateBondApplicationSubmissionReadiness({
       target: applicationState?.requirementProfile?.identity?.company || null,
     }))
   })
-  const participantEntityIssues = Array.isArray(applicationState?.participantEntityCompleteness?.blockingIssues)
-    ? applicationState.participantEntityCompleteness.blockingIssues
-    : []
+  const participantEntityIssues = buildBondApplicationParticipantEntityCompleteness(applicationState).blockingIssues
   participantEntityIssues.forEach((item) => {
     issues.push(issue({
       category: 'participant_entity',
@@ -138,12 +147,31 @@ export function validateBondApplicationSubmissionReadiness({
     }))
   })
 
+  // Final submission validates every participant using the same visible question rules.
+  if (bankSubmission) {
+    const others = [
+      ...(applicationState.participants?.coApplicant ? [{ participant: applicationState.participants.coApplicant, path: 'participants.coApplicant' }] : []),
+      ...(applicationState.participants?.sureties || []).map((participant, index) => ({ participant, path: `participants.sureties.${index}` })),
+    ]
+    for (const { participant, path } of others) {
+      const projected = { ...applicationState, participants: { ...applicationState.participants, primaryApplicant: participant } }
+      for (const item of validateBondApplicationSteps({ applicationState: projected, throughStepOrder: 6 }).issues) {
+        if (!item.path?.startsWith('participants.primaryApplicant')) continue
+        issues.push(issue({ category: 'application', code: item.code, message: `${path === 'participants.coApplicant' ? 'Co-applicant' : 'Surety'}: ${item.message}`, path: item.path.replace('participants.primaryApplicant', path) }))
+      }
+    }
+  }
+
   const documentProgress = calculateBondApplicationDocumentProgress(documentChecklist)
-  documentProgress.blockingMissing.forEach((item) => {
+  const documentBlockers = bankSubmission
+    ? (documentChecklist.items || []).filter((item) => item.requirement?.required && item.requirement?.active !== false &&
+      item.requirement.requiredBefore !== BOND_APPLICATION_DOCUMENT_TIMING.requestedAfterOriginatorReview && !item.complete)
+    : documentProgress.blockingMissing
+  documentBlockers.forEach((item) => {
     issues.push(issue({
       category: 'documents',
       code: 'blocking_document_missing',
-      message: `${item.requirement?.title || 'A required document'} is needed before signing.`,
+      message: `${item.requirement?.title || 'A required document'} is needed before ${bankSubmission ? 'bank submission' : 'signing'}.`,
       stepKey: 'documents',
       screenKey: 'document_checklist',
       target: item.requirement?.key || null,
@@ -217,7 +245,7 @@ export function validateBondApplicationSubmissionReadiness({
     }
   })
 
-  validateBondApplicationDeclarationAcceptance({
+  if (!bankSubmission) validateBondApplicationDeclarationAcceptance({
     declarations,
     values: declarationValues,
     participantRole: signerIdentities.some((identity) => identity?.participantRole === 'surety') ? 'surety' : 'primary_applicant',
@@ -241,7 +269,7 @@ export function validateBondApplicationSubmissionReadiness({
   }
 
   const status = String(submission?.status || '').trim().toLowerCase()
-  if (status === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature) {
+  if (!bankSubmission && status === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature) {
     issues.push(issue({
       category: 'status',
       code: 'active_signature_request',
@@ -250,7 +278,7 @@ export function validateBondApplicationSubmissionReadiness({
       screenKey: 'awaiting_signature',
     }))
   }
-  if (status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted || applicationState?.meta?.submittedAt) {
+  if (!bankSubmission && (status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted || applicationState?.meta?.submittedAt)) {
     issues.push(issue({
       category: 'status',
       code: 'already_submitted',
@@ -260,8 +288,55 @@ export function validateBondApplicationSubmissionReadiness({
     }))
   }
 
+  if (bankSubmission) {
+    const snapshot = submission?.snapshot_json || submission?.snapshot || {}
+    const current = buildBondApplicationSubmissionSnapshot({ applicationState })
+    const comparable = (value) => ({
+      transactionId: value.transaction?.id || value.application?.transactionId,
+      intent: value.applicationIntent || 'bond_application',
+      property: value.property || value.shared?.property,
+      purchaserEntity: value.purchaserEntity || value.shared?.purchaserEntity,
+      finance: value.finance || value.shared?.finance,
+      selectedBanks: value.selectedBanks,
+      participants: value.participants?.map((participant) => ({
+        role: participant.participantRole || participant.role,
+        answers: participant.answers?.personal_contact ? buildBondApplicationSubmissionSnapshot({ applicationState: { participants: { primaryApplicant: mergeParticipantSectionsToParticipant(participant.answers) } } }).participants[0].answers : participant.answers,
+      })),
+    })
+    if (!['signed', 'submitted'].includes(status) || !(submission?.signed_at || submission?.signedAt)) {
+      issues.push(issue({ category: 'signatures', code: 'signatures_required', message: 'Complete all required signatures before bank submission.' }))
+    }
+    if (!(snapshot.transaction?.id || snapshot.application?.transactionId) || canonicalizeBondApplicationSnapshot(comparable(snapshot)) !== canonicalizeBondApplicationSnapshot(comparable(current))) {
+      issues.push(issue({ category: 'signatures', code: 'signed_version_not_current', message: 'Review and sign the current application version before bank submission.' }))
+    }
+    const manifest = submission?.signer_manifest_json || snapshot.signerManifest || []
+    for (const identity of resolveBondApplicationSignerIdentities(applicationState)) {
+      const signer = manifest.find((item) => item.participantRole === identity.participantRole &&
+        (identity.participantRole !== 'surety' || item.participantKey === identity.participantKey) &&
+        String(item.email || '').toLowerCase() === String(identity.email || '').toLowerCase())
+      if (!signer) issues.push(issue({ category: 'signatures', code: 'required_signer_missing', message: `The signed version must include the ${identity.participantRole.replaceAll('_', ' ')}.`, target: identity.participantKey || identity.participantRole }))
+      const requiredDeclarations = resolveBondApplicationDeclarations({ applicationState, participantRole: identity.participantRole })
+      const evidence = submission?.declarations_json || snapshot.declarations || []
+      const values = Object.fromEntries(requiredDeclarations.map((declaration) => [declaration.key,
+        evidence.some((item) => item.key === declaration.key && item.version === declaration.version && item.accepted === true && item.acceptedAt &&
+          item.participantRole === identity.participantRole &&
+          (identity.participantRole !== 'surety' || item.participantKey === identity.participantKey)),
+      ]))
+      for (const item of validateBondApplicationDeclarationAcceptance({ declarations: requiredDeclarations, values, participantRole: identity.participantRole }).issues) {
+        issues.push(issue({ category: 'declarations', code: item.code, message: item.message, target: identity.participantKey || identity.participantRole }))
+      }
+    }
+  }
+  const hasApplicationIssues = issues.some((item) => !['documents', 'signatures', 'status', 'declarations'].includes(item.category))
+  const readinessStatus = issues.length === 0 ? (bankSubmission ? 'ready_for_submission' : 'ready_to_sign')
+    : hasApplicationIssues ? 'draft' : 'awaiting_documents_or_signatures'
+  const label = { draft: 'Draft', awaiting_documents_or_signatures: 'Awaiting documents / signatures', ready_to_sign: 'Ready to sign', ready_for_submission: 'Ready for submission' }[readinessStatus]
+
   return {
     ready: issues.length === 0,
+    stage,
+    status: readinessStatus,
+    label,
     issues,
     documentProgress,
     signerIdentity: Array.isArray(signerIdentity) ? signerIdentity : signerIdentity,

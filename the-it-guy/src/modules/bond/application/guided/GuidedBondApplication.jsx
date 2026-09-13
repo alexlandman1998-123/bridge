@@ -1,3 +1,4 @@
+import BondApplicationBuyerNotices from '../../../../components/bond/BondApplicationBuyerNotices'
 import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronRight, FileText, PenLine, RotateCcw, ShieldCheck, UploadCloud } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
@@ -924,6 +925,7 @@ function ReviewOverviewScreen({ submissionController, onEditSection }) {
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Review your application</h2>
         <p className="mt-2 text-sm leading-6 text-[#5f7288]">Check the information that will be used to prepare the application document for signing.</p>
       </div>
+      <p role="status" className="text-sm font-semibold text-slate-700">{readiness.label}</p>
       {readinessAttempted && readiness.issues.length ? (
         <div className="rounded-[14px] border border-[#f2d6a6] bg-[#fff9ed] p-4" role="alert">
           <p className="text-sm font-semibold text-[#50360c]">A few details still need your attention before the application can be signed.</p>
@@ -999,14 +1001,14 @@ function DeclarationsScreen({ submissionController }) {
 }
 
 function PrepareSignatureScreen({ submissionController }) {
-  const { readiness, preparing, error, submission, prepareForSignature, startSigning } = submissionController
+  const { readiness, preparing, error, submission, prepareForSignature, startSigning, signingAvailability } = submissionController
   const status = String(submission?.status || '').toLowerCase()
   const awaiting = status === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Prepare for signing</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">We will prepare a locked application document from the information you reviewed. Signing happens in the secure signing page.</p>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">{signingAvailability.available ? 'We will prepare a locked application document from the information you reviewed.' : signingAvailability.message}</p>
       </div>
       {!readiness.ready && readiness.issues.length ? (
         <div className="rounded-[14px] border border-[#f2d6a6] bg-[#fff9ed] p-4" role="alert">
@@ -1024,12 +1026,12 @@ function PrepareSignatureScreen({ submissionController }) {
       ) : null}
       <div className="flex flex-wrap gap-2">
         {!awaiting ? (
-          <button type="button" disabled={preparing} onClick={() => void prepareForSignature()} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#9aa9b8]">
+          <button type="button" disabled={preparing || !signingAvailability.available} onClick={() => void prepareForSignature()} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#9aa9b8]">
             <FileText size={16} aria-hidden="true" />
             {preparing ? 'Preparing...' : 'Prepare application'}
           </button>
         ) : (
-          <button type="button" onClick={startSigning} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white">
+          <button type="button" disabled={!signingAvailability.available} onClick={startSigning} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white">
             Sign application
           </button>
         )}
@@ -1039,12 +1041,12 @@ function PrepareSignatureScreen({ submissionController }) {
 }
 
 function AwaitingSignatureScreen({ submissionController }) {
-  const { submission, refreshing, refreshStatus, startSigning, makeChanges, error } = submissionController
+  const { submission, refreshing, refreshStatus, startSigning, makeChanges, error, signingAvailability } = submissionController
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Awaiting your signature</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">Your application has been prepared from the information you reviewed. Sign it to complete your submission.</p>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">{signingAvailability.available ? 'Your application has been prepared from the information you reviewed.' : signingAvailability.message}</p>
       </div>
       <dl className="grid gap-3 sm:grid-cols-2">
         <DetailRow label="Submission version" value={submission?.submission_version || submission?.submissionVersion || 'Not prepared'} />
@@ -1053,7 +1055,7 @@ function AwaitingSignatureScreen({ submissionController }) {
       </dl>
       {error ? <div className="rounded-[14px] border border-[#f1d4cf] bg-[#fff8f6] p-4 text-sm text-[#b5472d]" role="alert">{error}</div> : null}
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={startSigning} className="rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white">Sign application</button>
+        <button type="button" disabled={!signingAvailability.available} onClick={startSigning} className="rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white">Sign application</button>
         <button type="button" onClick={() => void refreshStatus()} className="rounded-[12px] border border-[#d1deeb] px-4 py-2 text-sm font-semibold text-[#21384d]">{refreshing ? 'Refreshing...' : 'Refresh status'}</button>
         <button type="button" onClick={() => void makeChanges()} className="rounded-[12px] border border-[#f2d6a6] px-4 py-2 text-sm font-semibold text-[#6f5120]">Make changes</button>
       </div>
@@ -1125,6 +1127,7 @@ function CurrentScreen({
 }
 
 export default function GuidedBondApplication({
+  showHandoffNotices = true,
   portal,
   token,
   saveClientPortalOnboardingDraft,
@@ -1232,6 +1235,7 @@ export default function GuidedBondApplication({
 
   return (
     <section className="space-y-5 rounded-[22px] border border-[#dbe5ef] bg-[#f8fbff] px-4 py-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)] sm:px-5 sm:py-5">
+      {showHandoffNotices && token ? <BondApplicationBuyerNotices token={token} /> : null}
       <header className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-3">
         <button type="button" onClick={onBackToPortal} className="inline-flex min-h-[38px] items-center gap-2 rounded-[10px] border border-[#d1deeb] bg-white px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-[#f8fbff]">
           <ArrowLeft size={14} aria-hidden="true" />
@@ -1303,7 +1307,7 @@ export default function GuidedBondApplication({
           </button>
           <div className="flex items-center gap-3">
             <span className="hidden text-xs font-medium text-[#6b7d93] sm:inline">Saved through your secure application link.</span>
-            <button type="button" onClick={() => void handleContinue()} disabled={disablePrimary} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]">
+            <button type="button" onClick={() => void handleContinue()} disabled={disablePrimary || (['prepare_signature', 'awaiting_signature'].includes(controller.currentScreenKey) && !submissionController.signingAvailability.available)} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#2d475d] disabled:cursor-not-allowed disabled:bg-[#9aa9b8]">
               {controller.currentScreenKey === 'document_checklist' ? 'Continue to review' : controller.currentScreenKey === 'prepare_signature' ? 'Prepare application' : controller.currentScreenKey === 'awaiting_signature' ? 'Sign application' : controller.currentScreenKey === 'phase3_documents_handoff' ? 'Continue to documents' : isTransition ? 'Continue application' : 'Continue'}
               <ChevronRight size={15} aria-hidden="true" />
             </button>
