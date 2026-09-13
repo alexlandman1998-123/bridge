@@ -1,5 +1,6 @@
 import { isSupabaseConfigured, supabase } from '../../../lib/supabaseClient.js'
 import { REVO_ORGANISATION_ID } from '../revoExtensionRegistry.js'
+import { buildRevoInboxWorkflowRequest } from './workflowActions.js'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const TABLE_UNAVAILABLE_CODES = new Set(['42P01', '42703', 'PGRST204'])
@@ -311,4 +312,14 @@ export async function markRevoInboxConversationRead({ organisationId, conversati
     .maybeSingle())
   if (!data) throw new Error('The conversation could not be marked as read.')
   return mapConversation(data)
+}
+
+export async function createRevoInboxWorkflowRequest(input = {}) {
+  const client = requireClient()
+  const data = throwIfError(await client
+    .from('revo_inbox_workflow_requests')
+    .insert(buildRevoInboxWorkflowRequest(input))
+    .select('id, action_type, status, listing_id, lead_id, transaction_id, requested_at')
+    .single())
+  return data
 }
