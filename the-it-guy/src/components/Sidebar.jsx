@@ -547,12 +547,21 @@ function Sidebar() {
         organisation,
         organisationSettings,
       })
-        ? [...moduleFilteredItems, {
+        ? (() => {
+            const inboxItem = {
             key: 'revo_shared_inbox',
             label: 'Inbox',
             to: '/revo/inbox',
             activeMatch: ['/revo/inbox'],
-          }]
+            }
+            const dashboardIndex = moduleFilteredItems.findIndex((item) => item.key === 'dashboard')
+            if (dashboardIndex < 0) return [...moduleFilteredItems, inboxItem]
+            return [
+              ...moduleFilteredItems.slice(0, dashboardIndex + 1),
+              inboxItem,
+              ...moduleFilteredItems.slice(dashboardIndex + 1),
+            ]
+          })()
         : moduleFilteredItems
       return filterNavigationItems(workspaceItems, navPermissionContext)
     },
