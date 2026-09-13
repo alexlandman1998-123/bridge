@@ -12,6 +12,7 @@ import {
   Files,
   Gavel,
   Handshake,
+  Inbox,
   KanbanSquare,
   KeyRound,
   LayoutDashboard,
@@ -45,6 +46,7 @@ import { filterNavigationItems } from '../auth/permissions/navigationPermissions
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from '../lib/businessWorkspaceAccess'
 import { preloadAgencyLeadsRoute } from '../routes/leadsRouteLoader'
 import { preloadAgentTransactionsRoute } from '../routes/transactionsRouteLoader'
+import { isWorkspaceExtensionFeatureEnabled, REVO_EXTENSION_KEY } from '../modules/revo/revoExtensionRegistry'
 
 const ICON_BY_KEY = {
   dashboard: LayoutDashboard,
@@ -90,6 +92,7 @@ const ICON_BY_KEY = {
   clients_contact_history: ClipboardList,
   financials: Wallet,
   marketing: Megaphone,
+  revo_shared_inbox: Inbox,
   marketing_workspace: Megaphone,
   marketing_campaigns: Megaphone,
   marketing_email: Mail,
@@ -466,7 +469,13 @@ function OrganisationWorkspaceSwitcher({ currentWorkspace = null, memberships = 
 function Sidebar() {
   const workspaceContext = useWorkspace()
   const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
-  const { branding, loading: organisationLoading, membershipRole: organisationMembershipRole } = useOrganisation()
+  const {
+    branding,
+    loading: organisationLoading,
+    membershipRole: organisationMembershipRole,
+    organisation,
+    organisationSettings,
+  } = useOrganisation()
   const attorneyModuleState = useAttorneyModuleSettings({ enabled: role === 'attorney' })
   const location = useLocation()
   const navigate = useNavigate()
@@ -534,9 +543,20 @@ function Sidebar() {
       const moduleFilteredItems = role === 'attorney'
         ? filterAttorneyModuleNavigationItems(items, attorneyModuleState.modules)
         : items
-      return filterNavigationItems(moduleFilteredItems, navPermissionContext)
+      const workspaceItems = isWorkspaceExtensionFeatureEnabled(REVO_EXTENSION_KEY, 'shared_inbox', {
+        organisation,
+        organisationSettings,
+      })
+        ? [...moduleFilteredItems, {
+            key: 'revo_shared_inbox',
+            label: 'Inbox',
+            to: '/revo/inbox',
+            activeMatch: ['/revo/inbox'],
+          }]
+        : moduleFilteredItems
+      return filterNavigationItems(workspaceItems, navPermissionContext)
     },
-    [attorneyModuleState.modules, baseRole, membershipRole, navCurrentMembership, navPermissionContext, profile, role, workspaceContext.businessWorkspaceId, workspaceContext.rentalOperatingMode],
+    [attorneyModuleState.modules, baseRole, membershipRole, navCurrentMembership, navPermissionContext, organisation, organisationSettings, profile, role, workspaceContext.businessWorkspaceId, workspaceContext.rentalOperatingMode],
   )
   const isIntelligencePath =
     location.pathname.startsWith('/attorney/intelligence') ||
