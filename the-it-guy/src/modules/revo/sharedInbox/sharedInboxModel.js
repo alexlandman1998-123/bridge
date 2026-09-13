@@ -1,6 +1,6 @@
 export const REVO_SHARED_INBOX_CHANNELS = Object.freeze(['email', 'whatsapp'])
-export const REVO_SHARED_INBOX_CONVERSATION_STATUSES = Object.freeze(['open', 'closed', 'snoozed'])
-export const REVO_SHARED_INBOX_MESSAGE_DIRECTIONS = Object.freeze(['inbound', 'outbound'])
+export const REVO_SHARED_INBOX_CONVERSATION_STATUSES = Object.freeze(['open', 'waiting_on_us', 'waiting_on_client', 'closed', 'spam'])
+export const REVO_SHARED_INBOX_MESSAGE_DIRECTIONS = Object.freeze(['inbound', 'outbound', 'internal', 'system'])
 
 function text(value = '') {
   return String(value || '').trim()
@@ -44,7 +44,12 @@ export function normalizeSharedInboxConversation(input = {}) {
     subject: nullableText(input.subject),
     status: oneOf(input.status, REVO_SHARED_INBOX_CONVERSATION_STATUSES, 'open'),
     assignedUserId: nullableText(input.assignedUserId || input.assigned_user_id),
+    branchId: nullableText(input.branchId || input.branch_id),
+    assignedTeamId: nullableText(input.assignedTeamId || input.assigned_team_id),
+    unreadCount: Math.max(0, Number(input.unreadCount ?? input.unread_count) || 0),
     lastMessageAt: isoTime(input.lastMessageAt || input.last_message_at),
+    lastInboundAt: isoTime(input.lastInboundAt || input.last_inbound_at),
+    lastOutboundAt: isoTime(input.lastOutboundAt || input.last_outbound_at),
     lastMessagePreview: nullableText(input.lastMessagePreview || input.last_message_preview),
   }
 }

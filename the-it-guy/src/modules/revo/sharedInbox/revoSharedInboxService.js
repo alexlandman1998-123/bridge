@@ -58,7 +58,12 @@ function mapConversation(row = {}) {
     subject: text(row.subject),
     status: text(row.status) || 'open',
     assignedUserId: text(row.assigned_user_id),
+    branchId: text(row.branch_id),
+    assignedTeamId: text(row.assigned_team_id),
+    unreadCount: Math.max(0, Number(row.unread_count) || 0),
     lastMessageAt: row.last_message_at || null,
+    lastInboundAt: row.last_inbound_at || null,
+    lastOutboundAt: row.last_outbound_at || null,
     lastMessagePreview: text(row.last_message_preview),
     createdAt: row.created_at || null,
   }
@@ -156,7 +161,7 @@ export function buildPrivateInboxMessage({ organisationId, conversation, actorUs
     organisation_id: requireRevoOrganisationId(organisationId),
     conversation_id: text(conversation.id),
     channel: text(conversation.channel),
-    direction: 'outbound',
+    direction: normalizedType === 'note' ? 'internal' : 'outbound',
     message_type: normalizedType,
     provider_key: text(conversation.providerKey),
     sender_address: text(conversation.channelAddress),
@@ -171,10 +176,10 @@ export function buildPrivateInboxMessage({ organisationId, conversation, actorUs
 export async function loadRevoInbox(organisationId) {
   const client = requireClient()
   const resolvedOrganisationId = requireRevoOrganisationId(organisationId)
-  const [conversationsResult, messagesResult, activityResult] = await Promise.all([
+  const [conversationsResult, messagesResult, activityResult, associationsResult] = await Promise.all([
     client
       .from('revo_inbox_conversations')
-      .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, last_message_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
+      .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, assigned_team_id, branch_id, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
       .eq('organisation_id', resolvedOrganisationId)
       .order('last_message_at', { ascending: false, nullsFirst: false }),
     client
@@ -187,14 +192,27 @@ export async function loadRevoInbox(organisationId) {
       .select('id, conversation_id, actor_user_id, action, metadata_json, created_at')
       .eq('organisation_id', resolvedOrganisationId)
       .order('created_at', { ascending: true }),
+    client
+      .from('revo_inbox_associations')
+      .select('id, conversation_id, entity_type, entity_id, is_primary, created_at')
+      .eq('organisation_id', resolvedOrganisationId)
+      .order('created_at', { ascending: true }),
   ])
 
-  const firstError = conversationsResult.error || messagesResult.error || activityResult.error
+  const firstError = conversationsResult.error || messagesResult.error || activityResult.error || associationsResult.error
   if (firstError) throw firstError
   return {
     conversations: (conversationsResult.data || []).map(mapConversation),
     messages: (messagesResult.data || []).map(mapMessage),
     activity: (activityResult.data || []).map(mapActivity),
+    associations: (associationsResult.data || []).map((row) => ({
+      id: text(row.id),
+      conversationId: text(row.conversation_id),
+      entityType: text(row.entity_type),
+      entityId: text(row.entity_id),
+      isPrimary: row.is_primary === true,
+      createdAt: row.created_at || null,
+    })),
   }
 }
 
@@ -250,7 +268,7 @@ export async function updateRevoInboxConversation({ organisationId, conversation
   const patch = {}
   if (status !== undefined) {
     const normalizedStatus = text(status).toLowerCase()
-    if (!['open', 'closed', 'snoozed'].includes(normalizedStatus)) throw new Error('Choose an open, closed, or snoozed status.')
+    if (!['open', 'waiting_on_us', 'waiting_on_client', 'closed', 'spam'].includes(normalizedStatus)) throw new Error('Choose a valid conversation status.')
     patch.status = normalizedStatus
     patch.closed_at = normalizedStatus === 'closed' ? new Date().toISOString() : null
     patch.closed_by = normalizedStatus === 'closed' ? (await client.auth.getUser()).data.user?.id || null : null
@@ -265,7 +283,7 @@ export async function updateRevoInboxConversation({ organisationId, conversation
     .update(patch)
     .eq('id', text(conversationId))
     .eq('organisation_id', requireRevoOrganisationId(organisationId))
-    .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, last_message_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
+    .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, assigned_team_id, branch_id, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
     .maybeSingle())
   if (!data) throw new Error('The conversation could not be updated. It may no longer be accessible.')
   return mapConversation(data)
@@ -280,4 +298,17 @@ export async function saveRevoInboxPrivateMessage(input = {}) {
     .select('id, conversation_id, channel, direction, message_type, sender_address, recipient_addresses, subject, body_text, delivery_status, occurred_at, created_by')
     .single())
   return mapMessage(data)
+}
+
+export async function markRevoInboxConversationRead({ organisationId, conversationId } = {}) {
+  const client = requireClient()
+  const data = throwIfError(await client
+    .from('revo_inbox_conversations')
+    .update({ unread_count: 0, last_read_at: new Date().toISOString() })
+    .eq('id', text(conversationId))
+    .eq('organisation_id', requireRevoOrganisationId(organisationId))
+    .select('id, organisation_id, channel_id, contact_name, contact_address, subject, status, assigned_user_id, assigned_team_id, branch_id, unread_count, last_message_at, last_inbound_at, last_outbound_at, last_message_preview, created_at, revo_inbox_channels!inner(channel, provider_key, address)')
+    .maybeSingle())
+  if (!data) throw new Error('The conversation could not be marked as read.')
+  return mapConversation(data)
 }

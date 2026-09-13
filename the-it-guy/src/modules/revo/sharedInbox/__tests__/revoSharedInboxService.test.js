@@ -15,7 +15,7 @@ const conversation = {
 const note = buildPrivateInboxMessage({ organisationId, conversation, actorUserId, bodyText: 'Call after 3pm.', type: 'note' })
 assert.equal(note.message_type, 'note')
 assert.equal(note.delivery_status, 'queued')
-assert.equal(note.direction, 'outbound')
+assert.equal(note.direction, 'internal')
 assert.deepEqual(note.recipient_addresses, ['lead@example.test'])
 
 const draft = buildPrivateInboxMessage({ organisationId, conversation, actorUserId, bodyText: 'Thanks for your enquiry.', type: 'draft' })
