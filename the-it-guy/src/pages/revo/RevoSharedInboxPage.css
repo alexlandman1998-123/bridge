@@ -578,6 +578,25 @@
 .revo-details-heading strong {
   font-size: 14px;
 }
+.revo-details-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid #dce5e8;
+  border-radius: 6px;
+  background: #fff;
+  color: #4c6270;
+  cursor: pointer;
+}
+.revo-details-toggle svg {
+  transform: rotate(180deg);
+}
+.revo-details-edit {
+  margin-left: 10px;
+}
 .revo-details-heading button,
 .revo-section-heading button {
   padding: 0;
@@ -740,12 +759,54 @@
   opacity: 0.55;
   cursor: not-allowed;
 }
+.revo-details-collapsed {
+  grid-template-columns: 215px minmax(280px, 340px) minmax(470px, 1fr) 48px;
+}
+.revo-details.collapsed {
+  padding: 12px 8px;
+  overflow: hidden;
+}
+.revo-details.collapsed .revo-details-heading {
+  justify-content: center;
+}
+.revo-details.collapsed .revo-details-heading strong,
+.revo-details.collapsed .revo-details-edit,
+.revo-details.collapsed .revo-details-content {
+  display: none;
+}
+.revo-details.collapsed .revo-details-toggle {
+  margin: 0;
+}
+.revo-details.collapsed .revo-details-toggle svg {
+  transform: none;
+}
+
+/* The Arch9 shell owns the available height. Keep the inbox inside it and
+   reserve scrolling for its list and thread panes. */
+.ui-page-scroll:has(.revo-inbox-page) {
+  display: flex;
+  overflow: hidden !important;
+  padding: 0 !important;
+}
+.ui-page-scroll:has(.revo-inbox-page) > .ui-content-container {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  padding: 0 !important;
+}
+.ui-page-scroll:has(.revo-inbox-page) .revo-inbox-page {
+  height: 100% !important;
+  flex: 1;
+}
 @media (max-width: 1380px) {
   .revo-inbox-shell {
     grid-template-columns: 195px minmax(255px, 315px) minmax(400px, 1fr);
   }
   .revo-details {
     display: none;
+  }
+  .revo-details-collapsed {
+    grid-template-columns: 195px minmax(255px, 315px) minmax(400px, 1fr);
   }
 }
 @media (max-width: 900px) {
