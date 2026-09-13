@@ -57,13 +57,14 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
   if (!siteResult.data) return { mode: 'ready_to_create', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '' }
 
   const site = siteResult.data
-  const [domainsResult, revisionsResult, pagesResult, eventsResult, managementEventsResult, analyticsResult] = await Promise.all([
+  const [domainsResult, revisionsResult, pagesResult, eventsResult, managementEventsResult, analyticsResult, leadsResult] = await Promise.all([
     supabase.from('website_domains').select('id, hostname, domain_kind, status, is_primary, dns_instructions, verified_at, created_at, updated_at').eq('website_site_id', site.id).order('created_at'),
     supabase.from('website_site_revisions').select('id, revision_number, status, brand_json, source_revision_id, content_fingerprint, published_at, published_by, archived_at, updated_at').eq('website_site_id', site.id).order('revision_number', { ascending: false }),
     supabase.from('website_pages').select('id, slug, page_kind, title, seo_title, seo_description, social_image_url, content_blocks, revision_id, updated_at').eq('website_site_id', site.id).order('page_kind').order('slug'),
     supabase.from('website_publication_events').select('id, action, from_revision_id, source_revision_id, to_revision_id, content_fingerprint, metadata_json, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }).limit(12),
     supabase.from('website_management_events').select('id, action, metadata_json, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }).limit(12),
     supabase.rpc('website_dashboard_analytics', { p_website_site_id: site.id, p_days: 30 }),
+    supabase.rpc('website_workspace_leads', { p_website_site_id: site.id, p_days: 30 }),
   ])
   if (domainsResult.error) throw domainsResult.error
   if (revisionsResult.error) throw revisionsResult.error
@@ -101,6 +102,8 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
     publicationReadiness,
     analytics: analyticsResult.data || null,
     analyticsError: analyticsResult.error?.message || '',
+    websiteLeads: leadsResult.data || [],
+    websiteLeadsError: leadsResult.error?.message || '',
   }
 }
 
