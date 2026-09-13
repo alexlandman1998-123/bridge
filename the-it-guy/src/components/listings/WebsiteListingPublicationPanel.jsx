@@ -15,7 +15,7 @@ const INFRASTRUCTURE_BLOCKERS = [
   'Activate a website domain',
 ]
 
-export default function WebsiteListingPublicationPanel({ listingId, listingTitle, preparationBlockers = [], onPrepare }) {
+export default function WebsiteListingPublicationPanel({ listingId, listingTitle, preparationBlockers = [], onPrepare, variant = 'panel' }) {
   const [publication, setPublication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
@@ -71,6 +71,59 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     } finally {
       setAction('')
     }
+  }
+
+  const statusLabel = loading
+    ? 'Checking…'
+    : effectivelyLive
+      ? stale ? 'Update available' : 'Live on website'
+      : published ? 'Hidden by readiness' : 'Not published'
+  const statusClass = effectivelyLive && !stale
+    ? 'text-[#18713e]'
+    : stale || published
+      ? 'text-[#9a5b13]'
+      : 'text-[#526a82]'
+  const statusDotClass = effectivelyLive && !stale
+    ? 'bg-[#1f9d64]'
+    : stale || published
+      ? 'bg-[#d99321]'
+      : 'border border-[#aebdca] bg-white'
+
+  if (variant === 'channel') {
+    return (
+      <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 lg:grid-cols-[minmax(230px,0.9fr)_minmax(150px,190px)_minmax(260px,1fr)_minmax(130px,170px)_auto] lg:items-center">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]">
+            <Globe2 size={21} />
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold leading-5 text-[#142132]">Agency Website</p>
+            <p className="truncate text-xs leading-5 text-[#607387]">Your public property website</p>
+          </div>
+        </div>
+        <div className="min-w-0 md:justify-self-start">
+          <p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusClass}`}>
+            <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
+            {statusLabel}
+          </p>
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold leading-5 text-[#243d56]">{effectivelyLive ? stale ? 'Current CRM changes need publishing' : 'Listing is live on your website' : 'Publish this listing to your website'}</p>
+          <p className="mt-0.5 truncate text-xs leading-5 text-[#607387]">{publication?.hostname || 'Website domain not connected yet'}</p>
+        </div>
+        <div className="min-w-0">
+          {publication?.updatedAt ? <><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last updated</p><p className="mt-0.5 text-xs font-semibold text-[#607387]">{new Date(publication.updatedAt).toLocaleDateString()}</p></> : null}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          {published
+            ? <Button type="button" size="sm" className="justify-center" onClick={() => void run('update')} disabled={Boolean(action) || infrastructureBlocked}>{action === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{stale ? 'Update' : 'Refresh'}</Button>
+            : <Button type="button" size="sm" className="justify-center" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish</Button>}
+          {publicUrl ? <a className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[#c9d9cf] bg-white px-3 text-sm font-semibold text-[#2f6346]" href={publicUrl} target="_blank" rel="noreferrer">View <ExternalLink size={14} /></a> : null}
+        </div>
+        {error ? <p className="lg:col-span-5 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
+        {notice ? <p className="lg:col-span-5 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
+      </div>
+    )
   }
 
   return (

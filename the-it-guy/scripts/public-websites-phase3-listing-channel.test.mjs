@@ -89,6 +89,9 @@ assert.match(panel, /The CRM remains the source of truth/i, 'explains the source
 assert.match(panel, /Durable public images/i, 'shows durable image readiness')
 assert.match(panel, /mediaCleanupPending/i, 'surfaces incomplete public media cleanup')
 assert.match(listingDetail, /<WebsiteListingPublicationPanel/, 'mounts the channel controls in listing detail')
+assert.match(listingDetail, /variant="channel"/, 'shows the website channel inside the visible Listing Channels section')
+assert.match(panel, /Live on website/, 'labels a published website listing as live in the channel row')
+assert.match(panel, /Agency Website/, 'identifies the first-party website channel')
 assert.match(listingDetail, /prepareAgencyWebsiteListing/, 'saves current CRM details before a channel publish/update')
 
 assert.match(publicRepository, /from\('website_listing_publications'\)/, 'public rendering requires an explicit website-channel row')

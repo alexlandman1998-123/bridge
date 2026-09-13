@@ -10225,6 +10225,14 @@ function AgentListingDetail() {
             </Button>
           </div>
 
+          <WebsiteListingPublicationPanel
+            variant="channel"
+            listingId={listingRecord?.id}
+            listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
+            preparationBlockers={arch9PublicationBlockers}
+            onPrepare={prepareAgencyWebsiteListing}
+          />
+
           {channelRows.map((channel) => (
             <DistributionChannel
               key={channel.key}
@@ -11862,13 +11870,6 @@ function AgentListingDetail() {
                 )}
               </div>
             </section>
-
-            <WebsiteListingPublicationPanel
-              listingId={listingRecord?.id}
-              listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
-              preparationBlockers={arch9PublicationBlockers}
-              onPrepare={prepareAgencyWebsiteListing}
-            />
 
             <section className="rounded-[24px] border border-[#cfe0ef] bg-gradient-to-br from-[#f8fbff] via-white to-[#eef6fb] p-5 shadow-[0_14px_30px_rgba(15,23,42,0.07)]">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
