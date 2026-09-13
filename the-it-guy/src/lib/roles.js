@@ -1,5 +1,6 @@
 import { Building2, CalendarDays, Handshake, KanbanSquare, Users } from 'lucide-react'
 import { SHOW_INTELLIGENCE_BETA } from './featureFlags'
+import { hasOpenAgencyOperations } from './agencyOperationsAccess'
 import { canAccessHQ } from '../auth/hqAccess'
 import {
   APP_ROLE_LABELS,
@@ -441,6 +442,8 @@ export function canAccessAgentsModule({ role, baseRole = null, profile = null, m
   if (normalizedRole !== 'agent') {
     return false
   }
+  // Active membership and organisation isolation are enforced by route/service access.
+  if (hasOpenAgencyOperations({ appRole: normalizedRole, membershipStatus: membershipRole ? 'active' : '' })) return true
   const normalizedMembershipRole = normalizeMembershipRole(membershipRole)
   if (MANAGEMENT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
     return true
@@ -456,6 +459,7 @@ export function canManageAgentOrganisations({ role, baseRole = null, profile = n
   if (normalizedRole !== 'agent') {
     return false
   }
+  if (hasOpenAgencyOperations({ appRole: normalizedRole, membershipStatus: membershipRole ? 'active' : '' })) return true
   const normalizedMembershipRole = normalizeMembershipRole(membershipRole)
   if (MANAGEMENT_MEMBERSHIP_ROLES.has(normalizedMembershipRole)) {
     return true

@@ -1,6 +1,7 @@
 import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 
 const WEBSITE_BRAND_PUBLICATION_FUNCTION = 'website-brand-publication'
+const WEBSITE_DOMAIN_MANAGEMENT_FUNCTION = 'website-domain-management'
 
 function text(value) {
   return String(value || '').trim()
@@ -13,7 +14,7 @@ function latest(items = []) {
 export async function getWebsiteWorkspaceOverview(organisationId) {
   const safeOrganisationId = text(organisationId)
   if (!safeOrganisationId || !isSupabaseConfigured || !supabase) {
-    return { mode: 'unconfigured', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
+    return { mode: 'unconfigured', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '' }
   }
 
   const [pilotResult, productionReleaseResult, productionDarkLaunchResult] = await Promise.all([
@@ -41,10 +42,10 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
   const productionAccess = (productionRelease && ['approved', 'active', 'paused'].includes(productionRelease.status))
     || (productionDarkLaunch && ['prepared', 'active', 'paused'].includes(productionDarkLaunch.status))
   if (!pilotResult.data && !productionAccess) {
-    return { mode: 'pilot_unavailable', pilot: null, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
+    return { mode: 'pilot_unavailable', pilot: null, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '' }
   }
   if (pilotResult.data && pilotResult.data.status !== 'active' && !productionAccess) {
-    return { mode: 'pilot_paused', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
+    return { mode: 'pilot_paused', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '' }
   }
 
   const siteResult = await supabase
@@ -53,19 +54,22 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
     .eq('organisation_id', safeOrganisationId)
     .maybeSingle()
   if (siteResult.error) throw siteResult.error
-  if (!siteResult.data) return { mode: 'ready_to_create', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }
+  if (!siteResult.data) return { mode: 'ready_to_create', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '' }
 
   const site = siteResult.data
-  const [domainsResult, revisionsResult, pagesResult, eventsResult] = await Promise.all([
-    supabase.from('website_domains').select('id, hostname, domain_kind, status, is_primary, updated_at').eq('website_site_id', site.id).order('created_at'),
+  const [domainsResult, revisionsResult, pagesResult, eventsResult, managementEventsResult, analyticsResult] = await Promise.all([
+    supabase.from('website_domains').select('id, hostname, domain_kind, status, is_primary, dns_instructions, verified_at, created_at, updated_at').eq('website_site_id', site.id).order('created_at'),
     supabase.from('website_site_revisions').select('id, revision_number, status, brand_json, source_revision_id, content_fingerprint, published_at, published_by, archived_at, updated_at').eq('website_site_id', site.id).order('revision_number', { ascending: false }),
     supabase.from('website_pages').select('id, slug, page_kind, title, seo_title, seo_description, social_image_url, content_blocks, revision_id, updated_at').eq('website_site_id', site.id).order('page_kind').order('slug'),
     supabase.from('website_publication_events').select('id, action, from_revision_id, source_revision_id, to_revision_id, content_fingerprint, metadata_json, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }).limit(12),
+    supabase.from('website_management_events').select('id, action, metadata_json, created_at').eq('website_site_id', site.id).order('created_at', { ascending: false }).limit(12),
+    supabase.rpc('website_dashboard_analytics', { p_website_site_id: site.id, p_days: 30 }),
   ])
   if (domainsResult.error) throw domainsResult.error
   if (revisionsResult.error) throw revisionsResult.error
   if (pagesResult.error) throw pagesResult.error
   if (eventsResult.error) throw eventsResult.error
+  if (managementEventsResult.error) throw managementEventsResult.error
 
   const revisions = revisionsResult.data || []
   const draftRevision = latest(revisions.filter((revision) => revision.status === 'draft'))
@@ -93,8 +97,20 @@ export async function getWebsiteWorkspaceOverview(organisationId) {
     draftBrand: draftRevision?.brand_json && typeof draftRevision.brand_json === 'object' ? draftRevision.brand_json : null,
     archivedRevisions: revisions.filter((revision) => revision.status === 'archived'),
     publicationEvents: eventsResult.data || [],
+    managementEvents: managementEventsResult.data || [],
     publicationReadiness,
+    analytics: analyticsResult.data || null,
+    analyticsError: analyticsResult.error?.message || '',
   }
+}
+
+export async function manageWebsiteDomain({ action, siteId, hostname, domainId }) {
+  assertWebsiteControlReady(siteId)
+  const safeAction = text(action)
+  if (!['connect', 'verify', 'make-primary', 'remove'].includes(safeAction)) throw new Error('Choose a valid website domain action.')
+  const result = await invokeEdgeFunction(WEBSITE_DOMAIN_MANAGEMENT_FUNCTION, { body: { action: safeAction, siteId, hostname: text(hostname), domainId: text(domainId) } })
+  assertEdgeFunctionSuccess(result, 'Website domain management could not be completed.')
+  return result.data
 }
 
 export async function saveWebsiteDraftBrand(siteId, revisionId, brand) {

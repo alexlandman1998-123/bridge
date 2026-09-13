@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { hasOpenAgencyOperations } from '../../lib/agencyOperationsAccess'
 import Button from '../../components/ui/Button'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import Field from '../../components/ui/Field'
@@ -87,6 +88,7 @@ function getRoleLevel(value = '') {
 }
 
 function canAssignOrganisationRole(actor = {}, targetRole = '', { target = {}, invite = false } = {}) {
+  if (hasOpenAgencyOperations(actor)) return true
   const normalizedTargetRole = normalizeAgencyAuthorityRole(targetRole)
   if (normalizedTargetRole === 'owner') return false
   if (invite) {
@@ -301,6 +303,9 @@ export default function SettingsUsersPage() {
   )
   const [membershipRole, setMembershipRole] = useState('viewer')
   const canEdit = can(PERMISSIONS.manageUsers)
+  const openAgencyOperations = hasOpenAgencyOperations({ workspaceType: resolvedWorkspaceType, hasActiveMembership: canEdit })
+  const canManageOwnership = openAgencyOperations || isPrimaryOrganisationOwner
+  const canManageJobTitles = openAgencyOperations || isOrganisationOwner
   const administratorLabel = getWorkspaceAdministratorLabel({ appRole: role, workspaceType: resolvedWorkspaceType })
   const inviteSectionRef = useRef(null)
   const inviteNavigationState = readInviteNavigationState(location.state)
@@ -345,6 +350,8 @@ export default function SettingsUsersPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const authorityActor = useMemo(() => ({
+    workspaceType: resolvedWorkspaceType,
+    membershipStatus: organisationMembership?.status || (openAgencyOperations ? 'active' : ''),
     id: profile?.id || organisationMembership?.userId || organisationMembership?.user_id || '',
     userId: profile?.id || organisationMembership?.userId || organisationMembership?.user_id || '',
     email: profile?.email || organisationMembership?.email || '',
@@ -356,7 +363,7 @@ export default function SettingsUsersPage() {
       organisationMembership?.primary_branch_id ||
       organisationMembership?.branch_id ||
       '',
-  }), [membershipRole, organisationMembership, organisationMembershipRole, profile, workspaceRole])
+  }), [membershipRole, organisationMembership, organisationMembershipRole, profile, workspaceRole, resolvedWorkspaceType, openAgencyOperations])
   const ownershipHealth = useMemo(
     () => serverOwnershipHealth || getOrganisationOwnershipHealth(users),
     [serverOwnershipHealth, users],
@@ -595,7 +602,7 @@ export default function SettingsUsersPage() {
   }
 
   async function handleJobTitleChange(userRowId, nextJobTitle) {
-    if (!isOrganisationOwner) return
+    if (!canManageJobTitles) return
     try {
       setError('')
       setMessage('')
@@ -630,7 +637,7 @@ export default function SettingsUsersPage() {
   }
 
   async function handleOwnershipChange() {
-    if (!isPrimaryOrganisationOwner || !ownershipTransferTarget?.user?.id) return
+    if (!canManageOwnership || !ownershipTransferTarget?.user?.id) return
     const isPrimaryReassignment = ownershipTransferTarget.action === 'make_primary'
     const targetUser = ownershipTransferTarget.user
     const targetName = targetUser.fullName || targetUser.email || 'the selected member'
@@ -647,7 +654,7 @@ export default function SettingsUsersPage() {
       await loadUsers()
       retryWorkspaceBootstrap?.()
       setMessage(isPrimaryReassignment
-        ? `${targetName} is now the primary owner. You remain an organisation owner.`
+        ? `${targetName} is now the primary owner. Existing owners keep their ownership.`
         : `${targetName} has been granted organisation owner access.`)
     } catch (saveError) {
       setError(saveError.message)
@@ -1342,7 +1349,7 @@ export default function SettingsUsersPage() {
 
         {!loading && users.length && ownershipHealth.status === 'recovery_required' ? (
           <SettingsBanner tone="error">
-            Ownership recovery is required: {ownershipHealth.issues.map((issue) => issue.replaceAll('_', ' ')).join(', ')}. A platform administrator must run the ownership remediation before owner controls can be used.
+            Ownership needs attention: {ownershipHealth.issues.map((issue) => issue.replaceAll('_', ' ')).join(', ')}. {openAgencyOperations ? 'Use Claim ownership or Make primary owner to establish the agency ownership.' : 'A platform administrator must run the ownership remediation before owner controls can be used.'}
           </SettingsBanner>
         ) : null}
 
@@ -1397,18 +1404,18 @@ export default function SettingsUsersPage() {
                   userRow.userId && String(userRow.userId) === String(profile?.id || organisationMembership?.userId || organisationMembership?.user_id || ''),
                 )
                 const canGrantOwnership = Boolean(
-                  isPrimaryOrganisationOwner &&
-                  !isCurrentUser &&
+                  canManageOwnership &&
+                  (openAgencyOperations || !isCurrentUser) &&
                   userRow.userId &&
                   userRow.status === 'active' &&
                   userRow.role !== 'owner',
                 )
                 const canReceivePrimaryOwnership = Boolean(
-                  isPrimaryOrganisationOwner &&
-                  !isCurrentUser &&
+                  canManageOwnership &&
+                  (openAgencyOperations || !isCurrentUser) &&
                   userRow.userId &&
                   userRow.status === 'active' &&
-                  userRow.role === 'owner' &&
+                  (openAgencyOperations || userRow.role === 'owner') &&
                   !userRow.isPrimaryOwner,
                 )
                 const canDeactivateUser = Boolean(
@@ -1472,7 +1479,7 @@ export default function SettingsUsersPage() {
                   </div>
                   <div className="space-y-1">
                     <span className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[#8da0b6] lg:hidden">Job title</span>
-                    {isOrganisationOwner ? (
+                    {canManageJobTitles ? (
                       <Field
                         as="select"
                         value={userRow.jobTitle || ''}
@@ -1586,9 +1593,9 @@ export default function SettingsUsersPage() {
                         type="button"
                         variant="secondary"
                         disabled={transferringOwnership}
-                        onClick={() => setOwnershipTransferTarget({ action: 'grant', user: userRow })}
+                        onClick={() => setOwnershipTransferTarget({ action: isCurrentUser ? 'claim' : 'grant', user: userRow })}
                       >
-                        Grant owner
+                        {isCurrentUser ? 'Claim ownership' : 'Grant owner'}
                       </Button>
                     ) : null}
                     {canReceivePrimaryOwnership ? (
@@ -1637,11 +1644,11 @@ export default function SettingsUsersPage() {
 
       <ConfirmDialog
         open={Boolean(ownershipTransferTarget)}
-        title={ownershipTransferTarget?.action === 'make_primary' ? 'Make this owner primary?' : 'Grant organisation owner access?'}
+        title={ownershipTransferTarget?.action === 'make_primary' ? 'Make this member primary owner?' : ownershipTransferTarget?.action === 'claim' ? 'Claim organisation ownership?' : 'Grant organisation owner access?'}
         description={ownershipTransferTarget?.action === 'make_primary'
-          ? `${ownershipTransferTarget?.user?.fullName || ownershipTransferTarget?.user?.email || 'This owner'} will become the primary owner. You will remain an organisation owner, and the other owners will keep their access.`
+          ? `${ownershipTransferTarget?.user?.fullName || ownershipTransferTarget?.user?.email || 'This member'} will become the primary owner. Existing owners will keep their ownership.`
           : `${ownershipTransferTarget?.user?.fullName || ownershipTransferTarget?.user?.email || 'This member'} will become an additional organisation owner. The current primary owner will not change.`}
-        confirmLabel={ownershipTransferTarget?.action === 'make_primary' ? 'Make primary owner' : 'Grant owner'}
+        confirmLabel={ownershipTransferTarget?.action === 'make_primary' ? 'Make primary owner' : ownershipTransferTarget?.action === 'claim' ? 'Claim ownership' : 'Grant owner'}
         confirming={transferringOwnership}
         onConfirm={handleOwnershipChange}
         onCancel={() => setOwnershipTransferTarget(null)}

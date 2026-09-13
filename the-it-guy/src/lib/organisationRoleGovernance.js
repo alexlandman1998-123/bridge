@@ -1,6 +1,7 @@
 import { ACCESS_SCOPES, PERMISSIONS, permissionsByWorkspaceRole } from '../auth/permissions/permissionRegistry'
 import { normalizeOrgRole } from '../constants/orgRoles'
 import { WORKSPACE_TYPES, normalizeWorkspaceType } from '../constants/workspaceTypes'
+import { hasOpenAgencyOperations } from './agencyOperationsAccess'
 
 const ROLE_OPTION_SETS = Object.freeze({
   [WORKSPACE_TYPES.agency]: Object.freeze([
@@ -153,6 +154,9 @@ export function getOrganisationRoleAuthorityLevel(role = '') {
 }
 
 export function canGovernOrganisationRoleChange({ actor = {}, target = {}, nextRole = '' } = {}) {
+  if (hasOpenAgencyOperations(actor)) {
+    return getOrganisationRoleOptions(WORKSPACE_TYPES.agency).some((option) => option.value === nextRole)
+  }
   const actorId = String(actor.userId || actor.user_id || actor.id || '').trim()
   const targetId = String(target.userId || target.user_id || target.id || '').trim()
   const actorEmail = String(actor.email || '').trim().toLowerCase()

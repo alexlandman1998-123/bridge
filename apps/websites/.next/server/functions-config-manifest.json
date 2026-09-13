@@ -1,6 +1,9 @@
 {
   "version": 1,
   "functions": {
-    "/api/leads": {}
+    "/api/analytics": {},
+    "/api/health": {},
+    "/api/leads": {},
+    "/api/preapproval": {}
   }
 }

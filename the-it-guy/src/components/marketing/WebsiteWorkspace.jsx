@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowUpRight, CheckCircle2, Globe2, LayoutTemplate, LockKeyhole, Megaphone, MonitorSmartphone, RefreshCw } from 'lucide-react'
 import { useAuthSession } from '../../context/AuthSessionContext'
-import { createWebsiteCampaignPage, createWebsiteDraft, createWebsiteSite, deleteWebsiteDraftCampaign, discardWebsiteDraft, getWebsiteWorkspaceOverview, publishWebsiteDraft, resetWebsiteDraftBrand, rollbackWebsiteRevision, saveWebsiteDraftBrand, saveWebsiteDraftPage } from '../../services/websiteWorkspaceService'
+import { createWebsiteCampaignPage, createWebsiteDraft, createWebsiteSite, deleteWebsiteDraftCampaign, discardWebsiteDraft, getWebsiteWorkspaceOverview, manageWebsiteDomain, publishWebsiteDraft, resetWebsiteDraftBrand, rollbackWebsiteRevision, saveWebsiteDraftBrand, saveWebsiteDraftPage } from '../../services/websiteWorkspaceService'
 import WebsiteBrandEditor from './WebsiteBrandEditor'
 import WebsitePageEditor from './WebsitePageEditor'
 import './WebsiteWorkspace.css'
@@ -21,6 +21,14 @@ const PUBLICATION_LABELS = {
   rolled_back: 'Prior revision restored',
 }
 
+const MANAGEMENT_LABELS = {
+  domain_connected: 'Domain connected',
+  domain_verification_requested: 'Domain verification requested',
+  domain_verified: 'Domain verified',
+  domain_primary_changed: 'Primary domain changed',
+  domain_removed: 'Domain removed',
+}
+
 function isRepairableBrandBlocker(value) {
   return /^Prepare the (light|dark) website logo as a durable public asset before publishing\.$/i.test(String(value || '').trim())
 }
@@ -29,10 +37,64 @@ function getOrganisationId(authState) {
   return String(authState?.currentWorkspace?.id || authState?.currentMembership?.workspaceId || authState?.currentMembership?.workspace_id || '').trim()
 }
 
+function WebsiteAnalytics({ analytics, error }) {
+  const daily = Array.isArray(analytics?.dailyTraffic) ? analytics.dailyTraffic : []
+  const topPages = Array.isArray(analytics?.topPages) ? analytics.topPages : []
+  const topListings = Array.isArray(analytics?.topListings) ? analytics.topListings : []
+  const recent = Array.isArray(analytics?.recentSubmissions) ? analytics.recentSubmissions : []
+  const max = Math.max(1, ...daily.map((item) => Number(item.pageViews || 0)))
+  const metrics = [
+    ['Visits', String(analytics?.visits || 0), 'Privacy-conscious session visits'],
+    ['Page views', String(analytics?.pageViews || 0), 'First-party page views'],
+    ['Listing views', String(analytics?.listingViews || 0), 'Published listing detail views'],
+    ['Enquiries', String(analytics?.submissions || 0), 'Completed website submissions'],
+    ['Valuation requests', String(analytics?.valuationRequests || 0), 'Website valuation forms'],
+    ['Leads created', String(analytics?.leadsCreated || 0), 'CRM leads routed from the site'],
+  ]
+  return <section className="wwo-analytics" aria-label="Website analytics for the last 30 days"><div className="wwo-analytics-heading"><div><span className="md-eyebrow">WEBSITE PERFORMANCE</span><h2>Last 30 days</h2><p>Visits and page views are counted as privacy-conscious aggregates. Arch9 does not store visitor identities, IP addresses or browsing histories.</p></div><span className="wwo-period">Last 30 days</span></div>{error && <p className="ww-error">Website analytics will become available after the dashboard update is applied.</p>}<div className="wwo-metrics">{metrics.map(([label, value, detail]) => <article key={label}><small>{label}</small><strong>{value}</strong><span>{detail}</span></article>)}</div><div className="wwo-analytics-grid"><article className="wwo-chart"><div><strong>Website traffic</strong><small>Daily first-party page views</small></div>{daily.length ? <div className="wwo-bars">{daily.map((item) => <span key={item.date} title={`${item.date}: ${item.pageViews} page views`}><i style={{ height: `${Math.max(5, Number(item.pageViews || 0) * 100 / max)}%` }} /><small>{new Date(`${item.date}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</small></span>)}</div> : <p className="wwo-empty-data">No website traffic has been recorded in this period.</p>}</article><article className="wwo-top-pages"><div><strong>Top pages</strong><small>Ranked by first-party page views</small></div>{topPages.length ? <ol>{topPages.map((item, index) => <li key={`${item.label}-${index}`}><span>{index + 1}</span><strong>{item.label}</strong><b>{item.views}</b></li>)}</ol> : <p className="wwo-empty-data">No page-view data yet.</p>}</article></div><div className="wwo-analytics-grid"><article className="wwo-top-pages"><div><strong>Top listings</strong><small>Ranked by listing-detail views</small></div>{topListings.length ? <ol>{topListings.map((item, index) => <li key={`${item.label}-${index}`}><span>{index + 1}</span><strong>{item.label}</strong><b>{item.views}</b></li>)}</ol> : <p className="wwo-empty-data">No listing-view data yet.</p>}</article><article className="wwo-recent-submissions"><div><strong>Recent website submissions</strong><small>Only submissions recorded by this organisation’s public website are shown.</small></div>{recent.length ? <ol>{recent.slice(0, 4).map((item) => <li key={item.id}><span><strong>{String(item.submissionType || 'website enquiry').replaceAll('_', ' ')}</strong><small>{new Date(item.createdAt).toLocaleString()}</small></span><em>{item.status}</em><b>{item.leadId ? 'CRM lead linked' : 'Processing'}</b></li>)}</ol> : <p className="wwo-empty-data">No recent submissions.</p>}</article></div></section>
+}
+
+function WebsiteDomainManager({ siteId, domains, onChanged }) {
+  const [hostname, setHostname] = useState('')
+  const [busy, setBusy] = useState('')
+  const [notice, setNotice] = useState('')
+  const [error, setError] = useState('')
+  const customDomains = domains.filter((domain) => domain.domain_kind === 'custom')
+  const run = async (action, domain) => {
+    setBusy(`${action}:${domain?.id || 'new'}`); setError(''); setNotice('')
+    try { await manageWebsiteDomain({ action, siteId, hostname: action === 'connect' ? hostname : '', domainId: domain?.id }); setHostname(''); setNotice(action === 'connect' ? 'Domain added. Add the website-only DNS records, then verify it.' : action === 'verify' ? 'Domain verification checked.' : action === 'make-primary' ? 'The verified domain is now primary.' : 'Unconnected domain removed.'); await onChanged() } catch (cause) { setError(cause.message || 'Website domain management could not be completed.') } finally { setBusy('') }
+  }
+  return <section className="wwo-domain-manager"><div className="wwo-domain-heading"><div><span className="md-eyebrow">DOMAIN MANAGEMENT</span><h2>Connect a website domain safely.</h2><p>Only website records are used. This never changes nameservers, MX, SPF, DKIM, or DMARC records.</p></div></div>{error && <p className="ww-error">{error}</p>}{notice && <p className="ww-notice">{notice}</p>}<form onSubmit={(event) => { event.preventDefault(); void run('connect') }}><label>Domain name<input value={hostname} onChange={(event) => setHostname(event.target.value)} placeholder="www.example.co.za" required /></label><button className="ww-publish" type="submit" disabled={Boolean(busy)}>{busy === 'connect:new' ? 'Adding…' : 'Add domain'}</button></form>{customDomains.length ? <div className="wwo-domain-list">{customDomains.map((domain) => { const records = Array.isArray(domain.dns_instructions?.verification) ? domain.dns_instructions.verification : []; return <article key={domain.id}><div><strong>{domain.hostname}</strong><small>{domain.status}{domain.is_primary ? ' · primary' : ''}</small>{records.length > 0 && <p>Vercel verification records are ready. Add only the records shown by your domain provider; email records remain untouched.</p>}</div><div className="wwo-domain-actions">{domain.status !== 'active' && <button type="button" className="ww-rollback" disabled={Boolean(busy)} onClick={() => void run('verify', domain)}>{busy === `verify:${domain.id}` ? 'Verifying…' : 'Verify'}</button>}{domain.status === 'verified' && <button type="button" className="ww-publish" disabled={Boolean(busy)} onClick={() => void run('make-primary', domain)}>{busy === `make-primary:${domain.id}` ? 'Activating…' : 'Make primary'}</button>}{['pending', 'failed', 'disabled'].includes(domain.status) && !domain.is_primary && <button type="button" className="ww-rollback" disabled={Boolean(busy)} onClick={() => void run('remove', domain)}>{busy === `remove:${domain.id}` ? 'Removing…' : 'Remove'}</button>}</div></article> })}</div> : <p className="wwo-empty-data">No custom domains connected yet. Your managed preview remains available.</p>}</section>
+}
+
+function WebsiteReleasePreview({ previewUrl, draftRevision, publishedRevision, publicationReadiness, onManage }) {
+  const [device, setDevice] = useState('desktop')
+  const blockers = Array.isArray(publicationReadiness?.blockers) ? publicationReadiness.blockers : []
+  const publishedAt = publishedRevision?.published_at ? new Date(publishedRevision.published_at).toLocaleString() : 'Not published yet'
+  const publisher = publishedRevision?.published_by ? `Publisher ${String(publishedRevision.published_by).slice(0, 8)}` : 'Publisher not recorded'
+  return <section className="wwo-release-preview"><div className="wwo-release-heading"><div><span className="md-eyebrow">PREVIEW & PUBLISHING</span><h2>Review the public site before releasing changes.</h2><p>The embedded preview always shows the current public revision. Draft edits remain isolated until the publishing checks pass.</p></div><div className="wwo-device-toggle"><button type="button" className={device === 'desktop' ? 'active' : ''} onClick={() => setDevice('desktop')}>Desktop</button><button type="button" className={device === 'mobile' ? 'active' : ''} onClick={() => setDevice('mobile')}>Mobile</button></div></div><div className="wwo-release-grid"><div className="wwo-preview-frame-wrap"><div className={`wwo-preview-frame ${device}`}>{previewUrl ? <iframe title="Current public website preview" src={previewUrl} /> : <p className="wwo-empty-data">A connected preview URL is required to render the public website.</p>}</div>{previewUrl && <a href={previewUrl} target="_blank" rel="noreferrer">Open public preview <ArrowUpRight size={14} /></a>}</div><div className="wwo-release-status"><article><small>DRAFT</small><strong>{draftRevision ? `Revision ${draftRevision.revision_number}` : 'No active draft'}</strong><span>{draftRevision ? `Updated ${new Date(draftRevision.updated_at).toLocaleString()}` : 'Create a draft in Website Studio to begin.'}</span></article><article><small>PUBLISHED</small><strong>{publishedRevision ? `Revision ${publishedRevision.revision_number}` : 'No published revision'}</strong><span>{publishedAt} · {publisher}</span></article><div className={blockers.length ? 'wwo-blockers blocked' : 'wwo-blockers ready'}><strong>{draftRevision ? blockers.length ? 'Release blockers' : 'Ready to publish' : 'No draft to review'}</strong>{blockers.length ? <ul>{blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul> : <p>{draftRevision ? 'Required website, content and domain checks have passed.' : 'The published site remains unchanged.'}</p>}</div><button type="button" className="ww-publish" onClick={onManage}>{draftRevision ? 'Review draft in Website Studio' : 'Open Website Studio'}</button></div></div></section>
+}
+
+function WebsiteOperations({ analytics, analyticsError, domains, publicationEvents, managementEvents, previewUrl, onManage }) {
+  const failedForms = (Array.isArray(analytics?.recentSubmissions) ? analytics.recentSubmissions : []).filter((item) => String(item.status || '').toLowerCase() === 'failed')
+  const attentionDomains = domains.filter((domain) => domain.domain_kind === 'custom' && ['pending', 'failed', 'disabled'].includes(domain.status))
+  const events = [
+    ...(publicationEvents || []).map((event) => ({ id: `publication-${event.id}`, label: PUBLICATION_LABELS[event.action] || event.action, at: event.created_at, detail: event.content_fingerprint ? `Revision fingerprint ${event.content_fingerprint.slice(0, 10)}` : 'Recoverable release history' })),
+    ...(managementEvents || []).map((event) => ({ id: `management-${event.id}`, label: MANAGEMENT_LABELS[event.action] || event.action, at: event.created_at, detail: event.metadata_json?.hostname || 'Website domain operation' })),
+  ].sort((left, right) => String(right.at || '').localeCompare(String(left.at || ''))).slice(0, 8)
+  const checks = [
+    { label: 'Domain verification', state: attentionDomains.length ? 'Action needed' : 'Clear', detail: attentionDomains.length ? `${attentionDomains.map((domain) => domain.hostname).join(', ')} still needs verification or attention.` : 'No custom domain is awaiting action.' },
+    { label: 'Form delivery', state: analyticsError ? 'Unavailable' : failedForms.length ? 'Action needed' : 'Clear', detail: analyticsError ? 'Submission delivery status will appear after the analytics dashboard update is applied.' : failedForms.length ? `${failedForms.length} recent submission${failedForms.length === 1 ? '' : 's'} failed to process.` : 'No failed submissions are recorded in the current 30-day view.' },
+    { label: 'Public route', state: previewUrl ? 'Configured' : 'Action needed', detail: previewUrl ? 'A public preview or primary domain is configured. The public site exposes a lightweight /api/health endpoint for external uptime monitoring.' : 'Connect a preview or primary domain before enabling availability monitoring.' },
+  ]
+  return <section className="wwo-operations" aria-label="Website operations"><div className="wwo-operations-heading"><div><span className="md-eyebrow">OPERATIONS & SAFETY</span><h2>Keep changes controlled and observable.</h2><p>Website administrators can edit content, manage domains and release reviewed revisions. Every release remains recoverable; domain actions and release history are organisation-scoped.</p></div><button type="button" className="ww-rollback" onClick={onManage}>Open release controls</button></div><div className="wwo-health-checks">{checks.map((check) => <article key={check.label}><div><strong>{check.label}</strong><span className={`wwo-health-state ${check.state.toLowerCase().replaceAll(' ', '-')}`}>{check.state}</span></div><p>{check.detail}</p></article>)}</div><div className="wwo-operations-grid"><article className="wwo-activity"><div><strong>Activity history</strong><small>Domain and publication actions</small></div>{events.length ? <ol>{events.map((event) => <li key={event.id}><span><strong>{event.label}</strong><small>{event.detail}</small></span><time>{event.at ? new Date(event.at).toLocaleString() : 'Time unavailable'}</time></li>)}</ol> : <p className="wwo-empty-data">No website operations have been recorded yet.</p>}</article><article className="wwo-recovery"><strong>Safe rollback</strong><p>Restoring a prior revision always creates a new published copy. It does not overwrite history, change listings, or bypass publication controls.</p><button type="button" className="ww-publish" onClick={onManage}>Review recovery points</button></article></div></section>
+}
+
 export default function WebsiteWorkspace({ onBack }) {
   const { authState } = useAuthSession()
   const organisationId = useMemo(() => getOrganisationId(authState), [authState])
-  const [overview, setOverview] = useState({ mode: 'loading', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null })
+  const [showStudio, setShowStudio] = useState(false)
+  const [overview, setOverview] = useState({ mode: 'loading', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '' })
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [action, setAction] = useState('')
@@ -44,7 +106,7 @@ export default function WebsiteWorkspace({ onBack }) {
   const refresh = async () => {
     setError('')
     setOverview((current) => ({ ...current, mode: 'loading' }))
-    try { setOverview(await getWebsiteWorkspaceOverview(organisationId)) } catch (loadError) { setError('Website settings could not be loaded.'); setOverview({ mode: 'error', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], publicationReadiness: null }) }
+    try { setOverview(await getWebsiteWorkspaceOverview(organisationId)) } catch (loadError) { setError('Website settings could not be loaded.'); setOverview({ mode: 'error', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '' }) }
   }
 
   useEffect(() => { void refresh() }, [organisationId])
@@ -55,6 +117,23 @@ export default function WebsiteWorkspace({ onBack }) {
   }, [overview.archivedRevisions, rollbackRevisionId])
   const primaryDomain = overview.domains.find((domain) => domain.is_primary) || overview.domains.find((domain) => domain.domain_kind === 'preview')
   const hasPublishedSite = overview.site?.status === 'published' && Boolean(overview.publishedRevision)
+  const previewUrl = primaryDomain?.hostname
+    ? `https://${primaryDomain.hostname}`
+    : overview.productionDarkLaunch?.candidate_deployment_url || overview.productionRelease?.candidate_deployment_url || ''
+  const siteState = overview.mode === 'loading'
+    ? 'Checking website'
+    : hasPublishedSite && primaryDomain?.domain_kind === 'custom'
+      ? 'Live'
+      : overview.mode === 'connected'
+        ? 'Preview'
+        : overview.mode === 'ready_to_create'
+          ? 'Ready to create'
+          : overview.mode === 'pilot_paused'
+            ? 'Paused'
+            : 'Not available'
+  const lastPublished = overview.publishedRevision?.published_at
+    ? new Date(overview.publishedRevision.published_at).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+    : 'Not published yet'
   const publicationBlockers = Array.isArray(overview.publicationReadiness?.blockers) ? overview.publicationReadiness.blockers : []
   const publicationReady = overview.publicationReadiness?.ready === true || (publicationBlockers.length > 0 && publicationBlockers.every(isRepairableBrandBlocker))
   const createSite = async () => {
@@ -170,9 +249,30 @@ export default function WebsiteWorkspace({ onBack }) {
       setAction('')
     }
   }
+  if (!showStudio) return (
+    <div className="wa-page website-workspace website-overview">
+      <button className="ww-back" type="button" onClick={onBack}><ArrowLeft size={16} /> Marketing overview</button>
+      <section className="wwo-heading">
+        <div><span className="md-eyebrow">MARKETING · WEBSITES</span><h1>Websites</h1><p>Manage your public property website, preview its current version and keep its release status visible.</p></div>
+        <button className="ww-refresh" type="button" onClick={() => void refresh()}><RefreshCw size={15} /> Refresh</button>
+      </section>
+      {error && <p className="ww-error" role="status">{error}</p>}
+      {notice && <p className="ww-notice" role="status">{notice}</p>}
+      <section className="wwo-site-card" aria-label="Agency website">
+        <div className="wwo-site-visual"><div className="wwo-browser"><i /><i /><i /><span>{primaryDomain?.hostname || 'preview.arch9.co.za'}</span></div><div className="wwo-browser-page"><small>{overview.site?.templateKey || 'PROPERTY WEBSITE'}</small><strong>{overview.mode === 'loading' ? 'Preparing your website' : overview.site?.previewSlug || 'Your agency website'}</strong><span>Property search, published listings and Arch9 enquiries.</span></div></div>
+        <div className="wwo-site-copy"><div className="wwo-site-title"><div><span className="md-eyebrow">AGENCY WEBSITE</span><h2>{overview.site?.previewSlug || 'Your Arch9 website'}</h2></div><span className={`wwo-status wwo-status-${siteState.toLowerCase().replaceAll(' ', '-')}`}>{siteState}</span></div><p>{overview.mode === 'connected' ? 'Your configured website is ready to manage. Content and releases remain safely organisation-scoped.' : overview.mode === 'ready_to_create' ? 'Create a private draft using your organisation identity. No client domain or DNS record will be changed.' : overview.mode === 'loading' ? 'Loading the current site, domain and publishing status.' : 'Website access is not enabled for this workspace yet. Existing CRM and branding data are unchanged.'}</p><dl className="wwo-site-details"><div><dt>Primary domain</dt><dd>{primaryDomain?.hostname || 'Preview domain pending'}</dd></div><div><dt>Template</dt><dd>{overview.site?.templateKey || 'Property Standard v1'}</dd></div><div><dt>Last published</dt><dd>{lastPublished}</dd></div></dl><div className="wwo-actions">{previewUrl ? <a className="ww-publish" href={previewUrl} target="_blank" rel="noreferrer">Preview site <ArrowUpRight size={15} /></a> : <button className="ww-rollback" type="button" disabled>Preview unavailable</button>}{overview.mode === 'ready_to_create' ? <button className="ww-publish" type="button" disabled={Boolean(action) || !organisationId} onClick={() => void createSite()}>{action === 'create' ? 'Creating website…' : 'Create website'}</button> : <button className="ww-rollback" type="button" disabled={overview.mode !== 'connected'} onClick={() => setShowStudio(true)}>Manage website</button>}</div></div>
+      </section>
+      {overview.mode === 'connected' && <WebsiteAnalytics analytics={overview.analytics} error={overview.analyticsError} />}
+      {overview.mode === 'connected' && <WebsiteReleasePreview previewUrl={previewUrl} draftRevision={overview.draftRevision} publishedRevision={overview.publishedRevision} publicationReadiness={overview.publicationReadiness} onManage={() => setShowStudio(true)} />}
+      {overview.mode === 'connected' && <WebsiteDomainManager siteId={overview.site.id} domains={overview.domains} onChanged={refresh} />}
+      {overview.mode === 'connected' && <WebsiteOperations analytics={overview.analytics} analyticsError={overview.analyticsError} domains={overview.domains} publicationEvents={overview.publicationEvents} managementEvents={overview.managementEvents} previewUrl={previewUrl} onManage={() => setShowStudio(true)} />}
+      <section className="wwo-next"><article><Globe2 size={19} /><div><strong>Domain management</strong><p>Coming next: connect and verify website-only DNS records without touching email.</p></div></article><article><MonitorSmartphone size={19} /><div><strong>Visitor tracking</strong><p>Phase 3 will add privacy-conscious visitor, page-view and listing-view measurement.</p></div></article></section>
+    </div>
+  )
+
   return (
     <div className="wa-page website-workspace">
-      <button className="ww-back" type="button" onClick={onBack}><ArrowLeft size={16} /> Marketing overview</button>
+      <button className="ww-back" type="button" onClick={() => setShowStudio(false)}><ArrowLeft size={16} /> Websites</button>
 
       <section className="ww-preview-card" aria-label="Website preview status">
         <div className="ww-preview-copy">

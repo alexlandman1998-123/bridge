@@ -125,6 +125,8 @@ export default function BranchCommandCentrePage() {
       try {
         const settings = await fetchOrganisationSettings().catch(() => null)
         const currentActor = {
+          workspaceType: settings?.organisation?.type,
+          membershipStatus: settings?.membershipStatus || settings?.membership?.status,
           id: settings?.profile?.id || '',
           userId: settings?.profile?.id || '',
           email: settings?.profile?.email || '',

@@ -1,4 +1,5 @@
 import { fetchOrganisationSettings } from '../lib/settingsApi'
+import { hasOpenAgencyOperations } from '../lib/agencyOperationsAccess'
 import { buildRoleHeadcount } from '../lib/reportingRoleLogic'
 import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { assertPermission } from '../auth/permissions/permissionResolver'
@@ -215,6 +216,7 @@ function assertBranchOperationalAccess(context, action = 'operate this branch') 
 }
 
 function hasAllBranchAccess(context = {}) {
+  if (context?.organisationId && hasOpenAgencyOperations(context)) return true
   return ['owner', 'principal', 'super_admin', 'admin'].includes(normalizeLower(context?.membershipRole)) ||
     normalizeBranchScope(context?.membershipBranchScope, '') === BRANCH_SCOPES.allBranches
 }

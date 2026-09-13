@@ -33,6 +33,7 @@ import {
 } from './lib/commercialAccess'
 import { BUSINESS_WORKSPACES, resolveBusinessWorkspaceRoute } from './lib/businessWorkspaceAccess'
 import { RentalModuleBoundary } from './modules/rentals/shell/RentalModuleBoundary'
+import { isWorkspaceExtensionFeatureEnabled, REVO_EXTENSION_KEY } from './modules/revo/revoExtensionRegistry'
 import {
   RentalTenantPortalPage,
   RentalLandlordPortalPage,
@@ -455,6 +456,8 @@ const NewTransactionPage = lazy(() => import('./pages/NewTransactionPage'))
 const OnboardingProfileSetup = lazy(() => import('./pages/OnboardingProfileSetup'))
 const OnboardingLinksDemoPage = lazy(() => import('./pages/OnboardingLinksDemoPage'))
 const Pipeline = lazy(() => import('./pages/Pipeline'))
+const RevoSharedInboxPage = lazy(() => import('./pages/revo/RevoSharedInboxPage'))
+const RevoSharedInboxSettingsPage = lazy(() => import('./pages/revo/RevoSharedInboxSettingsPage'))
 const AgencyLeadListRoutePage = lazy(loadAgencyLeadListRouteModule)
 const AgencyLeadWorkspaceRoutePage = lazy(loadAgencyLeadWorkspaceRouteModule)
 const PipelineCanvassingPage = lazy(() => import('./pages/PipelineCanvassingPage'))
@@ -1377,6 +1380,15 @@ function RoleRoute({ allowedRoles, requiredPermission = '', requiredWorkspaceTyp
   return children
 }
 
+function RevoSharedInboxRoute({ children }) {
+  const { loading, organisation, organisationSettings } = useOrganisation()
+  if (loading) return <PageSkeleton label="Loading Revo shared inbox" />
+  if (!isWorkspaceExtensionFeatureEnabled(REVO_EXTENSION_KEY, 'shared_inbox', { organisation, organisationSettings })) {
+    return <AccessDenied message="The Revo shared inbox is not enabled for this workspace." />
+  }
+  return children
+}
+
 function RentalWorkspaceGuard({ children }) {
   const {
     availableBusinessWorkspaceIds = [],
@@ -1990,6 +2002,8 @@ function AppRoutes() {
 
               <Route element={<OrganisationGate><ProtectedLayout onLogout={logout} session={session} /></OrganisationGate>}>
               <Route path="/dashboard" element={<SalesWorkspaceGuard><AppErrorBoundary scope="dashboard-shell" title="Dashboard failed to render"><ClientAwareDashboard /></AppErrorBoundary></SalesWorkspaceGuard>} />
+              <Route path="/revo/inbox" element={<RevoSharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox" title="Revo shared inbox failed to load"><RevoSharedInboxPage /></AppErrorBoundary></RevoSharedInboxRoute>} />
+              <Route path="/revo/inbox/settings" element={<RevoSharedInboxRoute><AppErrorBoundary scope="revo-shared-inbox-settings" title="Revo inbox channel setup failed to load"><RevoSharedInboxSettingsPage /></AppErrorBoundary></RevoSharedInboxRoute>} />
               <Route path="/command-center" element={<HQRoute><AppErrorBoundary scope="command-center" title="Mission Control failed to render"><CommandCenterPage /></AppErrorBoundary></HQRoute>} />
               <Route path="/commercial" element={<RoleRoute allowedRoles={['agent', 'commercial_broker', 'commercial_admin', 'commercial_principal', 'platform_admin']}><AppErrorBoundary scope="commercial-workspace" title="Commercial workspace failed to render"><CommercialLayout onLogout={logout} user={session?.user || null} /></AppErrorBoundary></RoleRoute>}>
                 <Route index element={<CommercialDashboard />} />

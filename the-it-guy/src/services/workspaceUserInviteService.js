@@ -1,4 +1,5 @@
 import { buildAgentInviteLink } from '../lib/agentInviteService'
+import { hasOpenAgencyContext } from '../lib/agencyOperationsAccess'
 import { normalizeBusinessWorkspaceList } from '../lib/businessWorkspaceAccess'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
@@ -239,6 +240,10 @@ async function assertWorkspaceUserInviteAuthority({ workspaceId = '', role = '',
   if (workspaceId && currentWorkspaceId && workspaceId !== currentWorkspaceId) return
   const workspaceType = normalizeText(context?.organisation?.type || context?.organisation?.workspaceType).toLowerCase()
   if (workspaceType && !['agency', 'residential'].includes(workspaceType)) return
+
+  // The canonical invite flow still validates the target workspace and invite data.
+  // Agency launch mode removes inviter/recipient rank comparisons.
+  if (hasOpenAgencyContext(context)) return
 
   const actor = {
     role: context?.membershipRole || 'viewer',

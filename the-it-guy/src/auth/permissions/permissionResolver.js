@@ -17,6 +17,7 @@ import {
   normalizeWorkspaceType,
 } from '../../constants/workspaceTypes'
 import { FEATURE_FLAGS } from '../../lib/featureFlags'
+import { hasOpenAgencyOperations } from '../../lib/agencyOperationsAccess'
 import { resolveSystemRole, resolveWorkspaceRole, SYSTEM_ROLES } from '../../services/roleResolutionService'
 import {
   ACCESS_SCOPES,
@@ -392,6 +393,24 @@ function getPermissionMap(context = {}) {
   if (resolved.systemRole === SYSTEM_ROLES.admin || resolved.systemRole === SYSTEM_ROLES.superAdmin || resolved.systemRole === SYSTEM_ROLES.founder || resolved.appRole === APP_ROLES.platformAdmin) return platformAdminPermissions
   if (resolved.systemRole === SYSTEM_ROLES.client || resolved.appRole === APP_ROLES.client) return clientPermissions
   if (!resolved.hasActiveMembership) return Object.freeze({})
+  if (hasOpenAgencyOperations(resolved)) {
+    const operationalPermissions = [
+      PERMISSIONS.manageWorkspaceSettings, PERMISSIONS.inviteUsers, PERMISSIONS.manageUsers,
+      PERMISSIONS.manageBranches, PERMISSIONS.viewCommissionStructures,
+      PERMISSIONS.manageCommissionStructures, PERMISSIONS.manageCommissionProfiles,
+      PERMISSIONS.partnersViewNetwork, PERMISSIONS.partnersViewDirectory, PERMISSIONS.partnersViewDefaultRouting,
+      PERMISSIONS.partnersManagePreferences, PERMISSIONS.partnersManageOrgDefaults,
+      PERMISSIONS.partnersManageRegionDefaults, PERMISSIONS.partnersManageBranchDefaults,
+      PERMISSIONS.partnersManageTeamDefaults, PERMISSIONS.partnersOverrideAssignment,
+      PERMISSIONS.assignmentView, PERMISSIONS.assignmentAssign, PERMISSIONS.assignmentReassign,
+      PERMISSIONS.assignmentTransfer, PERMISSIONS.assignmentBulkAssign,
+      PERMISSIONS.assignmentManageQueues, PERMISSIONS.assignmentViewHistory, PERMISSIONS.assignLeads,
+    ]
+    return {
+      ...(permissionsByWorkspaceRole[resolved.workspaceType]?.[resolved.organisationRole] || {}),
+      ...Object.fromEntries(operationalPermissions.map((permission) => [permission, ACCESS_SCOPES.allWorkspace])),
+    }
+  }
   return permissionsByWorkspaceRole[resolved.workspaceType]?.[resolved.organisationRole] || Object.freeze({})
 }
 

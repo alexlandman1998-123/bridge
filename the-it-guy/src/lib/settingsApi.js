@@ -4,6 +4,7 @@ import { resolvePortalDocumentMetadata } from '../core/documents/portalDocumentM
 import { DEMO_PROFILE_ID } from './demoIds'
 import { normalizeOrganisationMembershipRole } from './organisationAccess'
 import { normalizeAppRole } from './appRoleMetadata'
+import { hasOpenAgencyContext } from './agencyOperationsAccess'
 import {
   BRANDING_BUCKET_CANDIDATES,
   PROFILE_AVATAR_BUCKET_CANDIDATES,
@@ -617,6 +618,8 @@ function assertOrganisationAdminAccess(context, actionLabel = 'perform this acti
 
 function getAuthorityActorFromContext(context = {}) {
   return {
+    workspaceType: context.organisation?.type,
+    membershipStatus: context.membershipStatus || context.membership?.status,
     id: context?.profile?.id || '',
     userId: context?.profile?.id || '',
     email: context?.profile?.email || '',
@@ -5910,6 +5913,9 @@ export async function updateOrganisationUserRole(userRowId, role) {
   if (!existing.data?.id) throw new Error('Organisation user not found.')
 
   const previousRole = existing.data.workspace_role || existing.data.organisation_role || existing.data.role
+  if (hasOpenAgencyContext(context) && normalizeAgencyAuthorityRole(nextRole) === 'owner') {
+    return (await grantOrganisationOwnership(userRowId)).owner
+  }
   if (!isOwnerOrganisationUserRow(existing.data) && normalizeAgencyAuthorityRole(nextRole) === 'owner') {
     throw new Error('Owner role changes must use the organisation ownership controls.')
   }
@@ -6083,7 +6089,7 @@ export async function updateOrganisationUserProfile(userRowId, input = {}) {
 export async function updateOrganisationUserJobTitle(userRowId, jobTitle) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
-  if (normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner') {
+  if (!hasOpenAgencyContext(context) && normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner') {
     throw new Error('Only the organisation owner can change job titles.')
   }
 
@@ -6195,10 +6201,10 @@ export async function updateOrganisationUserBusinessWorkspaces(userRowId, busine
 export async function transferOrganisationOwnership(targetMembershipId) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
-  if (
+  if (!hasOpenAgencyContext(context) && (
     normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner' ||
     !(context.membership?.is_primary_owner ?? context.membership?.isPrimaryOwner)
-  ) {
+  )) {
     throw new Error('Only the primary organisation owner can reassign primary ownership.')
   }
 
@@ -6234,10 +6240,10 @@ export async function transferOrganisationOwnership(targetMembershipId) {
 export async function grantOrganisationOwnership(targetMembershipId) {
   const client = requireClient()
   const context = await ensureOrganisationContext(client)
-  if (
+  if (!hasOpenAgencyContext(context) && (
     normalizeOrganisationMembershipRole(context.membershipRole) !== 'owner' ||
     !(context.membership?.is_primary_owner ?? context.membership?.isPrimaryOwner)
-  ) {
+  )) {
     throw new Error('Only the primary organisation owner can grant owner access.')
   }
 

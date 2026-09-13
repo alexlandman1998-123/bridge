@@ -1,6 +1,7 @@
 import { ORG_ROLES, normalizeOrgRole } from '../constants/orgRoles'
 import { WORKSPACE_TYPES } from '../constants/workspaceTypes'
 import { recordSecurityAuditEvent } from './auditLogService'
+import { hasOpenAgencyOperations } from '../lib/agencyOperationsAccess'
 
 export const AGENCY_AUTHORITY_LEVELS = Object.freeze({
   owner: 500,
@@ -138,6 +139,10 @@ export function canPerformAgencyAuthorityAction(action, actor = {}, target = {},
   const actorRole = normalizeAgencyAuthorityRole(actor.authorityRole || actor.role || actor.membershipRole || actor.organisationRole)
   const targetRole = normalizeAgencyAuthorityRole(target.authorityRole || target.role || target.membershipRole || target.organisationRole)
   const rule = AGENCY_AUTHORITY_MATRIX[action]
+  if (hasOpenAgencyOperations(actor) && rule && getUserId(actor) &&
+      ![AGENCY_AUTHORITY_ACTIONS.deleteOrganisation, AGENCY_AUTHORITY_ACTIONS.manageBilling].includes(action)) {
+    return true
+  }
   if (!rule?.[actorRole]) return false
 
   if (sameUser(actor, target) && [

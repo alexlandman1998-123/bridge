@@ -23,6 +23,14 @@
   },
   "dynamicRoutes": [
     {
+      "page": "/blog/[slug]",
+      "regex": "^/blog/([^/]+?)(?:/)?$",
+      "routeKeys": {
+        "nxtPslug": "nxtPslug"
+      },
+      "namedRegex": "^/blog/(?<nxtPslug>[^/]+?)(?:/)?$"
+    },
+    {
       "page": "/properties/[slug]",
       "regex": "^/properties/([^/]+?)(?:/)?$",
       "routeKeys": {
@@ -59,10 +67,46 @@
       "namedRegex": "^/_not\\-found(?:/)?$"
     },
     {
+      "page": "/api/analytics",
+      "regex": "^/api/analytics(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/analytics(?:/)?$"
+    },
+    {
+      "page": "/api/health",
+      "regex": "^/api/health(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/health(?:/)?$"
+    },
+    {
       "page": "/api/leads",
       "regex": "^/api/leads(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/api/leads(?:/)?$"
+    },
+    {
+      "page": "/api/preapproval",
+      "regex": "^/api/preapproval(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/api/preapproval(?:/)?$"
+    },
+    {
+      "page": "/blog",
+      "regex": "^/blog(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/blog(?:/)?$"
+    },
+    {
+      "page": "/calculators",
+      "regex": "^/calculators(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/calculators(?:/)?$"
+    },
+    {
+      "page": "/preapproval",
+      "regex": "^/preapproval(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/preapproval(?:/)?$"
     },
     {
       "page": "/properties",
