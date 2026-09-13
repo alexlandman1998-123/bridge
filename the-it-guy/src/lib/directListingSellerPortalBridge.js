@@ -189,18 +189,20 @@ function buildComplianceSummary(declarations = {}) {
   const disclosure = declarations.propertyConditionDisclosure || declarations.property_condition_disclosure || {}
   const fica = declarations.ficaForm || declarations.fica_form || {}
   const rows = [
-    ['mandate', 'Signed mandate held', mandate.signed ?? mandate.hasSignedMandate],
-    ['property_condition_disclosure', 'Signed Property Condition Disclosure held', disclosure.signed],
-    ['fica_form', 'Signed FICA form held', fica.signed],
+    ['mandate', 'Signed mandate', mandate.signed ?? mandate.hasSignedMandate, mandate.capturedVia || mandate.captured_via],
+    ['property_condition_disclosure', 'Signed Property Condition Disclosure', disclosure.signed, disclosure.capturedVia || disclosure.captured_via],
+    ['fica_form', 'Signed FICA form', fica.signed, fica.capturedVia || fica.captured_via],
   ]
-  return rows.map(([key, label, value]) => {
+  return rows.map(([key, label, value, capturedVia]) => {
     const held = normalizeBooleanDeclaration(value)
     return {
       key,
       label,
       held,
-      status: held === true ? 'reported_held' : held === false ? 'reported_not_held' : 'unknown',
-      statusLabel: held === true ? 'Reported held' : held === false ? 'Reported not held' : 'Not captured',
+      captureSource: normalizeKey(capturedVia),
+      requiresUpload: held === true,
+      status: held === true ? 'reported_held_pending_upload' : held === false ? 'reported_not_held' : 'unknown',
+      statusLabel: held === true ? 'Reported received — upload pending' : held === false ? 'Reported not held' : 'Not captured',
     }
   })
 }
@@ -250,6 +252,9 @@ export function buildSellerPortalFormDataFromDirectListing(listing = {}) {
     directListingComplianceSummary: complianceSummary,
     directListingUploadsRequired: false,
     sellerPortalInviteRequested: formData.sellerPortalInviteRequested ?? formData.seller_portal_invite_requested,
+    sellerPortalAccessIntent: pickFirst(formData.sellerPortalAccessIntent, formData.seller_portal_access_intent),
+    sellerPortalOptedOut: formData.sellerPortalOptedOut ?? formData.seller_portal_opted_out,
+    sellerPortalOptOutReason: pickFirst(formData.sellerPortalOptOutReason, formData.seller_portal_opt_out_reason),
 
     sellerFirstName: pickFirst(formData.sellerFirstName, formData.sellerName, seller.sellerName, seller.firstName, canonicalFacts?.firstName, identitySplit.name),
     sellerSurname: pickFirst(formData.sellerSurname, seller.sellerSurname, seller.lastName, canonicalFacts?.lastName, identitySplit.surname),

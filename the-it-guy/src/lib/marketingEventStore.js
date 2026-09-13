@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { canPersistMarketingEvents, createMarketingEvent, listMarketingEvents } from '../services/marketingEventRepository'
+import { canPersistMarketingEvents, createMarketingEvent, listMarketingEvents, updateMarketingEvent as updatePersistedMarketingEvent } from '../services/marketingEventRepository'
 
 const STORAGE_KEY = 'arch9.marketing-events.v1'
 
@@ -59,9 +59,21 @@ export function useMarketingEvents(kind, seed, { organisationId = '' } = {}) {
     return event
   }, [kind, organisationId, persisted])
 
-  const updateEvent = useCallback((id, values) => {
-    setEvents((current) => current.map((event) => event.id === id ? { ...event, ...values, updatedAt: new Date().toISOString() } : event))
-  }, [])
+  const updateEvent = useCallback(async (id, values) => {
+    if (persisted) {
+      try {
+        const event = await updatePersistedMarketingEvent(id, values)
+        setEvents((current) => current.map((currentEvent) => currentEvent.id === id ? event : currentEvent))
+        return event
+      } catch (error) {
+        setPersistenceError(error?.message || 'Could not update shared event.')
+        throw error
+      }
+    }
+    const next = { ...values, updatedAt: new Date().toISOString() }
+    setEvents((current) => current.map((event) => event.id === id ? { ...event, ...next } : event))
+    return next
+  }, [persisted])
 
   return useMemo(() => ({ events, createEvent, updateEvent, persisted, persistenceError }), [createEvent, events, persisted, persistenceError, updateEvent])
 }

@@ -1,5 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "supabase";
+import { applyWhatsAppCampaignWebhook } from "../_shared/whatsappCampaignWebhook.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -100,7 +101,7 @@ function mapMetaStatus(status: string) {
 function extractFailureReason(item: JsonRecord) {
   if (Array.isArray(item.errors) && item.errors.length > 0) {
     const first = item.errors[0] as JsonRecord;
-    return text(first.code) ? `${text(first.code)}:${text(first.title)}` : text(first.error_data?.code);
+    return `${String(first.code || "")}: ${text(first.title) || text((first.error_data as JsonRecord)?.details) || "Delivery failed"}`;
   }
   return text(item.error);
 }
@@ -191,10 +192,14 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { error: "Invalid webhook JSON." });
   }
 
-  const webhookEventId = text(req.headers.get("x-hub-signature-id")) ||
-    text((payload.entry as JsonRecord[])?.[0]?.id) ||
-    text(req.headers.get("x-request-id")) ||
-    await sha256Hex(rawBody);
+  // Apply idempotent campaign callbacks before audit deduplication so retries
+  // can recover a database failure without losing delivery or opt-out events.
+  try {
+    await applyWhatsAppCampaignWebhook(supabase, payload);
+  } catch {
+    return jsonResponse(500, { error: "Campaign webhook processing failed. Retry required." });
+  }
+  const webhookEventId = await sha256Hex(rawBody);
 
   const auditInsert = await supabase.from("notification_provider_webhook_events")
     .insert({
@@ -226,8 +231,9 @@ Deno.serve(async (req) => {
       ? entry.changes as JsonRecord[]
       : [];
     for (const change of changes) {
-      const statuses = Array.isArray((change as JsonRecord).value?.statuses)
-        ? (change as JsonRecord).value.statuses as JsonRecord[]
+      const changeValue = (change.value || {}) as JsonRecord;
+      const statuses = Array.isArray(changeValue.statuses)
+        ? changeValue.statuses as JsonRecord[]
         : [];
       for (const statusItem of statuses) {
         const mappedStatus = mapMetaStatus(text(statusItem.status));

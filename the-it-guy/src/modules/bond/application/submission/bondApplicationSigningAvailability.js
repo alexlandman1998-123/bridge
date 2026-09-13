@@ -1,16 +1,19 @@
 import { DOCUMENT_GENERATOR_RETIRED } from '../../../../core/documents/documentGeneratorRetirement.js'
 
 export function getBondApplicationSigningAvailability() {
-  return DOCUMENT_GENERATOR_RETIRED
-    ? { available: false, code: 'bond_application_signing_unavailable', message: 'Online signing is unavailable. You can still save your application. Contact your bond originator to arrange signing.' }
-    : { available: true, code: null, message: '' }
+  return {
+    available: true,
+    code: null,
+    message: DOCUMENT_GENERATOR_RETIRED
+      ? 'Sign your application here. Your drawn signature will be saved with the application and shown in the downloaded PDF.'
+      : '',
+  }
 }
 
 export function assertBondApplicationSigningAvailable() {
-  const availability = getBondApplicationSigningAvailability()
-  if (!availability.available) {
-    const error = new Error(availability.message)
-    error.code = availability.code
+  if (DOCUMENT_GENERATOR_RETIRED) {
+    const error = new Error('The retired document-packet signing route is unavailable. Use the in-application signature flow instead.')
+    error.code = 'bond_application_signing_unavailable'
     throw error
   }
 }

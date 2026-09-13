@@ -233,3 +233,62 @@ The schema includes:
 
 1. `sql/schema.sql`
 2. `sql/seed.sql`
+
+## WhatsApp campaigns
+
+The primary app's Marketing → WhatsApp page uses persisted campaign and consent
+records, with template definitions fetched from the selected sender's Meta WABA.
+It supports saved drafts, explicit recipient selection (up to 500), search and
+status/date filters, personalisation, review, sending and per-recipient results.
+CRM names and phone numbers can be copied into WhatsApp contacts; CRM/email
+subscription status never supplies WhatsApp consent.
+
+Meta fields come from the connected account: Phone Number ID for the sending
+endpoint, template name, exact language code, approval status, category and
+components. This version supports marketing/utility templates with positional or
+named text values, text/image/video/document headers, static phone/quick-reply
+buttons and dynamic URL suffixes. Create/submit templates in WhatsApp Manager;
+unsupported formats (including authentication, carousel, location and Flow
+buttons) are visibly unavailable. Media uses public HTTPS links; Meta validates
+media format, availability and size. Campaign name and consent evidence are
+Arch9 fields, not Meta template fields. Tokens remain server-side.
+
+Before enabling this in an environment, apply the new `whatsapp_campaigns`
+migration and deploy `whatsapp-campaigns` and the updated `whatsapp-webhook`
+function, then deploy the app. Use the repository's Supabase guard first and
+obtain explicit approval for that environment. No migration or deployment is
+performed by the checks below. Existing sender connections need a valid WABA ID,
+Phone Number ID and token with `whatsapp_business_management` (template reads)
+and `whatsapp_business_messaging` (sending) access. Configure the existing
+`WHATSAPP_WEBHOOK_APP_SECRET` and verification token, subscribe the app to WABA
+message webhooks, and set `WHATSAPP_GRAPH_VERSION` if overriding the existing
+integration's v23.0 default. Production sender configuration remains in the
+existing administrative integration; the campaign UI never collects tokens.
+
+Sending runs in resumable batches of five while the campaign page remains open.
+Closing it leaves unclaimed recipients queued; use **Send remaining** in results.
+Each recipient is atomically claimed before the Meta request. An interrupted or
+ambiguous attempt is marked unconfirmed and is never automatically resent.
+Approval is rechecked before each batch and consent before each individual claim.
+Delivery/read callbacks are monotonic and correlated using message IDs or
+`biz_opaque_callback_data`; read counts include only actual read callbacks.
+Signed STOP, unsubscribe and opt-out replies revoke permission. Other replies
+are not presented as a shared inbox. Scheduling and shared reply handling are
+outside this version. Read receipts can be unavailable, and acceptance by Meta
+is not delivery. A real sender/template/recipient smoke test is still required
+after an explicitly approved deployment.
+
+Focused local verification:
+
+```bash
+node --test scripts/whatsapp-campaigns.test.mjs
+./node_modules/.bin/vitest run src/components/marketing/__tests__/WhatsAppCampaigns.test.jsx
+```
+
+The Node tests use isolated PostgreSQL (PGlite), not a connected database. The
+component tests mock network operations; they never send WhatsApp messages.
+
+References checked during implementation:
+[Meta's template-message API example](https://www.postman.com/meta/whatsapp-business-platform/request/o65u5m5/send-message-template-text),
+[Meta's template components example](https://www.postman.com/meta/whatsapp-business-platform/request/ep5w4rc/create-template-w-document-header-text-body-a-phone-number-button-and-a-url-button),
+and [WhatsApp Business Messaging Policy](https://whatsappbusiness.com/policy/).

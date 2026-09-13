@@ -11,6 +11,7 @@ export const DIRECT_LISTING_SELLER_LEGAL_TYPES = [
   'multiple_owners',
   'company',
   'trust',
+  'deceased_estate',
   'foreign_individual',
   'other',
 ]
@@ -92,6 +93,14 @@ function normalizeMandateType(value) {
   return ''
 }
 
+function normalizeSellerPortalAccessIntent(value, inviteRequested = false) {
+  const key = normalizeKey(value)
+  if (['agent_managed', 'no_portal', 'offline', 'opted_out'].includes(key)) return 'agent_managed'
+  if (['send_now', 'send', 'invite_now'].includes(key)) return 'send_now'
+  if (['later', 'not_now', 'pending'].includes(key)) return 'later'
+  return inviteRequested ? 'send_now' : 'later'
+}
+
 function normalizeSellerLegalType(form = {}) {
   const key = normalizeKey(
     pickFirst(
@@ -108,6 +117,7 @@ function normalizeSellerLegalType(form = {}) {
 
   if (['company', 'private_company', 'pty_ltd', 'cc', 'close_corporation'].includes(key)) return 'company'
   if (['trust', 'inter_vivos_trust', 'family_trust'].includes(key)) return 'trust'
+  if (['deceased_estate', 'estate', 'deceased'].includes(key)) return 'deceased_estate'
   if (['foreign', 'foreign_owner', 'foreign_individual', 'non_resident_individual'].includes(key)) return 'foreign_individual'
   if (['multiple', 'multiple_owner', 'multiple_owners', 'joint', 'joint_owners', 'co_owners'].includes(key)) return 'multiple_owners'
   if (['individual', 'natural_person', 'single', 'married_cop', 'married_anc', 'married_in_community', 'married_out_of_community'].includes(key)) return 'individual'
@@ -120,6 +130,7 @@ function resolveOwnerModel(sellerLegalType, form = {}) {
 
   if (sellerLegalType === 'company') return { ownerEntityType: 'company', ownerStructureType: 'company' }
   if (sellerLegalType === 'trust') return { ownerEntityType: 'trust', ownerStructureType: 'trust' }
+  if (sellerLegalType === 'deceased_estate') return { ownerEntityType: 'deceased_estate', ownerStructureType: 'deceased_estate' }
   if (sellerLegalType === 'foreign_individual') return { ownerEntityType: 'foreign', ownerStructureType: 'foreign_individual' }
   if (sellerLegalType === 'multiple_owners') return { ownerEntityType: 'natural_person', ownerStructureType: 'multiple_owners' }
 
@@ -176,6 +187,7 @@ function normalizeSellerIdentity(form = {}) {
   const sellerSurname = normalizeText(pickFirst(form.sellerSurname, form.surname, form.lastName, form.last_name))
   const companyName = normalizeText(pickFirst(form.companyName, form.company_name, form.registeredName, form.registered_name))
   const trustName = normalizeText(pickFirst(form.trustName, form.trust_name))
+  const estateName = normalizeText(pickFirst(form.estateName, form.estate_name, form.deceasedEstateName, form.deceased_estate_name))
   const displayName = normalizeText(
     pickFirst(
       form.sellerDisplayName,
@@ -184,6 +196,7 @@ function normalizeSellerIdentity(form = {}) {
       [sellerName, sellerSurname].filter(Boolean).join(' '),
       companyName,
       trustName,
+      estateName,
     ),
   )
 
@@ -248,6 +261,28 @@ function normalizeForeignFacts(form = {}) {
   })
 }
 
+function normalizeDeceasedEstateFacts(form = {}) {
+  const rawExecutors = pickFirst(
+    form.executors,
+    form.estateExecutors,
+    form.estate_executors,
+    form.executorsText,
+    form.executorName,
+  )
+  const executors = normalizePeopleCollection(
+    typeof rawExecutors === 'string'
+      ? rawExecutors.split(/\r?\n|,/).map((executor) => executor.trim()).filter(Boolean)
+      : rawExecutors,
+    'Executor',
+  )
+  return compactObject({
+    estateName: normalizeText(pickFirst(form.estateName, form.estate_name, form.deceasedEstateName, form.deceased_estate_name)),
+    estate_reference: normalizeText(pickFirst(form.estateReference, form.estate_reference, form.sellerRegistrationNumber)),
+    executors,
+    executor_name: normalizeText(pickFirst(form.executorName, form.executor_name, executors[0]?.fullName)),
+  })
+}
+
 export function buildDirectListingComplianceDeclarations(form = {}) {
   const mandateSigned = normalizeBooleanDeclaration(
     pickFirst(form.hasSignedMandate, form.signedMandate, form.mandateSigned, form.manualMandateStatus, form.mandateStatus),
@@ -264,6 +299,8 @@ export function buildDirectListingComplianceDeclarations(form = {}) {
   const ficaFormSigned = normalizeBooleanDeclaration(
     pickFirst(form.hasSignedFicaForm, form.ficaFormSigned, form.signedFicaForm, form.fica_form_signed),
   )
+  const captureMethod = normalizeKey(pickFirst(form.complianceCaptureMethod, form.compliance_capture_method)) || 'agent_managed'
+  const captureNotes = normalizeText(pickFirst(form.complianceCaptureNotes, form.compliance_capture_notes))
 
   return {
     version: DIRECT_LISTING_INTAKE_VERSION,
@@ -271,19 +308,26 @@ export function buildDirectListingComplianceDeclarations(form = {}) {
     declarationsOnly: true,
     uploadsRequired: false,
     evidenceRequired: false,
+    capture: {
+      method: captureMethod,
+      notes: captureNotes,
+    },
     mandate: {
       hasSignedMandate: mandateSigned,
       signed: mandateSigned,
       status: declarationStatus(mandateSigned),
       mandateType: mandateSigned === true ? (mandateType || 'sole') : mandateType,
+      capturedVia: normalizeKey(pickFirst(form.mandateCaptureSource, form.mandate_capture_source)),
     },
     propertyConditionDisclosure: {
       signed: propertyConditionDisclosureSigned,
       status: declarationStatus(propertyConditionDisclosureSigned),
+      capturedVia: normalizeKey(pickFirst(form.disclosureCaptureSource, form.disclosure_capture_source)),
     },
     ficaForm: {
       signed: ficaFormSigned,
       status: declarationStatus(ficaFormSigned),
+      capturedVia: normalizeKey(pickFirst(form.ficaCaptureSource, form.fica_capture_source)),
     },
   }
 }
@@ -363,6 +407,7 @@ export function buildDirectListingPartyFacts(form = {}) {
   const company = normalizeCompanyFacts(form)
   const trust = normalizeTrustFacts(form)
   const foreign = normalizeForeignFacts(form)
+  const deceasedEstate = normalizeDeceasedEstateFacts(form)
   const owners = normalizePeopleCollection(pickFirst(form.multipleOwners, form.owners), 'Owner')
   const spouse = normalizePersonRecord(
     {
@@ -405,6 +450,11 @@ export function buildDirectListingPartyFacts(form = {}) {
     trustees: trust.trustees,
     trust_trustees: trust.trustees,
     trust,
+    deceasedEstate,
+    deceased_estate: deceasedEstate,
+    estateName: deceasedEstate.estateName,
+    estate_name: deceasedEstate.estateName,
+    executors: deceasedEstate.executors,
     multipleOwners: owners,
     owners,
     maritalStatus: normalizeText(pickFirst(form.maritalStatus, form.marital_status)),
@@ -421,14 +471,22 @@ export function buildDirectListingOnboardingFormData(form = {}, context = {}) {
   const sellerPortalInviteRequested = normalizeBooleanDeclaration(
     pickFirst(form.sellerPortalInviteRequested, form.sendSellerPortalLink, form.wouldLikeToSendSellerPortalLink),
   ) === true
+  const sellerPortalAccessIntent = normalizeSellerPortalAccessIntent(form.sellerPortalAccessIntent, sellerPortalInviteRequested)
+  const sellerPortalOptOutReason = normalizeText(pickFirst(form.sellerPortalOptOutReason, form.seller_portal_opt_out_reason))
 
   return compactObject({
     ...partyFacts,
     ...propertyFacts,
     complianceDeclarations,
     compliance_declarations: complianceDeclarations,
-    sellerPortalInviteRequested,
-    seller_portal_invite_requested: sellerPortalInviteRequested,
+    sellerPortalInviteRequested: sellerPortalAccessIntent === 'send_now' && sellerPortalInviteRequested,
+    seller_portal_invite_requested: sellerPortalAccessIntent === 'send_now' && sellerPortalInviteRequested,
+    sellerPortalAccessIntent,
+    seller_portal_access_intent: sellerPortalAccessIntent,
+    sellerPortalOptedOut: sellerPortalAccessIntent === 'agent_managed',
+    seller_portal_opted_out: sellerPortalAccessIntent === 'agent_managed',
+    sellerPortalOptOutReason,
+    seller_portal_opt_out_reason: sellerPortalOptOutReason,
     directListingIntake: {
       version: DIRECT_LISTING_INTAKE_VERSION,
       source: DIRECT_LISTING_INTAKE_SOURCE,
@@ -492,6 +550,8 @@ export function buildDirectListingIntakePayload(form = {}, context = {}) {
   const sellerPortalInviteRequested = normalizeBooleanDeclaration(
     pickFirst(form.sellerPortalInviteRequested, form.sendSellerPortalLink, form.wouldLikeToSendSellerPortalLink),
   ) === true
+  const sellerPortalAccessIntent = normalizeSellerPortalAccessIntent(form.sellerPortalAccessIntent, sellerPortalInviteRequested)
+  const sellerPortalOptOutReason = normalizeText(pickFirst(form.sellerPortalOptOutReason, form.seller_portal_opt_out_reason))
 
   return {
     version: DIRECT_LISTING_INTAKE_VERSION,
@@ -505,7 +565,10 @@ export function buildDirectListingIntakePayload(form = {}, context = {}) {
     sellerCanonicalFacts,
     complianceDeclarations,
     sellerPortalInvite: {
-      requested: sellerPortalInviteRequested,
+      requested: sellerPortalAccessIntent === 'send_now' && sellerPortalInviteRequested,
+      accessIntent: sellerPortalAccessIntent,
+      optedOut: sellerPortalAccessIntent === 'agent_managed',
+      optOutReason: sellerPortalOptOutReason,
       destinationEmail: seller.sellerEmail || seller.email || '',
       destinationPhone: seller.sellerPhone || seller.phone || '',
     },

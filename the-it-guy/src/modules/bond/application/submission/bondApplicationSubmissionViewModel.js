@@ -114,8 +114,8 @@ export function buildBondApplicationReviewSections({
       status: documentProgress?.canContinue === false ? 'needs_attention' : 'complete',
       summary: documentProgress ? [
         `${documentProgress.completedRequired} of ${documentProgress.totalRequired} required documents received`,
-        documentProgress.blockingMissing?.length ? `${documentProgress.blockingMissing.length} needed before signature` : 'Ready for review',
-      ] : ['Document checklist will be checked before signing.'],
+        documentProgress.blockingMissing?.length ? `${documentProgress.blockingMissing.length} still needed before bank submission` : 'Ready for bank submission',
+      ] : ['Documents can be uploaded now or later from the portal.'],
     },
   ]
 }

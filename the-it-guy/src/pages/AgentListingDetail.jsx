@@ -99,7 +99,7 @@ import {
   mapAgencyLeadSelectionRows,
 } from '../lib/agencyLeadSelection'
 import { assessBuyerOfferEligibility, assessBuyerOfferIntegrity, assessSellerOnboardingIntegrity } from '../lib/listingDataIntegrity'
-import { buildAgentAssistedOfferEntry } from '../lib/agentAssistedOfferEntry'
+import { buildAgentAssistedOfferEntry, buildManualBuyerCapture } from '../lib/agentAssistedOfferEntry'
 import {
   LISTING_SELLER_PROFILE_BRANCHES,
   addListingSellerProfileDraftPerson,
@@ -3352,6 +3352,9 @@ function AgentListingDetail() {
     depositAmount: '',
     financeType: 'cash',
     specialConditions: '',
+    manualCaptureSource: 'agent_meeting',
+    manualCaptureNotes: '',
+    manualDocumentStatus: 'not_received',
   })
   const [offerActionMessage, setOfferActionMessage] = useState('')
   const [offerActionError, setOfferActionError] = useState('')
@@ -4996,6 +4999,9 @@ function AgentListingDetail() {
     const agentAssistedEntry = clientIntakePreference === CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED
       ? buildAgentAssistedOfferEntry({ buyer: selectedLead, draft: offerInviteDraft })
       : null
+    const manualBuyerCapture = clientIntakePreference === CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL
+      ? null
+      : buildManualBuyerCapture({ draft: offerInviteDraft, mode: clientIntakePreference })
     if (agentAssistedEntry && !agentAssistedEntry.ok) {
       setOfferActionError(agentAssistedEntry.blockers.join(' '))
       return
@@ -5038,7 +5044,10 @@ function AgentListingDetail() {
         offerAmount: agentAssistedEntry?.payload.offerAmount,
         depositAmount: agentAssistedEntry?.payload.depositAmount,
         financeType: agentAssistedEntry?.payload.financeType,
-        conditionsJson: agentAssistedEntry?.payload.conditionsJson || { clientIntakePreference },
+        conditionsJson: agentAssistedEntry?.payload.conditionsJson || {
+          clientIntakePreference,
+          manualBuyerCapture,
+        },
       }, {
         actor: {
           id: profile?.id || listingRecord?.agentId || '',
@@ -5058,6 +5067,9 @@ function AgentListingDetail() {
           depositAmount: '',
           financeType: 'cash',
           specialConditions: '',
+          manualCaptureSource: 'agent_meeting',
+          manualCaptureNotes: '',
+          manualDocumentStatus: 'not_received',
         })
         setOffersRefreshTick((value) => value + 1)
         return
@@ -5078,13 +5090,13 @@ function AgentListingDetail() {
           email: buyerEmail,
           phone: buyerPhone,
           subject: `Hard-copy offer pack: ${propertyLabel}`,
-          message: `Prepare the hard-copy offer pack for ${buyerName}. No portal link may be sent.`,
+          message: `Prepare the hard-copy offer pack for ${buyerName}. No portal link may be sent.${manualBuyerCapture?.notes ? ` Agent note: ${manualBuyerCapture.notes}` : ''}`,
           dedupeKey: `buyer-offer-hard-copy:${canonicalOffer?.offerId || canonicalOffer?.id || ''}`,
-          metadata: { clientIntakePreference, controlledDelivery: true },
+          metadata: { clientIntakePreference, controlledDelivery: true, manualBuyerCapture },
         })
         setOfferActionMessage(`Hard-copy offer handoff prepared (${prepared.items.length} internal task). No buyer link was sent.`)
         setShowSendOfferLinkForm(false)
-        setOfferInviteDraft({ buyerLeadId: '', expiresInDays: 7, clientIntakePreference: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL, offerAmount: '', depositAmount: '', financeType: 'cash', specialConditions: '' })
+        setOfferInviteDraft({ buyerLeadId: '', expiresInDays: 7, clientIntakePreference: CLIENT_INTAKE_PREFERENCE.DIGITAL_PORTAL, offerAmount: '', depositAmount: '', financeType: 'cash', specialConditions: '', manualCaptureSource: 'agent_meeting', manualCaptureNotes: '', manualDocumentStatus: 'not_received' })
         setOffersRefreshTick((value) => value + 1)
         return
       }
@@ -5175,6 +5187,9 @@ function AgentListingDetail() {
         depositAmount: '',
         financeType: 'cash',
         specialConditions: '',
+        manualCaptureSource: 'agent_meeting',
+        manualCaptureNotes: '',
+        manualDocumentStatus: 'not_received',
       })
       setOffersRefreshTick((value) => value + 1)
     } catch (error) {
@@ -10975,6 +10990,46 @@ function AgentListingDetail() {
             </div>
           </section>
 
+          {directListingOperationalSummary.hasIntake ? (
+            <section data-testid="direct-listing-operational-audit" className="rounded-[24px] border border-[#d7e5f1] bg-[#f8fbff] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#6f839a]">Manual intake handoff</p>
+                  <h3 className="mt-1 text-[1.02rem] font-semibold text-[#142132]">What still needs to happen</h3>
+                  <p className="mt-1 text-sm leading-6 text-[#607387]">
+                    This is the live handoff from the agent’s initial capture. Reported documents still need uploading and verification before the listing can move forward.
+                  </p>
+                </div>
+                <span className={`inline-flex w-fit rounded-full border px-3 py-1 text-[0.74rem] font-semibold ${directListingOperationalSummary.portalInvite.agentManaged ? 'border-[#dbe6f2] bg-white text-[#35546c]' : 'border-[#f3d7a8] bg-[#fff8ea] text-[#88531a]'}`}>
+                  Seller portal: {directListingOperationalSummary.portalInvite.label}
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {directListingPostCreateActions.map((action) => {
+                  const complete = action.complete === true
+                  const pendingUpload = action.status === 'reported_held_pending_upload'
+                  return (
+                    <article key={action.key} className="rounded-[16px] border border-[#dce6f2] bg-white p-3.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <p className="text-sm font-semibold text-[#22374d]">{action.label}</p>
+                        <span className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${complete ? 'bg-[#1f7d44]' : pendingUpload ? 'bg-[#c58a16]' : 'bg-[#dc3e35]'}`} />
+                      </div>
+                      <p className={`mt-2 text-xs font-semibold ${complete ? 'text-[#1f7d44]' : pendingUpload ? 'text-[#9a5b13]' : 'text-[#607387]'}`}>{action.statusLabel}</p>
+                      <p className="mt-2 text-xs leading-5 text-[#607387]">{action.detail}</p>
+                    </article>
+                  )
+                })}
+              </div>
+              {directListingOutstandingPostCreateActions.length ? (
+                <div className="mt-4 flex justify-end">
+                  <Button type="button" variant="secondary" onClick={() => setActiveTab('documents')}>
+                    Open document workspace
+                  </Button>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
             {[
               { label: 'Leads', value: metrics.leadCount, meta: 'Interested buyers' },
@@ -12472,6 +12527,35 @@ function AgentListingDetail() {
                     <label className="grid gap-2">
                       <span className="text-sm font-semibold text-[#2d445e]">Special conditions</span>
                       <Field value={offerInviteDraft.specialConditions} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, specialConditions: event.target.value }))} placeholder="Optional conditions" />
+                    </label>
+                  </div>
+                ) : null}
+                {[CLIENT_INTAKE_PREFERENCE.AGENT_ASSISTED, CLIENT_INTAKE_PREFERENCE.HARD_COPY].includes(normalizeClientIntakePreference(offerInviteDraft.clientIntakePreference)) ? (
+                  <div className="mt-3 grid gap-4 rounded-[14px] border border-[#d8e6f2] bg-[#f7fbff] p-3 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <p className="text-sm font-semibold text-[#2d445e]">Manual buyer capture</p>
+                      <p className="mt-1 text-xs leading-5 text-[#60758c]">Record how the agent is capturing the buyer’s information. “Received” remains upload pending until the document is stored and verified.</p>
+                    </div>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Capture source</span>
+                      <Field as="select" value={offerInviteDraft.manualCaptureSource} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, manualCaptureSource: event.target.value }))}>
+                        <option value="agent_meeting">Agent meeting</option>
+                        <option value="phone_call">Phone call</option>
+                        <option value="email">Email</option>
+                        <option value="whatsapp">WhatsApp / message</option>
+                        <option value="hard_copy">Hard copy</option>
+                      </Field>
+                    </label>
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Buyer documents</span>
+                      <Field as="select" value={offerInviteDraft.manualDocumentStatus} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, manualDocumentStatus: event.target.value }))}>
+                        <option value="not_received">Not received yet</option>
+                        <option value="received_pending_upload">Received — upload pending</option>
+                      </Field>
+                    </label>
+                    <label className="grid gap-2 md:col-span-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Agent note</span>
+                      <Field as="textarea" value={offerInviteDraft.manualCaptureNotes} onChange={(event) => setOfferInviteDraft((prev) => ({ ...prev, manualCaptureNotes: event.target.value }))} placeholder="What was captured, what is still outstanding, and any agreed follow-up." />
                     </label>
                   </div>
                 ) : null}

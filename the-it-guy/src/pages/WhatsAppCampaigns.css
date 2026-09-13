@@ -202,3 +202,55 @@
   .wa-info-panel { display: block; }
   .wa-info-panel ul { display: grid; grid-template-columns: 1fr; }
 }
+
+/* Live campaign workflow */
+.wa-live .wa-notice { border: 1px solid #cfe5dd; background: #f0f8f4; border-radius: 12px; padding: 16px 20px; color: #234d3e; }
+.wa-live .wa-notice p { margin: 6px 0; }
+.wa-live .wa-editor-fields { border: 0; padding: 24px; margin: 0; display: grid; gap: 20px; min-width: 0; }
+.wa-live .wa-editor-fields input:not([type=checkbox]), .wa-live .wa-editor-fields select,
+.wa-live .wa-contact-manager input:not([type=checkbox]), .wa-live .wa-contact-manager select { width: 100%; box-sizing: border-box; border: 1px solid #dbe5ec; border-radius: 9px; padding: 11px 12px; font: inherit; color: #203749; background: white; }
+.wa-live .wa-editor-fields p, .wa-live .wa-contact-manager p { color: #64748b; line-height: 1.6; margin: 0; }
+.wa-live .wa-inline-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.wa-live .wa-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 18px; margin: 16px 0; }
+.wa-live .wa-checkbox { display: flex; gap: 10px; align-items: flex-start; line-height: 1.6; margin: 12px 0; }
+.wa-live .wa-checkbox input { margin-top: 5px; flex-shrink: 0; }
+.wa-live .wa-contact-manager { padding: 24px; display: grid; gap: 16px; }
+.wa-live .wa-contact-manager h2 { margin: 0; }
+.wa-live .wa-contact-list { max-height: 360px; overflow: auto; }
+.wa-live .wa-contact-row { display: flex; align-items: center; gap: 12px; padding: 12px 4px; border-bottom: 1px solid #edf1f5; }
+.wa-live .wa-contact-row > span { flex: 1; }
+.wa-live .wa-contact-row small { display: block; margin-top: 4px; color: #64748b; }
+.wa-live .wa-contact-row input[type=checkbox], .wa-live .wa-checkbox input { accent-color: #16875f; width: 17px; height: 17px; }
+.wa-live .wa-message-preview { white-space: pre-wrap; overflow-wrap: anywhere; background: #fff; color: #223c34; border: 1px solid #dbeae2; border-radius: 0 12px 12px 12px; padding: 20px; line-height: 1.6; margin: 20px 0 12px; }
+.wa-live .wa-media-preview { padding: 20px; background: #e2eee7; border-radius: 12px; overflow-wrap: anywhere; }
+.wa-live .wa-preview-button { border: 1px solid #dbeae2; border-radius: 8px; background: white; padding: 10px; color: #177f5c; text-align: center; margin-bottom: 8px; }
+.wa-live .wa-preview-button small { display: block; overflow-wrap: anywhere; }
+.wa-live .wa-review { display: grid; grid-template-columns: auto 1fr; gap: 12px 24px; margin: 0; }
+.wa-live .wa-review dt { color: #64748b; }
+.wa-live .wa-review dd { margin: 0; overflow-wrap: anywhere; }
+.wa-live .wa-results { padding: 20px; }
+.wa-live .wa-table-scroll { overflow-x: auto; }
+.wa-live .wa-results table { width: 100%; border-collapse: collapse; text-align: left; font-size: 14px; }
+.wa-live .wa-results th, .wa-live .wa-results td { padding: 14px 12px; border-bottom: 1px solid #edf1f5; }
+.wa-live .wa-results th { color: #64748b; font-weight: 600; }
+.wa-live button:disabled { opacity: .5; cursor: not-allowed; }
+.wa-live button:focus-visible, .wa-live input:focus-visible, .wa-live select:focus-visible, .wa-live a:focus-visible { outline: 2px solid #16875f; outline-offset: 3px; }
+.wa-live .wa-tabs { overflow-x: auto; }
+.wa-live .wa-tabs button, .wa-live .wa-status { text-transform: capitalize; }
+@media (max-width: 700px) {
+  .wa-live .wa-campaign-card { flex-wrap: wrap; }
+  .wa-live .wa-panel-toolbar { align-items: stretch; }
+  .wa-live .wa-review { grid-template-columns: 1fr; gap: 6px; }
+  .wa-live .wa-review dd { margin-bottom: 10px; }
+}
+
+.wa-live .wa-campaign-card { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.wa-live > .wa-notice { margin-bottom: 20px; }
+.wa-live .wa-empty { text-align: center; padding: 40px 20px; color: #64748b; }
+.wa-live .wa-error { border: 1px solid #efc7c7; border-radius: 10px; background: #fff4f4; color: #992e2e; padding: 14px 18px; }
+@media (max-width: 700px) { .wa-live .wa-campaign-card { grid-template-columns: 1fr; } }
+@media (max-width: 700px) {
+  .wa-live .wa-step-header li { flex-direction: column; gap: 7px; font-size: 11px; text-align: center; }
+  .wa-live .wa-step-header { padding: 14px 8px; }
+  .wa-live .wa-editor-fields { padding: 18px 0; }
+}

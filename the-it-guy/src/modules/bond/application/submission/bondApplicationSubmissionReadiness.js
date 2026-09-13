@@ -163,15 +163,17 @@ export function validateBondApplicationSubmissionReadiness({
   }
 
   const documentProgress = calculateBondApplicationDocumentProgress(documentChecklist)
+  // Applicants may sign first and return to the portal to upload supporting evidence.
+  // Documents remain mandatory before the originator submits to a bank.
   const documentBlockers = bankSubmission
     ? (documentChecklist.items || []).filter((item) => item.requirement?.required && item.requirement?.active !== false &&
       item.requirement.requiredBefore !== BOND_APPLICATION_DOCUMENT_TIMING.requestedAfterOriginatorReview && !item.complete)
-    : documentProgress.blockingMissing
+    : []
   documentBlockers.forEach((item) => {
     issues.push(issue({
       category: 'documents',
       code: 'blocking_document_missing',
-      message: `${item.requirement?.title || 'A required document'} is needed before ${bankSubmission ? 'bank submission' : 'signing'}.`,
+      message: `${item.requirement?.title || 'A required document'} is needed before bank submission.`,
       stepKey: 'documents',
       screenKey: 'document_checklist',
       target: item.requirement?.key || null,

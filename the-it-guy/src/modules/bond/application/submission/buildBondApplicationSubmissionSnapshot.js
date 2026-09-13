@@ -68,6 +68,7 @@ export function buildBondApplicationSubmissionSnapshot({
   participants = null,
   reviewContextHash = null,
   source = {},
+  signatureEvidence = null,
   createdAt = new Date().toISOString(),
 } = {}) {
   const primary = applicationState?.participants?.primaryApplicant || {}
@@ -175,6 +176,9 @@ export function buildBondApplicationSubmissionSnapshot({
     declarations: cloneBondApplicationValue(declarations || []),
     participants: participantSnapshots,
     signerManifest: resolvedSignerManifest,
+    signatureEvidence: (signatureEvidence || applicationState?.application?.signatureEvidence) && typeof (signatureEvidence || applicationState?.application?.signatureEvidence) === 'object'
+      ? cloneBondApplicationValue(signatureEvidence || applicationState.application.signatureEvidence)
+      : null,
     source: {
       onboardingFormDataId: source.onboardingFormDataId || null,
       sourceUpdatedAt: source.sourceUpdatedAt || null,

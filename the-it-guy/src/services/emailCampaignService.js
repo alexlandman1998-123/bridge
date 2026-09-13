@@ -87,9 +87,9 @@ export async function saveEmailCampaign({ campaign, organisationId, userId }) {
     audience_filter: campaign.audienceFilter || {}, content_json: campaign.contentJson || {}, html: campaign.html || '',
     updated_by: userId || null,
   }
-  if (!payload.name || !payload.subject) throw new Error('Add a campaign name and subject before saving.')
+  if (!payload.name) throw new Error('Add a campaign name before saving.')
   const query = campaign.id
-    ? supabase.from('email_campaigns').update(payload).eq('id', campaign.id).select().single()
+    ? supabase.from('email_campaigns').update(payload).eq('organisation_id', organisationId).eq('status', 'draft').eq('id', campaign.id).select().single()
     : supabase.from('email_campaigns').insert({ ...payload, created_by: userId }).select().single()
   const { data, error } = await query
   if (error) throw error
@@ -189,4 +189,20 @@ export async function getEmailCampaignAnalytics(campaignId) {
   ])
   for (const result of [recipients, events, links, audit]) if (result.error) throw result.error
   return { recipients: recipients.data || [], events: events.data || [], links: links.data || [], audit: audit.data || [] }
+}
+
+export async function getEmailDraft(organisationId, id) {
+  const { data, error } = await supabase.from('email_campaigns').select('*').eq('organisation_id', organisationId).eq('id', id).eq('status', 'draft').single()
+  if (error) throw error
+  return data
+}
+export async function getEmailRevisions(organisationId, id) {
+  const { data, error } = await supabase.from('email_campaign_revisions').select('*').eq('organisation_id', organisationId).eq('campaign_id', id).order('created_at', { ascending: false }).limit(30)
+  if (error) throw error
+  return data
+}
+export async function createEmailSender({ organisationId, userId, displayName, email }) {
+  const { data, error } = await supabase.from('email_sender_identities').insert({ organisation_id: organisationId, created_by: userId, display_name: clean(displayName), from_email: normalizeEmail(email), reply_to_email: normalizeEmail(email), verification_status: 'pending' }).select().single()
+  if (error) throw error
+  return data
 }

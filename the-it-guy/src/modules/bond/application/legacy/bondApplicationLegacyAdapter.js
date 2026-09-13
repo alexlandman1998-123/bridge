@@ -747,6 +747,10 @@ function applyKnownMappedState(legacy, state) {
   legacy.declarations_consents.digital_signature_date =
     state?.legacySubmission?.typedSignatureDate ?? legacy.declarations_consents.digital_signature_date
   legacy.consent = cloneBondApplicationValue(state?.legacySubmission?.consents?.consent || legacy.consent || {})
+  legacy._meta = {
+    ...(legacy._meta || {}),
+    bond_application_html_signature: cloneBondApplicationValue(state?.application?.signatureEvidence || legacy?._meta?.bond_application_html_signature || null),
+  }
   applyBankAccountToLegacy(legacy, state)
   applyGuidedRepeatablesToLegacy(legacy, state)
   return legacy
@@ -775,6 +779,10 @@ export function buildBondApplicationState(portal, options = {}) {
     rawApplication: legacyDraft,
     prefillMetadata: prefill.metadata,
   }).applicationState
+  const savedSignature = legacyDraft?._meta?.bond_application_html_signature
+  if (savedSignature && typeof savedSignature === 'object' && !Array.isArray(savedSignature)) {
+    interpretedState.application.signatureEvidence = cloneBondApplicationValue(savedSignature)
+  }
   interpretedState.requirementProfile = resolveBondOriginatorRequirementProfile({
     portal,
     originator: options.originator,

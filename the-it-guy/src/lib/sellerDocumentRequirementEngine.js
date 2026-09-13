@@ -709,7 +709,8 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     onboarding?.estateOrHoa ||
       canonicalFacts?.property?.estate_or_hoa ||
       propertyBranch === 'estate_hoa' ||
-      normalizeText(onboarding?.estateName || onboarding?.estateComplexName || canonicalFacts?.property?.estate_name),
+      (sellerBranch !== 'deceased_estate' &&
+        normalizeText(onboarding?.estateName || onboarding?.estateComplexName || canonicalFacts?.property?.estate_name)),
   )
   const bodyCorporate = Boolean(onboarding?.bodyCorporate || canonicalFacts?.property?.body_corporate || sectionalTitle || shareBlock)
   const commercialProperty = Boolean(onboarding?.commercialProperty || canonicalFacts?.property?.commercial_property || ['commercial', 'mixed_use'].includes(propertyBranch))

@@ -9,10 +9,24 @@ function money(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
 }
 
+export function buildManualBuyerCapture({ draft = {}, mode = 'agent_assisted', now = new Date().toISOString() } = {}) {
+  const captureSource = text(draft.manualCaptureSource).toLowerCase().replace(/[\s-]+/g, '_') || 'agent_meeting'
+  const documentStatus = text(draft.manualDocumentStatus).toLowerCase().replace(/[\s-]+/g, '_') || 'not_received'
+  return {
+    mode: text(mode) || 'agent_assisted',
+    captureSource,
+    notes: text(draft.manualCaptureNotes),
+    documentStatus,
+    documentsRequireUpload: documentStatus === 'received_pending_upload',
+    capturedAt: now,
+  }
+}
+
 export function buildAgentAssistedOfferEntry({ buyer = {}, draft = {}, now = new Date().toISOString() } = {}) {
   const offerAmount = money(draft.offerAmount)
   const depositAmount = money(draft.depositAmount)
   const financeType = text(draft.financeType).toLowerCase() || 'cash'
+  const manualCapture = buildManualBuyerCapture({ draft, mode: 'agent_assisted', now })
   const blockers = []
   if (!offerAmount) blockers.push('Enter the buyer’s offer amount before saving an agent-assisted offer.')
   const conditionsJson = mergeResidentialOfferTermsIntoConditions(
@@ -21,6 +35,7 @@ export function buildAgentAssistedOfferEntry({ buyer = {}, draft = {}, now = new
       offerEntryMode: 'agent_assisted',
       agentAssisted: true,
       agentCapturedAt: now,
+      manualBuyerCapture: manualCapture,
       buyerName: text(buyer.name),
       buyerEmail: text(buyer.email).toLowerCase(),
       buyerPhone: text(buyer.phone),

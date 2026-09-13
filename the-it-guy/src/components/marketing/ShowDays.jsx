@@ -30,7 +30,7 @@ import {
   showDays,
   showDaysTabs,
 } from '../../data/showDays'
-import { formatEventDate, useMarketingEvents } from '../../lib/marketingEventStore'
+import { useMarketingEvents } from '../../lib/marketingEventStore'
 import { checkInMarketingEventRsvp, listMarketingEventRsvps, processMarketingEventConversion, updateMarketingEventRsvpInterest } from '../../services/marketingEventOperationsService'
 
 const statIcons = { 'show-days': CalendarDays, registrations: UsersRound, attendees: Eye, attendance: CheckCircle2 }
@@ -74,26 +74,18 @@ export function ShowDayCard({ showDay, onOpen }) {
   )
 }
 
-function CreateShowDayForm({ onClose, onCreate }) {
-  const [values, setValues] = useState({ title: '', address: '', date: '', time: '10:00 – 14:00', status: 'Draft' })
-  const update = (field) => (event) => setValues((current) => ({ ...current, [field]: event.target.value }))
-  const submit = async (event) => { event.preventDefault(); if (!values.title.trim() || !values.date) return; await onCreate({ ...values, startDate: values.date, startTime: values.time.split('–')[0].trim(), title: values.title.trim(), date: formatEventDate(values.date), dayDate: formatEventDate(values.date), registrations: '0', attendees: '0', confirmed: '0', interestedLeads: '0', attendanceRate: '0%', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=520&q=84', imageAlt: 'Property prepared for a show day', hostAgent: 'Unassigned', hostInitials: '—', contactNumber: 'Add contact details', email: 'Add contact email', description: 'Add a short property and visitor briefing.' }); onClose() }
-  return <section className="marketing-event-form" aria-label="Create show day"><div><div><span>New event</span><h2>Create show day</h2><p>Start with the property, schedule and host. Visitor tracking and follow-up live in the event workspace.</p></div><button className="wa-more" type="button" aria-label="Close show day form" onClick={onClose}>×</button></div><form onSubmit={submit}><label>Property title<input required value={values.title} onChange={update('title')} placeholder="e.g. 3 Bedroom Home in Constantia Park" /></label><label>Address<input required value={values.address} onChange={update('address')} placeholder="Street, suburb, city" /></label><label>Date<input required type="date" value={values.date} onChange={update('date')} /></label><label>Time<input value={values.time} onChange={update('time')} /></label><label>Status<select value={values.status} onChange={update('status')}><option>Draft</option><option>Upcoming</option></select></label><footer><button type="button" className="wa-secondary-button" onClick={onClose}>Cancel</button><button className="wa-primary-button" type="submit">Save show day <ChevronRight size={16} /></button></footer></form></section>
-}
-
-export function ShowDaysOverview({ onOpenShowDay }) {
+export function ShowDaysOverview({ onOpenShowDay, onCreateShowDay }) {
   const { organisation } = useOrganisation()
   const organisationId = organisation?.organisationId || organisation?.id || ''
-  const { events, createEvent } = useMarketingEvents('showDays', showDays, { organisationId })
+  const { events } = useMarketingEvents('showDays', showDays, { organisationId })
   const [activeTab, setActiveTab] = useState(showDaysTabs[0])
   const [query, setQuery] = useState('')
   const [status, setStatus] = useState('All')
-  const [creating, setCreating] = useState(false)
   const visible = useMemo(() => events.filter((event) => (activeTab === 'All Show Days' || event.status === activeTab) && (status === 'All' || event.status === status) && `${event.title} ${event.address}`.toLowerCase().includes(query.toLowerCase())), [activeTab, events, query, status])
   return (
     <div className="wa-page show-days-page">
       <ShowDaysStats events={events} />
-      <section className="wa-campaigns-panel"><div className="wa-panel-toolbar"><div className="wa-tabs" role="tablist" aria-label="Show day status">{showDaysTabs.map((tab) => <button className={activeTab === tab ? 'wa-tab-active' : ''} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}</div><button className="wa-primary-button" type="button" onClick={() => setCreating(true)}>Create Show Day <ChevronRight size={16} /></button></div><div className="wa-campaigns-content"><ShowDaysFilters query={query} onQuery={setQuery} status={status} onStatus={setStatus} />{creating ? <CreateShowDayForm onClose={() => setCreating(false)} onCreate={createEvent} /> : null}<div className="wa-campaign-list">{visible.length ? visible.map((showDay) => <ShowDayCard showDay={showDay} onOpen={onOpenShowDay} key={showDay.id} />) : <p className="marketing-event-empty">No show days match these filters.</p>}</div><footer className="wa-list-footer"><span>Showing {visible.length} of {events.length} show days</span></footer></div></section>
+      <section className="wa-campaigns-panel"><div className="wa-panel-toolbar"><div className="wa-tabs" role="tablist" aria-label="Show day status">{showDaysTabs.map((tab) => <button className={activeTab === tab ? 'wa-tab-active' : ''} type="button" role="tab" aria-selected={activeTab === tab} onClick={() => setActiveTab(tab)} key={tab}>{tab}</button>)}</div><button className="wa-primary-button" type="button" onClick={onCreateShowDay}>Create Show Day <ChevronRight size={16} /></button></div><div className="wa-campaigns-content"><ShowDaysFilters query={query} onQuery={setQuery} status={status} onStatus={setStatus} /><div className="wa-campaign-list">{visible.length ? visible.map((showDay) => <ShowDayCard showDay={showDay} onOpen={onOpenShowDay} key={showDay.id} />) : <p className="marketing-event-empty">No show days match these filters.</p>}</div><footer className="wa-list-footer"><span>Showing {visible.length} of {events.length} show days</span></footer></div></section>
     </div>
   )
 }

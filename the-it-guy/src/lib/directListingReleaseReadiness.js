@@ -66,6 +66,7 @@ function buildFactReadiness(payload = {}) {
     sellerLegalType: Boolean(legalType),
     companyDirectors: legalType !== 'company' || Boolean(seller.company?.directors?.length || seller.companyDirectors?.length),
     trustTrustees: legalType !== 'trust' || Boolean(seller.trust?.trustees?.length || seller.trustees?.length),
+    estateExecutors: legalType !== 'deceased_estate' || Boolean(seller.deceasedEstate?.executors?.length || seller.deceased_estate?.executors?.length || seller.executors?.length),
     multipleOwners: legalType !== 'multiple_owners' || Boolean(seller.owners?.length || seller.multipleOwners?.length),
     foreignOwnerCountry: legalType !== 'foreign_individual' || Boolean(seller.foreignOwnerCountry || seller.foreign?.country),
     propertyAddress: Boolean(facts.propertyAddress || facts.formattedAddress || facts.property?.propertyAddress || facts.property?.address),
@@ -180,6 +181,25 @@ export function buildDirectListingReleaseReadinessScenarios() {
       },
     }),
     buildDirectListingReleaseScenarioListing({
+      scenario: 'global_deceased_estate_agent_managed',
+      form: {
+        sellerType: 'deceased_estate',
+        sellerName: 'Alex',
+        sellerSurname: 'Executor',
+        sellerEmail: 'executor@example.com',
+        sellerPhone: '+27 82 111 6666',
+        deceasedEstateName: 'Estate Late Jane Doe',
+        sellerRegistrationNumber: 'EST-2026-001',
+        executorsText: 'Alex Executor',
+        propertyAddress: '10 Executor Avenue',
+        propertyStructureType: 'full_title',
+        hasSignedMandate: true,
+        mandateCaptureSource: 'in_person',
+        sellerPortalAccessIntent: 'agent_managed',
+        sellerPortalOptOutReason: 'Executor will hand documents to the agent.',
+      },
+    }),
+    buildDirectListingReleaseScenarioListing({
       scenario: 'kingstons_company_sectional',
       form: {
         sellerType: 'company',
@@ -259,6 +279,8 @@ function evaluateDirectListingReleaseRow(listing = {}) {
     sellerType: summary.sellerType,
     propertyStructureType: summary.propertyStructureType,
     portalInviteStatus: summary.portalInvite?.status || 'not_requested',
+    portalAccessIntent: summary.portalInvite?.accessIntent || 'later',
+    portalAgentManaged: summary.portalInvite?.agentManaged === true,
     attentionItems: summary.attentionItems || [],
     blockers,
   }
@@ -287,6 +309,7 @@ export function buildDirectListingReleaseReadinessReport({ listings = null } = {
       portalReady: rows.filter((row) => row.portalReady).length,
       operationalAuditReady: rows.filter((row) => row.operationalAuditReady).length,
       postCreateActionsVisible: rows.filter((row) => row.postCreateActionsVisible).length,
+      agentManaged: rows.filter((row) => row.portalAgentManaged).length,
     },
     rows,
     blockers,
@@ -297,6 +320,7 @@ export function buildDirectListingReleaseReadinessReport({ listings = null } = {
       creationBlocked: rows.some((row) => row.creationBlocked),
       postCreateActionsVisible: rows.every((row) => row.postCreateActionsVisible),
       sellerPortalReadsDirectFormat: rows.every((row) => row.portalReady),
+      agentManagedSellerPath: rows.some((row) => row.portalAgentManaged && row.ready),
       kingstonsSafe: kingstonsRows.every((row) => row.ready && row.uploadFree),
     },
   }

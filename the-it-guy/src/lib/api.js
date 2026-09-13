@@ -56450,6 +56450,99 @@ export async function prepareClientPortalBondApplicationSubmission({
   return { submission, signPath: submission.signPath }
 }
 
+export async function submitClientPortalBondApplicationHtmlSignature({
+  token,
+  acceptedDeclarations = [],
+  declarationValues = {},
+  signatureEvidence = {},
+  expectedSourceHash = '',
+  idempotencyKey = '',
+} = {}) {
+  const signatureDataUrl = String(signatureEvidence?.dataUrl || '').trim()
+  if (!/^data:image\/png;base64,[a-z0-9+/=]+$/i.test(signatureDataUrl) || signatureDataUrl.length > 1024 * 1024) {
+    throw new Error('Draw your signature before signing the application.')
+  }
+  if (!signatureEvidence?.confirmed) throw new Error('Confirm the application information before signing.')
+
+  const client = requireClientPortalTokenClient(token)
+  const context = await fetchBondApplicationPortalSubmissionContext(client, token)
+  const normalizedApplication = await fetchNormalizedBondApplicationBundle(client, context.transaction.id)
+  const applicationState = normalizedApplication?.activeChangeRequestId ? buildApplicationStateFromNormalizedApplication(normalizedApplication) : context.applicationState
+  const resolvedDocs = resolveBondApplicationDocumentRequirements({ applicationState })
+  const documentChecklist = buildBondApplicationDocumentChecklist({ activeRequirements: resolvedDocs.activeRequirements, existingRequiredDocuments: context.requiredDocuments, existingDocuments: context.documents })
+  const declarations = resolveBondApplicationDeclarations({ applicationState })
+  const signerIdentity = resolveBondApplicationSignerIdentity(applicationState)
+  const readiness = validateBondApplicationSubmissionReadiness({ applicationState, documentChecklist, declarations, declarationValues, signerIdentity, latestSaveStatus: 'saved', submission: null })
+  if (!readiness.ready) {
+    const error = new Error('A few details still need your attention before the application can be signed.')
+    error.issues = readiness.issues
+    throw error
+  }
+
+  const sourceLegacy = toLegacyBondApplication(applicationState)
+  const sourceHash = await hashBondApplicationSnapshot(sourceLegacy)
+  if (expectedSourceHash && expectedSourceHash !== sourceHash) throw new Error('The saved application changed after review. Refresh and review the latest information before signing.')
+  const existing = await fetchLatestClientPortalBondApplicationSubmissionRow(client, context.transaction.id)
+  if (existing?.status === BOND_APPLICATION_SUBMISSION_STATUSES.submitted && !(isBondCorrectionResubmission(normalizedApplication, existing))) {
+    const error = new Error('This bond application has already been submitted.')
+    error.code = 'BOND_APPLICATION_ALREADY_SUBMITTED'
+    throw error
+  }
+  const latestVersionQuery = await client.from('transaction_bond_application_submissions').select('submission_version').eq('transaction_id', context.transaction.id).order('submission_version', { ascending: false }).limit(1).maybeSingle()
+  if (latestVersionQuery.error && !isMissingTableError(latestVersionQuery.error, 'transaction_bond_application_submissions')) throw latestVersionQuery.error
+  const now = new Date().toISOString()
+  const evidence = {
+    method: 'html_canvas',
+    dataUrl: signatureDataUrl,
+    signerName: normalizeTextValue(signatureEvidence.signerName || signerIdentity.fullName),
+    signedAt: signatureEvidence.signedAt || now,
+    confirmed: true,
+  }
+  const snapshot = buildBondApplicationSubmissionSnapshot({
+    applicationState,
+    transaction: context.transaction,
+    submissionVersion: Number(latestVersionQuery.data?.submission_version || 0) + 1,
+    declarations: acceptedDeclarations.length ? acceptedDeclarations : buildBondApplicationDeclarationEvidence({ declarations, values: declarationValues, acceptedAt: now, selectedBankIds: applicationState.application.selectedBankIds }),
+    documentChecklist,
+    signerIdentity,
+    signatureEvidence: evidence,
+    source: { onboardingFormDataId: context.onboardingFormData?.id || null, sourceUpdatedAt: context.onboardingFormData?.updated_at || null, sourceHash },
+    createdAt: now,
+  })
+  const snapshotHash = await hashBondApplicationSnapshot(snapshot)
+  const insert = await client.from('transaction_bond_application_submissions').insert({
+    transaction_id: context.transaction.id,
+    onboarding_form_data_id: context.onboardingFormData?.id || null,
+    bond_application_id: normalizedApplication?.activeChangeRequestId ? normalizedApplication.id : null,
+    source_application_revision: normalizedApplication?.activeChangeRequestId ? normalizedApplication.revision : null,
+    submission_version: snapshot.submissionVersion,
+    application_schema_version: String(snapshot.versions.applicationSchemaVersion),
+    flow_version: BOND_APPLICATION_SUBMISSION_FLOW_VERSION,
+    document_rule_set_version: snapshot.versions.documentRuleSetVersion,
+    declaration_contract_version: snapshot.versions.declarationContractVersion,
+    status: BOND_APPLICATION_SUBMISSION_STATUSES.submitted,
+    snapshot_json: snapshot,
+    snapshot_hash: snapshotHash,
+    source_application_hash: sourceHash,
+    source_application_updated_at: context.onboardingFormData?.updated_at || null,
+    declarations_json: snapshot.declarations,
+    document_manifest_json: snapshot.documentManifest,
+    selected_bank_ids: snapshot.selectedBanks,
+    signer_manifest_json: snapshot.signerManifest,
+    prepared_at: now,
+    signed_at: evidence.signedAt,
+    submitted_at: now,
+    metadata: { idempotencyKey: normalizeTextValue(idempotencyKey) || null, signingMethod: 'html_canvas', signatureConfirmedAt: now },
+  }).select('*').single()
+  if (insert.error) throw insert.error
+
+  if (normalizedApplication?.id) {
+    const appUpdate = await client.from('bond_applications').update({ status: BOND_APPLICATION_STATUSES.submitted, active_submission_id: insert.data.id, submitted_at: now, updated_at: now }).eq('id', normalizedApplication.id)
+    if (appUpdate.error) throw appUpdate.error
+  }
+  return { submission: insert.data }
+}
+
 export async function cancelClientPortalBondApplicationSubmission({ token, submissionId } = {}) {
   const client = requireClientPortalTokenClient(token)
   const context = await fetchBondApplicationPortalSubmissionContext(client, token)

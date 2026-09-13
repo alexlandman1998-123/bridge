@@ -68,6 +68,8 @@ import {
   buildDirectListingPartyFacts,
 } from '../lib/directListingIntakeModel'
 import {
+  buildSellerRequirementProfile,
+  getRequiredSellerDocuments,
   syncSellerDocumentRequirements as syncLocalSellerDocumentRequirements,
 } from '../lib/sellerDocumentRequirementEngine'
 import {
@@ -131,6 +133,7 @@ const DIRECT_LISTING_SELLER_TYPE_OPTIONS = [
   { value: 'company', label: 'Company' },
   { value: 'close_corporation', label: 'Close corporation' },
   { value: 'trust', label: 'Trust' },
+  { value: 'deceased_estate', label: 'Deceased estate' },
   { value: 'other', label: 'Other entity' },
   { value: 'foreign_individual', label: 'Foreign individual' },
 ]
@@ -147,6 +150,20 @@ const DIRECT_LISTING_MANDATE_TYPE_OPTIONS = [
   { value: 'dual', label: 'Dual' },
   { value: 'tri', label: 'Tri' },
   { value: 'open', label: 'Open' },
+]
+const DIRECT_LISTING_COMPLIANCE_CAPTURE_METHOD_OPTIONS = [
+  { value: 'agent_managed', label: 'Agent-managed (no portal)' },
+  { value: 'seller_portal', label: 'Seller portal' },
+  { value: 'mixed', label: 'Mixed: agent and portal' },
+  { value: 'pending', label: 'Not captured yet' },
+]
+const DIRECT_LISTING_DOCUMENT_CAPTURE_SOURCE_OPTIONS = [
+  { value: '', label: 'Source not recorded' },
+  { value: 'in_person', label: 'In person / hard copy' },
+  { value: 'email', label: 'Emailed to agent' },
+  { value: 'whatsapp', label: 'WhatsApp / message' },
+  { value: 'seller_portal', label: 'Seller portal' },
+  { value: 'other', label: 'Other' },
 ]
 const QUICK_ADD_INTENT_OPTIONS = [
   {
@@ -219,8 +236,10 @@ const QUICK_ADD_SELLER_TYPE_CARDS = [
   { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more individual owners', icon: UsersRound },
   { value: 'company', label: 'Company', description: 'Pty Ltd / Ltd company', icon: Building2 },
   { value: 'close_corporation', label: 'Close Corporation', description: 'Registered close corp', icon: Building2 },
-  { value: 'trust', label: 'Trust', description: 'Trust / Estate', icon: UsersRound },
+  { value: 'trust', label: 'Trust', description: 'Registered trust', icon: UsersRound },
+  { value: 'deceased_estate', label: 'Deceased Estate', description: 'Estate administered by an executor', icon: FileText },
   { value: 'other', label: 'Other Entity', description: 'Other legal entity', icon: Building2 },
+  { value: 'foreign_individual', label: 'Foreign Owner', description: 'Non-resident individual owner', icon: UserRound },
 ]
 
 const CREATE_LISTING_WORKFLOW_STEPS = [
@@ -904,15 +923,18 @@ function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel = 'Canc
   )
 }
 
-function CreateListingStatusRow({ label, complete, detail = '' }) {
+function CreateListingStatusRow({ label, complete, detail = '', status = '' }) {
+  const reportedPending = status === 'reported_held_pending_upload'
+  const indicatorClass = complete ? 'bg-[#1f7d44]' : reportedPending ? 'bg-[#c58a16]' : 'bg-[#dc3e35]'
+  const detailClass = complete ? 'text-[#1f7d44]' : reportedPending ? 'text-[#9a5b13]' : 'text-[#7b8ca2]'
   return (
     <div className="flex items-start justify-between gap-3">
       <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#294563]">
-        <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${complete ? 'bg-[#1f7d44]' : 'bg-[#dc3e35]'}`} />
+        <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${indicatorClass}`} />
         <span className="truncate">{label}</span>
       </span>
-      <span className={`shrink-0 text-xs font-semibold ${complete ? 'text-[#1f7d44]' : 'text-[#7b8ca2]'}`}>
-        {detail || (complete ? 'Complete' : 'Incomplete')}
+      <span className={`shrink-0 text-xs font-semibold ${detailClass}`}>
+        {detail || (complete ? 'Complete' : reportedPending ? 'Upload pending' : 'Incomplete')}
       </span>
     </div>
   )
@@ -920,12 +942,12 @@ function CreateListingStatusRow({ label, complete, detail = '' }) {
 
 function buildCreateListingRequirementSummary(form = {}) {
   const sellerName = getQuickAddSellerDisplayName(form)
-  const mandateComplete = Boolean(form.hasSignedMandate || normalizeText(form.manualMandateFileName))
+  const reportedDetail = (reported) => reported ? 'Reported received — upload pending' : 'Not recorded'
   return [
     { key: 'seller', label: 'Seller details', complete: Boolean(sellerName && (form.sellerEmail || form.sellerPhone)) },
-    { key: 'fica', label: 'FICA details', complete: Boolean(form.hasSignedFicaForm) },
-    { key: 'disclosure', label: 'Disclosure', complete: Boolean(form.hasSignedPropertyConditionDisclosure) },
-    { key: 'mandate', label: 'Signed mandate', complete: mandateComplete },
+    { key: 'fica', label: 'FICA evidence', complete: false, status: form.hasSignedFicaForm ? 'reported_held_pending_upload' : '', detail: reportedDetail(form.hasSignedFicaForm) },
+    { key: 'disclosure', label: 'Disclosure evidence', complete: false, status: form.hasSignedPropertyConditionDisclosure ? 'reported_held_pending_upload' : '', detail: reportedDetail(form.hasSignedPropertyConditionDisclosure) },
+    { key: 'mandate', label: 'Signed mandate', complete: false, status: form.hasSignedMandate || normalizeText(form.manualMandateFileName) ? 'reported_held_pending_upload' : '', detail: reportedDetail(form.hasSignedMandate || normalizeText(form.manualMandateFileName)) },
   ]
 }
 
@@ -1519,6 +1541,7 @@ function buildDirectListingMapperForm(form = {}) {
     ...form,
     companyDirectors: parseDirectListingPeopleText(form.companyDirectorsText, 'Director'),
     trustees: parseDirectListingPeopleText(form.trusteesText, 'Trustee'),
+    executors: parseDirectListingPeopleText(form.executorsText || form.executorName, 'Executor'),
     multipleOwners: parseDirectListingPeopleText(multipleOwnersText, 'Owner'),
   }
 }
@@ -1529,6 +1552,7 @@ function getQuickAddSellerDisplayName(form = {}) {
     return normalizeText(form.companyName || form.sellerName)
   }
   if (legalType === 'trust') return normalizeText(form.trustName || form.sellerName)
+  if (legalType === 'deceased_estate') return normalizeText(form.deceasedEstateName || form.sellerName)
   if (legalType === 'multiple_owners') {
     const multipleOwnersText = normalizeText(form.multipleOwnersText)
       || buildCreateListingOwnersText(form.multipleOwners)
@@ -1542,6 +1566,7 @@ function getQuickAddSellerNameRequirementLabel(form = {}) {
   if (legalType === 'company') return 'Company name is required.'
   if (legalType === 'close_corporation') return 'CC name is required.'
   if (legalType === 'trust') return 'Trust name is required.'
+  if (legalType === 'deceased_estate') return 'Estate name is required.'
   if (legalType === 'other') return 'Entity name is required.'
   if (legalType === 'multiple_owners') return 'At least one owner name is required.'
   return 'Seller full name is required.'
@@ -1558,6 +1583,7 @@ function buildDirectListingCanonicalFactReadiness(canonicalFacts = {}) {
     sellerLegalType: Boolean(legalType),
     companyDirectors: legalType !== 'company' || Boolean(seller.company?.directors?.length || seller.companyDirectors?.length),
     trustTrustees: legalType !== 'trust' || Boolean(seller.trust?.trustees?.length || seller.trustees?.length),
+    estateExecutors: legalType !== 'deceased_estate' || Boolean(seller.deceasedEstate?.executors?.length || seller.deceased_estate?.executors?.length || seller.executors?.length),
     multipleOwners: legalType !== 'multiple_owners' || Boolean(seller.owners?.length || seller.multipleOwners?.length),
     foreignOwnerCountry: legalType !== 'foreign_individual' || Boolean(seller.foreignOwnerCountry || seller.foreign?.country),
     propertyAddress: Boolean(property.propertyAddress || property.formattedAddress || property.address),
@@ -2914,6 +2940,9 @@ function buildInitialListingLeadForm(profile, workspace) {
     trustName: '',
     trustRegistrationNumber: '',
     trusteesText: '',
+    deceasedEstateName: '',
+    executorName: '',
+    executorsText: '',
     multipleOwnersText: '',
     multipleOwners: [],
     maritalStatus: '',
@@ -2925,6 +2954,11 @@ function buildInitialListingLeadForm(profile, workspace) {
     hasSignedMandate: false,
     hasSignedPropertyConditionDisclosure: false,
     hasSignedFicaForm: false,
+    complianceCaptureMethod: 'agent_managed',
+    complianceCaptureNotes: '',
+    mandateCaptureSource: '',
+    disclosureCaptureSource: '',
+    ficaCaptureSource: '',
     sellerPortalInviteRequested: false,
     sellerPortalDeliveryMethod: '',
     sellerPortalAccessIntent: 'later',
@@ -4703,6 +4737,22 @@ function AgentListings({ initialTab = null } = {}) {
   ), [directListingMapperForm, isDeveloperDirectListingFlow, isManualListingFlow])
   const directListingSellerType = normalizeDirectListingKey(directListingPartyPreview?.sellerLegalType || form.sellerType || 'individual')
   const directListingCompliancePreview = directListingIntakePreview?.complianceDeclarations || null
+  const directListingRequirementPreview = useMemo(() => {
+    if (!directListingIntakePreview) return []
+    const profile = buildSellerRequirementProfile({
+      listingStatus: 'onboarding_completed',
+      sellerOnboardingStatus: 'completed',
+      sellerOnboarding: {
+        status: 'completed',
+        formData: directListingIntakePreview.sellerOnboardingFormData,
+      },
+      sellerCanonicalFacts: directListingIntakePreview.sellerCanonicalFacts,
+    })
+    return getRequiredSellerDocuments({
+      ...profile,
+      lifecycleStatus: 'onboarding_completed',
+    })
+  }, [directListingIntakePreview])
 
   const currentBranchId = normalizeText(currentMembership?.branchId || currentMembership?.branch_id)
   const currentMembershipRole = resolveMembershipListingScopeRole({ currentMembership, workspaceRole })
@@ -7668,7 +7718,7 @@ function AgentListings({ initialTab = null } = {}) {
                   <section className="rounded-[8px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                     <p className="text-sm font-bold text-[#142132]">Seller requirements</p>
                     <div className="mt-3 grid gap-2">
-                      {sellerRequirementSummary.map((item) => <CreateListingStatusRow key={item.key} label={item.label} complete={item.complete} />)}
+                      {sellerRequirementSummary.map((item) => <CreateListingStatusRow key={item.key} label={item.label} complete={item.complete} detail={item.detail} status={item.status} />)}
                     </div>
                   </section>
                   <section className="rounded-[8px] border border-[#dce6f2] bg-[#fbfdff] p-4">
@@ -8672,20 +8722,26 @@ function AgentListings({ initialTab = null } = {}) {
                           ? 'Company name *'
                           : selectedSellerType === 'close_corporation'
                             ? 'CC name *'
-                            : selectedSellerType === 'trust'
-                              ? 'Trust name *'
-                              : selectedSellerType === 'other'
+                          : selectedSellerType === 'trust'
+                            ? 'Trust name *'
+                            : selectedSellerType === 'deceased_estate'
+                              ? 'Estate name *'
+                            : selectedSellerType === 'other'
                                 ? 'Entity name *'
                                 : 'Full name *'
                       const registrationLabel =
                         selectedSellerType === 'trust'
                           ? 'Trust registration/reference number'
+                          : selectedSellerType === 'deceased_estate'
+                            ? 'Estate reference number'
                           : selectedSellerType === 'individual' || selectedSellerType === 'multiple_owners'
                             ? 'ID number'
                             : 'Registration number'
                       const contactNameLabel =
                         selectedSellerType === 'trust'
                           ? 'Trustee / contact person'
+                          : selectedSellerType === 'deceased_estate'
+                            ? 'Executor / contact person'
                           : selectedSellerType === 'individual' || selectedSellerType === 'multiple_owners'
                             ? 'Full name *'
                             : 'Contact person'
@@ -8700,21 +8756,21 @@ function AgentListings({ initialTab = null } = {}) {
                             </p>
                           </div>
 
-                          {['company', 'close_corporation', 'trust', 'other'].includes(selectedSellerType) ? (
+                          {['company', 'close_corporation', 'trust', 'deceased_estate', 'other'].includes(selectedSellerType) ? (
                             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                               <label className="grid gap-2">
                                 <span className="text-sm font-semibold text-[#2d445e]">{entityNameLabel}</span>
                                 <Field
-                                  value={selectedSellerType === 'trust' ? form.trustName : form.companyName}
-                                  onChange={(event) => updateForm(selectedSellerType === 'trust' ? 'trustName' : 'companyName', event.target.value)}
+                                  value={selectedSellerType === 'trust' ? form.trustName : selectedSellerType === 'deceased_estate' ? form.deceasedEstateName : form.companyName}
+                                  onChange={(event) => updateForm(selectedSellerType === 'trust' ? 'trustName' : selectedSellerType === 'deceased_estate' ? 'deceasedEstateName' : 'companyName', event.target.value)}
                                   placeholder={entityNameLabel.replace(' *', '')}
                                 />
                               </label>
                               <label className="grid gap-2">
                                 <span className="text-sm font-semibold text-[#2d445e]">{registrationLabel}</span>
                                 <Field
-                                  value={selectedSellerType === 'trust' ? form.trustRegistrationNumber : form.companyRegistrationNumber}
-                                  onChange={(event) => updateForm(selectedSellerType === 'trust' ? 'trustRegistrationNumber' : 'companyRegistrationNumber', event.target.value)}
+                                  value={selectedSellerType === 'trust' ? form.trustRegistrationNumber : selectedSellerType === 'deceased_estate' ? form.sellerRegistrationNumber : form.companyRegistrationNumber}
+                                  onChange={(event) => updateForm(selectedSellerType === 'trust' ? 'trustRegistrationNumber' : selectedSellerType === 'deceased_estate' ? 'sellerRegistrationNumber' : 'companyRegistrationNumber', event.target.value)}
                                   placeholder="Optional"
                                 />
                               </label>
@@ -8734,6 +8790,11 @@ function AgentListings({ initialTab = null } = {}) {
                                 <label className="grid gap-2 md:col-span-2 xl:col-span-3">
                                   <span className="text-sm font-semibold text-[#2d445e]">Trustees</span>
                                   <Field as="textarea" value={form.trusteesText} onChange={(event) => updateForm('trusteesText', event.target.value)} placeholder="One trustee per line" />
+                                </label>
+                              ) : selectedSellerType === 'deceased_estate' ? (
+                                <label className="grid gap-2 md:col-span-2 xl:col-span-3">
+                                  <span className="text-sm font-semibold text-[#2d445e]">Executors</span>
+                                  <Field as="textarea" value={form.executorsText} onChange={(event) => updateForm('executorsText', event.target.value)} placeholder="One executor per line" />
                                 </label>
                               ) : selectedSellerType === 'company' || selectedSellerType === 'close_corporation' ? (
                                 <label className="grid gap-2 md:col-span-2 xl:col-span-3">
@@ -8773,6 +8834,9 @@ function AgentListings({ initialTab = null } = {}) {
                                   <span className="text-sm font-semibold text-[#2d445e]">Additional owners</span>
                                   <Field as="textarea" value={form.multipleOwnersText} onChange={(event) => updateForm('multipleOwnersText', event.target.value)} placeholder="Owner 2, email, mobile - one owner per line" />
                                 </label>
+                              ) : null}
+                              {selectedSellerType === 'foreign_individual' ? (
+                                <><label className="grid gap-2"><span className="text-sm font-semibold text-[#2d445e]">Country / jurisdiction</span><Field value={form.foreignOwnerCountry} onChange={(event) => updateForm('foreignOwnerCountry', event.target.value)} placeholder="Country" /></label><label className="grid gap-2"><span className="text-sm font-semibold text-[#2d445e]">Passport number</span><Field value={form.foreignPassportNumber} onChange={(event) => updateForm('foreignPassportNumber', event.target.value)} placeholder="Optional" /></label></>
                               ) : null}
                             </div>
                           )}
@@ -9197,6 +9261,23 @@ function AgentListings({ initialTab = null } = {}) {
                       </>
                     ) : null}
 
+                    {directListingSellerType === 'deceased_estate' ? (
+                      <>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Estate name</span>
+                          <Field value={form.deceasedEstateName} onChange={(event) => updateForm('deceasedEstateName', event.target.value)} placeholder="Estate of the late owner" />
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Estate reference</span>
+                          <Field value={form.sellerRegistrationNumber} onChange={(event) => updateForm('sellerRegistrationNumber', event.target.value)} placeholder="Master’s Office reference" />
+                        </label>
+                        <label className="grid gap-2 xl:col-span-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Executors</span>
+                          <Field as="textarea" value={form.executorsText} onChange={(event) => updateForm('executorsText', event.target.value)} placeholder="One executor per line" />
+                        </label>
+                      </>
+                    ) : null}
+
                     {directListingSellerType === 'multiple_owners' ? (
                       <label className="grid gap-2 xl:col-span-4">
                         <span className="text-sm font-semibold text-[#2d445e]">Owners</span>
@@ -9353,8 +9434,8 @@ function AgentListings({ initialTab = null } = {}) {
                 <section className="space-y-4 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Legacy Lead Documents</h4>
-                      <p className="mt-1 text-xs text-[#60758c]">Document details can be completed from the listing workspace.</p>
+                      <h4 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#3b5774]">Compliance capture</h4>
+                      <p className="mt-1 text-xs text-[#60758c]">Record what the agent received without treating it as an uploaded or verified document.</p>
                     </div>
                     {directListingCompliancePreview ? (
                       <div className="flex flex-wrap gap-2 text-xs font-semibold">
@@ -9405,14 +9486,97 @@ function AgentListings({ initialTab = null } = {}) {
                       />
                       <span className="text-sm font-semibold text-[#2d445e]">FICA recorded</span>
                     </label>
-                    <label className="flex min-h-[44px] items-center gap-3 rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2 xl:col-span-2">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(form.sellerPortalInviteRequested)}
-                        onChange={(event) => updateForm('sellerPortalInviteRequested', event.target.checked)}
-                        className="h-4 w-4 rounded border-[#b8c8da] text-[#1f7d44]"
-                      />
-                      <span className="text-sm font-semibold text-[#2d445e]">Invite seller from workspace</span>
+                    <label className="grid gap-2 xl:col-span-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Seller collaboration</span>
+                      <Field
+                        as="select"
+                        value={form.sellerPortalAccessIntent}
+                        onChange={(event) => {
+                          const intent = event.target.value
+                          updateForm('sellerPortalAccessIntent', intent)
+                          updateForm('sellerPortalInviteRequested', intent === 'send_now')
+                          if (intent !== 'send_now') updateForm('sellerPortalDeliveryMethod', '')
+                        }}
+                      >
+                        <option value="send_now">Send seller portal invite</option>
+                        <option value="later">Decide later</option>
+                        <option value="agent_managed">Agent-managed — seller will not use the portal</option>
+                      </Field>
+                    </label>
+                    {form.sellerPortalAccessIntent === 'agent_managed' ? (
+                      <label className="grid gap-2 xl:col-span-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Offline-management note</span>
+                        <Field as="textarea" value={form.sellerPortalOptOutReason} onChange={(event) => updateForm('sellerPortalOptOutReason', event.target.value)} placeholder="For example: seller prefers to hand documents to the agent." />
+                      </label>
+                    ) : null}
+                  </div>
+                  <div className="rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-[#243b53]">Required seller documents</p>
+                        <p className="mt-1 text-xs leading-5 text-[#60758c]">
+                          This live preview changes with the ownership and property details above. It is the same requirement pack saved with the listing.
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-[#35546c]">
+                        {directListingRequirementPreview.filter((requirement) => requirement.required !== false).length} required
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {directListingRequirementPreview.map((requirement) => (
+                        <span
+                          key={requirement.requirement_key || requirement.key}
+                          title={requirement.requirement_description || ''}
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${requirement.required === false ? 'bg-white text-[#60758c]' : 'bg-[#e7f5ec] text-[#1f7d44]'}`}
+                        >
+                          {requirement.requirement_name || requirement.label || requirement.key}
+                          {requirement.required === false ? ' · optional' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid gap-4 border-t border-[#e4ebf3] pt-4 md:grid-cols-2 xl:grid-cols-4">
+                    <label className="grid gap-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Capture route</span>
+                      <Field value={form.complianceCaptureMethod} as="select" onChange={(event) => updateForm('complianceCaptureMethod', event.target.value)}>
+                        {DIRECT_LISTING_COMPLIANCE_CAPTURE_METHOD_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </Field>
+                    </label>
+                    {form.hasSignedMandate ? (
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Mandate received via</span>
+                        <Field value={form.mandateCaptureSource} as="select" onChange={(event) => updateForm('mandateCaptureSource', event.target.value)}>
+                          {DIRECT_LISTING_DOCUMENT_CAPTURE_SOURCE_OPTIONS.map((option) => (
+                            <option key={option.value || 'unrecorded'} value={option.value}>{option.label}</option>
+                          ))}
+                        </Field>
+                      </label>
+                    ) : null}
+                    {form.hasSignedPropertyConditionDisclosure ? (
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">Disclosure received via</span>
+                        <Field value={form.disclosureCaptureSource} as="select" onChange={(event) => updateForm('disclosureCaptureSource', event.target.value)}>
+                          {DIRECT_LISTING_DOCUMENT_CAPTURE_SOURCE_OPTIONS.map((option) => (
+                            <option key={option.value || 'unrecorded'} value={option.value}>{option.label}</option>
+                          ))}
+                        </Field>
+                      </label>
+                    ) : null}
+                    {form.hasSignedFicaForm ? (
+                      <label className="grid gap-2">
+                        <span className="text-sm font-semibold text-[#2d445e]">FICA received via</span>
+                        <Field value={form.ficaCaptureSource} as="select" onChange={(event) => updateForm('ficaCaptureSource', event.target.value)}>
+                          {DIRECT_LISTING_DOCUMENT_CAPTURE_SOURCE_OPTIONS.map((option) => (
+                            <option key={option.value || 'unrecorded'} value={option.value}>{option.label}</option>
+                          ))}
+                        </Field>
+                      </label>
+                    ) : null}
+                    <label className="grid gap-2 md:col-span-2 xl:col-span-2">
+                      <span className="text-sm font-semibold text-[#2d445e]">Capture note</span>
+                      <Field as="textarea" value={form.complianceCaptureNotes} onChange={(event) => updateForm('complianceCaptureNotes', event.target.value)} placeholder="For example: seller handed over copies in person; scan still needed." />
                     </label>
                   </div>
                 </section>

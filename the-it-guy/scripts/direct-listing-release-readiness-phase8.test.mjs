@@ -23,21 +23,29 @@ function test(name, fn) {
   }
 }
 
-test('Phase 8 release report passes seeded global and Kingstons scenarios', () => {
+test('Phase 8 release report passes global, agent-managed, and Kingstons scenarios', () => {
   const report = buildDirectListingReleaseReadinessReport()
 
   assert.equal(report.ready, true)
   assert.equal(report.phase, 8)
-  assert.equal(report.counts.scenarios, 4)
+  assert.equal(report.counts.scenarios, 5)
   assert.equal(report.counts.blocked, 0)
   assert.equal(report.counts.kingstons, 1)
   assert.equal(report.counts.uploadFree, report.counts.scenarios)
+  assert.equal(report.counts.agentManaged, 1)
   assert.equal(report.globalContract.declarationOnly, true)
   assert.equal(report.globalContract.uploadsRequired, false)
   assert.equal(report.globalContract.sellerPortalReadsDirectFormat, true)
   assert.equal(report.globalContract.kingstonsSafe, true)
   assert.equal(report.globalContract.creationBlocked, false)
   assert.equal(report.globalContract.postCreateActionsVisible, true)
+  assert.equal(report.globalContract.agentManagedSellerPath, true)
+
+  const estateListing = report.rows.find((row) => row.listingId === 'direct_global_deceased_estate_agent_managed')
+  assert.equal(estateListing?.ready, true)
+  assert.equal(estateListing?.portalAgentManaged, true)
+  assert.equal(estateListing?.portalAccessIntent, 'agent_managed')
+  assert.equal(estateListing?.portalInviteStatus, 'agent_managed')
 })
 
 test('Phase 8 release report blocks any upload-gated direct listing regression', () => {

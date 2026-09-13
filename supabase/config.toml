@@ -291,3 +291,9 @@ entrypoint = "./functions/email-sender-verification/index.ts"
 enabled = true
 verify_jwt = false
 entrypoint = "./functions/email-campaign-track/index.ts"
+
+[functions.whatsapp-campaigns]
+enabled = true
+verify_jwt = true
+import_map = "./functions/whatsapp-campaigns/deno.json"
+entrypoint = "./functions/whatsapp-campaigns/index.ts"

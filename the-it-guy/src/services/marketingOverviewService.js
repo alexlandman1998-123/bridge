@@ -98,7 +98,7 @@ export async function getMarketingOverviewDashboard({ organisationId = '', range
   }
   const since = period.comparisonStart.toISOString()
   const [leadsResult, campaignsResult, performanceResult, siteResult] = await Promise.all([
-    supabase.from('leads').select('lead_id, lead_source, stage, status, property_interest, created_at, updated_at, contacts(first_name,last_name,email)').eq('organisation_id', orgId).gte('created_at', since).order('created_at', { ascending: false }).limit(2000),
+    supabase.from('leads').select('lead_id, lead_source, stage, status, property_interest, created_at, updated_at, contacts!leads_contact_id_fkey(first_name,last_name,email)').eq('organisation_id', orgId).gte('created_at', since).order('created_at', { ascending: false }).limit(2000),
     supabase.from('email_campaigns').select('id,name,subject,preview_text,status,scheduled_for,sent_at,created_at,updated_at,audience_filter').eq('organisation_id', orgId).order('updated_at', { ascending: false }).limit(100),
     supabase.from('email_campaign_performance').select('campaign_id,recipients,delivered,opened,clicked').eq('organisation_id', orgId),
     supabase.from('website_sites').select('id').eq('organisation_id', orgId).maybeSingle(),

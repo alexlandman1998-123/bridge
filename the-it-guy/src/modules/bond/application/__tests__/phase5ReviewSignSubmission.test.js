@@ -155,8 +155,10 @@ function runReadinessTests() {
     existingDocuments: [],
   })
   const docReadiness = validateBondApplicationSubmissionReadiness({ applicationState: state, documentChecklist: missingDocChecklist, declarations, declarationValues, latestSaveStatus: 'saved' })
-  assert.equal(docReadiness.ready, false)
-  assert.ok(docReadiness.issues.some((item) => item.code === 'blocking_document_missing'))
+  assert.equal(docReadiness.ready, true)
+  const bankDocReadiness = validateBondApplicationSubmissionReadiness({ applicationState: state, documentChecklist: missingDocChecklist, declarations, declarationValues, latestSaveStatus: 'saved', stage: 'bank_submission' })
+  assert.equal(bankDocReadiness.ready, false)
+  assert.ok(bankDocReadiness.issues.some((item) => item.code === 'blocking_document_missing'))
 
   const preApprovalState = setPath(state, 'application.intent', BOND_APPLICATION_INTENTS.preApproval)
   preApprovalState.application.selectedBankIds = []

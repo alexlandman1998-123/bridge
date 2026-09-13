@@ -110,14 +110,13 @@ import {
   cancelClientPortalBondApplicationSubmission,
   fetchClientPortalBondApplicationSubmission,
   inviteClientPortalBondApplicationCoApplicant,
-  prepareClientPortalBondApplicationSubmission,
-  prepareClientPortalJointBondApplicationSubmission,
   resolveClientPortalFinalSignedDocumentAccess,
   fetchClientPortalMatterFinancialAccounts,
   respondToClientPortalAppointment,
   reconcileClientPortalBondDocumentRequirements,
   saveClientPortalOnboardingDraft,
   submitClientPortalComment,
+  submitClientPortalBondApplicationHtmlSignature,
   uploadClientPortalMatterFinancialRequestDocument,
   uploadClientPortalMatterFinancialProof,
   uploadClientPortalDocument,
@@ -9519,6 +9518,7 @@ function ClientPortal() {
   async function handleGuidedBondApplicationPrepareSubmission({
     acceptedDeclarations = [],
     declarationValues = {},
+    signatureEvidence = {},
     expectedSourceHash = '',
   } = {}) {
     if (isDemoMode) {
@@ -9532,15 +9532,13 @@ function ClientPortal() {
         expectedSourceHash,
       }
     }
-    const prepare = guidedBondApplicationParticipantFlag.enabled && guidedBondApplicationState?.application?.applicantStructure === 'joint'
-      ? prepareClientPortalJointBondApplicationSubmission
-      : prepareClientPortalBondApplicationSubmission
-    const result = await prepare({
+    const result = await submitClientPortalBondApplicationHtmlSignature({
       token,
       acceptedDeclarations,
       declarationValues,
+      signatureEvidence,
       expectedSourceHash,
-      idempotencyKey: `guided-bond-submission:${portal?.transaction?.id || token}`,
+      idempotencyKey: `guided-bond-html-signature:${portal?.transaction?.id || token}`,
     })
     await loadPortal({ background: true })
     return result

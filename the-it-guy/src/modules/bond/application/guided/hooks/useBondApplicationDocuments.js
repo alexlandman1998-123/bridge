@@ -110,11 +110,7 @@ export function useBondApplicationDocuments({
       existingDocuments: documents,
     })
     const nextProgress = calculateBondApplicationDocumentProgress(nextChecklist)
-    if (!nextProgress.canContinue) {
-      setError('Upload the required documents before continuing to review.')
-      return { ok: false, reason: 'missing_documents', items: nextProgress.blockingMissing }
-    }
-    return { ok: true, fingerprint: reconciliationPlan.fingerprint }
+    return { ok: true, fingerprint: reconciliationPlan.fingerprint, outstandingDocuments: nextProgress.blockingMissing }
   }, [documents, reconciliationPlan.fingerprint, refresh, requiredDocuments, resolved.activeRequirements])
 
   return {

@@ -11,4 +11,9 @@ assert.equal(state.compatibility.legacyBase._meta.originator_correction_id, 'cor
 state.compatibility.legacyBase._meta.guided_bond_application_v2.completed_screen_keys.push('other')
 assert.equal(legacy._meta.guided_bond_application_v2.completed_screen_keys.length, 2)
 assert.equal(toLegacyBondApplication(state)._meta.originator_correction_id, 'correction-1')
+state.application.signatureEvidence = { method: 'html_canvas', dataUrl: 'data:image/png;base64,AA==', signerName: 'Sample Buyer', signedAt: '2026-09-13T12:00:00.000Z', confirmed: true }
+const signedLegacy = toLegacyBondApplication(state)
+const resumedSignedState = buildBondApplicationState({ onboardingFormData: { formData: { bond_application: signedLegacy } } })
+assert.equal(resumedSignedState.application.signatureEvidence.signerName, 'Sample Buyer')
+assert.equal(resumedSignedState.application.signatureEvidence.confirmed, true)
 console.log('Application resume preserves saved screen, completed steps and correction identity without mutating the source')

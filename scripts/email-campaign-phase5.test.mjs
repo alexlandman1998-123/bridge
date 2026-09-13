@@ -9,6 +9,6 @@ const component = readFileSync(resolve('the-it-guy/src/components/marketing/Emai
 for (const expected of ['create table if not exists public.email_campaign_audit_events', 'create or replace function public.email_campaign_preflight', 'create or replace function public.email_campaign_duplicate', 'create or replace function public.email_campaign_archive', 'create policy email_campaign_audit_events_admin']) assert.ok(migration.includes(expected), `Missing Phase 5 operations contract: ${expected}`)
 assert.match(service, /preflightEmailCampaign/)
 assert.match(service, /duplicateEmailCampaign/)
-assert.match(component, /Preflight & schedule/)
+assert.match(readFileSync(resolve('the-it-guy/src/components/marketing/EmailCampaignBuilder.jsx'), 'utf8'), /Preflight & schedule/)
 assert.match(component, /Run preflight/)
 console.log('Email campaign Phase 5 operations checks passed.')

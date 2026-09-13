@@ -108,6 +108,23 @@ export async function renderBondApplicationPackPdf({ snapshot, manifest, brand =
     row('Version / accepted', `${declaration.version || 'Not recorded'} / ${display(declaration.accepted)}`)
     row('Participant / accepted at', `${declaration.participantKey || declaration.participantRole || 'Not recorded'} / ${declaration.acceptedAt || 'Not recorded'}`)
   }
+  const signature = snapshot.signatureEvidence || null
+  if (signature?.dataUrl) {
+    section('Applicant signature')
+    paragraph('The applicant confirmed this application in Arch9 using the drawn signature below. This is an in-app application confirmation, not a third-party digital signature certificate.')
+    row('Signed by', signature.signerName || 'Primary applicant')
+    row('Signed at', signature.signedAt || 'Not recorded')
+    room(38)
+    try {
+      const properties = doc.getImageProperties(signature.dataUrl)
+      const width = Math.min(78, 30 * properties.width / properties.height)
+      const height = Math.min(28, width * properties.height / properties.width)
+      doc.addImage(signature.dataUrl, properties.fileType, margin, y, width, height)
+      y += height + 7
+    } catch {
+      paragraph('The captured signature image could not be rendered in this copy.')
+    }
+  }
   section('Signing evidence')
   paragraph('Signer identities below describe the saved signing request. They are not newly applied signatures. Refer to the original signed PDF for the actual signed instrument.')
   const signers = submission?.signer_manifest_json || snapshot.signerManifest || []

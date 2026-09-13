@@ -29,6 +29,7 @@ const snapshot = {
   selectedBanks: ['Example Bank'],
   participants: [{ participantRole: 'primary_applicant', answers: person }, { participantRole: 'co_applicant', answers: { ...person, personal: { first_name: 'André', surname: 'Example' } } }],
   signerManifest: [{ participantRole: 'primary_applicant', fullName: 'Zoë Mokoena', email: 'zoe@example.test', identityReference: 'TEST-IDENTITY' }],
+  signatureEvidence: { method: 'html_canvas', signerName: 'Zoë Mokoena', signedAt: '2026-09-13T10:00:00.000Z', confirmed: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwI/4BvG8wAAAABJRU5ErkJggg==' },
   declarations: [{ key: 'accuracy', title: 'Accuracy of information', text: 'I confirm that these sample answers are accurate.', version: 'test-v1', accepted: true, acceptedAt: '2026-09-13T10:00:00Z', participantRole: 'primary_applicant' }, { key: 'marketing', title: 'Marketing preference', text: 'Optional sample marketing consent.', version: 'test-v1', accepted: false, participantRole: 'primary_applicant' }],
   documentManifest: [{ title: 'Bank statements', requirementKey: 'statements', documents: [{ id: 'statement1', filePath: 'test/one.pdf' }, { id: 'statement2', filePath: 'test/two.pdf' }] }],
 }

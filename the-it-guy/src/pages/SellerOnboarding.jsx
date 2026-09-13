@@ -4946,7 +4946,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   {directListingComplianceSummary.map((item) => (
                     <div key={item.key} className="rounded-[12px] border border-[#dce7f2] bg-white px-3 py-2">
                       <p className="font-semibold text-[#2a4057]">{item.label}</p>
-                      <p className={item.held === true ? 'mt-1 text-[#1f7d44]' : item.held === false ? 'mt-1 text-[#9a5b13]' : 'mt-1 text-[#60748b]'}>
+                      <p className={item.status === 'reported_held_pending_upload' ? 'mt-1 text-[#9a5b13]' : item.held === false ? 'mt-1 text-[#9a5b13]' : 'mt-1 text-[#60748b]'}>
                         {item.statusLabel}
                       </p>
                     </div>

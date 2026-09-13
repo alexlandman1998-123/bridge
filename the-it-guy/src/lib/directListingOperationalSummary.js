@@ -54,12 +54,37 @@ function getDirectListingIntake(listing = {}, portalFormData = {}) {
 function getPortalInviteSummary(listing = {}, portalFormData = {}) {
   const onboarding = listing?.sellerOnboarding || {}
   const localInvite = firstObject(onboarding.sellerPortalInvite, onboarding.seller_portal_invite)
+  const accessIntent = normalizeKey(
+    portalFormData.sellerPortalAccessIntent ||
+      portalFormData.seller_portal_access_intent ||
+      onboarding.sellerPortalAccessIntent ||
+      onboarding.seller_portal_access_intent ||
+      localInvite.accessIntent ||
+      localInvite.access_intent,
+  )
+  const agentManaged = Boolean(
+    portalFormData.sellerPortalOptedOut ||
+      portalFormData.seller_portal_opted_out ||
+      onboarding.sellerPortalOptedOut ||
+      onboarding.seller_portal_opted_out ||
+      localInvite.optedOut ||
+      localInvite.opted_out ||
+      accessIntent === 'agent_managed',
+  )
+  const optOutReason = firstText(
+    portalFormData.sellerPortalOptOutReason,
+    portalFormData.seller_portal_opt_out_reason,
+    onboarding.sellerPortalOptOutReason,
+    onboarding.seller_portal_opt_out_reason,
+    localInvite.optOutReason,
+    localInvite.opt_out_reason,
+  )
   const requested = Boolean(
-    portalFormData.sellerPortalInviteRequested ||
+    !agentManaged && (portalFormData.sellerPortalInviteRequested ||
       portalFormData.seller_portal_invite_requested ||
       localInvite.requested ||
       onboarding.sellerPortalActivationSource ||
-      onboarding.seller_portal_activation_source,
+      onboarding.seller_portal_activation_source),
   )
   const token = firstText(onboarding.sellerPortalToken, onboarding.seller_portal_token, onboarding.token, listing?.sellerPortalToken, listing?.seller_portal_token)
   const sentAt = firstText(onboarding.invitationLastSentAt, onboarding.seller_portal_invitation_last_sent_at, onboarding.inviteCreatedAt, onboarding.seller_portal_invite_created_at)
@@ -68,11 +93,16 @@ function getPortalInviteSummary(listing = {}, portalFormData = {}) {
 
   return {
     requested,
+    accessIntent: agentManaged ? 'agent_managed' : accessIntent || (requested ? 'send_now' : 'later'),
+    agentManaged,
+    optOutReason,
     prepared: Boolean(token || localInvite.link || localInvite.portalLinkPresent),
     sent: Boolean(localInvite.sent || sentAt || status === 'invitation_sent'),
     activated: Boolean(activatedAt || status === 'activated' || status === 'profile_complete'),
-    status: status || (activatedAt ? 'activated' : sentAt ? 'invitation_sent' : token ? 'invitation_pending' : requested ? 'requested' : 'not_requested'),
-    label: activatedAt
+    status: agentManaged ? 'agent_managed' : status || (activatedAt ? 'activated' : sentAt ? 'invitation_sent' : token ? 'invitation_pending' : requested ? 'requested' : 'not_requested'),
+    label: agentManaged
+      ? 'Agent-managed (no portal)'
+      : activatedAt
       ? 'Activated'
       : sentAt || localInvite.sent
         ? 'Invitation sent'
@@ -111,6 +141,8 @@ function buildDeclarationRows(portalFormData = {}) {
     held: row.held,
     status: row.status,
     statusLabel: row.statusLabel,
+    captureSource: row.captureSource,
+    requiresUpload: row.requiresUpload === true,
   }))
 }
 
@@ -127,50 +159,54 @@ function buildDocumentFollowUpAction({
   reportedDetail,
 }) {
   const declaration = findDeclarationRow(declarations, key)
-  const complete = declaration?.held === true
+  const reportedHeld = declaration?.held === true
   return {
     key,
     label,
-    complete,
-    status: complete ? 'reported_held' : 'required',
-    statusLabel: complete ? 'Reported held' : 'Required after listing',
-    detail: complete ? reportedDetail : requiredDetail,
-    attentionLabel: complete ? '' : `${label}: required after listing creation`,
+    complete: false,
+    status: reportedHeld ? 'reported_held_pending_upload' : 'required',
+    statusLabel: reportedHeld ? 'Reported received — upload pending' : 'Required after listing',
+    detail: reportedHeld ? reportedDetail : requiredDetail,
+    attentionLabel: reportedHeld
+      ? `${label}: reported received${declaration?.captureSource ? ` via ${humanize(declaration.captureSource)}` : ''}; upload and verify before activation`
+      : `${label}: required after listing creation`,
     declarationStatusLabel: declaration?.statusLabel || 'Not captured',
   }
 }
 
 function buildFollowUpActions({ declarations = [], portalInvite = {} } = {}) {
-  const portalComplete = Boolean(portalInvite.sent || portalInvite.activated)
+  const portalComplete = Boolean(portalInvite.sent || portalInvite.activated || portalInvite.agentManaged)
   return [
     buildDocumentFollowUpAction({
       declarations,
       key: 'mandate',
       label: 'Mandate',
       requiredDetail: 'Update the mandate record and get the signed mandate into the seller document pack.',
-      reportedDetail: 'Quick Add says the mandate is held. Verify it is attached before activation or publish.',
+      reportedDetail: 'An agent recorded the mandate as received. Upload and verify it before activation or publish.',
     }),
     buildDocumentFollowUpAction({
       declarations,
       key: 'fica_form',
       label: 'FICA documents',
       requiredDetail: 'Collect and upload the seller FICA documents through the seller portal or document centre.',
-      reportedDetail: 'Quick Add says FICA is held. Verify the approved documents before activation or publish.',
+      reportedDetail: 'An agent recorded FICA as received. Upload and verify the approved documents before activation or publish.',
     }),
     buildDocumentFollowUpAction({
       declarations,
       key: 'property_condition_disclosure',
       label: 'Disclosure form',
       requiredDetail: 'Collect and upload the signed property condition disclosure form.',
-      reportedDetail: 'Quick Add says the disclosure is held. Verify it is attached before activation or publish.',
+      reportedDetail: 'An agent recorded the disclosure as received. Upload and verify it before activation or publish.',
     }),
     {
       key: 'seller_portal',
       label: 'Seller portal link',
       complete: portalComplete,
-      status: portalComplete ? 'sent' : portalInvite.prepared ? 'prepared' : 'required',
-      statusLabel: portalComplete ? 'Sent' : portalInvite.prepared ? 'Prepared, not sent' : 'Required after listing',
-      detail: portalComplete
+      status: portalInvite.agentManaged ? 'agent_managed' : portalComplete ? 'sent' : portalInvite.prepared ? 'prepared' : 'required',
+      statusLabel: portalInvite.agentManaged ? 'Agent-managed (no portal)' : portalComplete ? 'Sent' : portalInvite.prepared ? 'Prepared, not sent' : 'Required after listing',
+      detail: portalInvite.agentManaged
+        ? `Seller is being managed offline${portalInvite.optOutReason ? `: ${portalInvite.optOutReason}` : '.'}`
+        : portalComplete
         ? 'The seller portal invitation has been sent or activated.'
         : 'Send the seller portal link so the seller can upload the mandate, FICA docs and disclosure form.',
       attentionLabel: portalComplete ? '' : 'Seller portal link: send to seller for uploads',
@@ -215,8 +251,7 @@ export function buildDirectListingOperationalSummary(listing = {}) {
   const attentionItems = [
     readiness.missing ? `${readiness.missing} intake fact${readiness.missing === 1 ? '' : 's'} missing` : '',
     ...declarations
-      .filter((row) => row.held !== true)
-      .map((row) => `${row.label}: ${row.statusLabel}`),
+      .map((row) => `${row.label}: ${row.statusLabel}${row.captureSource ? ` (${humanize(row.captureSource)})` : ''}`),
     ...followUpActions.map((action) => action.attentionLabel),
     portalInvite.requested && !portalInvite.sent && !portalInvite.activated ? 'Seller portal invite not sent yet' : '',
     portalInvite.error ? `Seller portal invite error: ${portalInvite.error}` : '',

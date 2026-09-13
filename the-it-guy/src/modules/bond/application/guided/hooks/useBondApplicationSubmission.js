@@ -1,4 +1,5 @@
 import { getBondApplicationSigningAvailability } from '../../submission/bondApplicationSigningAvailability.js'
+import { isBondApplicationSignature } from '../bondApplicationSignature.js'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   BOND_APPLICATION_SUBMISSION_STATUSES,
@@ -119,6 +120,15 @@ export function useBondApplicationSubmission({
     if (!availability.available) { setError(availability.message); return { ok: false, reason: availability.code } }
     setError('')
     if (!readiness.ready) return { ok: false, reason: 'readiness', issues: readiness.issues }
+    const signatureEvidence = applicationState?.application?.signatureEvidence || {}
+    if (!isBondApplicationSignature(signatureEvidence.dataUrl)) {
+      setError('Draw your signature before signing the application.')
+      return { ok: false, reason: 'signature_required' }
+    }
+    if (!signatureEvidence.confirmed) {
+      setError('Confirm that the application information is complete and accurate before signing.')
+      return { ok: false, reason: 'signature_confirmation_required' }
+    }
     setPreparing(true)
     try {
       if (saveLatestApplication) await saveLatestApplication()
@@ -127,6 +137,7 @@ export function useBondApplicationSubmission({
         acceptedDeclarations: acceptedDeclarationEvidence,
         declarationValues,
         expectedSourceHash: '',
+        signatureEvidence,
       })
       const nextSubmission = result?.submission || result || null
       setSubmission(nextSubmission)
@@ -137,7 +148,7 @@ export function useBondApplicationSubmission({
     } finally {
       setPreparing(false)
     }
-  }, [acceptedDeclarationEvidence, declarationValues, localSnapshotPreview, onPrepareSubmission, readiness, saveLatestApplication])
+  }, [acceptedDeclarationEvidence, applicationState?.application?.signatureEvidence, declarationValues, localSnapshotPreview, onPrepareSubmission, readiness, saveLatestApplication])
 
   const startSigning = useCallback(() => {
     const availability = getBondApplicationSigningAvailability()

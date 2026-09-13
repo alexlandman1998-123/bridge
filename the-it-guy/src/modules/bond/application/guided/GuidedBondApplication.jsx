@@ -7,6 +7,7 @@ import {
 import { useGuidedBondApplication } from './hooks/useGuidedBondApplication.js'
 import { useBondApplicationDocuments } from './hooks/useBondApplicationDocuments.js'
 import { useBondApplicationSubmission } from './hooks/useBondApplicationSubmission.js'
+import { BondApplicationSignaturePad } from './BondApplicationSignaturePad.jsx'
 import { BUYER_ENTITY_TYPE_OPTIONS, getBondApplicationRepeatableGroup } from '../flow/bondApplicationFlowContract.js'
 import {
   BOND_APPLICATION_DOCUMENT_RULE_SET_VERSION,
@@ -861,7 +862,7 @@ function DocumentsChecklistScreen({ documentsController }) {
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Documents for your application</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">We have used your application details to work out what is needed. Documents you have already provided are shown below, so you do not need to upload them again.</p>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">We have used your application details to work out what is needed. Upload documents now, while you complete the application, or later in your portal. They are required before your originator can send the application to a bank.</p>
       </div>
       <div className="rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -904,7 +905,7 @@ function DocumentsChecklistScreen({ documentsController }) {
       {!progress.canContinue && progress.blockingMissing.length ? (
         <div className="flex items-start gap-2 rounded-[14px] border border-[#f2d6a6] bg-[#fff9ed] p-4 text-sm text-[#6f5120]" role="status">
           <AlertTriangle size={18} className="mt-0.5 shrink-0" aria-hidden="true" />
-          <p>Upload the required-before-signature documents before continuing to review.</p>
+          <p>You can continue and sign the application now. These documents can be uploaded here or later from your portal, but are required before bank submission.</p>
         </div>
       ) : null}
     </div>
@@ -1000,15 +1001,16 @@ function DeclarationsScreen({ submissionController }) {
   )
 }
 
-function PrepareSignatureScreen({ submissionController }) {
-  const { readiness, preparing, error, submission, prepareForSignature, startSigning, signingAvailability } = submissionController
+function PrepareSignatureScreen({ submissionController, applicationState, updateField }) {
+  const { readiness, preparing, error, submission, prepareForSignature } = submissionController
   const status = String(submission?.status || '').toLowerCase()
   const awaiting = status === BOND_APPLICATION_SUBMISSION_STATUSES.awaitingSignature
+  const signature = applicationState?.application?.signatureEvidence || {}
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Prepare for signing</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">{signingAvailability.available ? 'We will prepare a locked application document from the information you reviewed.' : signingAvailability.message}</p>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">Review your details, confirm the declaration, and draw your signature. We will save it with this application and include it in the PDF.</p>
       </div>
       {!readiness.ready && readiness.issues.length ? (
         <div className="rounded-[14px] border border-[#f2d6a6] bg-[#fff9ed] p-4" role="alert">
@@ -1024,16 +1026,33 @@ function PrepareSignatureScreen({ submissionController }) {
           Your application is prepared and awaiting your signature.
         </div>
       ) : null}
+      {!awaiting ? (
+        <div className="rounded-[16px] border border-[#dbe5ef] bg-[#fbfdff] p-4">
+          <BondApplicationSignaturePad
+            value={signature.dataUrl || ''}
+            signerName={submissionController.signerIdentity?.fullName || ''}
+            onChange={(dataUrl) => updateField('application.signatureEvidence', {
+              dataUrl,
+              signerName: submissionController.signerIdentity?.fullName || '',
+              signedAt: dataUrl ? new Date().toISOString() : '',
+              method: 'html_canvas',
+              confirmed: signature.confirmed || false,
+            })}
+          />
+          <label className="mt-4 flex items-start gap-3 text-sm leading-6 text-[#40566d]">
+            <input type="checkbox" checked={Boolean(signature.confirmed)} onChange={(event) => updateField('application.signatureEvidence', { ...signature, confirmed: event.target.checked })} className="mt-1 h-4 w-4 rounded border-[#9bb0c4] text-[#35546c]" />
+            <span>I confirm that the information in this bond application is complete and accurate to the best of my knowledge.</span>
+          </label>
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         {!awaiting ? (
-          <button type="button" disabled={preparing || !signingAvailability.available} onClick={() => void prepareForSignature()} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#9aa9b8]">
+          <button type="button" disabled={preparing} onClick={() => void prepareForSignature()} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white disabled:bg-[#9aa9b8]">
             <FileText size={16} aria-hidden="true" />
-            {preparing ? 'Preparing...' : 'Prepare application'}
+            {preparing ? 'Saving signature...' : 'Sign application'}
           </button>
         ) : (
-          <button type="button" disabled={!signingAvailability.available} onClick={startSigning} className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white">
-            Sign application
-          </button>
+          <p className="text-sm font-medium text-[#40566d]">Your application is ready for signature.</p>
         )}
       </div>
     </div>
@@ -1041,12 +1060,12 @@ function PrepareSignatureScreen({ submissionController }) {
 }
 
 function AwaitingSignatureScreen({ submissionController }) {
-  const { submission, refreshing, refreshStatus, startSigning, makeChanges, error, signingAvailability } = submissionController
+  const { submission, refreshing, refreshStatus, makeChanges, error } = submissionController
   return (
     <div className="space-y-5">
       <div>
         <h2 className="text-xl font-semibold tracking-[-0.02em] text-[#142132]">Awaiting your signature</h2>
-        <p className="mt-2 text-sm leading-6 text-[#5f7288]">{signingAvailability.available ? 'Your application has been prepared from the information you reviewed.' : signingAvailability.message}</p>
+        <p className="mt-2 text-sm leading-6 text-[#5f7288]">Your application has been prepared from the information you reviewed.</p>
       </div>
       <dl className="grid gap-3 sm:grid-cols-2">
         <DetailRow label="Submission version" value={submission?.submission_version || submission?.submissionVersion || 'Not prepared'} />
@@ -1055,7 +1074,6 @@ function AwaitingSignatureScreen({ submissionController }) {
       </dl>
       {error ? <div className="rounded-[14px] border border-[#f1d4cf] bg-[#fff8f6] p-4 text-sm text-[#b5472d]" role="alert">{error}</div> : null}
       <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={!signingAvailability.available} onClick={startSigning} className="rounded-[12px] bg-[#35546c] px-4 py-2 text-sm font-semibold text-white">Sign application</button>
         <button type="button" onClick={() => void refreshStatus()} className="rounded-[12px] border border-[#d1deeb] px-4 py-2 text-sm font-semibold text-[#21384d]">{refreshing ? 'Refreshing...' : 'Refresh status'}</button>
         <button type="button" onClick={() => void makeChanges()} className="rounded-[12px] border border-[#f2d6a6] px-4 py-2 text-sm font-semibold text-[#6f5120]">Make changes</button>
       </div>
@@ -1100,7 +1118,7 @@ function CurrentScreen({
   if (currentScreenKey === 'document_checklist') return <DocumentsChecklistScreen documentsController={documentsController} />
   if (currentScreenKey === 'review_overview') return <ReviewOverviewScreen submissionController={submissionController} onEditSection={(section) => void controller.openScreen(section.screenKey)} />
   if (currentScreenKey === 'declarations') return <DeclarationsScreen submissionController={submissionController} />
-  if (currentScreenKey === 'prepare_signature') return <PrepareSignatureScreen submissionController={submissionController} />
+  if (currentScreenKey === 'prepare_signature') return <PrepareSignatureScreen submissionController={submissionController} applicationState={applicationState} updateField={updateField} />
   if (currentScreenKey === 'awaiting_signature') return <AwaitingSignatureScreen submissionController={submissionController} />
   if (currentScreenKey === 'submitted_status') return <SubmittedApplicationScreen submissionController={submissionController} />
   if (flow.currentScreen?.transitionOnly) return <TransitionScreen reason={handoffReason || (currentScreenKey === 'phase4_review_sign_handoff' ? 'phase_4_review_sign' : currentScreenKey === 'phase3_documents_handoff' ? 'phase_3_documents' : '')} />
@@ -1216,7 +1234,7 @@ export default function GuidedBondApplication({
     }
     if (controller.currentScreenKey === 'prepare_signature') {
       const result = await submissionController.prepareForSignature()
-      if (result.ok) await controller.openScreen('awaiting_signature')
+      if (result.ok) await controller.openScreen(String(result.submission?.status || '').toLowerCase() === BOND_APPLICATION_SUBMISSION_STATUSES.submitted ? 'submitted_status' : 'awaiting_signature')
       return
     }
     if (controller.currentScreenKey === 'awaiting_signature') {
