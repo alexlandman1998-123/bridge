@@ -13,6 +13,7 @@ import {
   Plus,
   Search,
   SlidersHorizontal,
+  Tag,
   User2,
   UserRoundSearch,
   Users,
@@ -27,7 +28,6 @@ import Modal from '../components/ui/Modal'
 import SearchInput from '../components/ui/SearchInput'
 import DataTable, { DataTableInner } from '../components/ui/DataTable'
 import {
-  getAgentClientOpenPath,
   loadAgentClientDirectory,
 } from '../core/clients/agentClientDirectory'
 import { deriveAttorneyClients } from '../core/clients/attorneyClientSelectors'
@@ -37,6 +37,7 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { fetchTransactionsByParticipantSummary } from '../lib/transactionsListApi'
 import { createAgentRoutePerformanceBaseline } from '../services/observability/agentRoutePerformanceBaseline'
+import { getClientMarketingWorkspace, saveClientMarketingTags, saveEmailAudience } from '../services/emailCampaignService'
 
 let legacyClientApiPromise = null
 
@@ -830,6 +831,74 @@ function AddClientModal({
   )
 }
 
+function ClientMarketingProfileModal({ client, marketingContact, loading, error, onClose, onSaveTags }) {
+  const [tagInput, setTagInput] = useState('')
+  const [tags, setTags] = useState([])
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+
+  useEffect(() => {
+    setTags(marketingContact?.tags || [])
+    setTagInput('')
+    setSaveError('')
+  }, [client?.id, marketingContact?.id])
+
+  if (!client) return null
+  const addTag = () => {
+    const next = tagInput.trim().toLowerCase()
+    if (!next) return
+    setTags((current) => current.includes(next) ? current : [...current, next])
+    setTagInput('')
+  }
+  const save = async () => {
+    setSaving(true)
+    setSaveError('')
+    try {
+      await onSaveTags(tags)
+    } catch (cause) {
+      setSaveError(cause.message || 'Unable to save client tags.')
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <Modal open={Boolean(client)} onClose={onClose} title={client.name || 'Client profile'} subtitle="Client details and bulk-email tags stay in one place." className="max-w-4xl">
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+        <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#73879d]">Contact</p>
+          <p className="mt-3 text-lg font-semibold text-[#10243a]">{client.name || 'Unnamed client'}</p>
+          <dl className="mt-4 space-y-3 text-sm"><div><dt className="text-[#73879d]">Email</dt><dd className="mt-1 font-medium text-[#29445f]">{client.email || 'No email address'}</dd></div><div><dt className="text-[#73879d]">Phone</dt><dd className="mt-1 font-medium text-[#29445f]">{client.phone || 'No phone number'}</dd></div><div><dt className="text-[#73879d]">Linked record</dt><dd className="mt-1 font-medium text-[#29445f]">{getLinkedRecordLabel(client, 'No linked record')}</dd></div></dl>
+        </section>
+        <section className="rounded-[18px] border border-[#dbe8f5] bg-white p-4">
+          <div className="flex items-start gap-3"><span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eaf3ff] text-[#1767b4]"><Tag size={17} /></span><div><p className="font-semibold text-[#17334f]">Bulk-email tags</p><p className="mt-1 text-sm leading-5 text-[#637890]">Tags organise audiences. They never override consent, unsubscribe, suppression, or subscription checks.</p></div></div>
+          {!client.email ? <p className="mt-4 rounded-xl border border-[#f1ddb2] bg-[#fff9ed] p-3 text-sm text-[#7f5b16]">Add an email address to this client before assigning marketing tags.</p> : null}
+          <div className="mt-4 flex flex-wrap gap-2">{tags.map((tag) => <button type="button" key={tag} className="inline-flex items-center gap-1 rounded-full border border-[#cfe1f2] bg-[#f3f8fd] px-3 py-1 text-sm font-semibold text-[#27516f]" onClick={() => setTags((current) => current.filter((item) => item !== tag))}>{tag}<span aria-hidden="true">×</span><span className="sr-only">Remove {tag}</span></button>)}{!tags.length ? <span className="text-sm text-[#73879d]">No tags yet.</span> : null}</div>
+          <div className="mt-4 flex gap-2"><input className="min-h-10 min-w-0 flex-1 rounded-xl border border-[#d7e3ef] px-3 text-sm" value={tagInput} onChange={(event) => setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addTag() } }} placeholder="e.g. show-day" disabled={!client.email || loading || saving} /><Button type="button" variant="secondary" onClick={addTag} disabled={!client.email || !tagInput.trim() || loading || saving}>Add</Button></div>
+          {error || saveError ? <p className="mt-3 text-sm text-[#b42318]">{saveError || error}</p> : null}
+          <div className="mt-5 flex justify-end"><Button type="button" onClick={() => void save()} disabled={!client.email || loading || saving}>{saving ? 'Saving…' : 'Save tags'}</Button></div>
+        </section>
+      </div>
+    </Modal>
+  )
+}
+
+function ClientAudiencesTab({ audiences = [], loading, error, organisationId, userId, onSaved }) {
+  const [name, setName] = useState('')
+  const [tag, setTag] = useState('')
+  const [description, setDescription] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const save = async () => {
+    if (!name.trim() || !tag.trim()) { setSaveError('Name the audience and choose one tag.'); return }
+    setSaving(true); setSaveError('')
+    try {
+      await saveEmailAudience({ organisationId, userId, audience: { name, description, filterJson: { tag: tag.trim().toLowerCase() } } })
+      setName(''); setTag(''); setDescription(''); await onSaved()
+    } catch (cause) { setSaveError(cause.message || 'Unable to save this audience.') } finally { setSaving(false) }
+  }
+  return <section className="p-5"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.12em] text-[#73879d]">Audiences</p><h3 className="mt-1 text-xl font-semibold text-[#10243a]">Reusable bulk-email segments</h3><p className="mt-1 max-w-2xl text-sm leading-6 text-[#637890]">Saved audiences use client tags, but recipient eligibility is still checked at send time for consent, subscriptions, suppression and deduplication.</p></div></div><div className="mt-5 grid gap-4 rounded-[18px] border border-[#dfe9f3] bg-[#fbfdff] p-4 lg:grid-cols-3"><label className="grid gap-1.5 text-sm font-semibold text-[#35516c]">Audience name<input className="min-h-10 rounded-xl border border-[#d7e3ef] bg-white px-3 font-normal" value={name} onChange={(event) => setName(event.target.value)} placeholder="Show day buyers" /></label><label className="grid gap-1.5 text-sm font-semibold text-[#35516c]">Client tag<input className="min-h-10 rounded-xl border border-[#d7e3ef] bg-white px-3 font-normal" value={tag} onChange={(event) => setTag(event.target.value)} placeholder="show-day" /></label><label className="grid gap-1.5 text-sm font-semibold text-[#35516c]">Description <span className="font-normal text-[#73879d]">Optional</span><input className="min-h-10 rounded-xl border border-[#d7e3ef] bg-white px-3 font-normal" value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Visitors to recent show days" /></label><div className="lg:col-span-3 flex items-center justify-between gap-3"><p className="text-sm text-[#b42318]">{saveError || error}</p><Button type="button" onClick={() => void save()} disabled={loading || saving}>{saving ? 'Saving…' : 'Save audience'}</Button></div></div><div className="mt-5 grid gap-3 md:grid-cols-2">{loading ? <LoadingSkeleton lines={3} /> : audiences.map((audience) => <article key={audience.id} className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="font-semibold text-[#17334f]">{audience.name}</p><p className="mt-1 text-sm text-[#687e95]">{audience.description || 'No description'}</p><span className="mt-3 inline-flex rounded-full bg-[#eef6ff] px-2.5 py-1 text-xs font-semibold text-[#26629a]">Tag: {audience.filter_json?.tag || 'Custom filter'}</span></article>)}{!loading && !audiences.length ? <p className="rounded-[16px] border border-dashed border-[#d6e2ee] p-5 text-sm text-[#687e95]">No saved audiences yet. Create one from a client tag above.</p> : null}</div></section>
+}
+
 function Clients() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -852,6 +921,9 @@ function Clients() {
   const [manualAttorneyParties, setManualAttorneyParties] = useState(() => readAttorneyManualParties())
   const [openActionMenuId, setOpenActionMenuId] = useState('')
   const [showAddModal, setShowAddModal] = useState(false)
+  const [directoryTab, setDirectoryTab] = useState('clients')
+  const [selectedAgentClient, setSelectedAgentClient] = useState(null)
+  const [marketingState, setMarketingState] = useState({ loading: false, error: '', marketingContact: null, savedAudiences: [] })
   const performanceBaselineRef = useRef(null)
   if (!performanceBaselineRef.current) {
     performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'clients', route: '/clients' })
@@ -994,6 +1066,22 @@ function Clients() {
     })
     return () => window.cancelAnimationFrame(frameId)
   }, [activeOrganisationId, error, isPrimaryAgentClientsRoute, loading, profile?.id, rows.length])
+
+  const loadMarketingWorkspace = useCallback(async (client = selectedAgentClient) => {
+    if (!activeOrganisationId) return
+    setMarketingState((current) => ({ ...current, loading: true, error: '' }))
+    try {
+      const next = await getClientMarketingWorkspace({ organisationId: activeOrganisationId, email: client?.email })
+      setMarketingState({ loading: false, error: '', ...next })
+    } catch (marketingError) {
+      setMarketingState((current) => ({ ...current, loading: false, error: marketingError.message || 'Unable to load marketing details.' }))
+    }
+  }, [activeOrganisationId, selectedAgentClient])
+
+  useEffect(() => {
+    if (!isAgentClientDirectory || (!selectedAgentClient && directoryTab !== 'audiences')) return
+    void loadMarketingWorkspace()
+  }, [directoryTab, isAgentClientDirectory, loadMarketingWorkspace, selectedAgentClient])
 
   const developmentOptions = useMemo(() => getDevelopmentOptionsFromRows(rows), [rows])
   const sourceRows = useMemo(
@@ -1152,7 +1240,8 @@ function Clients() {
 
   function handleOpenClient(client) {
     if (isAgentClientDirectory) {
-      navigate(getAgentClientOpenPath(client, role))
+      setOpenActionMenuId('')
+      setSelectedAgentClient(client)
       return
     }
     navigate(`${isBondClientsRoute ? '/bond/clients' : '/clients'}/${client.id}`)
@@ -1267,6 +1356,9 @@ function Clients() {
       </section>
 
       <section className="overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-white/92 shadow-[0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-xl">
+        {isAgentClientDirectory ? <div className="flex gap-2 border-b border-[#e6edf5] bg-[#fbfdff] px-4 pt-3"><button type="button" className={`rounded-t-xl px-4 py-3 text-sm font-semibold ${directoryTab === 'clients' ? 'bg-white text-[#0f63c7] shadow-[0_-2px_10px_rgba(15,23,42,0.04)]' : 'text-[#62778e]'}`} onClick={() => setDirectoryTab('clients')}>Clients</button><button type="button" className={`rounded-t-xl px-4 py-3 text-sm font-semibold ${directoryTab === 'audiences' ? 'bg-white text-[#0f63c7] shadow-[0_-2px_10px_rgba(15,23,42,0.04)]' : 'text-[#62778e]'}`} onClick={() => setDirectoryTab('audiences')}>Audiences</button></div> : null}
+        {isAgentClientDirectory && directoryTab === 'audiences' ? <ClientAudiencesTab audiences={marketingState.savedAudiences} loading={marketingState.loading} error={marketingState.error} organisationId={activeOrganisationId} userId={profile?.id} onSaved={() => loadMarketingWorkspace()} /> : null}
+        <div className={isAgentClientDirectory && directoryTab !== 'clients' ? 'hidden' : ''}>
         <div className="flex items-stretch gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-3 py-3">
           <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
             {directorySegments.map((segment) => {
@@ -1670,6 +1762,7 @@ function Clients() {
             </DataTableInner>
           </DataTable>
         ) : null}
+        </div>
       </section>
 
       <AddClientModal
@@ -1680,6 +1773,17 @@ function Clients() {
         matterOptions={matterOptions}
         organisationId={activeOrganisationId || null}
         onSaved={handleAddClientSaved}
+      />
+      <ClientMarketingProfileModal
+        client={selectedAgentClient}
+        marketingContact={marketingState.marketingContact}
+        loading={marketingState.loading}
+        error={marketingState.error}
+        onClose={() => setSelectedAgentClient(null)}
+        onSaveTags={async (tags) => {
+          const marketingContact = await saveClientMarketingTags({ organisationId: activeOrganisationId, client: selectedAgentClient, tags })
+          setMarketingState((current) => ({ ...current, marketingContact, error: '' }))
+        }}
       />
     </section>
   )

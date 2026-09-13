@@ -26,10 +26,10 @@ const [app, navigation, account, organisation, commission, users, billing, leadC
   read('src/lib/settingsApi.js'),
 ])
 
-assert.match(navigation, /label: 'Syndication'/, 'Syndication should replace the old Property24 entry on the settings dashboard.')
-assert.match(navigation, /to: '\/settings\/syndication'/, 'Syndication should link to the new settings hub.')
+assert.match(navigation, /label: 'Third-party integrations'/, 'Third-party integrations should provide the shared entry point on the settings dashboard.')
+assert.match(navigation, /to: '\/settings\/integrations'/, 'Third-party integrations should link to the integrations hub.')
 
-for (const removedRoute of ['integrations', 'api', 'audit-log', 'help']) {
+for (const removedRoute of ['api', 'audit-log', 'help']) {
   assert.doesNotMatch(app, new RegExp(`path=["']${removedRoute}["']`), `${removedRoute} must not be routable`)
   assert.doesNotMatch(navigation, new RegExp(`/settings/${removedRoute}`), `${removedRoute} must not be advertised`)
 }
@@ -51,12 +51,13 @@ for (const route of [
   '/settings/roles',
   '/settings/activity',
   '/settings/billing',
-  '/settings/syndication',
+  '/settings/integrations',
 ]) {
   assert.match(navigation + app, new RegExp(route.replaceAll('/', '\\/')), `Settings route ${route} should be wired into the workspace.`)
 }
 
-assert.match(app, /path="syndication"[\s\S]*<SettingsSyndicationPage \/>/, 'The syndication hub must be wired to its route.')
+assert.match(app, /path="integrations"[\s\S]*<SettingsSyndicationPage \/>/, 'The integrations hub must be wired to its route.')
+assert.match(app, /path="syndication" element=\{<Navigate to="\/settings\/integrations" replace \/>\}/, 'The legacy syndication route should redirect to the integrations hub.')
 assert.match(app, /path="syndication\/property24"/, 'The Property24 setup page must be nested under syndication.')
 assert.match(app, /path="syndication\/private-property"/, 'The Private Property setup page must be nested under syndication.')
 assert.match(app, /path="property24"[\s\S]*Navigate to="\/settings\/syndication\/property24"/, 'The legacy Property24 route should redirect to the syndication setup page.')

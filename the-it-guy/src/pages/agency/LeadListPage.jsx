@@ -176,8 +176,6 @@ export default function LeadListPage({
   summary = {},
   sellerJourneyMetrics = {},
   operationalSummary = {},
-  showDaySummary = {},
-  showDayPrompt = '',
   rows = [],
   kanbanColumns = [],
   viewMode = 'table',
@@ -197,8 +195,6 @@ export default function LeadListPage({
   onArchiveLead,
   onDeleteLead,
   onMoveLead,
-  onOpenShowDayQueue,
-  onOpenShowDayLead,
   showDayListings = [],
   publicIntakeBaseUrl = '',
   showDayImportBusy = false,
@@ -219,23 +215,6 @@ export default function LeadListPage({
     <div className="flex flex-col gap-5" data-testid="agency-lead-list-page">
       <section className="order-1 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
         {metricCards.map((card) => <MetricCard key={card.label} {...card} />)}
-      </section>
-
-      <section data-testid="show-day-follow-up-queue" className={`${category === 'buyer' ? '' : 'hidden'} order-4 rounded-[18px] border border-[#dce7f2] bg-white p-4 shadow-[0_12px_30px_rgba(31,54,78,0.05)]`}>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-[#7d91a8]">Show Day Follow-Up Queue</p>
-              <h3 className="mt-1 text-lg font-semibold text-[#17334f]">Phone buyers who already viewed, then move onboarding-ready leads forward.</h3>
-              <p className="mt-1 text-sm text-[#60758d]">{showDayPrompt || 'Contact show-day visitors while the property is still fresh and capture their next step.'}</p>
-            </div>
-            <button type="button" className="inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-sm font-semibold text-[#35546c]" onClick={onOpenShowDayQueue}><Filter size={15} /> Open Show Day Queue</button>
-          </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-4">
-            {[['Captured', showDaySummary.captured], ['Viewed', showDaySummary.viewed], ['Due', showDaySummary.due], ['Onboarding Ready', showDaySummary.offerReady]].map(([label, value]) => <div key={label} className="rounded-[12px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-2"><p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#8296aa]">{label}</p><p className="mt-1 text-xl font-semibold text-[#102236]">{value || 0}</p></div>)}
-          </div>
-          <div className="mt-4 space-y-2">
-            {(showDaySummary.queue || []).length ? (showDaySummary.queue || []).slice(0, 4).map((row) => <div key={row.leadId} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e5edf6] bg-[#fbfdff] px-3 py-3"><div className="min-w-[220px] flex-1"><p className="text-sm font-semibold text-[#203a54]">{row.name}</p><p className="mt-0.5 text-xs text-[#6f849a]">{row.property || 'Linked property pending'} · {row.dueLabel || 'Follow-up timing pending'}</p></div><div className="flex items-center gap-2">{row.overdue ? <span className="rounded-full border border-[#f1cdc8] bg-[#fff5f4] px-2.5 py-1 text-xs font-semibold text-[#9f3028]">Overdue</span> : null}<button type="button" className="rounded-[10px] border border-[#dbe6f1] bg-white px-3 py-2 text-xs font-semibold text-[#35546c]" onClick={() => onOpenShowDayLead(row, 'activity')}>Open Lead</button><button type="button" className="rounded-[10px] bg-[#0f2743] px-3 py-2 text-xs font-semibold text-white" onClick={() => onOpenShowDayLead(row, 'onboarding_otp')}>Open Setup / Offer</button></div></div>) : <div className="rounded-[14px] border border-dashed border-[#d8e4f0] bg-[#fbfdff] p-4 text-sm text-[#6a8098]">No show-day follow-ups are due right now.</div>}
-          </div>
       </section>
 
       <section id="agency-lead-filters" className="order-2 min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">

@@ -3795,7 +3795,7 @@ function AppRoutes() {
                   }
                 />
                 <Route
-                  path="syndication"
+                  path="integrations"
                   element={
                     <OrganisationSettingsManageRoute>
                       <RoleRoute allowedRoles={['agent']}>
@@ -3804,6 +3804,7 @@ function AppRoutes() {
                     </OrganisationSettingsManageRoute>
                   }
                 />
+                <Route path="syndication" element={<Navigate to="/settings/integrations" replace />} />
                 <Route
                   path="syndication/property24"
                   element={

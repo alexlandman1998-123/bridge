@@ -31417,14 +31417,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             summary={leadPageSummary}
             sellerJourneyMetrics={sellerJourneyMetrics}
             operationalSummary={leadOperationalSummary}
-            showDaySummary={{
-              ...showDayFollowUpSummary,
-              queue: showDayFollowUpSummary.queue.map((row) => ({
-                ...row,
-                dueLabel: row.dueDate ? `Due ${formatDateShort(row.dueDate)}` : '',
-              })),
-            }}
-            showDayPrompt={SHOW_DAY_FOLLOW_UP_PROMPT}
             rows={leadListPageRows}
             kanbanColumns={leadListKanbanColumns}
             viewMode={pipelineViewMode}
@@ -31446,8 +31438,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             onArchiveLead={openArchiveLeadModal}
             onDeleteLead={openDeleteLeadModal}
             onMoveLead={(leadId, columnId) => void handleMovePipelineCard(leadId, columnId)}
-            onOpenShowDayQueue={openShowDayFollowUpQueue}
-            onOpenShowDayLead={openShowDayLead}
             showDayListings={appointmentListingOptions}
             publicIntakeBaseUrl={typeof window !== 'undefined' ? `${window.location.origin}/intake/${encodeURIComponent(normalizeText(currentWorkspace?.slug || workspace?.slug || organisationId))}` : ''}
             showDayImportBusy={showDayImportBusy}

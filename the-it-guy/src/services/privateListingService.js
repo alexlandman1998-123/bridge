@@ -6082,6 +6082,18 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
     throw new Error(result.data?.message || 'This listing cannot be permanently deleted until its linked workflows are resolved.')
   }
 
+  const verification = await client
+    .from('private_listings')
+    .select('id')
+    .eq('id', normalizedId)
+    .maybeSingle()
+  if (verification.error) {
+    throw new Error(`The listing delete could not be verified: ${verification.error.message || 'database verification failed.'}`)
+  }
+  if (verification.data?.id) {
+    throw new Error('The database still contains this listing after the delete request. Nothing was removed from this browser. Please try again or contact support.')
+  }
+
   return result.data
 }
 

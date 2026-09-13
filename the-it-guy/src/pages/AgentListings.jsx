@@ -6347,6 +6347,10 @@ function AgentListings({ initialTab = null } = {}) {
       setError('Unable to delete this listing because it is missing a listing id.')
       return
     }
+    if (isSupabaseConfigured && !remoteListingId) {
+      setError('Unable to permanently delete this listing because its database record could not be identified. Refresh the page and try again.')
+      return
+    }
 
     const listingTitle = String(card?.title || 'this listing').trim()
 
@@ -6356,7 +6360,7 @@ function AgentListings({ initialTab = null } = {}) {
 
     try {
       let remoteDelete = null
-      if (isSupabaseConfigured && remoteListingId) {
+      if (isSupabaseConfigured) {
         remoteDelete = await deletePrivateListing(remoteListingId, {
           organisationId: card?.listingRecord?.organisationId || card?.listingRecord?.organisation_id || organisationId,
         })

@@ -1,6 +1,62 @@
 import { supabase } from '../lib/supabaseClient'
 
 const clean = (value) => String(value || '').trim()
+const normalizeEmail = (value) => clean(value).toLowerCase()
+
+function normalizeTags(tags = []) {
+  return [...new Set((Array.isArray(tags) ? tags : String(tags).split(','))
+    .map((tag) => clean(tag).toLowerCase())
+    .filter(Boolean))]
+}
+
+function getClientRoleType(client = {}) {
+  const candidates = [client.primaryRole, client.typeKeys?.[0], client.typeKey, client.role]
+  const role = candidates.map((value) => clean(value).toLowerCase()).find(Boolean)
+  return ['buyer', 'seller', 'landlord', 'tenant', 'lead'].includes(role) ? role : 'lead'
+}
+
+export async function getClientMarketingWorkspace({ organisationId, email = '' }) {
+  if (!organisationId) return { marketingContact: null, savedAudiences: [] }
+  const normalizedEmail = normalizeEmail(email)
+  const [contactResult, audiencesResult] = await Promise.all([
+    normalizedEmail
+      ? supabase.from('email_marketing_contacts').select('*').eq('organisation_id', organisationId).eq('email', normalizedEmail).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).order('updated_at', { ascending: false }),
+  ])
+  if (contactResult.error) throw contactResult.error
+  if (audiencesResult.error) throw audiencesResult.error
+  return { marketingContact: contactResult.data || null, savedAudiences: audiencesResult.data || [] }
+}
+
+export async function saveClientMarketingTags({ organisationId, client, tags }) {
+  const email = normalizeEmail(client?.email)
+  if (!organisationId) throw new Error('Select an organisation before updating client tags.')
+  if (!email) throw new Error('Add an email address before assigning marketing tags.')
+  const nextTags = normalizeTags(tags)
+  const { data: existing, error: lookupError } = await supabase
+    .from('email_marketing_contacts')
+    .select('id')
+    .eq('organisation_id', organisationId)
+    .eq('email', email)
+    .maybeSingle()
+  if (lookupError) throw lookupError
+
+  const query = existing?.id
+    ? supabase.from('email_marketing_contacts').update({ tags: nextTags }).eq('id', existing.id).select().single()
+    : supabase.from('email_marketing_contacts').insert({
+      organisation_id: organisationId,
+      source_type: 'crm',
+      email,
+      full_name: clean(client?.name) || null,
+      role_type: getClientRoleType(client),
+      tags: nextTags,
+      is_valid_email: true,
+    }).select().single()
+  const { data, error } = await query
+  if (error) throw error
+  return data
+}
 
 export async function getEmailCampaignWorkspace(organisationId) {
   if (!organisationId) return { campaigns: [], performance: [], identities: [], contacts: [], subscriptionTypes: [], deliverability: [], templates: [], savedAudiences: [], usage: [], billingProfile: null, dailyPerformance: [], categoryPerformance: [] }

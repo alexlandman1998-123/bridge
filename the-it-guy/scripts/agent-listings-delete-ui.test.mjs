@@ -55,6 +55,13 @@ assert(
 )
 
 assert(
+  source.includes('if (isSupabaseConfigured && !remoteListingId)') &&
+    source.includes('its database record could not be identified') &&
+    source.includes('if (isSupabaseConfigured) {\n        remoteDelete = await deletePrivateListing(remoteListingId'),
+  'configured production deletion must fail closed instead of reporting success after a browser-only removal.',
+)
+
+assert(
   source.includes('rememberDeletedListingIds(deletedIds)'),
   'handleDeleteListing should persist delete tombstones before reload.',
 )
@@ -106,6 +113,14 @@ assert(
   deletePrivateListingSource.includes("throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')") &&
     deletePrivateListingSource.includes("throw new Error(result.data?.message || 'This listing cannot be permanently deleted until its linked workflows are resolved.')"),
   'the client must explain permission denials and structured deletion blockers instead of reporting false success.',
+)
+
+assert(
+  deletePrivateListingSource.includes(".from('private_listings')") &&
+    deletePrivateListingSource.includes(".select('id')") &&
+    deletePrivateListingSource.includes(".eq('id', normalizedId)") &&
+    deletePrivateListingSource.includes('The database still contains this listing after the delete request'),
+  'permanent deletion must verify the canonical database row is gone before the UI removes local data or reports success.',
 )
 
 assert(

@@ -43,12 +43,13 @@ for (const route of [
   '/settings/roles',
   '/settings/activity',
   '/settings/billing',
-  '/settings/syndication',
+  '/settings/integrations',
 ]) {
   assert.match(navigation + app, new RegExp(route.replaceAll('/', '\\/')), `Settings route ${route} should be wired into the workspace.`)
 }
 
-assert.match(app, /path="syndication"[\s\S]*<SettingsSyndicationPage \/>/, 'The syndication hub must be wired to its route.')
+assert.match(app, /path="integrations"[\s\S]*<SettingsSyndicationPage \/>/, 'The integrations hub must be wired to its route.')
+assert.match(app, /path="syndication" element=\{<Navigate to="\/settings\/integrations" replace \/>\}/, 'The legacy syndication route should redirect to the integrations hub.')
 assert.match(app, /path="syndication\/property24"/, 'The Property24 setup page must be nested under syndication.')
 assert.match(app, /path="syndication\/private-property"/, 'The Private Property setup page must be nested under syndication.')
 assert.match(app, /path="property24"[\s\S]*Navigate to="\/settings\/syndication\/property24"/, 'The legacy Property24 route should redirect to the syndication setup page.')
