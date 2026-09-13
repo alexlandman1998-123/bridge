@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, X } from 'lucide-react'
+import { CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, SlidersHorizontal, X } from 'lucide-react'
 import Button from '../ui/Button'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../../services/websiteListingPublicationService'
 
@@ -48,6 +48,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     [preparationBlockers, publication?.blockers],
   )
   const infrastructureBlocked = readinessBlockers.some((blocker) => INFRASTRUCTURE_BLOCKERS.some((prefix) => String(blocker).startsWith(prefix)))
+  const hasConnectedWebsite = Boolean(publication?.websiteSiteId && publication?.hostname)
 
   const run = async (nextAction) => {
     if (!listingId || action) return
@@ -90,8 +91,12 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
       : 'border border-[#aebdca] bg-white'
 
   if (variant === 'channel') {
+    // A website channel only makes sense after the organisation has a live site
+    // with an active domain. Avoid showing a disabled, misleading channel row.
+    if (!hasConnectedWebsite) return null
+
     return (
-      <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 lg:grid-cols-[minmax(230px,0.9fr)_minmax(150px,190px)_minmax(260px,1fr)_minmax(130px,170px)_auto] lg:items-center">
+      <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(250px,1fr)_minmax(170px,0.7fr)_minmax(130px,170px)_auto] lg:items-center">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]">
             <Globe2 size={21} />
@@ -108,20 +113,25 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
           </p>
         </div>
         <div className="min-w-0">
-          <p className="text-sm font-semibold leading-5 text-[#243d56]">{effectivelyLive ? stale ? 'Current CRM changes need publishing' : 'Listing is live on your website' : 'Publish this listing to your website'}</p>
-          <p className="mt-0.5 truncate text-xs leading-5 text-[#607387]">{publication?.hostname || 'Website domain not connected yet'}</p>
-        </div>
-        <div className="min-w-0">
           {publication?.updatedAt ? <><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last updated</p><p className="mt-0.5 text-xs font-semibold text-[#607387]">{new Date(publication.updatedAt).toLocaleDateString()}</p></> : null}
         </div>
-        <div className="flex flex-wrap items-center gap-2 md:justify-end">
-          {published
-            ? <Button type="button" size="sm" className="justify-center" onClick={() => void run('update')} disabled={Boolean(action) || infrastructureBlocked}>{action === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{stale ? 'Update' : 'Refresh'}</Button>
-            : <Button type="button" size="sm" className="justify-center" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish</Button>}
-          {publicUrl ? <a className="inline-flex min-h-9 items-center justify-center gap-2 rounded-lg border border-[#c9d9cf] bg-white px-3 text-sm font-semibold text-[#2f6346]" href={publicUrl} target="_blank" rel="noreferrer">View <ExternalLink size={14} /></a> : null}
+        <div className="flex justify-start lg:justify-end">
+          <details className="relative">
+            <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
+              <SlidersHorizontal size={15} />
+              Manage
+            </summary>
+            <div className="absolute right-0 z-30 mt-2 grid w-56 gap-1.5 rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+              {published
+                ? <Button type="button" size="sm" className="w-full justify-start" onClick={() => void run('update')} disabled={Boolean(action) || infrastructureBlocked}>{action === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{stale ? 'Update website listing' : 'Refresh website listing'}</Button>
+                : <Button type="button" size="sm" className="w-full justify-start" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish to website</Button>}
+              {publicUrl ? <a className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#2f6346] hover:bg-[#f2faf5]" href={publicUrl} target="_blank" rel="noreferrer">View listing <ExternalLink size={14} /></a> : null}
+              {published ? <Button type="button" size="sm" variant="secondary" className="w-full justify-start border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={() => void run('unpublish')} disabled={Boolean(action)}>{action === 'unpublish' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}Unpublish</Button> : null}
+            </div>
+          </details>
         </div>
-        {error ? <p className="lg:col-span-5 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
-        {notice ? <p className="lg:col-span-5 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
+        {error ? <p className="lg:col-span-4 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
+        {notice ? <p className="lg:col-span-4 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
       </div>
     )
   }

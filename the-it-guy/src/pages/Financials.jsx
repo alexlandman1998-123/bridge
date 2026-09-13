@@ -15,7 +15,14 @@ import {
   saveTransactionFinancialRecord,
   uploadTransactionFinancialInvoice,
 } from '../lib/api'
-import { isSupabaseConfigured } from '../lib/supabaseClient'
+import { isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import {
+  completeTransactionFeeInvoice,
+  listTransactionFeeInvoiceQueue,
+  prepareTransactionFeeInvoice,
+} from '../services/transactionFeeControlService.js'
+import { downloadTransactionFeeInvoiceDraft } from '../services/transactionFeeInvoicePdf.js'
+import { buildTransactionFeeInvoiceEmailDraft } from '../services/transactionFeeInvoiceDelivery.js'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -93,6 +100,53 @@ function buildBreakdown(summary) {
     ...item,
     width: total > 0 ? `${(item.value / total) * 100}%` : '25%',
   }))
+}
+
+function TransactionFeeInvoiceQueue({ items = [], busyTransactionId = '', invoiceReferences = {}, deliveryEmails = {}, error = '', organisationName = '', onPrepare, onReferenceChange, onDeliveryEmailChange, onComplete }) {
+  if (!items.length && !error) return null
+  return (
+    <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+      <SectionHeader title="R1,500 Transaction Fee — Finance Queue" copy="Only verified OTPs with attorney receipt confirmation appear here. This queue records finance handling; it does not generate or email a tax invoice." />
+      {error ? <p className="mt-3 text-sm text-danger" role="alert">{error}</p> : null}
+      {items.length ? (
+        <div className="mt-5 space-y-3">
+          {items.map((item) => {
+            const readyToPrepare = item.status === 'ready_to_prepare'
+            const completed = item.status === 'completed'
+            const isBusy = busyTransactionId === item.transactionId
+            return (
+              <article key={item.feeControlId || item.id || item.transactionId} className="rounded-[16px] border border-[#e4ebf4] bg-[#fbfcfe] px-4 py-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <strong className="text-sm font-semibold text-[#142132]">Transaction fee · {item.billingPartyType === 'attorney' ? 'Attorney billed' : 'Agent billed'}</strong>
+                    <p className="mt-1 text-sm text-[#66758b]">R1,500 excl. VAT · R1,725 incl. VAT</p>
+                  </div>
+                  <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-xs font-semibold ${completed ? 'border-[#d6ece0] bg-[#edfdf3] text-[#1c7d45]' : 'border-[#f4dfba] bg-[#fff7e9] text-[#b67218]'}`}>
+                    {completed ? `Completed · ${item.invoiceReference}` : readyToPrepare ? 'Ready to prepare' : 'Ready for finance'}
+                  </span>
+                </div>
+                {readyToPrepare ? (
+                  <div className="mt-3">
+                    <Button size="sm" disabled={isBusy} onClick={() => onPrepare(item.transactionId)}>{isBusy ? 'Preparing…' : 'Prepare for finance'}</Button>
+                  </div>
+                ) : !completed ? (
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
+                    <label className="grid flex-1 gap-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Accounting-system invoice reference</span>
+                      <Field value={invoiceReferences[item.transactionId] || ''} onChange={(event) => onReferenceChange(item.transactionId, event.target.value)} placeholder="e.g. INV-100" />
+                    </label>
+                    <Button size="sm" disabled={isBusy} onClick={() => onComplete(item.transactionId)}>{isBusy ? 'Saving…' : 'Mark invoice completed'}</Button>
+                  </div>
+                ) : (
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end"><label className="grid flex-1 gap-1.5"><span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Agreed billing email</span><Field type="email" value={deliveryEmails[item.transactionId] || ''} onChange={(event) => onDeliveryEmailChange(item.transactionId, event.target.value)} placeholder="billing@example.com" /></label><Button size="sm" variant="secondary" onClick={() => void downloadTransactionFeeInvoiceDraft({ invoiceReference: item.invoiceReference, transactionId: item.transactionId, billingPartyType: item.billingPartyType, organisationName })}>Download invoice copy</Button><Button size="sm" variant="ghost" disabled={!deliveryEmails[item.transactionId]} onClick={async () => { const draft = buildTransactionFeeInvoiceEmailDraft({ recipientEmail: deliveryEmails[item.transactionId], billingPartyType: item.billingPartyType, invoiceReference: item.invoiceReference, transactionId: item.transactionId }); await navigator.clipboard?.writeText(`To: ${draft.recipientEmail}\nSubject: ${draft.subject}\n\n${draft.body}`) }}>Copy email</Button></div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      ) : null}
+    </section>
+  )
 }
 
 function FinancialDetailDrawer({ row, record, loading, saving, error, onClose, onSave, onUpload, onOpenMatter }) {
@@ -247,7 +301,7 @@ function FinancialDetailDrawer({ row, record, loading, saving, error, onClose, o
 
 function Financials() {
   const navigate = useNavigate()
-  const { profile } = useWorkspace()
+  const { profile, workspace } = useWorkspace()
   const [data, setData] = useState({ rows: [], summary: {} })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -256,6 +310,11 @@ function Financials() {
   const [drawerLoading, setDrawerLoading] = useState(false)
   const [drawerSaving, setDrawerSaving] = useState(false)
   const [drawerError, setDrawerError] = useState('')
+  const [transactionFeeInvoiceQueue, setTransactionFeeInvoiceQueue] = useState([])
+  const [transactionFeeInvoiceBusyId, setTransactionFeeInvoiceBusyId] = useState('')
+  const [transactionFeeInvoiceReferences, setTransactionFeeInvoiceReferences] = useState({})
+  const [transactionFeeInvoiceDeliveryEmails, setTransactionFeeInvoiceDeliveryEmails] = useState({})
+  const [transactionFeeInvoiceError, setTransactionFeeInvoiceError] = useState('')
 
   const loadData = useCallback(async () => {
     if (!isSupabaseConfigured || !profile?.id) {
@@ -278,6 +337,25 @@ function Financials() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  const loadTransactionFeeInvoiceQueue = useCallback(async () => {
+    if (!isSupabaseConfigured || !profile?.id) return
+    try {
+      setTransactionFeeInvoiceError('')
+      const items = await listTransactionFeeInvoiceQueue(supabase)
+      setTransactionFeeInvoiceQueue(items)
+    } catch (queueError) {
+      // The queue migrates with this feature; keep existing financials usable
+      // during a staged frontend/database rollout.
+      if (!['42P01', 'PGRST202', 'PGRST205'].includes(queueError?.code)) {
+        setTransactionFeeInvoiceError(queueError?.message || 'Unable to load the transaction-fee finance queue.')
+      }
+    }
+  }, [profile?.id])
+
+  useEffect(() => {
+    void loadTransactionFeeInvoiceQueue()
+  }, [loadTransactionFeeInvoiceQueue])
 
   useEffect(() => {
     function refreshFinancials() {
@@ -390,6 +468,35 @@ function Financials() {
     }
   }
 
+  async function handlePrepareTransactionFeeInvoice(transactionId) {
+    try {
+      setTransactionFeeInvoiceBusyId(transactionId)
+      setTransactionFeeInvoiceError('')
+      await prepareTransactionFeeInvoice(supabase, { transactionId })
+      await loadTransactionFeeInvoiceQueue()
+    } catch (invoiceError) {
+      setTransactionFeeInvoiceError(invoiceError?.message || 'Unable to prepare the transaction-fee invoice.')
+    } finally {
+      setTransactionFeeInvoiceBusyId('')
+    }
+  }
+
+  async function handleCompleteTransactionFeeInvoice(transactionId) {
+    try {
+      setTransactionFeeInvoiceBusyId(transactionId)
+      setTransactionFeeInvoiceError('')
+      await completeTransactionFeeInvoice(supabase, {
+        transactionId,
+        invoiceReference: transactionFeeInvoiceReferences[transactionId] || '',
+      })
+      await loadTransactionFeeInvoiceQueue()
+    } catch (invoiceError) {
+      setTransactionFeeInvoiceError(invoiceError?.message || 'Unable to complete the transaction-fee invoice.')
+    } finally {
+      setTransactionFeeInvoiceBusyId('')
+    }
+  }
+
   function openMatter(row) {
     if (row.unitId) {
       navigate(`/units/${row.unitId}`)
@@ -447,6 +554,19 @@ function Financials() {
               icon={Receipt}
             />
           </section>
+
+          <TransactionFeeInvoiceQueue
+            items={transactionFeeInvoiceQueue}
+            busyTransactionId={transactionFeeInvoiceBusyId}
+            invoiceReferences={transactionFeeInvoiceReferences}
+            deliveryEmails={transactionFeeInvoiceDeliveryEmails}
+            error={transactionFeeInvoiceError}
+            organisationName={workspace?.name || workspace?.displayName || ''}
+            onPrepare={handlePrepareTransactionFeeInvoice}
+            onReferenceChange={(transactionId, value) => setTransactionFeeInvoiceReferences((current) => ({ ...current, [transactionId]: value }))}
+            onDeliveryEmailChange={(transactionId, value) => setTransactionFeeInvoiceDeliveryEmails((current) => ({ ...current, [transactionId]: value }))}
+            onComplete={handleCompleteTransactionFeeInvoice}
+          />
 
           <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
             <SectionHeader title="Registered Revenue Mix" copy="Expected, invoiced, paid, and outstanding across your registered matter fee book." />

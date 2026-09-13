@@ -18,6 +18,7 @@ export const PROPERTY24_API_ROUTES = {
   reconcileRentalListing: `${PROPERTY24_API_BASE_PATH}/rentals/:listingId/reconcile`,
   listingLeads: `${PROPERTY24_API_BASE_PATH}/listings/:listingId/leads`,
   pullLeads: `${PROPERTY24_API_BASE_PATH}/leads/pull`,
+  syncStatistics: `${PROPERTY24_API_BASE_PATH}/settings/statistics-sync`,
   runReconciliation: `${PROPERTY24_API_BASE_PATH}/reconciliation/run`,
 }
 
@@ -39,5 +40,6 @@ export const PROPERTY24_API_METHODS = {
   reconcileRentalListing: 'POST',
   listingLeads: 'GET',
   pullLeads: 'POST',
+  syncStatistics: 'POST',
   runReconciliation: 'POST',
 }

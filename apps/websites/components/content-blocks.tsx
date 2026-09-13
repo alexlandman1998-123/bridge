@@ -5,7 +5,7 @@ import { PropertyCard } from '@/components/property-card'
 import { HomeSearch } from '@/components/home-search'
 import { PropertySearch } from '@/components/property-search'
 import { isHomeSeekersTemplate } from '@/lib/site-templates'
-import type { PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
+import type { PublicBlogPost, PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
 
 function Block({ block, page, properties, templateKey, site }: { block: WebsiteBlock; page: PublicPage; properties: PublicProperty[]; templateKey: WebsiteTemplateKey; site: ResolvedSite }) {
   if (block.type === 'hero') return <section className={page.kind === 'home' ? 'hero' : 'campaign-hero'}><div className="content-shell"><p className="eyebrow">{block.eyebrow || 'PROPERTY, SIMPLIFIED'}</p><h1>{block.heading}</h1>{block.body && <p>{block.body}</p>}{page.kind === 'home' ? isHomeSeekersTemplate(templateKey) ? <HomeSearch areas={Array.from(new Set(properties.map(property => property.suburb).filter((area): area is string => Boolean(area))))} /> : <PropertySearch /> : block.ctaLabel && block.ctaHref ? <a className="header-cta" href={block.ctaHref}>{block.ctaLabel}</a> : null}</div></section>
@@ -17,19 +17,17 @@ function Block({ block, page, properties, templateKey, site }: { block: WebsiteB
   return <section className="cta-block"><h2>{block.heading}</h2>{block.body && <p>{block.body}</p>}<a className="header-cta" href={block.ctaHref}>{block.ctaLabel}</a></section>
 }
 
-function Neighbourhoods() {
-  const areas = [
-    { name: 'Waterkloof', image: '/images/kingdom-neighbourhood-v1.png' },
-    { name: 'Brooklyn', image: '/images/kingdom-showcase-apartment-v1.png' },
-    { name: 'Lynnwood', image: '/images/kingdom-showcase-lynnwood-v1.png' },
-  ]
-  return <section className="neighbourhoods-section" id="neighbourhoods"><div className="content-shell"><div className="section-heading"><div><h2>Find your neighbourhood</h2><p>Explore some of Pretoria’s most loved addresses.</p></div><a href="/properties">View all areas <span aria-hidden="true">→</span></a></div><div className="neighbourhood-grid">{areas.map((area) => <a href={`/properties?q=${encodeURIComponent(area.name)}`} key={area.name} className="neighbourhood-card"><img src={area.image} alt="" /><span>{area.name}<b aria-hidden="true">→</b></span></a>)}</div></div></section>
+function LatestBlogPosts({ posts, site }: { posts: PublicBlogPost[]; site: ResolvedSite }) {
+  const latestPosts = posts.slice(0, 3)
+  if (!latestPosts.length) return null
+
+  return <section className="latest-blog-section" id="blog"><div className="content-shell"><div className="section-heading"><div><h2>Latest from {site.name}</h2></div><a href="/blog">View all articles <span aria-hidden="true">→</span></a></div><div className="latest-blog-grid">{latestPosts.map((post) => <a href={`/blog/${post.slug}`} key={post.id} className="latest-blog-card">{post.coverImageUrl ? <img src={post.coverImageUrl} alt={post.coverImageAlt || ''} /> : null}<div><p>{post.authorName || site.name}</p><h3>{post.title}</h3>{post.summary ? <span>{post.summary}</span> : null}<b>Read article <span aria-hidden="true">→</span></b></div></a>)}</div></div></section>
 }
 
-export function ContentBlocks({ page, properties, templateKey, site }: { page: PublicPage; properties: PublicProperty[]; templateKey: WebsiteTemplateKey; site: ResolvedSite }) {
+export function ContentBlocks({ page, properties, templateKey, site, blogPosts = [] }: { page: PublicPage; properties: PublicProperty[]; templateKey: WebsiteTemplateKey; site: ResolvedSite; blogPosts?: PublicBlogPost[] }) {
   const homeSeekers = isHomeSeekersTemplate(templateKey)
   return <>
-    {page.blocks.filter((block) => !block.hidden).map((block, index) => <Fragment key={`${block.type}-${index}`}><Block block={block} page={page} properties={properties} site={site} templateKey={templateKey} />{page.kind === 'home' && homeSeekers && block.type === 'rich_text' && <Neighbourhoods />}</Fragment>)}
+    {page.blocks.filter((block) => !block.hidden).map((block, index) => <Fragment key={`${block.type}-${index}`}><Block block={block} page={page} properties={properties} site={site} templateKey={templateKey} />{page.kind === 'home' && homeSeekers && block.type === 'rich_text' && <LatestBlogPosts posts={blogPosts} site={site} />}</Fragment>)}
     {page.kind === 'home' && <section className="newsletter-section"><div><p className="eyebrow">STAY IN TOUCH</p><h2>Stay close to the market.</h2><p>Get the latest properties, local market insights and neighbourhood news.</p></div><LeadForm pageId={page.id} purpose="newsletter_signup" privacyPolicyUrl={site.privacyPolicyUrl} /></section>}
   </>
 }

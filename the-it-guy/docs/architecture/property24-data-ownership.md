@@ -42,6 +42,14 @@ Arch9 owns business data. Property24 integration records store external identifi
 - Reconciliation is report-only. It may read listing summaries, recent updates and portal visibility from Property24, but it never publishes, updates, imports, reassigns or changes status.
 - Status drift, missing records, unexpected external records, visibility drift and unmatched updates are presented as review items. Any corrective action must use the relevant canonical Arch9 listing workflow.
 
+## Statistics reporting rules
+
+- Property24 statistics describe portal performance. Imported Property24 CRM leads describe leads Arch9 received and stored; these measures are reported separately.
+- Production statistics use Listing Service v55. Listing Contact Form is Property24's `requestDetailsLeads`; WhatsApp Contact Form is Property24's `whatsAppLeads` field.
+- Property24 WhatsApp contact forms are never combined with Arch9 WhatsApp campaign analytics.
+- Total portal contacts use Property24's `totalContactLeads` value. Arch9 does not calculate this total from individual contact-type fields, because Property24 may add other contact types.
+- Views (`viewCount`) and alerts (`alertCount`) are interest metrics, not leads.
+
 ## ExDev vetting rules
 
 - Phase 6 vetting-pack generation is available only for an enabled ExDev connection and an authenticated organisation administrator.

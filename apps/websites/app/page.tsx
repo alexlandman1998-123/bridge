@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { cache } from 'react'
 import { ContentBlocks } from '@/components/content-blocks'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
-import { getPublicPage, resolveSite } from '@/lib/site-repository'
+import { getPublicBlogPosts, getPublicPage, resolveSite } from '@/lib/site-repository'
 import styles from './homepage.module.css'
 import { isHomeSeekersTemplate, templateClassName } from '@/lib/site-templates'
 
@@ -13,8 +13,10 @@ export const dynamic = 'force-dynamic'
 const loadHome = cache(async () => {
   const requestHeaders = await headers()
   const site = await resolveSite(requestHeaders.get('host'))
-  const page = site ? await getPublicPage(site, '') : null
-  return { page, site }
+  const [page, blogPosts] = site
+    ? await Promise.all([getPublicPage(site, ''), getPublicBlogPosts(site)])
+    : [null, []]
+  return { page, site, blogPosts }
 })
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -29,14 +31,14 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage() {
-  const { page, site } = await loadHome()
+  const { page, site, blogPosts } = await loadHome()
   if (!site || !page) notFound()
 
   return (
     <main className={`${templateClassName(site.templateKey)} ${isHomeSeekersTemplate(site.templateKey) ? styles.homepage : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
       {site.preview && <div className="preview-banner">Preview site — not yet connected to a client domain</div>}
       <SiteHeader site={site} enquiryHref="/valuation" homepage />
-      <ContentBlocks page={page} properties={site.properties} site={site} templateKey={site.templateKey} />
+      <ContentBlocks page={page} properties={site.properties} site={site} templateKey={site.templateKey} blogPosts={blogPosts} />
       <SiteFooter site={site} />
     </main>
   )

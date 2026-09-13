@@ -21,6 +21,12 @@ for (const path of [
   'server/property24/publishService.js',
   'server/property24/leadService.js',
   'server/property24/reconciliationService.js',
+  'server/property24/statisticsContract.js',
+  'server/property24/statisticsStorage.js',
+  'server/property24/statisticsSyncService.js',
+  'server/property24/statisticsSyncApi.js',
+  'api/property24/settings/statistics-sync.js',
+  'api/property24/statistics/sync.js',
   'server/property24/apiContract.js',
 ]) {
   assert.ok(fs.existsSync(new URL(`../${path}`, import.meta.url)), `${path} should exist`)
@@ -113,6 +119,7 @@ assert.equal(resolveProperty24Environment('https://api.exdev.property24-test.com
 assert.equal(resolveProperty24Environment('https://api.property24.com'), 'production')
 assert.equal(PROPERTY24_API_ROUTES.publishListing, '/api/property24/listings/:listingId/publish')
 assert.equal(PROPERTY24_API_ROUTES.pullLeads, '/api/property24/leads/pull')
+assert.equal(PROPERTY24_API_ROUTES.syncStatistics, '/api/property24/settings/statistics-sync')
 assert.equal(PROPERTY24_API_ROUTES.runReconciliation, '/api/property24/reconciliation/run')
 
 const publishScript = read('scripts/property24-publish-listing.mjs')

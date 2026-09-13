@@ -207,6 +207,7 @@ import {
 import { markRouteMilestone } from '../lib/performanceTrace.js'
 import { fetchJourneyStageOverrides } from '../services/journeyStageOverrideService.js'
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
+import { confirmAttorneyTransactionFeeReceipt } from '../services/transactionFeeControlService.js'
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getPrivateListingTransferAttorneyAllocation } from '../services/privateListingAttorneyAllocationService'
 import { fetchMatterHealth, saveMatterHealth } from '../services/matterHealthService'
@@ -14939,6 +14940,75 @@ function OverviewSidePanel({ title, children }) {
   )
 }
 
+function AttorneyFeeReceiptPanel({ control = null, loading = false, saving = false, error = '', onConfirm }) {
+  const [documentationReceived, setDocumentationReceived] = useState(false)
+  const [receiptNote, setReceiptNote] = useState('')
+
+  useEffect(() => {
+    setDocumentationReceived(false)
+    setReceiptNote('')
+  }, [control?.id, control?.attorney_receipt_confirmed])
+
+  if (loading) {
+    return <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]"><LoadingSkeleton lines={3} /></section>
+  }
+
+  if (!control) {
+    return (
+      <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Transaction fee documents</span>
+        <p className="mt-2 text-sm leading-6 text-textMuted">Attorney receipt confirmation becomes available after the signed OTP has been uploaded and verified.</p>
+      </section>
+    )
+  }
+
+  const isConfirmed = control.attorney_receipt_confirmed === true
+  const billedTo = control.billing_party_type === 'attorney' ? 'Attorney' : 'Agent'
+  return (
+    <section className="rounded-[16px] border border-borderDefault bg-white p-4 shadow-[0_10px_22px_rgba(15,23,42,0.04)]">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-textMuted">Transaction fee documents</span>
+          <h3 className="mt-1 text-base font-semibold text-textStrong">Attorney receipt confirmation</h3>
+        </div>
+        <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${isConfirmed ? 'border-success/30 bg-successSoft text-success' : 'border-warning/30 bg-warningSoft text-warning'}`}>
+          {isConfirmed ? 'Receipt confirmed' : 'Confirmation required'}
+        </span>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+        <div className="rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+          <span className="block font-semibold uppercase tracking-[0.08em] text-textMuted">Fee</span>
+          <strong className="mt-1 block text-textStrong">R1,500 excl. VAT</strong>
+        </div>
+        <div className="rounded-[10px] border border-borderSoft bg-surfaceAlt px-3 py-2">
+          <span className="block font-semibold uppercase tracking-[0.08em] text-textMuted">Billed to</span>
+          <strong className="mt-1 block text-textStrong">{billedTo}</strong>
+        </div>
+      </div>
+      {isConfirmed ? (
+        <p className="mt-3 text-sm leading-6 text-success">The signed OTP and approved consent documentation were confirmed received and reviewed on {formatDate(control.attorney_receipt_confirmed_at)}.</p>
+      ) : (
+        <form className="mt-4 space-y-3" onSubmit={(event) => {
+          event.preventDefault()
+          void onConfirm({ documentationReceived, receiptNote })
+        }}>
+          <label className="flex cursor-pointer items-start gap-2 rounded-[12px] border border-borderSoft bg-surfaceAlt px-3 py-3 text-sm leading-5 text-textBody">
+            <input type="checkbox" checked={documentationReceived} onChange={(event) => setDocumentationReceived(event.target.checked)} className="mt-0.5 size-4 rounded border-borderStrong" />
+            <span>I confirm that the signed OTP and approved consent documentation have been received and reviewed.</span>
+          </label>
+          <label className="block text-sm font-medium text-textStrong">
+            Internal note <span className="font-normal text-textMuted">(optional)</span>
+            <textarea value={receiptNote} onChange={(event) => setReceiptNote(event.target.value)} maxLength={1000} rows={2} className="mt-1.5 w-full rounded-[10px] border border-borderDefault bg-white px-3 py-2 text-sm font-normal text-textBody" placeholder="Add a receipt or review note" />
+          </label>
+          {error ? <p className="text-sm text-danger" role="alert">{error}</p> : null}
+          <p className="text-xs leading-5 text-textMuted">This records document receipt only. It does not generate an invoice or accept responsibility for payment.</p>
+          <Button type="submit" size="sm" disabled={!documentationReceived || saving}>{saving ? 'Confirming…' : 'Confirm document receipt'}</Button>
+        </form>
+      )}
+    </section>
+  )
+}
+
 function getPartnerInviteStatusClass(status) {
   const normalized = String(status || '').trim().toLowerCase()
   if (normalized === 'accepted') return 'border-success/30 bg-successSoft text-success'
@@ -15975,6 +16045,10 @@ function AttorneyTransactionDetail() {
   const [data, setData] = useState(() => initialTransactionShell)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [transactionFeeControl, setTransactionFeeControl] = useState(null)
+  const [transactionFeeControlLoading, setTransactionFeeControlLoading] = useState(false)
+  const [transactionFeeControlSaving, setTransactionFeeControlSaving] = useState(false)
+  const [transactionFeeControlError, setTransactionFeeControlError] = useState('')
   const [journeyStageOverrides, setJourneyStageOverrides] = useState([])
   const [matterAccessChecked, setMatterAccessChecked] = useState(workspaceRole !== 'attorney')
   const [matterAccessAllowed, setMatterAccessAllowed] = useState(workspaceRole !== 'attorney')
@@ -16738,6 +16812,8 @@ function AttorneyTransactionDetail() {
     foregroundLoadTransactionRef.current = ''
     setData(initialTransactionShell)
     setError('')
+    setTransactionFeeControl(null)
+    setTransactionFeeControlError('')
     setHydratingDetail(false)
     setDocumentWorkspaceLoad({ transactionId: '', status: 'idle', error: '' })
     setWorkspaceDatasetLoads({})
@@ -16779,6 +16855,34 @@ function AttorneyTransactionDetail() {
     initialDetailLoadKeyRef.current = currentMatterAccessKey
     void loadData({ background: false })
   }, [attorneyPermissionState.loading, attorneyPermissionState.membership?.isActive, currentMatterAccessKey, loadData, workspaceRole])
+
+  useEffect(() => {
+    if (workspaceRole !== 'attorney' || !transactionId) return undefined
+    let cancelled = false
+    setTransactionFeeControlLoading(true)
+    setTransactionFeeControlError('')
+
+    supabase
+      .from('transaction_fee_controls')
+      .select('id, transaction_id, billing_party_type, attorney_receipt_confirmed, attorney_receipt_confirmed_at')
+      .eq('transaction_id', transactionId)
+      .maybeSingle()
+      .then(({ data: feeControl, error: feeControlError }) => {
+        if (cancelled) return
+        // The control table is introduced with this feature. Treat an older
+        // schema during staged rollout as no recorded OTP, rather than making
+        // the whole attorney matter page fail.
+        if (feeControlError && !['42P01', 'PGRST205'].includes(feeControlError.code)) {
+          setTransactionFeeControlError(feeControlError.message || 'Unable to load the transaction-fee verification.')
+        }
+        setTransactionFeeControl(feeControl || null)
+      })
+      .finally(() => {
+        if (!cancelled) setTransactionFeeControlLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [transactionId, workspaceRole])
 
   useEffect(() => {
     let active = true
@@ -22348,6 +22452,28 @@ function AttorneyTransactionDetail() {
     }
   }
 
+  async function handleAttorneyFeeReceiptConfirmation({ documentationReceived, receiptNote }) {
+    if (!transaction?.id) return
+    try {
+      setTransactionFeeControlSaving(true)
+      setTransactionFeeControlError('')
+      const confirmedControl = await confirmAttorneyTransactionFeeReceipt(supabase, {
+        transactionId: transaction.id,
+        documentationReceived,
+        receiptNote,
+      })
+      setTransactionFeeControl((current) => current ? {
+        ...current,
+        attorney_receipt_confirmed: confirmedControl?.attorneyReceiptConfirmed === true,
+        attorney_receipt_confirmed_at: confirmedControl?.attorneyReceiptConfirmedAt || new Date().toISOString(),
+      } : current)
+    } catch (confirmationError) {
+      setTransactionFeeControlError(confirmationError?.message || 'Unable to confirm document receipt.')
+    } finally {
+      setTransactionFeeControlSaving(false)
+    }
+  }
+
   function openReviewAction(action, document, requirement) {
     setReviewActionDraft({
       open: true,
@@ -22755,6 +22881,13 @@ function AttorneyTransactionDetail() {
               onRunTask={handleArchlineTaskCommand}
             />
             <AttorneyDealSetupHandoffPanel transactionId={transaction?.id} />
+            <AttorneyFeeReceiptPanel
+              control={transactionFeeControl}
+              loading={transactionFeeControlLoading}
+              saving={transactionFeeControlSaving}
+              error={transactionFeeControlError}
+              onConfirm={handleAttorneyFeeReceiptConfirmation}
+            />
           </section>
         ) : null}
 

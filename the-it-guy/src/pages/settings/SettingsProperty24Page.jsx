@@ -37,6 +37,10 @@ import {
 } from './property24SettingsModel'
 import { runProperty24OrganisationReconciliation } from '../../services/property24ReconciliationService'
 import {
+  getProperty24StatisticsSyncRuns,
+  runProperty24StatisticsSync,
+} from '../../services/property24StatisticsOperationsService'
+import {
   downloadProperty24VettingPackMarkdown,
   runProperty24OrganisationVettingPack,
 } from '../../services/property24VettingPackService'
@@ -383,6 +387,8 @@ export default function SettingsProperty24Page() {
   const [saving, setSaving] = useState(false)
   const [syncing, setSyncing] = useState(false)
   const [healthLoading, setHealthLoading] = useState(false)
+  const [statisticsLoading, setStatisticsLoading] = useState(false)
+  const [statisticsSyncing, setStatisticsSyncing] = useState(false)
   const [reconciliationLoading, setReconciliationLoading] = useState(false)
   const [vettingPackLoading, setVettingPackLoading] = useState(false)
   const [liveCutoverLoading, setLiveCutoverLoading] = useState(false)
@@ -391,6 +397,8 @@ export default function SettingsProperty24Page() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [healthError, setHealthError] = useState('')
+  const [statisticsError, setStatisticsError] = useState('')
+  const [statisticsRuns, setStatisticsRuns] = useState([])
   const [reconciliationError, setReconciliationError] = useState('')
   const [vettingPackError, setVettingPackError] = useState('')
   const [liveCutoverError, setLiveCutoverError] = useState('')
@@ -455,6 +463,9 @@ export default function SettingsProperty24Page() {
         void loadProperty24LiveCutover({
           organisationId: organisationContext.organisation?.id,
         })
+        void loadProperty24StatisticsRuns({
+          organisationId: organisationContext.organisation?.id,
+        })
       } catch (loadError) {
         if (!cancelled) setError(loadError.message || 'Unable to load Property24 settings.')
       } finally {
@@ -506,6 +517,8 @@ export default function SettingsProperty24Page() {
   const serverCredentialsReady = true
   const healthSummary = property24Health?.summary || {}
   const healthChecks = property24Health?.checks || []
+  const latestStatisticsRun = statisticsRuns[0] || null
+  const statisticsNeedReview = latestStatisticsRun?.status === 'failed' || latestStatisticsRun?.status === 'partial'
   const reconciliationView = property24Reconciliation?.view || null
   const vettingPackView = property24VettingPack?.view || null
   const liveCutoverView = property24LiveCutover || null
@@ -642,6 +655,35 @@ export default function SettingsProperty24Page() {
       matchStatus: 'mapped',
       confidence: 1,
     }, 'Agent match accepted and saved.')
+  }
+
+  async function loadProperty24StatisticsRuns({ organisationId = context?.organisation?.id } = {}) {
+    if (!organisationId) return
+    setStatisticsLoading(true)
+    setStatisticsError('')
+    try {
+      setStatisticsRuns(await getProperty24StatisticsSyncRuns({ organisationId }))
+    } catch (loadError) {
+      setStatisticsError(loadError.message || 'Unable to load Property24 statistics sync history.')
+    } finally {
+      setStatisticsLoading(false)
+    }
+  }
+
+  async function syncProperty24Statistics() {
+    const organisationId = context?.organisation?.id
+    if (!organisationId) return
+    setStatisticsSyncing(true)
+    setStatisticsError('')
+    try {
+      const report = await runProperty24StatisticsSync({ organisationId })
+      setSuccess(`Property24 statistics ${report.status === 'partial' ? 'synced with records needing review' : 'synced successfully'}.`)
+      await loadProperty24StatisticsRuns({ organisationId })
+    } catch (syncError) {
+      setStatisticsError(syncError.message || 'Property24 statistics sync failed.')
+    } finally {
+      setStatisticsSyncing(false)
+    }
   }
 
   async function loadProperty24Health({ organisationId = context?.organisation?.id } = {}) {
@@ -1278,6 +1320,42 @@ export default function SettingsProperty24Page() {
             value={formatFriendlySyncDate(latestSyncAt)}
             description="Sync running every 15 minutes"
           />
+        </div>
+
+        <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-[#17233a]">Portal statistics</h3>
+                {latestStatisticsRun ? (
+                  <span className={`rounded-full border px-2 py-0.5 text-[0.68rem] font-semibold uppercase tracking-[0.05em] ${getHealthTone(statisticsNeedReview ? 'WARN' : 'OK')}`}>
+                    {statisticsNeedReview ? 'Needs review' : 'Up to date'}
+                  </span>
+                ) : null}
+              </div>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-[#6b7d93]">
+                Refresh Property24 views and contact-form statistics. This reads portal data and updates Arch9 analytics; it does not change a listing or lead.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={() => loadProperty24StatisticsRuns()} disabled={statisticsLoading || statisticsSyncing}>
+                <RefreshCw className={`h-4 w-4 ${statisticsLoading ? 'animate-spin' : ''}`} /> Refresh history
+              </button>
+              <button type="button" className={PRIMARY_BUTTON_CLASS} onClick={syncProperty24Statistics} disabled={statisticsSyncing || !connectionReady}>
+                <RefreshCw className={`h-4 w-4 ${statisticsSyncing ? 'animate-spin' : ''}`} /> {statisticsSyncing ? 'Syncing statistics...' : 'Sync portal statistics'}
+              </button>
+            </div>
+          </div>
+          {statisticsError ? <div className="mt-4"><SettingsBanner>{statisticsError}</SettingsBanner></div> : null}
+          {latestStatisticsRun ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <HealthMetric label="Latest status" value={latestStatisticsRun.status.replace(/_/g, ' ')} />
+              <HealthMetric label="Stored" value={latestStatisticsRun.storedCount} />
+              <HealthMetric label="Received" value={latestStatisticsRun.receivedCount} />
+              <HealthMetric label="Completed" value={formatHealthDate(latestStatisticsRun.completedAt || latestStatisticsRun.startedAt)} />
+            </div>
+          ) : !statisticsLoading ? <p className="mt-4 text-sm text-[#6b7d93]">No statistics sync has run yet.</p> : null}
+          {statisticsNeedReview ? <p className="mt-3 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-4 py-3 text-sm text-[#8a5710]">{latestStatisticsRun.errorSummary?.message || 'The last statistics run was incomplete. Retry the sync and review Property24 configuration if it fails again.'}</p> : null}
         </div>
 
         <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">

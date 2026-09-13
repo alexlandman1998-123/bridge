@@ -2186,8 +2186,6 @@ function DistributionChannel({
   reference = '',
   status = 'pending',
   statusLabel = '',
-  contextTitle = '',
-  contextDetail = '',
   lastSynced = '',
   primaryAction = null,
   secondaryAction = null,
@@ -2206,8 +2204,9 @@ function DistributionChannel({
       : syncing
         ? 'text-[#2f6fb3]'
         : 'text-[#526a82]'
+  const manageActions = [primaryAction, secondaryAction, ...menuActions].filter(Boolean)
   return (
-    <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(230px,0.9fr)_minmax(150px,190px)_minmax(260px,1fr)_minmax(130px,170px)_auto] lg:items-center">
+    <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(250px,1fr)_minmax(170px,0.7fr)_minmax(130px,170px)_auto] lg:items-center">
       <div className="flex min-w-0 items-center gap-3">
         <PlatformLogo src={logoSrc} icon={Icon} label={name} />
         <div className="min-w-0">
@@ -2227,10 +2226,6 @@ function DistributionChannel({
         </p>
       </div>
       <div className="min-w-0">
-        <p className="text-sm font-semibold leading-5 text-[#243d56]">{contextTitle || 'Ready to publish'}</p>
-        {contextDetail ? <p className="mt-0.5 truncate text-xs leading-5 text-[#607387]">{contextDetail}</p> : null}
-      </div>
-      <div className="min-w-0">
         {lastSynced ? (
           <>
             <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last synced</p>
@@ -2238,16 +2233,15 @@ function DistributionChannel({
           </>
         ) : null}
       </div>
-      <div className="flex flex-wrap items-center gap-2 md:justify-end">
-        {primaryAction}
-        {secondaryAction}
-        {menuActions.length ? (
+      <div className="flex justify-start lg:justify-end">
+        {manageActions.length ? (
           <details className="relative">
-            <summary className="grid h-9 w-9 cursor-pointer list-none place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
-              <MoreVertical size={15} />
+            <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
+              <SlidersHorizontal size={15} />
+              Manage
             </summary>
-            <div className="absolute right-0 z-30 mt-2 w-56 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
-              {menuActions.map((action) => action)}
+            <div className="absolute right-0 z-30 mt-2 grid w-56 gap-1.5 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+              {manageActions.map((action, index) => <div key={action.key || `channel-action-${index}`}>{action}</div>)}
             </div>
           </details>
         ) : null}
@@ -9986,29 +9980,6 @@ function AgentListingDetail() {
           </button>,
         ],
       },
-      ...(agencyWebsiteLink ? [{
-        key: 'agency_website',
-        icon: Globe,
-        name: 'Your Website',
-        subtitle: 'Agency website',
-        reference: '',
-        status: isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'live' : 'not_published',
-        statusLabel: isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'Live' : 'Not published',
-        contextTitle: isExternalLinkSellerVisible(agencyWebsiteLink.status) ? 'Published and up to date' : 'Not published on website',
-        contextDetail: agencyWebsiteLink.url || '',
-        lastSynced: agencyWebsiteLink.lastCheckedAt ? formatDate(agencyWebsiteLink.lastCheckedAt) : 'Manual channel',
-        primaryAction: agencyWebsiteLink.url ? (
-          <a href={agencyWebsiteLink.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
-            <Eye size={15} />
-            View Live Listing
-          </a>
-        ) : null,
-        secondaryAction: (
-          <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(agencyWebsiteLink)}>
-            Manage
-          </Button>
-        ),
-      }] : []),
       ...visibleExternalListingLinks.map((link) => {
         const live = isExternalLinkSellerVisible(link.status)
         return {
@@ -10240,14 +10211,6 @@ function AgentListingDetail() {
             </Button>
           </div>
 
-          <WebsiteListingPublicationPanel
-            variant="channel"
-            listingId={listingRecord?.id}
-            listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
-            preparationBlockers={arch9PublicationBlockers}
-            onPrepare={prepareAgencyWebsiteListing}
-          />
-
           {channelRows.map((channel) => (
             <DistributionChannel
               key={channel.key}
@@ -10282,6 +10245,14 @@ function AgentListingDetail() {
               </Button>
             </div>
           ) : null}
+
+          <WebsiteListingPublicationPanel
+            variant="channel"
+            listingId={listingRecord?.id}
+            listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
+            preparationBlockers={arch9PublicationBlockers}
+            onPrepare={prepareAgencyWebsiteListing}
+          />
         </article>
 
         <Modal

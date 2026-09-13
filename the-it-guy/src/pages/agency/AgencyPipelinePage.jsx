@@ -115,6 +115,11 @@ import { resolveLeadNextStep } from '../../services/leadNextActionService'
 import { buildAppointmentSaveFeedback } from '../../services/appointmentSaveFeedbackService'
 import { captureShowDayLeadBatch, parseShowDayVisitorRows } from '../../services/showDayLeadCaptureService'
 import { notifyAppointmentParticipants } from '../../services/appointmentNotificationService'
+import {
+  TRANSACTION_FEE_EX_VAT,
+  TRANSACTION_FEE_INCL_VAT,
+  recordTransactionFeeControl,
+} from '../../services/transactionFeeControlService'
 import { sendKingstonsValuationDownloadEmailForPresentation } from '../../services/kingstonsValuationDownloadEmailService'
 import { normalizeLeadLifecycleStageKey, resolveLeadLifecyclePresentation } from '../../services/leadLifecyclePresentationService'
 import {
@@ -768,6 +773,7 @@ const OTP_UPLOAD_WIZARD_STEPS = [
   { key: 'details', label: 'Confirm Details' },
   { key: 'signatures', label: 'Confirm Signatures' },
   { key: 'terms', label: 'Arch9 Terms' },
+  { key: 'fee', label: 'Fee & Consent' },
   { key: 'attorney', label: 'Transfer Attorney' },
   { key: 'instruction', label: 'Send Instruction' },
   { key: 'upload', label: 'Upload OTP' },
@@ -11807,6 +11813,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     financeType: '',
     confirmedSignedByAllParties: false,
     confirmedArch9TermsIncluded: false,
+    confirmedTransactionFeeConsentIncluded: false,
+    transactionFeeBillingParty: '',
     note: '',
   })
   const [offerPropertySelectorOpen, setOfferPropertySelectorOpen] = useState(false)
@@ -28822,6 +28830,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function persistBuyerOtpTransactionFeeControl({
+    transactionId = selectedLeadLinkedTransactionId,
+    documentRow = null,
+  } = {}) {
+    const scopedTransactionId = normalizeText(transactionId)
+    if (!isSupabaseConfigured || !supabase || !isUuidLike(scopedTransactionId)) {
+      throw new Error('A transaction is required to record the transaction-fee verification.')
+    }
+
+    return recordTransactionFeeControl(supabase, {
+      transactionId: scopedTransactionId,
+      otpDocumentId: normalizeText(documentRow?.id || documentRow?.documentId),
+      billingPartyType: buyerOfferUploadForm.transactionFeeBillingParty,
+      consentAndFeeTermsConfirmed: buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded === true,
+      confirmationNote: buyerOfferUploadForm.note,
+    })
+  }
+
   async function persistBuyerOtpTransactionSnapshot({
     transactionId = selectedLeadLinkedTransactionId,
     otpAttorneyInstructionContext = null,
@@ -29649,6 +29675,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (stepKey === 'terms' && buyerOfferUploadForm.confirmedArch9TermsIncluded !== true) {
       return 'Confirm the Arch9 terms and conditions are included in the OTP.'
     }
+    if (stepKey === 'fee') {
+      if (!['agent', 'attorney'].includes(buyerOfferUploadForm.transactionFeeBillingParty)) {
+        return 'Choose whether the R1,500 excl. VAT transaction fee is billed to the agent or attorney.'
+      }
+      if (buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded !== true) {
+        return 'Confirm that the transaction-fee terms and consent form are included in the signed OTP pack.'
+      }
+    }
     if (stepKey === 'attorney' && !otpUploadWizardAttorneyComplete) {
       return 'Choose or capture the transferring attorney before continuing.'
     }
@@ -29656,6 +29690,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       if (!selectedOtpUploadListingId) return 'Select the property before uploading the OTP.'
       if (buyerOfferUploadForm.confirmedSignedByAllParties !== true) return 'Confirm the OTP is signed by all required parties.'
       if (buyerOfferUploadForm.confirmedArch9TermsIncluded !== true) return 'Confirm the Arch9 terms and conditions are included in the OTP.'
+      if (!['agent', 'attorney'].includes(buyerOfferUploadForm.transactionFeeBillingParty)) return 'Choose whether the R1,500 excl. VAT transaction fee is billed to the agent or attorney.'
+      if (buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded !== true) return 'Confirm that the transaction-fee terms and consent form are included in the signed OTP pack.'
       if (!otpUploadWizardAttorneyComplete) return 'Choose or capture the transferring attorney before uploading the OTP.'
     }
     return ''
@@ -29794,6 +29830,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         metadata: {
           signedByAllPartiesConfirmed: buyerOfferUploadForm.confirmedSignedByAllParties === true,
           arch9TermsIncludedConfirmed: buyerOfferUploadForm.confirmedArch9TermsIncluded === true,
+          transactionFeeConsentIncludedConfirmed: buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded === true,
+          transactionFeeBillingParty: buyerOfferUploadForm.transactionFeeBillingParty || null,
           kingstonsBuyerOtpTerms: otpAttorneyInstructionContext?.terms || null,
           transferAttorney: otpAttorneyInstructionContext?.transferAttorney || null,
           transferAttorneyRoleplayer: otpAttorneyInstructionContext?.roleplayerSelection || null,
@@ -29805,6 +29843,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       let transactionId = normalizeText(selectedLeadLinkedTransactionId)
       let transactionWarning = ''
       let attorneyInstructionWarning = ''
+      let transactionFeeControlWarning = ''
       const otpCommission = asRecord(otpAttorneyInstructionContext?.terms?.commission)
       if (!transactionId) {
         try {
@@ -29865,7 +29904,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	        transactionId,
 	      })
 	      let requiredDocumentCaptureResult = null
-	      if (transactionId) {
+	      let transactionFeeControlResult = null
+      if (transactionId) {
 	        try {
 	          requiredDocumentCaptureResult = await persistBuyerOtpRequiredDocumentCapture({
 	            transactionId,
@@ -29878,6 +29918,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	            requiredDocumentError?.message || 'The OTP checklist evidence could not be updated on the transaction.',
 	          )
 	          console.warn('[AgencyPipelinePage] Buyer OTP required-document capture could not be updated.', requiredDocumentError)
+	        }
+	        try {
+	          transactionFeeControlResult = await persistBuyerOtpTransactionFeeControl({
+	            transactionId,
+	            documentRow: persistedOtpDocument,
+	          })
+	        } catch (transactionFeeControlError) {
+	          transactionFeeControlWarning = transactionFeeControlError?.message || 'The transaction-fee verification could not be recorded.'
+	          console.warn('[AgencyPipelinePage] Buyer OTP transaction-fee verification could not be saved.', transactionFeeControlError)
 	        }
 	      }
 
@@ -30048,9 +30097,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         otpDocumentUploadedAt: uploadedAt,
         buyerOtpSignedByAllPartiesConfirmed: buyerOfferUploadForm.confirmedSignedByAllParties === true,
         buyerOtpArch9TermsIncludedConfirmed: buyerOfferUploadForm.confirmedArch9TermsIncluded === true,
+        buyerOtpTransactionFeeConsentIncludedConfirmed: buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded === true,
+        buyerOtpTransactionFeeBillingParty: buyerOfferUploadForm.transactionFeeBillingParty || null,
         otpTransactionId: transactionId,
         buyerOtpTransactionSnapshot: transactionSnapshotResult,
         buyerOtpRequiredDocumentCapture: requiredDocumentCaptureResult,
+	        buyerOtpTransactionFeeControl: transactionFeeControlResult,
         buyerOtpSignedWorkflow: signedOtpWorkflowResult,
         buyerOtpAuditTrail: auditTrailResult,
       }
@@ -30061,6 +30113,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         otpDocumentUploadedAt: uploadedAt,
         buyerOtpSignedByAllPartiesConfirmed: buyerOfferUploadForm.confirmedSignedByAllParties === true,
         buyerOtpArch9TermsIncludedConfirmed: buyerOfferUploadForm.confirmedArch9TermsIncluded === true,
+        buyerOtpTransactionFeeConsentIncludedConfirmed: buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded === true,
+        buyerOtpTransactionFeeBillingParty: buyerOfferUploadForm.transactionFeeBillingParty || null,
         convertedTransactionId: transactionId || selectedLead.convertedTransactionId || selectedLead.convertedDealId || '',
         convertedDealId: transactionId || selectedLead.convertedDealId || selectedLead.convertedTransactionId || '',
         ...(otpAttorneyInstructionContext?.terms ? {
@@ -30087,6 +30141,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         note: '',
         confirmedSignedByAllParties: false,
         confirmedArch9TermsIncluded: false,
+        confirmedTransactionFeeConsentIncluded: false,
+        transactionFeeBillingParty: '',
       }))
       const stageMoveResult = await handleUpdateLeadStage(selectedLead.leadId, 'Offer', {
         successMessage: 'OTP uploaded and buyer moved to Offer.',
@@ -30097,6 +30153,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         setError(`OTP uploaded, but the transaction context needs attention: ${transactionWarning}`)
       } else if (attorneyInstructionWarning) {
         setError(`OTP uploaded, but the transfer instruction needs attention: ${attorneyInstructionWarning}`)
+	      } else if (transactionFeeControlWarning) {
+	        setError(`OTP uploaded, but the transaction-fee verification needs attention: ${transactionFeeControlWarning}`)
       } else if (!stageMoveResult) {
         setMessage('OTP uploaded. The buyer stage still needs workflow review before moving to Offer.')
       } else {
@@ -40363,6 +40421,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                  (step.key === 'details' && Boolean(selectedOtpUploadListingId)) ||
 	                  (step.key === 'signatures' && buyerOfferUploadForm.confirmedSignedByAllParties === true) ||
 	                  (step.key === 'terms' && buyerOfferUploadForm.confirmedArch9TermsIncluded === true) ||
+	                  (step.key === 'fee' && buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded === true && ['agent', 'attorney'].includes(buyerOfferUploadForm.transactionFeeBillingParty)) ||
 	                  (step.key === 'attorney' && otpUploadWizardAttorneyComplete) ||
 	                  (step.key === 'instruction' && index < otpUploadWizardStepIndex) ||
 	                  (step.key === 'upload' && index < otpUploadWizardStepIndex)
@@ -40388,6 +40447,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                      <span className="block text-sm font-semibold">{step.label}</span>
 	                      {step.key === 'signatures' && buyerOfferUploadForm.confirmedSignedByAllParties ? <span className="mt-0.5 block text-xs text-[#607891]">Signed by all parties</span> : null}
 	                      {step.key === 'terms' && buyerOfferUploadForm.confirmedArch9TermsIncluded ? <span className="mt-0.5 block text-xs text-[#607891]">Arch9 terms included</span> : null}
+	                      {step.key === 'fee' && buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded && buyerOfferUploadForm.transactionFeeBillingParty ? <span className="mt-0.5 block text-xs text-[#607891]">Billed to {buyerOfferUploadForm.transactionFeeBillingParty}</span> : null}
 	                    </span>
 	                  </button>
 	                )
@@ -40500,6 +40560,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                  <span className="min-w-0">
 	                    <span className="block text-sm font-semibold text-[#18324b]">Arch9 terms included in OTP</span>
 	                    <span className="mt-1 block text-sm leading-6 text-[#607891]">The signed document contains the required Arch9 terms and conditions before it enters the transaction file.</span>
+	                  </span>
+	                </label>
+	              </section>
+	            ) : null}
+
+	            {otpUploadWizardStep === 'fee' ? (
+	              <section className="grid gap-4">
+	                <div>
+	                  <h4 className="text-lg font-semibold tracking-[-0.02em] text-[#102033]">Verify transaction fee and consent</h4>
+	                  <p className="mt-1 text-sm leading-6 text-[#60758b]">This records the R1,500 excl. VAT transaction-fee control against the transaction. No invoice is sent at this stage.</p>
+	                </div>
+	                <div className="rounded-[16px] border border-[#d7e7f7] bg-[#f7fbff] p-4 text-sm text-[#284663]">
+	                  <strong className="block text-base text-[#17324d]">R{TRANSACTION_FEE_EX_VAT.toLocaleString('en-ZA')} excl. VAT · R{TRANSACTION_FEE_INCL_VAT.toLocaleString('en-ZA')} incl. VAT</strong>
+	                  <span className="mt-1 block leading-6">Select the party to invoice under the applicable agreement. This selection is recorded for finance; it does not create or send an invoice yet.</span>
+	                </div>
+	                <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
+	                  Fee billed to
+	                  <Field
+	                    as="select"
+	                    value={buyerOfferUploadForm.transactionFeeBillingParty}
+	                    onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, transactionFeeBillingParty: event.target.value }))}
+	                  >
+	                    <option value="">Select billing party</option>
+	                    <option value="agent">Agent</option>
+	                    <option value="attorney">Transferring attorney</option>
+	                  </Field>
+	                </label>
+	                <label className="flex min-h-[128px] items-start gap-3 rounded-[16px] border border-[#dfe9f4] bg-[#fbfdff] p-4">
+	                  <input
+	                    type="checkbox"
+	                    checked={buyerOfferUploadForm.confirmedTransactionFeeConsentIncluded === true}
+	                    onChange={(event) => setBuyerOfferUploadForm((previous) => ({ ...previous, confirmedTransactionFeeConsentIncluded: event.target.checked }))}
+	                    className="mt-1 h-4 w-4 rounded border-[#cbd8e6] text-[#0b63f6]"
+	                  />
+	                  <span className="min-w-0">
+	                    <span className="block text-sm font-semibold text-[#18324b]">Transaction-fee terms and approved consent form included</span>
+	                    <span className="mt-1 block text-sm leading-6 text-[#607891]">Important: verify the signed OTP pack includes the approved transaction-fee terms and consent form before continuing. This confirmation is saved with the transaction and OTP evidence.</span>
 	                  </span>
 	                </label>
 	              </section>

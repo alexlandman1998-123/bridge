@@ -20,6 +20,10 @@
     {
       "path": "/api/property24/leads/sync",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/property24/statistics/sync",
+      "schedule": "15 2 * * *"
     }
   ],
   "redirects": [
