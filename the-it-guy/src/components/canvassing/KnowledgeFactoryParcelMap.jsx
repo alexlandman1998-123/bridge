@@ -39,7 +39,7 @@ export default function KnowledgeFactoryParcelMap({ properties = [], loading = f
   const autocompleteRef = useRef(null)
   const mapRef = useRef(null)
   const polygonsRef = useRef([])
-  const [state, setState] = useState({ status: apiKey() ? 'loading' : 'missing-key', error: '' })
+  const [state, setState] = useState({ status: apiKey() ? 'loading' : 'missing-key', error: '', autocompleteAvailable: false })
 
   useEffect(() => {
     const key = apiKey()
@@ -47,27 +47,35 @@ export default function KnowledgeFactoryParcelMap({ properties = [], loading = f
     let active = true
     loadGoogleMaps(key).then(async (maps) => {
       if (!active || !maps) return
-      const { Map } = await maps.importLibrary('maps')
+      const Map = typeof maps.importLibrary === 'function'
+        ? (await maps.importLibrary('maps')).Map
+        : maps.Map
       if (!active) return
+      if (typeof Map !== 'function') throw new Error('Google Maps did not provide the map renderer.')
       const map = new Map(containerRef.current, { center: DEFAULT_CENTER, zoom: 12, mapTypeControl: false, streetViewControl: false, fullscreenControl: false })
       mapRef.current = map
-      const { PlaceAutocompleteElement } = await maps.importLibrary('places')
-      if (!active || !autocompleteRef.current) return
-      const autocomplete = new PlaceAutocompleteElement()
-      autocomplete.placeholder = 'Search a South African address or suburb'
-      autocomplete.includedRegionCodes = ['za']
-      autocompleteRef.current.replaceChildren(autocomplete)
-      autocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
-        const place = placePrediction?.toPlace?.()
-        if (!place) return
-        await place.fetchFields({ fields: ['location', 'viewport'] })
-        if (place.viewport) map.fitBounds(place.viewport)
-        else if (place.location) {
-          map.setCenter(place.location)
-          map.setZoom(17)
+      let autocompleteAvailable = false
+      if (typeof maps.importLibrary === 'function' && autocompleteRef.current) {
+        try {
+          const { PlaceAutocompleteElement } = await maps.importLibrary('places')
+          if (!active || !PlaceAutocompleteElement) return
+          const autocomplete = new PlaceAutocompleteElement()
+          autocomplete.placeholder = 'Search a South African address or suburb'
+          autocomplete.includedRegionCodes = ['za']
+          autocompleteRef.current.replaceChildren(autocomplete)
+          autocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
+            const place = placePrediction?.toPlace?.()
+            if (!place) return
+            await place.fetchFields({ fields: ['location', 'viewport'] })
+            if (place.viewport) map.fitBounds(place.viewport)
+            else if (place.location) { map.setCenter(place.location); map.setZoom(17) }
+          })
+          autocompleteAvailable = true
+        } catch (error) {
+          console.warn('Google Places autocomplete is unavailable; pan and zoom the map to search an area.', error)
         }
-      })
-      setState({ status: 'ready', error: '' })
+      }
+      setState({ status: 'ready', error: '', autocompleteAvailable })
     }).catch((error) => {
       if (active) setState({ status: 'error', error: error?.message || 'Google Maps is unavailable.' })
     })
@@ -98,7 +106,7 @@ export default function KnowledgeFactoryParcelMap({ properties = [], loading = f
   return <div className="relative min-h-[520px] flex-1 overflow-hidden bg-slate-100" data-testid="knowledge-factory-parcel-map">
     <div ref={containerRef} className="absolute inset-0" aria-label="Knowledge Factory parcel map" />
     <div className="absolute left-4 right-4 top-4 z-10 flex max-w-xl gap-2">
-      <div ref={autocompleteRef} className="min-h-11 min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-label="Search a South African address or suburb" />
+      <div ref={autocompleteRef} className={`min-h-11 min-w-0 flex-1 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm ${state.autocompleteAvailable ? '' : 'flex items-center px-3 text-sm text-slate-600'}`} aria-label="Search a South African address or suburb">{state.status === 'ready' && !state.autocompleteAvailable ? 'Pan and zoom to the address or suburb, then search this area.' : null}</div>
       <button type="button" disabled={loading || state.status !== 'ready'} onClick={() => { const bounds = toBounds(mapRef.current); if (bounds) onSearchArea?.(bounds) }} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#1769dc] px-4 text-sm font-semibold text-white shadow-sm hover:bg-[#1359bc] disabled:cursor-not-allowed disabled:opacity-60">{loading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}Search this area</button>
     </div>
     <div className="absolute left-4 top-20 z-10 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">{properties.length} parcels in view</div>
