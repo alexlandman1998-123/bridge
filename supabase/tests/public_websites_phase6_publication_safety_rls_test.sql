@@ -1,5 +1,5 @@
 begin;
-select plan(25);
+select plan(27);
 
 select has_column('public', 'website_sites', 'published_revision_id', 'site stores one exact public revision pointer');
 select has_column('public', 'website_site_revisions', 'source_revision_id', 'revision records the revision it was cloned from');
@@ -29,6 +29,26 @@ select ok(not has_function_privilege('anon', 'public.website_publish_revision(uu
 select ok(not has_function_privilege('anon', 'public.website_rollback_revision(uuid,uuid)', 'execute'), 'anonymous users cannot restore a website revision');
 select ok(has_function_privilege('authenticated', 'public.website_publish_revision(uuid,uuid)', 'execute'), 'authenticated admins can reach the guarded publish command');
 select ok(has_function_privilege('authenticated', 'public.website_rollback_revision(uuid,uuid)', 'execute'), 'authenticated admins can reach the guarded recovery command');
+select ok(
+  exists (
+    select 1 from pg_catalog.pg_indexes
+    where schemaname = 'public'
+      and tablename = 'website_site_revisions'
+      and indexname = 'website_site_revisions_one_published_per_site_idx'
+  ),
+  'a site can have only one published revision'
+);
+select is(
+  (
+    select count(*)::integer
+    from public.website_sites site
+    join public.website_site_revisions revision on revision.id = site.published_revision_id
+    where site.status in ('published', 'suspended')
+      and (revision.website_site_id is distinct from site.id or revision.status <> 'published')
+  ),
+  0,
+  'every published website points to its own published revision'
+);
 
 select * from finish();
 rollback;

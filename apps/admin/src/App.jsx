@@ -137,9 +137,28 @@ function restoreProspectDemoDraft() {
         ? mapProspectDemoConfig(draft.savedConfig)
         : null,
       slugTouched: Boolean(draft.slugTouched),
+      assetsNeedReupload: Boolean(draft.assetsNeedReupload),
     }
   } catch {
     return null
+  }
+}
+
+function createProspectDemoDraft(form, savedConfig, slugTouched) {
+  const assetFields = ['logoUrl', 'logoLightUrl', 'logoDarkUrl', 'samplePropertyImageUrl']
+  const assetsNeedReupload = assetFields.some((field) => String(form[field] || '').startsWith('data:'))
+  const persistedForm = Object.fromEntries(
+    Object.entries(form).map(([key, value]) => [
+      key,
+      assetFields.includes(key) && String(value || '').startsWith('data:') ? '' : value,
+    ]),
+  )
+
+  return {
+    form: persistedForm,
+    savedConfig: assetsNeedReupload ? null : savedConfig,
+    slugTouched,
+    assetsNeedReupload,
   }
 }
 
@@ -1760,14 +1779,18 @@ async function loadAdminProfile(userId) {
 }
 
 async function loadAdminAccess() {
-  if (!supabase) return { level: '', roles: [] }
+  if (!supabase) return { data: null, error: 'Supabase is not configured.' }
 
   const { data, error } = await supabase.rpc('arch9_admin_access_level')
-  if (error || !data || typeof data !== 'object') return { level: '', roles: [] }
+  if (error) return { data: null, error: error.message || 'Unable to confirm admin access.' }
+  if (!data || typeof data !== 'object') return { data: { level: '', roles: [] }, error: '' }
 
   return {
-    level: normalizeText(data.level).toLowerCase(),
-    roles: Array.isArray(data.roles) ? data.roles : [],
+    data: {
+      level: normalizeText(data.level).toLowerCase(),
+      roles: Array.isArray(data.roles) ? data.roles : [],
+    },
+    error: '',
   }
 }
 
@@ -3474,10 +3497,16 @@ function ProspectLinkCard({ copied, label, link, onCopy }) {
         <p>{link}</p>
       </div>
       <div className="prospect-link-actions">
-        <button className="secondary-button compact" disabled={!link} onClick={() => window.open(link, '_blank', 'noopener,noreferrer')} type="button">
+        <a
+          aria-disabled={!link}
+          className="secondary-button compact"
+          href={link || undefined}
+          rel="noopener noreferrer"
+          target="_blank"
+        >
           <ExternalLink size={15} />
           <span>Preview</span>
-        </button>
+        </a>
         <button className="secondary-button compact" disabled={!link} onClick={onCopy} type="button">
           <Copy size={15} />
           <span>{copied ? 'Copied' : 'Copy Link'}</span>
@@ -3549,6 +3578,7 @@ function ProspectDemoGeneratorView() {
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false)
   const [isDraftReady, setIsDraftReady] = useState(false)
   const [draftStorageError, setDraftStorageError] = useState('')
+  const [assetsNeedReupload, setAssetsNeedReupload] = useState(false)
 
   const activeSlug = normalizeDemoSlug(form.slug || form.agencyName || savedConfig?.slug)
   const buyerOnboardingLink = buildDemoLink(activeSlug, 'onboarding')
@@ -3579,6 +3609,7 @@ function ProspectDemoGeneratorView() {
       setSavedConfig(draft.savedConfig)
       setSlugTouched(draft.slugTouched)
       setHasRestoredDraft(true)
+      setAssetsNeedReupload(draft.assetsNeedReupload)
     }
     setIsDraftReady(true)
   }, [])
@@ -3589,11 +3620,8 @@ function ProspectDemoGeneratorView() {
     const persistDraft = () => {
       if (typeof window === 'undefined') return
       try {
-        window.localStorage.setItem(PROSPECT_DEMO_DRAFT_STORAGE_KEY, JSON.stringify({
-          form,
-          savedConfig,
-          slugTouched,
-        }))
+        const draft = createProspectDemoDraft(form, savedConfig, slugTouched)
+        window.localStorage.setItem(PROSPECT_DEMO_DRAFT_STORAGE_KEY, JSON.stringify(draft))
         setDraftStorageError('')
       } catch {
         setDraftStorageError('Your browser could not save this draft. Try using smaller image files or generate the demo before leaving.')
@@ -3711,6 +3739,7 @@ function ProspectDemoGeneratorView() {
         ...previous,
         [field]: dataUrl,
       }))
+      setAssetsNeedReupload(false)
     } catch (fileError) {
       setError(fileError?.message || 'Unable to read the uploaded file.')
     }
@@ -3743,6 +3772,7 @@ function ProspectDemoGeneratorView() {
     setSavedConfig(null)
     setSlugTouched(false)
     setHasRestoredDraft(false)
+    setAssetsNeedReupload(false)
     setError('')
     setSuccess('')
   }
@@ -3792,6 +3822,7 @@ function ProspectDemoGeneratorView() {
             {error ? <Notice tone="danger" text={error} /> : null}
             {success ? <Notice tone="success" text={success} /> : null}
             {hasRestoredDraft ? <Notice tone="info" text="Your prospect demo draft was restored automatically." /> : null}
+            {assetsNeedReupload ? <Notice tone="warning" text="Your form details were saved, but uploaded images need to be selected again before generating the demo." /> : null}
             {draftStorageError ? <Notice tone="warning" text={draftStorageError} /> : null}
             {!isSupabaseConfigured ? <Notice tone="warning" text={getSupabaseConfigStatus().message} /> : null}
 
@@ -5998,6 +6029,8 @@ export default function App() {
   const [isBooting, setIsBooting] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
   const [isResolvingAccess, setIsResolvingAccess] = useState(false)
+  const [accessError, setAccessError] = useState('')
+  const [accessRefreshKey, setAccessRefreshKey] = useState(0)
   const [pathname, setPathname] = useState(() => (typeof window === 'undefined' ? '/admin' : window.location.pathname))
 
   const allowedViews = useMemo(
@@ -6064,6 +6097,25 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!supabase || typeof window === 'undefined') return undefined
+
+    function refreshSessionAfterReturn() {
+      if (document.visibilityState === 'hidden') return
+      void supabase.auth.getSession().then(({ data }) => {
+        setSession(data.session || null)
+        setAccessRefreshKey((current) => current + 1)
+      })
+    }
+
+    window.addEventListener('focus', refreshSessionAfterReturn)
+    document.addEventListener('visibilitychange', refreshSessionAfterReturn)
+    return () => {
+      window.removeEventListener('focus', refreshSessionAfterReturn)
+      document.removeEventListener('visibilitychange', refreshSessionAfterReturn)
+    }
+  }, [])
+
+  useEffect(() => {
     let isMounted = true
 
     async function boot() {
@@ -6101,6 +6153,7 @@ export default function App() {
     async function resolveAccess() {
       if (!session?.user) {
         setIsResolvingAccess(false)
+        setAccessError('')
         setAccess({ allowed: false, level: '', roles: [] })
         setDashboard(EMPTY_DASHBOARD)
         setInbound(EMPTY_INBOUND)
@@ -6117,8 +6170,14 @@ export default function App() {
         ])
         if (cancelled) return
 
-        const nextAccess = resolveAdminAccess(accessResult)
+        if (accessResult.error) {
+          setAccessError(accessResult.error)
+          return
+        }
+
+        const nextAccess = resolveAdminAccess(accessResult.data)
         setAccess(nextAccess)
+        setAccessError('')
         setProfile(nextProfile || { email: session.user.email })
         if (typeof window !== 'undefined') setPathname(window.location.pathname)
       } finally {
@@ -6130,7 +6189,7 @@ export default function App() {
     return () => {
       cancelled = true
     }
-  }, [session])
+  }, [accessRefreshKey, session])
 
   useEffect(() => {
     refreshData(rangeId)
@@ -6199,6 +6258,21 @@ export default function App() {
   }
 
   if (!access.allowed) {
+    if (accessError) {
+      return (
+        <main className="center-shell">
+          <section className="message-panel">
+            <AlertTriangle size={24} />
+            <h1>We could not confirm admin access</h1>
+            <p>{accessError}</p>
+            <button className="secondary-button" onClick={() => setAccessRefreshKey((current) => current + 1)} type="button">
+              <RefreshCw size={16} />
+              <span>Try again</span>
+            </button>
+          </section>
+        </main>
+      )
+    }
     return <UnauthorizedScreen onSignOut={handleSignOut} roles={access.roles} />
   }
 

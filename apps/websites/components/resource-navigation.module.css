@@ -1,5 +1,5 @@
 .menu { position: relative; }
-.menu.menu summary { text-transform: none; letter-spacing: normal; border: 0; padding: 0; list-style: none; display: flex; gap: 8px; align-items: center; font: 500 13px Arial, sans-serif; color: #353c34; cursor: pointer; }
+.menu.menu summary { text-transform: none; letter-spacing: inherit; border: 0; padding: 0; list-style: none; display: flex; gap: 8px; align-items: center; font: inherit; color: #353c34; cursor: pointer; }
 .menu summary::-webkit-details-marker { display: none; }
 .menu summary:focus-visible { outline: 2px solid #718164; outline-offset: 6px; }
 .active { text-decoration: underline; text-underline-offset: 9px; }

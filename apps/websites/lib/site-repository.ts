@@ -1,5 +1,6 @@
 import { additionalMockProperties } from '@/lib/mock-properties'
 import { visiblePublishedBlogPosts } from '@/lib/blog-publication'
+import { legacyPropertySlug, matchesPropertySlug, propertySlug } from '@/lib/property-urls'
 import { getServerSupabase } from '@/lib/supabase-server'
 import type { PublicBlogPost, PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
 
@@ -74,11 +75,7 @@ export function normalizeHostname(host: string | null | undefined): string {
   return String(host || '').trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '')
 }
 
-export function propertySlug(property: Pick<PublicProperty, 'id' | 'title'>): string {
-  const title = property.title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'property'
-  return `${title}-${property.id}`
-}
+export { legacyPropertySlug, propertySlug }
 
 function isDemoMode(hostname: string): boolean {
   if (process.env.WEBSITES_DEMO_MODE !== 'true') return false
@@ -118,7 +115,7 @@ function mapPage(row: Record<string, unknown>): PublicPage {
 function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'] = []): PublicProperty {
   return {
     id: String(row.listing_id),
-    reference: String(row.listing_id),
+    reference: String(row.arch9_reference || row.listing_id),
     title: String(row.title || 'Property listing'),
     transactionType: String(row.listing_type).toLowerCase() === 'rental' ? 'rental' : 'sale',
     propertyType: String(row.property_type || 'Property'),
@@ -191,18 +188,23 @@ async function getPublishedWebsiteListings(
 
   const eligibilityResult = await supabase
     .from('listing_publication_data')
-    .select('listing_id, private_listings!inner(organisation_id)')
+    .select('listing_id, private_listings!inner(organisation_id, arch9_reference)')
     .in('listing_id', listingIds)
     .eq('status', 'Published')
     .eq('private_listings.organisation_id', site.organisationId)
   if (eligibilityResult.error) throw eligibilityResult.error
-  const eligibleIds = new Set((eligibilityResult.data || []).map((row) => String(row.listing_id)))
+  const eligibleReferences = new Map((eligibilityResult.data || []).flatMap((row) => {
+    const listing = Array.isArray(row.private_listings) ? row.private_listings[0] : row.private_listings
+    const reference = listing && typeof listing === 'object' ? String((listing as Record<string, unknown>).arch9_reference || '') : ''
+    return reference ? [[String(row.listing_id), reference] as const] : []
+  }))
 
   return (channelResult.data || []).flatMap((channel) => {
     const listingId = String(channel.listing_id)
-    if (!eligibleIds.has(listingId) || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
+    const reference = eligibleReferences.get(listingId)
+    if (!reference || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
     return [{
-      row: { ...(channel.publication_json as Record<string, unknown>), listing_id: listingId },
+      row: { ...(channel.publication_json as Record<string, unknown>), listing_id: listingId, arch9_reference: reference },
       media: mapSnapshotMedia(channel.media_json),
     }]
   })
@@ -218,7 +220,7 @@ export async function getPublicProperties(site: ResolvedSite, query: Record<stri
 
 export async function getPublicProperty(site: ResolvedSite, slug: string): Promise<PublicProperty | null> {
   const properties = await getPublicProperties(site)
-  return properties.find((property) => propertySlug(property) === slug) || null
+  return properties.find((property) => matchesPropertySlug(property, slug)) || null
 }
 
 export async function getPublicBlogPosts(site: ResolvedSite): Promise<PublicBlogPost[]> {

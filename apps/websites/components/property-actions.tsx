@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-export function PropertyActions() {
+export function PropertyActions({ photoCount }: { photoCount: number }) {
   const [saved, setSaved] = useState(false)
   const [message, setMessage] = useState('')
 
@@ -19,6 +19,7 @@ export function PropertyActions() {
   }
 
   return <div className="listing-actions" aria-label="Listing actions">
+    {photoCount > 0 ? <button type="button" onClick={() => window.dispatchEvent(new Event('listing-gallery:open'))}><span>View all {photoCount} photo{photoCount === 1 ? '' : 's'}</span><span aria-hidden="true">→</span></button> : null}
     <button type="button" onClick={share} aria-label="Share listing"><ShareIcon /><span>Share</span></button>
     <button type="button" onClick={() => setSaved((value) => !value)} aria-pressed={saved} aria-label={saved ? 'Remove saved listing' : 'Save listing'}><HeartIcon filled={saved} /><span>{saved ? 'Saved' : 'Save'}</span></button>
     <span className="listing-action-message" aria-live="polite">{message}</span>
