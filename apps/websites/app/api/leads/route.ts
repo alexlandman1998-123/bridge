@@ -1,6 +1,7 @@
 import { createHmac } from 'crypto'
 import { NextResponse } from 'next/server'
 import { normalizeHostname } from '@/lib/site-repository'
+import { normalizeWebsiteLeadIntent } from '@/lib/lead-intent'
 import { getServerSupabase } from '@/lib/supabase-server'
 
 export const runtime = 'nodejs'
@@ -18,6 +19,7 @@ type LeadBody = {
   email?: unknown
   phone?: unknown
   message?: unknown
+  intent?: unknown
   privacyAccepted?: unknown
   marketingConsent?: unknown
   pageUrl?: unknown
@@ -78,6 +80,7 @@ function attribution(request: Request, body: LeadBody, host: string) {
     utmTerm: pageMatchesSite ? text(page.searchParams.get('utm_term'), 160) : undefined,
     utmContent: pageMatchesSite ? text(page.searchParams.get('utm_content'), 160) : undefined,
     userAgent: text(request.headers.get('user-agent'), 512),
+    leadIntent: normalizeWebsiteLeadIntent(body.intent),
   }
 }
 

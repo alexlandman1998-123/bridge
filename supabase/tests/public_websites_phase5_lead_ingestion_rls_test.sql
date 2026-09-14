@@ -1,5 +1,5 @@
 begin;
-select plan(16);
+select plan(18);
 
 select has_column('public', 'website_lead_submissions', 'contact_id', 'submission receipt links to its CRM contact');
 select has_column('public', 'website_lead_submissions', 'request_fingerprint', 'submission receipt stores an irreversible abuse fingerprint');
@@ -17,6 +17,16 @@ select ok(not has_function_privilege('anon', 'public.website_capture_lead_submis
 select ok(not has_function_privilege('authenticated', 'public.website_capture_lead_submission(text,text,uuid,uuid,text,text,text,text,boolean,boolean,text,text,jsonb)', 'execute'), 'authenticated clients cannot execute the privileged capture command');
 select ok(has_function_privilege('service_role', 'public.website_capture_lead_submission(text,text,uuid,uuid,text,text,text,text,boolean,boolean,text,text,jsonb)', 'execute'), 'the website server can execute atomic capture');
 select ok(has_function_privilege('service_role', 'public.website_prepare_lead_notification_fallback(uuid,text)', 'execute'), 'the website server can create a manager fallback');
+select like(
+  pg_get_functiondef('public.website_capture_lead_submission(text,text,uuid,uuid,text,text,text,text,boolean,boolean,text,text,jsonb)'::regprocedure),
+  '%v_lead_category%',
+  'website capture calculates a CRM lead category at the trusted boundary'
+);
+select like(
+  pg_get_functiondef('public.website_capture_lead_submission(text,text,uuid,uuid,text,text,text,text,boolean,boolean,text,text,jsonb)'::regprocedure),
+  '%notificationDomain'', ''website_lead''%',
+  'website capture projects a routed lead into the in-app notification bell'
+);
 
 select * from finish();
 rollback;

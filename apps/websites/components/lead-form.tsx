@@ -33,6 +33,9 @@ export function LeadForm({ propertyId, pageId, purpose, variant = 'default', pri
         body: JSON.stringify({
           // Newsletter requests use the audited CRM ingestion flow, rather than a separate contact store.
           type: propertyId ? 'property_enquiry' : isNewsletter ? 'general_enquiry' : purpose || 'general_enquiry',
+          // The API validates this independently of the human-readable message.
+          // Only the homepage selector sends it, so property enquiries remain buyer enquiries.
+          intent: homepageForm ? intent : undefined,
           propertyId,
           pageId,
           name: form.get('name'),

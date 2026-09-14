@@ -3373,6 +3373,36 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/pipeline/canvassing/fica-kyc"
+                element={
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <PipelineCanvassingPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
+                }
+              />
+              <Route
+                path="/pipeline/canvassing/lookup-approvals"
+                element={
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <PipelineCanvassingPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
+                }
+              />
+              <Route
+                path="/pipeline/canvassing/operations"
+                element={
+                  <SalesWorkspaceGuard>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <PipelineCanvassingPage />
+                    </RoleRoute>
+                  </SalesWorkspaceGuard>
+                }
+              />
+              <Route
                 path="/pipeline/canvassing/prospects/:prospectId"
                 element={
                   <SalesWorkspaceGuard>
