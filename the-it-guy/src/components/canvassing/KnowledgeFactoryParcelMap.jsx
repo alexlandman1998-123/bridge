@@ -47,7 +47,9 @@ export default function KnowledgeFactoryParcelMap({ properties = [], loading = f
     let active = true
     loadGoogleMaps(key).then(async (maps) => {
       if (!active || !maps) return
-      const map = new maps.Map(containerRef.current, { center: DEFAULT_CENTER, zoom: 12, mapTypeControl: false, streetViewControl: false, fullscreenControl: false })
+      const { Map } = await maps.importLibrary('maps')
+      if (!active) return
+      const map = new Map(containerRef.current, { center: DEFAULT_CENTER, zoom: 12, mapTypeControl: false, streetViewControl: false, fullscreenControl: false })
       mapRef.current = map
       const { PlaceAutocompleteElement } = await maps.importLibrary('places')
       if (!active || !autocompleteRef.current) return
