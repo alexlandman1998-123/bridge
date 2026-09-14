@@ -2,7 +2,11 @@ let googleMapsPromise: Promise<any> | null = null
 
 const GOOGLE_MAPS_SCRIPT_ID = 'arch9-google-maps-js'
 const GOOGLE_MAPS_SRC = 'https://maps.googleapis.com/maps/api/js'
-const GOOGLE_MAPS_LOAD_TIMEOUT_MS = 10000
+// The Maps script is requested only when an address field receives focus. On
+// slower connections the Places bundle can legitimately arrive after ten
+// seconds, so do not turn a transient load into a provider configuration error.
+const GOOGLE_MAPS_LOAD_TIMEOUT_MS = 30000
+const GOOGLE_MAPS_CALLBACK_NAME = '__arch9GoogleMapsReady'
 
 function getGoogleMapsApiKey() {
   const env = typeof import.meta !== 'undefined' ? import.meta.env : {}
@@ -12,7 +16,11 @@ function getGoogleMapsApiKey() {
 function getExistingGoogle() {
   if (typeof window === 'undefined') return null
   const maybeGoogle = (window as any).google
-  return maybeGoogle?.maps?.places ? maybeGoogle : null
+  // The Maps script creates `window.google.maps` before its libraries are
+  // ready. Returning that placeholder races the callback and leaves callers
+  // without either a renderer or `importLibrary`.
+  const maps = maybeGoogle?.maps
+  return typeof maps?.importLibrary === 'function' || typeof maps?.Map === 'function' ? maybeGoogle : null
 }
 
 export function hasGoogleMapsApiKey() {
@@ -54,7 +62,7 @@ export function loadGoogleMaps() {
     }
 
     const timeout = window.setTimeout(() => {
-      settleReject(new Error('Google Maps took too long to load. Check that Maps JavaScript API and the Places library are enabled for this key.'))
+      settleReject(new Error('Address search is taking longer than expected. Please try again or enter the address manually.'))
     }, GOOGLE_MAPS_LOAD_TIMEOUT_MS)
 
     const resolveWhenReady = () => {
@@ -63,7 +71,7 @@ export function loadGoogleMaps() {
         settleResolve(loadedGoogle)
         return
       }
-      settleReject(new Error('Google Maps loaded, but the Places library is unavailable. Enable Maps JavaScript API and Places API for this key.'))
+      settleReject(new Error('Google Maps loaded, but could not initialise. Please try again or enter the address manually.'))
     }
 
     if (existingScript) {
@@ -75,12 +83,14 @@ export function loadGoogleMaps() {
 
     const script = document.createElement('script')
     script.id = GOOGLE_MAPS_SCRIPT_ID
-    script.src = `${GOOGLE_MAPS_SRC}?key=${encodeURIComponent(apiKey)}&libraries=places&v=weekly`
+    ;(window as any)[GOOGLE_MAPS_CALLBACK_NAME] = resolveWhenReady
+    script.src = `${GOOGLE_MAPS_SRC}?key=${encodeURIComponent(apiKey)}&libraries=places&v=weekly&loading=async&callback=${GOOGLE_MAPS_CALLBACK_NAME}`
     script.async = true
-    script.defer = true
     script.addEventListener('load', () => {
       script.dataset.loaded = 'true'
-      resolveWhenReady()
+      // The load event can precede Google's callback. The callback is the
+      // authoritative signal that Maps is ready for consumers.
+      if (getExistingGoogle()) resolveWhenReady()
     })
     script.addEventListener('error', () => settleReject(new Error('Google Maps failed to load.')))
 

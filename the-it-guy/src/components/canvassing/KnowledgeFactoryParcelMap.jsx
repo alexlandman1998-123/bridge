@@ -1,29 +1,11 @@
 import { AlertCircle, Loader2, MapPin, Search } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { loadGoogleMaps } from '../../lib/googleMaps'
 
 const DEFAULT_CENTER = { lat: -26.2041, lng: 28.0473 }
-const SCRIPT_ID = 'arch9-google-maps-js'
 
 function apiKey() {
   return String(import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '').trim()
-}
-
-function loadGoogleMaps(key) {
-  if (window.google?.maps) return Promise.resolve(window.google.maps)
-  const existing = document.getElementById(SCRIPT_ID)
-  if (existing) return new Promise((resolve, reject) => {
-    existing.addEventListener('load', () => resolve(window.google?.maps), { once: true })
-    existing.addEventListener('error', () => reject(new Error('Google Maps could not be loaded.')), { once: true })
-  })
-  return new Promise((resolve, reject) => {
-    const script = document.createElement('script')
-    script.id = SCRIPT_ID
-    script.async = true
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&loading=async`
-    script.onload = () => window.google?.maps ? resolve(window.google.maps) : reject(new Error('Google Maps did not initialise.'))
-    script.onerror = () => reject(new Error('Google Maps could not be loaded.'))
-    document.head.appendChild(script)
-  })
 }
 
 function toBounds(map) {
@@ -45,7 +27,8 @@ export default function KnowledgeFactoryParcelMap({ properties = [], loading = f
     const key = apiKey()
     if (!key || !containerRef.current) return undefined
     let active = true
-    loadGoogleMaps(key).then(async (maps) => {
+    loadGoogleMaps().then(async (google) => {
+      const maps = google?.maps
       if (!active || !maps) return
       const Map = typeof maps.importLibrary === 'function'
         ? (await maps.importLibrary('maps')).Map
