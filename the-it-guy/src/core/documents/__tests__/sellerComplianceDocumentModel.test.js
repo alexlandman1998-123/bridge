@@ -102,6 +102,18 @@ test('buildPropertyDisclosureDocumentMarkup renders FICA and signer pages when c
   assert.match(html, /Page 5 of 5/)
 })
 
+test('property disclosure stays a standalone document when no compliance pack is supplied', () => {
+  const html = buildPropertyDisclosureDocumentMarkup(completedDisclosure, {
+    sellerName: 'John Smith',
+    propertyAddress: '1 Main Road, Cape Town',
+    documentReference: 'LIST-123',
+  })
+
+  assert.doesNotMatch(html, /FICA Summary/)
+  assert.doesNotMatch(html, /Signature Certificate/)
+  assert.match(html, /Annexure A/)
+})
+
 test('property disclosure requests details for answers that indicate a defect', () => {
   const electricalFaults = PROPERTY_DISCLOSURE_QUESTIONS.find((question) => question.key === 'electrical_faults')
   const securitySystems = PROPERTY_DISCLOSURE_QUESTIONS.find((question) => question.key === 'security_systems')

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const boundarySource = await readFile('src/components/AppErrorBoundary.jsx', 'utf8')
+const viteConfigSource = await readFile('vite.config.js', 'utf8')
 const packageDefinition = JSON.parse(await readFile('package.json', 'utf8'))
 
 const reloadLimitMatch = boundarySource.match(/const\s+STALE_CHUNK_AUTO_RELOAD_LIMIT\s*=\s*(\d+)/)
@@ -47,6 +48,12 @@ assert.match(
   boundarySource,
   /this\.recoverFromStaleChunk\(\{\s*force:\s*false\s*\}\)/,
   'Manual refresh must reset once, then continue through the normal bounded recovery sequence.',
+)
+
+assert.match(
+  viteConfigSource,
+  /chunkInfo\.name\s*===\s*'Sidebar'[\s\S]*?navigation-shell-\[hash\]\.js/,
+  'The primary navigation chunk must use a neutral asset name for browser content filters.',
 )
 assert.match(
   packageDefinition.scripts['build:guarded'],

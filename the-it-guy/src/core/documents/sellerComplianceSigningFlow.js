@@ -1,5 +1,8 @@
 import { buildSellerCompliancePortalModel } from './sellerCompliancePortalModel.js'
-import { recordSellerComplianceSignerSignature } from './sellerComplianceSignerModel.js'
+import {
+  recordSellerComplianceSignerSignature,
+  SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS,
+} from './sellerComplianceSignerModel.js'
 
 export const SELLER_COMPLIANCE_SIGNING_FLOW_CONTRACT = 'arch9-seller-compliance-signing-flow-v1'
 
@@ -104,6 +107,7 @@ export function applySellerComplianceSignatureToForm({
     signatureValue: disclosure.signature,
     signatureType: disclosure.signature && String(disclosure.signature).startsWith('data:image/') ? 'drawn' : 'typed',
     signedAt: disclosure.signedAt || disclosure.signed_at,
+    acceptedDocuments: SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS.map((document) => document.key),
     ...audit,
   })
   const updatedSigning = buildSellerCompliancePortalModel({

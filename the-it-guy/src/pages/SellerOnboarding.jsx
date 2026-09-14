@@ -93,12 +93,30 @@ import {
   normalizePropertyDisclosure,
   shouldPromptPropertyDisclosureComment,
 } from '../lib/propertyDisclosure'
-import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel'
 import {
   applySellerComplianceSignatureToForm,
   buildDisclosureForComplianceSigner,
   buildSellerComplianceSigningForForm,
 } from '../core/documents/sellerComplianceSigningFlow'
+import {
+  areSellerOnboardingConsentsComplete,
+  readSellerOnboardingConsents,
+  updateSellerOnboardingConsent,
+  SELLER_ONBOARDING_CONSENTS,
+} from '../core/documents/sellerOnboardingConsent'
+import {
+  createSellerOnboardingCompletionRecord,
+  normalizeSellerOnboardingCompletionMode,
+  SELLER_ONBOARDING_COMPLETION_MODES,
+} from '../core/documents/sellerOnboardingCompletionMode'
+import {
+  getSellerOnboardingAttorneyConsentStatus,
+  readSellerOnboardingAttorneyRecommendation,
+  recordSellerOnboardingAttorneyConsent,
+  resolveSellerOnboardingAttorneyChoiceAuthority,
+  sellerOnboardingAttorneyRecommendationRequiresDecision,
+} from '../core/documents/sellerOnboardingAttorneyRecommendation'
+import { createSellerOnboardingGeneratedDocuments } from '../core/documents/sellerOnboardingGeneratedDocuments'
 import {
   buildArch9SellerTermsAcceptance,
   getArch9SellerTermsConfig,
@@ -757,6 +775,11 @@ function getSellerDisplayName(listing = {}, form = {}) {
 function getSellerComplianceSignerIdFromUrl() {
   if (typeof window === 'undefined') return ''
   return String(new URLSearchParams(window.location.search).get('signer') || '').trim()
+}
+
+function getSellerOnboardingCompletionModeFromUrl() {
+  if (typeof window === 'undefined') return SELLER_ONBOARDING_COMPLETION_MODES.selfService
+  return normalizeSellerOnboardingCompletionMode(new URLSearchParams(window.location.search).get('completion_mode'))
 }
 
 function getSellerComplianceSignaturePaneIndex() {
@@ -1593,6 +1616,7 @@ function normalizeFormData(listing) {
     sellerTaxNumber: existing.sellerTaxNumber || existing.incomeTaxNumber || existing.income_tax_number || canonicalFacts?.seller?.tax_number || existing.taxNumber || existing.tax_number || '',
     saResident: normalizeYesNoValue(existing.saResident ?? existing.sa_resident ?? existing.taxResident ?? existing.tax_resident ?? canonicalFacts?.seller?.sa_resident ?? canonicalFacts?.seller?.tax_resident),
     popiConsent: normalizeAcceptedValue(existing.popiConsentAccepted ?? existing.popi_consent_accepted ?? existing.popiConsent ?? existing.popi_consent ?? canonicalFacts?.seller?.popi_consent_accepted ?? canonicalFacts?.seller?.popi_consent),
+    sellerOnboardingConsents: readSellerOnboardingConsents(existing),
     vatRegistered: isVatEligibleOwnership ? Boolean(existing.vatRegistered) : false,
     vatNumber: isVatEligibleOwnership ? (existing.vatNumber || '') : '',
     maritalStatus: ownershipBranch === 'married' ? (existing.maritalStatus || canonicalFacts?.seller?.marital_status || 'married') : 'not_married',
@@ -1664,6 +1688,7 @@ function normalizeFormData(listing) {
     mandateType: existing.mandateType || canonicalFacts?.transaction?.mandate_type || listing?.mandateType || '',
     mandateStartDate: existing.mandateStartDate || existing.mandate_start_date || canonicalFacts?.transaction?.mandate_start_date || listing?.mandateStartDate || listing?.mandate_start_date || '',
     mandateEndDate: existing.mandateEndDate || existing.mandate_end_date || existing.mandateExpiryDate || existing.mandate_expiry_date || canonicalFacts?.transaction?.mandate_end_date || canonicalFacts?.transaction?.mandate_expiry_date || listing?.mandateEndDate || listing?.mandate_end_date || listing?.mandateExpiryDate || listing?.mandate_expiry_date || '',
+    preferredTransferAttorneyRecommendation: readSellerOnboardingAttorneyRecommendation(existing),
     specialMandateConditions: existing.specialMandateConditions || existing.special_mandate_conditions || canonicalFacts?.transaction?.special_mandate_conditions || {},
     additionalConditions: existing.additionalConditions || existing.additional_conditions || existing.additionalMandateConditions || existing.additional_mandate_conditions || canonicalFacts?.transaction?.additional_conditions || '',
     sellingTimeline: existing.sellingTimeline || '1_3_months',
@@ -2270,7 +2295,7 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
   )
 }
 
-function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddress = '' }) {
+function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddress = '', onSubmit = null, submitting = false }) {
   const issueCount = issueGroups.reduce((total, group) => total + (group.missing?.length || 0), 0)
   const ready = issueCount === 0
 
@@ -2347,6 +2372,24 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
             </div>
           )
         })}
+      </div>
+
+      <div className="mt-5 border-t border-white/80 pt-4">
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={onSubmit}
+          disabled={!ready || submitting}
+          className={`min-h-[52px] w-full rounded-[16px] ${BRAND_ACTION_BUTTON_CLASS}`}
+        >
+          {submitting ? 'Submitting...' : ready ? 'Submit Seller Information' : 'Complete required items to submit'}
+          <CheckCircle2 size={16} />
+        </Button>
+        <p className={`mt-2 text-center text-xs leading-5 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
+          {ready
+            ? 'You can still return to a section above before submitting.'
+            : 'This button stays here while you complete the highlighted items.'}
+        </p>
       </div>
     </section>
   )
@@ -2887,6 +2930,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const lastDraftSignatureRef = useRef('')
   const saveDraftRef = useRef(null)
   const requestedComplianceSignerId = useMemo(() => getSellerComplianceSignerIdFromUrl(), [token])
+  const onboardingCompletionMode = useMemo(() => getSellerOnboardingCompletionModeFromUrl(), [token])
+  const isAgentAssistedCompletion = onboardingCompletionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted
 
   useEffect(() => {
     let isMounted = true
@@ -3180,6 +3225,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const mandateRequiresSellerSpouseEmail = useMemo(
     () => mandateRequiresSpouseEmail(form, ownershipBranch),
     [form, ownershipBranch],
+  )
+  const preferredTransferAttorneyRecommendation = useMemo(
+    () => readSellerOnboardingAttorneyRecommendation(form),
+    [form],
+  )
+  const recommendedTransferAttorneyName = preferredTransferAttorneyRecommendation.companyName || ''
+  const preferredTransferAttorneyConsentStatus = getSellerOnboardingAttorneyConsentStatus(preferredTransferAttorneyRecommendation)
+  const preferredTransferAttorneyChoiceAuthority = useMemo(
+    () => resolveSellerOnboardingAttorneyChoiceAuthority({
+      recommendation: preferredTransferAttorneyRecommendation,
+      signing: sellerComplianceSigning,
+    }),
+    [preferredTransferAttorneyRecommendation, sellerComplianceSigning],
   )
 
   function buildCanonicalPayload(nextForm = form, options = {}) {
@@ -3616,17 +3674,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const { default: html2pdf } = await import('html2pdf.js/src/index.js')
       const agencyBrand = resolveAgencyBrand(listing)
       const propertyAddress = getPropertyDisplayAddress(listing, form)
-      const compliancePackSigning = buildSellerComplianceSigningForForm({
-        formData: form || {},
-        listing: listing || {},
-        token,
-        signerId: requestedComplianceSignerId || activeComplianceSigner?.id || '',
-      }).model
-      const sellerCompliancePack = buildSellerComplianceDocumentModel({
-        formData: form || {},
-        listing: listing || {},
-        signing: compliancePackSigning,
-      })
       const markup = buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
         sellerName: getSellerDisplayName(listing, form),
         sellerIdNumber: form.idNumber || form.foreignPassportNumber || form.passportNumber || '',
@@ -3651,7 +3698,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           logoDarkUrl: agencyBrand.logoDarkUrl,
           logoLightUrl: agencyBrand.logoLightUrl,
         },
-        sellerCompliancePack,
       })
       const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
       const documentBody = pdfDocument.body
@@ -3683,7 +3729,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       await html2pdf()
         .set({
           margin: 0,
-          filename: 'seller-compliance-pack.pdf',
+          filename: 'property-condition-disclosure.pdf',
           image: { type: 'jpeg', quality: 0.98 },
           html2canvas: {
             scale: 2,
@@ -4071,6 +4117,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
       }
 
+      if (!areSellerOnboardingConsentsComplete(form)) {
+        return 'Please accept the onboarding permissions and information declaration before continuing.'
+      }
+
       if (!form.mandateType) {
         return 'Please select the mandate type for this sale.'
       }
@@ -4084,6 +4134,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       const mandateEnd = new Date(`${form.mandateEndDate}T00:00:00`)
       if (Number.isNaN(mandateStart.getTime()) || Number.isNaN(mandateEnd.getTime()) || mandateEnd <= mandateStart) {
         return 'Mandate end date must be after the start date.'
+      }
+      if (sellerOnboardingAttorneyRecommendationRequiresDecision(form)) {
+        return 'Please tell us whether you are comfortable with the agency’s conveyancing attorney recommendation.'
       }
     }
 
@@ -4243,6 +4296,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         const mandateEnd = new Date(`${form.mandateEndDate}T00:00:00`)
         if (Number.isNaN(mandateStart.getTime()) || Number.isNaN(mandateEnd.getTime()) || mandateEnd <= mandateStart) {
           return 'Mandate end date must be after the start date.'
+        }
+        if (sellerOnboardingAttorneyRecommendationRequiresDecision(form)) {
+          return 'Please tell us whether you are comfortable with the agency’s conveyancing attorney recommendation.'
         }
       }
     }
@@ -4411,9 +4467,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       submissionOwnershipBranch === 'trust' && (!submissionTrustees.length || submissionTrustees.some((trustee) => !trustee.name || !trustee.surname)) && 'At least one trustee',
       submissionOwnershipBranch === 'trust' && !submissionForm.authorisedTrusteeName && 'Authorised trustee',
       submissionOwnershipBranch === 'trust' && (!submissionForm.authorisedTrusteeCapacity || !submissionForm.trustAuthorityBasis) && 'Trust signing authority',
+      !areSellerOnboardingConsentsComplete(submissionForm) && 'Onboarding permissions and declaration',
     ].filter(Boolean)
     const finalRequiredMissing = [
       ...submissionSellerMissing.map((item) => `Seller: ${item}`),
+      ...mandateMissing.map((item) => `Mandate: ${item}`),
       ...submissionPropertyMissing.map((item) => `Property: ${item}`),
       ...getPropertyDisclosureMissingItems(submissionDisclosure || {}).map((item) => `Disclosure: ${item}`),
     ]
@@ -4446,6 +4504,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         : ''
       const arch9TermsAcceptance = readArch9SellerTermsAcceptance(submissionForm)
       const arch9TermsAcceptedAt = arch9TermsAcceptance.acceptedAt || arch9TermsAcceptance.accepted_at || new Date().toISOString()
+      const completionRecord = createSellerOnboardingCompletionRecord({
+        existing: submissionForm.sellerOnboardingCompletion || submissionForm.seller_onboarding_completion,
+        mode: onboardingCompletionMode,
+      })
+      const generatedDocuments = createSellerOnboardingGeneratedDocuments()
       let finalForm = {
         ...(submissionForm || {}),
         ...buildSellerEntityProfileAliases(submissionForm),
@@ -4503,6 +4566,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           arch9_terms_accepted_at: arch9TermsAcceptedAt,
         },
         propertyDisclosureStatus: getPropertyDisclosureStatus(submissionDisclosure || {}),
+        completionMode: completionRecord.mode,
+        completion_mode: completionRecord.mode,
+        sellerOnboardingCompletion: completionRecord,
+        seller_onboarding_completion: completionRecord,
+        sellerOnboardingGeneratedDocuments: generatedDocuments,
+        seller_onboarding_generated_documents: generatedDocuments,
         currentStep: FINAL_STEP_INDEX,
       }
       if (isPropertyDisclosureDigitallyComplete(finalForm.propertyDisclosure || {})) {
@@ -4533,6 +4602,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         const submitted = await submitSellerOnboarding(token, {
           status: 'completed',
           formData: submitFormData,
+          completionMode: onboardingCompletionMode,
           sellerType: String(submissionForm?.ownerEntityType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
           ownershipStructure: String(submissionForm?.ownerStructureType || submissionForm?.ownershipType || '').trim().toLowerCase() || null,
           maritalRegime: String(submissionForm?.ownershipType || '').trim().toLowerCase().includes('married')
@@ -4777,6 +4847,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     isNaturalPersonSeller && !form.nationality && 'Nationality',
     !form.sellerTaxNumber && 'Tax number',
     !form.saResident && 'SA resident status',
+    !areSellerOnboardingConsentsComplete(form) && 'Onboarding permissions',
     requiresSellerResidentialAddress && !sellerResidentialAddress && 'Residential address',
   ].filter(Boolean)
   const mandateMissing = [
@@ -4784,6 +4855,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     !form.mandateStartDate && 'Start date',
     !form.mandateEndDate && 'End date',
     mandateDatesInvalid && 'End date must be after start date',
+    sellerOnboardingAttorneyRecommendationRequiresDecision(form) && 'Conveyancing attorney preference',
   ].filter(Boolean)
   const propertyMissing = getPropertyAddressMissingItems(resolveProgressionPropertyAddress(listing || {}, form || {}))
   const sectionSummaryValue = [form.schemeName, form.sectionNumber || form.unitNumber].filter(Boolean).join(' / ')
@@ -4807,20 +4879,25 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ? [form.commercialUseDescription, form.floorSize ? `${form.floorSize} m2` : ''].filter(Boolean).join(' / ')
           : `${form.erfSize || 'Not provided'} m2`
   const disclosureMissing = getPropertyDisclosureMissingItems(activePropertyDisclosure || {})
-  const reviewIssueGroups = [
+  const submitIssueGroups = [
     { label: 'Seller details', missing: sellerMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Mandate preferences', missing: mandateMissing, onEdit: () => setCurrentStep(0) },
     { label: 'Property details', missing: propertyMissing, onEdit: () => setCurrentStep(1) },
-    { label: 'Property disclosure', missing: disclosureMissing, onEdit: () => setCurrentStep(2) },
-    ...(bondComplianceSummary ? [{ label: 'Bond follow-up', missing: bondComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
-    ...(tenantComplianceSummary ? [{ label: 'Tenant follow-up', missing: tenantComplianceSummary.missing, onEdit: () => setCurrentStep(1) }] : []),
+    {
+      label: 'Property disclosure',
+      missing: [
+        ...disclosureMissing,
+        ...(!isArch9SellerTermsAccepted(form) ? ['Seller terms acceptance'] : []),
+      ],
+      onEdit: () => setCurrentStep(2),
+    },
   ]
   const directListingPortalIntake = hasDirectListingPortalIntake(listing)
   const directListingComplianceSummary = Array.isArray(form.directListingComplianceSummary)
     ? form.directListingComplianceSummary
     : []
 
-  const shouldShowWelcome = !embedded && !isCompleted && !hasRequestedComplianceSigner && showWelcome
+  const shouldShowWelcome = !embedded && !isCompleted && !hasRequestedComplianceSigner && !isAgentAssistedCompletion && showWelcome
   const onboardingActions = !embedded && !isCompleted && !hasRequestedComplianceSigner ? (
     <div className="rounded-[24px] border border-white/70 bg-white/95 p-3 shadow-[0_14px_32px_rgba(15,23,42,0.08)] backdrop-blur-xl">
       <div className="grid gap-2 md:hidden">
@@ -4902,6 +4979,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       {!isCompleted && !hasRequestedComplianceSigner ? (
         <>
           <SellerOnboardingHero brand={agencyBrand} listing={listing} form={form} statusLabel={statusLabel} />
+          {isAgentAssistedCompletion ? (
+            <div className="mt-4 flex items-start gap-3 rounded-[16px] border border-[#c9dceb] bg-[#f4f9ff] px-4 py-3 text-sm leading-6 text-[#315879]">
+              <UserRound size={18} className="mt-0.5 shrink-0" />
+              <p><strong>Agent-assisted onboarding.</strong> Capture the information with the seller. Submission will be recorded as completed by the authenticated agency user; it does not replace FICA review or mandate signing.</p>
+            </div>
+          ) : null}
         </>
       ) : null}
 
@@ -5530,6 +5613,31 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               </FormSection>
 
               <FormSection
+                icon={ShieldCheck}
+                title="Permissions and declaration"
+                description="These permissions cover the basic onboarding information. Your agent will request FICA supporting documents separately in the portal after you submit."
+                illustration="selling_context"
+                mobilePaneIndex={sellerPaneIndexes.identity}
+              >
+                <div className="grid gap-3">
+                  {SELLER_ONBOARDING_CONSENTS.map((consent) => {
+                    const currentConsent = readSellerOnboardingConsents(form)[consent.key]
+                    return (
+                      <label key={consent.key} className="flex items-start gap-3 rounded-[14px] border border-[#d9e2ee] bg-[#fbfdff] px-4 py-3 text-sm leading-6 text-[#2a4057]">
+                        <input
+                          className="mt-1"
+                          type="checkbox"
+                          checked={Boolean(currentConsent?.accepted)}
+                          onChange={(event) => handleFormUpdate('sellerOnboardingConsents', updateSellerOnboardingConsent(form, consent.key, event.target.checked))}
+                        />
+                        <span>{consent.label}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </FormSection>
+
+              <FormSection
                 icon={FileCheck2}
                 title="Mandate preferences"
                 description="Confirm the mandate choices your agent will use to prepare the mandate."
@@ -5562,6 +5670,72 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                       <input className={DATE_INPUT_CLASS} type="date" value={form.mandateEndDate || ''} onChange={(event) => handleFormUpdate('mandateEndDate', event.target.value)} />
                     </label>
                   </div>
+                  {recommendedTransferAttorneyName ? (
+                    <section className="rounded-[16px] border border-[#cfe1f1] bg-[#f7fbff] p-4" aria-labelledby="conveyancing-attorney-choice-title">
+                      <div className="flex items-start gap-3">
+                        <Landmark className="mt-0.5 shrink-0 text-[#2f6f9f]" size={20} aria-hidden="true" />
+                        <div className="min-w-0">
+                          <h3 id="conveyancing-attorney-choice-title" className="text-sm font-semibold text-[#172334]">Conveyancing attorney recommendation</h3>
+                          <p className="mt-1 text-sm leading-6 text-[#2a4057]">
+                            Your agency recommends <span className="font-semibold">{recommendedTransferAttorneyName}</span> as the conveyancing attorney for this sale.
+                          </p>
+                          <p className="mt-2 text-sm leading-6 text-[#4f6378]">
+                            This is entirely your choice: you may use this firm, appoint another conveyancer, or decide later. Your response does not instruct the firm or create an obligation. Your agent will provide any applicable relationship or referral disclosure before a mandate is signed.
+                          </p>
+                          {preferredTransferAttorneyChoiceAuthority.requiresAllMandateSigners ? (
+                            <p className="mt-2 rounded-[10px] bg-white px-3 py-2 text-sm leading-6 text-[#35546c]">
+                              This records a preference only. Each required owner will still receive their own mandate-signing request before a mandate can be completed.
+                            </p>
+                          ) : null}
+                          {preferredTransferAttorneyChoiceAuthority.requiresAuthorityReview ? (
+                            <p className="mt-2 rounded-[10px] bg-white px-3 py-2 text-sm leading-6 text-[#35546c]">
+                              You are recording a preference as {preferredTransferAttorneyChoiceAuthority.responseSignerRoleLabel || 'the authorised representative'}. Your agency must still verify the {preferredTransferAttorneyChoiceAuthority.authorityRequirement?.label || 'signing authority'} before any later instruction or mandate is completed.
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                      <div className="mt-4 grid gap-2 md:grid-cols-3" role="radiogroup" aria-labelledby="conveyancing-attorney-choice-title">
+                        {[
+                          {
+                            value: 'accepted',
+                            title: 'I’m comfortable with this recommendation',
+                            description: 'Your agent may continue discussing this option with you.',
+                          },
+                          {
+                            value: 'declined',
+                            title: 'I’ll nominate my own attorney',
+                            description: 'Your agent will record that you prefer a different conveyancer.',
+                          },
+                          {
+                            value: 'deferred',
+                            title: 'I’d prefer to decide later',
+                            description: 'No attorney will be appointed through this response.',
+                          },
+                        ].map((option) => {
+                          const selected = preferredTransferAttorneyConsentStatus === option.value
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              role="radio"
+                              aria-checked={selected}
+                              onClick={() => handleFormUpdate('preferredTransferAttorneyRecommendation', recordSellerOnboardingAttorneyConsent({
+                                recommendation: preferredTransferAttorneyRecommendation,
+                                decision: option.value,
+                                authority: preferredTransferAttorneyChoiceAuthority,
+                              }))}
+                              className={`min-h-[104px] rounded-[14px] border px-3 py-3 text-left transition ${selected
+                                ? 'border-[#2f6f9f] bg-white ring-2 ring-[#b7d7ee]'
+                                : 'border-[#d8e2ec] bg-white hover:border-[#8bb8d8]'}`}
+                            >
+                              <span className="block text-sm font-semibold text-[#172334]">{option.title}</span>
+                              <span className="mt-1 block text-xs leading-5 text-[#60748b]">{option.description}</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </section>
+                  ) : null}
                   <div>
                     <p className="text-sm font-medium text-[#2a4057]">Special conditions</p>
                     <p className="mt-1 text-sm leading-5 text-[#60748b]">Select anything that must be included or considered.</p>
@@ -6283,9 +6457,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             >
               <div className="grid grid-cols-1 gap-4">
                 <ReviewReadinessPanel
-                  issueGroups={reviewIssueGroups}
+                  issueGroups={submitIssueGroups}
                   sellerName={getSellerDisplayName(listing, form)}
                   propertyAddress={getPropertyDisplayAddress(listing, form)}
+                  onSubmit={handleSubmit}
+                  submitting={submitting}
                 />
                 <ReviewCard
                   title="Seller Summary"
@@ -6299,6 +6475,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Phone', value: form.phone },
                     ...(requiresSellerResidentialAddress ? [{ label: 'Residential Address', value: sellerResidentialAddress }] : []),
                     { label: 'Ownership', value: getOwnershipSummaryLabel(form) },
+                    { label: 'Onboarding permissions', value: areSellerOnboardingConsentsComplete(form) ? 'Accepted' : 'Not accepted' },
                   ]}
                 />
                 <ReviewCard
@@ -6336,6 +6513,16 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Mandate Type', value: getMandateTypeLabel(form.mandateType) },
                     { label: 'Start Date', value: formatDateValue(form.mandateStartDate) },
                     { label: 'End Date', value: formatDateValue(form.mandateEndDate) },
+                    ...(recommendedTransferAttorneyName ? [{
+                      label: 'Conveyancing attorney',
+                      value: preferredTransferAttorneyConsentStatus === 'accepted'
+                        ? `${recommendedTransferAttorneyName} (comfortable with recommendation)`
+                        : preferredTransferAttorneyConsentStatus === 'declined'
+                          ? 'Own attorney to be nominated'
+                          : preferredTransferAttorneyConsentStatus === 'deferred'
+                            ? 'Decision deferred'
+                            : 'Choice required',
+                    }] : []),
                     { label: 'Special Conditions', value: selectedSpecialMandateConditionLabels.length ? selectedSpecialMandateConditionLabels.join(', ') : 'None selected' },
                     { label: 'Additional Conditions', value: form.additionalConditions || 'Not provided' },
                   ]}

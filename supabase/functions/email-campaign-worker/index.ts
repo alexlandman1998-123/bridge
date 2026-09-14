@@ -68,9 +68,9 @@ Deno.serve(async (req: Request) => {
     if (claimError || !claimedJob) continue;
     if (campaign.status === "scheduled") await db.from("email_campaigns").update({ status: "sending", sending_started_at: now }).eq("id", campaign.id).eq("status", "scheduled");
     const { data: policy } = await db.from("email_sending_policies")
-      .select("max_recipients_per_worker_run,daily_recipient_limit,paused_at").eq("organisation_id", campaign.organisation_id).maybeSingle();
-    if (policy?.paused_at) {
-      if (job) await db.from("email_campaign_dispatch_jobs").update({ status: "failed", last_error: "Organisation sending policy is paused." }).eq("id", job.id);
+      .select("max_recipients_per_worker_run,daily_recipient_limit,paused_at,approved_at").eq("organisation_id", campaign.organisation_id).maybeSingle();
+    if (!policy?.approved_at || policy?.paused_at) {
+      if (job) await db.from("email_campaign_dispatch_jobs").update({ status: "failed", last_error: policy?.paused_at ? "Organisation sending policy is paused." : "Organisation email sending is not approved." }).eq("id", job.id);
       continue;
     }
     const startOfDay = new Date(); startOfDay.setUTCHours(0, 0, 0, 0);

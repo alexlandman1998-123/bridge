@@ -70,28 +70,6 @@ const demoPages: PublicPage[] = [
   },
 ]
 
-// Showcase inventory is deliberately limited to preview domains. It makes an
-// empty pilot feel like a real estate website while CRM-published listings
-// remain the source of truth and automatically take precedence.
-const homeSeekersShowcaseProperties: PublicProperty[] = [
-  {
-    id: 'kingdom-showcase-house', reference: 'KINGDOM-DEMO-001', title: 'Contemporary family residence', transactionType: 'sale', propertyType: 'House', suburb: 'Waterkloof Ridge', province: 'Gauteng', price: 8950000, bedrooms: 4, bathrooms: 4, parkingBays: 3,
-    description: 'A considered family residence with generous entertaining spaces, a landscaped garden and a pool.', features: ['Swimming pool', 'Entertaining terrace', 'Study', 'Staff suite'], amenities: ['Close to leading schools', 'Secure access'], isShowcase: true,
-    media: [{ type: 'image', url: '/images/kingdom-showcase-house-v1.png', caption: 'Kingdom showcase property', order: 0 }],
-  },
-  {
-    id: 'kingdom-showcase-apartment', reference: 'KINGDOM-DEMO-002', title: 'Leafy terrace apartment', transactionType: 'sale', propertyType: 'Apartment', suburb: 'Brooklyn', province: 'Gauteng', price: 3250000, bedrooms: 2, bathrooms: 2, parkingBays: 2,
-    description: 'An elegant apartment with a generous covered terrace and seamless indoor-outdoor living.', features: ['Covered terrace', 'Fibre ready', 'Two secure bays', '24-hour security'], amenities: ['Walkable to cafés', 'Easy access to the city'], isShowcase: true,
-    media: [{ type: 'image', url: '/images/kingdom-showcase-apartment-v1.png', caption: 'Kingdom showcase property', order: 0 }],
-  },
-  {
-    id: 'kingdom-showcase-lynnwood', reference: 'KINGDOM-DEMO-003', title: 'Architectural garden home', transactionType: 'sale', propertyType: 'House', suburb: 'Lynnwood', province: 'Gauteng', price: 4850000, bedrooms: 3, bathrooms: 2, parkingBays: 2,
-    description: 'A warm contemporary home with textured stone, landscaped grounds and flexible family living.', features: ['Landscaped garden', 'Open-plan living', 'Double garage', 'Security'], amenities: ['Close to schools', 'Easy access to the city'], isShowcase: true,
-    media: [{ type: 'image', url: '/images/kingdom-showcase-lynnwood-v1.png', caption: 'Kingdom showcase property', order: 0 }],
-  },
-  ...additionalMockProperties,
-]
-
 export function normalizeHostname(host: string | null | undefined): string {
   return String(host || '').trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '')
 }
@@ -235,10 +213,7 @@ export async function getPublicProperties(site: ResolvedSite, query: Record<stri
   const supabase = getServerSupabase()
   const listings = await getPublishedWebsiteListings(supabase, site)
   const publishedProperties = listings.map(({ row, media }) => mapProperty(row, media))
-  const properties = publishedProperties.length || !site.preview || site.templateKey !== 'home-seekers-v1'
-    ? publishedProperties
-    : homeSeekersShowcaseProperties
-  return filterProperties(properties, query)
+  return filterProperties(publishedProperties, query)
 }
 
 export async function getPublicProperty(site: ResolvedSite, slug: string): Promise<PublicProperty | null> {
@@ -400,9 +375,6 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
   const brand = (revisionResult.data?.brand_json || {}) as Record<string, unknown>
   const properties = await getPublishedWebsiteListings(supabase, { id: site.id, organisationId: site.organisation_id }, 12)
   const publishedProperties = properties.map(({ row, media }) => mapProperty(row, media))
-  const previewProperties = publishedProperties.length || domain.domain_kind !== 'preview' || site.template_key !== 'home-seekers-v1'
-    ? publishedProperties
-    : homeSeekersShowcaseProperties
   return {
     id: site.id,
     organisationId: site.organisation_id,
@@ -428,6 +400,6 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
       ? Object.fromEntries(Object.entries(brand.socialLinks as Record<string, unknown>).filter(([key, value]) => ['instagram', 'facebook', 'linkedin'].includes(key) && typeof value === 'string' && value.startsWith('https://'))) as ResolvedSite['socialLinks']
       : undefined,
     preview: domain.domain_kind === 'preview',
-    properties: previewProperties,
+    properties: publishedProperties,
   }
 }

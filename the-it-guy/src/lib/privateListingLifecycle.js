@@ -25,7 +25,7 @@ const LEGACY_STATUS_MAP = {
 const PRIVATE_LISTING_STATUS_LABELS = {
   seller_lead: 'Seller Lead',
   onboarding_sent: 'Onboarding Sent',
-  onboarding_completed: 'Onboarding Completed',
+  onboarding_completed: 'Onboarding Submitted',
   listing_review: 'Listing Review',
   mandate_ready: 'Mandate Ready',
   mandate_sent: 'Mandate Sent',
@@ -40,7 +40,7 @@ const PRIVATE_LISTING_STATUS_LABELS = {
 const PRIVATE_LISTING_STATUS_DESCRIPTIONS = {
   seller_lead: 'Seller lead captured. Send seller onboarding to progress the listing.',
   onboarding_sent: 'Seller onboarding link has been sent. Waiting for seller submission.',
-  onboarding_completed: 'Seller completed onboarding. Review details and prepare the mandate step.',
+  onboarding_completed: 'Seller onboarding has been submitted. Review the captured details, request the applicable FICA evidence, and prepare the mandate when ready.',
   listing_review: 'Listing details are under internal review before mandate readiness.',
   mandate_ready: 'Listing has enough detail for mandate preparation.',
   mandate_sent: 'Mandate has been sent to seller and is awaiting signature.',
@@ -483,7 +483,7 @@ export function getPrivateListingLifecycleNextAction(listing = {}) {
   const status = getPrivateListingLifecycleState(listing)
   if (status === 'seller_lead') return 'Send seller onboarding'
   if (status === 'onboarding_sent') return 'Await seller onboarding completion'
-  if (status === 'onboarding_completed') return 'Review listing and prepare mandate'
+  if (status === 'onboarding_completed') return 'Review submitted onboarding and prepare mandate'
   if (status === 'listing_review') return 'Finalize review and move to mandate ready'
   if (status === 'mandate_ready') return 'Generate and send mandate'
   if (status === 'mandate_sent') return 'Await mandate signature'

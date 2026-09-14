@@ -6990,6 +6990,7 @@ function SellerCompliancePackCard({
   const state = model.signingState
   const percent = Math.max(0, Math.min(100, Number(state.percent || 0)))
   const signers = Array.isArray(model.signers) ? model.signers : []
+  const signatureRequests = Array.isArray(model.signatureRequests) ? model.signatureRequests : []
   const actions = Array.isArray(model.actions) ? model.actions : []
   const complete = Boolean(model.complete || state.complete)
   const statusClass = complete
@@ -7039,16 +7040,16 @@ function SellerCompliancePackCard({
   }
 
   return (
-    <article id="seller-compliance-pack" className={`rounded-[18px] border border-[#dbe5ef] bg-white ${compact ? 'p-5' : 'px-4 py-4'} shadow-[0_14px_30px_rgba(15,23,42,0.05)]`}>
+    <article id="seller-onboarding-signatures" className={`rounded-[18px] border border-[#dbe5ef] bg-white ${compact ? 'p-5' : 'px-4 py-4'} shadow-[0_14px_30px_rgba(15,23,42,0.05)]`}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#718196]">
             <ShieldCheck size={13} />
             Seller compliance
           </span>
-          <h3 className="mt-1.5 text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Seller Compliance Pack</h3>
+          <h3 className="mt-1.5 text-[1.04rem] font-semibold tracking-[-0.03em] text-[#142132]">Seller onboarding signatures</h3>
           <p className="mt-1 text-sm leading-6 text-[#6b7d93]">
-            Disclosure, FICA declaration and seller signatures are tracked per required signer.
+            Disclosure and FICA declaration signatures are tracked per required signer. Each document is generated separately.
           </p>
         </div>
         <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold ${statusClass}`}>
@@ -7091,6 +7092,48 @@ function SellerCompliancePackCard({
           )
         })}
       </div>
+
+      {signatureRequests.length ? (
+        <section className="mt-4 rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-3">
+          <p className="text-sm font-semibold text-[#142132]">Request each outstanding signature</p>
+          <p className="mt-1 text-xs leading-5 text-[#6b7d93]">Each person receives their own link and can sign only for themselves. Their signature acknowledges the separate disclosure and FICA declaration; the mandate remains separate.</p>
+          <div className="mt-3 grid gap-2">
+            {signatureRequests.map((request) => {
+              const absoluteHref = typeof window !== 'undefined'
+                ? new URL(request.href, window.location.origin).toString()
+                : request.href
+              const emailHref = request.email
+                ? `mailto:${encodeURIComponent(request.email)}?subject=${encodeURIComponent('Seller disclosure and FICA signature request')}&body=${encodeURIComponent(`Hi ${request.name || 'there'},\n\nPlease review and sign the following seller documents using your private link:\n${(request.documents || []).map((document) => `- ${document.label}`).join('\n')}\n\n${absoluteHref}`)}`
+                : ''
+              return (
+                <div key={request.signerId} className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[#e1e9f2] bg-white px-3 py-2.5">
+                  <div className="min-w-0">
+                    <strong className="block truncate text-sm text-[#142132]">{request.name}</strong>
+                    <span className="block truncate text-xs text-[#6b7d93]">{request.roleLabel}{request.email ? ` · ${request.email}` : ' · Add email to send link'}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <SellerPortalAction
+                      action={{ label: 'Open link', href: request.href }}
+                      token={token}
+                      workspaceNavigationScope={workspaceNavigationScope}
+                      className="inline-flex min-h-[34px] items-center gap-1.5 rounded-full border border-[#dbe5ef] bg-white px-3 text-xs font-semibold text-[#35546c] transition hover:bg-[#f8fbff]"
+                    >
+                      <FileSignature size={13} />
+                      Open link
+                    </SellerPortalAction>
+                    {emailHref ? (
+                      <a href={emailHref} className="inline-flex min-h-[34px] items-center gap-1.5 rounded-full bg-[#063f37] px-3 text-xs font-semibold text-white transition hover:bg-[#052f2a]">
+                        <Mail size={13} />
+                        Email link
+                      </a>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      ) : null}
 
       <div className="mt-4 rounded-[14px] border border-[#dbe5ef] bg-[#f8fbff] px-3.5 py-3">
         <p className="text-sm font-semibold text-[#142132]">{model.nextMessage}</p>

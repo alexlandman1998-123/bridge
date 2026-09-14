@@ -486,6 +486,7 @@
     "test:client-marketing-directory": "node scripts/client-marketing-directory.test.mjs",
     "test:transaction-first-paint-stability": "node scripts/transaction-first-paint-stability.test.mjs",
     "test:email-campaign-landing": "node scripts/email-campaign-landing.test.mjs",
+    "check:email-platform-readiness": "node scripts/email-platform-readiness.mjs",
     "test:website-overview": "node scripts/website-overview.test.mjs",
     "test:website-dashboard-phase2": "node scripts/website-dashboard-phase2.test.mjs",
     "test:website-analytics-phase3": "node scripts/website-analytics-phase3.test.mjs",

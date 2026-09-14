@@ -10,7 +10,7 @@ const getOrg = (a) => String(a?.currentWorkspace?.id || a?.currentMembership?.wo
 
 function useCampaigns() {
   const { authState } = useAuthSession(); const organisationId = getOrg(authState)
-  const [state, setState] = useState({ loading: true, error: '', campaigns: [], performance: [], identities: [], contacts: [], subscriptionTypes: [], deliverability: [], templates: [], savedAudiences: [], usage: [], billingProfile: null, dailyPerformance: [], categoryPerformance: [] })
+  const [state, setState] = useState({ loading: true, error: '', campaigns: [], performance: [], identities: [], domains: [], contacts: [], subscriptionTypes: [], deliverability: [], templates: [], savedAudiences: [], usage: [], billingProfile: null, dailyPerformance: [], categoryPerformance: [] })
   const refresh = async () => { if (!organisationId) return setState((s) => ({ ...s, loading: false, error: 'Choose an organisation workspace to use Email Campaigns.' })); setState((s) => ({ ...s, loading: true, error: '' })); try { setState({ loading: false, error: '', ...(await getEmailCampaignWorkspace(organisationId)) }) } catch (e) { setState((s) => ({ ...s, loading: false, error: e.message || 'Campaign data could not be loaded.' })) } }
   useEffect(() => { void refresh() }, [organisationId])
   return { ...state, refresh, organisationId, userId: authState?.user?.id || '' }

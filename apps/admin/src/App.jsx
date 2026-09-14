@@ -40,6 +40,7 @@ import {
   resolveAdminViewFromPath,
 } from './lib/adminRoutes'
 import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from './lib/supabaseClient'
+import EmailOperationsView from './EmailOperationsView'
 
 const APP_ENV = import.meta.env || {}
 const ARCH9_EXPLORE_URL = APP_ENV.VITE_ARCH9_EXPLORE_URL || '/'
@@ -6225,6 +6226,7 @@ export default function App() {
         {['organisations', 'transactions', 'users', 'reports'].includes(view) ? (
           <AdminWorkspaceView snapshot={dashboard} type={view} />
         ) : null}
+        {view === 'emailOperations' ? <EmailOperationsView /> : null}
         {view === 'prospects' ? <ProspectDemoGeneratorView /> : null}
         {view === 'support' ? <SupportView dashboard={dashboard} snapshot={support} /> : null}
         {view === 'search' ? <SearchView /> : null}

@@ -252,6 +252,13 @@ export default defineConfig({
     chunkSizeWarningLimit: 1800,
     rollupOptions: {
       output: {
+        chunkFileNames(chunkInfo) {
+          // Some browser privacy/content filters match the generic "Sidebar"
+          // asset name. The primary shell must remain loadable in those
+          // browsers, so give only this lazy navigation chunk a neutral URL.
+          if (chunkInfo.name === 'Sidebar') return 'assets/navigation-shell-[hash].js'
+          return 'assets/[name]-[hash].js'
+        },
         manualChunks(id) {
           const normalizedId = id.replace(/\\/g, '/')
           if (normalizedId.includes('vite/preload-helper') || normalizedId.includes('commonjsHelpers.js')) {

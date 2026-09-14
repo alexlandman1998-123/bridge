@@ -1,4 +1,9 @@
 import { assertDocumentGeneratorAvailable } from '../core/documents/documentGeneratorRetirement'
+import { advanceSellerWorkflowState, createSellerWorkflowState, SELLER_WORKFLOW_STAGES } from '../core/documents/sellerWorkflowState'
+import {
+  createSellerOnboardingCompletionRecord,
+  normalizeSellerOnboardingCompletionMode,
+} from '../core/documents/sellerOnboardingCompletionMode'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
@@ -7134,14 +7139,113 @@ async function syncSellerJourneyLeadStageForListingId(
   })
 }
 
-export async function syncPrivateListingRequirements(listingOrId, { emitActivity = true, reason = 'system' } = {}) {
+async function recordSellerFicaRequestWorkflowStage(client, listing = {}, requirements = []) {
+  const hasFicaRequests = (Array.isArray(requirements) ? requirements : []).some((requirement) =>
+    normalizeText(requirement?.group || requirement?.requirement_group).toLowerCase() === 'fica' &&
+    normalizeText(requirement?.status).toLowerCase() !== 'not_applicable',
+  )
+  if (!hasFicaRequests || !listing?.id) return null
+
+  const onboardingResult = await client
+    .from('private_listing_seller_onboarding')
+    .select('id, form_data')
+    .eq('private_listing_id', listing.id)
+    .maybeSingle()
+  if (onboardingResult.error) {
+    if (isMissingTableError(onboardingResult.error, 'private_listing_seller_onboarding')) return null
+    throw onboardingResult.error
+  }
+  if (!onboardingResult.data?.id) return null
+
+  const formData = onboardingResult.data.form_data && typeof onboardingResult.data.form_data === 'object'
+    ? onboardingResult.data.form_data
+    : {}
+  const currentStage = String(formData?.sellerWorkflow?.stage || formData?.seller_workflow?.stage || '').trim()
+  if (Object.values(SELLER_WORKFLOW_STAGES).indexOf(currentStage) >= Object.values(SELLER_WORKFLOW_STAGES).indexOf(SELLER_WORKFLOW_STAGES.ficaDocumentsRequested)) {
+    return onboardingResult.data
+  }
+  const nextWorkflow = advanceSellerWorkflowState(
+    formData.sellerWorkflow || formData.seller_workflow || createSellerWorkflowState(),
+    { stage: SELLER_WORKFLOW_STAGES.ficaDocumentsRequested, preserveLaterStage: true },
+  )
+  const update = await client
+    .from('private_listing_seller_onboarding')
+    .update({ form_data: { ...formData, sellerWorkflow: nextWorkflow } })
+    .eq('id', onboardingResult.data.id)
+    .select('id, form_data')
+    .single()
+  if (update.error) throw update.error
+  return update.data
+}
+
+async function recordSellerMandateSignedWorkflowStage(client, listingId, { performedBy = '', signedAt = '' } = {}) {
+  const normalizedListingId = normalizeUuid(listingId)
+  if (!normalizedListingId) return null
+
+  const onboardingResult = await client
+    .from('private_listing_seller_onboarding')
+    .select('id, form_data')
+    .eq('private_listing_id', normalizedListingId)
+    .maybeSingle()
+  if (onboardingResult.error) {
+    if (isMissingTableError(onboardingResult.error, 'private_listing_seller_onboarding')) return null
+    throw onboardingResult.error
+  }
+  if (!onboardingResult.data?.id) return null
+
+  const formData = onboardingResult.data.form_data && typeof onboardingResult.data.form_data === 'object'
+    ? onboardingResult.data.form_data
+    : {}
+  const completedAt = normalizeText(signedAt) || new Date().toISOString()
+  const nextWorkflow = advanceSellerWorkflowState(
+    formData.sellerWorkflow || formData.seller_workflow || createSellerWorkflowState(),
+    {
+      stage: SELLER_WORKFLOW_STAGES.documentsPrepared,
+      at: completedAt,
+      actor: normalizeText(performedBy),
+      preserveLaterStage: true,
+    },
+  )
+  const listingCreation = {
+    status: 'created',
+    createdAt: completedAt,
+    created_at: completedAt,
+    source: 'signed_mandate_upload',
+  }
+  const update = await client
+    .from('private_listing_seller_onboarding')
+    .update({
+      form_data: {
+        ...formData,
+        sellerWorkflow: nextWorkflow,
+        sellerListingCreation: listingCreation,
+        seller_listing_creation: listingCreation,
+      },
+    })
+    .eq('id', onboardingResult.data.id)
+    .select('id, form_data')
+    .single()
+  if (update.error) throw update.error
+  return update.data
+}
+
+export async function syncPrivateListingRequirements(listingOrId, { emitActivity = true, reason = 'system', formData = null } = {}) {
   const client = requireClient()
-  const listing =
+  let listing =
     typeof listingOrId === 'object' && listingOrId
       ? listingOrId
       : await getPrivateListing(listingOrId)
 
   if (!listing?.id) throw new Error('Private listing not found.')
+  if (formData && typeof formData === 'object') {
+    listing = {
+      ...listing,
+      sellerOnboarding: {
+        ...(listing.sellerOnboarding && typeof listing.sellerOnboarding === 'object' ? listing.sellerOnboarding : {}),
+        formData,
+      },
+    }
+  }
 
   const existingRequirements = await getPrivateListingDocumentRequirements(listing.id)
   const profile = buildSellerRequirementProfile(listing)
@@ -7211,7 +7315,17 @@ export async function syncPrivateListingRequirements(listingOrId, { emitActivity
   const refreshedRequirements = requestIssuance?.counts?.applied
     ? await getPrivateListingDocumentRequirements(listing.id)
     : requirements
+  const workflowOnboarding = await recordSellerFicaRequestWorkflowStage(client, listing, refreshedRequirements).catch((workflowError) => {
+    console.warn('[Private Listings] seller FICA request workflow stage sync skipped', workflowError)
+    return null
+  })
   const hydrated = hydrateListingWithRequirementData(listing, refreshedRequirements, documents)
+  if (workflowOnboarding?.form_data) {
+    hydrated.sellerOnboarding = {
+      ...(hydrated.sellerOnboarding || {}),
+      formData: workflowOnboarding.form_data,
+    }
+  }
 
   if (requestIssuance?.applied?.length) {
     await Promise.all(requestIssuance.applied.map((request) => createPrivateListingActivity({
@@ -7312,6 +7426,7 @@ export async function sendSellerOnboarding(
     onboardingToken = '',
     listingSnapshot = null,
     portalBranding: providedPortalBranding = null,
+    mandateSetup = null,
   } = {},
 ) {
   const preparationStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
@@ -7373,6 +7488,11 @@ export async function sendSellerOnboarding(
     marital_regime: normalizeNullableText(maritalRegime),
     form_data: {
       ...existingFormData,
+      sellerWorkflow: createSellerWorkflowState({
+        existing: existingFormData.sellerWorkflow || existingFormData.seller_workflow,
+        stage: SELLER_WORKFLOW_STAGES.onboardingSent,
+        actor: performedByUserId,
+      }),
       sellerFirstName,
       firstName: sellerFirstName,
       sellerSurname,
@@ -7382,6 +7502,7 @@ export async function sendSellerOnboarding(
       email: resolvedSellerEmail,
       sellerPhone: resolvedSellerPhone,
       phone: resolvedSellerPhone,
+      ...(mandateSetup && typeof mandateSetup === 'object' ? mandateSetup : {}),
       ...(portalBranding ? { portalBranding } : {}),
     },
     status: 'sent',
@@ -7749,7 +7870,34 @@ export async function submitSellerOnboarding(token, payload = {}) {
   const client = requireClient()
   const normalizedToken = normalizeText(token)
   if (!normalizedToken) throw new Error('Onboarding token is required.')
-  const rawFormData = stripSellerOnboardingTransferAttorneyFields(payload.formData)
+  const completionMode = normalizeSellerOnboardingCompletionMode(payload.completionMode || payload.completion_mode)
+  let completedBy = normalizeText(payload.completedBy || payload.completed_by)
+  if (completionMode === 'agent_assisted' && !completedBy) {
+    const user = await getCurrentUser(client)
+    completedBy = normalizeText(user?.id)
+  }
+  const completionRecord = createSellerOnboardingCompletionRecord({
+    existing: payload.formData?.sellerOnboardingCompletion || payload.formData?.seller_onboarding_completion,
+    mode: completionMode,
+    completedBy,
+    completedAt: payload.completedAt || payload.completed_at,
+    notes: payload.completionNotes || payload.completion_notes,
+  })
+  const rawFormData = stripSellerOnboardingTransferAttorneyFields({
+    ...(payload.formData || {}),
+    completionMode,
+    completion_mode: completionMode,
+    completedBy: completionRecord.completedBy,
+    completed_by: completionRecord.completedBy,
+    completedAt: completionRecord.completedAt,
+    completed_at: completionRecord.completedAt,
+    sellerOnboardingCompletion: completionRecord,
+    seller_onboarding_completion: completionRecord,
+    sellerWorkflow: advanceSellerWorkflowState(
+      payload.formData?.sellerWorkflow || payload.formData?.seller_workflow || createSellerWorkflowState(),
+      { stage: SELLER_WORKFLOW_STAGES.basicIntakeSubmitted, actor: completionRecord.completedBy },
+    ),
+  })
   const canonicalFacts = getCanonicalFactsCandidate(rawFormData)
   const canonicalReadiness = getCanonicalReadinessCandidate(rawFormData)
   const formData = sanitizeSellerOnboardingCompletionFormData(rawFormData)
@@ -7806,7 +7954,8 @@ export async function submitSellerOnboarding(token, payload = {}) {
     deferSellerOnboardingFollowUp('seller requirements sync after onboarding submit', async () => {
       const requirementSync = await syncPrivateListingRequirements(rpcContext.listing, {
         emitActivity: true,
-        reason: 'onboarding_completed',
+        reason: completionMode === 'agent_assisted' ? 'agent_assisted_onboarding_completed' : 'onboarding_completed',
+        formData: rpcFormData,
       })
       if (!requirementSync?.listing) return null
       return ensureSellerClientPortalContext(client, {
@@ -7900,7 +8049,8 @@ export async function submitSellerOnboarding(token, payload = {}) {
 
   const requirementSync = await syncPrivateListingRequirements(transitionResult?.listing || fallbackListing, {
     emitActivity: true,
-    reason: 'onboarding_completed',
+    reason: completionMode === 'agent_assisted' ? 'agent_assisted_onboarding_completed' : 'onboarding_completed',
+    formData: sanitizedNextFormData,
   }).catch((requirementsError) => {
     console.error('[Private Listings] seller requirements sync failed after onboarding submit', requirementsError)
     return null
@@ -8652,13 +8802,22 @@ export async function uploadPrivateListingDocument(listingId, file, {
       console.warn('[Private Listings] mandate status update skipped after signed mandate upload', error)
       return null
     })
+    await recordSellerMandateSignedWorkflowStage(client, normalizedListingId, {
+      performedBy: user?.id || '',
+      signedAt: insertPayload.uploaded_at,
+    }).catch((error) => {
+      console.warn('[Private Listings] seller mandate workflow stage sync skipped after signed mandate upload', error)
+      return null
+    })
   }
 
   await createPrivateListingActivity({
     privateListingId: normalizedListingId,
     activityType: 'listing_document_uploaded',
     activityTitle: mandateUpload ? 'Signed mandate uploaded' : 'Listing document uploaded',
-    activityDescription: `${insertPayload.document_name} uploaded.`,
+    activityDescription: mandateUpload
+      ? `${insertPayload.document_name} uploaded. Mandate signed and listing created for the next internal steps.`
+      : `${insertPayload.document_name} uploaded.`,
     performedBy: user?.id || null,
     visibility: 'internal',
     metadata: {

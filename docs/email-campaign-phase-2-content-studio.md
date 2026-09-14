@@ -24,6 +24,18 @@ Apply `supabase/migrations/20260913133840_email_visual_builder.sql` before relea
 
 Verify the deployed flow with an approved internal test recipient before enabling production use. Image cropping and a general asset uploader remain outside this release; image selection uses existing listing media or permanent public URLs.
 
+## Sending-domain foundation
+
+`20260914073546_email_sending_domains_phase1.sql` adds the organisation-scoped record that later domain onboarding uses. It stores the Resend domain ID, provider-generated DNS records, status, verification timestamps and provider error without exposing write access to browser clients. Sender identities can link only to a domain in the same organisation that matches the sender address. `20260914073806_email_sending_domain_guard_fix_phase1.sql` corrects that guard to derive the domain from the source email inside the trigger. Phase 1 does not create domains with Resend or expose a customer-facing setup screen; those are Phase 2 and Phase 3.
+
+`email-sending-domain-create` is the Phase 2 server-only endpoint. It authenticates the current user, checks organisation send permission, reserves the canonical domain in Arch9 before calling Resend, then stores the provider ID and returned DNS records. It never returns provider credentials and rejects a domain already claimed by another organisation.
+
+## Domain setup screen
+
+Phase 3 adds the self-service domain flow to **Set up sender** in the campaign Details step. An authorised agency user can add a domain or dedicated sending subdomain, copy every provider-generated DNS record, refresh provider status and create a sender address linked to that exact domain. A sender remains pending until the refreshed domain is verified. `email-sender-verification` now retrieves each stored provider domain directly, saves its current status and DNS records, then updates the linked sender identities.
+
+Phase 4 adds the provider verification command. After the DNS records are published, an authorised user can ask Arch9 to start Resend verification for one stored domain. The server-only endpoint immediately stores Resend's refreshed status and records, and keeps all matching sender identities pending until Resend returns `verified`.
+
 ## Local checks
 
 From the primary app package:

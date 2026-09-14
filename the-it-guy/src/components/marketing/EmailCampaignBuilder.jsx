@@ -5,6 +5,7 @@ import {
   Check,
   CheckCircle2,
   Circle,
+  Copy,
   Eye,
   Mail,
   MoreVertical,
@@ -18,6 +19,7 @@ import {
 import { useAuthSession } from "../../context/AuthSessionContext";
 import {
   createEmailSender,
+  createEmailSendingDomain,
   getEmailDraft,
   getEmailRevisions,
   preflightEmailCampaign,
@@ -27,6 +29,7 @@ import {
   saveEmailTemplate,
   scheduleEmailCampaign,
   sendEmailCampaignTest,
+  verifyEmailSendingDomain,
 } from "../../services/emailCampaignService";
 import { getOrganisationPrivateListings } from "../../services/privateListingService";
 import {
@@ -79,6 +82,7 @@ export default function EmailCampaignBuilder({
     organisationId,
     userId,
     identities,
+    domains = [],
     contacts,
     subscriptionTypes,
     templates,
@@ -110,6 +114,7 @@ export default function EmailCampaignBuilder({
   const [templateName, setTemplateName] = useState("");
   const [senderName, setSenderName] = useState(brand.name);
   const [senderEmail, setSenderEmail] = useState("");
+  const [sendingDomainId, setSendingDomainId] = useState("");
   const [scheduledFor, setScheduledFor] = useState("");
   const [revisions, setRevisions] = useState([]);
   const [history, setHistory] = useState({ past: [], future: [] });
@@ -126,6 +131,21 @@ export default function EmailCampaignBuilder({
       s.verification_status === "verified" &&
       !s.sending_paused_at,
   );
+  const sendingDomain = domains.find((domain) => domain.id === sendingDomainId);
+  const copyDnsRecord = async (record) => {
+    const content = [
+      `Type: ${record.type}`,
+      `Host: ${record.name}`,
+      `Value: ${record.value}`,
+      record.priority ? `Priority: ${record.priority}` : "",
+    ].filter(Boolean).join("\n");
+    try {
+      await navigator.clipboard.writeText(content);
+      setNotice(`DNS record for ${record.name} copied.`);
+    } catch {
+      setError("Unable to copy this DNS record. Select and copy the values manually.");
+    }
+  };
   const context = {
     agencyName: brand.name || sender?.display_name,
     senderEmail: sender?.from_email,
@@ -592,6 +612,7 @@ export default function EmailCampaignBuilder({
           </button>
         ))}
       </nav>
+      <main className="eb-stage">
       {(error || workspace.error) && (
         <p role="alert" className="eb-error">
           {error || workspace.error}
@@ -919,6 +940,9 @@ export default function EmailCampaignBuilder({
               ))}
             </section>
           )}
+        </>
+      )}
+      </main>
           <footer className="eb-bottom">
             <div>
               {step === 2 ? (
@@ -1009,8 +1033,6 @@ export default function EmailCampaignBuilder({
               )}
             </div>
           </footer>
-        </>
-      )}
       {modal && (
         <div className="eb-modal-backdrop">
           <section
@@ -1150,25 +1172,126 @@ export default function EmailCampaignBuilder({
             )}
             {modal === "sender" && (
               <>
-                <h2>Set up a sender</h2>
+                <h2>Set up your sending domain</h2>
                 <p>
-                  Add your sending identity, then ask your email administrator
-                  to verify its domain in Resend. Refresh verification once the
-                  domain is ready.
+                  Add your agency domain once. We will generate the DNS records
+                  your administrator needs to publish before a sender can be
+                  verified.
                 </p>
+                <form
+                  className="eb-domain-form"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const domain = new FormData(e.currentTarget).get("domain");
+                    void run(async () => {
+                      const result = await createEmailSendingDomain({
+                        organisationId,
+                        domain,
+                      });
+                      await refresh();
+                      setNotice(
+                        result.created
+                          ? "Domain set up. Add the DNS records below, then refresh verification."
+                          : "This domain is already set up for your agency.",
+                      );
+                    });
+                  }}
+                >
+                  <label className="eb-field">
+                    Sending domain
+                    <input
+                      name="domain"
+                      type="text"
+                      required
+                      placeholder="updates.youragency.co.za"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck="false"
+                    />
+                    <small>
+                      Use a domain or subdomain your agency controls. A dedicated
+                      subdomain keeps campaign reputation separate from normal mail.
+                    </small>
+                  </label>
+                  <button className="eb-primary" disabled={busy}>
+                    {busy ? "Setting up…" : "Set up domain"}
+                  </button>
+                </form>
+                {domains.length > 0 && (
+                  <div className="eb-domain-list" aria-live="polite">
+                    <h3>Sending domains</h3>
+                    {domains.map((domain) => (
+                      <article key={domain.id}>
+                        <div className="eb-domain-heading">
+                          <strong>{domain.domain_name}</strong>
+                          <span className={`eb-domain-status is-${domain.verification_status}`}>
+                            {domain.verification_status}
+                          </span>
+                        </div>
+                        {domain.last_provider_error && (
+                          <p className="eb-domain-error">{domain.last_provider_error}</p>
+                        )}
+                        {Array.isArray(domain.dns_records) && domain.dns_records.length > 0 ? (
+                          <div className="eb-dns-records">
+                            <p>Add each record in your DNS provider:</p>
+                            {domain.dns_records.map((record, index) => (
+                              <div className="eb-dns-record" key={`${record.name}-${record.type}-${index}`}>
+                                <div>
+                                  <strong>{record.record || record.type}</strong>
+                                  <small>{record.type} · {record.name}{record.priority ? ` · Priority ${record.priority}` : ""}</small>
+                                  <code>{record.value}</code>
+                                </div>
+                                <button type="button" onClick={() => void copyDnsRecord(record)}>
+                                  <Copy size={14} /> Copy
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="eb-domain-help">DNS records will appear here once the provider finishes setup.</p>
+                        )}
+                        {domain.verification_status !== "verified" && (
+                          <button
+                            className="eb-domain-verify"
+                            type="button"
+                            disabled={busy || !domain.provider_domain_id}
+                            onClick={() => void run(async () => {
+                              const result = await verifyEmailSendingDomain({ organisationId, domainId: domain.id });
+                              await refresh();
+                              setNotice(
+                                result.domain?.status === "verified"
+                                  ? `${domain.domain_name} is verified and matching senders are ready.`
+                                  : `Verification started for ${domain.domain_name}. Resend is checking the DNS records.`,
+                              );
+                            })}
+                          >
+                            Verify DNS with Resend
+                          </button>
+                        )}
+                      </article>
+                    ))}
+                  </div>
+                )}
+                <h3 className="eb-sender-heading">Add a sender address</h3>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
                     void run(async () => {
+                      if (!sendingDomain) throw new Error("Choose the sending domain for this address.");
+                      const addressDomain = senderEmail.trim().toLowerCase().split("@").at(-1);
+                      if (addressDomain !== sendingDomain.domain_name) {
+                        throw new Error(`Use an address ending in @${sendingDomain.domain_name}.`);
+                      }
                       await createEmailSender({
                         organisationId,
                         userId,
                         displayName: senderName,
                         email: senderEmail,
+                        sendingDomainId,
                       });
                       await refresh();
                       setNotice(
-                        "Sender added. Domain verification is still required.",
+                        "Sender added. It becomes available once its domain is verified.",
                       );
                     });
                   }}
@@ -1183,15 +1306,31 @@ export default function EmailCampaignBuilder({
                     />
                   </label>
                   <label className="eb-field">
+                    Sending domain
+                    <select
+                      required
+                      value={sendingDomainId}
+                      onChange={(e) => setSendingDomainId(e.target.value)}
+                    >
+                      <option value="">Select a domain</option>
+                      {domains.map((domain) => (
+                        <option value={domain.id} key={domain.id}>
+                          {domain.domain_name} · {domain.verification_status}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="eb-field">
                     Sending email
                     <input
                       type="email"
                       required
                       value={senderEmail}
                       onChange={(e) => setSenderEmail(e.target.value)}
+                      placeholder={sendingDomain ? `marketing@${sendingDomain.domain_name}` : "marketing@youragency.co.za"}
                     />
                   </label>
-                  <button disabled={busy}>Add sender</button>
+                  <button disabled={busy || !sendingDomain}>Add sender</button>
                 </form>
                 <button
                   disabled={busy}
@@ -1201,7 +1340,7 @@ export default function EmailCampaignBuilder({
                         await refreshEmailSenderVerification(organisationId);
                       await refresh();
                       setNotice(
-                        `${result.verified} of ${result.checked} sender domains verified.`,
+                        `${result.domainsVerified || 0} of ${result.domainsChecked || 0} sending domains verified.`,
                       );
                     })
                   }

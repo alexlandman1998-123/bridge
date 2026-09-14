@@ -6,7 +6,7 @@ import EmailCampaignBuilder from '../EmailCampaignBuilder'
 const mocks = vi.hoisted(() => ({ save: vi.fn(), get: vi.fn() }))
 vi.mock('../../../context/AuthSessionContext', () => ({ useAuthSession: () => ({ authState: { currentWorkspace: { name: 'Kingdom Real Estate' }, user: { email: 'agent@example.com' } } }) }))
 vi.mock('../../../services/privateListingService', () => ({ getOrganisationPrivateListings: async () => [] }))
-vi.mock('../../../services/emailCampaignService', () => ({ saveEmailCampaign: mocks.save, getEmailDraft: mocks.get, getEmailRevisions: async () => [], previewEmailAudience: async () => 12, createEmailSender: vi.fn(), preflightEmailCampaign: vi.fn(), refreshEmailSenderVerification: vi.fn(), saveEmailTemplate: vi.fn(), scheduleEmailCampaign: vi.fn(), sendEmailCampaignTest: vi.fn() }))
+vi.mock('../../../services/emailCampaignService', () => ({ saveEmailCampaign: mocks.save, getEmailDraft: mocks.get, getEmailRevisions: async () => [], previewEmailAudience: async () => 12, createEmailSender: vi.fn(), createEmailSendingDomain: vi.fn(), preflightEmailCampaign: vi.fn(), refreshEmailSenderVerification: vi.fn(), saveEmailTemplate: vi.fn(), scheduleEmailCampaign: vi.fn(), sendEmailCampaignTest: vi.fn(), verifyEmailSendingDomain: vi.fn() }))
 const workspace = { organisationId: 'org', userId: 'user', contacts: [], templates: [], savedAudiences: [], subscriptionTypes: [{ id: 'consent', name: 'Property updates' }], identities: [{ id: 'sender', display_name: 'Kingdom', from_email: 'hello@example.com', verification_status: 'verified' }], refresh: vi.fn() }
 const Audience = () => <div>Audience controls</div>
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers() })

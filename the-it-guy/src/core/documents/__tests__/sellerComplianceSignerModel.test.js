@@ -39,6 +39,7 @@ test('normalizes a seller compliance signer into the phase 1 contract shape', ()
   assert.equal(signer.complete, false)
   assert.equal(signer.audit.ip, '196.1.2.3')
   assert.equal(signer.audit.otpVerified, true)
+  assert.deepEqual(signer.acceptedDocuments, [])
 })
 
 test('keeps the seller compliance pack incomplete after only seller 1 signs', () => {
@@ -67,6 +68,7 @@ test('keeps the seller compliance pack incomplete after only seller 1 signs', ()
   assert.equal(state.signedCount, 1)
   assert.equal(state.remainingCount, 1)
   assert.equal(state.percent, 50)
+  assert.deepEqual(updated[0].acceptedDocuments, [])
   assert.equal(state.nextSigner.id, 'seller-2')
   assert.deepEqual(state.waitingOn.map((signer) => signer.id), ['seller-2'])
 })
@@ -97,6 +99,17 @@ test('completes the seller compliance pack once every required signer has signed
   assert.equal(state.remainingCount, 0)
   assert.equal(state.nextSigner, null)
   assert.equal(state.percent, 100)
+})
+
+test('records which separate onboarding documents each signer accepted', () => {
+  const updated = recordSellerComplianceSignerSignature([
+    { id: 'seller-1', name: 'Alex Seller', role: 'seller_1', status: 'pending' },
+  ], 'seller-1', {
+    signature: 'Alex',
+    acceptedDocuments: ['property_condition_disclosure', 'signed_fica_declaration', 'not-a-document'],
+  })
+
+  assert.deepEqual(updated[0].acceptedDocuments, ['property_condition_disclosure', 'signed_fica_declaration'])
 })
 
 test('requires review when one seller uploads authority for another signer', () => {

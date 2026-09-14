@@ -19,6 +19,13 @@ export const SELLER_COMPLIANCE_SIGNER_ROLES = Object.freeze({
   authorisedSignatory: 'authorised_signatory',
 })
 
+// These remain distinct generated documents, but a seller's onboarding
+// signature expressly acknowledges both. A mandate has its own signature path.
+export const SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS = Object.freeze([
+  Object.freeze({ key: 'property_condition_disclosure', label: 'Property Condition Disclosure' }),
+  Object.freeze({ key: 'signed_fica_declaration', label: 'Seller FICA Declaration' }),
+])
+
 const COMPLETE_STATUSES = new Set([
   SELLER_COMPLIANCE_SIGNER_STATUSES.signed,
   SELLER_COMPLIANCE_SIGNER_STATUSES.skippedByAuthority,
@@ -142,6 +149,19 @@ function normalizeSignature(input = {}) {
   }
 }
 
+function normalizeAcceptedDocuments(input = {}) {
+  const supplied = Array.isArray(input.acceptedDocuments)
+    ? input.acceptedDocuments
+    : Array.isArray(input.accepted_documents)
+      ? input.accepted_documents
+      : []
+  const allowed = new Set(SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS.map((document) => document.key))
+  const keys = supplied
+    .map((document) => key(typeof document === 'string' ? document : document?.key))
+    .filter((documentKey) => allowed.has(documentKey))
+  return keys.length ? [...new Set(keys)] : []
+}
+
 export function normalizeSellerComplianceSigner(input = {}, index = 0) {
   const required = bool(input.required ?? input.is_required, true)
   const role = normalizeRole(input.role || input.signerRole || input.signer_role, index)
@@ -167,6 +187,7 @@ export function normalizeSellerComplianceSigner(input = {}, index = 0) {
     complete,
     signedAt: status === SELLER_COMPLIANCE_SIGNER_STATUSES.signed ? signedAt : '',
     signature,
+    acceptedDocuments: normalizeAcceptedDocuments(input),
     audit: normalizeAudit(input),
     authority,
     authorityRequired: authorityRequirement.required,
@@ -236,6 +257,7 @@ export function recordSellerComplianceSignerSignature(signers = [], signerId = '
     signedAt,
     signature: signatureInput.signature || signatureInput.signatureValue || signatureInput.signature_value || signer.signature?.value,
     signatureType: signatureInput.signatureType || signatureInput.signature_type || signer.signature?.type || 'drawn',
+    acceptedDocuments: signatureInput.acceptedDocuments || signatureInput.accepted_documents || signer.acceptedDocuments,
     audit: {
       ...signer.audit,
       ...normalizeAudit(signatureInput),

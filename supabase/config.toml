@@ -149,6 +149,16 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/resend-webhook/index.ts"
 
+[functions.email-sending-domain-verify]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/email-sending-domain-verify/index.ts"
+
+[functions.email-platform-status]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/email-platform-status/index.ts"
+
 [functions.inbound-lead-email]
 enabled = true
 verify_jwt = false
@@ -286,6 +296,11 @@ entrypoint = "./functions/email-preference-centre/index.ts"
 enabled = true
 verify_jwt = true
 entrypoint = "./functions/email-sender-verification/index.ts"
+
+[functions.email-sending-domain-create]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/email-sending-domain-create/index.ts"
 
 [functions.email-campaign-track]
 enabled = true

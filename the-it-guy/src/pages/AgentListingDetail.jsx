@@ -25,6 +25,7 @@ import {
   Copy,
   Download,
   Link2,
+  Landmark,
   MessageSquare,
   RefreshCw,
   Send,
@@ -66,6 +67,7 @@ import {
   DOCUMENT_START_PACKET_TYPES,
   DOCUMENT_START_SOURCE_MODES,
 } from '../core/documents/documentStartRules'
+import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel'
 import { appendDocumentStartLegalScenarioParams } from '../core/documents/documentStartLegalScenario'
 import {
   buildAcceptedOfferConversionPreflight,
@@ -157,6 +159,7 @@ import {
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
+import { listTransactionPartnerConnectionOptions } from '../services/partnerNetworkService'
 import {
   getPrivateListing,
   createPrivateListingActivity,
@@ -203,6 +206,12 @@ import {
 } from '../services/listings/listingWorkspaceUiModel'
 import { buildSellerMandateContinuityModel } from '../services/sellerMandateContinuityService'
 import { buildSellerDocumentSourceOfTruth } from '../services/sellerDocumentRequirementsService'
+import { createMandateCommercialTermsRevision } from '../core/documents/mandateCommercialTermsRevision'
+import {
+  buildSellerOnboardingAttorneyInstructionReadiness,
+  readSellerOnboardingAttorneyRecommendation,
+  reviseSellerOnboardingAttorneyRecommendation,
+} from '../core/documents/sellerOnboardingAttorneyRecommendation'
 import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
 import {
   getSellerBasePackAliases,
@@ -2040,8 +2049,7 @@ function statusClass(status) {
 
 function getOnboardingStatusLabel(status) {
   const key = String(status || '').trim().toLowerCase()
-  if (key === 'completed') return 'Completed'
-  if (key === 'submitted') return 'Submitted'
+  if (key === 'completed' || key === 'submitted') return 'Onboarding Submitted'
   if (key === 'under_review') return 'Under Review'
   if (key === 'in_progress') return 'In Progress'
   return 'Not Started'
@@ -2935,7 +2943,7 @@ function getNextBestAction({ pendingOffers, missingDocuments, onboardingStatus, 
       buttonLabel: 'Open Documents',
     }
   }
-  if (onboardingStatus !== 'Completed') {
+  if (onboardingStatus !== 'Onboarding Submitted') {
     return {
       key: 'open_pipeline',
       title: 'Seller onboarding still in progress',
@@ -3400,6 +3408,12 @@ function AgentListingDetail() {
   const [listingPerformanceDraft, setListingPerformanceDraft] = useState({})
   const [listingPerformanceSaving, setListingPerformanceSaving] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
+  const [sellerOnboardingSendOpen, setSellerOnboardingSendOpen] = useState(false)
+  const [onboardingMandateChoice, setOnboardingMandateChoice] = useState('')
+  const [preferredTransferAttorneyOptions, setPreferredTransferAttorneyOptions] = useState([])
+  const [preferredTransferAttorneyOptionId, setPreferredTransferAttorneyOptionId] = useState('')
+  const [preferredTransferAttorneyChoiceTouched, setPreferredTransferAttorneyChoiceTouched] = useState(false)
+  const [preferredTransferAttorneyLoading, setPreferredTransferAttorneyLoading] = useState(false)
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
   const [showFullGallery, setShowFullGallery] = useState(false)
@@ -3427,6 +3441,7 @@ function AgentListingDetail() {
     mandateTerms: '',
     paymentResponsibility: '',
     notes: '',
+    digitalMandateRequested: '',
   })
   const [savingCommission, setSavingCommission] = useState(false)
   const [rolePlayersDraft, setRolePlayersDraft] = useState({
@@ -3544,6 +3559,30 @@ function AgentListingDetail() {
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
     [activeOrganisationId, listingRecord?.organisationId, listingRecord?.organisation_id],
   )
+
+  useEffect(() => {
+    if (!sellerOnboardingSendOpen || !isSupabaseConfigured || !listingOrganisationId) return undefined
+    let active = true
+
+    async function loadPreferredTransferAttorneyOptions() {
+      try {
+        setPreferredTransferAttorneyLoading(true)
+        const options = await listTransactionPartnerConnectionOptions({
+          organizationId: listingOrganisationId,
+          roleType: 'transfer_attorney',
+        })
+        if (active) setPreferredTransferAttorneyOptions(Array.isArray(options) ? options : [])
+      } catch (error) {
+        console.warn('[AgentListingDetail] preferred transfer attorney options unavailable', error)
+        if (active) setPreferredTransferAttorneyOptions([])
+      } finally {
+        if (active) setPreferredTransferAttorneyLoading(false)
+      }
+    }
+
+    void loadPreferredTransferAttorneyOptions()
+    return () => { active = false }
+  }, [listingOrganisationId, sellerOnboardingSendOpen])
 
   useEffect(() => {
     if (!developmentLinkOpen) return undefined
@@ -5639,10 +5678,43 @@ function AgentListingDetail() {
     }
   }
 
-  async function handleSendSellerOnboardingFollowUp() {
+  async function handleSendSellerOnboardingFollowUp({ confirmed = false } = {}) {
     if (!listingRecord?.id) return
+    if (!confirmed) {
+      const savedChoice = sellerFormData?.digitalMandateRequested ?? sellerFormData?.digital_mandate_requested
+      const savedAttorneyRecommendation = readSellerOnboardingAttorneyRecommendation(sellerFormData)
+      setOnboardingMandateChoice(savedChoice === true || String(savedChoice).toLowerCase() === 'true' ? 'yes' : savedChoice === false || String(savedChoice).toLowerCase() === 'false' ? 'no' : '')
+      setPreferredTransferAttorneyOptionId(String(savedAttorneyRecommendation.partnerOptionId || '').trim())
+      setPreferredTransferAttorneyChoiceTouched(false)
+      setSellerOnboardingSendOpen(true)
+      return
+    }
     setDetailError('')
     setDetailMessage('')
+    if (!['yes', 'no'].includes(onboardingMandateChoice)) {
+      setDetailError('Choose whether this seller should receive a digital mandate.')
+      return
+    }
+    const digitalMandateRequested = onboardingMandateChoice === 'yes'
+    const existingAttorneyRecommendation = readSellerOnboardingAttorneyRecommendation(sellerFormData)
+    const selectedPreferredTransferAttorney = preferredTransferAttorneyOptions.find((option) => String(option?.id || '') === preferredTransferAttorneyOptionId) || null
+    let preferredTransferAttorneyRecommendation = existingAttorneyRecommendation
+    if (preferredTransferAttorneyChoiceTouched) {
+      try {
+        preferredTransferAttorneyRecommendation = reviseSellerOnboardingAttorneyRecommendation({
+          current: existingAttorneyRecommendation,
+          partner: selectedPreferredTransferAttorney,
+          revisedBy: listingActor.id || profile?.id || profile?.email || '',
+        })
+      } catch (recommendationError) {
+        setDetailError(recommendationError?.message || 'This attorney recommendation can no longer be changed here.')
+        return
+      }
+    }
+    if (digitalMandateRequested && (!(Number(commissionDraft.percentage) > 0) || !String(commissionDraft.vatHandling || '').trim())) {
+      setDetailError('Enter the commission percentage and VAT treatment before sending a digital mandate.')
+      return
+    }
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
     const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
     const hasSellerContact = isValidEmail(sellerEmail) || Boolean(formatSouthAfricanWhatsAppNumber(sellerPhone))
@@ -5692,6 +5764,16 @@ function AgentListingDetail() {
             maritalRegime: sellerFormData?.maritalRegime || sellerFormData?.maritalStatus || null,
             sellerContactEmail: sellerEmail,
             sellerContactPhone: sellerPhone,
+            mandateSetup: {
+              digitalMandateRequested,
+              digital_mandate_requested: digitalMandateRequested,
+              commissionPercentage: digitalMandateRequested ? String(commissionDraft.percentage || '').trim() : '',
+              commission_percent: digitalMandateRequested ? String(commissionDraft.percentage || '').trim() : '',
+              vatHandling: digitalMandateRequested ? String(commissionDraft.vatHandling || '').trim() : '',
+              mandateSetupCapturedAt: new Date().toISOString(),
+              preferredTransferAttorneyRecommendation,
+              preferred_transfer_attorney_recommendation: preferredTransferAttorneyRecommendation,
+            },
           })
         : { token, link: localLink, expiresAt: '' }
       const onboardingToken = response?.token || token
@@ -5717,6 +5799,14 @@ function AgentListingDetail() {
             ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
             sellerEmail: sellerEmail || row?.sellerOnboarding?.formData?.sellerEmail || '',
             sellerPhone: sellerPhone || row?.sellerOnboarding?.formData?.sellerPhone || '',
+            digitalMandateRequested,
+            digital_mandate_requested: digitalMandateRequested,
+            commissionPercentage: digitalMandateRequested ? String(commissionDraft.percentage || '').trim() : '',
+            commission_percent: digitalMandateRequested ? String(commissionDraft.percentage || '').trim() : '',
+            vatHandling: digitalMandateRequested ? String(commissionDraft.vatHandling || '').trim() : '',
+            mandateSetupCapturedAt: new Date().toISOString(),
+            preferredTransferAttorneyRecommendation,
+            preferred_transfer_attorney_recommendation: preferredTransferAttorneyRecommendation,
           },
         },
         updatedAt: sentAt,
@@ -5828,6 +5918,7 @@ function AgentListingDetail() {
       if (onboardingLink && typeof navigator !== 'undefined') {
         void navigator.clipboard?.writeText(onboardingLink)
       }
+      setSellerOnboardingSendOpen(false)
       setDetailMessage(
         onboardingLink
           ? `Seller onboarding link ready and copied.${deliveryWarning || ''}`
@@ -6975,7 +7066,12 @@ function AgentListingDetail() {
     }
   }, [listingRecord?.askingPrice, metrics.offerAverage])
 
-  const onboardingStatusLabel = getOnboardingStatusLabel(listingRecord?.sellerOnboarding?.status)
+  const onboardingStatusLabel = getOnboardingStatusLabel(
+    listingRecord?.sellerOnboarding?.status || listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status,
+  )
+  const canCompleteSellerOnboardingOnBehalf = ['sent', 'onboarding_sent', 'in_progress'].includes(
+    normalizeKey(listingRecord?.sellerOnboarding?.status || listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status),
+  )
   const missingDocuments = useMemo(
     () =>
       (listingRecord?.requiredDocuments || []).filter((doc) => {
@@ -7086,6 +7182,39 @@ function AgentListingDetail() {
       isExpired: daysUntilExpiry !== null && daysUntilExpiry < 0,
     }
   }, [listingRecord, marketingDraft.expiryDate, marketingDraft.mandateSignedDate])
+
+  const sellerOnboardingProgress = useMemo(() => {
+    const complianceStatus = buildSellerComplianceAgentStatus({
+      requirements: dynamicSellerRequirements,
+      documents: Array.isArray(listingRecord?.documents) ? listingRecord.documents : [],
+      listing: {
+        ...(listingRecord || {}),
+        mandateStatus: mandateWorkspace.status,
+      },
+    })
+    const ficaRequested = dynamicSellerRequirements.some((requirement) => {
+      const group = normalizeKey(requirement?.group || requirement?.requirement_group)
+      const status = normalizeKey(requirement?.status)
+      return group === 'fica' && status !== 'not_applicable'
+    })
+    const listingCreated = complianceStatus.canTreatListingAsCreated
+    return {
+      currentLabel: complianceStatus.status === 'listing_live'
+        ? 'Listing live'
+        : listingCreated
+          ? 'Mandate signed · Listing created'
+          : complianceStatus.onboardingSubmitted
+            ? 'Onboarding submitted'
+            : 'Onboarding in progress',
+      steps: [
+        { key: 'onboarding', label: 'Onboarding submitted', complete: complianceStatus.onboardingSubmitted },
+        { key: 'fica', label: 'FICA documents requested', complete: ficaRequested },
+        { key: 'mandate', label: 'Mandate signed', complete: complianceStatus.signedMandate },
+        { key: 'listing', label: 'Listing created', complete: listingCreated },
+      ],
+      mandatePending: complianceStatus.onboardingSubmitted && !complianceStatus.signedMandate,
+    }
+  }, [dynamicSellerRequirements, listingRecord, mandateWorkspace.status])
 
   const mandateContinuity = useMemo(() => {
     const mandatePacket = buildListingMandatePacketSummary(listingRecord, mandateWorkspace)
@@ -7270,6 +7399,11 @@ function AgentListingDetail() {
     ? Math.round((listingReadinessCompleted / listingReadinessItems.length) * 100)
     : 0
   const sellerFormData = useMemo(() => getListingSellerFormData(listingRecord), [listingRecord])
+  const sellerAttorneyInstructionReadiness = useMemo(() => buildSellerOnboardingAttorneyInstructionReadiness({
+    recommendation: readSellerOnboardingAttorneyRecommendation(sellerFormData),
+    mandate: mandateWorkspace,
+    signing: sellerFormData?.sellerComplianceSigning || sellerFormData?.seller_compliance_signing || {},
+  }), [mandateWorkspace, sellerFormData])
   const directListingOperationalSummary = useMemo(
     () => buildDirectListingOperationalSummary(listingRecord),
     [listingRecord],
@@ -7431,6 +7565,12 @@ function AgentListingDetail() {
     const mandateTerms = firstDraftValue(commission?.mandate_terms, commission?.mandateTerms, sellerFormData?.mandateTerms, sellerFormData?.mandateCommissionTerms, sellerFormData?.specialConditions)
     const paymentResponsibility = firstDraftValue(commission?.payment_responsibility, commission?.paymentResponsibility, sellerFormData?.paymentResponsibility)
     const notes = firstDraftValue(commission?.commission_notes, commission?.notes, sellerFormData?.commissionNotes, sellerFormData?.notes, '')
+    const digitalMandateRequested = firstDraftValue(sellerFormData?.digitalMandateRequested, sellerFormData?.digital_mandate_requested, '')
+    const revisions = Array.isArray(sellerFormData?.mandateCommercialTermsRevisions)
+      ? sellerFormData.mandateCommercialTermsRevisions
+      : Array.isArray(sellerFormData?.mandate_commercial_terms_revisions)
+        ? sellerFormData.mandate_commercial_terms_revisions
+        : []
     const lastUpdated = firstDraftValue(commission?.updated_at, commission?.updatedAt, listingRecord?.mandate?.updatedAt, listingRecord?.updatedAt)
     const hasData = Boolean(percentage || amount || vatHandling || mandateTerms || paymentResponsibility || notes)
     return {
@@ -7448,6 +7588,10 @@ function AgentListingDetail() {
       mandateTerms: mandateTerms || '',
       paymentResponsibility: paymentResponsibility || '',
       notes,
+      digitalMandateRequested: ['true', 'yes', '1'].includes(String(digitalMandateRequested).toLowerCase()),
+      commercialTermsRevisionCount: revisions.length,
+      mandateRefreshRequired: ['true', 'yes', '1'].includes(String(sellerFormData?.mandateDocumentRefreshRequired ?? sellerFormData?.mandate_document_refresh_required ?? '').toLowerCase()),
+      mandateAmendmentRequired: ['true', 'yes', '1'].includes(String(sellerFormData?.mandateAmendmentRequired ?? sellerFormData?.mandate_amendment_required ?? '').toLowerCase()),
       lastUpdatedSource: lastUpdated ? `Updated ${formatDate(lastUpdated)}` : 'No captured source',
     }
   }, [listingRecord, marketingDraft.price, sellerFormData])
@@ -7552,6 +7696,7 @@ function AgentListingDetail() {
       mandateTerms: commissionWorkspace.mandateTerms || '',
       paymentResponsibility: commissionWorkspace.paymentResponsibility || '',
       notes: commissionWorkspace.notes || '',
+      digitalMandateRequested: commissionWorkspace.digitalMandateRequested,
     })
   }, [
     commissionWorkspace.amount,
@@ -7560,6 +7705,7 @@ function AgentListingDetail() {
     commissionWorkspace.paymentResponsibility,
     commissionWorkspace.percentage,
     commissionWorkspace.vatHandling,
+    commissionWorkspace.digitalMandateRequested,
   ])
 
   const commissionDraftPreview = useMemo(() => {
@@ -8264,6 +8410,15 @@ function AgentListingDetail() {
       return
     }
     setActiveTab('pipeline')
+  }
+
+  function openAgentAssistedSellerOnboarding() {
+    const token = String(listingRecord?.sellerOnboarding?.token || listingRecord?.sellerOnboardingToken || '').trim()
+    if (!token) {
+      setDetailError('Send seller onboarding first so the agent-assisted intake can use its secure onboarding record.')
+      return
+    }
+    navigate(`/seller/onboarding/${encodeURIComponent(token)}?completion_mode=agent_assisted&source=agent_workspace`)
   }
 
   function updateSellerProfileBuilderDraft(key, value) {
@@ -9084,8 +9239,43 @@ function AgentListingDetail() {
       mandateTerms: commissionPatch.mandateTerms,
       paymentResponsibility: commissionPatch.paymentResponsibility,
       commissionNotes: commissionPatch.notes,
+      digitalMandateRequested: Boolean(commissionDraft.digitalMandateRequested),
+      digital_mandate_requested: Boolean(commissionDraft.digitalMandateRequested),
       commissionUpdatedAt: now,
       commissionUpdatedBy: commissionPatch.updatedBy,
+    }
+    const existingFormData = (listingRecord?.sellerOnboarding?.formData && typeof listingRecord.sellerOnboarding.formData === 'object')
+      ? listingRecord.sellerOnboarding.formData
+      : {}
+    const existingRevisions = Array.isArray(existingFormData.mandateCommercialTermsRevisions)
+      ? existingFormData.mandateCommercialTermsRevisions
+      : []
+    const revision = createMandateCommercialTermsRevision({
+      previous: {
+        commissionPercentage: commissionWorkspace.percentage,
+        commissionAmount: commissionWorkspace.amount,
+        vatHandling: commissionWorkspace.vatHandling === 'Not captured' ? '' : commissionWorkspace.vatHandling,
+        mandateTerms: commissionWorkspace.mandateTerms,
+        paymentResponsibility: commissionWorkspace.paymentResponsibility,
+        digitalMandateRequested: commissionWorkspace.digitalMandateRequested,
+      },
+      next: formPatch,
+      revisions: existingRevisions,
+      actor: commissionPatch.updatedBy,
+      recordedAt: now,
+    })
+    if (revision.changed) {
+      const nextRevisions = [...existingRevisions, revision].slice(-20)
+      formPatch.mandateCommercialTerms = revision.next
+      formPatch.mandate_commercial_terms = revision.next
+      formPatch.mandateCommercialTermsRevision = revision
+      formPatch.mandate_commercial_terms_revision = revision
+      formPatch.mandateCommercialTermsRevisions = nextRevisions
+      formPatch.mandate_commercial_terms_revisions = nextRevisions
+      formPatch.mandateDocumentRefreshRequired = true
+      formPatch.mandate_document_refresh_required = true
+      formPatch.mandateAmendmentRequired = Boolean(mandateWorkspace?.signedDate)
+      formPatch.mandate_amendment_required = Boolean(mandateWorkspace?.signedDate)
     }
     const localListing = patchListing((row) => ({
       ...row,
@@ -9119,7 +9309,11 @@ function AgentListingDetail() {
           }))
         }
       }
-      setDetailMessage('Commission details saved and synced across the seller profile.')
+      setDetailMessage(revision.changed
+        ? mandateWorkspace?.signedDate
+          ? 'Commercial terms saved. The signed mandate is unchanged; prepare an amendment for seller signature.'
+          : 'Commercial terms saved. Refresh the mandate draft before it is signed.'
+        : 'Commission details saved and synced across the seller profile.')
     } catch (error) {
       setDetailError(error?.message || 'Commission details saved locally, but Supabase could not be updated.')
     } finally {
@@ -10365,6 +10559,82 @@ function AgentListingDetail() {
   return (
     <section className="space-y-5">
       <Modal
+        open={sellerOnboardingSendOpen}
+        onClose={() => !followUpActionId && setSellerOnboardingSendOpen(false)}
+        title="Prepare seller onboarding"
+        subtitle="Choose whether the seller should receive a separate digital mandate. These terms remain editable in the Commission tab until a mandate is signed."
+        size="md"
+      >
+        <div className="space-y-5">
+          <fieldset className="grid gap-3">
+            <legend className="text-sm font-semibold text-[#2d445e]">Should the seller sign the mandate digitally?</legend>
+            <label className="flex items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-4 py-3 text-sm font-medium text-[#243d56]">
+              <input type="radio" name="digital-mandate-choice" value="yes" checked={onboardingMandateChoice === 'yes'} onChange={(event) => setOnboardingMandateChoice(event.target.value)} />
+              Yes — prepare a separate digital mandate after onboarding
+            </label>
+            <label className="flex items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-4 py-3 text-sm font-medium text-[#243d56]">
+              <input type="radio" name="digital-mandate-choice" value="no" checked={onboardingMandateChoice === 'no'} onChange={(event) => setOnboardingMandateChoice(event.target.value)} />
+              No — send basic onboarding only
+            </label>
+          </fieldset>
+          {onboardingMandateChoice === 'yes' ? (
+            <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 md:grid-cols-2">
+              <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                Commission percentage
+                <Field type="number" min="0" step="0.01" value={commissionDraft.percentage} onChange={(event) => updateCommissionDraft('percentage', event.target.value)} placeholder="5" />
+              </label>
+              <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                VAT treatment
+                <Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}>
+                  <option value="">Select VAT treatment</option>
+                  <option value="exclusive">VAT exclusive</option>
+                  <option value="inclusive">VAT inclusive</option>
+                </Field>
+              </label>
+              <p className="text-xs leading-5 text-[#607387] md:col-span-2">The mandate, FICA declaration and disclosure will remain separate documents. This step only records the mandate instruction and commercial terms.</p>
+            </div>
+          ) : null}
+          <section className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
+            <div>
+              <p className="text-sm font-semibold text-[#243d56]">Preferred conveyancing attorney <span className="font-medium text-[#607387]">(optional)</span></p>
+              <p className="mt-1 text-sm leading-5 text-[#607387]">Choose a connected transfer-attorney partner to recommend to the seller in a later onboarding step. This does not instruct the firm or choose on the seller’s behalf.</p>
+            </div>
+            <label className="mt-3 grid gap-2 text-sm font-semibold text-[#2d445e]">
+              Agency recommendation
+              <Field
+                as="select"
+                value={preferredTransferAttorneyOptionId}
+                disabled={preferredTransferAttorneyLoading || sellerAttorneyInstructionReadiness.instructionStatus === 'agency_instruction_confirmed'}
+                onChange={(event) => {
+                  setPreferredTransferAttorneyOptionId(event.target.value)
+                  setPreferredTransferAttorneyChoiceTouched(true)
+                }}
+              >
+                <option value="">No recommendation — seller can decide later</option>
+                {preferredTransferAttorneyOptions.map((partner) => (
+                  <option key={partner.id} value={partner.id}>
+                    {partner.companyName || 'Connected transfer attorney'}{partner.preferred ? ' · Preferred partner' : ''}
+                  </option>
+                ))}
+              </Field>
+            </label>
+            {sellerAttorneyInstructionReadiness.instructionStatus === 'agency_instruction_confirmed' ? (
+              <p className="mt-2 text-xs leading-5 text-[#8a641d]">A formal agency instruction has already been recorded. Use the transaction instruction workflow to change the firm.</p>
+            ) : sellerAttorneyInstructionReadiness.sellerConsentStatus !== 'not_requested' ? (
+              <p className="mt-2 text-xs leading-5 text-[#8a641d]">Changing this recommendation preserves the previous choice in the audit trail and asks the seller to respond again. It does not appoint the newly selected firm.</p>
+            ) : null}
+            {preferredTransferAttorneyLoading ? <p className="mt-2 text-xs text-[#607387]">Loading connected transfer-attorney partners…</p> : null}
+            {!preferredTransferAttorneyLoading && isSupabaseConfigured && !preferredTransferAttorneyOptions.length ? <p className="mt-2 text-xs leading-5 text-[#8a641d]">No connected transfer-attorney partners are available for this agency. You can continue without a recommendation.</p> : null}
+          </section>
+          <div className="flex justify-end gap-2 border-t border-[#e5edf6] pt-4">
+            <Button type="button" variant="secondary" disabled={Boolean(followUpActionId)} onClick={() => setSellerOnboardingSendOpen(false)}>Cancel</Button>
+            <Button type="button" disabled={Boolean(followUpActionId)} onClick={() => void handleSendSellerOnboardingFollowUp({ confirmed: true })}>
+              {followUpActionId === 'send_onboarding' ? 'Sending…' : 'Send seller onboarding'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
         open={developmentLinkOpen}
         onClose={() => !developmentLinkSaving && setDevelopmentLinkOpen(false)}
         title="Link listing to a development"
@@ -11159,10 +11429,36 @@ function AgentListingDetail() {
                   <TrendingUp size={20} />
                 </div>
               </div>
+              <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#607387]">Seller onboarding journey</p>
+                  <span className="rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-xs font-semibold text-[#35546c]">{sellerOnboardingProgress.currentLabel}</span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {sellerOnboardingProgress.steps.map((step) => (
+                    <div key={step.key} className={`flex items-center gap-2 rounded-[10px] border px-2.5 py-2 text-xs font-semibold ${step.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#e1e9f2] bg-white text-[#607387]'}`}>
+                      {step.complete ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
+                      {step.label}
+                    </div>
+                  ))}
+                </div>
+                {sellerOnboardingProgress.mandatePending ? (
+                  <p className="mt-3 text-xs leading-5 text-[#607387]">The mandate can be uploaded later. FICA requests remain visible in Documents until the agency receives and reviews the evidence.</p>
+                ) : null}
+              </div>
               <div className="mt-auto pt-5">
                 <Button onClick={() => handleNextBestAction(nextBestAction)}>
                   {nextBestAction.buttonLabel || 'Open Workspace'}
                 </Button>
+                {canCompleteSellerOnboardingOnBehalf ? (
+                  <div className="mt-3 border-t border-[#e5edf6] pt-3">
+                    <Button type="button" variant="secondary" onClick={openAgentAssistedSellerOnboarding}>
+                      <UserRound size={15} />
+                      Complete on behalf of client
+                    </Button>
+                    <p className="mt-2 text-xs leading-5 text-[#6b7d93]">Use the same secure onboarding record to capture the information with the seller. No link needs to be sent.</p>
+                  </div>
+                ) : null}
               </div>
             </section>
 
@@ -13832,6 +14128,24 @@ function AgentListingDetail() {
                         )}
                       </div>
                     </div>
+                    {sellerAttorneyInstructionReadiness.status !== 'not_applicable' ? (
+                      <div className="mt-4 rounded-[16px] border border-[#d9e7f3] bg-[#f7fbff] p-3">
+                        <div className="flex items-start gap-2.5">
+                          <Landmark size={17} className="mt-0.5 shrink-0 text-[#2f6f9f]" />
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-[#243d56]">Conveyancing attorney</p>
+                            <p className="mt-1 text-sm leading-5 text-[#607387]">
+                              {sellerAttorneyInstructionReadiness.companyName || 'Recommended firm'} · {sellerAttorneyInstructionReadiness.reason}
+                            </p>
+                            {sellerAttorneyInstructionReadiness.canCreateAgencyInstruction ? (
+                              <p className="mt-2 text-xs leading-5 text-[#35546c]">
+                                Ready for a separate, transaction-scoped agency instruction. This status does not allocate the firm or send it work automatically.
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
                   </article>
 
                   <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
@@ -14094,6 +14408,17 @@ function AgentListingDetail() {
                 </div>
               </div>
 
+              {commissionWorkspace.mandateRefreshRequired ? (
+                <div className={`mt-5 rounded-[16px] border px-4 py-3 text-sm leading-6 ${commissionWorkspace.mandateAmendmentRequired ? 'border-[#f0ddbf] bg-[#fffaf1] text-[#7a4b10]' : 'border-[#d8e7f7] bg-[#f7fbff] text-[#315879]'}`}>
+                  <p className="font-semibold">{commissionWorkspace.mandateAmendmentRequired ? 'Signed mandate needs an amendment' : 'Mandate draft needs a refresh'}</p>
+                  <p className="mt-1">
+                    {commissionWorkspace.mandateAmendmentRequired
+                      ? 'Commercial terms changed after signing. The signed document remains unchanged; prepare and sign an amendment before relying on the new terms.'
+                      : 'Commercial terms changed after onboarding. Use the latest saved terms when preparing the separate mandate document.'}
+                  </p>
+                </div>
+              ) : null}
+
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Commission Percentage</span>
@@ -14124,6 +14449,13 @@ function AgentListingDetail() {
                     <option value="no">No VAT</option>
                     <option value="exclusive">VAT Exclusive</option>
                     <option value="inclusive">VAT Inclusive</option>
+                  </Field>
+                </label>
+                <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Digital Mandate</span>
+                  <Field as="select" value={commissionDraft.digitalMandateRequested ? 'yes' : 'no'} onChange={(event) => updateCommissionDraft('digitalMandateRequested', event.target.value === 'yes')}>
+                    <option value="yes">Prepare for digital signature</option>
+                    <option value="no">Do not prepare digitally</option>
                   </Field>
                 </label>
                 <label className="grid gap-2">
@@ -14161,7 +14493,7 @@ function AgentListingDetail() {
               <div className="mt-5 grid gap-3 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4 md:grid-cols-3">
                 <FieldDisplay label="Estimated Ex VAT" value={commissionDraftPreview.estimatedExVat ? formatMoneyValue(commissionDraftPreview.estimatedExVat) : 'Not captured'} />
                 <FieldDisplay label="Estimated Incl VAT" value={commissionDraftPreview.estimatedInclVat ? formatMoneyValue(commissionDraftPreview.estimatedInclVat) : 'Not captured'} />
-                <FieldDisplay label="Sync Target" value="Seller profile, mandate data, and seller portal source fields" />
+                <FieldDisplay label="Term revisions" value={commissionWorkspace.commercialTermsRevisionCount ? `${commissionWorkspace.commercialTermsRevisionCount} saved` : 'Original terms'} />
               </div>
             </article>
           ) : null}

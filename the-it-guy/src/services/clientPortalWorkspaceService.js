@@ -70,6 +70,8 @@ import {
 } from '../core/clientPortal/clientPortalProfileDiagnostics.js'
 import { buildSellerCompliancePortalModel } from '../core/documents/sellerCompliancePortalModel.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
+import { buildFicaDeclarationDocumentMarkup } from '../core/documents/ficaDeclarationDocumentMarkup.js'
+import { buildFicaDeclarationDocumentModel } from '../core/documents/ficaDeclarationDocumentModel.js'
 import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel.js'
 import { buildClientLegalProgressModel } from '../core/clientPortal/clientLegalProgressModel.js'
 
@@ -2263,24 +2265,6 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
       ? disclosure.generated_document
       : {}
   const listing = isPlainObject(portalData?.listing) ? portalData.listing : {}
-  const sellerComplianceSigning = isPlainObject(portalData?.sellerComplianceSigning)
-    ? portalData.sellerComplianceSigning
-    : isPlainObject(portalData?.seller_compliance_signing)
-      ? portalData.seller_compliance_signing
-      : isPlainObject(portalData?.activeSellingContext?.sellerComplianceSigning)
-        ? portalData.activeSellingContext.sellerComplianceSigning
-        : buildSellerCompliancePortalModel({
-            formData,
-            listing,
-            portalData,
-            token: toDisplayText(portalData?.sellerWorkspaceToken || portalData?.seller_workspace_token || portalData?.token),
-          })
-  const sellerCompliancePack = buildSellerComplianceDocumentModel({
-    formData,
-    listing,
-    signing: sellerComplianceSigning,
-    generatedAt: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || new Date().toISOString(),
-  })
   const context = {
     sellerName: toDisplayText(formData.sellerName || [formData.sellerFirstName, formData.sellerSurname].filter(Boolean).join(' ')),
     sellerIdNumber: toDisplayText(formData.sellerIdNumber || formData.idNumber || formData.id_number),
@@ -2299,34 +2283,22 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
         listing?.id,
     ),
     branding: resolveSellerPortalDisclosureBranding(portalData, formData, listing),
-    sellerCompliancePack,
   }
   const generatedHtml = buildPropertyDisclosureDocumentMarkup(disclosure, context)
-  const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'seller-compliance-pack.pdf')
+  const fileName = toDisplayText(generatedDocument.fileName || generatedDocument.file_name, 'property-condition-disclosure.pdf')
   return {
     id: generatedDocument.id || `property-disclosure-${context.listingId || context.propertyId || 'document'}`,
-    name: generatedDocument.title || 'Seller Compliance Pack',
-    document_name: generatedDocument.title || 'Seller Compliance Pack',
+    name: generatedDocument.title || 'Property Condition Disclosure',
+    document_name: generatedDocument.title || 'Property Condition Disclosure',
     category: 'property_condition_disclosure',
     document_type: 'property_condition_disclosure',
     requirementKey: 'property_condition_disclosure',
     requirement_key: 'property_condition_disclosure',
-    requirementKeys: [
-      'property_condition_disclosure',
-      SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
-      SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
-    ],
-    requirement_keys: [
-      'property_condition_disclosure',
-      SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
-      SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
-    ],
+    requirementKeys: ['property_condition_disclosure', SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM],
+    requirement_keys: ['property_condition_disclosure', SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM],
     status: 'completed',
     visibility: 'seller_visible',
     systemGeneratedDocument: true,
-    bundleType: 'seller_compliance_pack',
-    bundle_type: 'seller_compliance_pack',
-    sellerCompliancePack,
     generatedHtml,
     generatedFileName: fileName.replace(/\.(html?|pdf)$/i, '.pdf'),
     created_at: generatedDocument.generatedAt || generatedDocument.generated_at || disclosure.signedAt || disclosure.signed_at || null,
@@ -2412,6 +2384,44 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(portalData = {}, works
       listing?.seller_type,
   )
   const listingId = toDisplayText(listing?.id || listing?.private_listing_id || portalData?.listingId || portalData?.listing_id || onboarding?.token, 'onboarding')
+  const complianceSigning = isPlainObject(portalData?.sellerComplianceSigning)
+    ? portalData.sellerComplianceSigning
+    : isPlainObject(portalData?.seller_compliance_signing)
+      ? portalData.seller_compliance_signing
+      : isPlainObject(portalData?.activeSellingContext?.sellerComplianceSigning)
+        ? portalData.activeSellingContext.sellerComplianceSigning
+        : buildSellerCompliancePortalModel({
+            formData,
+            listing,
+            portalData,
+            token: toDisplayText(portalData?.sellerWorkspaceToken || portalData?.seller_workspace_token || portalData?.token),
+          })
+  const sellerCompliancePack = buildSellerComplianceDocumentModel({
+    formData,
+    listing,
+    signing: complianceSigning,
+    generatedAt: completedAt || new Date().toISOString(),
+  })
+  const declarationModel = buildFicaDeclarationDocumentModel({
+    partyType: 'seller',
+    transaction: {
+      id: toDisplayText(listing?.transactionId || listing?.transaction_id),
+      reference: toDisplayText(
+        listing?.listingReference || listing?.listing_reference || listing?.reference ||
+        listing?.privateListingReference || listing?.private_listing_reference || listing?.id,
+      ),
+    },
+    property: { address: resolveSellerPortalDisclosurePropertyAddress(listing, formData) },
+    signing: sellerCompliancePack.signingSummary,
+    sections: sellerCompliancePack.ficaSections,
+    branding: resolveSellerPortalDisclosureBranding(portalData, formData, listing),
+    declaration: {
+      wording: formData?.ficaDeclarationWording || formData?.fica_declaration_wording,
+      wordingVersion: formData?.ficaDeclarationWordingVersion || formData?.fica_declaration_wording_version,
+    },
+    generatedAt: completedAt || new Date().toISOString(),
+  })
+  const generatedHtml = buildFicaDeclarationDocumentMarkup(declarationModel)
 
   return {
     id: `seller-fica-declaration-${listingId}`,
@@ -2423,6 +2433,10 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(portalData = {}, works
     document_category: 'fica_declaration',
     document_name: 'Signed FICA Declaration',
     name: 'Signed FICA Declaration',
+    generatedHtml,
+    generated_html: generatedHtml,
+    generatedFileName: 'signed-fica-declaration.pdf',
+    generated_file_name: 'signed-fica-declaration.pdf',
     status: 'completed',
     visibility: 'seller_visible',
     source: 'seller_onboarding.fica_declaration',
@@ -2440,6 +2454,7 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(portalData = {}, works
       completionRoute: SELLER_BASE_PACK_COMPLETION_ROUTES.SELLER_ONBOARDING_LINK,
       supportingFicaDocumentsDynamic: true,
       sellerType,
+      ficaDeclarationModel: declarationModel,
     },
   }
 }
@@ -2472,6 +2487,7 @@ function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying
   const generatedMandateDocument = buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode)
   const signedMandateDocument = buildSignedMandateDocumentFromPacket(portalData, workspaceMode)
   const propertyDisclosureDocument = buildPropertyDisclosureDocumentFromFormData(portalData, workspaceMode)
+  const sellerFicaDeclarationDocument = buildSellerFicaDeclarationDocumentFromOnboarding(portalData, workspaceMode)
   return [
     (signedMandateDocument || generatedMandateDocument)
       ? buildSellerSaleDocumentCenterItem(signedMandateDocument || generatedMandateDocument, {
@@ -2482,9 +2498,16 @@ function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying
       : null,
     propertyDisclosureDocument
       ? buildSellerSaleDocumentCenterItem(propertyDisclosureDocument, {
-          id: 'seller-compliance-pack',
-          title: 'Seller Compliance Pack',
-          description: 'Completed FICA summary and seller property disclosure available for download.',
+          id: 'property-condition-disclosure',
+          title: 'Property Condition Disclosure',
+          description: 'Completed seller property disclosure available for download.',
+        })
+      : null,
+    sellerFicaDeclarationDocument
+      ? buildSellerSaleDocumentCenterItem(sellerFicaDeclarationDocument, {
+          id: 'seller-fica-declaration',
+          title: 'Seller FICA Declaration',
+          description: 'Completed FICA declaration available for download.',
         })
       : null,
   ].filter(Boolean)
@@ -2496,7 +2519,7 @@ function buildSellerDownloadableDocumentLookup(portalData = {}, workspaceMode = 
     buildSignedMandateDocumentFromPacket(portalData, workspaceMode),
     buildGeneratedMandateDocumentFromPacket(portalData, workspaceMode),
     propertyDisclosureDocument,
-    propertyDisclosureDocument ? null : buildSellerFicaDeclarationDocumentFromOnboarding(portalData, workspaceMode),
+    buildSellerFicaDeclarationDocumentFromOnboarding(portalData, workspaceMode),
   ].filter(Boolean)
   const lookup = new Map()
   documents.forEach((document) => {

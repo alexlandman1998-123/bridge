@@ -1,5 +1,6 @@
 import { transformSellerOnboardingToFacts } from '../../services/documents/sellerOnboardingFactTransformer.js'
 import { resolveSellerComplianceRequiredSigners } from './sellerComplianceSignerResolver.js'
+import { SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS } from './sellerComplianceSignerModel.js'
 
 export const SELLER_COMPLIANCE_PORTAL_MODEL_CONTRACT = 'arch9-seller-compliance-portal-model-v1'
 
@@ -223,6 +224,7 @@ function buildSignatureRequests({ token = '', signers = [] } = {}) {
       email: signer.email || '',
       href: `/seller/onboarding/${encodeURIComponent(token)}?signer=${encodeURIComponent(signer.id)}`,
       disabled: !signer.email,
+      documents: SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS,
     }))
 }
 
