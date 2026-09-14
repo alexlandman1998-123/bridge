@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { CircleAlert, Loader2, Plus, UserRoundCheck, Wrench } from 'lucide-react'
+import { useSearchParams } from 'react-router-dom'
 import { acknowledgeRentalMaintenanceRequest, createRentalMaintenanceRequest, getRentalMaintenanceQueue, triageRentalMaintenanceRequest } from '../../services/rentals/rentalMaintenanceRepository.js'
 
 const blank = () => ({ tenancyId: '', category: 'plumbing', priority: 'routine', description: '' })
@@ -8,9 +9,10 @@ const title = (value) => String(value || '').replaceAll('_', ' ').replace(/\b\w/
 const priorityTone = (value, breached) => breached || value === 'emergency' ? 'border-[#f0cbc8] bg-[#fff5f4] text-[#a23d35]' : value === 'urgent' ? 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]' : 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]'
 
 export default function RentalMaintenancePage() {
-  const [queue, setQueue] = useState([]); const [form, setForm] = useState(blank); const [triage, setTriageState] = useState({}); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [filter, setFilter] = useState('all')
+  const [searchParams] = useSearchParams(); const requestedTenancyId = searchParams.get('tenancyId') || ''; const [queue, setQueue] = useState([]); const [form, setForm] = useState(() => ({ ...blank(), tenancyId: requestedTenancyId })); const [triage, setTriageState] = useState({}); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [filter, setFilter] = useState('all')
   const load = useCallback(async () => { try { setLoading(true); setError(''); setQueue(await getRentalMaintenanceQueue()) } catch (cause) { setError(cause?.message || 'Unable to load maintenance requests.') } finally { setLoading(false) } }, [])
   useEffect(() => { void load() }, [load])
+  useEffect(() => { if (requestedTenancyId) setForm((current) => current.tenancyId ? current : { ...current, tenancyId: requestedTenancyId }) }, [requestedTenancyId])
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
   const setTriage = (id, key, value, priority) => setTriageState((current) => ({ ...current, [id]: { ...(current[id] || triageBlank(priority)), [key]: value } }))
   const submit = async (event) => { event.preventDefault(); try { setSaving(true); setError(''); await createRentalMaintenanceRequest(form); setMessage('Maintenance request captured.'); setForm(blank()); await load() } catch (cause) { setError(cause?.message || 'Unable to capture maintenance request.') } finally { setSaving(false) } }

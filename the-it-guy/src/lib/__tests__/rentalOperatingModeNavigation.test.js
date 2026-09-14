@@ -15,6 +15,10 @@ const longTermNav = getRoleNavItems('agent', { ...context, rentalOperatingMode: 
 const shortTermNav = getRoleNavItems('agent', { ...context, rentalOperatingMode: RENTAL_OPERATING_MODES.shortTerm })
 
 assert.equal(longTermNav[0].to, '/agent/rentals/long-term/dashboard')
+assert.deepEqual(longTermNav.map((item) => item.key), ['rental_dashboard', 'rental_portfolio', 'rental_lettings', 'rental_applications', 'rental_tenancies', 'rental_operations'])
+assert.deepEqual(longTermNav.find((item) => item.key === 'rental_portfolio')?.children?.map((item) => item.key), ['rental_properties', 'rental_portfolios'])
+assert.deepEqual(longTermNav.find((item) => item.key === 'rental_lettings')?.children?.map((item) => item.key), ['rental_vacancies', 'rental_listings', 'rental_leads'])
+assert.deepEqual(longTermNav.find((item) => item.key === 'rental_operations')?.children?.map((item) => item.key), ['rental_maintenance', 'rental_inspections', 'rental_financial_review', 'rental_reports'])
 assert.deepEqual(shortTermNav.map((item) => item.key), ['short_term_dashboard', 'short_term_calendar', 'short_term_bookings', 'short_term_properties', 'short_term_turnovers', 'short_term_rates'])
 assert.equal(shortTermNav[0].to, '/agent/rentals/short-term/dashboard')
 

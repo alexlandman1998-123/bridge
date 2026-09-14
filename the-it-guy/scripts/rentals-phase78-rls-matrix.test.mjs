@@ -6,9 +6,9 @@ import { evaluateRentalRlsMatrix, RENTAL_RLS_MATRIX } from '../src/services/rent
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (path) => readFile(join(root, path), 'utf8')
-const phase72 = await read('../supabase/migrations/20260831102932_rental_security_privacy_hardening.sql')
-const phase73 = await read('../supabase/migrations/20260831102958_rental_recovery_runbooks.sql')
-const phase74 = await read('../supabase/migrations/20260831103147_rental_controlled_rollout_cohorts.sql')
+const phase72 = await read('../supabase/migrations/20260831102950_rental_security_privacy_hardening.sql')
+const phase73 = await read('../supabase/migrations/20260831103013_rental_recovery_runbooks.sql')
+const phase74 = await read('../supabase/migrations/20260831103225_rental_controlled_rollout_cohorts.sql')
 
 for (const migration of [phase72, phase73, phase74]) {
   assert.match(migration, /enable row level security/, 'Sensitive Phase 72–74 tables must enable RLS.')

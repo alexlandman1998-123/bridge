@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (path) => readFile(join(root, path), 'utf8')
-const migration = await read('../supabase/migrations/20260831110550_rental_financial_reconciliation_snapshot.sql')
+const migration = await read('../supabase/migrations/20260831110614_rental_financial_reconciliation_snapshot.sql')
 const repository = await read('src/services/rentals/rentalFinancialReconciliationRepository.js')
 const page = await read('src/pages/rentals/RentalFinancialReconciliationPage.jsx')
 const app = await read('src/App.jsx')
