@@ -107,6 +107,14 @@ test('publication sync can still save description when feature columns are missi
   assert.match(privateListingServiceSource, /\.select\('listing_id, title, address, suburb, province, property_type, listing_type, asking_price, bedrooms, bathrooms, garages, parking_bays, floor_size, erf_size, rates_taxes, levies, description, status, created_at, updated_at'\)/)
 })
 
+test('approved listings publish their selected agency-website channel after the public projection is ready', () => {
+  assert.match(agentListingsSource, /import \{ setWebsiteListingPublication \} from '..\/services\/websiteListingPublicationService'/)
+  assert.match(agentListingsSource, /function shouldAutoPublishToAgencyWebsite\(listingStatus = '', selectedChannels = \[\]\)/)
+  assert.match(agentListingsSource, /status: shouldAutoPublishToAgencyWebsite\(context\.listingStatus, form\.selectedSyndicationChannels\) \? 'Published' : 'Draft'/)
+  assert.match(agentListingsSource, /setWebsiteListingPublication\(created\.listing\.id, 'publish'\)/)
+  assert.match(agentListingsSource, /setWebsiteListingPublication\(listingId, 'publish'\)/)
+})
+
 test('blank marketing drafts do not erase persisted listing content', () => {
   assert.match(agentListingsSource, /LISTING_MARKETING_DRAFT_STORAGE_KEY = 'itg:listing-marketing-draft:v1'/)
   assert.match(agentListingsSource, /writeListingMarketingDraftStorage\(editListingId,\s*\{\s*\n\s*description: normalizeText\(value\)/)

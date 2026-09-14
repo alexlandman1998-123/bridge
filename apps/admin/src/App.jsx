@@ -356,6 +356,7 @@ const NAV_ICONS = {
   dashboard: Home,
   inboundLeads: Target,
   organisations: Building2,
+  emailOperations: UploadCloud,
   reports: BarChart3,
   transactions: FileText,
   users: UsersRound,

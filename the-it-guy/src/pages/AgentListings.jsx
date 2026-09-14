@@ -82,6 +82,7 @@ import {
   PROPERTY_STRUCTURE_TYPES,
 } from '../lib/propertyTaxonomy'
 import { buildFinalListingModuleOverview } from '../services/listings/finalListingModuleModel'
+import { setWebsiteListingPublication } from '../services/websiteListingPublicationService'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const CREATE_LISTING_DRAFT_STORAGE_KEY = 'itg:agent-listings:create-draft:v1'
@@ -1006,6 +1007,19 @@ function buildCreateListingPortalStatuses(form = {}) {
   ]
 }
 
+function shouldAutoPublishToAgencyWebsite(listingStatus = '', selectedChannels = []) {
+  return normalizeKey(listingStatus) === 'active' &&
+    Array.isArray(selectedChannels) &&
+    selectedChannels.includes('agency_website')
+}
+
+function describeAgencyWebsitePublication(publication = null) {
+  if (!publication?.attempted) return ''
+  return publication.error
+    ? ' The agency website could not be updated yet; review it in Listing Channels.'
+    : ' The listing is now live on the agency website.'
+}
+
 function readQuickListingImageAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -1087,7 +1101,7 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
       description,
       features: publicationFeatures,
       amenities: [],
-      status: 'Draft',
+      status: shouldAutoPublishToAgencyWebsite(context.listingStatus, form.selectedSyndicationChannels) ? 'Published' : 'Draft',
     },
     media: {
       galleryImages: uploadedImages,
@@ -4540,6 +4554,7 @@ function AgentListings({ initialTab = null } = {}) {
     if (property24Url && !distributionLinks.some((link) => normalizeDirectListingKey(link?.platform).includes('property24'))) {
       distributionLinks.push({ platform: 'Property24', url: property24Url, status: listing.property24Status || 'Draft', visibleToSeller: false })
     }
+    let websitePublication = null
 
     if (isSupabaseConfigured && isUuidLike(listingId)) {
       const databaseListingPatch = { ...listingPatch }
@@ -4576,7 +4591,7 @@ function AgentListings({ initialTab = null } = {}) {
           description: effectiveListingDescription,
           features: buildQuickListingPublicationFeatures(form, effectiveKeySellingPoints),
           amenities: [],
-          status: 'Draft',
+          status: shouldAutoPublishToAgencyWebsite(listingPatch.listingStatus, form.selectedSyndicationChannels) ? 'Published' : 'Draft',
         },
         media: {
           galleryImages: uploadedImages,
@@ -4588,6 +4603,14 @@ function AgentListings({ initialTab = null } = {}) {
         console.warn('[Listings] listing editor distribution sync skipped', syncError)
         return null
       })
+      if (shouldAutoPublishToAgencyWebsite(listingPatch.listingStatus, form.selectedSyndicationChannels)) {
+        websitePublication = await setWebsiteListingPublication(listingId, 'publish')
+          .then((publication) => ({ attempted: true, publication }))
+          .catch((publicationError) => {
+            console.warn('[Listings] agency website publication needs attention after listing edit', publicationError)
+            return { attempted: true, error: publicationError?.message || 'website_publication_failed' }
+          })
+      }
       if (assignmentChanged) {
         await reassignListingAgent(listingId, requestedAssignedAgentId, {
           listingType: form.listingType === 'rental' ? 'rental' : 'sale',
@@ -4603,6 +4626,7 @@ function AgentListings({ initialTab = null } = {}) {
         metadata: {
           source: 'shared_listing_editor',
           activeStep: createListingStep,
+          websitePublication,
           updatedAt: new Date().toISOString(),
         },
       }).catch(() => null)
@@ -4700,7 +4724,7 @@ function AgentListings({ initialTab = null } = {}) {
     }
 
     setError('')
-    setWorkflowMessage(successMessage)
+    setWorkflowMessage(`${successMessage}${describeAgencyWebsitePublication(websitePublication)}`)
     if (typeof window !== 'undefined') {
       window.localStorage.removeItem(listingEditorDraftStorageKey)
     }
@@ -5680,6 +5704,7 @@ function AgentListings({ initialTab = null } = {}) {
       let directListingRequirementSync = null
       let directListingSellerPortalInvite = null
       let listingDistributionSync = null
+      let websitePublication = null
       const sellerDisplayName = getQuickAddSellerDisplayName(form)
       const directListingPersistence = buildQuickAddDirectListingPersistencePayload(form, {
         capturedBy: profile?.id || profile?.email || '',
@@ -5772,35 +5797,55 @@ function AgentListings({ initialTab = null } = {}) {
         }
         createdListingId = created.listing.id
         createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
-        listingDistributionSync = await syncQuickListingDistributionData(created.listing.id, form, {
-          title: listingTitle,
-          address: formattedAddress || propertyAddress,
-        })
-        await persistSellerProfileOnboardingFormData({
-          listingId: created.listing.id,
-          formData: directListingPersistence.sellerOnboardingFormData,
-          status: 'not_started',
-          sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
-          ownershipStructure: directListingPersistence.seller?.ownerStructureType || directListingPersistence.seller?.ownershipType || form.sellerType,
-        }).catch((persistenceError) => {
-          console.warn('[Listings] direct listing intake form data persistence skipped after quick add create', persistenceError)
-          return null
-        })
-        if (documentUploadQueue.length) {
-          const uploadResult = await uploadQuickAddDocumentsForListing(created.listing.id, documentUploadQueue)
-          uploadedDocuments = uploadResult.uploadedDocuments
-          failedDocumentUploads = uploadResult.failedDocumentUploads
+        // The listing exists as soon as this point is reached. Distribution,
+        // seller-form persistence and document uploads touch independent
+        // services, so waiting for each one in sequence makes Quick Add feel
+        // much slower than the actual record creation.
+        const [distributionResult, _sellerFormResult, documentUploadResult] = await Promise.all([
+          syncQuickListingDistributionData(created.listing.id, form, {
+            title: listingTitle,
+            address: formattedAddress || propertyAddress,
+            listingStatus: resolvedListingStatus,
+          }),
+          persistSellerProfileOnboardingFormData({
+            listingId: created.listing.id,
+            formData: directListingPersistence.sellerOnboardingFormData,
+            status: 'not_started',
+            sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+            ownershipStructure: directListingPersistence.seller?.ownerStructureType || directListingPersistence.seller?.ownershipType || form.sellerType,
+          }).catch((persistenceError) => {
+            console.warn('[Listings] direct listing intake form data persistence skipped after quick add create', persistenceError)
+            return null
+          }),
+          documentUploadQueue.length
+            ? uploadQuickAddDocumentsForListing(created.listing.id, documentUploadQueue)
+            : Promise.resolve(null),
+        ])
+        listingDistributionSync = distributionResult
+        if (documentUploadResult) {
+          uploadedDocuments = documentUploadResult.uploadedDocuments
+          failedDocumentUploads = documentUploadResult.failedDocumentUploads
         }
-        directListingRequirementSync = await syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created')
-        directListingSellerPortalInvite = await sendQuickAddSellerPortalInvite({
-          listingId: created.listing.id,
-          form,
-          directListingPersistence,
-          profile,
-          organisationId: listingOrganisationId,
-          agencyName: profile?.agencyName || profile?.company || workspace?.name || '',
-          propertyAddress: formattedAddress || propertyAddress,
-        })
+        if (shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels)) {
+          websitePublication = await setWebsiteListingPublication(created.listing.id, 'publish')
+            .then((publication) => ({ attempted: true, publication }))
+            .catch((publicationError) => {
+              console.warn('[Listings] agency website publication needs attention after quick add', publicationError)
+              return { attempted: true, error: publicationError?.message || 'website_publication_failed' }
+            })
+        }
+        ;[directListingRequirementSync, directListingSellerPortalInvite] = await Promise.all([
+          syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created'),
+          sendQuickAddSellerPortalInvite({
+            listingId: created.listing.id,
+            form,
+            directListingPersistence,
+            profile,
+            organisationId: listingOrganisationId,
+            agencyName: profile?.agencyName || profile?.company || workspace?.name || '',
+            propertyAddress: formattedAddress || propertyAddress,
+          }),
+        ])
         handoffPlan = buildQuickAddHandoffPlan({
           listingId: created.listing.id,
           listingTitle: createdListingTitle,
@@ -5813,15 +5858,16 @@ function AgentListings({ initialTab = null } = {}) {
           failedDocumentUploads,
         })
         sellerUpdatePayload.internalListingNotes = mergeQuickListingMetadataInNotes(quickNotes, { handoffPlan })
-        await updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null)
-        await createPrivateListingActivity({
-          privateListingId: created.listing.id,
-          activityType: 'quick_add_listing_created',
-          activityTitle: 'Listing created via Quick Add',
-          activityDescription: 'Listing created from manual quick capture.',
-          performedBy: profile?.id || null,
-          visibility: 'internal',
-          metadata: {
+        await Promise.all([
+          updatePrivateListing(created.listing.id, sellerUpdatePayload, { includeRequirementsAndDocuments: false }).catch(() => null),
+          createPrivateListingActivity({
+            privateListingId: created.listing.id,
+            activityType: 'quick_add_listing_created',
+            activityTitle: 'Listing created via Quick Add',
+            activityDescription: 'Listing created from manual quick capture.',
+            performedBy: profile?.id || null,
+            visibility: 'internal',
+            metadata: {
             origin: 'quick_add',
             quickAddIntent: selectedQuickAddIntent.value,
             quickAddIntentLabel: selectedQuickAddIntent.label,
@@ -5852,12 +5898,14 @@ function AgentListings({ initialTab = null } = {}) {
               requirementSync: directListingRequirementSync,
               sellerPortalInvite: directListingSellerPortalInvite,
               distributionSync: listingDistributionSync,
+              websitePublication,
               mandate: mandatePack,
               handoffPlan,
             canonicalStructure: CANONICAL_LISTING_STRUCTURE,
             createdAt: new Date().toISOString(),
-          },
-        }).catch(() => null)
+            },
+          }).catch(() => null),
+        ])
       } else {
         uploadedDocuments = documentUploadQueue.map((documentUpload) => ({
           kind: documentUpload.kind,
@@ -6073,10 +6121,11 @@ function AgentListings({ initialTab = null } = {}) {
         documentUploadFailures: failedDocumentUploads,
         requirementSync: directListingRequirementSync,
         sellerPortalInvite: directListingSellerPortalInvite,
+        websitePublication,
         handoffPlan,
       })
       setWorkflowMessage(
-        `Listing created as ${activationTier.workflowLabel}. Mandate follow-up still requires canonical signing before activation.${buildQuickAddSellerPortalInviteMessage(directListingSellerPortalInvite)}${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
+        `Listing created as ${activationTier.workflowLabel}. Mandate follow-up still requires canonical signing before activation.${describeAgencyWebsitePublication(websitePublication)}${buildQuickAddSellerPortalInviteMessage(directListingSellerPortalInvite)}${failedDocumentUploads.length ? ` ${failedDocumentUploads.length} supporting document upload${failedDocumentUploads.length === 1 ? '' : 's'} need to be retried.` : ''}`,
       )
       window.dispatchEvent(new Event('itg:listings-updated'))
       if (isCreateListingWorkspace && createdListingId) {
@@ -7619,7 +7668,7 @@ function AgentListings({ initialTab = null } = {}) {
                 <div className="border-b border-[#e6edf5] pb-5">
                   <p className="text-xs font-bold uppercase text-[#1f7d44]">Step {listingEditorSteps.findIndex((step) => step.key === 'syndication') + 1} of {listingEditorSteps.length}</p>
                   <h2 className="mt-2 text-2xl font-semibold text-[#142132]">Syndication</h2>
-                  <p className="mt-1 text-sm text-[#607387]">Choose where this property should appear.</p>
+                  <p className="mt-1 text-sm text-[#607387]">Approved listings publish automatically to the selected channels. Drafts and review listings stay private.</p>
                 </div>
                 <div className="grid gap-3 md:grid-cols-2">
                   {createListingPortalStatuses.map((portal) => {
@@ -7859,6 +7908,13 @@ function AgentListings({ initialTab = null } = {}) {
                       : quickAddSuccess.sellerPortalInvite.status === 'prepared_local'
                         ? 'Seller portal link prepared locally.'
                         : 'Seller portal invite needs a retry.'}
+                  </p>
+                ) : null}
+                {quickAddSuccess.websitePublication?.attempted ? (
+                  <p className={`mt-1 text-xs font-semibold ${quickAddSuccess.websitePublication.error ? 'text-[#9a5b13]' : 'text-[#1f7d44]'}`}>
+                    {quickAddSuccess.websitePublication.error
+                      ? 'Agency website publication needs attention in Listing Channels.'
+                      : 'Published to the agency website.'}
                   </p>
                 ) : null}
               </div>
