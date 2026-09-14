@@ -1,4 +1,4 @@
-import { AlertCircle, FileSearch, Loader2, MapPin, Search } from 'lucide-react'
+import { AlertCircle, Loader2, MapPin, Search } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
 const DEFAULT_CENTER = { lat: -26.2041, lng: 28.0473 }
@@ -34,7 +34,7 @@ function toBounds(map) {
   return { west: southWest.lng(), east: northEast.lng(), south: southWest.lat(), north: northEast.lat() }
 }
 
-export default function KnowledgeFactoryParcelMap({ properties = [], loading = false, onSearchArea, onFocusProperty, onPrepareReport, focusedProperty }) {
+export default function KnowledgeFactoryParcelMap({ properties = [], loading = false, onSearchArea, onFocusProperty, focusedProperty }) {
   const containerRef = useRef(null)
   const addressRef = useRef(null)
   const mapRef = useRef(null)
@@ -93,6 +93,6 @@ export default function KnowledgeFactoryParcelMap({ properties = [], loading = f
       <button type="button" disabled={loading || state.status !== 'ready'} onClick={() => { const bounds = toBounds(mapRef.current); if (bounds) onSearchArea?.(bounds) }} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#1769dc] px-4 text-sm font-semibold text-white shadow-sm hover:bg-[#1359bc] disabled:cursor-not-allowed disabled:opacity-60">{loading ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}Search this area</button>
     </div>
     <div className="absolute left-4 top-20 z-10 rounded-xl border border-slate-200 bg-white/95 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm">{properties.length} parcels in view</div>
-    {focusedProperty ? <article className="absolute bottom-4 left-4 z-10 w-[min(310px,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"><div className="flex items-start gap-3"><span className="mt-0.5 text-[#1769dc]"><MapPin size={18} /></span><div><h3 className="font-semibold text-slate-900">Property {focusedProperty.propertyId}</h3><p className="mt-1 text-sm text-slate-500">Erf {focusedProperty.erf ?? '—'} · Portion {focusedProperty.portion ?? '—'}</p><p className="mt-2 text-xs leading-5 text-slate-500">Request a cost-validated, non-personal property report before proceeding.</p><button type="button" onClick={() => onPrepareReport?.(focusedProperty)} className="mt-3 inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-[#1769dc] px-3 text-xs font-semibold text-white hover:bg-[#1359bc]"><FileSearch size={14} />Prepare report</button></div></div></article> : null}
+    {focusedProperty ? <article className="absolute bottom-4 left-4 z-10 w-[min(310px,calc(100%-2rem))] rounded-2xl border border-slate-200 bg-white p-4 shadow-xl"><div className="flex items-start gap-3"><span className="mt-0.5 text-[#1769dc]"><MapPin size={18} /></span><div><h3 className="font-semibold text-slate-900">Property {focusedProperty.propertyId}</h3><p className="mt-1 text-sm text-slate-500">Erf {focusedProperty.erf ?? '—'} · Portion {focusedProperty.portion ?? '—'}</p><p className="mt-2 text-xs leading-5 text-slate-500">Report options are open in the panel on the right. No supplier request has been made.</p></div></div></article> : null}
   </div>
 }

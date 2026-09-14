@@ -6,22 +6,30 @@ const text = (value) => String(value || '').trim()
 function org(value) { if (!UUID.test(text(value))) throw new Error('Select a valid organisation workspace.'); return text(value) }
 
 export async function listSensitiveLookupCases({ organisationId } = {}) {
-  if (!isSupabaseConfigured || !supabase) throw new Error('Sensitive lookup storage is not configured.')
-  const { data, error } = await supabase.from('knowledge_factory_sensitive_lookup_cases').select('*').eq('organisation_id', org(organisationId)).order('created_at', { ascending: false })
-  if (error) throw new Error(error.message || 'Sensitive lookup cases could not be loaded.')
-  return data || []
+  const payload = await call({ action: 'list_cases', organisationId: org(organisationId) })
+  return payload.items || []
 }
 
-export async function createSensitiveLookupCase({ organisationId, prospectId = '', lookupType, subjectLabel, businessPurpose, consentCaptured } = {}) {
+async function call(body) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Sensitive lookup storage is not configured.')
-  const { data: auth } = await supabase.auth.getUser()
-  const userId = auth?.user?.id
-  if (!userId) throw new Error('Sign in before creating a lookup case.')
+  const { data: { session }, error } = await supabase.auth.getSession()
+  if (error || !session?.access_token) throw new Error('Please sign in again before managing sensitive lookup requests.')
+  const response = await fetch('/api/knowledge-factory/sensitive-lookups', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(body) })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(text(payload?.error) || `Sensitive lookup request failed (HTTP ${response.status}).`)
+  return payload || {}
+}
+
+export async function createSensitiveLookupCase({ organisationId, prospectId = '', lookupType, subjectLabel, businessPurpose, consentCaptured, consentVersion = 'arch9_sensitive_lookup_v1' } = {}) {
   if (!TYPES.has(text(lookupType))) throw new Error('Select a supported lookup type.')
   if (text(subjectLabel).length < 2) throw new Error('Enter a subject label.')
   if (text(businessPurpose).length < 10) throw new Error('Provide a specific business purpose.')
   if (consentCaptured !== true) throw new Error('Recorded consent is required before this lookup can be queued.')
-  const { data, error } = await supabase.from('knowledge_factory_sensitive_lookup_cases').insert({ organisation_id: org(organisationId), prospect_id: UUID.test(text(prospectId)) ? text(prospectId) : null, created_by: userId, lookup_type: text(lookupType), subject_label: text(subjectLabel), business_purpose: text(businessPurpose), consent_captured_at: new Date().toISOString(), consent_captured_by: userId }).select('*').single()
-  if (error || !data) throw new Error(error?.message || 'Sensitive lookup case could not be created.')
-  return data
+  const payload = await call({ action: 'create_case', organisationId: org(organisationId), prospectId: UUID.test(text(prospectId)) ? text(prospectId) : '', lookupType: text(lookupType), subjectLabel: text(subjectLabel), businessPurpose: text(businessPurpose), consentCaptured, consentVersion: text(consentVersion) })
+  return payload.item
+}
+
+export async function reviewSensitiveLookupCase({ organisationId, caseId, decision, reviewNote } = {}) {
+  const payload = await call({ action: 'review_case', organisationId: org(organisationId), caseId: text(caseId), decision: text(decision), reviewNote: text(reviewNote) })
+  return payload.item
 }

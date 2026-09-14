@@ -1,4 +1,4 @@
-import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../../lib/supabaseClient'
+import { supabase } from '../../lib/supabaseClient'
 
 function text(value = '') {
   return String(value || '').trim()
@@ -14,14 +14,25 @@ function assertOrganisationId(organisationId = '') {
   return value
 }
 
-async function call(body) {
-  const result = await invokeEdgeFunction('knowledge-factory-graphql', { body })
-  if (result.error) throw new Error(getEdgeFunctionInvokeError(result).message)
-  return result.data || {}
+async function call(body, route = 'map') {
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError || !session?.access_token) throw new Error('Please sign in again before using property intelligence.')
+  const response = await fetch(`/api/knowledge-factory/${route}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify(body),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(text(payload?.error) || `Property intelligence request failed (HTTP ${response.status}).`)
+  return payload || {}
 }
 
 export async function getKnowledgeFactoryMapStatus({ organisationId } = {}) {
   return call({ action: 'status', organisationId: assertOrganisationId(organisationId) })
+}
+
+export async function getKnowledgeFactoryReportStatus({ organisationId } = {}) {
+  return call({ action: 'status', organisationId: assertOrganisationId(organisationId) }, 'reports')
 }
 
 export async function searchKnowledgeFactoryMap({ organisationId, purpose, bounds } = {}) {
@@ -53,16 +64,16 @@ export async function quoteKnowledgeFactoryReport({ organisationId, purpose, pro
     purpose: normalizedPurpose,
     propertyId: normalizedPropertyId,
     reportTypes: normalizeReportTypes(reportTypes),
-  })
+  }, 'reports')
 }
 
 export async function requestKnowledgeFactoryReport({ organisationId, purpose, quoteId } = {}) {
   const normalizedPurpose = text(purpose)
   if (normalizedPurpose.length < 10) throw new Error('Provide a report purpose of at least 10 characters.')
   if (!UUID.test(text(quoteId))) throw new Error('A valid property report quote is required.')
-  return call({ action: 'request_property_report', organisationId: assertOrganisationId(organisationId), purpose: normalizedPurpose, quoteId: text(quoteId) })
+  return call({ action: 'request_property_report', organisationId: assertOrganisationId(organisationId), purpose: normalizedPurpose, quoteId: text(quoteId) }, 'reports')
 }
 
 export async function listKnowledgeFactoryReports({ organisationId } = {}) {
-  return call({ action: 'list_property_reports', organisationId: assertOrganisationId(organisationId) })
+  return call({ action: 'list_property_reports', organisationId: assertOrganisationId(organisationId) }, 'reports')
 }

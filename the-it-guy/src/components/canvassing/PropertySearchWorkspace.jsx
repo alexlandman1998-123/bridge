@@ -6,6 +6,7 @@ import { propertyDataProvider } from '../../services/propertyIntelligence/proper
 import { PROPERTY_REPORT_TYPE_LIST } from '../../services/propertyIntelligence/propertyDataProviderContract'
 import { getKnowledgeFactoryMapStatus, searchKnowledgeFactoryMap } from '../../services/propertyIntelligence/knowledgeFactoryMapService'
 import KnowledgeFactoryParcelMap from './KnowledgeFactoryParcelMap'
+import KnowledgeFactoryPropertyPanel from './KnowledgeFactoryPropertyPanel'
 import MockParcelMap from './MockParcelMap'
 import PropertyReportBasket from './PropertyReportBasket'
 
@@ -41,6 +42,7 @@ export default function PropertySearchWorkspace() {
   const [quoteState, setQuoteState] = useState({ status: 'idle', quote: null, error: '' })
   const [orderState, setOrderState] = useState({ status: 'idle', order: null, error: '' })
   const [mapPurpose, setMapPurpose] = useState('Canvassing potential seller opportunities')
+  const [knowledgeFactoryReportTypes, setKnowledgeFactoryReportTypes] = useState(['property_summary'])
   const [knowledgeFactoryState, setKnowledgeFactoryState] = useState({ status: KNOWLEDGE_FACTORY_MAP_ENABLED ? 'loading' : 'inactive', properties: [], count: 0, error: '', message: '' })
   const orderRunRef = useRef(0)
   const organisationId = currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id || ''
@@ -186,10 +188,10 @@ export default function PropertySearchWorkspace() {
     return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm xl:h-[calc(100dvh-14.5rem)] xl:min-h-[620px] xl:max-h-[760px]" data-canvassing-workspace="knowledge-factory-map">
       <div className="flex min-h-[680px] flex-col xl:h-full xl:min-h-0">
         <div className="border-b border-slate-200 bg-white p-4">
-          <div className="flex flex-wrap items-end justify-between gap-3"><label className="block min-w-[min(100%,420px)] flex-1"><span className="mb-1.5 block text-xs font-semibold text-slate-600">Business purpose for this lookup</span><input value={mapPurpose} onChange={(event) => setMapPurpose(event.target.value)} maxLength={500} className={`${FILTER_CLASS} w-full font-normal`} placeholder="e.g. Canvassing potential seller opportunities" /></label><span className="max-w-sm text-xs leading-5 text-slate-500">Parcel-only map search. Each search is permission-checked, cost-audited, and capped at 25 results.</span></div>
+          <div className="flex flex-wrap items-end justify-between gap-3"><label className="block min-w-[min(100%,420px)] flex-1"><span className="mb-1.5 block text-xs font-semibold text-slate-600">Business purpose for this lookup</span><input value={mapPurpose} onChange={(event) => setMapPurpose(event.target.value)} maxLength={500} className={`${FILTER_CLASS} w-full font-normal`} placeholder="e.g. Canvassing potential seller opportunities" /></label><div className="max-w-sm"><span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-amber-900">Controlled UAT</span><p className="mt-1 text-xs leading-5 text-slate-500">Parcel-only map search. Each search is permission-checked, cost-audited, and capped at 25 results.</p></div></div>
           {knowledgeFactoryState.message || knowledgeFactoryState.error ? <p role="status" className={`mt-3 text-sm ${knowledgeFactoryState.error ? 'text-rose-700' : 'text-slate-600'}`}>{knowledgeFactoryState.error || knowledgeFactoryState.message}</p> : null}
         </div>
-        {blocked ? <div className="grid min-h-[520px] flex-1 place-items-center bg-slate-50 p-6 text-center"><div className="max-w-md"><h3 className="font-semibold text-slate-900">Property intelligence is not available</h3><p className="mt-2 text-sm leading-6 text-slate-600">{knowledgeFactoryState.error || knowledgeFactoryState.message || 'Your organisation needs an approved Knowledge Factory entitlement and named-user permission.'}</p></div></div> : <KnowledgeFactoryParcelMap properties={knowledgeFactoryState.properties} loading={knowledgeFactoryState.status === 'searching'} focusedProperty={focusedParcel} onFocusProperty={(property) => setFocusedPropertyId(property?.id || '')} onSearchArea={searchMapArea} onPrepareReport={(property) => navigate('/pipeline/canvassing/property-reports', { state: { propertyId: property?.propertyId || property?.id || '' } })} />}
+        {blocked ? <div className="grid min-h-[520px] flex-1 place-items-center bg-slate-50 p-6 text-center"><div className="max-w-md"><h3 className="font-semibold text-slate-900">Property intelligence is not available</h3><p className="mt-2 text-sm leading-6 text-slate-600">{knowledgeFactoryState.error || knowledgeFactoryState.message || 'Your organisation needs an approved Knowledge Factory entitlement and named-user permission.'}</p></div></div> : <div className="grid min-h-[520px] flex-1 xl:min-h-0 xl:grid-cols-[minmax(0,1fr)_360px]"><KnowledgeFactoryParcelMap properties={knowledgeFactoryState.properties} loading={knowledgeFactoryState.status === 'searching'} focusedProperty={focusedParcel} onFocusProperty={(property) => setFocusedPropertyId(property?.id || '')} onSearchArea={searchMapArea} /><KnowledgeFactoryPropertyPanel property={focusedParcel} reportTypes={knowledgeFactoryReportTypes} onToggleReportType={(reportType) => setKnowledgeFactoryReportTypes((previous) => previous.includes(reportType) ? previous.filter((item) => item !== reportType) : [...previous, reportType])} onOpenReportBuilder={() => { if (focusedParcel) navigate('/pipeline/canvassing/property-reports', { state: { propertyId: focusedParcel.propertyId || focusedParcel.id, reportTypes: knowledgeFactoryReportTypes } }) }} /></div>}
       </div>
     </section>
   }

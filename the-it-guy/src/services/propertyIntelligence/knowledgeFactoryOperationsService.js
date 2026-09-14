@@ -16,5 +16,25 @@ export async function getKnowledgeFactoryOperationsSnapshot({ organisationId } =
   const error = [access.error, permissions.error, audits.error, reports.error, lookups.error].find(Boolean)
   if (error) throw new Error(error.message || 'Knowledge Factory operations are unavailable.')
   const events = audits.data || []
-  return { access: access.data, permissions: permissions.data || [], events, reportCount: (reports.data || []).length, pendingLookups: (lookups.data || []).filter((item) => item.status === 'pending_approval').length, credits: events.reduce((sum, event) => sum + (Number(event.credits_consumed) || 0), 0) }
+  const activePermissions = (permissions.data || []).filter((item) => !item.revoked_at)
+  const operationUsers = (operation) => activePermissions.filter((item) => Array.isArray(item.allowed_operations) && item.allowed_operations.includes(operation)).length
+  const failedEvents = events.filter((item) => item.outcome === 'failed' || item.outcome === 'denied')
+  return {
+    access: access.data,
+    permissions: permissions.data || [],
+    events,
+    reportCount: (reports.data || []).length,
+    pendingLookups: (lookups.data || []).filter((item) => item.status === 'pending_approval').length,
+    credits: events.reduce((sum, event) => sum + (Number(event.credits_consumed) || 0), 0),
+    rollout: {
+      mode: 'controlled_uat',
+      enabled: access.data?.enabled === true && !access.data?.suspended_at,
+      namedUserCount: activePermissions.length,
+      mapUserCount: operationUsers('map_properties'),
+      reportUserCount: operationUsers('property_report'),
+      auditedEventCount: events.length,
+      failedEventCount: failedEvents.length,
+      latestEventAt: events[0]?.created_at || null,
+    },
+  }
 }

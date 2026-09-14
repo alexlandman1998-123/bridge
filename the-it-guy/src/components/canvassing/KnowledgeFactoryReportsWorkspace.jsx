@@ -4,6 +4,7 @@ import { useLocation } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { createCanvassingActivity, createCanvassingProspect } from '../../lib/canvassingRepository'
 import {
+  getKnowledgeFactoryReportStatus,
   listKnowledgeFactoryReports,
   quoteKnowledgeFactoryReport,
   requestKnowledgeFactoryReport,
@@ -15,9 +16,15 @@ const REPORT_OPTIONS = [
   { id: 'property_summary', label: 'Property summary', description: 'Address, erf, extent, property classification and locality.' },
   { id: 'municipal_valuation', label: 'Municipal valuation', description: 'Recorded municipal value, valuation date, municipality and zoning when supplied.' },
 ]
+const REPORT_TYPE_IDS = new Set(REPORT_OPTIONS.map((option) => option.id))
 
 function text(value) {
   return String(value || '').trim()
+}
+
+function selectedReportTypes(value) {
+  const types = Array.isArray(value) ? value.map(text).filter((item) => REPORT_TYPE_IDS.has(item)) : []
+  return types.length ? [...new Set(types)] : ['property_summary']
 }
 
 function formatCredits(value) {
@@ -56,10 +63,12 @@ export default function KnowledgeFactoryReportsWorkspace({ prospects = [], onPro
   const { currentWorkspace, profile, currentMembership } = useWorkspace()
   const organisationId = currentWorkspace?.organisationId || currentWorkspace?.organisation_id || currentWorkspace?.id || ''
   const initialPropertyId = text(location.state?.propertyId || location.state?.property?.propertyId || location.state?.property?.id)
+  const initialReportTypes = selectedReportTypes(location.state?.reportTypes)
   const [propertyId, setPropertyId] = useState(initialPropertyId)
   const [purpose, setPurpose] = useState('Canvassing potential seller opportunities')
-  const [reportTypes, setReportTypes] = useState(['property_summary'])
+  const [reportTypes, setReportTypes] = useState(initialReportTypes)
   const [quote, setQuote] = useState(null)
+  const [accessState, setAccessState] = useState({ status: 'loading', enabled: false, message: '' })
   const [confirmed, setConfirmed] = useState(false)
   const [requestState, setRequestState] = useState({ status: 'loading', items: [], error: '' })
   const [busy, setBusy] = useState('')
@@ -77,9 +86,18 @@ export default function KnowledgeFactoryReportsWorkspace({ prospects = [], onPro
   }
 
   useEffect(() => { void loadReports() }, [organisationId])
+  useEffect(() => {
+    if (!organisationId) return undefined
+    let active = true
+    getKnowledgeFactoryReportStatus({ organisationId })
+      .then((result) => { if (active) setAccessState({ status: 'ready', enabled: result.propertyReportEnabled === true, message: result.message || '' }) })
+      .catch((error) => { if (active) setAccessState({ status: 'error', enabled: false, message: error?.message || 'Property report access is unavailable.' }) })
+    return () => { active = false }
+  }, [organisationId])
   useEffect(() => { if (initialPropertyId) setPropertyId(initialPropertyId) }, [initialPropertyId])
+  useEffect(() => { setReportTypes(initialReportTypes); setQuote(null); setConfirmed(false) }, [location.key])
 
-  const canQuote = /^[1-9]\d{0,14}$/.test(propertyId) && purpose.length >= 10 && reportTypes.length > 0 && !busy
+  const canQuote = accessState.enabled && /^[1-9]\d{0,14}$/.test(propertyId) && purpose.length >= 10 && reportTypes.length > 0 && !busy
   const quoteExpired = quote?.quote_expires_at && new Date(quote.quote_expires_at).getTime() <= Date.now()
 
   function toggleType(id) {
@@ -168,7 +186,7 @@ export default function KnowledgeFactoryReportsWorkspace({ prospects = [], onPro
 
   return <section className="space-y-5" data-canvassing-workspace="knowledge-factory-reports">
     <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950">
-      <div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 text-[#1769dc]" size={20} /><div><p className="font-semibold">Knowledge Factory property reports</p><p className="mt-1 leading-6 text-blue-900">Reports are requested server-side only. You see the supplier credit estimate first; submitting the report requires a second, explicit confirmation. Ownership, bonds, transfers, credit and FICA data are not included in Phase 2.</p></div></div>
+      <div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 text-[#1769dc]" size={20} /><div><div className="flex flex-wrap items-center gap-2"><p className="font-semibold">Knowledge Factory property reports</p><span className="rounded-full bg-amber-100 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wide text-amber-900">Controlled UAT</span></div><p className="mt-1 leading-6 text-blue-900">Reports are requested server-side only. You see the supplier credit estimate first; submitting the report requires a second, explicit confirmation. Ownership, bonds, transfers, credit and FICA data are not included in Phase 2.</p>{accessState.status !== 'loading' && !accessState.enabled ? <p role="status" className="mt-2 font-medium text-rose-700">{accessState.message || 'Your named-user property report permission is not active.'}</p> : null}</div></div>
     </div>
 
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
