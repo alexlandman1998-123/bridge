@@ -1,29 +1,288 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CircleAlert, Loader2, Plus, UserRoundCheck, Wrench } from 'lucide-react'
-import { useSearchParams } from 'react-router-dom'
-import { acknowledgeRentalMaintenanceRequest, createRentalMaintenanceRequest, getRentalMaintenanceQueue, triageRentalMaintenanceRequest } from '../../services/rentals/rentalMaintenanceRepository.js'
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
+  Loader2,
+  Plus,
+  Search,
+  Wrench,
+} from "lucide-react";
+import {
+  acknowledgeRentalMaintenanceRequest,
+  getRentalMaintenanceQueue,
+} from "../../services/rentals/rentalMaintenanceRepository.js";
 
-const blank = () => ({ tenancyId: '', category: 'plumbing', priority: 'routine', description: '' })
-const triageBlank = (priority = 'routine') => ({ priority, assigneeName: '', assigneeContact: '', notes: '' })
-const title = (value) => String(value || '').replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
-const priorityTone = (value, breached) => breached || value === 'emergency' ? 'border-[#f0cbc8] bg-[#fff5f4] text-[#a23d35]' : value === 'urgent' ? 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]' : 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]'
+const label = (value) =>
+  String(value || "")
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+const open = (item) =>
+  !["resolved", "closed", "cancelled"].includes(item.status);
+
+function Metric({ icon, label: title, value, tone = "text-[#142132]" }) {
+  return (
+    <article className="rounded-[16px] border border-[#e1e8f0] bg-white p-4">
+      {createElement(icon, { size: 18, className: "text-[#1769d1]" })}
+      <p className={`mt-3 text-2xl font-semibold ${tone}`}>{value}</p>
+      <p className="mt-1 text-xs text-[#60758b]">{title}</p>
+    </article>
+  );
+}
+function IssueCard({ item, busy, onAcknowledge }) {
+  const urgent =
+    item.sla_breached || ["urgent", "emergency"].includes(item.priority);
+  return (
+    <article
+      className={`rounded-[16px] border bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,.04)] ${urgent ? "border-l-4 border-l-red-500" : "border-[#e1e8f0]"}`}
+    >
+      <div className="flex flex-wrap justify-between gap-3">
+        <div>
+          <div className="flex gap-2 text-xs font-semibold">
+            <span className={urgent ? "text-red-700" : "text-blue-700"}>
+              {item.sla_breached ? "OVERDUE" : label(item.priority)}
+            </span>
+            <span className="text-[#60758b]">{item.request_id}</span>
+          </div>
+          <h3 className="mt-2 font-semibold text-[#142132]">
+            {label(item.category)} issue
+          </h3>
+          <p className="mt-1 text-sm text-[#60758b]">
+            {item.assignee_name || "Unassigned"} · reported{" "}
+            {item.reported_at
+              ? new Date(item.reported_at).toLocaleString()
+              : "recently"}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-[#f5f8fb] px-2.5 py-1 text-xs font-semibold text-[#36516e]">
+            {label(item.status)}
+          </span>
+          {item.status === "submitted" ? (
+            <button
+              disabled={busy}
+              onClick={() => onAcknowledge(item.request_id)}
+              className="rounded-lg bg-[#087a55] px-3 py-2 text-xs font-semibold text-white"
+            >
+              Acknowledge
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </article>
+  );
+}
 
 export default function RentalMaintenancePage() {
-  const [searchParams] = useSearchParams(); const requestedTenancyId = searchParams.get('tenancyId') || ''; const [queue, setQueue] = useState([]); const [form, setForm] = useState(() => ({ ...blank(), tenancyId: requestedTenancyId })); const [triage, setTriageState] = useState({}); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState(''); const [message, setMessage] = useState(''); const [filter, setFilter] = useState('all')
-  const load = useCallback(async () => { try { setLoading(true); setError(''); setQueue(await getRentalMaintenanceQueue()) } catch (cause) { setError(cause?.message || 'Unable to load maintenance requests.') } finally { setLoading(false) } }, [])
-  useEffect(() => { void load() }, [load])
-  useEffect(() => { if (requestedTenancyId) setForm((current) => current.tenancyId ? current : { ...current, tenancyId: requestedTenancyId }) }, [requestedTenancyId])
-  const set = (key, value) => setForm((current) => ({ ...current, [key]: value }))
-  const setTriage = (id, key, value, priority) => setTriageState((current) => ({ ...current, [id]: { ...(current[id] || triageBlank(priority)), [key]: value } }))
-  const submit = async (event) => { event.preventDefault(); try { setSaving(true); setError(''); await createRentalMaintenanceRequest(form); setMessage('Maintenance request captured.'); setForm(blank()); await load() } catch (cause) { setError(cause?.message || 'Unable to capture maintenance request.') } finally { setSaving(false) } }
-  const acknowledge = async (id) => { try { setSaving(true); setError(''); await acknowledgeRentalMaintenanceRequest(id); setMessage('Request acknowledged.'); await load() } catch (cause) { setError(cause?.message || 'Unable to acknowledge request.') } finally { setSaving(false) } }
-  const assign = async (request) => { const values = triage[request.request_id] || triageBlank(request.priority); try { setSaving(true); setError(''); const result = await triageRentalMaintenanceRequest({ requestId: request.request_id, ...values }); setMessage(`Assigned with SLA due ${new Date(result.sla_due_at).toLocaleString()}.`); setTriageState((current) => { const next = { ...current }; delete next[request.request_id]; return next }); await load() } catch (cause) { setError(cause?.message || 'Unable to triage request.') } finally { setSaving(false) } }
-  const counts = useMemo(() => queue.reduce((result, item) => ({ ...result, [item.priority]: (result[item.priority] || 0) + 1, breached: result.breached + (item.sla_breached ? 1 : 0) }), { all: queue.length, routine: 0, urgent: 0, emergency: 0, breached: 0 }), [queue])
-  const rows = useMemo(() => queue.filter((item) => {
-    if (filter === 'all') return true
-    if (filter === 'breached') return item.sla_breached
-    return item.priority === filter
-  }), [filter, queue])
-  const tabs = [['all', 'All'], ['emergency', 'Emergency'], ['urgent', 'Urgent'], ['routine', 'Routine'], ['breached', 'SLA breached']]
-  return <main className="mx-auto w-full max-w-[1600px] px-3 py-2 sm:px-5 lg:px-7"><section className="space-y-4 pb-6"><div className="flex max-w-full gap-1 overflow-x-auto rounded-[14px] border border-[#dbe4ee] bg-white p-1">{tabs.map(([key, label]) => <button key={key} type="button" onClick={() => setFilter(key)} className={`shrink-0 rounded-[10px] px-3 py-2 text-xs font-semibold ${filter === key ? 'bg-[#0f2743] text-white shadow-sm' : 'text-[#51667f] hover:bg-[#f6f9fc]'}`}>{label} <span className="ml-1 opacity-70">{counts[key] || 0}</span></button>)}</div><section className="grid gap-4 xl:grid-cols-[minmax(0,.8fr)_minmax(0,1.2fr)]"><form onSubmit={submit} className="rounded-[18px] border border-[#dfe7f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,.05)]"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#edf5ff] text-[#1769d1]"><Plus size={18} /></span><div><h2 className="font-semibold text-[#142132]">New request</h2><p className="mt-1 text-sm text-[#60758b]">Capture staff-reported work against a tenancy.</p></div></div><div className="mt-5 grid gap-3 sm:grid-cols-2"><label className="form-field sm:col-span-2"><span>Tenancy ID</span><input required value={form.tenancyId} onChange={(event) => set('tenancyId', event.target.value)} placeholder="Tenancy UUID" /></label><label className="form-field"><span>Category</span><select value={form.category} onChange={(event) => set('category', event.target.value)}>{['plumbing','electrical','appliance','security','structural','pest','cleaning','other'].map((item) => <option key={item}>{title(item)}</option>)}</select></label><label className="form-field"><span>Priority</span><select value={form.priority} onChange={(event) => set('priority', event.target.value)}>{['routine','urgent','emergency'].map((item) => <option key={item}>{title(item)}</option>)}</select></label><label className="form-field sm:col-span-2"><span>Description</span><textarea required minLength="10" rows={4} value={form.description} onChange={(event) => set('description', event.target.value)} placeholder="Describe the issue, access requirements, and impact." /></label></div><button disabled={saving} className="mt-5 inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#0f2743] px-4 text-sm font-semibold text-white disabled:opacity-60">{saving ? <Loader2 size={16} className="animate-spin" /> : <Wrench size={16} />}Capture request</button></form><section className="rounded-[18px] border border-[#dfe7f0] bg-white p-5 shadow-[0_12px_30px_rgba(15,23,42,.05)]"><div className="flex items-center justify-between"><div><h2 className="font-semibold text-[#142132]">Maintenance queue</h2><p className="mt-1 text-sm text-[#60758b]">Acknowledge, triage, and assign work without leaving the queue.</p></div><Wrench size={20} className="text-[#1769d1]" /></div>{loading ? <div className="grid min-h-48 place-items-center text-sm text-[#60758b]"><Loader2 className="animate-spin" size={17} /></div> : rows.length ? <div className="mt-4 space-y-3">{rows.map((request) => { const values = triage[request.request_id] || triageBlank(request.priority); const active = !['resolved', 'cancelled'].includes(request.status); return <article key={request.request_id} className="rounded-xl border border-[#e4ebf2] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div className="flex items-start gap-3"><CircleAlert size={18} className="mt-0.5 text-[#60758b]" /><div><p className="font-semibold text-[#20364d]">{title(request.category)} · {title(request.status)}</p><p className="mt-1 text-xs text-[#60758b]">Reported {new Date(request.reported_at).toLocaleString()}{request.assignee_name ? ` · ${request.assignee_name}` : ''}</p></div></div><span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${priorityTone(request.priority, request.sla_breached)}`}>{request.sla_breached ? 'SLA breached' : title(request.priority)}</span></div>{request.status === 'submitted' ? <button disabled={saving} onClick={() => void acknowledge(request.request_id)} className="mt-3 rounded-xl border border-[#dbe6f1] px-3 py-2 text-xs font-semibold text-[#35546c]">Acknowledge</button> : null}{active ? <div className="mt-4 grid gap-2 rounded-xl bg-[#f8fbff] p-3 sm:grid-cols-2 xl:grid-cols-4"><label className="form-field"><span>Priority</span><select value={values.priority} onChange={(event) => setTriage(request.request_id, 'priority', event.target.value, request.priority)}>{['routine','urgent','emergency'].map((item) => <option key={item}>{title(item)}</option>)}</select></label><label className="form-field"><span>Assignee</span><input required value={values.assigneeName} onChange={(event) => setTriage(request.request_id, 'assigneeName', event.target.value, request.priority)} placeholder="Contractor or staff" /></label><label className="form-field"><span>Contact</span><input value={values.assigneeContact} onChange={(event) => setTriage(request.request_id, 'assigneeContact', event.target.value, request.priority)} placeholder="Optional" /></label><label className="form-field"><span>Notes</span><input value={values.notes} onChange={(event) => setTriage(request.request_id, 'notes', event.target.value, request.priority)} placeholder="Optional" /></label><button disabled={saving || !values.assigneeName.trim()} onClick={() => void assign(request)} className="sm:col-span-2 xl:col-span-4 inline-flex items-center justify-center gap-2 rounded-xl bg-[#0f2743] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60"><UserRoundCheck size={15} />{request.assignee_name ? 'Reassign and reset SLA' : 'Assign and set SLA'}</button></div> : null}</article> })}</div> : <div className="mt-4 rounded-xl border border-dashed border-[#dbe6f1] p-8 text-center text-sm text-[#60758b]">No maintenance requests in this view.</div>}</section></section>{message ? <p className="rounded-xl border border-[#cfe8dc] bg-[#effaf3] p-3 text-sm text-[#26724c]">{message}</p> : null}{error ? <p className="rounded-xl border border-[#f2c6c6] bg-[#fff7f7] p-3 text-sm text-[#9f3131]">{error}</p> : null}</section></main>
+  const [queue, setQueue] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [tab, setTab] = useState("all");
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState("");
+  const load = useCallback(async () => {
+    try {
+      setLoading(true);
+      setQueue(await getRentalMaintenanceQueue());
+    } catch (cause) {
+      setError(cause?.message || "Unable to load maintenance requests.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const metrics = useMemo(
+    () => ({
+      open: queue.filter(open).length,
+      urgent: queue.filter(
+        (item) => open(item) && ["urgent", "emergency"].includes(item.priority),
+      ).length,
+      approval: queue.filter((item) => /approval/i.test(item.status)).length,
+      overdue: queue.filter((item) => open(item) && item.sla_breached).length,
+    }),
+    [queue],
+  );
+  const rows = useMemo(
+    () =>
+      queue.filter(
+        (item) =>
+          [item.request_id, item.category, item.status, item.assignee_name]
+            .join(" ")
+            .toLowerCase()
+            .includes(query.toLowerCase()) &&
+          (tab === "all" || tab === "new"
+            ? tab !== "new" || item.status === "submitted"
+            : tab === "in_progress"
+              ? ["acknowledged", "triaged", "assigned", "in_progress"].includes(
+                  item.status,
+                )
+              : tab === "overdue"
+                ? item.sla_breached
+                : item.status === tab),
+      ),
+    [queue, query, tab],
+  );
+  const acknowledge = async (id) => {
+    try {
+      setBusy(id);
+      await acknowledgeRentalMaintenanceRequest(id);
+      await load();
+    } catch (cause) {
+      setError(cause?.message || "Unable to acknowledge request.");
+    } finally {
+      setBusy("");
+    }
+  };
+  const tabs = [
+    ["all", "All issues"],
+    ["new", "New"],
+    ["in_progress", "In progress"],
+    ["awaiting_approval", "Awaiting approval"],
+    ["scheduled", "Scheduled"],
+    ["resolved", "Resolved"],
+  ];
+  return (
+    <main className="mx-auto w-full max-w-[1600px] px-3 py-3 sm:px-5 lg:px-7">
+      <section className="space-y-4">
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-[#142132]">
+              Maintenance
+            </h1>
+            <p className="mt-1 text-sm text-[#60758b]">
+              Triage tenant issues, coordinate contractors and keep every
+              property moving.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <label className="flex h-10 min-w-64 items-center gap-2 rounded-xl border border-[#dbe4ee] bg-white px-3">
+              <Search size={15} className="text-[#7b8ca2]" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none"
+                placeholder="Search issues or assignee"
+              />
+            </label>
+            <button className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#087a55] px-4 text-sm font-semibold text-white">
+              <Plus size={16} />
+              Log issue
+            </button>
+          </div>
+        </header>
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <Metric icon={Wrench} label="Open issues" value={metrics.open} />
+          <Metric
+            icon={AlertTriangle}
+            label="Urgent"
+            value={metrics.urgent}
+            tone="text-red-700"
+          />
+          <Metric
+            icon={Clock3}
+            label="Awaiting approval"
+            value={metrics.approval}
+            tone="text-amber-700"
+          />
+          <Metric
+            icon={AlertTriangle}
+            label="Overdue"
+            value={metrics.overdue}
+            tone="text-red-700"
+          />
+          <Metric icon={CheckCircle2} label="Avg. resolution" value="—" />
+        </section>
+        <nav className="flex overflow-x-auto rounded-xl border border-[#dbe4ee] bg-white p-1">
+          {tabs.map(([key, title]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold ${tab === key ? "bg-[#0f2743] text-white" : "text-[#60758b]"}`}
+            >
+              {title}
+            </button>
+          ))}
+        </nav>
+        {error ? (
+          <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            {error}
+          </p>
+        ) : null}
+        <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <section>
+            <h2 className="mb-3 text-lg font-semibold text-[#142132]">
+              Needs attention
+            </h2>
+            {loading ? (
+              <div className="grid min-h-64 place-items-center rounded-xl border bg-white">
+                <Loader2 className="animate-spin" />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {rows.map((item) => (
+                  <IssueCard
+                    key={item.request_id}
+                    item={item}
+                    busy={busy === item.request_id}
+                    onAcknowledge={acknowledge}
+                  />
+                ))}
+                {!rows.length ? (
+                  <p className="rounded-xl border border-dashed bg-white p-10 text-center text-sm text-[#60758b]">
+                    No issues in this view.
+                  </p>
+                ) : null}
+              </div>
+            )}
+          </section>
+          <aside className="space-y-4">
+            <section className="rounded-[16px] border border-[#e1e8f0] bg-white p-4">
+              <h2 className="font-semibold text-[#142132]">Live triage</h2>
+              <p className="mt-3 text-3xl font-semibold">{metrics.open}</p>
+              <p className="text-sm text-[#60758b]">open maintenance issues</p>
+              <div className="mt-4 space-y-2 text-sm">
+                <p className="flex justify-between">
+                  <span>Urgent</span>
+                  <b>{metrics.urgent}</b>
+                </p>
+                <p className="flex justify-between">
+                  <span>Overdue</span>
+                  <b>{metrics.overdue}</b>
+                </p>
+              </div>
+            </section>
+            <section className="rounded-[16px] border border-[#e1e8f0] bg-white p-4">
+              <h2 className="font-semibold text-[#142132]">SLA at risk</h2>
+              {queue
+                .filter((item) => item.sla_breached)
+                .slice(0, 4)
+                .map((item) => (
+                  <p
+                    key={item.request_id}
+                    className="mt-3 border-l-2 border-red-500 pl-3 text-sm"
+                  >
+                    <b>{label(item.category)} issue</b>
+                    <br />
+                    <span className="text-xs text-red-700">SLA breached</span>
+                  </p>
+                ))}
+              {!metrics.overdue ? (
+                <p className="mt-3 text-sm text-[#60758b]">
+                  No overdue issues.
+                </p>
+              ) : null}
+            </section>
+          </aside>
+        </section>
+      </section>
+    </main>
+  );
 }
