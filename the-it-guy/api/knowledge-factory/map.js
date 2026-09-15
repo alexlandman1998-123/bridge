@@ -186,13 +186,29 @@ async function supplierToken(config) {
   return token
 }
 
-function parseWktPolygon(value) {
-  const match = /^POLYGON\s*\(\(\s*([^()]+?)\s*\)\)$/i.exec(text(value, 50_000))
+export function parseWktPolygon(value) {
+  // Knowledge Factory can return an SRID-qualified POLYGON, a POLYGON with
+  // interior rings, or a MULTIPOLYGON. The map only needs the first exterior
+  // ring to make the parcel selectable.
+  const wkt = text(value, 50_000).replace(/^SRID=\d+\s*;\s*/i, '')
+  const match = /^(?:POLYGON\s*\(\(|MULTIPOLYGON\s*\(\(\()\s*([^()]+?)\s*\)/i.exec(wkt)
   if (!match) return []
   return match[1].split(',').flatMap((pair) => {
-    const [longitude, latitude] = pair.trim().split(/\s+/).map(Number)
+    const [longitude, latitude] = pair.trim().split(/\s+/).slice(0, 2).map(Number)
     return Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ latitude, longitude }] : []
   }).slice(0, 500)
+}
+
+function pointPolygon(latitude, longitude) {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return []
+  const latitudeRadius = 0.000025
+  const longitudeRadius = 0.000025
+  return [
+    { latitude: latitude - latitudeRadius, longitude: longitude - longitudeRadius },
+    { latitude: latitude - latitudeRadius, longitude: longitude + longitudeRadius },
+    { latitude: latitude + latitudeRadius, longitude: longitude + longitudeRadius },
+    { latitude: latitude + latitudeRadius, longitude: longitude - longitudeRadius },
+  ]
 }
 
 function costs(body) {
@@ -211,7 +227,7 @@ async function searchMap(config, bounds) {
     headers: { 'content-type': 'application/json', authorization: `Bearer ${await supplierToken(config)}`, 'GraphQL-Cost': 'report' },
     body: JSON.stringify({
       operationName: 'MapProperties',
-      query: 'query MapProperties($minX: Decimal!, $maxX: Decimal!, $minY: Decimal!, $maxY: Decimal!) { properties(where: { x: { gt: $minX, lt: $maxX }, y: { gt: $minY, lt: $maxY } }, first: 25) { nodes { propertyId wkt erf portion suburb { suburbId } } } }',
+      query: 'query MapProperties($minX: Decimal!, $maxX: Decimal!, $minY: Decimal!, $maxY: Decimal!) { properties(where: { x: { gt: $minX, lt: $maxX }, y: { gt: $minY, lt: $maxY } }, first: 25) { nodes { propertyId x y wkt erf portion suburb { suburbId } } } }',
       variables: { minX: bounds.west, maxX: bounds.east, minY: bounds.south, maxY: bounds.north },
     }),
   })
@@ -220,9 +236,12 @@ async function searchMap(config, bounds) {
   const nodes = Array.isArray(body?.data?.properties?.nodes) ? body.data.properties.nodes : []
   const items = nodes.flatMap((node) => {
     const propertyId = text(String(node?.propertyId || ''), 100)
-    const polygon = parseWktPolygon(node?.wkt)
+    const supplierPolygon = parseWktPolygon(node?.wkt)
+    const longitude = number(node?.x)
+    const latitude = number(node?.y)
+    const polygon = supplierPolygon.length >= 3 ? supplierPolygon : pointPolygon(latitude, longitude)
     if (!propertyId || polygon.length < 3) return []
-    return [{ id: propertyId, propertyId, erf: number(node.erf), portion: number(node.portion), suburbId: text(String(node?.suburb?.suburbId || ''), 100) || null, polygon }]
+    return [{ id: propertyId, propertyId, erf: number(node.erf), portion: number(node.portion), suburbId: text(String(node?.suburb?.suburbId || ''), 100) || null, latitude, longitude, geometry: supplierPolygon.length >= 3 ? 'boundary' : 'location', polygon }]
   })
   return { items, costs: costs(body), vendorRequestId: text(response.headers.get('x-request-id'), 200) || null }
 }

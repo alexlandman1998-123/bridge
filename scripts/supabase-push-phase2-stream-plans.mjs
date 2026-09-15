@@ -52,7 +52,7 @@ function countBy(rows, key) {
 function approvedCorrectiveSubstitutions(repoRoot, manifestRows) {
   return manifestRows.filter((row) => {
     if (row.action !== 'corrective_migration_required') return false
-    const clearanceFile = path.join(repoRoot, CLEARANCE_DIR, `${row.version}-${row.stream}.json`)
+    const clearanceFile = path.join(repoRoot, CLEARANCE_DIR, `${row.version}-${row.evidenceStream || row.stream}.json`)
     if (!existsSync(clearanceFile)) return false
     const clearance = readJson(clearanceFile)
     const blockers = Array.isArray(clearance.blockers) ? clearance.blockers : []

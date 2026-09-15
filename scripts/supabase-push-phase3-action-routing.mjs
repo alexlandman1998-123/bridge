@@ -23,7 +23,7 @@ function readJson(filePath) {
 }
 
 function evidencePath(row) {
-  return `docs/staging-evidence/${row.version}-${row.stream}.json`
+  return `docs/staging-evidence/${row.version}-${row.evidenceStream || row.stream}.json`
 }
 
 function correctivePath(row) {
@@ -31,11 +31,11 @@ function correctivePath(row) {
 }
 
 function manualReviewPath(row) {
-  return `docs/manual-review/${row.version}-${row.stream}.md`
+  return `docs/manual-review/${row.version}-${row.evidenceStream || row.stream}.md`
 }
 
 function clearancePath(row) {
-  return path.join(CLEARANCE_DIR, `${row.version}-${row.stream}.json`)
+  return path.join(CLEARANCE_DIR, `${row.version}-${row.evidenceStream || row.stream}.json`)
 }
 
 function approvedClearanceAction(repoRoot, row) {

@@ -1,0 +1,27 @@
+{
+  "version": "20260913190000",
+  "stream": "other",
+  "file": "20260913190000_fica_declaration_canonical_pack_phase3.sql",
+  "originalAction": "manual_data_review",
+  "clearanceDecision": "apply_original_after_dependency_check",
+  "approvedBy": "Alex",
+  "approvedAt": "2026-09-14T16:49:07Z",
+  "manualReview": {
+    "checked": true,
+    "decision": "apply_original_after_dependency_check",
+    "source": "Read-only production and staging audit of the two canonical definition keys and five fixed rule IDs",
+    "ledgerRecorded": false,
+    "intendedOutcomeReviewed": true,
+    "idempotency": "Both writes use ON CONFLICT against stable primary keys; reruns converge configuration without duplicating logical requirements or verifying existing evidence.",
+    "requiredChecks": [
+      "staging_dependency_preflight",
+      "post_apply_fica_declaration_data_audit",
+      "canonical_document_verification_data_guard",
+      "fica_manual_pack_service_test"
+    ],
+    "productionRecordsPresent": 0,
+    "stagingRecordsPresent": 0,
+    "blockers": []
+  },
+  "blockers": []
+}

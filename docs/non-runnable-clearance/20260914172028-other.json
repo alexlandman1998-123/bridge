@@ -1,0 +1,20 @@
+{
+  "version": "20260914172028",
+  "stream": "other",
+  "file": "20260914172028_fica_compliance_certificate_activate_rule.sql",
+  "originalAction": "manual_data_review",
+  "clearanceDecision": "apply_original_after_dependency_check",
+  "approvedBy": "Alex",
+  "approvedAt": "2026-09-14T17:42:00Z",
+  "manualReview": {
+    "checked": true,
+    "decision": "apply_original_after_dependency_check",
+    "source": "Staging verification showed the exact canonical FICA certificate rule present and inactive after its source migration, then active after this correction.",
+    "ledgerRecorded": false,
+    "intendedOutcomeReviewed": true,
+    "idempotency": "The migration asserts the fixed rule identity tuple and converges that primary key to is_active=true.",
+    "requiredChecks": ["certificate_catalog_query", "fica_compliance_review_service_test"],
+    "blockers": []
+  },
+  "blockers": []
+}

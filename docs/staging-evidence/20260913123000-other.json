@@ -1,0 +1,26 @@
+{
+  "version": "20260913123000",
+  "stream": "other",
+  "file": "20260913123000_rental_lease_version_seed_for_conversions.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T16:41:30Z",
+  "notes": [
+    "Apply the original migration to staging, run checks, then record the staging ledger.",
+    "Validated on staging: the seed function and trigger exist, and every rental lease has an initial version after the conversion backfill."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260913123000 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260913123000 --evidence docs/staging-evidence/20260913123000-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-09-14T16:41:57.256Z"
+}

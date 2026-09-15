@@ -1,0 +1,1 @@
+import{j as l}from"./vendor-react-nZI-YelQ.js";import{B as d}from"./BondStatusBadge-Bn40f12L.js";function m({label:r="Healthy",status:o="healthy",overdueDays:a=0,className:i=""}){let e="emerald";return o==="overdue"||a>0?e="rose":o==="watch"?e="amber":o==="flagged"?e="indigo":o==="healthy"&&(e="emerald"),l.jsx(d,{label:r,tone:e,className:i})}export{m as B};

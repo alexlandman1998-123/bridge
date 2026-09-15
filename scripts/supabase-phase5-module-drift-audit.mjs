@@ -116,8 +116,18 @@ function readMigrationFiles(repoRoot) {
         file,
         path: path.join(migrationsDir, file),
         module: classifyModule(name),
+        transactional: isExplicitTransactionalMigration(path.join(migrationsDir, file)),
       }
     })
+}
+
+function isExplicitTransactionalMigration(filePath) {
+  const source = readFileSync(filePath, 'utf8')
+    .replace(/^\s*--.*$/gm, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .trim()
+
+  return /^begin\s*;/i.test(source) && /commit\s*;\s*$/i.test(source)
 }
 
 function classifyModule(name = '') {
@@ -452,6 +462,7 @@ function buildMigrationDrift({ files, buckets, objectRowsByFile, fetchRemote }) 
         objectCount: objects.length,
         liveCount,
         objectStatus,
+        transactional: Boolean(migration?.transactional),
       }
     })
     .sort((a, b) => {
@@ -462,6 +473,14 @@ function buildMigrationDrift({ files, buckets, objectRowsByFile, fetchRemote }) 
 }
 
 const DEPLOYMENT_STREAM_ORDER = [
+  'rental_readiness',
+  'document_configuration',
+  'fica_compliance',
+  'transaction_fee_controls',
+  'property24_analytics',
+  'website_blog',
+  'email_delivery',
+  'website_operations',
   'settings_governance',
   'legal_review_assurance',
   'legal_document_runtime',
@@ -477,7 +496,41 @@ const DEPLOYMENT_STREAM_ORDER = [
   'other',
 ]
 
+// These local-only migrations share a timestamp range but not a single
+// database dependency chain. Keep each real product lane independent so a
+// stalled website or fee migration cannot prevent a reviewed FICA or rental
+// migration from reaching staging.
+const DEPLOYMENT_LANES = new Map([
+  ['20260913120000', { stream: 'rental_readiness', dependsOn: 'rental baseline preflight' }],
+  ['20260913123000', { stream: 'rental_readiness', dependsOn: '20260913120000' }],
+  ['20260913130000', { stream: 'rental_readiness', dependsOn: '20260913123000' }],
+  ['20260913163747', { stream: 'transaction_fee_controls', dependsOn: 'transaction-fee baseline preflight' }],
+  ['20260913164842', { stream: 'transaction_fee_controls', dependsOn: '20260913163747' }],
+  ['20260913174500', { stream: 'transaction_fee_controls', dependsOn: '20260913164842' }],
+  ['20260913164108', { stream: 'property24_analytics', dependsOn: 'Property24 baseline preflight' }],
+  ['20260913164657', { stream: 'property24_analytics', dependsOn: '20260913164108' }],
+  ['20260913165354', { stream: 'property24_analytics', dependsOn: '20260913164657' }],
+  ['20260913182014', { stream: 'fica_compliance', dependsOn: 'FICA case baseline preflight' }],
+  ['20260913200000', { stream: 'fica_compliance', dependsOn: '20260913182014' }],
+  ['20260913210000', { stream: 'fica_compliance', dependsOn: '20260913200000' }],
+  ['20260913190000', { stream: 'document_configuration', dependsOn: 'document-pack baseline preflight' }],
+  ['20260914165606', { stream: 'document_configuration', dependsOn: '20260913190000' }],
+  ['20260913182312', { stream: 'website_blog', dependsOn: 'website-blog baseline preflight' }],
+  ['20260913184108', { stream: 'website_blog', dependsOn: '20260913182312' }],
+  ['20260913185826', { stream: 'website_blog', dependsOn: '20260913184108' }],
+  ['20260913191403', { stream: 'website_blog', dependsOn: '20260913185826' }],
+  ['20260913193410', { stream: 'website_blog', dependsOn: '20260913191403' }],
+  ['20260913195118', { stream: 'website_blog', dependsOn: '20260913193410' }],
+  ['20260914073546', { stream: 'email_delivery', dependsOn: 'email-delivery baseline preflight' }],
+  ['20260914073806', { stream: 'email_delivery', dependsOn: '20260914073546' }],
+  ['20260914080412', { stream: 'email_delivery', dependsOn: '20260914073806' }],
+  ['20260914080640', { stream: 'email_delivery', dependsOn: '20260914080412' }],
+  ['20260914083450', { stream: 'website_operations', dependsOn: 'website-hostname baseline preflight' }],
+])
+
 function deploymentStream(row) {
+  const lane = DEPLOYMENT_LANES.get(row.version)
+  if (lane) return lane.stream
   const name = row.file.toLowerCase()
   if (name.includes('settings_')) return 'settings_governance'
   if (/legal_(document_counsel|document_review|draft_review|draft_immutable|signing_envelope|signer_session|final_signed|final_delivery)/.test(name)) return 'legal_review_assurance'
@@ -501,6 +554,11 @@ function isCorrectiveMigration(row) {
 function applicationAction(row) {
   if (isCorrectiveMigration(row) && ['partial_live', 'none_live'].includes(row.objectStatus)) return 'apply_original_after_dependency_check'
   if (row.objectStatus === 'all_live') return 'repair_only_after_smoke'
+  // A local-only migration with an explicit BEGIN/COMMIT cannot be classified as
+  // partially applied from overlapping object names alone. Those names may be
+  // inherited from an earlier migration; treat it as an original-application
+  // candidate until a catalog diff proves otherwise.
+  if (row.objectStatus === 'partial_live' && row.transactional) return 'apply_original_after_dependency_check'
   if (row.objectStatus === 'partial_live') return 'corrective_migration_required'
   if (row.objectStatus === 'none_live') return 'apply_original_after_dependency_check'
   if (row.objectStatus === 'no_static_objects') return 'manual_data_review'
@@ -510,7 +568,7 @@ function applicationAction(row) {
 function applicationGate(action) {
   if (action === 'repair_only_after_smoke') return 'Run module behavior tests; then record only this version as applied.'
   if (action === 'corrective_migration_required') return 'Diff live definitions, create an idempotent corrective migration, and verify both outcomes.'
-  if (action === 'apply_original_after_dependency_check') return 'Prove prerequisites in staging, apply this file alone, and run catalog plus behavior checks.'
+  if (action === 'apply_original_after_dependency_check') return 'Prove prerequisites and any overlapping-object provenance in staging, apply this file alone, and run catalog plus behavior checks.'
   if (action === 'manual_data_review') return 'Verify the intended data outcome and idempotency manually before deciding apply or repair.'
   return 'Refresh linked evidence before any action.'
 }
@@ -524,6 +582,10 @@ function buildApplicationManifest(driftRows) {
       return {
         ...row,
         stream,
+        // Evidence was already captured under the former shared `other`
+        // stream. Preserve that file identity while routing execution through
+        // the new, independent lane.
+        evidenceStream: DEPLOYMENT_LANES.has(row.version) ? 'other' : stream,
         action,
         gate: applicationGate(action),
       }
@@ -534,11 +596,12 @@ function buildApplicationManifest(driftRows) {
       return a.version.localeCompare(b.version)
     })
 
-  const previousByStream = new Map()
   return rows.map((row) => {
-    const dependsOn = previousByStream.get(row.stream) || 'stream preflight'
-    previousByStream.set(row.stream, row.version)
-    return { ...row, dependsOn }
+    const lane = DEPLOYMENT_LANES.get(row.version)
+    return {
+      ...row,
+      dependsOn: lane?.dependsOn || 'module baseline preflight',
+    }
   })
 }
 
@@ -947,12 +1010,14 @@ function main() {
     const applicationManifest = buildApplicationManifest(driftRows).map((row) => ({
       version: row.version,
       stream: row.stream,
+      evidenceStream: row.evidenceStream,
       dependsOn: row.dependsOn,
       module: row.module,
       file: row.file,
       objectStatus: row.objectStatus,
       liveCount: row.liveCount,
       objectCount: row.objectCount,
+      transactional: row.transactional,
       action: row.action,
       gate: row.gate,
     }))
@@ -983,12 +1048,14 @@ function main() {
       applicationManifest: buildApplicationManifest(driftRows).map((row) => ({
         version: row.version,
         stream: row.stream,
+        evidenceStream: row.evidenceStream,
         dependsOn: row.dependsOn,
         module: row.module,
         file: row.file,
         objectStatus: row.objectStatus,
         liveCount: row.liveCount,
         objectCount: row.objectCount,
+        transactional: row.transactional,
         action: row.action,
         gate: row.gate,
       })),

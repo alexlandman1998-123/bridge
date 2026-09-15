@@ -1,0 +1,24 @@
+{
+  "version": "20260913185826",
+  "stream": "other",
+  "file": "20260913185826_website_blog_release2_media_operations.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T00:00:00.000Z",
+  "notes": [
+    "Applied to staging; website-media storage bucket and the available-listings function are present."
+  ],
+  "commands": [
+    "staging catalog query verified website-media and website_blog_available_listings"
+  ],
+  "ledgerRecordedAt": "2026-09-14T19:07:14.700Z"
+}

@@ -1,0 +1,19 @@
+{
+  "version": "20260913130000",
+  "stream": "rental_readiness",
+  "file": "20260913130000_rental_notice_acknowledgement_transition.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:15:00Z",
+  "notes": [
+    "Verified in production: rental_notices and its historical baseline ledger entry exist; rental_acknowledge_notice(uuid) now performs the notice_given tenancy transition.",
+    "Production recovery was rechecked immediately before SQL application: eight completed physical backups were available."
+  ]
+}

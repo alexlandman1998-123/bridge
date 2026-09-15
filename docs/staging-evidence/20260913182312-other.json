@@ -1,0 +1,24 @@
+{
+  "version": "20260913182312",
+  "stream": "other",
+  "file": "20260913182312_website_blog_structured_blocks_phase1.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T00:00:00.000Z",
+  "notes": [
+    "Applied to staging; content_blocks and the authenticated draft-save function are present."
+  ],
+  "commands": [
+    "staging catalog query verified content_blocks and website_save_draft_blog_post"
+  ],
+  "ledgerRecordedAt": "2026-09-14T19:05:40.485Z"
+}

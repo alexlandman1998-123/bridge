@@ -1,0 +1,19 @@
+{
+  "version": "20260913190000",
+  "stream": "document_configuration",
+  "file": "20260913190000_fica_declaration_canonical_pack_phase3.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:00:00Z",
+  "notes": [
+    "Verified in production: the two canonical document definitions exist and are active; the five canonical rule IDs exist with their expected definition keys and are inactive before the dedicated activation correction.",
+    "Production recovery was rechecked immediately before SQL application: eight completed physical backups were available."
+  ]
+}

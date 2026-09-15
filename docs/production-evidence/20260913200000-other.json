@@ -1,0 +1,16 @@
+{
+  "version": "20260913200000",
+  "stream": "fica_compliance",
+  "file": "20260913200000_knowledge_factory_fica_verification_handoff_phase4.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:45:00Z",
+  "notes": ["Verified transaction-aware FICA handoff metadata in production. No raw provider payload fields are introduced."]
+}

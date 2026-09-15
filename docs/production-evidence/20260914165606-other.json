@@ -1,0 +1,19 @@
+{
+  "version": "20260914165606",
+  "stream": "document_configuration",
+  "file": "20260914165606_fica_declaration_canonical_pack_activate_rules.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:01:00Z",
+  "notes": [
+    "Verified in production after application: both canonical document definitions are active and all five canonical FICA declaration rule IDs are active.",
+    "The original migration is recorded in the production ledger; this corrective migration is ready to be recorded next."
+  ]
+}

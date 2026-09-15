@@ -1,0 +1,25 @@
+{
+  "version": "20260913195118",
+  "stream": "other",
+  "file": "20260913195118_website_blog_slug_redirect_trigger.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T00:00:00.000Z",
+  "notes": [
+    "Applied to staging and verified the redirect capture function and trigger exist on website_blog_posts."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260913195118 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260913195118 --evidence docs/staging-evidence/20260913195118-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-09-14T19:04:29.688Z"
+}

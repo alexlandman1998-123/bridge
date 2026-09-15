@@ -1,0 +1,19 @@
+{
+  "version": "20260914172028",
+  "stream": "fica_compliance",
+  "file": "20260914172028_fica_compliance_certificate_activate_rule.sql",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T17:42:00Z",
+  "notes": [
+    "Verified the exact canonical certificate rule identity and active state after the append-only correction; FICA certificate behavior test passes."
+  ],
+  "ledgerRecordedAt": "2026-09-14T17:22:30.889Z"
+}

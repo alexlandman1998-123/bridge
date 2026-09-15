@@ -1,0 +1,8 @@
+@media(max-width:600px){
+  .hs-selling__process>div,.hs-selling__commitments{display:flex;gap:12px;overflow-x:auto;margin-right:-22px;padding:0 22px 12px 0;scroll-snap-type:x mandatory}
+  .hs-selling__process article,.hs-selling__process article:nth-child(3),.hs-selling__commitments article,.hs-selling__commitments article:first-child{flex:0 0 min(80vw,320px);min-height:245px;padding:25px!important;border:1px solid #555!important;scroll-snap-align:start}
+  .hs-selling__process article,.hs-selling__process article:nth-child(3){border-color:#dededb!important}
+  .hs-selling__process span{margin-bottom:43px}
+  .hs-selling__process>div::-webkit-scrollbar,.hs-selling__commitments::-webkit-scrollbar{height:4px}
+  .hs-selling__process>div::-webkit-scrollbar-thumb,.hs-selling__commitments::-webkit-scrollbar-thumb{background:#888;border-radius:99px}
+}

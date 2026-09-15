@@ -1,0 +1,1 @@
+const c=new Map;function o(e="",n=""){return`${String(e||"").trim()}:${String(n||"").trim()}`}function i(e,n){const t=o(e,n),r=c.get(t);return r?r.expiresAt<=Date.now()?(c.delete(t),null):r.data||null:null}function C(e,n,t){const r=o(e,n);return!r||!t||c.set(r,{data:t,expiresAt:Date.now()+6e4}),t}function u(e,n){c.delete(o(e,n))}export{u as d,i as r,C as w};

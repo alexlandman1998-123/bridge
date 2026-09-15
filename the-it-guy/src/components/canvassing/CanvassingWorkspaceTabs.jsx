@@ -18,5 +18,5 @@ export default function CanvassingWorkspaceTabs() {
   const items = isOrganisationAdminMembershipRole(membershipRole)
     ? CANVASSING_WORKSPACE_TABS
     : CANVASSING_WORKSPACE_TABS.filter((item) => item.id !== 'operations')
-  return <ModuleSegmentedNav items={items} ariaLabel="Canvassing tools" />
+  return <ModuleSegmentedNav items={items} ariaLabel="Canvassing tools" singleRow />
 }

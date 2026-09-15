@@ -1,0 +1,20 @@
+{
+  "version": "20260913190000",
+  "stream": "document_configuration",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T16:57:22Z",
+  "notes": [
+    "The original migration created the two canonical definitions and five fixed requirement-rule IDs.",
+    "First-run verification exposed inactive rules; the immediately following reviewed corrective migration 20260914165606 activated only those five IDs.",
+    "The final catalog audit reports all seven records present and canonical_match=true."
+  ],
+  "ledgerRecordedAt": "2026-09-14T16:57:55.432Z"
+}

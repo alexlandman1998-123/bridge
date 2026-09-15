@@ -346,6 +346,13 @@ const HomeSeekersDevelopments = lazy(() => import('./pages/HomeSeekersDevelopmen
 const HomeSeekersPeople = lazy(() => import('./pages/HomeSeekersPeople'))
 const HomeSeekersAbout = lazy(() => import('./pages/HomeSeekersAbout'))
 const HomeSeekersContact = lazy(() => import('./pages/HomeSeekersContact'))
+const HomeSeekersPageShell = lazy(() => import('./pages/HomeSeekersPageShell'))
+const HomeSeekersSelling = lazy(() => import('./pages/HomeSeekersSelling'))
+const HomeSeekersBuying = lazy(() => import('./pages/HomeSeekersBuying'))
+const HomeSeekersProperty = lazy(() => import('./pages/HomeSeekersProperty'))
+const HomeSeekersRenting = lazy(() => import('./pages/HomeSeekersRenting'))
+const HomeSeekersAreas = lazy(() => import('./pages/HomeSeekersAreas'))
+const HomeSeekersJoin = lazy(() => import('./pages/HomeSeekersJoin'))
 const PublicDevelopmentLandingPage = lazy(() => import('./pages/PublicDevelopmentResponsiveRoute'))
 const BondDashboardPage = lazy(() => import('./pages/bond/BondDashboardPage'))
 const BondDevelopmentsPage = lazy(() => import('./pages/bond/BondDevelopmentsPage'))
@@ -1922,6 +1929,13 @@ function AppRoutes() {
           <Route path="/demo/homeseekers/people" element={<AppErrorBoundary scope="homeseekers-people" title="HomeSeekers people page failed to load"><HomeSeekersPeople /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/about" element={<AppErrorBoundary scope="homeseekers-about" title="HomeSeekers about page failed to load"><HomeSeekersAbout /></AppErrorBoundary>} />
           <Route path="/demo/homeseekers/contact" element={<AppErrorBoundary scope="homeseekers-contact" title="HomeSeekers contact page failed to load"><HomeSeekersContact /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/selling" element={<AppErrorBoundary scope="homeseekers-selling" title="HomeSeekers selling page failed to load"><HomeSeekersSelling /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/buying" element={<AppErrorBoundary scope="homeseekers-buying" title="HomeSeekers buying page failed to load"><HomeSeekersBuying /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/buying/:propertyId" element={<AppErrorBoundary scope="homeseekers-property" title="HomeSeekers property page failed to load"><HomeSeekersProperty /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/renting" element={<AppErrorBoundary scope="homeseekers-renting" title="HomeSeekers renting page failed to load"><HomeSeekersRenting /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/areas" element={<AppErrorBoundary scope="homeseekers-areas" title="HomeSeekers areas page failed to load"><HomeSeekersAreas /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/join" element={<AppErrorBoundary scope="homeseekers-join" title="HomeSeekers join page failed to load"><HomeSeekersJoin /></AppErrorBoundary>} />
+          <Route path="/demo/homeseekers/valuation" element={<AppErrorBoundary scope="homeseekers-valuation" title="HomeSeekers valuation page failed to load"><HomeSeekersPageShell page="valuation" /></AppErrorBoundary>} />
           <Route path="/referrals/invite/:token" element={<AppErrorBoundary scope="referral-invite" title="Referral invite failed to load"><ReferralInvitePage /></AppErrorBoundary>} />
           <Route element={<MobileExecutiveLayout />}>
             <Route path="/m/developments" element={<MobileDevelopmentsPage />} />

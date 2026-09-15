@@ -1,0 +1,1 @@
+function t(r){const n=Number(r||0);return new Intl.NumberFormat("en-ZA",{style:"currency",currency:"ZAR",maximumFractionDigits:0}).format(n)}function m(r,n=1){return`${Number(r||0).toFixed(n)}%`}function u(r){return new Intl.NumberFormat("en-ZA").format(Number(r||0))}export{u as a,t as b,m as f};

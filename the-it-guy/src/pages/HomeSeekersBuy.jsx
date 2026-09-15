@@ -5,19 +5,15 @@ import './HomeSeekersBuy.css'
 import './HomeSeekersBuyOverrides.css'
 
 const homes = [
-  { status: 'For sale', price: 'R 4 950 000', suburb: 'Bedfordview', beds: 4, baths: 3, cars: 2, type: 'House', image: 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=1200&q=88' },
-  { status: 'For sale', price: 'R 3 650 000', suburb: 'Edenvale', beds: 3, baths: 2.5, cars: 2, type: 'House', image: 'https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1200&q=88' },
-  { status: 'New listing', price: 'R 7 950 000', suburb: 'Waterkloof Ridge', beds: 5, baths: 4, cars: 3, type: 'House', image: 'https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=1200&q=88' },
-  { status: 'For sale', price: 'R 2 850 000', suburb: 'Parkhurst', beds: 3, baths: 2, cars: 2, type: 'House', image: 'https://images.unsplash.com/photo-1600047509358-9dc75507daeb?auto=format&fit=crop&w=1200&q=88' },
-  { status: 'For sale', price: 'R 5 600 000', suburb: 'Melrose', beds: 4, baths: 3, cars: 2, type: 'House', image: 'https://images.unsplash.com/photo-1600566753190-17f0baa2a6c3?auto=format&fit=crop&w=1200&q=88' },
-  { status: 'For sale', price: 'R 1 950 000', suburb: 'Greenstone', beds: 2, baths: 2, cars: 2, type: 'Apartment', image: 'https://images.unsplash.com/photo-1600047509807-ba8f99d2cdde?auto=format&fit=crop&w=1200&q=88' },
+  { status: 'For sale', price: 'R25,800,000', suburb: 'Waterkloof', beds: 5, baths: 7, cars: 5, type: 'Freehold', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2026/2/869_42e792e711594d22ad9df15a573182f4_t_w_1540_h_635.avif' },
+  { status: 'For sale', price: 'R12,995,000', suburb: 'Steyn City', beds: 3, baths: 3, cars: 2, type: 'House', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_97bcc14546414da09ea8ba586b858759_t_w_505_h_490.avif' },
+  { status: 'For sale', price: 'R3,490,000', suburb: 'Waterkloof', beds: '—', baths: '—', cars: '—', type: 'Vacant land', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_f02bc109f42a499fb43e3e7b41af6c13_t_w_505_h_490.avif' },
 ]
 const nav = ['Buy', 'Sell', 'Rent', 'Developments', 'Our people', 'About', 'Contact']
 const localAreas = [
-  { name: 'Bedfordview', count: '42 properties', image: 'https://images.unsplash.com/photo-1600047509358-9dc75507daeb?auto=format&fit=crop&w=900&q=82' },
-  { name: 'Edenvale', count: '36 properties', image: 'https://images.unsplash.com/photo-1600566753086-00f18fb6b3ea?auto=format&fit=crop&w=900&q=82' },
-  { name: 'Greenstone', count: '28 properties', image: 'https://images.unsplash.com/photo-1600607688969-a5bfcd646154?auto=format&fit=crop&w=900&q=82' },
-  { name: 'Sandton', count: '52 properties', image: 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=900&q=82' },
+  { name: 'Pretoria', count: 'Featured homes', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2026/2/869_42e792e711594d22ad9df15a573182f4_t_w_1540_h_635.avif' },
+  { name: 'Waterkloof', count: 'Featured homes', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_f02bc109f42a499fb43e3e7b41af6c13_t_w_505_h_490.avif' },
+  { name: 'Midrand', count: 'Featured homes', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2025/8/869_97bcc14546414da09ea8ba586b858759_t_w_505_h_490.avif' },
 ]
 
 function HomeSeekersBuy() {

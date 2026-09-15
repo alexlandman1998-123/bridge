@@ -1,0 +1,16 @@
+{
+  "version": "20260913123000",
+  "stream": "rental_readiness",
+  "file": "20260913123000_rental_lease_version_seed_for_conversions.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:57:00Z",
+  "notes": ["Verified the production lease-version seed function and insert trigger; every existing rental lease has an initial version."]
+}

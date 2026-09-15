@@ -1,1243 +1,310 @@
 {
-  "generatedAt": "2026-09-06T16:55:55.173Z",
+  "generatedAt": "2026-09-14T16:26:46.136Z",
   "status": "LEDGER_DRIFT_BLOCKED",
   "closeoutSource": "scripts/supabase-phase8-closeout.mjs",
   "splitInvestigationSource": "scripts/supabase-phase6-split-ledger-investigation.mjs",
   "closeoutCommandStatus": 1,
-  "splitCommandStatus": 0,
+  "splitCommandStatus": 1,
   "resolved": false,
-  "reviewedSplitVersions": [
-    "202609030001"
-  ],
+  "reviewedSplitVersions": [],
   "unresolvedSplitVersions": [],
   "counts": {
-    "pureLocalOnly": 89,
-    "pureRemoteOnly": 0,
+    "pureLocalOnly": 24,
+    "pureRemoteOnly": 4,
     "divergent": 0,
-    "splitRows": 1,
-    "reviewedSplitRows": 1,
+    "splitRows": 0,
+    "reviewedSplitRows": 0,
     "unresolvedSplitRows": 0,
-    "blockers": 156
+    "blockers": 28
   },
   "rows": {
     "pureLocalOnly": [
       {
-        "version": "20260817174624",
-        "stream": "other",
-        "file": "20260817174624_arch9_inbound_leads_flow.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913120000",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260817174624 --plan"
+        "command": ""
       },
       {
-        "version": "20260818203652",
-        "stream": "other",
-        "file": "20260818203652_arch9_inbound_leads_snapshot_profile_shape.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913123000",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260818203652 --plan"
+        "command": ""
       },
       {
-        "version": "202608200002",
-        "stream": "other",
-        "file": "202608200002_whatsapp_template_seed.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913130000",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 202608200002 --plan"
+        "command": ""
       },
       {
-        "version": "20260820160621",
-        "stream": "other",
-        "file": "20260820160621_journey_stage_overrides_phase2.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913163747",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260820160621 --plan"
+        "command": ""
       },
       {
-        "version": "20260820174624",
-        "stream": "other",
-        "file": "20260820174624_admin_dashboard_units_as_listings.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913164108",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260820174624 --plan"
+        "command": ""
       },
       {
-        "version": "20260820192038",
-        "stream": "other",
-        "file": "20260820192038_admin_dashboard_external_inventory_snapshots.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913164657",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260820192038 --plan"
+        "command": ""
       },
       {
-        "version": "20260820192857",
-        "stream": "other",
-        "file": "20260820192857_remove_admin_external_inventory_counts.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913164842",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260820192857 --plan"
+        "command": ""
       },
       {
-        "version": "20260820193436",
-        "stream": "other",
-        "file": "20260820193436_admin_dashboard_exact_active_listing_tokens.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913165354",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260820193436 --plan"
+        "command": ""
       },
       {
-        "version": "202608230002",
-        "stream": "other",
-        "file": "202608230002_transaction_sale_profile_phase1.sql",
-        "resolution": "ready_for_one_version_promotion",
+        "version": "20260913174500",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_execution_pending"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 202608230002 --plan"
+        "command": ""
       },
       {
-        "version": "202608240001",
-        "stream": "other",
-        "file": "202608240001_prospect_demo_configs.sql",
-        "resolution": "ready_for_one_version_promotion",
+        "version": "20260913182014",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_execution_pending"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 202608240001 --plan"
+        "command": ""
       },
       {
-        "version": "20260824084233",
-        "stream": "other",
-        "file": "20260824084233_add_prospect_demo_brand_colours.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913182312",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260824084233 --plan"
+        "command": ""
       },
       {
-        "version": "20260824091732",
-        "stream": "other",
-        "file": "20260824091732_align_prospect_demo_admin_rls.sql",
-        "resolution": "ready_for_one_version_promotion",
+        "version": "20260913184108",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_execution_pending"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260824091732 --plan"
+        "command": ""
       },
       {
-        "version": "20260824092531",
-        "stream": "other",
-        "file": "20260824092531_add_prospect_demo_light_dark_logos.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913185826",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260824092531 --plan"
+        "command": ""
       },
       {
-        "version": "202608250001",
-        "stream": "other",
-        "file": "202608250001_remove_listing_mandate_activation_guards.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913190000",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 202608250001 --plan"
+        "command": ""
       },
       {
-        "version": "20260827081713",
-        "stream": "other",
-        "file": "20260827081713_normalize_transaction_participant_assignment_sources.sql",
-        "resolution": "ready_for_one_version_promotion",
+        "version": "20260913191403",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_execution_pending"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260827081713 --plan"
+        "command": ""
       },
       {
-        "version": "20260827091439",
-        "stream": "other",
-        "file": "20260827091439_transaction_setup_owner_rls_access.sql",
-        "resolution": "ready_for_one_version_promotion",
+        "version": "20260913193410",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_execution_pending"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260827091439 --plan"
+        "command": ""
       },
       {
-        "version": "202608290001",
-        "stream": "other",
-        "file": "202608290001_lead_multi_agent_assignments.sql",
-        "resolution": "ready_for_one_version_promotion",
+        "version": "20260913195118",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_execution_pending"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 202608290001 --plan"
+        "command": ""
       },
       {
-        "version": "202608290002",
-        "stream": "other",
-        "file": "202608290002_client_compliance_verification.sql",
-        "resolution": "ready_for_one_version_promotion",
+        "version": "20260913200000",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_execution_pending"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 202608290002 --plan"
+        "command": ""
       },
       {
-        "version": "20260829103738",
-        "stream": "other",
-        "file": "20260829103738_transaction_sync_phase2_canonical_propagation.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260913210000",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260829103738 --plan"
+        "command": ""
       },
       {
-        "version": "20260829105514",
-        "stream": "other",
-        "file": "20260829105514_transaction_sync_phase3_module_adapters.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260914073546",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260829105514 --plan"
+        "command": ""
       },
       {
-        "version": "20260829111644",
-        "stream": "other",
-        "file": "20260829111644_transaction_sync_phase6_controlled_recovery.sql",
-        "resolution": "ready_for_one_version_promotion",
+        "version": "20260914073806",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_execution_pending"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260829111644 --plan"
+        "command": ""
       },
       {
-        "version": "20260829112135",
-        "stream": "other",
-        "file": "20260829112135_transaction_sync_phase7_canary_certification.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260914080412",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260829112135 --plan"
+        "command": ""
       },
       {
-        "version": "20260829112530",
-        "stream": "other",
-        "file": "20260829112530_transaction_sync_phase8_fleet_release_gate.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260914080640",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260829112530 --plan"
+        "command": ""
       },
       {
-        "version": "20260829195657",
-        "stream": "other",
-        "file": "20260829195657_seller_onboarding_link_fast_prepare.sql",
-        "resolution": "promotion_blocked_by_phase5",
+        "version": "20260914083450",
+        "resolution": "unmanaged_pure_local_only",
         "resolved": false,
         "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
+          "missing_production_promotion_plan"
         ],
-        "command": "npm run supabase:push:promote-one -- --version 20260829195657 --plan"
-      },
-      {
-        "version": "20260830125035",
-        "stream": "other",
-        "file": "20260830125035_attorney_dashboard_rpc_hot_path.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260830125035 --plan"
-      },
-      {
-        "version": "20260830160810",
-        "stream": "other",
-        "file": "20260830160810_secure_auth_bootstrap_rpc.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260830160810 --plan"
-      },
-      {
-        "version": "20260831071807",
-        "stream": "other",
-        "file": "20260831071807_canonical_transaction_requirements_on_creation.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260831071807 --plan"
-      },
-      {
-        "version": "20260831072652",
-        "stream": "other",
-        "file": "20260831072652_canonical_transaction_requirements_on_creation.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260831072652 --plan"
-      },
-      {
-        "version": "20260831120000",
-        "stream": "other",
-        "file": "20260831120000_property24_migration_listing_media_storage.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260831120000 --plan"
-      },
-      {
-        "version": "20260831131538",
-        "stream": "other",
-        "file": "20260831131538_property24_canonical_connection_backfill.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260831131538 --plan"
-      },
-      {
-        "version": "20260831140736",
-        "stream": "other",
-        "file": "20260831140736_property24_agent_catalog_mappings.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260831140736 --plan"
-      },
-      {
-        "version": "20260831150740",
-        "stream": "other",
-        "file": "20260831150740_property24_live_cutover_gate.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260831150740 --plan"
-      },
-      {
-        "version": "20260831153322",
-        "stream": "other",
-        "file": "20260831153322_staging_rls_warning_view_hardening.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260831153322 --plan"
-      },
-      {
-        "version": "20260831190341",
-        "stream": "other",
-        "file": "20260831190341_compatibility_fallback_retirement_telemetry.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260831190341 --plan"
-      },
-      {
-        "version": "20260901140943",
-        "stream": "other",
-        "file": "20260901140943_harden_admin_portal_authorization.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260901140943 --plan"
-      },
-      {
-        "version": "20260901143358",
-        "stream": "other",
-        "file": "20260901143358_property24_category_listing_facts.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260901143358 --plan"
-      },
-      {
-        "version": "20260901145225",
-        "stream": "other",
-        "file": "20260901145225_property24_commercial_canonical_backfill.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260901145225 --plan"
-      },
-      {
-        "version": "20260901165511",
-        "stream": "other",
-        "file": "20260901165511_website_publication_workflow_phase6.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260901165511 --plan"
-      },
-      {
-        "version": "20260901170254",
-        "stream": "other",
-        "file": "20260901170254_development_structure_hierarchy_phase2.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260901170254 --plan"
-      },
-      {
-        "version": "20260901170909",
-        "stream": "other",
-        "file": "20260901170909_development_product_catalogue_phase4.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260901170909 --plan"
-      },
-      {
-        "version": "20260901174924",
-        "stream": "other",
-        "file": "20260901174924_website_draft_page_authoring_phase7.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260901174924 --plan"
-      },
-      {
-        "version": "20260902095249",
-        "stream": "other",
-        "file": "20260902095249_public_development_organisation_branding.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260902095249 --plan"
-      },
-      {
-        "version": "20260902105303",
-        "stream": "other",
-        "file": "20260902105303_public_development_high_contrast_branding.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260902105303 --plan"
-      },
-      {
-        "version": "20260903094624",
-        "stream": "other",
-        "file": "20260903094624_organisation_workspace_lock.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260903094624 --plan"
-      },
-      {
-        "version": "20260903094957",
-        "stream": "attorney_identity_access",
-        "file": "20260903094957_retire_inactive_attorney_assignments.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260903094957 --plan"
-      },
-      {
-        "version": "20260903130012",
-        "stream": "other",
-        "file": "20260903130012_development_marketing_invite_delivery_phase5.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260903130012 --plan"
-      },
-      {
-        "version": "20260905090353",
-        "stream": "other",
-        "file": "20260905090353_document_trust_phase1_seller_atomic_link.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905090353 --plan"
-      },
-      {
-        "version": "20260905091122",
-        "stream": "other",
-        "file": "20260905091122_document_trust_phase3_role_scoped_projections.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905091122 --plan"
-      },
-      {
-        "version": "20260905095152",
-        "stream": "other",
-        "file": "20260905095152_document_trust_phase61_confirmed_remediation.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905095152 --plan"
-      },
-      {
-        "version": "20260905102430",
-        "stream": "bond_finance_runtime",
-        "file": "20260905102430_bond_application_portal_phase6_document_continuity.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905102430 --plan"
-      },
-      {
-        "version": "20260905102813",
-        "stream": "bond_finance_runtime",
-        "file": "20260905102813_bond_application_portal_phase7_submission_readiness.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905102813 --plan"
-      },
-      {
-        "version": "20260905102934",
-        "stream": "bond_finance_runtime",
-        "file": "20260905102934_bond_application_portal_phase8_external_submission_record.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905102934 --plan"
-      },
-      {
-        "version": "20260905141005",
-        "stream": "other",
-        "file": "20260905141005_rental_property_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141005 --plan"
-      },
-      {
-        "version": "20260905141007",
-        "stream": "other",
-        "file": "20260905141007_rental_unit_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141007 --plan"
-      },
-      {
-        "version": "20260905141008",
-        "stream": "other",
-        "file": "20260905141008_rental_portfolio_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141008 --plan"
-      },
-      {
-        "version": "20260905141009",
-        "stream": "other",
-        "file": "20260905141009_rental_landlord_mandate_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141009 --plan"
-      },
-      {
-        "version": "20260905141010",
-        "stream": "other",
-        "file": "20260905141010_rental_vacancy_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141010 --plan"
-      },
-      {
-        "version": "20260905141011",
-        "stream": "other",
-        "file": "20260905141011_rental_evidence_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141011 --plan"
-      },
-      {
-        "version": "20260905141012",
-        "stream": "other",
-        "file": "20260905141012_rental_vacancy_marketing_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141012 --plan"
-      },
-      {
-        "version": "20260905141013",
-        "stream": "other",
-        "file": "20260905141013_rental_internal_marketing_operations.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141013 --plan"
-      },
-      {
-        "version": "20260905141014",
-        "stream": "other",
-        "file": "20260905141014_rental_applications_and_applicant_access.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141014 --plan"
-      },
-      {
-        "version": "20260905141015",
-        "stream": "other",
-        "file": "20260905141015_rental_application_submission.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141015 --plan"
-      },
-      {
-        "version": "20260905141016",
-        "stream": "other",
-        "file": "20260905141016_rental_application_documents.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141016 --plan"
-      },
-      {
-        "version": "20260905141017",
-        "stream": "other",
-        "file": "20260905141017_rental_application_review_workspace.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141017 --plan"
-      },
-      {
-        "version": "20260905141018",
-        "stream": "other",
-        "file": "20260905141018_rental_application_screening.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141018 --plan"
-      },
-      {
-        "version": "20260905141019",
-        "stream": "other",
-        "file": "20260905141019_rental_application_screening_reviewer_actor.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141019 --plan"
-      },
-      {
-        "version": "20260905141020",
-        "stream": "other",
-        "file": "20260905141020_rental_application_decisions.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141020 --plan"
-      },
-      {
-        "version": "20260905141021",
-        "stream": "other",
-        "file": "20260905141021_rental_application_tenancy_conversion.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905141021 --plan"
-      },
-      {
-        "version": "20260905150420",
-        "stream": "other",
-        "file": "20260905150420_development_visual_analytics_phase14.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260905150420 --plan"
-      },
-      {
-        "version": "20260906063435",
-        "stream": "other",
-        "file": "20260906063435_public_websites_phase7_privilege_hardening.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906063435 --plan"
-      },
-      {
-        "version": "20260906065759",
-        "stream": "other",
-        "file": "20260906065759_agent_phase2_rls_acceptance.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906065759 --plan"
-      },
-      {
-        "version": "20260906070515",
-        "stream": "other",
-        "file": "20260906070515_attorney_coordination_nomination_phase2.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906070515 --plan"
-      },
-      {
-        "version": "20260906071644",
-        "stream": "other",
-        "file": "20260906071644_attorney_coordination_propagation_phase4.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906071644 --plan"
-      },
-      {
-        "version": "20260906123000",
-        "stream": "other",
-        "file": "20260906123000_public_websites_pilot_closeout_phase5_go_live.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906123000 --plan"
-      },
-      {
-        "version": "20260906130000",
-        "stream": "other",
-        "file": "20260906130000_meta_lead_ads_integration.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906130000 --plan"
-      },
-      {
-        "version": "20260906133000",
-        "stream": "other",
-        "file": "20260906133000_public_websites_pilot_closeout_phase6_hypercare.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906133000 --plan"
-      },
-      {
-        "version": "20260906134500",
-        "stream": "other",
-        "file": "20260906134500_public_websites_pilot_closeout_phase6_hypercare_indexes.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906134500 --plan"
-      },
-      {
-        "version": "20260906140000",
-        "stream": "other",
-        "file": "20260906140000_public_websites_pilot_closeout_phase6_approval_gate.sql",
-        "resolution": "ready_for_one_version_promotion",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_execution_pending"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906140000 --plan"
-      },
-      {
-        "version": "20260906163535",
-        "stream": "bond_finance_runtime",
-        "file": "20260906163535_corrective_bond_delivery_reminders.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163535 --plan"
-      },
-      {
-        "version": "20260906163540",
-        "stream": "other",
-        "file": "20260906163540_corrective_whatsapp_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163540 --plan"
-      },
-      {
-        "version": "20260906163545",
-        "stream": "other",
-        "file": "20260906163545_corrective_agency_onboarding.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163545 --plan"
-      },
-      {
-        "version": "20260906163551",
-        "stream": "other",
-        "file": "20260906163551_corrective_transaction_participant_statuses.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163551 --plan"
-      },
-      {
-        "version": "20260906163555",
-        "stream": "other",
-        "file": "20260906163555_corrective_seller_onboarding_receipt.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163555 --plan"
-      },
-      {
-        "version": "20260906163601",
-        "stream": "other",
-        "file": "20260906163601_corrective_development_access_boundary.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163601 --plan"
-      },
-      {
-        "version": "20260906163615",
-        "stream": "other",
-        "file": "20260906163615_corrective_development_org_relationships.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163615 --plan"
-      },
-      {
-        "version": "20260906163617",
-        "stream": "other",
-        "file": "20260906163617_corrective_rental_portal_foundation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163617 --plan"
-      },
-      {
-        "version": "20260906163622",
-        "stream": "other",
-        "file": "20260906163622_corrective_development_marketing_collaboration.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163622 --plan"
-      },
-      {
-        "version": "20260906163629",
-        "stream": "other",
-        "file": "20260906163629_corrective_rental_application_lead_linkage.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163629 --plan"
-      },
-      {
-        "version": "20260906163638",
-        "stream": "other",
-        "file": "20260906163638_corrective_attorney_lane_delegation.sql",
-        "resolution": "promotion_blocked_by_phase5",
-        "resolved": false,
-        "blockers": [
-          "production_promotion_not_ready",
-          "phase5_staging_evidence_missing"
-        ],
-        "command": "npm run supabase:push:promote-one -- --version 20260906163638 --plan"
+        "command": ""
       }
     ],
-    "pureRemoteOnly": [],
-    "divergent": [],
-    "splitRows": [
+    "pureRemoteOnly": [
       {
-        "version": "202609030001",
-        "module": "lead_capture_crm",
-        "objectStatus": "all_live",
-        "remoteNameStatus": "remote_name_matches",
-        "decision": "confirmed_live_split",
-        "resolved": true,
-        "blockers": []
+        "version": "20260914073732",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260914073732_*.sql"
+      },
+      {
+        "version": "20260914073827",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260914073827_*.sql"
+      },
+      {
+        "version": "20260914080521",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260914080521_*.sql"
+      },
+      {
+        "version": "20260914080747",
+        "resolution": "restore_local_history_or_accept_remote_only",
+        "resolved": false,
+        "blockers": [
+          "remote_history_without_local_migration_file"
+        ],
+        "command": "git log --all -- supabase/migrations/20260914080747_*.sql"
       }
-    ]
+    ],
+    "divergent": [],
+    "splitRows": []
   },
   "blockers": [
-    "20260817174624:production_promotion_not_ready",
-    "20260817174624:phase5_staging_evidence_missing",
-    "20260818203652:production_promotion_not_ready",
-    "20260818203652:phase5_staging_evidence_missing",
-    "202608200002:production_promotion_not_ready",
-    "202608200002:phase5_staging_evidence_missing",
-    "20260820160621:production_promotion_not_ready",
-    "20260820160621:phase5_staging_evidence_missing",
-    "20260820174624:production_promotion_not_ready",
-    "20260820174624:phase5_staging_evidence_missing",
-    "20260820192038:production_promotion_not_ready",
-    "20260820192038:phase5_staging_evidence_missing",
-    "20260820192857:production_promotion_not_ready",
-    "20260820192857:phase5_staging_evidence_missing",
-    "20260820193436:production_promotion_not_ready",
-    "20260820193436:phase5_staging_evidence_missing",
-    "202608230002:production_promotion_execution_pending",
-    "202608240001:production_promotion_execution_pending",
-    "20260824084233:production_promotion_not_ready",
-    "20260824084233:phase5_staging_evidence_missing",
-    "20260824091732:production_promotion_execution_pending",
-    "20260824092531:production_promotion_not_ready",
-    "20260824092531:phase5_staging_evidence_missing",
-    "202608250001:production_promotion_not_ready",
-    "202608250001:phase5_staging_evidence_missing",
-    "20260827081713:production_promotion_execution_pending",
-    "20260827091439:production_promotion_execution_pending",
-    "202608290001:production_promotion_execution_pending",
-    "202608290002:production_promotion_execution_pending",
-    "20260829103738:production_promotion_not_ready",
-    "20260829103738:phase5_staging_evidence_missing",
-    "20260829105514:production_promotion_not_ready",
-    "20260829105514:phase5_staging_evidence_missing",
-    "20260829111644:production_promotion_execution_pending",
-    "20260829112135:production_promotion_not_ready",
-    "20260829112135:phase5_staging_evidence_missing",
-    "20260829112530:production_promotion_not_ready",
-    "20260829112530:phase5_staging_evidence_missing",
-    "20260829195657:production_promotion_not_ready",
-    "20260829195657:phase5_staging_evidence_missing",
-    "20260830125035:production_promotion_not_ready",
-    "20260830125035:phase5_staging_evidence_missing",
-    "20260830160810:production_promotion_not_ready",
-    "20260830160810:phase5_staging_evidence_missing",
-    "20260831071807:production_promotion_execution_pending",
-    "20260831072652:production_promotion_execution_pending",
-    "20260831120000:production_promotion_not_ready",
-    "20260831120000:phase5_staging_evidence_missing",
-    "20260831131538:production_promotion_not_ready",
-    "20260831131538:phase5_staging_evidence_missing",
-    "20260831140736:production_promotion_not_ready",
-    "20260831140736:phase5_staging_evidence_missing",
-    "20260831150740:production_promotion_not_ready",
-    "20260831150740:phase5_staging_evidence_missing",
-    "20260831153322:production_promotion_not_ready",
-    "20260831153322:phase5_staging_evidence_missing",
-    "20260831190341:production_promotion_execution_pending",
-    "20260901140943:production_promotion_not_ready",
-    "20260901140943:phase5_staging_evidence_missing",
-    "20260901143358:production_promotion_not_ready",
-    "20260901143358:phase5_staging_evidence_missing",
-    "20260901145225:production_promotion_not_ready",
-    "20260901145225:phase5_staging_evidence_missing",
-    "20260901165511:production_promotion_execution_pending",
-    "20260901170254:production_promotion_not_ready",
-    "20260901170254:phase5_staging_evidence_missing",
-    "20260901170909:production_promotion_not_ready",
-    "20260901170909:phase5_staging_evidence_missing",
-    "20260901174924:production_promotion_not_ready",
-    "20260901174924:phase5_staging_evidence_missing",
-    "20260902095249:production_promotion_not_ready",
-    "20260902095249:phase5_staging_evidence_missing",
-    "20260902105303:production_promotion_not_ready",
-    "20260902105303:phase5_staging_evidence_missing",
-    "20260903094624:production_promotion_execution_pending",
-    "20260903094957:production_promotion_not_ready",
-    "20260903094957:phase5_staging_evidence_missing",
-    "20260903130012:production_promotion_not_ready",
-    "20260903130012:phase5_staging_evidence_missing",
-    "20260905090353:production_promotion_execution_pending",
-    "20260905091122:production_promotion_execution_pending",
-    "20260905095152:production_promotion_execution_pending",
-    "20260905102430:production_promotion_not_ready",
-    "20260905102430:phase5_staging_evidence_missing",
-    "20260905102813:production_promotion_not_ready",
-    "20260905102813:phase5_staging_evidence_missing",
-    "20260905102934:production_promotion_not_ready",
-    "20260905102934:phase5_staging_evidence_missing",
-    "20260905141005:production_promotion_not_ready",
-    "20260905141005:phase5_staging_evidence_missing",
-    "20260905141007:production_promotion_not_ready",
-    "20260905141007:phase5_staging_evidence_missing",
-    "20260905141008:production_promotion_not_ready",
-    "20260905141008:phase5_staging_evidence_missing",
-    "20260905141009:production_promotion_not_ready",
-    "20260905141009:phase5_staging_evidence_missing",
-    "20260905141010:production_promotion_not_ready",
-    "20260905141010:phase5_staging_evidence_missing",
-    "20260905141011:production_promotion_not_ready",
-    "20260905141011:phase5_staging_evidence_missing",
-    "20260905141012:production_promotion_not_ready",
-    "20260905141012:phase5_staging_evidence_missing",
-    "20260905141013:production_promotion_not_ready",
-    "20260905141013:phase5_staging_evidence_missing",
-    "20260905141014:production_promotion_not_ready",
-    "20260905141014:phase5_staging_evidence_missing",
-    "20260905141015:production_promotion_not_ready",
-    "20260905141015:phase5_staging_evidence_missing",
-    "20260905141016:production_promotion_not_ready",
-    "20260905141016:phase5_staging_evidence_missing",
-    "20260905141017:production_promotion_not_ready",
-    "20260905141017:phase5_staging_evidence_missing",
-    "20260905141018:production_promotion_not_ready",
-    "20260905141018:phase5_staging_evidence_missing",
-    "20260905141019:production_promotion_not_ready",
-    "20260905141019:phase5_staging_evidence_missing",
-    "20260905141020:production_promotion_not_ready",
-    "20260905141020:phase5_staging_evidence_missing",
-    "20260905141021:production_promotion_not_ready",
-    "20260905141021:phase5_staging_evidence_missing",
-    "20260905150420:production_promotion_not_ready",
-    "20260905150420:phase5_staging_evidence_missing",
-    "20260906063435:production_promotion_not_ready",
-    "20260906063435:phase5_staging_evidence_missing",
-    "20260906065759:production_promotion_execution_pending",
-    "20260906070515:production_promotion_execution_pending",
-    "20260906071644:production_promotion_not_ready",
-    "20260906071644:phase5_staging_evidence_missing",
-    "20260906123000:production_promotion_execution_pending",
-    "20260906130000:production_promotion_not_ready",
-    "20260906130000:phase5_staging_evidence_missing",
-    "20260906133000:production_promotion_execution_pending",
-    "20260906134500:production_promotion_execution_pending",
-    "20260906140000:production_promotion_execution_pending",
-    "20260906163535:production_promotion_not_ready",
-    "20260906163535:phase5_staging_evidence_missing",
-    "20260906163540:production_promotion_not_ready",
-    "20260906163540:phase5_staging_evidence_missing",
-    "20260906163545:production_promotion_not_ready",
-    "20260906163545:phase5_staging_evidence_missing",
-    "20260906163551:production_promotion_not_ready",
-    "20260906163551:phase5_staging_evidence_missing",
-    "20260906163555:production_promotion_not_ready",
-    "20260906163555:phase5_staging_evidence_missing",
-    "20260906163601:production_promotion_not_ready",
-    "20260906163601:phase5_staging_evidence_missing",
-    "20260906163615:production_promotion_not_ready",
-    "20260906163615:phase5_staging_evidence_missing",
-    "20260906163617:production_promotion_not_ready",
-    "20260906163617:phase5_staging_evidence_missing",
-    "20260906163622:production_promotion_not_ready",
-    "20260906163622:phase5_staging_evidence_missing",
-    "20260906163629:production_promotion_not_ready",
-    "20260906163629:phase5_staging_evidence_missing",
-    "20260906163638:production_promotion_not_ready",
-    "20260906163638:phase5_staging_evidence_missing"
+    "20260913120000:missing_production_promotion_plan",
+    "20260913123000:missing_production_promotion_plan",
+    "20260913130000:missing_production_promotion_plan",
+    "20260913163747:missing_production_promotion_plan",
+    "20260913164108:missing_production_promotion_plan",
+    "20260913164657:missing_production_promotion_plan",
+    "20260913164842:missing_production_promotion_plan",
+    "20260913165354:missing_production_promotion_plan",
+    "20260913174500:missing_production_promotion_plan",
+    "20260913182014:missing_production_promotion_plan",
+    "20260913182312:missing_production_promotion_plan",
+    "20260913184108:missing_production_promotion_plan",
+    "20260913185826:missing_production_promotion_plan",
+    "20260913190000:missing_production_promotion_plan",
+    "20260913191403:missing_production_promotion_plan",
+    "20260913193410:missing_production_promotion_plan",
+    "20260913195118:missing_production_promotion_plan",
+    "20260913200000:missing_production_promotion_plan",
+    "20260913210000:missing_production_promotion_plan",
+    "20260914073546:missing_production_promotion_plan",
+    "20260914073806:missing_production_promotion_plan",
+    "20260914080412:missing_production_promotion_plan",
+    "20260914080640:missing_production_promotion_plan",
+    "20260914083450:missing_production_promotion_plan",
+    "20260914073732:remote_history_without_local_migration_file",
+    "20260914073827:remote_history_without_local_migration_file",
+    "20260914080521:remote_history_without_local_migration_file",
+    "20260914080747:remote_history_without_local_migration_file"
   ]
 }

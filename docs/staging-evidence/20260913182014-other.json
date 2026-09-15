@@ -1,0 +1,20 @@
+{
+  "version": "20260913182014",
+  "stream": "fica_compliance",
+  "file": "20260913182014_fica_access_controls_phase6.sql",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T17:25:00Z",
+  "notes": [
+    "Verified staging FICA case and audit tables, RLS, audit-read policy, privileged update guard, and audit triggers.",
+    "Focused access, review, and provider-handoff tests pass. The historic Knowledge Factory foundation and FICA-case baseline were restored as prerequisites and are not represented as ledger-complete in this receipt."
+  ],
+  "ledgerRecordedAt": "2026-09-14T17:17:45.903Z"
+}

@@ -1,0 +1,16 @@
+{
+  "version": "20260913210000",
+  "stream": "fica_compliance",
+  "file": "20260913210000_fica_compliance_certificate_phase5.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:50:00Z",
+  "notes": ["Verified production certificate column, active restricted certificate pack and definition, and active canonical certificate rule after its dedicated correction."]
+}

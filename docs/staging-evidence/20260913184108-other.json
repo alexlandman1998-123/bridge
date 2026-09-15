@@ -1,0 +1,25 @@
+{
+  "version": "20260913184108",
+  "stream": "other",
+  "file": "20260913184108_website_blog_media_listing_blocks_phase2.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T00:00:00.000Z",
+  "notes": [
+    "Applied to staging; website_media_assets and website_blog_listing_links are present with RLS-enabled access rules."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --apply-sql --version 20260913184108 --confirm APPLY_TO_STAGING_ONLY",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260913184108 --evidence docs/staging-evidence/20260913184108-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-09-14T19:06:35.648Z"
+}

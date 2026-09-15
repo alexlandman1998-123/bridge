@@ -17,6 +17,10 @@ import {
   runPrivatePropertyPostSubmitMonitor,
 } from '../services/privatePropertyPostSubmitMonitorService.js'
 import {
+  buildSyndicationChannelPreflight,
+  fetchSyndicationChannelPreflightInput,
+} from '../services/syndicationChannelPreflightService.js'
+import {
   PRIVATE_PROPERTY_API_BASE_PATH,
   PRIVATE_PROPERTY_API_METHODS,
 } from './apiContract.js'
@@ -150,6 +154,9 @@ function matchPrivatePropertyRoute(requestUrl, routeParams = {}) {
   if (routeParts[0] === 'listings' && routeParts[2] === 'status') {
     return { name: 'listingStatus', listingId: normalizePrivatePropertyText(routeParams.listingId || routeParts[1]) }
   }
+  if (routeParts[0] === 'listings' && routeParts[2] === 'syndication-review') {
+    return { name: 'syndicationReview', listingId: normalizePrivatePropertyText(routeParams.listingId || routeParts[1]) }
+  }
   return null
 }
 
@@ -200,7 +207,7 @@ function getMissingConfiguration(config = {}, needs = {}) {
 }
 
 function canUseBrowserPrivatePropertyListingAuth({ headers = {}, config = {}, route = {} } = {}) {
-  return ['previewListing', 'publishListing', 'listingStatus'].includes(route?.name) &&
+  return ['previewListing', 'publishListing', 'listingStatus', 'syndicationReview'].includes(route?.name) &&
     Boolean(getBearerToken(headers) && config.supabaseUrl && config.serviceRoleKey)
 }
 
@@ -389,6 +396,8 @@ export async function createPrivatePropertyApiResponse({
     const buildReadiness = dependencies.buildReadiness || buildPrivatePropertyGoLiveReadinessReport
     const runControlledPublish = dependencies.runControlledPublish || runPrivatePropertyControlledPublishRehearsal
     const runPostSubmitMonitor = dependencies.runPostSubmitMonitor || runPrivatePropertyPostSubmitMonitor
+    const fetchSyndicationPreflightInput = dependencies.fetchSyndicationPreflightInput || fetchSyndicationChannelPreflightInput
+    const buildSyndicationPreflight = dependencies.buildSyndicationPreflight || buildSyndicationChannelPreflight
     const supabase = createSupabase(config)
     const browserAuthFailure = await authenticateBrowserPrivatePropertyListingRequest({ supabase, headers, config })
     if (browserAuthFailure) return browserAuthFailure
@@ -409,6 +418,20 @@ export async function createPrivatePropertyApiResponse({
         preview: toPublicPreview(readiness.preview),
         readiness,
         report: readiness,
+      })
+    }
+
+    if (route.name === 'syndicationReview') {
+      const input = await fetchSyndicationPreflightInput({ client: supabase, listingId: config.listingId })
+      const review = buildSyndicationPreflight({
+        ...input,
+        organisationId: input.listing.organisation_id,
+        env: env || getRuntimeEnv(),
+      })
+      return buildJsonResponse(200, {
+        route: route.name,
+        listingId: config.listingId,
+        review,
       })
     }
 

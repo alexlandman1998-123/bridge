@@ -1,0 +1,25 @@
+{
+  "version": "20260913120000",
+  "stream": "other",
+  "file": "20260913120000_rental_application_approval_readiness.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": false,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T16:30:47Z",
+  "notes": [
+    "Do not apply SQL. Run smoke checks, then record the staging ledger.",
+    "Validated on staging: the function exists, authenticated may execute, anon may not, and an unauthenticated invocation was rejected before any application write."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260913120000 --evidence docs/staging-evidence/20260913120000-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-09-14T16:31:17.550Z"
+}

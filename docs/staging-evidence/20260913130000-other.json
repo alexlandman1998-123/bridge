@@ -1,0 +1,25 @@
+{
+  "version": "20260913130000",
+  "stream": "other",
+  "file": "20260913130000_rental_notice_acknowledgement_transition.sql",
+  "route": "repair_only",
+  "action": "repair_only_after_smoke",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T17:10:00Z",
+  "stagingRoute": "apply_missing_repair_sql",
+  "notes": [
+    "Historical rental-notice prerequisites were restored in staging. The acknowledgement transition was then replayed and verified by function definition and the focused rental notice-to-move-out workflow check."
+  ],
+  "commands": [
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260913130000 --evidence docs/staging-evidence/20260913130000-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-09-14T17:12:30.512Z"
+}

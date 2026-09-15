@@ -1,0 +1,1 @@
+const e="The buyer offer workflow has been retired. Use buyer onboarding to capture purchase, finance, party, and OTP details.",r="Arch9 no longer creates or routes buyer offers in the platform; OTP preparation starts from buyer onboarding and uploaded signed OTP evidence.";export{e as O,r as a};

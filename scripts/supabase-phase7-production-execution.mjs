@@ -61,7 +61,7 @@ function selectedRows(repoRoot, manifest, options) {
 }
 
 function clearancePath(row) {
-  return path.join(CLEARANCE_DIR, `${row.version}-${row.stream}.json`)
+  return path.join(CLEARANCE_DIR, `${row.version}-${row.evidenceStream || row.stream}.json`)
 }
 
 function rowWithApprovedClearance(repoRoot, row) {

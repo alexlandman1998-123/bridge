@@ -46,6 +46,7 @@ import { getProperty24ListingStatusOptions } from './settings/property24Settings
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
 import ListingAgentReassignmentPanel from '../components/listings/ListingAgentReassignmentPanel'
+import SyndicationReviewModal from '../components/listings/SyndicationReviewModal'
 import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
 import {
   ListingWorkspacePortalActionPanel,
@@ -159,6 +160,10 @@ import {
 import { invokeEdgeFunction, isSupabaseConfigured, supabase } from '../lib/supabaseClient'
 import { isUnsafeFallbackAllowed } from '../lib/envValidation'
 import { resolveTransactionRoutingProfile } from '../services/transactionRoutingProfileService'
+import {
+  canAcknowledgeSyndicationChannel,
+  shouldRequireSyndicationReview,
+} from '../services/syndicationReviewGateService'
 import { listTransactionPartnerConnectionOptions } from '../services/partnerNetworkService'
 import {
   getPrivateListing,
@@ -430,7 +435,7 @@ const BOND_ORIGINATOR_OPTIONS = [
   'Prime Bond Desk',
 ]
 
-const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhouse', 'Cluster', 'Land', 'Commercial', 'Mixed-use']
+const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhouse', 'Cluster', 'Land', 'Farm', 'Commercial', 'Industrial', 'Mixed-use']
 const LISTING_STATUS_OPTIONS = ['mandate_signed', 'active', 'under_offer', 'sold', 'withdrawn']
 const FEATURE_OPTIONS = [
   'Pool',
@@ -605,6 +610,11 @@ function firstDraftValue(...values) {
     if (normalized) return value
   }
   return ''
+}
+
+function normalizeMarketingListingType(value = '') {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['rental', 'rent', 'to rent', 'letting', 'lease'].includes(normalized) ? 'Rental' : 'Sale'
 }
 
 function buildListingMandatePacketSummary(listingRecord = {}, mandateWorkspace = {}) {
@@ -883,6 +893,7 @@ function buildListingSnapshotFormData(draft = {}) {
     longitude: draft.longitude ?? null,
     googlePlaceId: String(draft.googlePlaceId || '').trim(),
     propertyType: draft.propertyType,
+    propertySubtype: String(draft.propertySubtype || '').trim(),
     listingType: draft.listingType,
     bedrooms: draft.bedrooms,
     bathrooms: draft.bathrooms,
@@ -893,6 +904,7 @@ function buildListingSnapshotFormData(draft = {}) {
     erfSize: draft.erfSize,
     floorSize: draft.floorSize,
     askingPrice: draft.price,
+    pricePresentation: String(draft.pricePresentation || 'Standard').trim(),
     levies: draft.leviesNotApplicable ? '' : draft.levies,
     leviesNotApplicable: Boolean(draft.leviesNotApplicable),
     ratesTaxes: draft.ratesTaxesNotApplicable ? '' : draft.ratesTaxes,
@@ -900,11 +912,14 @@ function buildListingSnapshotFormData(draft = {}) {
     saleType: String(draft.saleType || '').trim(),
     vatApplicable: String(draft.vatApplicable || '').trim(),
     offersFrom: draft.offersFrom,
+    rentalPricePeriod: String(draft.rentalPricePeriod || 'PerMonth').trim(),
+    availableFrom: formatDateInputValue(draft.availableFrom),
     features: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures : [],
     keySellingPoints: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures : [],
     amenities: Array.isArray(draft.amenities) ? draft.amenities : [],
     petFriendly: Boolean(draft.petFriendly),
     fibreReady: Boolean(draft.fibreReady),
+    furnished: Boolean(draft.furnished),
     securityFeatures: String(draft.securityFeatures || '').trim(),
     propertyNotes: String(draft.description || '').trim(),
     propertyDescription: String(draft.description || '').trim(),
@@ -2097,6 +2112,68 @@ function HubCard({ icon = Info, title, copy = '', complete = null, children, cla
   )
 }
 
+function ListingTermsFields({ draft = {}, onChange }) {
+  const listingType = String(draft.listingType || '').trim().toLowerCase()
+  const isRental = ['rental', 'rent', 'to rent', 'letting', 'lease'].includes(listingType)
+  const propertyType = String(draft.propertyType || '').trim().toLowerCase()
+  const supportsPerSquareMetre = ['commercial', 'industrial', 'land', 'farm', 'mixed-use'].includes(propertyType)
+
+  return (
+    <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <label className="grid gap-2">
+        <span className="text-sm font-semibold text-[#2d445e]">Listing Purpose</span>
+        <Field as="select" value={normalizeMarketingListingType(draft.listingType)} onChange={(event) => onChange('listingType', event.target.value)}>
+          <option value="Sale">For sale</option>
+          <option value="Rental">To rent</option>
+        </Field>
+      </label>
+      <label className="grid gap-2">
+        <span className="text-sm font-semibold text-[#2d445e]">Property Subtype</span>
+        <Field value={draft.propertySubtype || ''} onChange={(event) => onChange('propertySubtype', event.target.value)} placeholder="e.g. Office, Smallholding, Freehold" />
+      </label>
+      {isRental ? (
+        <>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Rental Period</span>
+            <Field as="select" value={draft.rentalPricePeriod || 'PerMonth'} onChange={(event) => onChange('rentalPricePeriod', event.target.value)}>
+              <option value="PerMonth">Per month</option>
+              <option value="PerWeek">Per week</option>
+              <option value="PerDay">Per day</option>
+              {supportsPerSquareMetre ? <option value="PerM2">Per m²</option> : null}
+            </Field>
+          </label>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Available From</span>
+            <Field type="date" value={formatDateInputValue(draft.availableFrom)} onChange={(event) => onChange('availableFrom', event.target.value)} />
+          </label>
+        </>
+      ) : (
+        <>
+          <label className="grid gap-2">
+            <span className="text-sm font-semibold text-[#2d445e]">Price Presentation</span>
+            <Field as="select" value={draft.pricePresentation || 'Standard'} onChange={(event) => onChange('pricePresentation', event.target.value)}>
+              <option value="Standard">Standard price</option>
+              <option value="Poa">Price on application</option>
+              <option value="Negotiable">Negotiable</option>
+              <option value="OffersFrom">Offers from</option>
+            </Field>
+          </label>
+          {draft.pricePresentation === 'OffersFrom' ? (
+            <label className="grid gap-2">
+              <span className="text-sm font-semibold text-[#2d445e]">Offers From</span>
+              <Field type="number" min="0" step="1000" value={draft.offersFrom} onChange={(event) => onChange('offersFrom', event.target.value)} placeholder="0" />
+            </label>
+          ) : null}
+        </>
+      )}
+      <label className="flex items-end gap-2 pb-2 text-sm font-semibold text-[#2d445e]">
+        <input type="checkbox" checked={Boolean(draft.furnished)} onChange={(event) => onChange('furnished', event.target.checked)} />
+        Furnished
+      </label>
+    </div>
+  )
+}
+
 function SnapshotRow({ label, value }) {
   return (
     <div className="flex items-center justify-between gap-3 border-b border-[#e7edf5] py-2.5 last:border-b-0">
@@ -3109,7 +3186,8 @@ function buildPropertyDraft(listingRecord) {
     // title that was subsequently saved or synchronised by another workflow.
     headline: String(firstDraftValue(listingRecord?.title, listingRecord?.listingTitle, propertyDetails?.headline, onboardingFormData.propertyAddress)).trim(),
     propertyType: String(firstDraftValue(propertyDetails?.propertyType, listingRecord?.propertyType, onboardingFormData.propertyType, 'House')).trim(),
-    listingType: String(firstDraftValue(propertyDetails?.listingType, onboardingFormData.listingType, onboardingFormData.saleType, 'Sale')).trim(),
+    propertySubtype: String(firstDraftValue(propertyDetails?.propertySubtype, onboardingFormData.propertySubtype)).trim(),
+    listingType: normalizeMarketingListingType(firstDraftValue(propertyDetails?.listingType, onboardingFormData.listingType, onboardingFormData.saleType, 'Sale')),
     publicationStatus: String(firstDraftValue(propertyDetails?.publicationStatus, onboardingFormData.publicationStatus, listingRecord?.publicationData?.status, 'Draft')).trim(),
     listingStatus: normalizedListingStatus,
     source: String(firstDraftValue(marketing?.source, propertyDetails?.source, listingRecord?.listingSource, onboardingFormData.listingSource, 'seller_onboarding')).trim(),
@@ -3133,6 +3211,7 @@ function buildPropertyDraft(listingRecord) {
     erfSize: String(firstDraftValue(propertyDetails?.erfSize, onboardingFormData.erfSize)).trim(),
     floorSize: String(firstDraftValue(propertyDetails?.floorSize, onboardingFormData.floorSize)).trim(),
     price: String(firstDraftValue(propertyDetails?.price, listingRecord?.askingPrice, onboardingFormData.askingPrice)).trim(),
+    pricePresentation: String(firstDraftValue(propertyDetails?.pricePresentation, onboardingFormData.pricePresentation, onboardingFormData.saleType === 'POA' ? 'Poa' : 'Standard')).trim(),
     levies: String(firstDraftValue(propertyDetails?.levies, onboardingFormData.levies)).trim(),
     leviesNotApplicable: Boolean(propertyDetails?.leviesNotApplicable),
     ratesTaxes: String(firstDraftValue(propertyDetails?.ratesTaxes, onboardingFormData.ratesTaxes)).trim(),
@@ -3140,10 +3219,13 @@ function buildPropertyDraft(listingRecord) {
     saleType: String(firstDraftValue(propertyDetails?.saleType, onboardingFormData.saleType, 'For Sale')).trim(),
     vatApplicable: String(firstDraftValue(propertyDetails?.vatApplicable, onboardingFormData.vatApplicable, 'no')).trim(),
     offersFrom: String(firstDraftValue(propertyDetails?.offersFrom, onboardingFormData.offersFrom)).trim(),
+    rentalPricePeriod: String(firstDraftValue(propertyDetails?.rentalPricePeriod, onboardingFormData.rentalPricePeriod, 'PerMonth')).trim(),
+    availableFrom: formatDateInputValue(firstDraftValue(propertyDetails?.availableFrom, onboardingFormData.availableFrom)),
     selectedFeatures,
     amenities,
     petFriendly: Boolean(firstDraftValue(propertyDetails?.petFriendly, onboardingFormData.petFriendly, selectedFeatures.includes('Pet Friendly'))),
     fibreReady: Boolean(firstDraftValue(propertyDetails?.fibreReady, onboardingFormData.fibreReady, selectedFeatures.includes('Fibre'))),
+    furnished: Boolean(firstDraftValue(propertyDetails?.furnished, onboardingFormData.furnished)),
     securityFeatures: String(firstDraftValue(propertyDetails?.securityFeatures, onboardingFormData.securityFeatures)).trim(),
     description: String(firstDraftValue(
       propertyDetails?.description,
@@ -3201,6 +3283,12 @@ function buildLightweightMarketingDraft(draft = {}) {
     headline: String(safeDraft.headline || '').trim(),
     description: String(safeDraft.description || '').trim(),
     listingPreviewDescription: String(safeDraft.listingPreviewDescription || '').trim(),
+    propertySubtype: String(safeDraft.propertySubtype || '').trim(),
+    pricePresentation: String(safeDraft.pricePresentation || 'Standard').trim(),
+    offersFrom: String(safeDraft.offersFrom || '').trim(),
+    rentalPricePeriod: String(safeDraft.rentalPricePeriod || 'PerMonth').trim(),
+    availableFrom: formatDateInputValue(safeDraft.availableFrom),
+    furnished: Boolean(safeDraft.furnished),
     selectedFeatures: Array.isArray(safeDraft.selectedFeatures) ? safeDraft.selectedFeatures.map(String).filter(Boolean) : [],
     amenities: Array.isArray(safeDraft.amenities) ? safeDraft.amenities.map(String).filter(Boolean) : [],
     videoLink: String(safeDraft.videoLink || '').trim(),
@@ -3380,6 +3468,10 @@ function AgentListingDetail() {
   const [privatePropertyAction, setPrivatePropertyAction] = useState('')
   const [privatePropertyPreview, setPrivatePropertyPreview] = useState(null)
   const [privatePropertyStatusCheck, setPrivatePropertyStatusCheck] = useState(null)
+  const [syndicationReviewOpen, setSyndicationReviewOpen] = useState(false)
+  const [syndicationReviewLoading, setSyndicationReviewLoading] = useState(false)
+  const [syndicationReview, setSyndicationReview] = useState(null)
+  const [syndicationReviewAcknowledgements, setSyndicationReviewAcknowledgements] = useState({})
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [sellerDocumentWorkflowAction, setSellerDocumentWorkflowAction] = useState('')
   const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
@@ -4103,6 +4195,7 @@ function AgentListingDetail() {
         listingCode: nextDraft.listingCode,
         headline: nextDraft.headline.trim(),
         propertyType: nextDraft.propertyType,
+        propertySubtype: nextDraft.propertySubtype.trim(),
         listingType: nextDraft.listingType,
         publicationStatus: nextDraft.publicationStatus,
         listingStatus: nextDraft.listingStatus,
@@ -4127,6 +4220,7 @@ function AgentListingDetail() {
         erfSize: nextDraft.erfSize,
         floorSize: nextDraft.floorSize,
         price: Number(nextDraft.price || 0),
+        pricePresentation: nextDraft.pricePresentation,
         levies: nextDraft.leviesNotApplicable ? 0 : Number(nextDraft.levies || 0),
         leviesNotApplicable: nextDraft.leviesNotApplicable,
         ratesTaxes: nextDraft.ratesTaxesNotApplicable ? 0 : Number(nextDraft.ratesTaxes || 0),
@@ -4134,10 +4228,13 @@ function AgentListingDetail() {
         saleType: nextDraft.saleType,
         vatApplicable: nextDraft.vatApplicable,
         offersFrom: Number(nextDraft.offersFrom || 0),
+        rentalPricePeriod: nextDraft.rentalPricePeriod,
+        availableFrom: formatDateInputValue(nextDraft.availableFrom),
         selectedFeatures: nextDraft.selectedFeatures,
         amenities: nextDraft.amenities,
         petFriendly: nextDraft.petFriendly,
         fibreReady: nextDraft.fibreReady,
+        furnished: nextDraft.furnished,
         securityFeatures: nextDraft.securityFeatures,
         description: nextDraft.description.trim(),
         listingPreviewDescription: String(nextDraft.listingPreviewDescription || nextDraft.description || '').trim(),
@@ -4173,8 +4270,13 @@ function AgentListingDetail() {
         longitude: nextDraft.longitude ?? null,
         googlePlaceId: nextDraft.googlePlaceId.trim(),
         propertyType: nextDraft.propertyType,
+        propertySubtype: nextDraft.propertySubtype.trim(),
         listingType: nextDraft.listingType,
         askingPrice: Number(nextDraft.price || 0),
+        pricePresentation: nextDraft.pricePresentation,
+        offersFrom: Number(nextDraft.offersFrom || 0),
+        rentalPricePeriod: nextDraft.rentalPricePeriod,
+        availableFrom: formatDateInputValue(nextDraft.availableFrom),
         bedrooms: nextDraft.bedrooms,
         bathrooms: nextDraft.bathrooms,
         garages: nextDraft.garages,
@@ -4342,8 +4444,13 @@ function AgentListingDetail() {
           longitude: effectiveDraft.longitude ?? null,
           googlePlaceId: effectiveDraft.googlePlaceId.trim(),
           propertyType: effectiveDraft.propertyType,
+          propertySubtype: effectiveDraft.propertySubtype.trim(),
           listingType: effectiveDraft.listingType,
           askingPrice: Number(effectiveDraft.price || 0),
+          pricePresentation: effectiveDraft.pricePresentation,
+          offersFrom: Number(effectiveDraft.offersFrom || 0),
+          rentalPricePeriod: effectiveDraft.rentalPricePeriod,
+          availableFrom: formatDateInputValue(effectiveDraft.availableFrom),
           bedrooms: effectiveDraft.bedrooms,
           bathrooms: effectiveDraft.bathrooms,
           garages: effectiveDraft.garages,
@@ -4628,6 +4735,7 @@ function AgentListingDetail() {
   }
 
   async function publishProperty24Listing() {
+    if (!await requireSyndicationReviewBeforePublish('property24')) return null
     const expiryError = getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate)
     if (expiryError) {
       setDetailMessage('')
@@ -4692,6 +4800,58 @@ function AgentListingDetail() {
     return payload
   }
 
+  async function openSyndicationReview({ requiredForChannel = '', showModal = true } = {}) {
+    setSyndicationReviewOpen(showModal)
+    setSyndicationReviewLoading(true)
+    setDetailError('')
+    try {
+      const saveResult = await saveMarketingDraft(marketingDraft, { successMessage: '' })
+      if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before reviewing channel settings.')
+      const payload = await callPrivatePropertyListingAction('syndication-review', {}, { method: 'GET', fallbackMessage: 'Channel review could not be loaded.' })
+      const review = payload?.review || null
+      setSyndicationReview(review)
+      if (requiredForChannel) setSyndicationReviewAcknowledgements((previous) => ({ ...previous, [requiredForChannel]: false }))
+      return review
+    } catch (error) {
+      setDetailError(error?.message || 'Channel review could not be loaded.')
+      return null
+    } finally {
+      setSyndicationReviewLoading(false)
+    }
+  }
+
+  async function requireSyndicationReviewBeforePublish(channel) {
+    const currentReview = syndicationReview
+    const acknowledged = Boolean(syndicationReviewAcknowledgements[channel])
+    if (!shouldRequireSyndicationReview({
+      review: currentReview,
+      channel,
+      acknowledged,
+      draftDirty: marketingDraftDirtyRef.current,
+    })) {
+      if (currentReview) return true
+      const review = await openSyndicationReview({ requiredForChannel: channel, showModal: false })
+      const reviewRequired = shouldRequireSyndicationReview({
+        review,
+        channel,
+        acknowledged: false,
+        draftDirty: marketingDraftDirtyRef.current,
+      })
+      if (reviewRequired) setSyndicationReviewOpen(true)
+      return !reviewRequired
+    }
+    await openSyndicationReview({ requiredForChannel: channel })
+    return false
+  }
+
+  function continueSyndicationReview(channel, action) {
+    if (canAcknowledgeSyndicationChannel(syndicationReview, channel)) {
+      setSyndicationReviewAcknowledgements((previous) => ({ ...previous, [channel]: true }))
+    }
+    setSyndicationReviewOpen(false)
+    void action()
+  }
+
   async function previewPrivatePropertyListing() {
     setPrivatePropertyAction('preview')
     setPrivatePropertyPreview(null)
@@ -4722,6 +4882,7 @@ function AgentListingDetail() {
   }
 
   async function publishPrivatePropertyListing() {
+    if (!await requireSyndicationReviewBeforePublish('privateProperty')) return null
     setPrivatePropertyAction('publish')
     setDetailError('')
     setDetailMessage('Submitting to Private Property...')
@@ -10271,6 +10432,10 @@ function AgentListingDetail() {
             <Eye size={15} />
             Preview Listing
           </a>
+          <Button type="button" variant="secondary" onClick={openSyndicationReview} disabled={syndicationReviewLoading}>
+            {syndicationReviewLoading ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
+            Review channels
+          </Button>
           <Button type="button" onClick={() => saveMarketingDraft(marketingDraft, { successMessage: 'Marketing changes saved in Arch9.' })}>
             <Send size={15} />
             Save Changes
@@ -11596,6 +11761,10 @@ function AgentListingDetail() {
               </div>
             </HubCard>
 
+            <HubCard icon={SlidersHorizontal} title="Listing Terms" copy="Capture the shared terms that shape how this listing is presented across channels.">
+              <ListingTermsFields draft={marketingDraft} onChange={updateMarketingDraft} />
+            </HubCard>
+
             <HubCard icon={HandCoins} title="Price & Financial Details" copy="Structured pricing, recurring costs and offer positioning for portals and reporting." complete={sectionStatusByKey.financial?.complete}>
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 <label className="grid gap-2">
@@ -11886,6 +12055,14 @@ function AgentListingDetail() {
                   <p className="mt-3 text-xs text-[#6f8197]">Each section updates as soon as required fields are completed and saved.</p>
                 </div>
               </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+              <div>
+                <h4 className="text-[1rem] font-semibold text-[#142132]">Listing Terms</h4>
+                <p className="mt-1 text-sm text-[#607387]">Capture the shared terms that shape how this listing is presented across channels.</p>
+              </div>
+              <ListingTermsFields draft={marketingDraft} onChange={updateMarketingDraft} />
             </section>
 
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
@@ -14788,6 +14965,16 @@ function AgentListingDetail() {
           </section>
         </section>
       ) : null}
+
+      <SyndicationReviewModal
+        open={syndicationReviewOpen}
+        onClose={() => !syndicationReviewLoading && setSyndicationReviewOpen(false)}
+        review={syndicationReview}
+        loading={syndicationReviewLoading}
+        onRefresh={() => openSyndicationReview()}
+        onContinuePrivateProperty={() => continueSyndicationReview('privateProperty', previewPrivatePropertyListing)}
+        onContinueProperty24={() => continueSyndicationReview('property24', previewProperty24Listing)}
+      />
 
       <Modal
         open={sellerPortalActivationOpen}

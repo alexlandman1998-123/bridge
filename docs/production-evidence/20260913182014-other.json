@@ -1,0 +1,19 @@
+{
+  "version": "20260913182014",
+  "stream": "fica_compliance",
+  "file": "20260913182014_fica_access_controls_phase6.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:30:00Z",
+  "notes": [
+    "Verified production FICA access-control objects: audit table, RLS, audit-read policy, privileged update guard, audit trigger, and assigned-staff column.",
+    "Production recovery was rechecked immediately before SQL application: eight completed physical backups were available."
+  ]
+}

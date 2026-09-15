@@ -1,0 +1,26 @@
+{
+  "version": "20260913193410",
+  "stream": "other",
+  "file": "20260913193410_website_blog_release3_publishing_polish.sql",
+  "route": "apply_original",
+  "action": "apply_original_after_dependency_check",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T00:00:00.000Z",
+  "notes": [
+    "The intended lifecycle_status check constraint was already present exactly in staging; replaying the DDL was rejected as a duplicate constraint.",
+    "The lifecycle status values match the migration definition. No residue was created by the rejected transaction."
+  ],
+  "commands": [
+    "staging catalog query verified website_blog_posts_lifecycle_status_check",
+    "node scripts/supabase-phase6-staging-execution.mjs --record-applied --version 20260913193410 --evidence docs/staging-evidence/20260913193410-other.json --confirm APPLY_TO_STAGING_ONLY"
+  ],
+  "ledgerRecordedAt": "2026-09-14T19:03:53.104Z"
+}

@@ -1,0 +1,1 @@
+function a(r){if(!r||r.defaultPrevented||r.key!==" "&&r.key!=="Spacebar")return;if(r.repeat){r.preventDefault();return}const t=r.currentTarget;!t||typeof t.click!="function"||(r.preventDefault(),t.click())}export{a};

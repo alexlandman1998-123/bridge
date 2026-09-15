@@ -1,6 +1,6 @@
 # Supabase Migration Phase 2 Onboarding-Critical Report
 
-Generated: 2026-08-14T12:16:35.756Z
+Generated: 2026-09-14T16:25:59.448Z
 Repo: /Users/alexanderlandman/the-it-guy
 
 ## Safety Scope
@@ -16,7 +16,7 @@ Phase 2 validates onboarding-critical live objects and runtime visibility. It do
 | Patch applied | no |
 | Remote catalog fetched | yes |
 | REST RPC probes run | yes |
-| REST project ref | isdowlnollckzvltkasn |
+| REST project ref | vaszuxjeoajeuhlcnzzf |
 
 ## Summary
 
@@ -75,9 +75,9 @@ Phase 2 validates onboarding-critical live objects and runtime visibility. It do
 
 | Check | Ready | Expected | Observed | Details |
 | --- | --- | --- | --- | --- |
-| rest_bridge_complete_workspace_onboarding | yes | HTTP 200; success=false; code=permission_denied | HTTP 200; code=permission_denied | durationMs=407 |
-| rest_bridge_create_principal_claim_invite | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=203 |
-| rest_bridge_complete_principal_claim_onboarding | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=209 |
+| rest_bridge_complete_workspace_onboarding | yes | HTTP 200; success=false; code=permission_denied | HTTP 200; code=permission_denied | durationMs=1406 |
+| rest_bridge_create_principal_claim_invite | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=238 |
+| rest_bridge_complete_principal_claim_onboarding | yes | HTTP 200; success=false; code=not_authenticated | HTTP 200; code=not_authenticated | durationMs=231 |
 
 ## Command Evidence
 

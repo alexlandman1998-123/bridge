@@ -1,0 +1,19 @@
+{
+  "version": "20260913200000",
+  "stream": "fica_compliance",
+  "file": "20260913200000_knowledge_factory_fica_verification_handoff_phase4.sql",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T17:35:00Z",
+  "notes": [
+    "Verified all transaction-aware and provider-status FICA handoff fields in staging; raw provider payload storage remains excluded."
+  ],
+  "ledgerRecordedAt": "2026-09-14T17:20:08.444Z"
+}

@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Inter+Tight:wght@600;700;800&display=swap" />
+    <link rel="icon" type="image/png" href="/favicon-dark.png" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/png" href="/favicon-light.png" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-dark.svg?v=2" media="(prefers-color-scheme: light)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-light.svg?v=2" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=2" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A modern property experience for buyers and sellers." />
+    <meta property="og:title" content="The Future of Property" />
+    <meta property="og:description" content="A modern property experience for buyers and sellers." />
+    <meta property="og:image" content="https://app.arch9.co.za/brand/future-of-property-preview.jpg" />
+    <meta property="og:url" content="https://app.arch9.co.za/" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="The Future of Property" />
+    <meta name="twitter:description" content="A modern property experience for buyers and sellers." />
+    <meta name="twitter:image" content="https://app.arch9.co.za/brand/future-of-property-preview.jpg" />
+    <title>Arch9 | Platform</title>
+    <script type="module" crossorigin src="/assets/index-D8YQMSSu.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-runtime-CsAVBJvT.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-nZI-YelQ.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-supabase-DTqiiTOY.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-BqoWcGWz.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-BQQTt2GQ.css">
+      <meta name="arch9-release" content="c053247eed9591105b6526862dc29316dbf4b437" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      ;(() => {
+        const retryKey = 'arch9:bootstrap-retry:v1'
+        const retryWindowMs = 2 * 60 * 1000
+        let appStarted = false
+
+        const isModuleLoadFailure = (value) => /(?:chunkloaderror|dynamically imported module|module script|failed to fetch|load failed for module|\/assets\/.*\.js)/i.test(
+          String(value?.message || value?.reason?.message || value || ''),
+        )
+
+        const getRetryCount = () => {
+          try {
+            const record = JSON.parse(window.sessionStorage.getItem(retryKey) || '{}')
+            if (!record.timestamp || Date.now() - record.timestamp > retryWindowMs) return 0
+            return Number(record.count) || 0
+          } catch {
+            return 0
+          }
+        }
+
+        const saveRetryCount = (count) => {
+          try {
+            window.sessionStorage.setItem(retryKey, JSON.stringify({ count, timestamp: Date.now() }))
+          } catch {
+            // Navigation below remains safe when browser storage is unavailable.
+          }
+        }
+
+        const reloadFreshShell = () => {
+          const url = new URL(window.location.href)
+          url.searchParams.set('arch9_bootstrap_reload', String(Date.now()))
+          window.location.replace(url.toString())
+        }
+
+        const showRecovery = () => {
+          const root = document.getElementById('root')
+          if (!root) return
+          root.innerHTML = `
+            <main style="min-height:100vh;display:grid;place-items:center;padding:24px;background:#f8fafc;color:#14213d;font-family:Inter,system-ui,sans-serif">
+              <section style="width:min(100%,520px);padding:36px;border:1px solid #dbe4ee;border-radius:20px;background:#fff;box-shadow:0 20px 60px rgba(15,23,42,.1);text-align:center">
+                <p style="margin:0 0 12px;color:#0f766e;font-size:12px;font-weight:800;letter-spacing:.12em">ARCH9 UPDATE</p>
+                <h1 style="margin:0;font-size:28px;line-height:1.2">Finishing the latest update</h1>
+                <p style="margin:16px 0 24px;color:#52647a;line-height:1.6">This browser still has an older app file open. Your data is safe—refresh to load the current version.</p>
+                <button type="button" id="arch9-bootstrap-retry" style="border:0;border-radius:10px;padding:12px 18px;background:#0f766e;color:#fff;font:inherit;font-weight:700;cursor:pointer">Refresh Arch9</button>
+              </section>
+            </main>`
+          document.getElementById('arch9-bootstrap-retry')?.addEventListener('click', () => {
+            try { window.sessionStorage.removeItem(retryKey) } catch {}
+            reloadFreshShell()
+          })
+        }
+
+        const recover = () => {
+          if (appStarted) return
+          const retryCount = getRetryCount()
+          if (retryCount < 1) {
+            saveRetryCount(retryCount + 1)
+            window.setTimeout(reloadFreshShell, 50)
+            return
+          }
+          showRecovery()
+        }
+
+        window.addEventListener('error', (event) => {
+          const target = event.target
+          const failedEntryScript = target?.tagName === 'SCRIPT' && /(?:\/assets\/|\/src\/main\.jsx)/.test(String(target?.src || ''))
+          if (failedEntryScript || isModuleLoadFailure(event.error || event.message)) recover()
+        }, true)
+        window.addEventListener('unhandledrejection', (event) => {
+          if (isModuleLoadFailure(event.reason)) recover()
+        })
+        window.__arch9MarkBootstrapReady = () => {
+          appStarted = true
+          try { window.sessionStorage.removeItem(retryKey) } catch {}
+        }
+      })()
+    </script>
+  </body>
+</html>

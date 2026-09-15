@@ -1,0 +1,16 @@
+{
+  "version": "20260913120000",
+  "stream": "rental_readiness",
+  "file": "20260913120000_rental_application_approval_readiness.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:55:00Z",
+  "notes": ["Verified the production application-decision function now requires all required screening checks before approval. Eight completed physical backups were rechecked before application."]
+}

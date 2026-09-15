@@ -1,0 +1,19 @@
+{
+  "version": "20260913210000",
+  "stream": "fica_compliance",
+  "file": "20260913210000_fica_compliance_certificate_phase5.sql",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T17:40:00Z",
+  "notes": [
+    "Verified the restricted certificate column, active certificate pack and definition, and its active canonical rule after the dedicated append-only activation correction."
+  ],
+  "ledgerRecordedAt": "2026-09-14T17:21:23.788Z"
+}

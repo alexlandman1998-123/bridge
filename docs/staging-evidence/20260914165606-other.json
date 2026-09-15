@@ -1,0 +1,19 @@
+{
+  "version": "20260914165606",
+  "stream": "document_configuration",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "stagingLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "approvedBy": "Alex",
+  "capturedAt": "2026-09-14T16:57:22Z",
+  "notes": [
+    "Precondition check found all five canonical FICA declaration rule tuples.",
+    "The migration activated exactly those fixed IDs; the final catalog audit reports all seven records present and canonical_match=true."
+  ],
+  "ledgerRecordedAt": "2026-09-14T16:58:13.295Z"
+}

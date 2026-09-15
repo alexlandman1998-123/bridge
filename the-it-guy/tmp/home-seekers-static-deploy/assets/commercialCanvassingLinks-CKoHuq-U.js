@@ -1,0 +1,1 @@
+function c(n){return String(n||"").trim()}function s(n={}){const r=new URLSearchParams;Object.entries(n||{}).forEach(([t,e])=>{const i=c(e);i&&r.set(t,i)});const a=r.toString();return a?`/commercial/canvassing?${a}`:"/commercial/canvassing"}export{s as b};

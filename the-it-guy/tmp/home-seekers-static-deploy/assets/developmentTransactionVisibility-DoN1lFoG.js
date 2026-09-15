@@ -1,0 +1,1 @@
+const a=new Set(["archived","cancelled","canceled","deleted"]),n=e=>String(e||"").trim().toLowerCase();function r(e){const t=e?.transaction;return!t?.id||t.is_active===!1||t.archived_at||t.cancelled_at||t.deleted_at?!1:!a.has(n(t.lifecycle_state))}function c(e=[]){return(Array.isArray(e)?e:[]).filter(r)}export{c as s};

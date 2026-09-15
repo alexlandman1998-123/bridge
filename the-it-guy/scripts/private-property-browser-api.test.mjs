@@ -26,6 +26,7 @@ for (const path of [
   'api/private-property/listings/[listingId]/preview.js',
   'api/private-property/listings/[listingId]/publish.js',
   'api/private-property/listings/[listingId]/status.js',
+  'api/private-property/listings/[listingId]/syndication-review.js',
 ]) {
   assert.ok(fs.existsSync(new URL(`../${path}`, import.meta.url)), `${path} should exist`)
 }
@@ -33,6 +34,7 @@ for (const path of [
 assert.equal(PRIVATE_PROPERTY_API_ROUTES.previewListing, '/api/private-property/listings/:listingId/preview')
 assert.equal(PRIVATE_PROPERTY_API_ROUTES.publishListing, '/api/private-property/listings/:listingId/publish')
 assert.equal(PRIVATE_PROPERTY_API_ROUTES.listingStatus, '/api/private-property/listings/:listingId/status')
+assert.equal(PRIVATE_PROPERTY_API_ROUTES.syndicationReview, '/api/private-property/listings/:listingId/syndication-review')
 
 const viteConfig = read('vite.config.js')
 assert.match(viteConfig, /createPrivatePropertyApiResponse/)

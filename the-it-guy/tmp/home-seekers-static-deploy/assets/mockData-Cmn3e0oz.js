@@ -1,0 +1,1 @@
+const f=!1;function m(t=[],...n){return[...Array.isArray(t)?t.filter(Boolean):[]].sort((a,o)=>{const r=n.map(e=>a?.[e]).find(Boolean),s=n.map(e=>o?.[e]).find(Boolean),i=new Date(r||0).getTime();return new Date(s||0).getTime()-i})}export{f as M,m as s};

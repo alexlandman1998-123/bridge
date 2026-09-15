@@ -1,0 +1,16 @@
+{
+  "version": "20260914172028",
+  "stream": "fica_compliance",
+  "file": "20260914172028_fica_compliance_certificate_activate_rule.sql",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "productionTargetStateVerified": true,
+  "productionLedgerRecorded": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Alex",
+  "capturedAt": "2026-09-14T17:50:00Z",
+  "notes": ["Verified the fixed canonical FICA certificate rule identity and active state after the append-only activation correction."]
+}

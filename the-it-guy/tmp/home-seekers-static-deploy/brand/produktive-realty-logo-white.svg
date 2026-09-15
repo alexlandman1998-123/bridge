@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 260" role="img" aria-labelledby="title desc">
+  <title id="title">Produktive Realty</title>
+  <desc id="desc">Produktive Realty white wordmark with gold house mark.</desc>
+  <g fill="none" fill-rule="evenodd">
+    <path d="M62 182V98l74-54 74 54v84h-36v-65l-38-28-38 28v65H62Z" fill="#d1ad61"/>
+    <path d="M111 182h27v-50h-27v50Zm43 0h27v-78h-27v78Z" fill="#fff"/>
+    <path d="M60 213h808" stroke="#d1ad61" stroke-width="8" stroke-linecap="round"/>
+    <text x="254" y="94" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="70" font-weight="800" letter-spacing="5">PRODUKTIVE</text>
+    <text x="254" y="178" fill="#fff" font-family="Arial, Helvetica, sans-serif" font-size="74" font-weight="800" letter-spacing="5">REALTY</text>
+  </g>
+</svg>
