@@ -540,7 +540,11 @@ export async function assertProperty24ProductionWriteAllowed({
 } = {}) {
   if (normalizeProperty24Text(environment).toLowerCase() !== 'production') return { required: false, allowed: true, gate: null }
   const gate = await fetchProperty24LiveCutoverGate({ supabase, organisationId })
-  if (rollbackOnly && gate.status === PROPERTY24_LIVE_CUTOVER_STATES.PAUSED) {
+  // Taking an existing listing off the portal must remain available to authorised
+  // agents, even when new production publishing is paused or has not started.
+  // The caller still has to pass the listing-level browser authentication and
+  // the normal enabled/credential checks before reaching this guard.
+  if (rollbackOnly) {
     return { required: true, allowed: true, rollbackOnly: true, gate }
   }
   if (!PRODUCTION_WRITE_STATES.has(gate.status)) {

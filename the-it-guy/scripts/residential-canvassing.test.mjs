@@ -31,7 +31,7 @@ assert.match(canvassingWorkspaceTabsSource, /Property Search/, 'canvassing works
 assert.match(canvassingWorkspaceTabsSource, /label: 'Reports'/, 'canvassing workspace navigation should expose reports')
 assert.match(canvassingWorkspaceTabsSource, /ModuleSegmentedNav/, 'canvassing workspace navigation should use the shared segmented module navigation')
 assert.match(canvassingWorkspaceTabsSource, /ariaLabel="Canvassing tools"/, 'canvassing workspace navigation should identify its purpose to assistive technology')
-assert.match(canvassingWorkspaceTabsSource, /singleRow/, 'canvassing workspace navigation should keep all tools in one row')
+assert.match(moduleSegmentedNavSource, /gridTemplateColumns: `repeat\(\$\{Math\.max\(items\.length, 1\)\}, minmax\(0, 1fr\)\)`/, 'segmented module navigation should keep all tools in one row')
 assert.match(moduleSegmentedNavSource, /NavLink/, 'segmented module navigation should preserve route-aware active states')
 assert.match(canvassingPageSource, /activeCanvassingWorkspace === 'property-search'/, 'canvassing should resolve and render the property search workspace from its URL')
 assert.match(canvassingPageSource, /activeCanvassingWorkspace === 'property-reports'/, 'canvassing should resolve and render the property reports workspace from its URL')

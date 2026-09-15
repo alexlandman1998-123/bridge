@@ -898,6 +898,7 @@ function AgentNewDealWizard({
     importProperty24Link: '',
     importNotes: '',
     pipelineLeadId: '',
+    connectBuyerNow: true,
     clientName: '',
     clientSurname: '',
     clientEmail: '',
@@ -1026,6 +1027,13 @@ function AgentNewDealWizard({
       privateListingId: requestedPropertyMode === PROPERTY_MODE_PRIVATE ? initialPrivateListingId || '' : '',
       developmentId: requestedPropertyMode === PROPERTY_MODE_DEVELOPMENT ? initialDevelopmentId || '' : '',
       unitId: requestedPropertyMode === PROPERTY_MODE_DEVELOPMENT ? initialUnitId || '' : '',
+      connectBuyerNow: true,
+      pipelineLeadId: '',
+      clientName: '',
+      clientSurname: '',
+      clientEmail: '',
+      clientPhone: '',
+      buyerParties: [],
     }))
     const localListings = mergeListings(readAgentPrivateListings())
     setPrivateListings(localListings)
@@ -1979,7 +1987,7 @@ function AgentNewDealWizard({
       }
     }
 
-    if (stepKey === 'client') {
+    if (stepKey === 'client' && form.connectBuyerNow) {
       if (!String(form.clientName || '').trim()) nextErrors.clientName = `${buyerCaptureLabels.firstName} is required.`
       if (!String(form.clientSurname || '').trim()) nextErrors.clientSurname = `${buyerCaptureLabels.lastName} is required.`
       if (!String(form.clientEmail || '').trim()) nextErrors.clientEmail = `${buyerCaptureLabels.email} is required.`
@@ -2122,7 +2130,8 @@ function AgentNewDealWizard({
     }
 
     const privateListing = selectedPrivateListing
-    const buyerName = `${form.clientName} ${form.clientSurname}`.trim()
+    const buyerConnected = Boolean(form.connectBuyerNow)
+    const buyerName = buyerConnected ? `${form.clientName} ${form.clientSurname}`.trim() : ''
     const propertyMode = form.propertyMode
     const financeType = normalizeFinanceTypeForApi(form.financeType)
     const bondFinance = financeType === 'bond' || financeType === 'combination'
@@ -2391,12 +2400,12 @@ function AgentNewDealWizard({
           province: propertyMode === PROPERTY_MODE_IMPORT ? form.importProvince : propertyMode === PROPERTY_MODE_PRIVATE ? privateListing?.propertyDetails?.province || privateListing?.province || '' : '',
           postalCode: '',
           propertyDescription: propertyMode === PROPERTY_MODE_IMPORT ? form.importNotes : propertyMode === PROPERTY_MODE_PRIVATE ? privateListing?.propertyDetails?.description || privateListing?.marketing?.description || '' : '',
-          buyerFirstName: form.clientName,
-          buyerLastName: form.clientSurname,
-          buyerName: `${String(form.clientName || '').trim()} ${String(form.clientSurname || '').trim()}`.trim(),
-          buyerPhone: form.clientPhone,
-          buyerEmail: form.clientEmail,
-          buyerParties: buildBuyerPartiesForPayload(),
+          buyerFirstName: buyerConnected ? form.clientName : '',
+          buyerLastName: buyerConnected ? form.clientSurname : '',
+          buyerName,
+          buyerPhone: buyerConnected ? form.clientPhone : '',
+          buyerEmail: buyerConnected ? form.clientEmail : '',
+          buyerParties: buyerConnected ? buildBuyerPartiesForPayload() : [],
           sellerName: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerName : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.name : '',
           sellerPhone: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerPhone : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.phone : '',
           sellerEmail: propertyMode === PROPERTY_MODE_IMPORT ? form.importSellerEmail : propertyMode === PROPERTY_MODE_PRIVATE ? listingSeller.email : '',
@@ -2449,6 +2458,7 @@ function AgentNewDealWizard({
         },
         options: {
           allowIncomplete: true,
+          buyerConnectionDeferred: !buyerConnected,
           deferFinanceType: !financeType,
           creationOrigin,
           handoffChecklist,
@@ -2599,7 +2609,7 @@ function AgentNewDealWizard({
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                 <div className="mb-5 rounded-[18px] border border-[#d8e5f2] bg-[#f7fbff] px-4 py-3">
                   <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#52708d]">
-                    Agent sale
+                    Listing transaction
                   </span>
                   <p className="mt-1 text-sm leading-6 text-[#48627f]">
                     Select the active listing that already has a signed OTP. Development stock is handled inside the developer transaction flow.
@@ -2730,7 +2740,18 @@ function AgentNewDealWizard({
                     </>
                   )}
                 </div>
-                <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#5f748c]">
+                  {form.propertyMode === PROPERTY_MODE_PRIVATE && selectedPrivateListing ? (
+                    <div className="mt-4 rounded-[14px] border border-[#d8e5f2] bg-[#f7fbff] px-4 py-3 text-sm text-[#48627f]">
+                      <p className="font-semibold text-[#22374d]">Seller from this listing</p>
+                      <p className="mt-1">
+                        {getListingSeller(selectedPrivateListing).name || 'Seller name not captured'}
+                        {getListingSeller(selectedPrivateListing).email || getListingSeller(selectedPrivateListing).phone
+                          ? ` • ${[getListingSeller(selectedPrivateListing).email, getListingSeller(selectedPrivateListing).phone].filter(Boolean).join(' • ')}`
+                          : ''}
+                      </p>
+                    </div>
+                  ) : null}
+                  <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4 py-3 text-sm text-[#5f748c]">
                   <p className="font-semibold text-[#22374d]">Deal terms inherited from listing or unit</p>
                   <p className="mt-1">
                     {inheritedDealTerms.salePrice ? `Selling price: ${formatCurrency(inheritedDealTerms.salePrice)}` : 'Selling price not captured yet.'}
@@ -2831,6 +2852,21 @@ function AgentNewDealWizard({
 
             {activeStep === 'client' ? (
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
+                <div className="mb-5 rounded-[18px] border border-[#d8e5f2] bg-[#f7fbff] p-4">
+                  <p className="font-semibold text-[#22374d]">Connect a buyer now?</p>
+                  <p className="mt-1 text-sm leading-6 text-[#60758d]">You can attach an existing lead or capture a buyer now. Choose no to create the transaction and add the buyer later.</p>
+                  <div className="mt-3 flex flex-wrap gap-3">
+                    <label className="inline-flex items-center gap-2 text-sm font-semibold text-[#22374d]">
+                      <input type="radio" name="connect-buyer-now" checked={form.connectBuyerNow} onChange={() => updateField('connectBuyerNow', true)} />
+                      Yes, connect buyer
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm font-semibold text-[#22374d]">
+                      <input type="radio" name="connect-buyer-now" checked={!form.connectBuyerNow} onChange={() => updateField('connectBuyerNow', false)} />
+                      No, add buyer later
+                    </label>
+                  </div>
+                </div>
+                {form.connectBuyerNow ? (
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="Select From Pipeline" hint="Optional: pull through an existing lead and then edit as needed." fullWidth>
                     <select className={fieldClass()} value={form.pipelineLeadId} onChange={(event) => updateField('pipelineLeadId', event.target.value)}>
@@ -2957,6 +2993,11 @@ function AgentNewDealWizard({
                     )}
                   </div>
                 </div>
+                ) : (
+                  <p className="rounded-[16px] border border-dashed border-[#d6e1ee] bg-white px-4 py-4 text-sm leading-6 text-[#60758d]">
+                    This transaction will be created without a buyer connection. The selected listing and its seller will remain attached, and buyer onboarding can be completed from the transaction workspace.
+                  </p>
+                )}
               </section>
             ) : null}
 

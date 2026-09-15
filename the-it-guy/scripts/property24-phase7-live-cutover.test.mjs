@@ -333,6 +333,16 @@ await assert.rejects(
   }),
   (error) => error.code === 'property24_live_cutover_not_authorized' && error.status === 403,
 )
+const blockedRollback = await assertProperty24ProductionWriteAllowed({
+  supabase: blockedSupabase,
+  organisationId: 'org-blocked',
+  agencyId: 999,
+  listingId: 'blocked-listing',
+  environment: 'production',
+  rollbackOnly: true,
+})
+assert.equal(blockedRollback.allowed, true)
+assert.equal(blockedRollback.rollbackOnly, true)
 
 const migrationSource = read('../../supabase/migrations/20260831150740_property24_live_cutover_gate.sql')
 assert.match(migrationSource, /property24_live_cutover_gates/)
@@ -350,6 +360,7 @@ assert.match(connectionServiceSource, /assertProperty24ProductionConnectionEnabl
 const apiSource = read('../server/property24/api.js')
 assert.match(apiSource, /productionWriteRequired/)
 assert.match(apiSource, /productionRollbackOnly/)
+assert.match(apiSource, /'expired'/)
 assert.match(apiSource, /PROPERTY24_PUBLISH_PERMISSION = 'publish_listings'/)
 const endpointSource = read('../api/property24/settings/live-cutover.js')
 assert.match(endpointSource, /supabase\.auth\.getUser\(token\)/)

@@ -302,7 +302,7 @@ export function buildProperty24ApiConfig({ env = getRuntimeEnv(), requestUrl, pa
       'withdrawRentalListing',
     ].includes(route.name),
     productionRollbackOnly: ['withdrawListing', 'withdrawRentalListing'].includes(route.name) ||
-      ['withdrawn', 'removed'].includes(normalizeProperty24Text(firstValue(payload.status, payload.listingStatus, query.get('status'), query.get('listingStatus'))).toLowerCase()),
+      ['withdrawn', 'removed', 'expired'].includes(normalizeProperty24Text(firstValue(payload.status, payload.listingStatus, query.get('status'), query.get('listingStatus'))).toLowerCase()),
     environment,
   }
 }

@@ -2,10 +2,10 @@ import { NavLink } from 'react-router-dom'
 
 const EMPTY_ITEMS = Object.freeze([])
 
-export default function ModuleSegmentedNav({ items = EMPTY_ITEMS, ariaLabel = 'Module navigation', className = '', singleRow = false }) {
-  const layoutStyle = singleRow ? { gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` } : undefined
+export default function ModuleSegmentedNav({ items = EMPTY_ITEMS, ariaLabel = 'Module navigation', className = '' }) {
+  const layoutStyle = { gridTemplateColumns: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` }
   return (
-    <nav className={`grid min-h-11 w-full ${singleRow ? 'max-w-none' : 'max-w-[640px] grid-cols-3'} gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 ${className}`.trim()} style={layoutStyle} aria-label={ariaLabel}>
+    <nav className={`grid min-h-11 w-full max-w-none gap-1 rounded-xl border border-slate-200 bg-slate-100 p-1 ${className}`.trim()} style={layoutStyle} aria-label={ariaLabel}>
       {items.map((item) => {
         const Icon = item.icon
         return (

@@ -2042,7 +2042,9 @@ function Units() {
             searchValue={deferredSearch}
             onSearchChange={(nextValue) => setFilters((previous) => ({ ...previous, search: nextValue }))}
             onRowClick={isDeveloperWorkspaceRole ? navigateToDeveloperTransactionWorkspace : handleOpenAgentTransaction}
-            onCreateTransaction={() => window.dispatchEvent(new CustomEvent('itg:open-new-transaction'))}
+            onCreateTransaction={() => window.dispatchEvent(new CustomEvent('itg:open-new-transaction', {
+              detail: { initialPropertyMode: 'private' },
+            }))}
             createTransactionLabel={isDeveloperWorkspaceRole ? 'Create Transaction' : 'Create Deal'}
             onOpenPipeline={isDeveloperWorkspaceRole ? null : () => navigate('/pipeline')}
             onDeleteTransaction={canDeleteTransactions ? requestDeleteTransaction : null}

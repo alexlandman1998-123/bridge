@@ -938,7 +938,7 @@ function AppLayout({ onLogout, session = null, user }) {
 
       {wizardOpen ? (
         <Suspense fallback={<ModalSkeleton />}>
-          {role === 'agent' ? (
+          {role === 'agent' || wizardInitialPropertyMode === 'private' ? (
             <AgentNewDealWizard
               open={wizardOpen}
               onClose={handleCloseNewTransaction}
