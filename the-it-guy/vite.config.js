@@ -7,6 +7,7 @@ import { createAdminMobileDashboardResponse } from './server/services/adminMobil
 import { createMissionControlResponse, writeNodeJsonResponse } from './server/services/hqMissionControlApi.js'
 import { createBuyerOfferBrandingResponse } from './server/services/buyerOfferBrandingApi.js'
 import { createPublicAgentCardEventsResponse } from './server/services/publicAgentCardEventsApi.js'
+import { createPublicAgentCardImageResponse, createPublicAgentCardShareResponse, writeNodeTextResponse } from './server/services/publicAgentCardShareApi.js'
 import { createPublicAgencyIntakeResponse } from './server/services/publicAgencyIntakeApi.js'
 import { createPublicListingsResponse } from './server/services/publicListingsApi.js'
 import { createProperty24ApiResponse } from './server/property24/api.js'
@@ -216,6 +217,16 @@ function missionControlApiPlugin() {
           body,
         })
         writeNodeJsonResponse(response, payload)
+      })
+      server.middlewares.use('/api/public/agent-card-share', async (request, response) => {
+        writeNodeTextResponse(response, await createPublicAgentCardShareResponse({ method: request.method, url: request.url, headers: request.headers }))
+      })
+      server.middlewares.use('/api/public/agent-card-image', async (request, response) => {
+        writeNodeTextResponse(response, await createPublicAgentCardImageResponse({ method: request.method, url: request.url, headers: request.headers }))
+      })
+      server.middlewares.use('/share/card/', async (request, response) => {
+        const slug = String(request.url || '').split('?')[0].replace(/^\/+/, '').split('/')[0]
+        writeNodeTextResponse(response, await createPublicAgentCardShareResponse({ method: request.method, url: `/api/public/agent-card-share?slug=${encodeURIComponent(slug)}`, headers: request.headers }))
       })
       server.middlewares.use('/api/property24', async (request, response) => {
         const chunks = []

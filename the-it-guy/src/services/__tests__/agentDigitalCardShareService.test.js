@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import {
   __agentDigitalCardShareServiceTestUtils,
   buildAgentDigitalCardFileBaseName,
+  buildAgentDigitalCardCampaignUrl,
+  buildAgentDigitalCardIntakeUrl,
+  readAgentDigitalCardAttribution,
   buildAgentDigitalCardShareKit,
   buildAgentDigitalCardShareKitCsv,
   buildAgentDigitalCardShareText,
@@ -44,6 +47,37 @@ assert.equal(shareKit.fileBaseName, 'kingstons-john-smith')
 assert.equal(shareKit.vcardFileName, 'kingstons-john-smith.vcf')
 assert.equal(shareKit.qrFileName, 'kingstons-john-smith-qr.png')
 assert.equal(shareKit.shareText, 'John Smith at Kingstons\nhttps://app.arch9.co.za/card/kingstons-john-smith')
+
+assert.deepEqual(
+  readAgentDigitalCardAttribution('?utm_source=LinkedIn&utm_medium=social&utm_campaign=Spring-Launch'),
+  {
+    sourceChannel: 'linkedin',
+    campaignCode: 'Spring-Launch',
+    utm: { utm_source: 'LinkedIn', utm_medium: 'social', utm_campaign: 'Spring-Launch' },
+  },
+)
+
+assert.equal(
+  buildAgentDigitalCardCampaignUrl({ cardUrl: 'https://app.arch9.co.za/card/kingstons-john-smith', source: 'QR', campaignCode: 'Show Day' }),
+  'https://app.arch9.co.za/card/kingstons-john-smith?source=qr&campaign=Show+Day',
+)
+
+assert.equal(
+  buildAgentDigitalCardIntakeUrl({
+    cardSlug: 'kingstons-john-smith',
+    intent: 'buy',
+    search: '?source=instagram&utm_source=instagram&utm_campaign=spring-launch',
+  }),
+  '/intake/kingstons-john-smith?intent=buy&source=instagram&utm_source=instagram&utm_campaign=spring-launch',
+)
+
+assert.match(
+  buildAgentDigitalCardIntakeUrl({
+    cardSlug: 'kingstons-john-smith',
+    listing: { id: 'listing-1', slug: 'oak-cottage', title: 'Oak Cottage', askingPrice: 1250000 },
+  }),
+  /intent=buy&listing=oak-cottage&listingId=listing-1&listingTitle=Oak\+Cottage&listingPrice=1250000&source=card$/,
+)
 assert.match(shareKit.vcard, /URL:https:\/\/app\.arch9\.co\.za\/card\/kingstons-john-smith\r\n/)
 
 const rolloutCsv = buildAgentDigitalCardShareKitCsv([

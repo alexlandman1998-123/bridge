@@ -636,6 +636,8 @@ export function buildAgencyPublicIntakeContract({ link = {}, organisation = {}, 
         avatarUrl: normalizeText(agentCardAgent.avatarUrl),
       },
       features: safeObject(agentDigitalCard.features),
+      profile: safeObject(agentDigitalCard.profile),
+      rollout: safeObject(agentDigitalCard.rollout),
     },
     agency: {
       name: normalizeText(branding.agencyName || branding.organisationName || organisation.display_name || organisation.name),

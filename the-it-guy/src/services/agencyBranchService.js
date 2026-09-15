@@ -318,6 +318,7 @@ async function listOrganisationUsers(client, organisationId) {
 
 async function listOrganisationTransactions(client, organisationId) {
   const selectAttempts = [
+    'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, compliance_status, compliance_review_required, documents_complete, documents_missing, required_documents_missing, missing_documents_count, created_at, updated_at',
     'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, gross_commission_percentage, gross_commission_amount, agent_commission_amount, agency_commission_amount, registered_at, created_at, updated_at',
     'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, status, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
     'id, organisation_id, assigned_branch_id, assigned_user_id, assigned_agent, assigned_agent_email, stage, lifecycle_state, sales_price, purchase_price, registered_at, created_at, updated_at',
@@ -347,7 +348,7 @@ async function listOrganisationTransactions(client, organisationId) {
 async function listOrganisationPrivateListings(client, organisationId) {
   const query = await client
     .from('private_listings')
-    .select('id, organisation_id, branch_id, assigned_agent_id, title, asking_price, estimated_value, listing_status, created_at, updated_at')
+    .select('id, organisation_id, branch_id, assigned_agent_id, title, asking_price, estimated_value, listing_status, mandate_status, mandate_expiry_date, created_at, updated_at')
     .eq('organisation_id', organisationId)
     .neq('listing_status', 'withdrawn')
 

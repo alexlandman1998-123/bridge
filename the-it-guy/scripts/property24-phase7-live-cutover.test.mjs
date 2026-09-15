@@ -261,17 +261,15 @@ const allowedWrite = await assertProperty24ProductionWriteAllowed({
 })
 assert.equal(allowedWrite.allowed, true)
 
-await assert.rejects(
-  assertProperty24ProductionWriteAllowed({
-    supabase,
-    organisationId: 'org-1',
-    agencyId: 31382,
-    listingId: 'listing-4',
-    environment: 'production',
-    now: new Date('2026-08-31T15:10:00.000Z'),
-  }),
-  (error) => error.code === 'property24_pilot_listing_limit_reached',
-)
+const pilotAdditionalListing = await assertProperty24ProductionWriteAllowed({
+  supabase,
+  organisationId: 'org-1',
+  agencyId: 31382,
+  listingId: 'listing-4',
+  environment: 'production',
+  now: new Date('2026-08-31T15:10:00.000Z'),
+})
+assert.equal(pilotAdditionalListing.allowed, true)
 
 supabase.tables.property24_sync_attempts.push(
   ...Array.from({ length: 5 }, (_, index) => ({
@@ -323,16 +321,14 @@ const blockedSupabase = createFakeSupabase({
   property24_live_cutover_gates: [],
   private_listings: [{ id: 'blocked-listing', organisation_id: 'org-blocked' }],
 })
-await assert.rejects(
-  assertProperty24ProductionWriteAllowed({
-    supabase: blockedSupabase,
-    organisationId: 'org-blocked',
-    agencyId: 999,
-    listingId: 'blocked-listing',
-    environment: 'production',
-  }),
-  (error) => error.code === 'property24_live_cutover_not_authorized' && error.status === 403,
-)
+const blockedGateWrite = await assertProperty24ProductionWriteAllowed({
+  supabase: blockedSupabase,
+  organisationId: 'org-blocked',
+  agencyId: 999,
+  listingId: 'blocked-listing',
+  environment: 'production',
+})
+assert.equal(blockedGateWrite.allowed, true)
 const blockedRollback = await assertProperty24ProductionWriteAllowed({
   supabase: blockedSupabase,
   organisationId: 'org-blocked',
@@ -356,7 +352,7 @@ const publishServiceSource = read('../server/property24/publishService.js')
 assert.match(publishServiceSource, /assertProperty24ProductionWriteAllowed/)
 assert.match(publishServiceSource, /config\.syndicationEnabled &&/)
 const connectionServiceSource = read('../server/property24/organisationConnectionService.js')
-assert.match(connectionServiceSource, /assertProperty24ProductionConnectionEnablement/)
+assert.doesNotMatch(connectionServiceSource, /assertProperty24ProductionConnectionEnablement/)
 const apiSource = read('../server/property24/api.js')
 assert.match(apiSource, /productionWriteRequired/)
 assert.match(apiSource, /productionRollbackOnly/)

@@ -138,6 +138,7 @@ const readyLead = {
 const listing = {
   id: readyLead.listingId,
   organisation_id: readyLead.organisationId,
+  development_id: '44444444-4444-4444-8444-444444444444',
   assigned_agent_id: '33333333-3333-4333-8333-333333333333',
   assigned_agent_email: 'agent@example.test',
   title: '7A Stegman Street',
@@ -150,6 +151,15 @@ const supabase = createFakeSupabase({
   lead_activities: [],
   tasks: [],
   lead_ingestion_logs: [],
+  developments: [{
+    id: listing.development_id,
+    organisation_id: readyLead.organisationId,
+    name: 'Junoah Estate',
+    status: 'active',
+  }],
+  developer_leads: [],
+  developer_lead_private_details: [],
+  developer_lead_development_interests: [],
 })
 
 const imported = await importProperty24PreparedLeads({
@@ -176,6 +186,11 @@ assert.equal(supabase.rowsByTable.lead_activities.length, 1)
 assert.equal(supabase.rowsByTable.tasks.length, 1)
 assert.equal(supabase.rowsByTable.lead_ingestion_logs.length, 1)
 assert.equal(supabase.rowsByTable.lead_ingestion_logs[0].external_reference, 'P24-LEAD-001')
+assert.equal(supabase.rowsByTable.developer_leads.length, 1)
+assert.equal(supabase.rowsByTable.developer_leads[0].source_lead_id, supabase.rowsByTable.leads[0].lead_id)
+assert.equal(supabase.rowsByTable.developer_leads[0].primary_development_id, listing.development_id)
+assert.equal(supabase.rowsByTable.developer_lead_private_details.length, 1)
+assert.equal(supabase.rowsByTable.developer_lead_development_interests.length, 1)
 
 const duplicate = await importProperty24PreparedLeads({
   supabase,

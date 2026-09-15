@@ -43,6 +43,14 @@ const contract = buildAgencyPublicIntakeContract({
           jobTitle: 'Property Practitioner',
         },
         features: { vcf: true, qr: true, listings: true, leadCapture: true },
+        profile: {
+          specialties: ['Luxury homes'],
+          serviceAreas: ['Sea Point'],
+          languages: ['English'],
+          credentials: ['PPRA registered'],
+          featuredListingIds: ['listing-1'],
+        },
+        rollout: { stage: 'pilot' },
       },
     },
     updated_at: '2026-07-29T10:00:00.000Z',
@@ -67,6 +75,9 @@ assert.equal(contract.card.enabled, true)
 assert.equal(contract.card.agent.name, 'John Smith')
 assert.equal(contract.card.agent.email, 'john@kingstons.test')
 assert.equal(contract.card.features.vcf, true)
+assert.deepEqual(contract.card.profile.specialties, ['Luxury homes'])
+assert.deepEqual(contract.card.profile.featuredListingIds, ['listing-1'])
+assert.equal(contract.card.rollout.stage, 'pilot')
 assert.equal(contract.agency.name, 'Kingstons Atlantic')
 assert.deepEqual(contract.intake.enabledIntents, ['buy', 'sell'])
 assert.equal(contract.intake.privacyPolicyVersion, 'privacy-v2')

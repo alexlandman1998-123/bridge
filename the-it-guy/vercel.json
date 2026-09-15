@@ -72,6 +72,10 @@
   ],
   "rewrites": [
     {
+      "source": "/share/card/:cardSlug",
+      "destination": "/api/public/agent-card-share?slug=:cardSlug"
+    },
+    {
       "source": "/((?!api/|assets/|brand/|favicon(?:-[^/]+)?\\.(?:png|svg|ico)|arch9-launch-preview\\.png|vite\\.svg).*)",
       "destination": "/index.html"
     }

@@ -564,6 +564,48 @@ async function fetchProperty24Sync({ supabase, listingId, environment } = {}) {
   return data || null
 }
 
+// A listing that has already been published to production must keep using its
+// recorded production connection.  Falling back to the process default here
+// can silently send a status update to ExDev, which accepts a different
+// catalogue and leaves the live portal listing unchanged.
+async function resolveExistingProperty24ListingEnvironment({ supabase, config = {}, env = {} } = {}) {
+  if (!config.listingId) return config
+  const result = await supabase
+    .from('property24_listing_syncs')
+    .select('environment, agency_id, listing_number, updated_at')
+    .eq('private_listing_id', config.listingId)
+  if (result.error && result.error.code !== 'PGRST116') throw result.error
+
+  const requestedListingNumber = normalizeProperty24Text(config.listingNumber)
+  const productionSync = (result.data || []).find((sync) => (
+    normalizeProperty24Text(sync.environment).toLowerCase() === 'production' &&
+    (!requestedListingNumber || normalizeProperty24Text(sync.listing_number) === requestedListingNumber)
+  ))
+  if (!productionSync) return config
+
+  const credentials = resolveProperty24EnvironmentCredentials({ env, environment: 'production' })
+  if (!credentials.configured) {
+    const error = new Error('This listing is live on Property24 production, but production credentials are not configured. No status change was sent.')
+    error.code = 'property24_production_credentials_missing'
+    error.status = 409
+    error.missingConfiguration = credentials.missing
+    throw error
+  }
+
+  return {
+    ...config,
+    environment: 'production',
+    property24BaseUrl: credentials.baseUrl,
+    property24Username: credentials.username,
+    property24Password: credentials.password,
+    property24UserGroupId: credentials.userGroupId,
+    property24ApiVersion: credentials.apiVersion,
+    property24SendUserGroupHeader: credentials.sendUserGroupHeader,
+    agencyId: normalizeProperty24Text(productionSync.agency_id) || config.agencyId,
+    listingNumber: requestedListingNumber || normalizeProperty24Text(productionSync.listing_number),
+  }
+}
+
 async function defaultFetchListingStatus({ supabase, property24, config } = {}) {
   const [listingResult, sync] = await Promise.all([
     fetchMaybeSingle(
@@ -1293,7 +1335,12 @@ export async function createProperty24ApiResponse({
       const supabase = createSupabase(config)
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
       if (browserAuthFailure) return browserAuthFailure
-      const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      const statusRouteConfig = await resolveExistingProperty24ListingEnvironment({
+        supabase,
+        config,
+        env: env || getRuntimeEnv(),
+      })
+      const resolvedConfig = await resolvePublishConfig({ supabase, config: statusRouteConfig, listingId: config.listingId })
       const statusConfig = await resolveProperty24StatusActionConfig({
         supabase,
         resolvedConfig: {

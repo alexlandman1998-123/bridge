@@ -1,5 +1,6 @@
 import {
   AlertCircle,
+  BarChart3,
   CheckCircle2,
   Copy,
   Download,
@@ -7,9 +8,11 @@ import {
   Inbox,
   IdCard,
   Mail,
+  Pencil,
   Plus,
   QrCode,
   RefreshCw,
+  Save,
   Search,
   UserRound,
   UsersRound,
@@ -29,11 +32,13 @@ import {
 } from '../../services/agencyPublicIntakeLinkService'
 import {
   buildAgentDigitalCardFileBaseName,
+  buildAgentDigitalCardCampaignUrl,
   buildAgentDigitalCardShareKit,
   buildAgentDigitalCardShareKitCsv,
   downloadAgentDigitalCardQrPng,
   downloadAgentDigitalCardTextFile,
 } from '../../services/agentDigitalCardShareService'
+import { resolveAgencyPublicCardListings } from '../../services/agencyPublicIntakeService'
 import {
   buildLeadCaptureDnsChecklist,
   buildLeadCaptureReviewQueueRows,
@@ -138,7 +143,7 @@ function buildAgentCardShareProfile({ user = {}, card = null, urls = {}, organis
     agentPhone: normalizeText(cardAgent.phone || cardAgent.whatsapp) || getUserPhone(user),
     agentJobTitle: normalizeText(cardAgent.jobTitle) || getUserJobTitle(user),
     organisationName: normalizeText(organisationName) || 'Agency',
-    shareUrl: normalizeText(urls.cardUrl || urls.intakeUrl),
+    shareUrl: normalizeText(urls.shareUrl || urls.cardUrl || urls.intakeUrl),
   }
 }
 
@@ -285,6 +290,106 @@ function MetricCard({ label, value, icon: Icon }) {
   )
 }
 
+function formatPercentage(value = 0, total = 0) {
+  if (!total) return '0%'
+  return `${Math.round((Number(value || 0) / Number(total || 1)) * 100)}%`
+}
+
+function AgentDigitalCardPerformanceOverview({ insights = null }) {
+  const summary = insights?.summary || {}
+  const sourceRows = Object.entries(summary.bySourceChannel || {})
+    .map(([source, metrics]) => ({ source, ...metrics }))
+    .sort((left, right) => (right.totalLeads - left.totalLeads) || (right.contactClicks - left.contactClicks) || (right.views - left.views))
+    .slice(0, 6)
+  const campaignRows = Object.entries(summary.byCampaignCode || {})
+    .filter(([campaign]) => campaign !== 'unattributed')
+    .map(([campaign, metrics]) => ({ campaign, ...metrics }))
+    .sort((left, right) => (right.totalLeads - left.totalLeads) || (right.views - left.views))
+    .slice(0, 3)
+
+  return (
+    <div className="mb-5 rounded-[18px] border border-[#dbe7f1] bg-[#f8fbfe] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#54728f]"><BarChart3 size={14} /> Digital-card funnel</p>
+          <h3 className="mt-1 text-lg font-semibold text-[#162334]">What turns card views into enquiries</h3>
+          <p className="mt-1 text-sm text-[#60758d]">Last {insights?.windowDays || 30} days across all agent cards.</p>
+        </div>
+        <span className="rounded-full border border-[#d7e5f1] bg-white px-3 py-1 text-xs font-semibold text-[#54728f]">{summary.views || 0} visits tracked</span>
+      </div>
+
+      <div className="mt-4 grid gap-2 sm:grid-cols-4">
+        {[
+          ['Views', summary.views || 0, 'Reach'],
+          ['Contact actions', summary.contactClicks || 0, formatPercentage(summary.contactClicks, summary.views)],
+          ['Property interest', summary.listingClicks || 0, formatPercentage(summary.listingClicks, summary.views)],
+          ['Enquiries', summary.totalLeads || 0, formatPercentage(summary.totalLeads, summary.views)],
+        ].map(([label, value, detail]) => (
+          <div key={label} className="rounded-[12px] border border-[#dce7f1] bg-white px-3 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#71849a]">{label}</p>
+            <p className="mt-1 text-xl font-semibold text-[#162334]">{value}</p>
+            <p className="mt-1 text-xs text-[#71849a]">{detail}</p>
+          </div>
+        ))}
+      </div>
+
+      {sourceRows.length ? (
+        <div className="mt-4 overflow-hidden rounded-[12px] border border-[#dce7f1] bg-white">
+          <table className="min-w-full text-left text-sm">
+            <thead className="bg-[#f4f8fc] text-xs font-semibold uppercase tracking-[0.1em] text-[#71849a]">
+              <tr><th className="px-3 py-2">Source</th><th className="px-3 py-2">Views</th><th className="px-3 py-2">Contact</th><th className="px-3 py-2">Enquiries</th><th className="px-3 py-2">Conversion</th></tr>
+            </thead>
+            <tbody>
+              {sourceRows.map((row) => (
+                <tr key={row.source} className="border-t border-[#e8eef5] text-[#526981]">
+                  <td className="px-3 py-2.5 font-semibold capitalize text-[#263c52]">{row.source}</td><td className="px-3 py-2.5">{row.views || 0}</td><td className="px-3 py-2.5">{row.contactClicks || 0}</td><td className="px-3 py-2.5">{row.totalLeads || 0}</td><td className="px-3 py-2.5 font-semibold">{formatPercentage(row.totalLeads, row.views)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : <p className="mt-4 rounded-[12px] border border-dashed border-[#cfdeeb] bg-white px-3 py-4 text-sm text-[#71849a]">Source performance will appear after visitors use a card link or submit an enquiry.</p>}
+
+      {campaignRows.length ? <p className="mt-3 text-xs text-[#60758d]">Top campaigns: {campaignRows.map((row) => `${row.campaign} (${row.totalLeads || 0} enquiries)`).join(' · ')}</p> : null}
+    </div>
+  )
+}
+
+function addCardMetrics(total, summary = {}) {
+  for (const key of ['views', 'contactClicks', 'listingClicks', 'totalLeads']) total[key] += Number(summary[key] || 0)
+  total.cards += 1
+  return total
+}
+
+function AgentCardRolloutOverview({ rows = [] }) {
+  const cohorts = rows.reduce((result, row) => {
+    if (!row.card || row.card.status !== 'active') return result
+    const stage = row.card.agentDigitalCard?.rollout?.stage === 'pilot' ? 'pilot' : 'standard'
+    addCardMetrics(result[stage], row.insights?.summary || {})
+    return result
+  }, {
+    pilot: { cards: 0, views: 0, contactClicks: 0, listingClicks: 0, totalLeads: 0 },
+    standard: { cards: 0, views: 0, contactClicks: 0, listingClicks: 0, totalLeads: 0 },
+  })
+  const pilotReady = cohorts.pilot.cards > 0 && cohorts.pilot.views >= 20 && cohorts.pilot.totalLeads > 0
+
+  return (
+    <div className="mb-5 rounded-[18px] border border-[#dbe7f1] bg-white p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#54728f]">Controlled rollout</p><h3 className="mt-1 text-lg font-semibold text-[#162334]">Pilot before broad distribution</h3><p className="mt-1 text-sm text-[#60758d]">Keep a small cohort tagged as Pilot, review its real engagement, then move cards to Standard when ready.</p></div>
+        <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${pilotReady ? statusToneClass('success') : statusToneClass('warning')}`}>{pilotReady ? 'Pilot has lead evidence' : 'Collect pilot evidence'}</span>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {['pilot', 'standard'].map((stage) => {
+          const cohort = cohorts[stage]
+          return <div key={stage} className="rounded-[12px] border border-[#e0e8f1] bg-[#f8fbfe] p-3"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#71849a]">{stage === 'pilot' ? 'Pilot cohort' : 'Standard rollout'}</p><p className="mt-1 text-xl font-semibold capitalize text-[#162334]">{cohort.cards} {cohort.cards === 1 ? 'card' : 'cards'}</p><p className="mt-2 text-sm text-[#526981]">{cohort.views} views · {cohort.contactClicks} contact actions · {cohort.totalLeads} enquiries</p></div>
+        })}
+      </div>
+      <p className="mt-3 text-xs leading-5 text-[#71849a]">Recommended gate: review at least 20 pilot visits and one genuine enquiry before expanding QR, WhatsApp, email-signature, and social distribution.</p>
+    </div>
+  )
+}
+
 function AgentCardManagementRow({
   user,
   card,
@@ -300,12 +405,15 @@ function AgentCardManagementRow({
   onCopyShareText,
   onDownloadQr,
   onDownloadVcard,
+  onEdit,
 }) {
   const status = card?.status || 'not_created'
   const active = status === 'active'
   const disabled = ['disabled', 'archived'].includes(status)
   const summary = insights?.summary || {}
   const rowDisabled = saving || Boolean(assetBusy)
+  const features = card?.agentDigitalCard?.features || {}
+  const rolloutStage = card?.agentDigitalCard?.rollout?.stage === 'pilot' ? 'pilot' : 'standard'
   return (
     <tr className="border-t border-[#e8eef5] align-top">
       <td className="px-4 py-4">
@@ -330,6 +438,7 @@ function AgentCardManagementRow({
                 30d: {summary.views || 0} views · {summary.totalLeads || 0} leads
               </span>
             ) : null}
+            {card ? <span className={`inline-flex w-fit items-center rounded-full border px-2 py-1 text-xs font-semibold ${rolloutStage === 'pilot' ? statusToneClass('warning') : statusToneClass('blue')}`}>{rolloutStage === 'pilot' ? 'Pilot cohort' : 'Standard rollout'}</span> : null}
           </div>
         ) : (
           <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusToneClass('slate')}`}>
@@ -341,7 +450,7 @@ function AgentCardManagementRow({
         {card?.slug ? (
           <div className="grid max-w-[420px] gap-2">
             <code className="min-w-0 truncate rounded-[10px] border border-[#e0e8f1] bg-[#fbfdff] px-3 py-2 text-xs text-[#35546c]">
-              {urls.cardUrl}
+              {urls.shareUrl || urls.cardUrl}
             </code>
           </div>
         ) : (
@@ -352,15 +461,16 @@ function AgentCardManagementRow({
         <div className="flex flex-wrap gap-2">
           {card?.slug ? (
             <>
-              <IconButton label={`Copy card link for ${getUserDisplayName(user)}`} icon={Copy} onClick={() => onCopy(urls.cardUrl)} disabled={saving} />
+              <IconButton label={`Copy share-ready card link for ${getUserDisplayName(user)}`} icon={Copy} onClick={() => onCopy(urls.shareUrl || urls.cardUrl)} disabled={saving} />
               <IconButton label={`Open card for ${getUserDisplayName(user)}`} icon={ExternalLink} onClick={() => onOpen(urls.cardUrl)} disabled={saving} />
               <IconButton label={`Copy share message for ${getUserDisplayName(user)}`} icon={Mail} onClick={() => onCopyShareText(user, card, urls)} disabled={rowDisabled} />
-              <IconButton label={`Download QR code for ${getUserDisplayName(user)}`} icon={QrCode} onClick={() => onDownloadQr(user, card, urls)} disabled={rowDisabled} />
-              <IconButton label={`Download contact file for ${getUserDisplayName(user)}`} icon={Download} onClick={() => onDownloadVcard(user, card, urls)} disabled={rowDisabled} />
+              <IconButton label={`Download QR code for ${getUserDisplayName(user)}`} icon={QrCode} onClick={() => onDownloadQr(user, card, urls)} disabled={rowDisabled || features.qr === false} />
+              <IconButton label={`Download contact file for ${getUserDisplayName(user)}`} icon={Download} onClick={() => onDownloadVcard(user, card, urls)} disabled={rowDisabled || features.vcf === false} />
+              <IconButton label={`Edit digital card for ${getUserDisplayName(user)}`} icon={Pencil} onClick={() => onEdit(user, card)} disabled={saving} />
             </>
           ) : null}
           {!card ? (
-            <SecondaryButton icon={Plus} onClick={() => onCreate(user)} disabled={saving}>Generate</SecondaryButton>
+            <SecondaryButton icon={Plus} onClick={() => onCreate(user)} disabled={saving}>Create card</SecondaryButton>
           ) : active ? (
             <SecondaryButton icon={XCircle} onClick={() => onDisable(user, card)} disabled={saving}>Disable</SecondaryButton>
           ) : (
@@ -369,6 +479,137 @@ function AgentCardManagementRow({
         </div>
       </td>
     </tr>
+  )
+}
+
+function CardEditorField({ label, value, onChange, placeholder = '', type = 'text', multiline = false, hint = '' }) {
+  const className = "min-h-10 w-full rounded-[12px] border border-[#d7e2ee] bg-white px-3 py-2 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"
+  return (
+    <label className="grid gap-1.5">
+      <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">{label}</span>
+      {multiline ? (
+        <textarea value={value || ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={3} className={className} />
+      ) : (
+        <input type={type} value={value || ''} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={className} />
+      )}
+      {hint ? <span className="text-xs text-[#7b8da6]">{hint}</span> : null}
+    </label>
+  )
+}
+
+function CardEditorToggle({ label, description, checked, onChange }) {
+  return (
+    <label className="flex cursor-pointer items-start gap-3 rounded-[12px] border border-[#e0e8f1] bg-[#fbfdff] p-3">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-4 w-4 accent-[#274e7a]" />
+      <span>
+        <span className="block text-sm font-semibold text-[#263c52]">{label}</span>
+        <span className="mt-0.5 block text-xs leading-5 text-[#71849a]">{description}</span>
+      </span>
+    </label>
+  )
+}
+
+function AgentCardEditorDialog({ editor, listingOptions = [], listingLoading = false, onChange, onClose, onSave, saving = false }) {
+  if (!editor) return null
+  const { user, draft } = editor
+  const update = (field, value) => onChange((current) => ({ ...current, draft: { ...current.draft, [field]: value } }))
+  const featuredListingIds = Array.isArray(draft.featuredListingIds) ? draft.featuredListingIds : []
+  const updateFeaturedListing = (index, value) => {
+    const next = [...featuredListingIds]
+    next[index] = value
+    update('featuredListingIds', [...new Set(next.filter(Boolean))].slice(0, 3))
+  }
+  const initials = (draft.name || getUserDisplayName(user)).slice(0, 1).toUpperCase()
+
+  return (
+    <div className="fixed inset-0 z-[140] overflow-y-auto bg-[#12233a]/50 p-4 sm:p-6" role="dialog" aria-modal="true" aria-label={`Edit digital card for ${getUserDisplayName(user)}`}>
+      <div className="mx-auto grid w-full max-w-6xl gap-5 rounded-[22px] bg-[#f7fafc] p-4 shadow-2xl lg:grid-cols-[minmax(0,1fr)_320px] lg:p-6">
+        <section className="min-w-0">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#71849a]">Digital card editor</p>
+              <h2 className="mt-1 text-xl font-semibold text-[#162334]">{getUserDisplayName(user)}</h2>
+              <p className="mt-1 text-sm text-[#60758d]">Changes are saved directly to this agent’s public card.</p>
+            </div>
+            <IconButton label="Close card editor" icon={X} onClick={onClose} disabled={saving} />
+          </div>
+
+          <div className="mt-6 grid gap-5">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <CardEditorField label="Display name" value={draft.name} onChange={(value) => update('name', value)} />
+              <CardEditorField label="Job title" value={draft.jobTitle} onChange={(value) => update('jobTitle', value)} placeholder="Property Practitioner" />
+              <CardEditorField label="Email" type="email" value={draft.email} onChange={(value) => update('email', value)} />
+              <CardEditorField label="Phone" type="tel" value={draft.phone} onChange={(value) => update('phone', value)} />
+              <CardEditorField label="WhatsApp" type="tel" value={draft.whatsapp} onChange={(value) => update('whatsapp', value)} hint="Use the full international number for the most reliable WhatsApp link." />
+              <CardEditorField label="Profile photo URL" type="url" value={draft.avatarUrl} onChange={(value) => update('avatarUrl', value)} placeholder="https://…" />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <CardEditorField label="Card heading" value={draft.heading} onChange={(value) => update('heading', value)} placeholder="Your local property expert" />
+              <CardEditorField label="Buyer button" value={draft.buyerCtaLabel} onChange={(value) => update('buyerCtaLabel', value)} />
+              <div className="sm:col-span-2">
+                <CardEditorField label="Personal introduction" value={draft.introduction} onChange={(value) => update('introduction', value)} multiline placeholder="Tell visitors how you can help them." />
+              </div>
+              <CardEditorField label="Seller button" value={draft.sellerCtaLabel} onChange={(value) => update('sellerCtaLabel', value)} />
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <CardEditorField label="Specialties" value={draft.specialties} onChange={(value) => update('specialties', value)} placeholder="Luxury homes, first-time buyers" hint="Separate each item with a comma." />
+              <CardEditorField label="Areas served" value={draft.serviceAreas} onChange={(value) => update('serviceAreas', value)} placeholder="Sea Point, Green Point" hint="Separate each item with a comma." />
+              <CardEditorField label="Languages" value={draft.languages} onChange={(value) => update('languages', value)} placeholder="English, Afrikaans" hint="Separate each item with a comma." />
+              <CardEditorField label="Credentials and recognition" value={draft.credentials} onChange={(value) => update('credentials', value)} placeholder="PPRA registered, Top performer 2025" hint="Separate each item with a comma." />
+              <div className="grid gap-2 sm:col-span-2">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Featured properties</span>
+                {editor.card?.slug ? [0, 1, 2].map((index) => (
+                  <select key={index} value={featuredListingIds[index] || ''} onChange={(event) => updateFeaturedListing(index, event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]" disabled={listingLoading}>
+                    <option value="">{index === 0 ? 'Use the newest public listings' : `Featured property ${index + 1} (optional)`}</option>
+                    {listingOptions.map((listing) => <option key={listing.id} value={listing.id}>{listing.title || listing.slug || 'Property listing'}{listing.suburb ? ` · ${listing.suburb}` : ''}</option>)}
+                  </select>
+                )) : <p className="rounded-[12px] border border-dashed border-[#d7e2ee] bg-white px-3 py-3 text-sm text-[#71849a]">Save this card first, then choose up to three public properties to feature.</p>}
+                {listingLoading ? <span className="text-xs text-[#71849a]">Loading this agent’s public listings…</span> : null}
+              </div>
+            </div>
+
+            <label className="grid gap-1.5"><span className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Rollout cohort</span><select value={draft.rolloutStage} onChange={(event) => update('rolloutStage', event.target.value)} className="min-h-10 rounded-[12px] border border-[#d7e2ee] bg-white px-3 text-sm text-[#162334] outline-none transition focus:border-[#274e7a] focus:ring-2 focus:ring-[#d9e8f6]"><option value="pilot">Pilot — limited distribution and measured review</option><option value="standard">Standard — ready for broad distribution</option></select></label>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <CardEditorToggle label="Buyer enquiries" description="Show the buyer enquiry action." checked={draft.buyEnabled} onChange={(value) => update('buyEnabled', value)} />
+              <CardEditorToggle label="Seller enquiries" description="Show the valuation and seller action." checked={draft.sellEnabled} onChange={(value) => update('sellEnabled', value)} />
+              <CardEditorToggle label="Show listings" description="Show this agent’s public listings on the card." checked={draft.listingsEnabled} onChange={(value) => update('listingsEnabled', value)} />
+              <CardEditorToggle label="Save contact" description="Allow visitors to download the contact card." checked={draft.vcfEnabled} onChange={(value) => update('vcfEnabled', value)} />
+              <CardEditorToggle label="Share controls" description="Show the share and copy-link actions." checked={draft.shareEnabled} onChange={(value) => update('shareEnabled', value)} />
+              <CardEditorToggle label="QR distribution" description="Allow the team to download a QR asset for this card." checked={draft.qrEnabled} onChange={(value) => update('qrEnabled', value)} />
+            </div>
+          </div>
+
+          <p className="mt-5 text-xs leading-5 text-[#71849a]">Website and social links use the agency’s existing public identity settings, so every agent card stays on-brand.</p>
+          <div className="mt-6 flex flex-wrap justify-end gap-2 border-t border-[#e0e8f1] pt-4">
+            <SecondaryButton onClick={onClose} disabled={saving}>Cancel</SecondaryButton>
+            <SecondaryButton icon={Save} onClick={() => onSave('draft')} disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</SecondaryButton>
+            <PrimaryButton icon={CheckCircle2} onClick={() => onSave('active')} disabled={saving}>{saving ? 'Saving…' : 'Publish card'}</PrimaryButton>
+          </div>
+        </section>
+
+        <aside className="rounded-[20px] bg-[#18354f] p-4 text-white shadow-[0_16px_36px_rgba(17,40,61,0.2)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-white/55">Live mobile preview</p>
+          <div className="mt-4 overflow-hidden rounded-[20px] bg-white text-[#162334] shadow-xl">
+            <div className="h-20 bg-[linear-gradient(135deg,#18354f,#315f7c)]" />
+            <div className="px-4 pb-5">
+              <div className="-mt-10 flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border-4 border-white bg-[#e9f0f6] text-2xl font-semibold text-[#274e7a]">
+                {draft.avatarUrl ? <img src={draft.avatarUrl} alt="" className="h-full w-full object-cover" /> : initials}
+              </div>
+              <h3 className="mt-3 text-xl font-semibold">{draft.name || getUserDisplayName(user)}</h3>
+              <p className="mt-1 text-sm font-semibold text-[#9a6408]">{draft.jobTitle || 'Property Practitioner'}</p>
+              {draft.heading ? <p className="mt-4 font-semibold">{draft.heading}</p> : null}
+              {draft.introduction ? <p className="mt-1 text-sm leading-5 text-[#60758d]">{draft.introduction}</p> : null}
+              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs font-semibold text-[#35546c]"><span>Call</span><span>WhatsApp</span><span>Email</span></div>
+              {draft.buyEnabled ? <div className="mt-4 rounded-[12px] bg-[#18354f] px-3 py-3 text-sm font-semibold text-white">{draft.buyerCtaLabel || 'I am looking to buy'}</div> : null}
+              {draft.sellEnabled ? <div className="mt-2 rounded-[12px] bg-[#d8a83b] px-3 py-3 text-sm font-semibold text-[#162334]">{draft.sellerCtaLabel || 'I am looking to sell'}</div> : null}
+            </div>
+          </div>
+        </aside>
+      </div>
+    </div>
   )
 }
 
@@ -666,6 +907,9 @@ export default function SettingsLeadCapturePage() {
   const [agentCardLinks, setAgentCardLinks] = useState([])
   const [agentCardInsights, setAgentCardInsights] = useState(null)
   const [agentCardAssetBusy, setAgentCardAssetBusy] = useState('')
+  const [agentCardEditor, setAgentCardEditor] = useState(null)
+  const [agentCardListingOptions, setAgentCardListingOptions] = useState([])
+  const [agentCardListingsLoading, setAgentCardListingsLoading] = useState(false)
   const [inboundEmails, setInboundEmails] = useState([])
   const [reviewItems, setReviewItems] = useState([])
   const [loading, setLoading] = useState(true)
@@ -951,7 +1195,10 @@ export default function SettingsLeadCapturePage() {
   }
 
   async function copyAgentCardShareText(user, card, urls) {
-    const shareKit = buildShareKitForAgentCard(user, card, urls)
+    const shareKit = buildShareKitForAgentCard(user, card, {
+      ...urls,
+      shareUrl: buildAgentDigitalCardCampaignUrl({ cardUrl: urls.shareUrl || urls.cardUrl, source: 'whatsapp' }),
+    })
     if (!shareKit.shareText) return
     try {
       await navigator.clipboard.writeText(shareKit.shareText)
@@ -969,7 +1216,7 @@ export default function SettingsLeadCapturePage() {
     setNotice('')
     try {
       const downloaded = await downloadAgentDigitalCardQrPng({
-        shareUrl: urls.cardUrl,
+        shareUrl: buildAgentDigitalCardCampaignUrl({ cardUrl: urls.shareUrl || urls.cardUrl, source: 'qr' }),
         fileName: shareKit.qrFileName,
       })
       setNotice(downloaded ? `QR downloaded for ${getUserDisplayName(user)}.` : 'QR download is not available in this browser.')
@@ -993,9 +1240,56 @@ export default function SettingsLeadCapturePage() {
     setNotice(downloaded ? `.vcf downloaded for ${getUserDisplayName(user)}.` : '.vcf download is not available in this browser.')
   }
 
-  async function saveAgentCardForUser(user, card = null, status = 'active') {
+  function buildAgentCardEditorDraft(user, card = null) {
+    const cardAgent = card?.agentDigitalCard?.agent || {}
+    const features = card?.agentDigitalCard?.features || {}
+    const profile = card?.agentDigitalCard?.profile || {}
+    const rollout = card?.agentDigitalCard?.rollout || {}
+    const enabledIntents = card?.enabledIntents || ['buy', 'sell']
+    return {
+      name: normalizeText(cardAgent.name) || getUserDisplayName(user),
+      email: normalizeText(cardAgent.email) || getUserEmail(user),
+      phone: normalizeText(cardAgent.phone) || getUserPhone(user),
+      whatsapp: normalizeText(cardAgent.whatsapp || cardAgent.phone) || getUserPhone(user),
+      jobTitle: normalizeText(cardAgent.jobTitle) || getUserJobTitle(user),
+      avatarUrl: normalizeText(cardAgent.avatarUrl) || getUserAvatarUrl(user),
+      heading: normalizeText(card?.heading),
+      introduction: normalizeText(card?.introduction),
+      buyerCtaLabel: normalizeText(card?.buyerCtaLabel) || 'I am looking to buy',
+      sellerCtaLabel: normalizeText(card?.sellerCtaLabel) || 'I am looking to sell',
+      buyEnabled: enabledIntents.includes('buy'),
+      sellEnabled: enabledIntents.includes('sell'),
+      listingsEnabled: features.listings !== false,
+      vcfEnabled: features.vcf !== false,
+      shareEnabled: features.share !== false,
+      qrEnabled: features.qr !== false,
+      specialties: Array.isArray(profile.specialties) ? profile.specialties.join(', ') : '',
+      serviceAreas: Array.isArray(profile.serviceAreas) ? profile.serviceAreas.join(', ') : '',
+      languages: Array.isArray(profile.languages) ? profile.languages.join(', ') : '',
+      credentials: Array.isArray(profile.credentials) ? profile.credentials.join(', ') : '',
+      featuredListingIds: Array.isArray(profile.featuredListingIds) ? profile.featuredListingIds : [],
+      rolloutStage: rollout.stage === 'pilot' ? 'pilot' : 'standard',
+    }
+  }
+
+  function openAgentCardEditor(user, card) {
+    setAgentCardEditor({ user, card, draft: buildAgentCardEditorDraft(user, card) })
+    setAgentCardListingOptions([])
+    if (!card?.slug) return
+    setAgentCardListingsLoading(true)
+    resolveAgencyPublicCardListings(card.slug, { limit: 24 })
+      .then((items) => setAgentCardListingOptions(items))
+      .catch(() => setAgentCardListingOptions([]))
+      .finally(() => setAgentCardListingsLoading(false))
+  }
+
+  async function saveAgentCardForUser(user, card = null, status = 'active', overrides = {}) {
     const userId = getUserId(user)
     if (!userId) return
+    const cardAgent = card?.agentDigitalCard?.agent || {}
+    const features = card?.agentDigitalCard?.features || {}
+    const profile = card?.agentDigitalCard?.profile || {}
+    const value = (key, existing, fallback = '') => overrides[key] ?? (normalizeText(existing) || fallback)
     setSaving(true)
     setError('')
     setNotice('')
@@ -1006,19 +1300,30 @@ export default function SettingsLeadCapturePage() {
         organisationName: getOrganisationDisplayName(),
         slug: card?.slug,
         status,
-        enabledIntents: card?.enabledIntents || ['buy', 'sell'],
+        heading: overrides.heading ?? card?.heading ?? '',
+        introduction: overrides.introduction ?? card?.introduction ?? '',
+        buyerCtaLabel: overrides.buyerCtaLabel ?? card?.buyerCtaLabel ?? 'I am looking to buy',
+        sellerCtaLabel: overrides.sellerCtaLabel ?? card?.sellerCtaLabel ?? 'I am looking to sell',
+        enabledIntents: overrides.enabledIntents ?? card?.enabledIntents ?? ['buy', 'sell'],
         defaultBranchId: card?.defaultBranchId || user.branchId || user.branch_id,
         agentUserId: userId,
-        agentName: getUserDisplayName(user),
-        agentEmail: getUserEmail(user),
-        agentPhone: getUserPhone(user),
-        agentWhatsApp: getUserPhone(user),
-        agentJobTitle: getUserJobTitle(user),
-        agentAvatarUrl: getUserAvatarUrl(user),
-        vcfEnabled: true,
-        qrEnabled: true,
-        listingsEnabled: true,
-        leadCaptureEnabled: true,
+        agentName: value('agentName', cardAgent.name, getUserDisplayName(user)),
+        agentEmail: value('agentEmail', cardAgent.email, getUserEmail(user)),
+        agentPhone: value('agentPhone', cardAgent.phone, getUserPhone(user)),
+        agentWhatsApp: value('agentWhatsApp', cardAgent.whatsapp || cardAgent.phone, getUserPhone(user)),
+        agentJobTitle: value('agentJobTitle', cardAgent.jobTitle, getUserJobTitle(user)),
+        agentAvatarUrl: value('agentAvatarUrl', cardAgent.avatarUrl, getUserAvatarUrl(user)),
+        vcfEnabled: overrides.vcfEnabled ?? features.vcf ?? true,
+        qrEnabled: overrides.qrEnabled ?? features.qr ?? true,
+        shareEnabled: overrides.shareEnabled ?? features.share ?? true,
+        listingsEnabled: overrides.listingsEnabled ?? features.listings ?? true,
+        leadCaptureEnabled: overrides.leadCaptureEnabled ?? features.leadCapture ?? true,
+        specialties: overrides.specialties ?? profile.specialties ?? [],
+        serviceAreas: overrides.serviceAreas ?? profile.serviceAreas ?? [],
+        languages: overrides.languages ?? profile.languages ?? [],
+        credentials: overrides.credentials ?? profile.credentials ?? [],
+        featuredListingIds: overrides.featuredListingIds ?? profile.featuredListingIds ?? [],
+        rolloutStage: overrides.rolloutStage ?? card?.agentDigitalCard?.rollout?.stage ?? 'standard',
       }, {
         organisationName: getOrganisationDisplayName(),
       })
@@ -1031,11 +1336,48 @@ export default function SettingsLeadCapturePage() {
         })
       }
       await load()
+      return true
     } catch (cardError) {
       setError(cardError?.message || 'Agent digital card could not be saved.')
+      return false
     } finally {
       setSaving(false)
     }
+  }
+
+  async function saveAgentCardEditor(status = agentCardEditor?.card?.status || 'draft') {
+    if (!agentCardEditor) return
+    const { user, card, draft } = agentCardEditor
+    const enabledIntents = [draft.buyEnabled ? 'buy' : '', draft.sellEnabled ? 'sell' : ''].filter(Boolean)
+    if (!enabledIntents.length) {
+      setError('Enable at least one enquiry action before saving this digital card.')
+      return
+    }
+    const saved = await saveAgentCardForUser(user, card, status, {
+      agentName: draft.name,
+      agentEmail: draft.email,
+      agentPhone: draft.phone,
+      agentWhatsApp: draft.whatsapp,
+      agentJobTitle: draft.jobTitle,
+      agentAvatarUrl: draft.avatarUrl,
+      heading: draft.heading,
+      introduction: draft.introduction,
+      buyerCtaLabel: draft.buyerCtaLabel,
+      sellerCtaLabel: draft.sellerCtaLabel,
+      enabledIntents,
+      vcfEnabled: draft.vcfEnabled,
+      qrEnabled: draft.qrEnabled,
+      shareEnabled: draft.shareEnabled,
+      listingsEnabled: draft.listingsEnabled,
+      leadCaptureEnabled: true,
+      specialties: draft.specialties,
+      serviceAreas: draft.serviceAreas,
+      languages: draft.languages,
+      credentials: draft.credentials,
+      featuredListingIds: draft.featuredListingIds,
+      rolloutStage: draft.rolloutStage,
+    })
+    if (saved) setAgentCardEditor(null)
   }
 
   async function generateMissingAgentCards() {
@@ -1090,7 +1432,7 @@ export default function SettingsLeadCapturePage() {
     const organisationName = getOrganisationDisplayName()
     const csv = buildAgentDigitalCardShareKitCsv(exportableAgentCardRows.map(({ user, card, urls }) => ({
       ...buildAgentCardShareProfile({ user, card, urls, organisationName }),
-      cardUrl: urls.cardUrl,
+      cardUrl: urls.shareUrl || urls.cardUrl,
       intakeUrl: urls.intakeUrl,
       buyerUrl: urls.buyerUrl,
       sellerUrl: urls.sellerUrl,
@@ -1277,6 +1619,8 @@ export default function SettingsLeadCapturePage() {
             </div>
           )}
         >
+          <AgentCardRolloutOverview rows={agentCardRows} />
+          <AgentDigitalCardPerformanceOverview insights={agentCardInsights} />
           {agentCardRows.length ? (
             <div className="overflow-hidden rounded-[18px] border border-[#e3eaf2] bg-white">
               <table className="min-w-full divide-y divide-[#e8eef5] text-left">
@@ -1298,7 +1642,7 @@ export default function SettingsLeadCapturePage() {
                       insights={insights}
                       saving={saving}
                       assetBusy={agentCardAssetBusy}
-                      onCreate={(targetUser) => saveAgentCardForUser(targetUser, null, 'active')}
+                      onCreate={(targetUser) => openAgentCardEditor(targetUser, null)}
                       onActivate={(targetUser, targetCard) => saveAgentCardForUser(targetUser, targetCard, 'active')}
                       onDisable={(targetUser, targetCard) => saveAgentCardForUser(targetUser, targetCard, 'disabled')}
                       onCopy={copyAddress}
@@ -1306,6 +1650,7 @@ export default function SettingsLeadCapturePage() {
                       onCopyShareText={copyAgentCardShareText}
                       onDownloadQr={downloadAgentCardQrAsset}
                       onDownloadVcard={downloadAgentCardVcardAsset}
+                      onEdit={openAgentCardEditor}
                     />
                   ))}
                 </tbody>
@@ -1319,6 +1664,16 @@ export default function SettingsLeadCapturePage() {
           )}
         </SettingsSectionCard>
       ) : null}
+
+      <AgentCardEditorDialog
+        editor={agentCardEditor}
+        listingOptions={agentCardListingOptions}
+        listingLoading={agentCardListingsLoading}
+        onChange={setAgentCardEditor}
+        onClose={() => setAgentCardEditor(null)}
+        onSave={saveAgentCardEditor}
+        saving={saving}
+      />
 
     </div>
   )

@@ -521,12 +521,9 @@ export async function applyProperty24LiveCutoverAction({
 }
 
 export async function assertProperty24ProductionConnectionEnablement({ supabase, organisationId, environment, enabled } = {}) {
-  if (normalizeProperty24Text(environment).toLowerCase() !== 'production' || enabled !== true) return null
-  const gate = await fetchProperty24LiveCutoverGate({ supabase, organisationId })
-  if (!PRODUCTION_WRITE_STATES.has(gate.status)) {
-    throw cutoverError('property24_live_cutover_not_authorized', 'Production Property24 cannot be enabled until Phase 7 starts the controlled pilot.')
-  }
-  return gate
+  // Retained as a compatibility hook for older callers. Agency-owned production
+  // connections are enabled from their own settings, not a central Phase 7 gate.
+  return null
 }
 
 export async function assertProperty24ProductionWriteAllowed({
@@ -539,17 +536,6 @@ export async function assertProperty24ProductionWriteAllowed({
   now = new Date(),
 } = {}) {
   if (normalizeProperty24Text(environment).toLowerCase() !== 'production') return { required: false, allowed: true, gate: null }
-  const gate = await fetchProperty24LiveCutoverGate({ supabase, organisationId })
-  // Taking an existing listing off the portal must remain available to authorised
-  // agents, even when new production publishing is paused or has not started.
-  // The caller still has to pass the listing-level browser authentication and
-  // the normal enabled/credential checks before reaching this guard.
-  if (rollbackOnly) {
-    return { required: true, allowed: true, rollbackOnly: true, gate }
-  }
-  if (!PRODUCTION_WRITE_STATES.has(gate.status)) {
-    throw cutoverError('property24_live_cutover_not_authorized', 'Production Property24 writes require an active Phase 7 pilot or live approval.', 403)
-  }
   const evidence = await fetchProperty24ProductionEvidence({ supabase, organisationId, agencyId, now })
   if (evidence.summary.failedAttemptCount >= 3) {
     throw cutoverError('property24_production_circuit_open', 'Repeated Property24 production failures opened the safety circuit. Review failures before retrying.', 409)
@@ -557,13 +543,5 @@ export async function assertProperty24ProductionWriteAllowed({
   if (evidence.summary.recentWriteAttemptCount >= 5) {
     throw cutoverError('property24_production_rate_limited', 'Too many Property24 production writes were attempted in the last minute. Wait before retrying.', 429)
   }
-  const alreadyTracked = evidence.syncRows.some((row) => normalizeProperty24Text(row.private_listing_id) === normalizeProperty24Text(listingId))
-  if (
-    gate.status === PROPERTY24_LIVE_CUTOVER_STATES.PILOT &&
-    !alreadyTracked &&
-    evidence.summary.trackedListingCount >= gate.pilotListingLimit
-  ) {
-    throw cutoverError('property24_pilot_listing_limit_reached', `The Phase 7 pilot is limited to ${gate.pilotListingLimit} production listings.`, 409)
-  }
-  return { required: true, allowed: true, rollbackOnly: false, gate, evidence: evidence.summary }
+  return { required: true, allowed: true, rollbackOnly: Boolean(rollbackOnly), gate: null, evidence: evidence.summary }
 }

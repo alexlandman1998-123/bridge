@@ -3573,6 +3573,16 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/agency/branches/:branchId/:tab"
+                element={
+                  <AgentManagementRoute allowBranchOperations>
+                    <RoleRoute allowedRoles={['agent']}>
+                      <AgencyBranchWorkspacePage />
+                    </RoleRoute>
+                  </AgentManagementRoute>
+                }
+              />
+              <Route
                 path="/agency/agents"
                 element={
                   <AgentManagementRoute>

@@ -441,6 +441,45 @@ assert.equal(browserStatusUpdateResponse.body.status, 'SUBMITTED')
 assert.equal(browserStatusUpdateArgs.listingNumber, 100314793)
 assert.equal(browserStatusUpdateArgs.listingStatus, 'Withdrawn')
 
+let productionStatusConfig = null
+const productionStatusResponse = await createProperty24ApiResponse({
+  method: 'POST',
+  url: `/api/property24/listings/${listingId}/status-update`,
+  headers: { authorization: 'Bearer signed-in-user-token' },
+  body: JSON.stringify({ status: 'Expired' }),
+  env: {
+    SUPABASE_URL: 'https://example.supabase.co',
+    SUPABASE_SERVICE_ROLE_KEY: 'service-role',
+    PROPERTY24_BASIC_AUTH_USERNAME: 'exdev-user@example.test',
+    PROPERTY24_BASIC_AUTH_PASSWORD: 'exdev-secret',
+    PROPERTY24_PRODUCTION_BASE_URL: 'https://api.property24.example.test',
+    PROPERTY24_PRODUCTION_BASIC_AUTH_USERNAME: 'production-user@example.test',
+    PROPERTY24_PRODUCTION_BASIC_AUTH_PASSWORD: 'production-secret',
+    PROPERTY24_SYNDICATION_ENABLED: 'true',
+  },
+  dependencies: {
+    createSupabase: () => createFakeSupabase({
+      ...baseTables,
+      property24_listing_syncs: [{
+        private_listing_id: listingId,
+        environment: 'production',
+        agency_id: 40067,
+        listing_number: 100314793,
+      }],
+    }, { id: userId, email: 'alex@arch9.co.za' }),
+    resolvePublishConfig: async ({ config }) => config,
+    createProperty24: (config) => {
+      productionStatusConfig = config
+      return { type: 'property24' }
+    },
+    applyStatusUpdate: async () => ({ status: 'SUBMITTED', databaseWrite: {} }),
+  },
+})
+assert.equal(productionStatusResponse.status, 200)
+assert.equal(productionStatusConfig.environment, 'production')
+assert.equal(productionStatusConfig.agencyId, '40067')
+assert.equal(productionStatusConfig.property24Username, 'production-user@example.test')
+
 const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /resolveProperty24ListingPublishConfiguration/)
 assert.match(apiSource, /mapping: resolvedConfig\.property24ResolvedMapping/)

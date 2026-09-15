@@ -159,7 +159,7 @@ export async function resolveAgencyPublicCardListings(slug = '', filters = {}) {
   return Array.isArray(payload?.items) ? payload.items : []
 }
 
-export async function recordAgentDigitalCardEvent({ slug = '', eventType = '', metadata = {} } = {}) {
+export async function recordAgentDigitalCardEvent({ slug = '', eventType = '', sourceChannel = '', metadata = {} } = {}) {
   const safeSlug = normalizeSlug(slug)
   const safeEventType = normalizeLower(eventType)
   if (!safeSlug || !safeEventType) return { accepted: false, skipped: true }
@@ -174,6 +174,7 @@ export async function recordAgentDigitalCardEvent({ slug = '', eventType = '', m
     body: JSON.stringify({
       slug: safeSlug,
       eventType: safeEventType,
+      sourceChannel: normalizeLower(sourceChannel),
       metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
     }),
   })

@@ -48,6 +48,67 @@ export function buildAgentDigitalCardShareText({
   return [agency ? `${name} at ${agency}` : name, url].filter(Boolean).join('\n')
 }
 
+export function readAgentDigitalCardAttribution(search = '') {
+  const params = new URLSearchParams(normalizeText(search).replace(/^\?/, ''))
+  const utm = {}
+  for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']) {
+    const value = normalizeText(params.get(key))
+    if (value) utm[key] = value
+  }
+  return {
+    sourceChannel: normalizeText(params.get('source') || params.get('channel') || utm.utm_source || 'card').toLowerCase(),
+    campaignCode: normalizeText(params.get('campaign') || params.get('campaign_code') || utm.utm_campaign),
+    utm,
+  }
+}
+
+export function buildAgentDigitalCardCampaignUrl({ cardUrl = '', source = '', campaignCode = '' } = {}) {
+  const url = normalizeText(cardUrl)
+  if (!url) return ''
+  try {
+    const tagged = new URL(url)
+    const channel = normalizeText(source).toLowerCase()
+    const campaign = normalizeText(campaignCode)
+    if (channel) tagged.searchParams.set('source', channel)
+    if (campaign) tagged.searchParams.set('campaign', campaign)
+    return tagged.toString()
+  } catch {
+    return url
+  }
+}
+
+export function buildAgentDigitalCardIntakeUrl({
+  cardSlug = '',
+  intent = 'buy',
+  listing = {},
+  search = '',
+} = {}) {
+  const slug = normalizeText(cardSlug)
+  if (!slug) return ''
+
+  const params = new URLSearchParams({ intent: normalizeText(intent) || 'buy' })
+  const selectedListing = listing && typeof listing === 'object' ? listing : {}
+  const listingFields = {
+    listing: selectedListing.slug,
+    listingId: selectedListing.id,
+    listingTitle: selectedListing.title,
+    listingPrice: selectedListing.askingPrice,
+  }
+  for (const [key, value] of Object.entries(listingFields)) {
+    const text = normalizeText(value)
+    if (text) params.set(key, text)
+  }
+
+  const incoming = new URLSearchParams(normalizeText(search).replace(/^\?/, ''))
+  for (const key of ['source', 'campaign', 'campaign_code', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content']) {
+    const value = normalizeText(incoming.get(key))
+    if (value) params.set(key, value)
+  }
+  if (!params.get('source')) params.set('source', 'card')
+
+  return `/intake/${encodeURIComponent(slug)}?${params.toString()}`
+}
+
 export function buildAgentDigitalCardShareKit({
   agentName = '',
   agentEmail = '',

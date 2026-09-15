@@ -412,7 +412,13 @@ function getPermissionMap(context = {}) {
     }
   }
   if (resolved.workspaceType === WORKSPACE_TYPES.agency) {
-    // Non-senior job titles share an assigned-record boundary, never branch/HQ scope.
+    // A branch manager is explicitly branch-scoped in the registry. Do not
+    // collapse that scope to an assigned-record boundary when the active
+    // organisation is not in the senior-operations shortcut above.
+    if (resolved.organisationRole === ORG_ROLES.branchManager) {
+      return permissionsByWorkspaceRole[WORKSPACE_TYPES.agency]?.[ORG_ROLES.branchManager] || Object.freeze({})
+    }
+    // Other non-senior job titles share an assigned-record boundary, never branch/HQ scope.
     const ownPermissions = permissionsByWorkspaceRole[WORKSPACE_TYPES.agency]?.[
       resolved.organisationRole === 'viewer' ? 'viewer' : 'agent'
     ] || {}
@@ -430,13 +436,18 @@ export function canAccessWorkspaceRecord(permission, context = {}, record = {}) 
   const isBondWorkspace = resolved.workspaceType === WORKSPACE_TYPES.bondOriginator
   const userId = resolved.userId
   const userRegionId = normalizeText(resolved.regionId)
-  const userUnitId = normalizeText(resolved.workspaceUnitId)
+  const userUnitId = normalizeText(resolved.workspaceUnitId || resolved.branchId || resolved.primaryBranchId)
   const recordRegionId = getRecordRegionId(record)
   const recordUnitId = getRecordWorkspaceUnitId(record)
   const assignedUserId = getRecordAssignedUserId(record)
 
   if (resolved.workspaceType === WORKSPACE_TYPES.agency) {
     if (permissionScope === ACCESS_SCOPES.allWorkspace) return true
+    if ([ACCESS_SCOPES.branchOnly, ACCESS_SCOPES.teamOnly].includes(permissionScope)) {
+      const isInManagedBranch = Boolean(userUnitId && recordUnitId && userUnitId === recordUnitId)
+      const isAssignedToActor = Boolean(assignedUserId && [userId, resolved.membership?.id].filter(Boolean).includes(assignedUserId))
+      return isInManagedBranch || isAssignedToActor
+    }
     const assignedId = normalizeText(record.assigned_user_id || record.assignedUserId || record.assigned_agent_id || record.assignedAgentId || record.owner_user_id || record.ownerUserId)
     return Boolean(assignedId && [userId, resolved.membership?.id].filter(Boolean).includes(assignedId))
   }

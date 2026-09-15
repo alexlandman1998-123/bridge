@@ -52,6 +52,11 @@ function normalizeObject(value = {}) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+function normalizeCardProfileItems(value, fallback = [], limit = 8) {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : fallback
+  return [...new Set((Array.isArray(values) ? values : []).map(normalizeText).filter(Boolean))].slice(0, limit)
+}
+
 function normalizeSlug(value = '') {
   return normalizeLower(value)
     .normalize('NFKD')
@@ -161,6 +166,7 @@ function buildAgentDigitalCardMetadata(input = {}, defaults = {}) {
     ...normalizeObject(input.metadataJson || input.metadata_json),
   }
   const previousCard = normalizeObject(previousMetadata.agentDigitalCard)
+  const previousProfile = normalizeObject(previousCard.profile)
   const agent = normalizeObject(input.agent || input.agentProfile || defaults.agent || previousCard.agent)
   const agentUserId = normalizeText(input.agentUserId || input.agent_user_id || input.defaultAssignedAgentId || input.default_assigned_agent_id || defaults.agentUserId || defaults.defaultAssignedAgentId)
   const agentEmail = normalizeText(input.agentEmail || input.agent_email || agent.email || previousCard.agent?.email)
@@ -189,8 +195,19 @@ function buildAgentDigitalCardMetadata(input = {}, defaults = {}) {
       features: {
         vcf: input.vcfEnabled ?? previousCard.features?.vcf ?? true,
         qr: input.qrEnabled ?? previousCard.features?.qr ?? true,
+        share: input.shareEnabled ?? previousCard.features?.share ?? true,
         listings: input.listingsEnabled ?? previousCard.features?.listings ?? true,
         leadCapture: input.leadCaptureEnabled ?? previousCard.features?.leadCapture ?? true,
+      },
+      profile: {
+        specialties: normalizeCardProfileItems(input.specialties, previousProfile.specialties),
+        serviceAreas: normalizeCardProfileItems(input.serviceAreas ?? input.service_areas, previousProfile.serviceAreas),
+        languages: normalizeCardProfileItems(input.languages, previousProfile.languages),
+        credentials: normalizeCardProfileItems(input.credentials, previousProfile.credentials),
+        featuredListingIds: normalizeCardProfileItems(input.featuredListingIds ?? input.featured_listing_ids, previousProfile.featuredListingIds, 3),
+      },
+      rollout: {
+        stage: normalizeLower(input.rolloutStage ?? input.rollout_stage ?? previousCard.rollout?.stage) === 'pilot' ? 'pilot' : 'standard',
       },
     },
   }
@@ -270,6 +287,8 @@ function createEmptyAgentCardInsightSummary() {
     linkedLeads: 0,
     byEventType: Object.fromEntries(AGENT_DIGITAL_CARD_EVENT_TYPES.map((type) => [type, 0])),
     byIntakeLink: {},
+    bySourceChannel: {},
+    byCampaignCode: {},
   }
 }
 
@@ -318,15 +337,29 @@ function createAgentCardInsightsSummary(events = [], submissions = []) {
     if (!summary.byIntakeLink[key]) summary.byIntakeLink[key] = createEmptyAgentCardInsightSummary()
     return summary.byIntakeLink[key]
   }
+  const ensureSourceSummary = (sourceChannel = '') => {
+    const key = normalizeSourceChannel(sourceChannel)
+    if (!summary.bySourceChannel[key]) summary.bySourceChannel[key] = createEmptyAgentCardInsightSummary()
+    return summary.bySourceChannel[key]
+  }
+  const ensureCampaignSummary = (campaignCode = '') => {
+    const key = normalizeText(campaignCode) || 'unattributed'
+    if (!summary.byCampaignCode[key]) summary.byCampaignCode[key] = createEmptyAgentCardInsightSummary()
+    return summary.byCampaignCode[key]
+  }
 
   for (const event of events) {
     applyAgentCardEventToSummary(summary, event)
     applyAgentCardEventToSummary(ensureLinkSummary(event.intakeLinkId), event)
+    applyAgentCardEventToSummary(ensureSourceSummary(event.sourceChannel), event)
+    applyAgentCardEventToSummary(ensureCampaignSummary(event.metadataJson?.campaignCode), event)
   }
 
   for (const submission of submissions) {
     applyAgentCardLeadToSummary(summary, submission)
     applyAgentCardLeadToSummary(ensureLinkSummary(submission.intakeLinkId), submission)
+    applyAgentCardLeadToSummary(ensureSourceSummary(submission.sourceChannel), submission)
+    applyAgentCardLeadToSummary(ensureCampaignSummary(submission.campaignCode), submission)
   }
 
   return summary
@@ -455,6 +488,7 @@ export function buildAgencyAgentCardUrls({ slug = '', host = DEFAULT_PUBLIC_INTA
   if (!safeSlug) {
     return {
       cardUrl: '',
+      shareUrl: '',
       intakeUrl: '',
       buyerUrl: '',
       sellerUrl: '',
@@ -464,6 +498,7 @@ export function buildAgencyAgentCardUrls({ slug = '', host = DEFAULT_PUBLIC_INTA
   const intakeUrl = `${baseHost}/intake/${encodeURIComponent(safeSlug)}`
   return {
     cardUrl: `${baseHost}/card/${encodeURIComponent(safeSlug)}`,
+    shareUrl: `${baseHost}/share/card/${encodeURIComponent(safeSlug)}`,
     intakeUrl,
     buyerUrl: `${intakeUrl}?intent=buy&source=card`,
     sellerUrl: `${intakeUrl}?intent=sell&source=card`,
@@ -744,15 +779,54 @@ export async function loadAgencyAgentCardInsights(options = {}) {
 
   let submissions = []
   let submissionsMissingSchema = false
+  let cardLinkIds = intakeLinkId ? [intakeLinkId] : null
+  if (!cardLinkIds) {
+    const cardLinksResult = await client
+      .from('agency_public_intake_links')
+      .select('id, metadata_json')
+      .eq('organisation_id', organisationId)
+      .eq('is_primary', false)
+
+    if (cardLinksResult.error) {
+      if (isMissingTableError(cardLinksResult.error)) {
+        return {
+          events: (eventsResult.data || []).map(normalizeAgentCardEventRow).filter(Boolean),
+          submissions: [],
+          summary: createAgentCardInsightsSummary((eventsResult.data || []).map(normalizeAgentCardEventRow).filter(Boolean), []),
+          schemaReady: false,
+          missingSchema: true,
+          windowDays,
+        }
+      }
+      throw cardLinksResult.error
+    }
+    cardLinkIds = (cardLinksResult.data || [])
+      .filter((link) => normalizeObject(link.metadata_json).surface === AGENT_DIGITAL_CARD_SURFACE)
+      .map((link) => normalizeText(link.id))
+      .filter(Boolean)
+  }
+
+  if (!cardLinkIds.length) {
+    const events = (eventsResult.data || []).map(normalizeAgentCardEventRow).filter(Boolean)
+    return {
+      events,
+      submissions: [],
+      summary: createAgentCardInsightsSummary(events, []),
+      schemaReady: true,
+      missingSchema: false,
+      windowDays,
+    }
+  }
+
   let submissionsQuery = client
     .from('agency_public_intake_submissions')
     .select('id, intake_link_id, organisation_id, lead_id, intent, status, source_channel, campaign_code, contact_name, contact_email, contact_phone, budget_min, budget_max, selected_listings_json, processing_error, processed_at, created_at, updated_at')
     .eq('organisation_id', organisationId)
     .gte('created_at', since)
 
-  if (intakeLinkId) {
-    submissionsQuery = submissionsQuery.eq('intake_link_id', intakeLinkId)
-  }
+  submissionsQuery = cardLinkIds.length === 1
+    ? submissionsQuery.eq('intake_link_id', cardLinkIds[0])
+    : submissionsQuery.in('intake_link_id', cardLinkIds)
 
   submissionsQuery = submissionsQuery
     .order('created_at', { ascending: false })

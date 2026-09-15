@@ -66,6 +66,7 @@ assert.equal(urls.listingsUrl, 'https://app.arch9.co.za/bridge/buy?agencySlug=ki
 
 const cardUrls = buildAgencyAgentCardUrls({ slug: 'kingstons-john-smith', host: 'https://app.arch9.co.za/' })
 assert.equal(cardUrls.cardUrl, 'https://app.arch9.co.za/card/kingstons-john-smith')
+assert.equal(cardUrls.shareUrl, 'https://app.arch9.co.za/share/card/kingstons-john-smith')
 assert.equal(cardUrls.buyerUrl, 'https://app.arch9.co.za/intake/kingstons-john-smith?intent=buy&source=card')
 assert.equal(cardUrls.listingsUrl, 'https://app.arch9.co.za/api/public/listings?cardSlug=kingstons-john-smith')
 
@@ -116,6 +117,7 @@ assert.equal(cardMetadata.surface, AGENT_DIGITAL_CARD_SURFACE)
 assert.equal(cardMetadata.agentDigitalCard.agent.userId, '33333333-3333-4333-8333-333333333333')
 assert.equal(cardMetadata.agentDigitalCard.agent.name, 'John Smith')
 assert.equal(cardMetadata.agentDigitalCard.features.vcf, true)
+assert.equal(cardMetadata.agentDigitalCard.features.share, true)
 
 const agentCardPayload = buildAgentCardPayload({
   organisationId: 'org-1',

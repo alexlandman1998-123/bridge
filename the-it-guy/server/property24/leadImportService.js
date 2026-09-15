@@ -18,6 +18,10 @@ function normalizePhone(value = '') {
   return normalizeText(value).replace(/[^\d+]/g, '')
 }
 
+function isUuid(value = '') {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(normalizeText(value))
+}
+
 function splitContactName(name = '') {
   const parts = normalizeText(name).split(/\s+/).filter(Boolean)
   if (!parts.length) return { firstName: 'Property24', lastName: 'Lead' }
@@ -53,10 +57,41 @@ async function fetchListingDetailsByIds(supabase, listingIds = []) {
   if (!ids.length) return new Map()
   const result = await supabase
     .from('private_listings')
-    .select('id, organisation_id, assigned_agent_id, assigned_agent_email, title')
+    .select('id, organisation_id, development_id, assigned_agent_id, assigned_agent_email, title')
     .in('id', ids)
   if (result.error) throw result.error
   return new Map((result.data || []).map((row) => [normalizeText(row.id), row]))
+}
+
+async function resolveListingDevelopment(supabase, listing = {}) {
+  const linkedDevelopmentId = normalizeText(listing.development_id || listing.developmentId)
+  if (isUuid(linkedDevelopmentId)) {
+    const linked = await maybeSingle(
+      supabase
+        .from('developments')
+        .select('id, organisation_id, name, status')
+        .eq('id', linkedDevelopmentId),
+    )
+    if (linked.error && linked.error.code !== 'PGRST116') throw linked.error
+    if (linked.data?.id) return linked.data
+  }
+
+  // Older portal listings were not always linked with development_id.  For
+  // those records, only accept an unambiguous, same-workspace name contained
+  // in the listing title; never guess across developers with like-named sites.
+  const organisationId = normalizeText(listing.organisation_id)
+  const title = normalizeText(listing.title).toLowerCase()
+  if (!organisationId || !title) return null
+  const candidates = await supabase
+    .from('developments')
+    .select('id, organisation_id, name, status')
+    .eq('organisation_id', organisationId)
+  if (candidates.error && !isMissingOptionalTableError(candidates.error)) throw candidates.error
+  const matches = (candidates.data || []).filter((development) => {
+    const name = normalizeText(development.name).toLowerCase()
+    return name.length >= 4 && title.includes(name)
+  })
+  return matches.length === 1 ? matches[0] : null
 }
 
 async function findExistingIngestionLog(supabase, lead = {}) {
@@ -285,6 +320,83 @@ async function persistActivityAndTask(supabase, rows = {}, lead = {}) {
   }
 }
 
+async function persistDeveloperLeadMirror(supabase, rows = {}, lead = {}, listing = {}) {
+  const development = await resolveListingDevelopment(supabase, listing)
+  const developerOrgId = normalizeText(development?.organisation_id)
+  if (!development?.id || !isUuid(developerOrgId) || !isUuid(rows.organisationId) || !isUuid(rows.leadId)) {
+    return { developerLeadId: null, reason: 'no_linked_development' }
+  }
+
+  const existing = await maybeSingle(
+    supabase
+      .from('developer_leads')
+      .select('developer_lead_id')
+      .eq('source_agency_org_id', rows.organisationId)
+      .eq('source_lead_id', rows.leadId)
+      .eq('primary_development_id', development.id)
+      .eq('ownership_model', 'agency_introduced'),
+  )
+  if (existing.error && existing.error.code !== 'PGRST116') throw existing.error
+  if (existing.data?.developer_lead_id) return { developerLeadId: existing.data.developer_lead_id, reused: true }
+
+  const developerLeadId = randomUUID()
+  const buyerFullName = normalizeText(lead.contactName) || normalizeText(lead.email) || 'Property24 buyer'
+  const protectedSummary = [normalizeText(development.name), normalizeText(listing.title), 'Property24 inbound lead'].filter(Boolean).join(' | ')
+  const leadInsert = await supabase
+    .from('developer_leads')
+    .insert({
+      developer_lead_id: developerLeadId,
+      developer_org_id: developerOrgId,
+      source_agency_org_id: rows.organisationId,
+      source_agent_user_id: isUuid(rows.leadRow.assigned_agent_id) ? rows.leadRow.assigned_agent_id : null,
+      assigned_agent_id: isUuid(rows.leadRow.assigned_agent_id) ? rows.leadRow.assigned_agent_id : null,
+      source_lead_id: rows.leadId,
+      primary_development_id: development.id,
+      ownership_model: 'agency_introduced',
+      lead_owner: 'agency',
+      selling_model: 'agent_led',
+      visibility_state: 'limited',
+      reservation_state: 'none',
+      lead_status: 'new',
+      lead_source: 'Property24 development enquiry',
+      budget_max: null,
+      unit_type_interest: normalizeText(listing.title) || null,
+      public_reference: lead.externalReference || null,
+      protected_summary: protectedSummary || null,
+    })
+    .select('developer_lead_id')
+    .single()
+  if (leadInsert.error) throw leadInsert.error
+
+  const privateInsert = await supabase
+    .from('developer_lead_private_details')
+    .insert({
+      developer_lead_id: developerLeadId,
+      buyer_full_name: buyerFullName,
+      buyer_email: normalizeEmail(lead.email) || null,
+      buyer_phone: normalizeText(lead.phone) || null,
+      private_notes: buildLeadNotes(lead) || null,
+      raw_payload: { source: 'Property24', externalReference: lead.externalReference || null, lead: lead.raw || {} },
+      handover_source: 'agency',
+    })
+  if (privateInsert.error) throw privateInsert.error
+
+  const interestInsert = await supabase
+    .from('developer_lead_development_interests')
+    .insert({
+      developer_lead_id: developerLeadId,
+      developer_org_id: developerOrgId,
+      development_id: development.id,
+      interest_rank: 1,
+      interest_status: 'interested',
+      unit_type_interest: normalizeText(listing.title) || null,
+      is_primary: true,
+    })
+  if (interestInsert.error) throw interestInsert.error
+
+  return { developerLeadId, reused: false }
+}
+
 async function persistIngestionLog(supabase, rows = {}, lead = {}) {
   const result = await supabase
     .from('lead_ingestion_logs')
@@ -371,6 +483,8 @@ export async function importProperty24PreparedLeads({
         ),
         lead,
       )
+      const developerMirror = await persistDeveloperLeadMirror(supabase, persisted, lead, listing)
+        .catch((error) => ({ developerLeadId: null, warning: error?.message || 'Unable to mirror this development lead.' }))
 
       results.push({
         externalReference: lead.externalReference || null,
@@ -378,6 +492,8 @@ export async function importProperty24PreparedLeads({
         listingId: lead.listingId || null,
         status: persisted.duplicate ? 'already_imported' : 'imported',
         leadId: persisted.leadId || null,
+        developerLeadId: developerMirror.developerLeadId || null,
+        ...(developerMirror.warning ? { warning: developerMirror.warning } : {}),
         contactId: persisted.contactId || null,
         logId: persisted.log?.log_id || null,
         reusedContact: Boolean(persisted.reusedContact),

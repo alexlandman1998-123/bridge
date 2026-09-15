@@ -233,7 +233,7 @@ export async function resolveProperty24ListingPublishConfiguration({
     fetchOrganisationUsersForProperty24({ supabase, organisationId }),
   ])
 
-  const property24LiveCutover = config.productionWriteRequired
+  const property24WriteSafety = config.productionWriteRequired
     ? await assertProperty24ProductionWriteAllowed({
         supabase,
         organisationId,
@@ -289,11 +289,11 @@ export async function resolveProperty24ListingPublishConfiguration({
     syndicationEnabled: Boolean(
       config.syndicationEnabled && (
         accountSettings.configured
-          ? accountSettings.enabled || property24LiveCutover?.rollbackOnly === true
+          ? accountSettings.enabled
           : true
       ),
     ),
-    property24LiveCutover,
+    property24WriteSafety,
     property24ResolvedMapping: {
       source: tableMapping ? 'property24_agent_mappings' : settingsMapping ? 'organisation_settings.property24.agentMappings' : 'none',
       listingAssignedAgentId: identity.assignedId || null,

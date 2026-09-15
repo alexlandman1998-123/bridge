@@ -1,5 +1,4 @@
 import { normalizeProperty24Text } from './client.js'
-import { assertProperty24ProductionConnectionEnablement } from './liveCutoverService.js'
 
 function asObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -111,13 +110,6 @@ export async function upsertOrganisationProperty24Connection({
   if (!['production', 'exdev'].includes(normalizedEnvironment)) {
     throw connectionError('property24_environment_invalid', 'Property24 environment must be ExDev or production.', 400)
   }
-
-  await assertProperty24ProductionConnectionEnablement({
-    supabase,
-    organisationId: normalizedOrganisationId,
-    environment: normalizedEnvironment,
-    enabled: enabled === true,
-  })
 
   const result = await supabase
     .from('property24_accounts')

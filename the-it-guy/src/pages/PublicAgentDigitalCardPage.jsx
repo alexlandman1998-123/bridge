@@ -1,14 +1,21 @@
 import {
   Bath,
+  BadgeCheck,
   BedDouble,
   Building2,
   ChevronRight,
+  Clipboard,
+  Facebook,
   ExternalLink,
+  Globe,
   Home,
+  Instagram,
+  Linkedin,
   LoaderCircle,
   Mail,
   MessageCircle,
   Phone,
+  Share2,
   Tag,
   UserPlus,
 } from 'lucide-react'
@@ -21,13 +28,20 @@ import {
 } from '../services/agencyPublicIntakeService'
 import {
   buildAgentDigitalCardFileBaseName,
+  buildAgentDigitalCardIntakeUrl,
   buildAgentDigitalCardShareText,
   buildAgentDigitalCardVcard,
   downloadAgentDigitalCardTextFile,
+  readAgentDigitalCardAttribution,
 } from '../services/agentDigitalCardShareService'
 
 function normalizeText(value = '') {
   return String(value || '').trim()
+}
+
+function normalizeTextList(value = [], limit = 8) {
+  const values = Array.isArray(value) ? value : []
+  return [...new Set(values.map(normalizeText).filter(Boolean))].slice(0, limit)
 }
 
 function normalizeThemeColour(value = '', fallback = '') {
@@ -105,6 +119,41 @@ function normalizeWhatsAppHref(value = '', fallbackText = '') {
   return fallbackText ? `https://wa.me/?text=${encodeURIComponent(fallbackText)}` : ''
 }
 
+function normalizeExternalUrl(value = '') {
+  const text = normalizeText(value)
+  if (!text) return ''
+  try {
+    const url = new URL(text.includes('://') ? text : `https://${text}`)
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : ''
+  } catch {
+    return ''
+  }
+}
+
+async function copyTextToClipboard(value = '') {
+  const text = normalizeText(value)
+  if (!text || typeof document === 'undefined') return false
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return true
+    }
+  } catch {
+    // Fall through to the browser-compatible selection approach.
+  }
+
+  const input = document.createElement('textarea')
+  input.value = text
+  input.setAttribute('readonly', '')
+  input.style.position = 'fixed'
+  input.style.opacity = '0'
+  document.body.appendChild(input)
+  input.select()
+  const copied = document.execCommand('copy')
+  input.remove()
+  return copied
+}
+
 function RoundContactLink({ icon: Icon, label, href = '', onClick = null }) {
   const icon = Icon ? createElement(Icon, { size: 22, strokeWidth: 2.4 }) : null
   const disabled = !href && !onClick
@@ -159,18 +208,15 @@ function IntentCta({ icon: Icon, title, subtitle, href, onClick = null, tone = '
   )
 }
 
-function ListingCard({ listing, intakeSlug = '', onTrack = () => {} }) {
+function ListingCard({ listing, intakeSlug = '', attributionSearch = '', onTrack = () => {} }) {
   const price = formatCurrency(listing.askingPrice)
   const location = formatLocation(listing)
-  const enquiryParams = new URLSearchParams({
+  const enquiryUrl = buildAgentDigitalCardIntakeUrl({
+    cardSlug: intakeSlug,
     intent: 'buy',
-    listing: listing.slug || '',
-    listingId: listing.id || '',
-    listingTitle: listing.title || '',
-    listingPrice: listing.askingPrice ? String(listing.askingPrice) : '',
-    source: 'card',
+    listing,
+    search: attributionSearch,
   })
-  const enquiryUrl = `/intake/${encodeURIComponent(intakeSlug)}?${enquiryParams.toString()}`
 
   return (
     <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.08)]">
@@ -215,7 +261,10 @@ export default function PublicAgentDigitalCardPage() {
   const [loading, setLoading] = useState(true)
   const [listingLoading, setListingLoading] = useState(false)
   const [error, setError] = useState('')
+  const [actionFeedback, setActionFeedback] = useState('')
   const trackedViewRef = useRef('')
+  const attributionSearch = typeof window !== 'undefined' ? window.location.search : ''
+  const attribution = readAgentDigitalCardAttribution(attributionSearch)
 
   useEffect(() => {
     let cancelled = false
@@ -241,13 +290,13 @@ export default function PublicAgentDigitalCardPage() {
   }, [cardSlug])
 
   useEffect(() => {
-    if (!intake?.card?.enabled) return undefined
+    if (!intake?.card?.enabled || intake?.card?.features?.listings === false) return undefined
     let cancelled = false
     Promise.resolve()
       .then(() => {
         if (cancelled) return []
         setListingLoading(true)
-        return resolveAgencyPublicCardListings(cardSlug, { limit: 6 })
+        return resolveAgencyPublicCardListings(cardSlug, { limit: intake?.card?.profile?.featuredListingIds?.length ? 24 : 6 })
       })
       .then((items) => {
         if (!cancelled) setListings(items)
@@ -261,7 +310,7 @@ export default function PublicAgentDigitalCardPage() {
     return () => {
       cancelled = true
     }
-  }, [cardSlug, intake?.card?.enabled])
+  }, [cardSlug, intake?.card?.enabled, intake?.card?.features?.listings, intake?.card?.profile?.featuredListingIds?.length])
 
   useEffect(() => {
     if (!intake?.card?.agent?.name && !intake?.agency?.name) return undefined
@@ -280,12 +329,15 @@ export default function PublicAgentDigitalCardPage() {
     recordAgentDigitalCardEventSoon({
       slug: cardSlug,
       eventType: 'card_view',
+      sourceChannel: attribution.sourceChannel,
       metadata: {
+        campaignCode: attribution.campaignCode,
+        utm: attribution.utm,
         pageUrl: typeof window !== 'undefined' ? window.location.href : '',
         referrer: typeof document !== 'undefined' ? document.referrer : '',
       },
     })
-  }, [cardSlug, intake?.card?.enabled, intake?.updatedAt])
+  }, [attribution.campaignCode, attribution.sourceChannel, attributionSearch, cardSlug, intake?.card?.enabled, intake?.updatedAt])
 
   const theme = useMemo(() => buildTheme(intake?.agency || {}), [intake?.agency])
   const agent = intake?.card?.agent || {}
@@ -296,27 +348,85 @@ export default function PublicAgentDigitalCardPage() {
   const phone = normalizeText(agent.phone)
   const whatsapp = normalizeText(agent.whatsapp || agent.phone)
   const email = normalizeText(agent.email)
-  const shareUrl = typeof window !== 'undefined' ? window.location.href : intake?.cardUrl || ''
-  const intakeUrl = `/intake/${encodeURIComponent(cardSlug)}`
-  const buyerUrl = `${intakeUrl}?intent=buy&source=card`
-  const sellerUrl = `${intakeUrl}?intent=sell&source=card`
+  const cardUrl = typeof window !== 'undefined' ? window.location.href : intake?.cardUrl || ''
+  const shareUrl = typeof window !== 'undefined'
+    ? `${window.location.origin}/share/card/${encodeURIComponent(cardSlug)}`
+    : `${String(intake?.cardUrl || '').replace(/\/card\/[^/]+$/, '')}/share/card/${encodeURIComponent(cardSlug)}`
+  const features = intake?.card?.features || {}
+  const profile = intake?.card?.profile || {}
+  const specialties = normalizeTextList(profile.specialties)
+  const serviceAreas = normalizeTextList(profile.serviceAreas)
+  const languages = normalizeTextList(profile.languages)
+  const credentials = normalizeTextList(profile.credentials)
+  const featuredListingIds = normalizeTextList(profile.featuredListingIds, 3)
+  const isFeatureEnabled = (name) => features[name] !== false
+  const enabledIntents = intake?.intake?.enabledIntents || ['buy', 'sell']
+  const showLeadCapture = isFeatureEnabled('leadCapture')
+  const showBuyerCta = showLeadCapture && enabledIntents.includes('buy')
+  const showSellerCta = showLeadCapture && enabledIntents.includes('sell')
+  const showListings = isFeatureEnabled('listings')
+  const buyerUrl = buildAgentDigitalCardIntakeUrl({ cardSlug, intent: 'buy', search: attributionSearch })
+  const sellerUrl = buildAgentDigitalCardIntakeUrl({ cardSlug, intent: 'sell', search: attributionSearch })
   const shareText = buildAgentDigitalCardShareText({
     agentName,
     organisationName: agencyName,
     shareUrl,
   })
   const heroLogoUrl = normalizeText(agency.logoDarkUrl || agency.logoLightUrl || agency.logoUrl || agency.logoIconUrl)
+  const websiteUrl = normalizeExternalUrl(agency.website)
+  const socialLinks = [
+    { label: 'Facebook', href: normalizeExternalUrl(agency.social?.facebook), icon: Facebook },
+    { label: 'Instagram', href: normalizeExternalUrl(agency.social?.instagram), icon: Instagram },
+    { label: 'LinkedIn', href: normalizeExternalUrl(agency.social?.linkedIn), icon: Linkedin },
+  ].filter((link) => link.href)
+  const cardHeading = normalizeText(intake?.intake?.heading)
+  const cardIntroduction = normalizeText(intake?.intake?.introduction)
+  const displayListings = [...listings]
+    .sort((left, right) => {
+      const leftRank = featuredListingIds.indexOf(normalizeText(left.id))
+      const rightRank = featuredListingIds.indexOf(normalizeText(right.id))
+      const leftPinned = leftRank === -1 ? Number.MAX_SAFE_INTEGER : leftRank
+      const rightPinned = rightRank === -1 ? Number.MAX_SAFE_INTEGER : rightRank
+      return leftPinned - rightPinned
+    })
+    .slice(0, 3)
 
   function trackCardEvent(eventType, metadata = {}) {
     recordAgentDigitalCardEventSoon({
       slug: cardSlug,
       eventType,
+      sourceChannel: attribution.sourceChannel,
       metadata: {
         ...metadata,
+        campaignCode: attribution.campaignCode,
+        utm: attribution.utm,
         pageUrl: typeof window !== 'undefined' ? window.location.href : '',
         referrer: typeof document !== 'undefined' ? document.referrer : '',
       },
     })
+  }
+
+  async function copyCardLink() {
+    const copied = await copyTextToClipboard(shareUrl)
+    if (!copied) {
+      setActionFeedback('Copying is not available in this browser.')
+      return
+    }
+    trackCardEvent('copy_link')
+    setActionFeedback('Card link copied.')
+  }
+
+  async function shareCard() {
+    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+      try {
+        await navigator.share({ title: `${agentName} | ${agencyName}`, text: shareText, url: shareUrl })
+        trackCardEvent('share_click')
+        return
+      } catch (shareError) {
+        if (shareError?.name === 'AbortError') return
+      }
+    }
+    await copyCardLink()
   }
 
   function downloadVcard() {
@@ -328,7 +438,7 @@ export default function PublicAgentDigitalCardPage() {
       agentPhone: phone || whatsapp,
       agentJobTitle: jobTitle,
       organisationName: agencyName,
-      shareUrl,
+      shareUrl: cardUrl,
     })
     downloadAgentDigitalCardTextFile({
       fileName: `${fileBaseName}.vcf`,
@@ -378,7 +488,7 @@ export default function PublicAgentDigitalCardPage() {
         />
       </div>
 
-      <section className="relative z-10 mx-auto grid min-h-screen w-full max-w-[1600px] min-w-0 gap-5 px-4 py-5 sm:px-6 lg:min-h-0 lg:grid-cols-[minmax(300px,400px)_minmax(0,1fr)] lg:items-stretch lg:px-8 lg:py-5 xl:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:gap-7">
+      <section className={`relative z-10 mx-auto grid min-h-screen w-full min-w-0 gap-5 px-4 py-5 sm:px-6 lg:min-h-0 lg:items-stretch lg:px-8 lg:py-5 ${showListings ? 'max-w-[1600px] lg:grid-cols-[minmax(300px,400px)_minmax(0,1fr)] xl:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:gap-7' : 'max-w-[460px]'}`}>
         <aside className="overflow-hidden rounded-lg border border-white/15 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.22)] lg:sticky lg:top-10 lg:self-start">
           <div className="px-6 pb-24 pt-7 text-white lg:pb-20 lg:pt-5" style={{ background: theme.hero }}>
             <div className="flex items-center justify-center">
@@ -407,36 +517,68 @@ export default function PublicAgentDigitalCardPage() {
                 <span className="text-slate-300">|</span>
                 <span className="font-medium text-slate-950">{agencyName}</span>
               </p>
+              {cardHeading || cardIntroduction ? (
+                <div className="mt-5 max-w-sm text-center">
+                  {cardHeading ? <h2 className="text-lg font-semibold text-slate-950">{cardHeading}</h2> : null}
+                  {cardIntroduction ? <p className="mt-2 text-sm leading-6 text-slate-600">{cardIntroduction}</p> : null}
+                </div>
+              ) : null}
+              {specialties.length || serviceAreas.length || languages.length || credentials.length ? (
+                <div className="mt-5 w-full max-w-sm border-t border-slate-100 pt-4 text-left">
+                  {specialties.length ? <p className="text-sm font-semibold text-slate-900">{specialties.join(' · ')}</p> : null}
+                  {serviceAreas.length ? <p className="mt-1 text-sm text-slate-600">Serving {serviceAreas.join(', ')}</p> : null}
+                  {languages.length ? <p className="mt-1 text-sm text-slate-600">Languages: {languages.join(', ')}</p> : null}
+                  {credentials.length ? <p className="mt-3 flex items-start gap-2 text-sm font-medium text-slate-700"><BadgeCheck className="mt-0.5 shrink-0 text-[var(--card-accent)]" size={17} /> <span>{credentials.join(' · ')}</span></p> : null}
+                </div>
+              ) : null}
             </div>
 
-            <div className="mt-7 grid grid-cols-4 gap-3 lg:mt-5">
+            <div className="mt-7 grid grid-cols-3 gap-x-3 gap-y-4 lg:mt-5 sm:grid-cols-6">
               <RoundContactLink icon={Phone} label="Call" href={normalizePhoneHref(phone)} onClick={() => trackCardEvent('call_click')} />
               <RoundContactLink icon={MessageCircle} label="WhatsApp" href={normalizeWhatsAppHref(whatsapp, shareText)} onClick={() => trackCardEvent('whatsapp_click')} />
               <RoundContactLink icon={Mail} label="Email" href={email ? `mailto:${email}` : ''} onClick={() => trackCardEvent('email_click')} />
-              <RoundContactLink icon={UserPlus} label="Save" onClick={downloadVcard} />
+              {isFeatureEnabled('vcf') ? <RoundContactLink icon={UserPlus} label="Save" onClick={downloadVcard} /> : null}
+              {isFeatureEnabled('share') ? <RoundContactLink icon={Share2} label="Share" onClick={shareCard} /> : null}
+              {isFeatureEnabled('share') ? <RoundContactLink icon={Clipboard} label="Copy link" onClick={copyCardLink} /> : null}
             </div>
+            {actionFeedback ? <p className="mt-3 text-center text-sm font-medium text-[var(--card-primary)]" role="status">{actionFeedback}</p> : null}
 
-            <div className="mt-6 grid gap-3 lg:mt-5">
-              <IntentCta
+            {websiteUrl || socialLinks.length ? (
+              <div className="mt-6 flex flex-wrap justify-center gap-2 border-t border-slate-100 pt-5">
+                {websiteUrl ? (
+                  <a href={websiteUrl} target="_blank" rel="noreferrer" onClick={() => trackCardEvent('website_click', { destination: 'website' })} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+                    <Globe size={16} /> Website
+                  </a>
+                ) : null}
+                {socialLinks.map(({ label, href, icon: Icon }) => (
+                  <a key={label} href={href} target="_blank" rel="noreferrer" onClick={() => trackCardEvent('website_click', { destination: label.toLowerCase() })} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
+                    <Icon size={16} /> {label}
+                  </a>
+                ))}
+              </div>
+            ) : null}
+
+            {showBuyerCta || showSellerCta ? <div className="mt-6 grid gap-3 lg:mt-5">
+              {showBuyerCta ? <IntentCta
                 icon={Home}
                 title={intake.intake?.buyerCtaLabel || 'I am looking to buy'}
                 subtitle="Let me help you find your perfect home"
                 href={buyerUrl}
                 onClick={() => trackCardEvent('buyer_cta_click')}
-              />
-              <IntentCta
+              /> : null}
+              {showSellerCta ? <IntentCta
                 icon={Tag}
                 title={intake.intake?.sellerCtaLabel || 'I am looking to sell'}
                 subtitle="Get a free market assessment"
                 href={sellerUrl}
                 onClick={() => trackCardEvent('seller_cta_click')}
                 tone="accent"
-              />
-            </div>
+              /> : null}
+            </div> : null}
           </div>
         </aside>
 
-        <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-white/25 bg-white/[0.08] p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur sm:p-6 lg:h-full">
+        {showListings ? <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-white/25 bg-white/[0.08] p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur sm:p-6 lg:h-full">
           <div>
             <div>
               <p className="text-xs font-semibold uppercase text-white/60">My Listings</p>
@@ -450,8 +592,8 @@ export default function PublicAgentDigitalCardPage() {
             </div>
           ) : listings.length ? (
             <div className="mt-5 grid min-w-0 gap-4 overflow-y-auto pr-1 sm:grid-cols-2 2xl:grid-cols-3">
-              {listings.map((listing) => (
-                <ListingCard key={listing.id || listing.slug} listing={listing} intakeSlug={cardSlug} onTrack={trackCardEvent} />
+              {displayListings.map((listing) => (
+                <ListingCard key={listing.id || listing.slug} listing={listing} intakeSlug={cardSlug} attributionSearch={attributionSearch} onTrack={trackCardEvent} />
               ))}
             </div>
           ) : (
@@ -466,7 +608,7 @@ export default function PublicAgentDigitalCardPage() {
             <span>{email || phone || agency.contactEmail || agency.contactPhone}</span>
             <span className="font-semibold text-slate-700">Powered by ARCH9</span>
           </footer>
-        </section>
+        </section> : null}
       </section>
     </main>
   )

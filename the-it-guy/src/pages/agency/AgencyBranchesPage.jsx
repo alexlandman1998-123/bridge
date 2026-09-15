@@ -9,6 +9,8 @@ import {
   Copy,
   Filter,
   LineChart,
+  LayoutGrid,
+  List,
   MapPin,
   MoreHorizontal,
   Plus,
@@ -19,7 +21,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import Button from '../../components/ui/Button'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
@@ -414,6 +416,56 @@ function BranchMobileCards({ rows, onView, onManageAgents, onDelete }) {
   )
 }
 
+function BranchCardGrid({ rows, onView, onManageAgents, onDelete }) {
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+      {rows.map((branch) => (
+        <article key={branch.id} className="rounded-lg border border-[#e2e8f0] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-[#102236] text-sm font-semibold text-white">{getInitials(branch.name)}</span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-[#f1f5f9] px-2.5 py-1 text-xs font-semibold text-[#475569]">#{branch.rank}</span>
+                  <StatusBadge tone={branch.health?.tone}>{branch.health?.label || 'Watch'}</StatusBadge>
+                </div>
+                <h3 className="mt-3 truncate text-[1.05rem] font-semibold text-[#0f172a]">{branch.name}</h3>
+                <p className="mt-1 flex items-center gap-1 truncate text-sm text-[#64748b]">
+                  <MapPin size={14} className="shrink-0" />
+                  <span className="truncate">{branch.location || 'Location pending'}</span>
+                </p>
+              </div>
+            </div>
+            <BranchActionMenu
+              branch={branch}
+              onView={() => onView(branch.id)}
+              onManageAgents={() => onManageAgents(branch.id)}
+              onDelete={() => onDelete(branch)}
+            />
+          </div>
+
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <MobileMetric label="Pipeline" value={formatCompactCurrency(branch.pipelineValue)} />
+            <MobileMetric label="Transactions" value={formatNumber(branch.activeTransactions)} />
+            <MobileMetric label="Listings" value={formatNumber(branch.activeListings)} />
+            <MobileMetric label="Sales Agents" value={formatNumber(branch.activeAgents)} />
+            <MobileMetric label="Team" value={formatNumber(branch.activeOperationalTeam)} />
+            <div className="rounded-lg border border-[#e2e8f0] bg-[#fbfdff] px-3 py-2">
+              <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#64748b]">Trend</p>
+              <div className="mt-1 flex items-center gap-1.5">
+                <MiniSparkline values={branch.trend?.sparkline} tone={branch.health?.tone === 'red' ? 'red' : branch.health?.tone === 'gold' ? 'gold' : 'green'} className="h-5 w-14" />
+                <span className={`text-xs font-semibold ${getChangeTone(branch.trend?.changePercent)}`}>{formatChange(branch.trend?.changePercent)}</span>
+              </div>
+            </div>
+          </div>
+
+          <Button size="sm" className="mt-5 w-full" onClick={() => onView(branch.id)}>View Branch <ArrowRight size={15} /></Button>
+        </article>
+      ))}
+    </div>
+  )
+}
+
 function MobileMetric({ label, value }) {
   return (
     <div className="rounded-lg border border-[#e2e8f0] bg-[#fbfdff] px-3 py-2">
@@ -712,14 +764,17 @@ function PrincipalManagerInviteModal({ open, onClose }) {
 
 export default function AgencyBranchesPage() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [overview, setOverview] = useState(EMPTY_OVERVIEW)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [period, setPeriod] = useState('this_month')
-  const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [provinceFilter, setProvinceFilter] = useState('all')
-  const [sortBy, setSortBy] = useState('pipeline')
+  const [period, setPeriod] = useState(() => searchParams.get('period') || 'this_month')
+  const [searchTerm, setSearchTerm] = useState(() => searchParams.get('search') || '')
+  const [statusFilter, setStatusFilter] = useState(() => searchParams.get('status') || 'all')
+  const [provinceFilter, setProvinceFilter] = useState(() => searchParams.get('province') || 'all')
+  const [sortBy, setSortBy] = useState(() => searchParams.get('sort') || 'pipeline')
+  const [viewMode, setViewMode] = useState(() => searchParams.get('view') || 'list')
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [showPrincipalInviteModal, setShowPrincipalInviteModal] = useState(false)
   const [deleteDialog, setDeleteDialog] = useState({ open: false, branch: null, error: '' })
@@ -744,6 +799,19 @@ export default function AgencyBranchesPage() {
     }, 0)
     return () => clearTimeout(timer)
   }, [loadOverview])
+
+  useEffect(() => {
+    const nextParams = new URLSearchParams()
+    if (period !== 'this_month') nextParams.set('period', period)
+    if (searchTerm) nextParams.set('search', searchTerm)
+    if (statusFilter !== 'all') nextParams.set('status', statusFilter)
+    if (provinceFilter !== 'all') nextParams.set('province', provinceFilter)
+    if (sortBy !== 'pipeline') nextParams.set('sort', sortBy)
+    if (viewMode !== 'list') nextParams.set('view', viewMode)
+    if (nextParams.toString() !== searchParams.toString()) {
+      setSearchParams(nextParams, { replace: true })
+    }
+  }, [period, provinceFilter, searchParams, searchTerm, setSearchParams, sortBy, statusFilter, viewMode])
 
   const provinceOptions = useMemo(() => {
     const values = [...new Set((overview.branches || []).map((row) => normalizeText(row?.province)).filter(Boolean))]
@@ -772,7 +840,9 @@ export default function AgencyBranchesPage() {
   }, [overview.branches, provinceFilter, searchTerm, sortBy, statusFilter])
 
   function openBranch(branchId) {
-    navigate(`/agency/branches/${branchId}`)
+    navigate(`/agency/branches/${branchId}`, {
+      state: { returnTo: `${location.pathname}${location.search}` },
+    })
   }
 
   function openManageAgents(branchId) {
@@ -868,7 +938,7 @@ export default function AgencyBranchesPage() {
           </section>
 
           <section className="rounded-lg border border-[#e2e8f0] bg-white p-4 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-            <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_160px_180px_180px_auto]">
+            <div className="grid gap-2 lg:grid-cols-[minmax(220px,1fr)_160px_180px_180px_auto_auto]">
               <label className="flex h-[42px] min-w-0 items-center gap-3 rounded-lg border border-[#dbe4ee] bg-white px-3">
                 <Search size={16} className="shrink-0 text-[#94a3b8]" />
                 <input
@@ -898,14 +968,42 @@ export default function AgencyBranchesPage() {
               <Button variant="secondary" size="sm" onClick={loadOverview} disabled={loading}>
                 <RefreshCw size={15} />Refresh
               </Button>
+              <div className="grid h-[42px] grid-cols-2 rounded-lg border border-[#dbe4ee] bg-[#f8fafc] p-1" role="group" aria-label="Branch results view">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  aria-pressed={viewMode === 'list'}
+                  className={`grid min-w-[38px] place-items-center rounded-md transition ${viewMode === 'list' ? 'bg-white text-[#0f172a] shadow-[0_4px_12px_rgba(15,23,42,0.08)]' : 'text-[#64748b] hover:text-[#0f172a]'}`}
+                  title="List view"
+                >
+                  <List size={17} aria-hidden="true" />
+                  <span className="sr-only">List view</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('cards')}
+                  aria-pressed={viewMode === 'cards'}
+                  className={`grid min-w-[38px] place-items-center rounded-md transition ${viewMode === 'cards' ? 'bg-white text-[#0f172a] shadow-[0_4px_12px_rgba(15,23,42,0.08)]' : 'text-[#64748b] hover:text-[#0f172a]'}`}
+                  title="Card view"
+                >
+                  <LayoutGrid size={17} aria-hidden="true" />
+                  <span className="sr-only">Card view</span>
+                </button>
+              </div>
             </div>
           </section>
 
           <section>
             {filteredRows.length ? (
               <>
-                <BranchTable rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
-                <BranchMobileCards rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
+                {viewMode === 'cards' ? (
+                  <BranchCardGrid rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
+                ) : (
+                  <>
+                    <BranchTable rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
+                    <BranchMobileCards rows={filteredRows} onView={openBranch} onManageAgents={openManageAgents} onDelete={openDeleteBranch} />
+                  </>
+                )}
               </>
             ) : (
               <EmptyState onCreate={() => setShowCreateModal(true)} />
