@@ -1,16 +1,11 @@
 import {
   Bath,
-  BadgeCheck,
   BedDouble,
   Building2,
   ChevronRight,
   CheckCircle2,
-  Facebook,
   ExternalLink,
-  Globe,
   Home,
-  Instagram,
-  Linkedin,
   LoaderCircle,
   Mail,
   MapPin,
@@ -135,40 +130,16 @@ function normalizeExternalUrl(value = '') {
   }
 }
 
-async function copyTextToClipboard(value = '') {
-  const text = normalizeText(value)
-  if (!text || typeof document === 'undefined') return false
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    // Fall through to the browser-compatible selection approach.
-  }
-
-  const input = document.createElement('textarea')
-  input.value = text
-  input.setAttribute('readonly', '')
-  input.style.position = 'fixed'
-  input.style.opacity = '0'
-  document.body.appendChild(input)
-  input.select()
-  const copied = document.execCommand('copy')
-  input.remove()
-  return copied
-}
-
 function RoundContactLink({ icon: Icon, label, href = '', onClick = null }) {
-  const icon = Icon ? createElement(Icon, { size: 22, strokeWidth: 2.4 }) : null
+  const icon = Icon ? createElement(Icon, { size: 25, strokeWidth: 2.1 }) : null
   const disabled = !href && !onClick
-  const className = `group flex w-full min-w-0 flex-col items-center gap-2 text-center ${disabled ? 'pointer-events-none opacity-45' : ''}`
+  const className = `group flex w-full min-w-0 flex-col items-center gap-2.5 text-center ${disabled ? 'pointer-events-none opacity-45' : ''}`
   const content = (
     <>
-      <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--card-primary)] text-white shadow-[0_12px_26px_rgba(15,23,42,0.2)] ring-1 ring-white/70 transition group-hover:-translate-y-0.5 group-hover:brightness-110">
+      <span className="flex h-[58px] w-[58px] items-center justify-center rounded-full bg-[var(--card-primary)] text-white shadow-[0_12px_28px_rgba(6,23,53,0.2)] ring-1 ring-white transition group-hover:-translate-y-0.5 group-hover:brightness-110 sm:h-16 sm:w-16">
         {icon}
       </span>
-      <span className="text-[0.82rem] font-semibold text-slate-950">{label}</span>
+      <span className="text-[0.78rem] font-semibold leading-tight text-[#071633] sm:text-sm">{label}</span>
     </>
   )
 
@@ -190,23 +161,23 @@ function RoundContactLink({ icon: Icon, label, href = '', onClick = null }) {
 function IntentCta({ icon: Icon, title, subtitle, onClick = null, tone = 'primary' }) {
   const icon = Icon ? createElement(Icon, { size: 27, strokeWidth: 1.9 }) : null
   const toneClass = tone === 'accent'
-    ? 'bg-[linear-gradient(135deg,var(--card-accent)_0%,rgba(184,134,28,0.96)_100%)] text-[var(--card-accent-text)] shadow-[0_16px_34px_rgba(184,134,28,0.24)]'
+    ? 'bg-[linear-gradient(115deg,#c91643_0%,#d84547_48%,#d69b22_100%)] text-white shadow-[0_16px_34px_rgba(184,47,47,0.2)]'
     : 'bg-[linear-gradient(135deg,var(--card-primary)_0%,var(--card-secondary)_100%)] text-white shadow-[0_16px_34px_rgba(15,23,42,0.22)]'
-  const secondaryTextClass = tone === 'accent' ? 'text-[var(--card-accent-text)]/78' : 'text-white/78'
-  const iconBorderClass = tone === 'accent' ? 'border-[var(--card-accent-text)]/72 text-[var(--card-accent-text)]' : 'border-white/78 text-white'
+  const secondaryTextClass = 'text-white/78'
+  const iconBorderClass = 'border-white/80 text-white'
 
   return (
     <button
       type="button"
       onClick={onClick || undefined}
-      className={`group flex min-h-[86px] w-full min-w-0 items-center gap-4 rounded-lg px-5 py-4 transition hover:-translate-y-0.5 hover:brightness-105 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20 ${toneClass}`}
+      className={`group flex min-h-[88px] w-full min-w-0 items-center gap-4 rounded-[10px] px-5 py-4 text-left transition hover:-translate-y-0.5 hover:brightness-105 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20 ${toneClass}`}
     >
       <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full border-2 ${iconBorderClass}`}>
         {icon}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block text-[1.15rem] font-semibold leading-6">{title}</span>
-        <span className={`mt-1 block text-[0.86rem] leading-5 ${secondaryTextClass}`}>{subtitle}</span>
+        <span className="block text-[1.08rem] font-semibold leading-6 sm:text-xl">{title}</span>
+        <span className={`mt-0.5 block text-[0.82rem] leading-5 sm:text-sm ${secondaryTextClass}`}>{subtitle}</span>
       </span>
       <ChevronRight className="shrink-0 transition group-hover:translate-x-1" size={28} strokeWidth={2.2} />
     </button>
@@ -224,8 +195,9 @@ function ListingCard({ listing, intakeSlug = '', attributionSearch = '', onTrack
   })
 
   return (
-    <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-[0_14px_34px_rgba(15,23,42,0.08)]">
-      <div className="aspect-[4/3] bg-slate-100">
+    <article className="w-[76vw] min-w-[250px] max-w-[310px] shrink-0 snap-start overflow-hidden rounded-[10px] border border-[#e4e7ec] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.09)]">
+      <div className="relative aspect-[1.52/1] bg-slate-100">
+        <span className="absolute left-3 top-3 z-10 rounded-md bg-[#102236]/90 px-2.5 py-1 text-[0.67rem] font-bold uppercase tracking-wide text-white">For sale</span>
         {listing.coverImageUrl ? (
           <img src={listing.coverImageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
         ) : (
@@ -234,14 +206,13 @@ function ListingCard({ listing, intakeSlug = '', attributionSearch = '', onTrack
           </div>
         )}
       </div>
-      <div className="p-4">
-        {price ? <p className="text-[0.95rem] font-semibold text-slate-950">{price}</p> : null}
-        <h3 className="mt-1 line-clamp-2 min-h-[2.75rem] text-[0.98rem] font-semibold leading-6 text-slate-900">{listing.title || 'Property listing'}</h3>
-        {location ? <p className="mt-1 truncate text-sm text-slate-500">{location}</p> : null}
-        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
-          {listing.bedrooms ? <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1"><BedDouble size={13} /> {listing.bedrooms}</span> : null}
-          {listing.bathrooms ? <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1"><Bath size={13} /> {listing.bathrooms}</span> : null}
-          {listing.propertyType ? <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-1"><Building2 size={13} /> {listing.propertyType}</span> : null}
+      <div className="p-3.5">
+        {price ? <p className="text-[1.02rem] font-bold leading-5 text-[#071633]">{price}</p> : null}
+        {location ? <p className="mt-1 truncate text-[0.78rem] text-slate-500">{location}</p> : <h3 className="mt-1 truncate text-sm font-semibold text-slate-800">{listing.title || 'Property listing'}</h3>}
+        <div className="mt-3 flex items-center gap-3 border-t border-slate-100 pt-3 text-[0.75rem] font-semibold text-[#26364f]">
+          {listing.bedrooms ? <span className="inline-flex items-center gap-1.5"><BedDouble size={15} /> {listing.bedrooms}</span> : null}
+          {listing.bathrooms ? <span className="inline-flex items-center gap-1.5"><Bath size={15} /> {listing.bathrooms}</span> : null}
+          {listing.propertyType ? <span className="ml-auto inline-flex min-w-0 items-center gap-1.5 truncate"><Building2 size={15} className="shrink-0" /> <span className="truncate">{listing.propertyType}</span></span> : null}
         </div>
         <a
           href={enquiryUrl}
@@ -250,7 +221,7 @@ function ListingCard({ listing, intakeSlug = '', attributionSearch = '', onTrack
             listingSlug: listing.slug || '',
             listingTitle: listing.title || '',
           })}
-          className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg bg-[var(--card-primary)] px-4 text-sm font-semibold text-white transition hover:brightness-110 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20"
+          className="mt-3 inline-flex min-h-9 w-full items-center justify-center gap-2 rounded-lg bg-[var(--card-primary)] px-4 text-xs font-semibold text-white transition hover:brightness-110 focus:outline-none focus:ring-4 focus:ring-[var(--card-primary)]/20"
         >
           Enquire <ExternalLink size={15} />
         </a>
@@ -291,7 +262,7 @@ function toNumberOrNull(value = '') {
 }
 
 function Field({ label, children, hint = '' }) {
-  return <label className="block text-sm font-semibold text-slate-800">
+  return <label className="block text-[0.95rem] font-semibold text-[#172033]">
     <span>{label}</span>
     <span className="mt-1.5 block">{children}</span>
     {hint ? <span className="mt-1 block text-xs font-normal text-slate-500">{hint}</span> : null}
@@ -299,7 +270,7 @@ function Field({ label, children, hint = '' }) {
 }
 
 function inputClassName() {
-  return 'min-h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-950 outline-none transition placeholder:text-slate-400 focus:border-[var(--card-primary)] focus:ring-4 focus:ring-[var(--card-primary)]/10'
+  return 'min-h-14 w-full rounded-xl border border-[#dfe4eb] bg-white px-4 text-base text-[#071633] outline-none transition placeholder:text-slate-400 focus:border-[var(--card-primary)] focus:ring-4 focus:ring-[var(--card-primary)]/10'
 }
 
 function AgentProfileIntakeModal({ open, intent, intake, cardSlug, attribution, onClose, onTrack }) {
@@ -310,6 +281,7 @@ function AgentProfileIntakeModal({ open, intent, intake, cardSlug, attribution, 
   const [submitted, setSubmitted] = useState(false)
   const steps = INTAKE_STEPS[intent] || INTAKE_STEPS.buy
   const step = steps[stepIndex] || steps[0]
+  const modalTheme = buildTheme(intake?.agency || {})
   const dirty = Object.entries(form).some(([key, value]) => key !== 'website' && value !== EMPTY_INTAKE_FORM[key])
 
   useEffect(() => {
@@ -417,15 +389,21 @@ function AgentProfileIntakeModal({ open, intent, intake, cardSlug, attribution, 
     <option value="">{placeholder}</option>{options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
   </select>
 
-  return <Modal open={open} onClose={closeWithConfirm} title={submitted ? 'Enquiry received' : intent === 'sell' ? 'Request a market assessment' : 'Find your next home'} subtitle={submitted ? '' : `${stepIndex + 1} of ${steps.length} · ${step.label}`} className="h-[100dvh] max-h-[100dvh] rounded-none sm:h-auto sm:max-h-[min(900px,calc(100dvh-32px))] sm:rounded-surface-xl">
-    {submitted ? <div className="py-8 text-center">
+  const modalStyle = {
+    '--card-primary': modalTheme.primary,
+    '--card-secondary': modalTheme.secondary,
+    '--card-accent': modalTheme.accent,
+  }
+
+  return <Modal open={open} onClose={closeWithConfirm} title={submitted ? 'Enquiry received' : intent === 'sell' ? 'Request a market assessment' : 'Find your next home'} subtitle={submitted ? '' : `${stepIndex + 1} of ${steps.length} · ${step.label}`} className="h-[calc(100dvh-24px)] max-h-[calc(100dvh-24px)] max-w-xl rounded-[22px] border-0 [&_.ui-icon-button]:h-12 [&_.ui-icon-button]:w-12 [&_.ui-icon-button]:rounded-xl [&_.ui-icon-button]:border-2 [&_.ui-modal-body]:px-5 [&_.ui-modal-body]:py-6 [&_.ui-modal-head]:px-5 [&_.ui-modal-head]:py-5 sm:h-auto sm:max-h-[min(820px,calc(100dvh-32px))] sm:[&_.ui-modal-body]:px-7 sm:[&_.ui-modal-head]:px-7">
+    {submitted ? <div className="py-10 text-center" style={modalStyle}>
       <CheckCircle2 className="mx-auto text-emerald-600" size={48} />
       <h4 className="mt-4 text-xl font-semibold text-slate-950">Thank you — {normalizeText(intake?.card?.agent?.name) || 'your agent'} has your enquiry.</h4>
       <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600">We’ll be in touch shortly with the right next steps.</p>
-      <button type="button" onClick={onClose} className="mt-6 min-h-11 rounded-lg bg-[var(--card-primary)] px-5 text-sm font-semibold text-white">Done</button>
-    </div> : <form onSubmit={submit}>
-      <div className="mb-6 flex gap-1.5" aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>{steps.map((item, index) => <span key={item.id} className={`h-1 flex-1 rounded-full ${index <= stepIndex ? 'bg-[var(--card-primary)]' : 'bg-slate-200'}`} />)}</div>
-      <p className="mb-5 text-sm text-slate-600">{step.description}</p>
+      <button type="button" onClick={onClose} className="mt-7 min-h-12 rounded-xl bg-[var(--card-primary)] px-7 text-sm font-semibold text-white shadow-lg">Done</button>
+    </div> : <form onSubmit={submit} className="flex min-h-full flex-col" style={modalStyle}>
+      <div className="mb-8 flex gap-2" aria-label={`Step ${stepIndex + 1} of ${steps.length}`}>{steps.map((item, index) => <span key={item.id} className={`h-1.5 flex-1 rounded-full ${index <= stepIndex ? 'bg-[var(--card-primary)]' : 'bg-[#e4e8ee]'}`} />)}</div>
+      <p className="mb-7 text-[0.95rem] leading-6 text-slate-600">{step.description}</p>
       <input tabIndex={-1} aria-hidden="true" className="hidden" name="website" value={form.website} onChange={(event) => update('website', event.target.value)} autoComplete="off" />
       {step.id === 'details' ? <div className="grid gap-4 sm:grid-cols-2">
         <Field label="First name"><input autoFocus required value={form.firstName} onChange={(event) => update('firstName', event.target.value)} className={inputClassName()} autoComplete="given-name" /></Field>
@@ -448,8 +426,8 @@ function AgentProfileIntakeModal({ open, intent, intake, cardSlug, attribution, 
       {step.id === 'address' ? <div className="grid gap-4"><Field label="Property address"><input autoFocus required value={form.propertyAddress} onChange={(event) => update('propertyAddress', event.target.value)} className={inputClassName()} autoComplete="street-address" /></Field><Field label="Suburb or area"><input value={form.suburb} onChange={(event) => update('suburb', event.target.value)} className={inputClassName()} autoComplete="address-level2" /></Field></div> : null}
       {step.id === 'property' ? <div className="grid gap-4 sm:grid-cols-2"><Field label="Property type">{select('sellerPropertyType', [['House', 'House'], ['Apartment', 'Apartment'], ['Townhouse', 'Townhouse'], ['Vacant Land', 'Vacant land']])}</Field><Field label="Estimated value" hint="Optional"><input autoFocus inputMode="numeric" value={form.estimatedValue} onChange={(event) => update('estimatedValue', event.target.value)} placeholder="R" className={inputClassName()} /></Field></div> : null}
       {step.id === 'notes' ? <div className="grid gap-4"><Field label="Preferred timeline">{select(intent === 'buy' ? 'buyerTimeline' : 'sellerTimeline', [['now', 'Immediately'], ['1_3_months', '1–3 months'], ['3_6_months', '3–6 months'], ['6_plus_months', '6+ months']])}</Field><Field label="Anything else we should know?" hint="Optional"><textarea autoFocus value={form.message} onChange={(event) => update('message', event.target.value)} rows={4} className={`${inputClassName()} py-3`} /></Field><label className="flex gap-3 rounded-lg bg-slate-50 p-3 text-sm leading-5 text-slate-600"><input required type="checkbox" checked={form.privacyConsent} onChange={(event) => update('privacyConsent', event.target.checked)} className="mt-1 h-4 w-4 accent-[var(--card-primary)]" /><span>I agree that {normalizeText(intake?.agency?.name) || 'this agency'} may contact me about this enquiry and handle my details according to its privacy policy.</span></label></div> : null}
-      {error ? <p role="alert" className="mt-5 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
-      <div className="mt-7 flex items-center justify-between gap-3 border-t border-slate-100 pt-5"><button type="button" onClick={() => { setError(''); setStepIndex((current) => Math.max(0, current - 1)) }} disabled={!stepIndex || submitting} className="min-h-11 rounded-lg px-4 text-sm font-semibold text-slate-600 disabled:opacity-40">Back</button>{stepIndex === steps.length - 1 ? <button type="submit" disabled={submitting} className="min-h-11 rounded-lg bg-[var(--card-primary)] px-5 text-sm font-semibold text-white disabled:opacity-60">{submitting ? 'Sending…' : 'Send enquiry'}</button> : <button type="button" onClick={continueStep} className="min-h-11 rounded-lg bg-[var(--card-primary)] px-5 text-sm font-semibold text-white">Continue</button>}</div>
+      {error ? <p role="alert" className="mt-5 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</p> : null}
+      <div className="sticky bottom-0 mt-auto flex items-center justify-between gap-3 border-t border-slate-100 bg-white pb-1 pt-5"><button type="button" onClick={() => { setError(''); setStepIndex((current) => Math.max(0, current - 1)) }} disabled={!stepIndex || submitting} className="min-h-12 rounded-xl px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-35">Back</button>{stepIndex === steps.length - 1 ? <button type="submit" disabled={submitting} className="min-h-12 min-w-[148px] rounded-xl bg-[var(--card-primary)] px-6 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(6,23,53,0.2)] disabled:opacity-60">{submitting ? 'Sending…' : 'Send enquiry'}</button> : <button type="button" onClick={continueStep} className="min-h-12 min-w-[132px] rounded-xl bg-[var(--card-primary)] px-6 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(6,23,53,0.2)]">Continue</button>}</div>
     </form>}
   </Modal>
 }
@@ -461,7 +439,6 @@ export default function PublicAgentDigitalCardPage() {
   const [loading, setLoading] = useState(true)
   const [listingLoading, setListingLoading] = useState(false)
   const [error, setError] = useState('')
-  const [actionFeedback, setActionFeedback] = useState('')
   const [activeIntent, setActiveIntent] = useState('')
   const trackedViewRef = useRef('')
   const attributionSearch = typeof window !== 'undefined' ? window.location.search : ''
@@ -555,11 +532,8 @@ export default function PublicAgentDigitalCardPage() {
     : `${String(intake?.cardUrl || '').replace(/\/card\/[^/]+$/, '')}/share/card/${encodeURIComponent(cardSlug)}`
   const features = intake?.card?.features || {}
   const profile = intake?.card?.profile || {}
-  const specialties = normalizeTextList(profile.specialties)
   const serviceAreas = normalizeTextList(profile.serviceAreas)
   const agentLocation = normalizeText(profile.location || profile.branchLocation || serviceAreas[0])
-  const languages = normalizeTextList(profile.languages)
-  const credentials = normalizeTextList(profile.credentials)
   const featuredListingIds = normalizeTextList(profile.featuredListingIds, 3)
   const isFeatureEnabled = (name) => features[name] !== false
   const enabledIntents = intake?.intake?.enabledIntents || ['buy', 'sell']
@@ -575,11 +549,10 @@ export default function PublicAgentDigitalCardPage() {
   const heroLogoUrl = normalizeText(agency.logoDarkUrl || agency.logoLightUrl || agency.logoUrl || agency.logoIconUrl)
   const websiteUrl = normalizeExternalUrl(agency.website)
   const socialLinks = [
-    { label: 'Facebook', href: normalizeExternalUrl(agency.social?.facebook), icon: Facebook },
-    { label: 'Instagram', href: normalizeExternalUrl(agency.social?.instagram), icon: Instagram },
-    { label: 'LinkedIn', href: normalizeExternalUrl(agency.social?.linkedIn), icon: Linkedin },
+    { label: 'Facebook', href: normalizeExternalUrl(agency.social?.facebook) },
+    { label: 'Instagram', href: normalizeExternalUrl(agency.social?.instagram) },
+    { label: 'LinkedIn', href: normalizeExternalUrl(agency.social?.linkedIn) },
   ].filter((link) => link.href)
-  const cardHeading = normalizeText(intake?.intake?.heading)
   const cardIntroduction = normalizeText(intake?.intake?.introduction)
   const displayListings = [...listings]
     .sort((left, right) => {
@@ -590,6 +563,12 @@ export default function PublicAgentDigitalCardPage() {
       return leftPinned - rightPinned
     })
     .slice(0, 3)
+  const experienceYears = Number(profile.yearsExperience || profile.experienceYears || 0)
+  const profileStats = [
+    !listingLoading && listings.length ? { value: listings.length, label: 'Active Listings' } : null,
+    experienceYears > 0 ? { value: experienceYears, label: 'Years Experience' } : null,
+    agentLocation ? { value: <MapPin size={19} />, label: agentLocation } : null,
+  ].filter(Boolean)
 
   function trackCardEvent(eventType, metadata = {}) {
     recordAgentDigitalCardEventSoon({
@@ -645,145 +624,93 @@ export default function PublicAgentDigitalCardPage() {
 
   return (
     <main
-      className="relative min-h-screen overflow-x-hidden text-slate-950"
+      className="relative min-h-screen overflow-x-hidden bg-[#f7f5f0] pb-12 text-[#071633]"
       style={{
         '--card-primary': theme.primary,
         '--card-secondary': theme.secondary,
         '--card-accent': theme.accent,
         '--card-accent-text': theme.accentText,
-        backgroundColor: theme.primary,
       }}
     >
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-        <div
-          className="absolute -bottom-[36rem] -right-[30rem] h-[78rem] w-[78rem] rounded-full border-[8rem]"
-          style={{ borderColor: hexToRgba(theme.secondary, 0.34) }}
-        />
-        <div
-          className="absolute -bottom-[27rem] -right-[21rem] h-[60rem] w-[60rem] rounded-full border-2"
-          style={{ borderColor: hexToRgba(theme.secondary, 0.58) }}
-        />
-      </div>
+      <header className="h-[245px] text-white sm:h-[270px]" style={{ background: theme.hero }}>
+        <div className="mx-auto flex h-full max-w-[920px] items-start px-6 pt-10 sm:px-10 sm:pt-12">
+          {heroLogoUrl ? (
+            <img src={heroLogoUrl} alt={agencyName} className="max-h-[76px] w-auto max-w-[270px] object-contain object-left sm:max-h-[88px] sm:max-w-[330px]" />
+          ) : (
+            <div className="flex items-center gap-3 text-xl font-bold tracking-wide"><span className="grid h-14 w-14 place-items-center rounded-full border-2 border-white">{agencyName.slice(0, 1).toUpperCase()}</span>{agencyName}</div>
+          )}
+        </div>
+      </header>
 
-      <section className={`relative z-10 mx-auto grid min-h-screen w-full min-w-0 gap-5 px-4 py-5 sm:px-6 lg:min-h-0 lg:items-stretch lg:px-8 lg:py-5 ${showListings ? 'max-w-[1600px] lg:grid-cols-[minmax(300px,400px)_minmax(0,1fr)] xl:grid-cols-[minmax(340px,420px)_minmax(0,1fr)] xl:gap-7' : 'max-w-[460px]'}`}>
-        <aside className="overflow-hidden rounded-lg border border-white/15 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.22)] lg:sticky lg:top-10 lg:self-start">
-          <div className="px-6 pb-24 pt-7 text-white lg:pb-20 lg:pt-5" style={{ background: theme.hero }}>
-            <div className="flex items-center justify-center">
-              {heroLogoUrl ? (
-                <img src={heroLogoUrl} alt={agencyName} className="max-h-24 w-full max-w-[340px] object-contain sm:max-h-28" />
-              ) : (
-                <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-white/20 bg-white/10 text-2xl font-semibold text-white">
-                  {agencyName.slice(0, 1).toUpperCase()}
-                </div>
-              )}
-            </div>
+      <div className="relative z-10 mx-auto -mt-[54px] w-full max-w-[920px] px-3 sm:-mt-[72px] sm:px-6">
+        <article className="relative mx-auto max-w-[760px] rounded-[12px] border border-[#dfe3e8] bg-white px-5 pb-6 pt-[94px] shadow-[0_26px_70px_rgba(7,22,51,0.18)] sm:px-8 sm:pb-8 sm:pt-[112px]">
+          <div className="absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2">
+            {agent.avatarUrl ? (
+              <img src={agent.avatarUrl} alt={agentName} className="h-36 w-36 rounded-full border-[6px] border-white object-cover shadow-[0_18px_42px_rgba(7,22,51,0.25)] sm:h-44 sm:w-44" />
+            ) : (
+              <div className="flex h-36 w-36 items-center justify-center rounded-full border-[6px] border-white bg-slate-100 text-5xl font-bold text-[var(--card-primary)] shadow-[0_18px_42px_rgba(7,22,51,0.25)] sm:h-44 sm:w-44">{agentName.slice(0, 1).toUpperCase()}</div>
+            )}
           </div>
 
-          <div className="px-6 pb-6 lg:pb-5">
-            <div className="-mt-20 flex flex-col items-center text-center">
-              {agent.avatarUrl ? (
-                <img src={agent.avatarUrl} alt="" className="h-40 w-40 rounded-full border-[6px] border-white object-cover shadow-[0_20px_44px_rgba(15,23,42,0.24)]" />
-              ) : (
-                <div className="flex h-40 w-40 items-center justify-center rounded-full border-[6px] border-white bg-slate-100 text-5xl font-semibold text-[var(--card-primary)] shadow-[0_20px_44px_rgba(15,23,42,0.24)]">
-                  {agentName.slice(0, 1).toUpperCase()}
-                </div>
-              )}
-              <h1 className="mt-5 text-[2.15rem] font-semibold leading-none text-slate-950 lg:mt-4">{agentName}</h1>
-              <p className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-base">
-                <span className="font-semibold text-[var(--card-accent)]">{jobTitle}</span>
-                <span className="text-slate-300">|</span>
-                <span className="font-medium text-slate-950">{agencyName}</span>
-              </p>
-              {agentLocation ? <p className="mt-3 inline-flex items-center gap-1.5 text-sm text-slate-500"><MapPin size={16} /> {agentLocation}</p> : null}
-              {cardHeading || cardIntroduction ? (
-                <div className="mt-5 max-w-sm text-center">
-                  {cardHeading ? <h2 className="text-lg font-semibold text-slate-950">{cardHeading}</h2> : null}
-                  {cardIntroduction ? <p className="mt-2 text-sm leading-6 text-slate-600">{cardIntroduction}</p> : null}
-                </div>
-              ) : null}
-              {specialties.length || serviceAreas.length || languages.length || credentials.length ? (
-                <div className="mt-5 w-full max-w-sm border-t border-slate-100 pt-4 text-left">
-                  {specialties.length ? <p className="text-sm font-semibold text-slate-900">{specialties.join(' · ')}</p> : null}
-                  {serviceAreas.length ? <p className="mt-1 text-sm text-slate-600">Serving {serviceAreas.join(', ')}</p> : null}
-                  {languages.length ? <p className="mt-1 text-sm text-slate-600">Languages: {languages.join(', ')}</p> : null}
-                  {credentials.length ? <p className="mt-3 flex items-start gap-2 text-sm font-medium text-slate-700"><BadgeCheck className="mt-0.5 shrink-0 text-[var(--card-accent)]" size={17} /> <span>{credentials.join(' · ')}</span></p> : null}
-                </div>
-              ) : null}
-            </div>
+          <section className="text-center">
+            <h1 className="text-[clamp(1.9rem,8vw,3rem)] font-bold leading-[1.05] tracking-[-0.045em] text-[#071633]">{agentName}</h1>
+            <p className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[0.92rem] sm:text-lg">
+              <span className="font-bold text-[#cc1746]">{jobTitle}</span>
+              <span className="h-5 w-px bg-slate-300" aria-hidden="true" />
+              <span className="font-medium text-[#071633]">{agencyName}</span>
+            </p>
+            {agentLocation ? <p className="mt-3 inline-flex items-center gap-1.5 text-sm text-slate-500"><MapPin size={16} /> {agentLocation}</p> : null}
+            {cardIntroduction ? <p className="mx-auto mt-4 max-w-xl text-sm leading-6 text-slate-500">{cardIntroduction}</p> : null}
+          </section>
 
-            <div className="mt-7 grid grid-cols-4 gap-x-2 gap-y-4 lg:mt-5">
+          <section className="mt-6 border-t border-[#dfe3e8] pt-5 sm:mt-8 sm:pt-6">
+            <h2 className="text-lg font-bold tracking-[-0.025em] text-[#071633]">Contact {agentName.split(' ')[0]}</h2>
+            <div className="mt-5 grid grid-cols-4 gap-x-1.5 sm:gap-x-5">
               <RoundContactLink icon={Phone} label="Call" href={normalizePhoneHref(phone)} onClick={() => trackCardEvent('call_click')} />
               <RoundContactLink icon={MessageCircle} label="WhatsApp" href={normalizeWhatsAppHref(whatsapp, shareText)} onClick={() => trackCardEvent('whatsapp_click')} />
               <RoundContactLink icon={Mail} label="Email" href={email ? `mailto:${email}` : ''} onClick={() => trackCardEvent('email_click')} />
-              {isFeatureEnabled('vcf') ? <RoundContactLink icon={UserPlus} label="Save" onClick={downloadVcard} /> : null}
+              {isFeatureEnabled('vcf') ? <RoundContactLink icon={UserPlus} label="Save Contact" onClick={downloadVcard} /> : null}
             </div>
-            {actionFeedback ? <p className="mt-3 text-center text-sm font-medium text-[var(--card-primary)]" role="status">{actionFeedback}</p> : null}
+          </section>
 
-            {websiteUrl || socialLinks.length ? (
-              <div className="mt-6 flex flex-wrap justify-center gap-2 border-t border-slate-100 pt-5">
-                {websiteUrl ? (
-                  <a href={websiteUrl} target="_blank" rel="noreferrer" onClick={() => trackCardEvent('website_click', { destination: 'website' })} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
-                    <Globe size={16} /> Website
-                  </a>
-                ) : null}
-                {socialLinks.map(({ label, href, icon: Icon }) => (
-                  <a key={label} href={href} target="_blank" rel="noreferrer" onClick={() => trackCardEvent('website_click', { destination: label.toLowerCase() })} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50">
-                    <Icon size={16} /> {label}
-                  </a>
-                ))}
-              </div>
-            ) : null}
+          {profileStats.length ? <section className="mt-6 grid divide-x divide-[#dfe3e8] border-y border-[#dfe3e8] py-5 text-center" style={{ gridTemplateColumns: `repeat(${profileStats.length}, minmax(0, 1fr))` }}>
+            {profileStats.map((stat) => <div key={stat.label} className="min-w-0 px-2">
+              <strong className="flex min-h-6 items-center justify-center text-xl font-bold text-[#071633]">{stat.value}</strong>
+              <span className="mt-1 block break-words text-[0.72rem] leading-4 text-slate-500 sm:text-sm">{stat.label}</span>
+            </div>)}
+          </section> : null}
 
-            {showBuyerCta || showSellerCta ? <div className="mt-6 grid gap-3 lg:mt-5">
-              {showBuyerCta ? <IntentCta
-                icon={Home}
-                title={intake.intake?.buyerCtaLabel || 'I am looking to buy'}
-                subtitle="Let me help you find your perfect home"
-                onClick={() => { trackCardEvent('buyer_cta_click'); setActiveIntent('buy') }}
-              /> : null}
-              {showSellerCta ? <IntentCta
-                icon={Tag}
-                title={intake.intake?.sellerCtaLabel || 'I am looking to sell'}
-                subtitle="Get a free market assessment"
-                onClick={() => { trackCardEvent('seller_cta_click'); setActiveIntent('sell') }}
-                tone="accent"
-              /> : null}
-            </div> : null}
-          </div>
-        </aside>
-
-        {showListings ? <section className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-white/25 bg-white/[0.08] p-5 shadow-[0_20px_60px_rgba(15,23,42,0.12)] backdrop-blur sm:p-6 lg:h-full">
-          <div>
-            <div>
-              <p className="text-xs font-semibold uppercase text-white/60">My Listings</p>
-              <h2 className="mt-1 text-2xl font-semibold text-white/90">Featured Properties</h2>
+          {showBuyerCta || showSellerCta ? <section className="mt-5">
+            <h2 className="text-xl font-bold tracking-[-0.03em] text-[#071633]">How can I help you?</h2>
+            <div className="mt-3 grid gap-3">
+              {showBuyerCta ? <IntentCta icon={Home} title="I want to buy" subtitle="Find the right home faster" onClick={() => { trackCardEvent('buyer_cta_click'); setActiveIntent('buy') }} /> : null}
+              {showSellerCta ? <IntentCta icon={Tag} title="I want to sell" subtitle="Get a free market assessment" onClick={() => { trackCardEvent('seller_cta_click'); setActiveIntent('sell') }} tone="accent" /> : null}
             </div>
-          </div>
+          </section> : null}
+        </article>
 
+        {showListings ? <section className="mt-8 sm:mt-10">
+          <div className="flex items-end justify-between gap-4 px-2 sm:px-0">
+            <h2 className="text-[1.7rem] font-bold tracking-[-0.045em] text-[#071633] sm:text-3xl">Featured Properties</h2>
+            {listings.length > 1 ? <span className="shrink-0 pb-1 text-xs font-semibold text-[#cc1746] sm:text-sm">Swipe to view</span> : null}
+          </div>
           {listingLoading ? (
-            <div className="mt-5 flex min-h-[260px] items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
-              <LoaderCircle className="mr-2 animate-spin" size={18} /> Loading listings...
-            </div>
+            <div className="mt-5 flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white text-sm font-semibold text-slate-500"><LoaderCircle className="mr-2 animate-spin" size={18} /> Loading listings...</div>
           ) : listings.length ? (
-            <div className="mt-5 grid min-w-0 grid-cols-2 gap-3 overflow-y-auto pr-1 sm:gap-4 2xl:grid-cols-3">
-              {displayListings.map((listing) => (
-                <ListingCard key={listing.id || listing.slug} listing={listing} intakeSlug={cardSlug} attributionSearch={attributionSearch} onTrack={trackCardEvent} />
-              ))}
+            <div className="-mx-3 mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-3 pb-6 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:-mx-6 sm:gap-4 sm:px-6">
+              {displayListings.map((listing) => <ListingCard key={listing.id || listing.slug} listing={listing} intakeSlug={cardSlug} attributionSearch={attributionSearch} onTrack={trackCardEvent} />)}
             </div>
           ) : (
-            <div className="mt-5 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
-              <Home className="mx-auto text-slate-400" size={30} />
-              <h3 className="mt-3 text-base font-semibold text-slate-900">No public listings linked yet</h3>
-              <p className="mt-1 text-sm leading-6 text-slate-500">Buyer and seller enquiries still route directly to {agentName}.</p>
-            </div>
+            <div className="mt-5 rounded-xl border border-dashed border-slate-200 bg-white px-5 py-9 text-center"><Home className="mx-auto text-slate-400" size={28} /><h3 className="mt-3 text-base font-semibold text-[#071633]">No featured properties yet</h3><p className="mt-1 text-sm text-slate-500">You can still contact {agentName} about your property search.</p></div>
           )}
-
-          <footer className="mt-auto flex flex-col gap-3 border-t border-slate-200 pt-5 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-            <span>{email || phone || agency.contactEmail || agency.contactPhone}</span>
-            <span className="font-semibold text-slate-700">Powered by ARCH9</span>
-          </footer>
         </section> : null}
-      </section>
+
+        <footer className="mt-6 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-xs text-slate-500">
+          {websiteUrl ? <a href={websiteUrl} target="_blank" rel="noreferrer" className="font-semibold hover:text-[#071633]">Website</a> : null}
+          {socialLinks.map(({ label, href }) => <a key={label} href={href} target="_blank" rel="noreferrer" className="font-semibold hover:text-[#071633]">{label}</a>)}
+          <span>Powered by ARCH9</span>
+        </footer>
+      </div>
       <AgentProfileIntakeModal
         open={Boolean(activeIntent)}
         intent={activeIntent || 'buy'}
