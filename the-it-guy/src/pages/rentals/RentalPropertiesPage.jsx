@@ -2,8 +2,10 @@ import {
   Building2,
   ChevronRight,
   Loader2,
+  Mail,
   Plus,
   Search,
+  UserRound,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -15,6 +17,7 @@ import {
 } from "../../services/rentals/rentalPropertyRepository.js";
 import { listRentalUnits } from "../../services/rentals/rentalUnitRepository.js";
 import { listPersistedRentalTenancies } from "../../services/rentals/rentalApplicationRepository.js";
+import { listRentalPropertyOwners } from "../../services/rentals/rentalLandlordMandateRepository.js";
 
 const initialForm = {
   name: "",
@@ -190,10 +193,12 @@ export default function RentalPropertiesPage() {
   const [properties, setProperties] = useState([]);
   const [units, setUnits] = useState([]);
   const [tenancies, setTenancies] = useState([]);
+  const [owners, setOwners] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
   const [stockView, setStockView] = useState("all");
+  const [selectedOwnerId, setSelectedOwnerId] = useState("");
   const [drawer, setDrawer] = useState(false);
   const [form, setForm] = useState(initialForm);
   const [creating, setCreating] = useState(false);
@@ -202,29 +207,34 @@ export default function RentalPropertiesPage() {
       setProperties([]);
       setUnits([]);
       setTenancies([]);
+      setOwners([]);
       setLoading(false);
       return;
     }
     try {
       setLoading(true);
       setError("");
-      const [propertyRows, unitRows, tenancyRows] = await Promise.all([
-        listRentalProperties({ ...scope, status: "active", limit: 100 }),
-        listRentalUnits({
-          organisationId: scope.organisationId,
-          branchId: scope.branchId,
-          limit: 500,
-        }),
-        listPersistedRentalTenancies(scope.organisationId),
-      ]);
+      const [propertyRows, unitRows, tenancyRows, ownerRows] =
+        await Promise.all([
+          listRentalProperties({ ...scope, status: "active", limit: 100 }),
+          listRentalUnits({
+            organisationId: scope.organisationId,
+            branchId: scope.branchId,
+            limit: 500,
+          }),
+          listPersistedRentalTenancies(scope.organisationId),
+          listRentalPropertyOwners(scope.organisationId),
+        ]);
       setProperties(propertyRows);
       setUnits(unitRows);
       setTenancies(tenancyRows);
+      setOwners(ownerRows);
     } catch (cause) {
       setError(cause?.message || "Unable to load managed stock.");
       setProperties([]);
       setUnits([]);
       setTenancies([]);
+      setOwners([]);
     } finally {
       setLoading(false);
     }
@@ -329,6 +339,19 @@ export default function RentalPropertiesPage() {
       ),
     [properties, query, renewalsByProperty, stockView],
   );
+  const selectedOwner = useMemo(
+    () => owners.find((owner) => owner.partyId === selectedOwnerId) || null,
+    [owners, selectedOwnerId],
+  );
+  const selectedOwnerProperties = useMemo(() => {
+    if (!selectedOwner) return [];
+    const ownerPropertyIds = new Set(
+      selectedOwner.relationships.map(
+        (relationship) => relationship.propertyId,
+      ),
+    );
+    return properties.filter((property) => ownerPropertyIds.has(property.id));
+  }, [properties, selectedOwner]);
   return (
     <main className="mx-auto w-full max-w-[1600px] px-3 py-2 sm:px-5 lg:px-7">
       <section className="space-y-4 pb-6">
@@ -385,6 +408,16 @@ export default function RentalPropertiesPage() {
               >
                 Renewals due {renewalCount}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setStockView("owners");
+                  setSelectedOwnerId("");
+                }}
+                className={`rounded-[8px] px-3 py-2 text-sm font-semibold ${stockView === "owners" ? "bg-[#0f2743] text-white" : "text-[#60758b] hover:bg-[#f5f9fd]"}`}
+              >
+                Owners {owners.length}
+              </button>
             </div>
             <div className="flex min-w-0 flex-1 flex-wrap justify-end gap-2">
               <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 sm:max-w-md">
@@ -393,7 +426,11 @@ export default function RentalPropertiesPage() {
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
                   className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm outline-none"
-                  placeholder="Search properties or locations"
+                  placeholder={
+                    stockView === "owners"
+                      ? "Search owners"
+                      : "Search properties or locations"
+                  }
                 />
               </label>
               <button
@@ -418,6 +455,201 @@ export default function RentalPropertiesPage() {
                 Loading managed stock…
               </span>
             </div>
+          ) : stockView === "owners" ? (
+            selectedOwner ? (
+              <section className="mt-4 space-y-4">
+                <header className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e1e8f0] bg-[#f8fbfe] p-4">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-[#edf5ff] text-[#1769d1]">
+                      <UserRound size={20} />
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="truncate text-lg font-semibold text-[#142132]">
+                        {selectedOwner.name}
+                      </h2>
+                      <p className="mt-1 flex items-center gap-1 text-sm text-[#60758b]">
+                        {selectedOwner.email ? (
+                          <>
+                            <Mail size={14} />
+                            {selectedOwner.email}
+                          </>
+                        ) : (
+                          "Owner contact details not captured"
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedOwnerId("")}
+                    className="rounded-lg border border-[#dbe4ee] bg-white px-3 py-2 text-sm font-semibold text-[#35546c]"
+                  >
+                    All owners
+                  </button>
+                </header>
+                <section className="grid gap-3 sm:grid-cols-3">
+                  <article className="rounded-xl border border-[#e1e8f0] bg-white p-4">
+                    <p className="text-2xl font-semibold text-[#142132]">
+                      {selectedOwnerProperties.length}
+                    </p>
+                    <p className="mt-1 text-sm text-[#60758b]">
+                      managed propert
+                      {selectedOwnerProperties.length === 1 ? "y" : "ies"}
+                    </p>
+                  </article>
+                  <article className="rounded-xl border border-[#e1e8f0] bg-white p-4">
+                    <p className="text-2xl font-semibold text-[#142132]">
+                      {selectedOwnerProperties.reduce(
+                        (total, property) =>
+                          total +
+                          (stockByProperty.get(property.id)?.total || 0),
+                        0,
+                      )}
+                    </p>
+                    <p className="mt-1 text-sm text-[#60758b]">
+                      units under management
+                    </p>
+                  </article>
+                  <article className="rounded-xl border border-[#e1e8f0] bg-white p-4">
+                    <p className="text-2xl font-semibold text-[#142132]">
+                      {selectedOwner.primaryPropertyCount}
+                    </p>
+                    <p className="mt-1 text-sm text-[#60758b]">
+                      primary property contact
+                      {selectedOwner.primaryPropertyCount === 1 ? "" : "s"}
+                    </p>
+                  </article>
+                </section>
+                <div>
+                  <h3 className="text-base font-semibold text-[#142132]">
+                    Properties under management
+                  </h3>
+                  <p className="mt-1 text-sm text-[#60758b]">
+                    Properties managed by your company for this owner.
+                  </p>
+                </div>
+                {selectedOwnerProperties.length ? (
+                  <section className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {selectedOwnerProperties.map((property) => {
+                      const stock = stockByProperty.get(property.id) || {
+                        total: 0,
+                        occupied: 0,
+                        vacant: 0,
+                      };
+                      return (
+                        <Link
+                          key={property.id}
+                          to={`/agent/rentals/portfolio/properties/${property.id}`}
+                          className="group rounded-xl border border-[#dce6f2] bg-white p-4 transition hover:border-[#b9cee4] hover:shadow-[0_8px_18px_rgba(15,23,42,.06)]"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="grid h-10 w-10 place-items-center rounded-xl bg-[#edf5ff] text-[#1769d1]">
+                              <Building2 size={19} />
+                            </span>
+                            <span
+                              className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${statusTone(property.status)}`}
+                            >
+                              {title(property.status || "draft")}
+                            </span>
+                          </div>
+                          <h4 className="mt-4 font-semibold text-[#142132]">
+                            {property.name}
+                          </h4>
+                          <p className="mt-1 text-sm text-[#60758b]">
+                            {property.address?.line1 || "Address pending"}
+                            {property.address?.city
+                              ? ` · ${property.address.city}`
+                              : ""}
+                          </p>
+                          <div className="mt-4 flex justify-between border-t border-[#edf2f7] pt-3 text-sm text-[#35546c]">
+                            <span>{stock.total} units</span>
+                            <span>{stock.occupied} occupied</span>
+                            <span>{stock.vacant} vacant</span>
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </section>
+                ) : (
+                  <p className="rounded-xl border border-dashed border-[#d8e4f0] bg-[#f9fbfd] p-8 text-center text-sm text-[#60758b]">
+                    No managed properties are linked to this owner.
+                  </p>
+                )}
+              </section>
+            ) : (
+              <section className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                {owners
+                  .filter((owner) =>
+                    [owner.name, owner.email, owner.phone]
+                      .join(" ")
+                      .toLowerCase()
+                      .includes(query.toLowerCase()),
+                  )
+                  .map((owner) => {
+                    const propertyCount = new Set(
+                      owner.relationships.map(
+                        (relationship) => relationship.propertyId,
+                      ),
+                    ).size;
+                    const ownerUnits = owner.relationships.reduce(
+                      (total, relationship) =>
+                        total +
+                        (stockByProperty.get(relationship.propertyId)?.total ||
+                          0),
+                      0,
+                    );
+                    return (
+                      <button
+                        key={owner.partyId}
+                        type="button"
+                        onClick={() => setSelectedOwnerId(owner.partyId)}
+                        className="group rounded-[14px] border border-[#dce6f2] bg-white p-4 text-left shadow-[0_6px_16px_rgba(15,23,42,.04)] transition hover:-translate-y-0.5 hover:border-[#b9cee4] hover:shadow-[0_10px_24px_rgba(15,23,42,.08)]"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="grid h-11 w-11 place-items-center rounded-xl bg-[#edf5ff] text-[#1769d1]">
+                            <UserRound size={20} />
+                          </span>
+                          <ChevronRight size={18} className="text-[#1769d1]" />
+                        </div>
+                        <h2 className="mt-4 font-semibold text-[#142132]">
+                          {owner.name}
+                        </h2>
+                        <p className="mt-1 truncate text-sm text-[#60758b]">
+                          {owner.email ||
+                            owner.phone ||
+                            "Contact details not captured"}
+                        </p>
+                        <div className="mt-4 flex gap-4 border-t border-[#edf2f7] pt-3 text-sm">
+                          <span>
+                            <b className="text-[#142132]">{propertyCount}</b>{" "}
+                            <span className="text-[#60758b]">properties</span>
+                          </span>
+                          <span>
+                            <b className="text-[#142132]">{ownerUnits}</b>{" "}
+                            <span className="text-[#60758b]">units</span>
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                {!owners.length ? (
+                  <p className="col-span-full rounded-xl border border-dashed border-[#d8e4f0] bg-[#f9fbfd] p-10 text-center text-sm text-[#60758b]">
+                    No owners are linked to managed properties yet.
+                  </p>
+                ) : null}
+                {owners.length &&
+                !owners.some((owner) =>
+                  [owner.name, owner.email, owner.phone]
+                    .join(" ")
+                    .toLowerCase()
+                    .includes(query.toLowerCase()),
+                ) ? (
+                  <p className="col-span-full rounded-xl border border-dashed border-[#d8e4f0] bg-[#f9fbfd] p-10 text-center text-sm text-[#60758b]">
+                    No owners match this search.
+                  </p>
+                ) : null}
+              </section>
+            )
           ) : rows.length ? (
             <section className="mt-4 grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
               {rows.map((property) => {
