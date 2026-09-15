@@ -3236,7 +3236,19 @@ function AppRoutes() {
                 }
               />
               <Route
-                path="/agent/rentals/portfolio/properties/:propertyId"
+                path="/agent/rentals/portfolio/properties/:propertyId/*"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalPropertyDetailPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/properties/:propertyId/*"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>

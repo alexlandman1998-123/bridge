@@ -601,7 +601,7 @@ export default function RentalPropertiesPage() {
                       return (
                         <Link
                           key={property.id}
-                          to={`/agent/rentals/portfolio/properties/${property.id}`}
+                          to={`/agent/rentals/properties/${property.id}`}
                           className="group rounded-xl border border-[#dce6f2] bg-white p-4 transition hover:border-[#b9cee4] hover:shadow-[0_8px_18px_rgba(15,23,42,.06)]"
                         >
                           <div className="flex items-start justify-between gap-3">
@@ -728,7 +728,7 @@ export default function RentalPropertiesPage() {
                 return (
                   <Link
                     key={property.id}
-                    to={`/agent/rentals/portfolio/properties/${property.id}`}
+                    to={`/agent/rentals/properties/${property.id}`}
                     className="group flex h-full flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,.05)] transition hover:-translate-y-0.5 hover:border-[#b9cee4] hover:shadow-[0_10px_24px_rgba(15,23,42,.09)]"
                   >
                     <div className="flex h-[112px] items-start justify-between border-b border-[#e5edf6] bg-[#f5f9fd] p-4">
