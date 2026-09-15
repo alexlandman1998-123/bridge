@@ -79,6 +79,46 @@ function formatDate(value) {
       }).format(value)
     : "Not captured";
 }
+function formatRent(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount <= 0) return "Rent pending";
+  return `R ${amount.toLocaleString("en-ZA", {
+    maximumFractionDigits: 0,
+  })}`;
+}
+function rentSummary(rents = []) {
+  const values = rents.filter(
+    (rent) => Number.isFinite(Number(rent)) && Number(rent) > 0,
+  );
+  if (!values.length) return "Rent pending";
+  const lowest = Math.min(...values);
+  const highest = Math.max(...values);
+  return `${lowest === highest ? "" : "From "}${formatRent(lowest)} / mo`;
+}
+function leaseProgress(tenancy = {}) {
+  const terms = tenancy.lease?.terms_json || {};
+  const startValue =
+    tenancy.intendedOccupationDate ||
+    terms.intended_occupation_date ||
+    terms.start_date;
+  if (!startValue) return null;
+  const start = new Date(`${startValue}T00:00:00`);
+  if (Number.isNaN(start.getTime())) return null;
+  let end = terms.end_date ? new Date(`${terms.end_date}T00:00:00`) : null;
+  if (!end || Number.isNaN(end.getTime())) {
+    const months = Number(terms.lease_term_months || 0);
+    if (!Number.isFinite(months) || months <= 0) return null;
+    end = new Date(start);
+    end.setMonth(end.getMonth() + months);
+  }
+  const duration = end.getTime() - start.getTime();
+  if (duration <= 0) return null;
+  const percentage = Math.min(
+    100,
+    Math.max(0, Math.round(((Date.now() - start.getTime()) / duration) * 100)),
+  );
+  return { percentage, end };
+}
 
 function CreatePropertyDrawer({
   open,
@@ -317,6 +357,28 @@ export default function RentalPropertiesPage() {
       return result;
     }, new Map());
   }, [properties, tenancies]);
+  const cardFactsByProperty = useMemo(() => {
+    const activeTenanciesByUnit = new Map(
+      tenancies
+        .filter((tenancy) => tenancy.status === "active" && tenancy.unitId)
+        .map((tenancy) => [tenancy.unitId, tenancy]),
+    );
+    return managedUnits.reduce((result, unit) => {
+      const current = result.get(unit.propertyId) || {
+        rents: [],
+        lease: null,
+      };
+      const tenancy = activeTenanciesByUnit.get(unit.id);
+      const leaseRent = Number(tenancy?.lease?.terms_json?.monthly_rent);
+      const targetRent = Number(unit.targetRent);
+      const rent =
+        Number.isFinite(targetRent) && targetRent > 0 ? targetRent : leaseRent;
+      if (Number.isFinite(rent) && rent > 0) current.rents.push(rent);
+      if (!current.lease && tenancy) current.lease = leaseProgress(tenancy);
+      result.set(unit.propertyId, current);
+      return result;
+    }, new Map());
+  }, [managedUnits, tenancies]);
   const renewalCount = [...renewalsByProperty.values()].reduce(
     (total, item) => total + item.count,
     0,
@@ -353,7 +415,7 @@ export default function RentalPropertiesPage() {
     return properties.filter((property) => ownerPropertyIds.has(property.id));
   }, [properties, selectedOwner]);
   return (
-    <main className="mx-auto w-full max-w-[1600px] px-3 py-2 sm:px-5 lg:px-7">
+    <main className="mx-auto w-full px-2 py-2 sm:px-3 lg:px-4">
       <section className="space-y-4 pb-6">
         <section className="rounded-[18px] border border-[#dce6f2] bg-white px-4 py-4 shadow-[0_8px_20px_rgba(15,23,42,.04)]">
           <div className="flex flex-wrap items-end justify-between gap-4">
@@ -659,6 +721,10 @@ export default function RentalPropertiesPage() {
                   vacant: 0,
                 };
                 const renewal = renewalsByProperty.get(property.id);
+                const cardFacts = cardFactsByProperty.get(property.id) || {
+                  rents: [],
+                  lease: null,
+                };
                 return (
                   <Link
                     key={property.id}
@@ -693,6 +759,41 @@ export default function RentalPropertiesPage() {
                         </span>
                         <span>{stock.occupied} occupied</span>
                         <span>{stock.vacant} vacant</span>
+                      </div>
+                      <div className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 py-2.5">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[.08em] text-[#718399]">
+                            Monthly rent
+                          </p>
+                          <p className="text-sm font-semibold text-[#142132]">
+                            {rentSummary(cardFacts.rents)}
+                          </p>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+                          <span className="font-medium text-[#60758b]">
+                            Lease progress
+                          </span>
+                          <span className="font-semibold text-[#35546c]">
+                            {cardFacts.lease
+                              ? `${cardFacts.lease.percentage}% complete`
+                              : stock.occupied
+                                ? "Lease dates pending"
+                                : "Vacant"}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[#e8eef4]">
+                          <div
+                            className="h-full rounded-full bg-[#16894f] transition-[width]"
+                            style={{
+                              width: `${cardFacts.lease?.percentage || 0}%`,
+                            }}
+                          />
+                        </div>
+                        {cardFacts.lease ? (
+                          <p className="mt-1.5 text-[0.7rem] text-[#718399]">
+                            Ends {formatDate(cardFacts.lease.end)}
+                          </p>
+                        ) : null}
                       </div>
                       {renewal ? (
                         <p className="rounded-[10px] border border-[#f6dfb6] bg-[#fff8ea] px-3 py-2 text-xs font-semibold text-[#8a5207]">
