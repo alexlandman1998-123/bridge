@@ -19,12 +19,42 @@ function integer(value) {
   return Number.isSafeInteger(number) ? number : null
 }
 
+// private_listings stores physical areas as whole square metres. Property24
+// exports occasionally contain fractional source areas, which must not make an
+// otherwise valid migration fail at the database boundary.
+function squareMetres(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0) return null
+  return Math.round(number)
+}
+
+function wholeCount(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number) || number < 0) return null
+  return Math.round(number)
+}
+
 function isUuid(value) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(text(value))
 }
 
 function unique(items = []) {
   return [...new Set(items.filter(Boolean))]
+}
+
+async function mapWithConcurrency(items = [], concurrency, mapper) {
+  const results = new Array(items.length)
+  let nextIndex = 0
+  const worker = async () => {
+    while (true) {
+      const index = nextIndex
+      nextIndex += 1
+      if (index >= items.length) return
+      results[index] = await mapper(items[index], index)
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(Math.max(1, concurrency), items.length) }, worker))
+  return results
 }
 
 function stableUuid(value) {
@@ -109,12 +139,15 @@ export async function fetchProperty24MigrationLiveSnapshot({ property24, mapping
   const plans = Array.isArray(mappingPlan?.listingPlans) ? mappingPlan.listingPlans : []
   const agentPlans = Array.isArray(mappingPlan?.agentPlans) ? mappingPlan.agentPlans : []
   const effectiveFromDate = text(fromDate) || new Date(Date.now() - 6 * 24 * 60 * 60 * 1_000).toISOString()
-  const [agentResponse, reconciliationResponse, updateResponse, ...portalResponses] = await Promise.all([
+  const [agentResponse, reconciliationResponse, updateResponse] = await Promise.all([
     property24.fetchAgencyAgents(context.agencyId),
     property24.fetchListingReconciliation({ agencyId: context.agencyId }),
     property24.fetchListingUpdates(effectiveFromDate),
-    ...plans.map((plan) => property24.checkListingOnPortal(plan.listingNumber)),
   ])
+  // Property24's portal endpoint is intentionally read one listing at a time.
+  // A large migration should not turn this verification into a burst that
+  // causes otherwise valid accounts to receive transient gateway responses.
+  const portalResponses = await mapWithConcurrency(plans, 6, (plan) => property24.checkListingOnPortal(plan.listingNumber))
   const agentRows = unwrapCollection(agentResponse.data)
   const reconciliationRows = unwrapCollection(reconciliationResponse.data)
   const updateRows = unwrapCollection(updateResponse.data)
@@ -356,10 +389,10 @@ function privateListingRow(plan, live, identity, target, generatedAt) {
       media_rehosted: true,
     },
     seller_canonical_facts_updated_at: generatedAt,
-    bedrooms: publication.bedrooms,
+    bedrooms: wholeCount(publication.bedrooms),
     bathrooms: publication.bathrooms,
-    erf_size_sqm: publication.erfSize,
-    floor_size_sqm: publication.floorSize,
+    erf_size_sqm: squareMetres(publication.erfSize),
+    floor_size_sqm: squareMetres(publication.floorSize),
     levy_amount: publication.levies,
     rates_amount: publication.ratesTaxes,
   })
@@ -377,7 +410,7 @@ function publicationRow(plan, live, listingId) {
     property_type: source.propertyType,
     listing_type: source.listingType,
     asking_price: source.askingPrice,
-    bedrooms: source.bedrooms,
+    bedrooms: wholeCount(source.bedrooms),
     bathrooms: source.bathrooms,
     garages: source.garages,
     parking_bays: source.parkingBays,
@@ -448,6 +481,7 @@ export function buildProperty24MigrationApplyPlan({
   target = {},
   imageManifest = null,
   requireCompleteImages = false,
+  allowPartialImages = false,
   generatedAt = new Date().toISOString(),
   idFactory = stableUuid,
 } = {}) {
@@ -462,6 +496,12 @@ export function buildProperty24MigrationApplyPlan({
   if (requireCompleteImages && imageManifest?.status !== 'COMPLETE') blockers.push({ code: 'image_import_incomplete', message: `Image import status must be COMPLETE before database apply; received ${imageManifest?.status || 'missing'}.` })
   if (requireCompleteImages && imageManifest?.summary?.completedImageCount !== mappingPlan.summary?.imageRelationshipCount) {
     blockers.push({ code: 'image_count_mismatch', message: 'Completed image count does not match the mapping plan.' })
+  }
+  if (allowPartialImages && imageManifest?.status === 'PARTIAL') {
+    warnings.push({
+      code: 'partial_image_import_approved',
+      message: `${imageManifest.summary?.failedImageCount || 0} unavailable source image(s) were approved for omission from this import.`,
+    })
   }
   const liveAgents = new Map((liveSnapshot.agents || []).map((agent) => [integer(agent.agentId), agent]))
   const liveListings = new Map((liveSnapshot.listings || []).map((listing) => [integer(listing.listingNumber), listing]))
@@ -551,7 +591,7 @@ export function buildProperty24MigrationApplyPlan({
   }
 }
 
-function verificationSummary(verification, plan) {
+function verificationSummary(verification, plan, { allowExtraImages = false } = {}) {
   const expectedListingIds = new Set(plan.listingOperations.map((operation) => operation.listingId))
   const expectedNumbers = new Set(plan.listingOperations.map((operation) => operation.listingNumber))
   const mediaExpected = plan.listingOperations.reduce((count, operation) => count + operation.mediaRows.length, 0)
@@ -563,7 +603,10 @@ function verificationSummary(verification, plan) {
     listings: verification.listings.length === expectedListingIds.size,
     publications: verification.publications.length === expectedListingIds.size,
     syncs: verification.syncs.filter((row) => expectedNumbers.has(integer(row.listing_number))).length === expectedNumbers.size,
-    media: importedMedia.length === mediaExpected && unexpectedImages.length === 0,
+    // A user-approved partial image import deliberately preserves any existing
+    // image rows: source files that could not be fetched are not destructive.
+    // All expected rehosted media must still be present.
+    media: importedMedia.length === mediaExpected && (allowExtraImages || unexpectedImages.length === 0),
   }
   return {
     passed: Object.values(checks).every(Boolean),
@@ -580,6 +623,7 @@ export async function executeProperty24MigrationApply({
   mappingPlan,
   imageManifest = null,
   apply = false,
+  allowPartialImages = false,
   fromDate = '',
   generatedAt = new Date().toISOString(),
   idFactory,
@@ -613,7 +657,8 @@ export async function executeProperty24MigrationApply({
     liveSnapshot,
     target,
     imageManifest,
-    requireCompleteImages: apply,
+    requireCompleteImages: apply && !allowPartialImages,
+    allowPartialImages: apply && allowPartialImages,
     generatedAt,
     idFactory,
   })
@@ -659,7 +704,7 @@ export async function executeProperty24MigrationApply({
       listingIds: plan.listingOperations.map((operation) => operation.listingId),
       property24AgentIds: plan.agentOperations.map((operation) => operation.property24AgentId),
     })
-    const summary = verificationSummary(verification, plan)
+    const summary = verificationSummary(verification, plan, { allowExtraImages: allowPartialImages })
     if (!summary.passed) throw new Error(`Post-apply verification failed: ${JSON.stringify(summary.checks)}.`)
     return {
       ...plan,

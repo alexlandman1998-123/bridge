@@ -9,6 +9,8 @@ const LISTING_AGENT_ROLES = new Set([
   'estate_agent',
   'sales_agent',
   'listing_agent',
+  'owner',
+  'agency_owner',
   'principal',
   'agency_principal',
 ])

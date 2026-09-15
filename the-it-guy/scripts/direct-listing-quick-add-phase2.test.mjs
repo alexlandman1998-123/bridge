@@ -105,3 +105,14 @@ test('Quick Add exposes existing-document cards and seller portal actions withou
   assert.equal(payload.sellerCanonicalFacts.property.show_reduced_banner, true)
   assert.equal(payload.sellerCanonicalFacts.property.no_transfer_duty, true)
 })
+
+test('Quick Add only blocks strong duplicate matches and does not serialise document uploads', () => {
+  assert.match(agentListingsSource, /const strongAddressAndSellerMatch = addressMatch && \(emailMatch \|\| phoneMatch\)/)
+  assert.match(agentListingsSource, /if \(placeMatch \|\| strongAddressAndSellerMatch\)/)
+  assert.doesNotMatch(agentListingsSource, /Existing transaction on same property/)
+  assert.match(agentListingsSource, /await Promise\.all\(documentUploadQueue\.map\(async \(documentUpload\)/)
+  assert.match(agentListingsSource, /includeRequirementsAndDocuments: false/)
+  assert.match(agentListingsSource, /syncRequirements: false/)
+  assert.match(agentListingsSource, /void \(async \(\) => \{/)
+  assert.match(agentListingsSource, /finishing in the background/)
+})

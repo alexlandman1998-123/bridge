@@ -646,7 +646,20 @@ function isDeletedPrivateListingRow(row = {}) {
   )
 }
 
-function applyVisiblePrivateListingFilters(queryBuilder) {
+function isProperty24MigrationImportRow(row = {}) {
+  const facts = row?.seller_canonical_facts_json || row?.sellerCanonicalFacts || {}
+  const source = normalizeKey(row?.stock_source || row?.stockSource || row?.listing_source || row?.listingSource)
+  return source === 'property24_migration_import' || Boolean(facts?.property24Import)
+}
+
+function isVisiblePrivateListingRow(row = {}, { includeArchivedImports = false } = {}) {
+  if (!isDeletedPrivateListingRow(row)) return true
+  if (!includeArchivedImports || !isProperty24MigrationImportRow(row)) return false
+  return !(row.deleted_at || row.deletedAt || row.is_deleted || row.isDeleted)
+}
+
+function applyVisiblePrivateListingFilters(queryBuilder, { includeArchivedImports = false } = {}) {
+  if (includeArchivedImports) return queryBuilder
   return queryBuilder
     .neq('listing_status', 'withdrawn')
     .neq('listing_visibility', 'archived')
@@ -5409,7 +5422,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
   }
 
   const [onboardingMap, requirementsMap, documentsMap, mandatePacketsMap] = await Promise.all([
-    fetchOnboardingRowsForListings(client, [insert.data.id]),
+    includeRequirementsAndDocuments ? fetchOnboardingRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchRequirementRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchDocumentRowsForListings(client, [insert.data.id]) : Promise.resolve(new Map()),
     includeRequirementsAndDocuments ? fetchMandatePacketRowsForListings(client, [insert.data]) : Promise.resolve(new Map()),
@@ -5424,7 +5437,7 @@ export async function createPrivateListing(payload = {}, options = {}) {
     }).catch(() => null)
   const listingWithRequirements = requirementSync?.listing || listing
 
-  await createPrivateListingActivity({
+  void createPrivateListingActivity({
     privateListingId: insert.data.id,
     activityType: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'quick_add_listing_created' : 'seller_lead_created',
     activityTitle: normalizeKey(payload.origin || payload.source) === 'quick_add' ? 'Listing created via Quick Add' : 'Seller lead captured',
@@ -6183,6 +6196,7 @@ export async function getAgentPrivateListings(
     includeAllOrganisationListings = false,
     assignedAgentIds = [],
     includeMedia = false,
+    includeArchivedImports = false,
   } = {},
 ) {
   const client = requireClient()
@@ -6193,7 +6207,7 @@ export async function getAgentPrivateListings(
   if (!includeAllOrganisationListings && !normalizedAgentIds.length) return []
 
   const buildQuery = ({ includeBranchFilter = true } = {}) => {
-    const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'))
+    const queryBuilder = applyVisiblePrivateListingFilters(client.from('private_listings').select('*'), { includeArchivedImports })
 
     if (normalizedOrgId) {
       queryBuilder.eq('organisation_id', normalizedOrgId)
@@ -6221,7 +6235,7 @@ export async function getAgentPrivateListings(
     if (isMissingTableError(query.error, 'private_listings')) return []
     throw query.error
   }
-  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
+  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports }))
   const listingIds = rows.map((row) => row.id)
   const [onboardingMap, requirementsMap, documentsMap, externalLinksMap, publicationMap, mandatePacketsMap, assignedAgentsMap, mediaMap] = await Promise.all([
     fetchOnboardingRowsForListings(client, listingIds),
@@ -6249,6 +6263,7 @@ export async function getAgentPrivateListingSummaries(
     assignedAgentIds = [],
     includeCommissionTerms = false,
     coreFieldsOnly = false,
+    includeArchivedImports = false,
   } = {},
 ) {
   const client = requireClient()
@@ -6285,6 +6300,8 @@ export async function getAgentPrivateListingSummaries(
       'organisation_id',
       'branch_id',
       'assigned_agent_id',
+      'stock_source',
+      'seller_canonical_facts_json',
       ...(includeIsActive ? ['is_active'] : []),
       'created_at',
       'updated_at',
@@ -6311,6 +6328,7 @@ export async function getAgentPrivateListingSummaries(
       client
         .from('private_listings')
         .select(selectColumns),
+      { includeArchivedImports },
     )
 
     if (normalizedOrgId) {
@@ -6350,7 +6368,7 @@ export async function getAgentPrivateListingSummaries(
     throw query.error
   }
 
-  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => !isDeletedPrivateListingRow(row))
+  const rows = (Array.isArray(query.data) ? query.data : []).filter((row) => isVisiblePrivateListingRow(row, { includeArchivedImports }))
   const onboardingCommissionByListingId = includeCommissionTerms
     ? await fetchOnboardingCommissionRowsForListings(client, rows.map((row) => row.id))
     : null

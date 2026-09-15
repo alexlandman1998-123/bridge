@@ -108,6 +108,7 @@ import {
   addListingSellerProfileDraftPerson,
   buildListingSellerProfileRequirementProjection,
   createListingSellerProfileBuilderDraft,
+  isListingSellerOwnershipUnidentified,
   removeListingSellerProfileDraftPerson,
   updateListingSellerProfileDraftPerson,
   validateListingSellerProfileBuilderDraft,
@@ -7578,6 +7579,10 @@ function AgentListingDetail() {
       : null,
     [listingRecord, sellerProfileBuilderDraft],
   )
+  const sellerOwnershipUnidentified = useMemo(
+    () => isListingSellerOwnershipUnidentified(listingRecord),
+    [listingRecord],
+  )
 
   const sellerProfile = useMemo(() => {
     const raw = (...values) => firstDraftValue(...values)
@@ -7593,9 +7598,9 @@ function AgentListingDetail() {
       resolveSellerNameFromListing(listingRecord),
       valueFor('sellerName', 'fullName'),
       [form.sellerFirstName || form.firstName, form.sellerSurname || form.lastName].filter(Boolean).join(' '),
-      'Seller',
+      sellerOwnershipUnidentified ? '' : 'Seller',
     )
-    const sellerTypeRaw = raw(valueFor('sellerType', 'type', 'ownershipType'), seller.sellerType, seller.type, 'individual')
+    const sellerTypeRaw = raw(valueFor('sellerType', 'type', 'ownershipType'), seller.sellerType, seller.type, sellerOwnershipUnidentified ? '' : 'individual')
     const propertyAddress = raw(
       valueFor('propertyAddress', 'addressLine1'),
       marketingDraft.addressLine1,
@@ -7603,7 +7608,7 @@ function AgentListingDetail() {
       listingRecord?.propertyAddress,
       listingRecord?.listingTitle,
     )
-    const mandateType = raw(valueFor('mandateType'), listingRecord?.mandateType, listingRecord?.mandate?.type, 'sole')
+    const mandateType = raw(valueFor('mandateType'), listingRecord?.mandateType, listingRecord?.mandate?.type, sellerOwnershipUnidentified ? '' : 'sole')
     const askingPrice = raw(valueFor('askingPrice', 'price'), marketingDraft.price, listingRecord?.askingPrice)
     const popiConsent = raw(valueFor('popiConsent', 'privacyConsent'), seller.popiConsent, listingRecord?.popiConsent)
     const sections = [
@@ -7672,12 +7677,12 @@ function AgentListingDetail() {
     ]
     const completionRows = sections.flatMap((item) => item.rows)
     const completed = completionRows.filter((row) => isSellerProfileFilled(row.rawValue)).length
-    const completionPercent = completionRows.length ? Math.round((completed / completionRows.length) * 100) : 0
+    const completionPercent = sellerOwnershipUnidentified ? 0 : (completionRows.length ? Math.round((completed / completionRows.length) * 100) : 0)
     const status = completionPercent >= 90 ? 'Complete' : completionPercent >= 60 ? 'In Progress' : 'Needs Attention'
     return {
-      initials: getInitials(sellerName),
-      name: formatSellerProfileValue(sellerName),
-      type: `${formatSellerProfileValue(sellerTypeRaw)} Seller`,
+      initials: getInitials(sellerName || 'Owner'),
+      name: sellerName ? formatSellerProfileValue(sellerName) : 'Owner details not captured',
+      type: sellerTypeRaw ? `${formatSellerProfileValue(sellerTypeRaw)} Seller` : 'Owner type not captured',
       propertyAddress: formatSellerProfileValue(propertyAddress),
       mandateType: formatSellerProfileValue(mandateType),
       askingPrice: formatSellerProfileValue(askingPrice, 'currency'),
@@ -7685,7 +7690,7 @@ function AgentListingDetail() {
       completionPercent,
       sections,
     }
-  }, [listingRecord, mandateWorkspace.expiryDate, marketingDraft.addressLine1, marketingDraft.listingDate, marketingDraft.price, sellerFormData])
+  }, [listingRecord, mandateWorkspace.expiryDate, marketingDraft.addressLine1, marketingDraft.listingDate, marketingDraft.price, sellerFormData, sellerOwnershipUnidentified])
 
   const nextBestAction = useMemo(
     () =>
@@ -10016,7 +10021,7 @@ function AgentListingDetail() {
     }
   }
 
-  const sellerProfileBuilderBranch = sellerProfileBuilderDraft.branch || 'individual'
+  const sellerProfileBuilderBranch = sellerProfileBuilderDraft.branch || ''
   const sellerProfileBuilderShowsCompany = ['company', 'foreign_company'].includes(sellerProfileBuilderBranch)
   const sellerProfileBuilderShowsTrust = ['trust', 'foreign_trust'].includes(sellerProfileBuilderBranch)
   const sellerProfileBuilderShowsForeign = sellerProfileBuilderBranch.startsWith('foreign_')
@@ -10892,8 +10897,10 @@ function AgentListingDetail() {
       <Modal
         open={sellerProfileBuilderOpen}
         onClose={sellerProfileBuilderSaving ? undefined : () => setSellerProfileBuilderOpen(false)}
-        title="Complete Seller Profile"
-        subtitle="Capture the seller ownership model and mandate facts for this listing."
+        title={sellerOwnershipUnidentified ? 'Capture Owner Details' : 'Complete Seller Profile'}
+        subtitle={sellerOwnershipUnidentified
+          ? 'Start by selecting who owns this property. Arch9 will then request only the documents that apply to that owner.'
+          : 'Capture the seller ownership model and mandate facts for this listing.'}
         className="max-w-5xl"
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
@@ -10901,7 +10908,7 @@ function AgentListingDetail() {
               Cancel
             </Button>
             <Button type="submit" form="listing-seller-profile-builder-form" disabled={sellerProfileBuilderSaving}>
-              {sellerProfileBuilderSaving ? 'Saving...' : 'Save Seller Profile'}
+              {sellerProfileBuilderSaving ? 'Saving...' : sellerOwnershipUnidentified ? 'Save Owner Details' : 'Save Seller Profile'}
             </Button>
           </div>
         }
@@ -10909,8 +10916,9 @@ function AgentListingDetail() {
         <form id="listing-seller-profile-builder-form" className="space-y-5" onSubmit={handleSaveSellerProfileBuilder}>
           <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Seller model
-              <Field as="select" value={sellerProfileBuilderDraft.branch || 'individual'} onChange={(event) => updateSellerProfileBuilderDraft('branch', event.target.value)}>
+              Who owns this property?
+              <Field as="select" value={sellerProfileBuilderDraft.branch || ''} onChange={(event) => updateSellerProfileBuilderDraft('branch', event.target.value)}>
+                <option value="">Choose the property owner</option>
                 {LISTING_SELLER_PROFILE_BRANCHES.map((branch) => (
                   <option key={branch.value} value={branch.value}>{branch.label}</option>
                 ))}
@@ -11141,7 +11149,12 @@ function AgentListingDetail() {
             </label>
           </section>
 
-          {sellerProfileRequirementPreview ? (
+          {!sellerProfileBuilderBranch ? (
+            <section className="rounded-[18px] border border-dashed border-[#c9d8e8] bg-[#f8fbff] p-4">
+              <p className="text-sm font-semibold text-[#243d56]">Document requirements are waiting for the owner type</p>
+              <p className="mt-1 text-sm leading-6 text-[#607387]">Choose who owns this property above. We will then show the appropriate FICA and property documents instead of assuming an individual owner.</p>
+            </section>
+          ) : sellerProfileRequirementPreview ? (
             <section data-testid="listing-seller-profile-requirement-preview" className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
@@ -13997,7 +14010,7 @@ function AgentListingDetail() {
             const onboardingItems = [
               {
                 label: 'Seller details',
-                complete: rowHasValue('seller_details', 'fullName') && rowHasValue('seller_details', 'sellerType'),
+                complete: !sellerOwnershipUnidentified && rowHasValue('seller_details', 'fullName') && rowHasValue('seller_details', 'sellerType'),
               },
               {
                 label: 'Contact details',
@@ -14005,7 +14018,7 @@ function AgentListingDetail() {
               },
               {
                 label: 'Property ownership',
-                complete: rowHasValue('property_ownership', 'propertyAddress') || rowHasValue('property_ownership', 'ownershipType'),
+                complete: !sellerOwnershipUnidentified && (rowHasValue('property_ownership', 'propertyAddress') || rowHasValue('property_ownership', 'ownershipType')),
               },
               {
                 label: 'FICA information',
@@ -14118,11 +14131,11 @@ function AgentListingDetail() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
-                      <Button size="sm" onClick={() => openSellerProfileBuilder('Complete the seller profile from the listing workspace.')}>
+                      <Button size="sm" onClick={() => openSellerProfileBuilder(sellerOwnershipUnidentified ? 'Choose who owns this property before collecting documents.' : 'Complete the seller profile from the listing workspace.')}>
                         <UserRound size={15} />
-                        Continue Seller Onboarding
+                        {sellerOwnershipUnidentified ? 'Capture Owner Details' : 'Continue Seller Onboarding'}
                       </Button>
-                      <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
+                      <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerOwnershipUnidentified || sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                         <Link2 size={15} />
                         {sellerPortalActivationSending ? 'Sending...' : 'Send Portal Link'}
                       </Button>
@@ -14350,8 +14363,8 @@ function AgentListingDetail() {
                         </div>
                       ))}
                     </div>
-                    <Button type="button" size="sm" className="mt-6 w-full justify-center" onClick={() => openSellerProfileBuilder('Continue the seller onboarding from the listing workspace.')}>
-                      Continue Onboarding
+                    <Button type="button" size="sm" className="mt-6 w-full justify-center" onClick={() => openSellerProfileBuilder(sellerOwnershipUnidentified ? 'Choose who owns this property before collecting documents.' : 'Continue the seller onboarding from the listing workspace.')}>
+                      {sellerOwnershipUnidentified ? 'Capture Owner Details' : 'Continue Onboarding'}
                     </Button>
                   </article>
                 </section>

@@ -405,7 +405,7 @@ export default function RentalListingCreatePage() {
               <SelectField label="Portal address display" name="exactAddressVisibility" value={form.exactAddressVisibility} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.exactAddressVisibility} />
               <label className="form-field">
                 <span>Bedrooms</span>
-                <input type="number" min="0" {...formField('bedrooms', form.bedrooms, updateForm)} />
+                <input type="number" min="0" step="0.5" {...formField('bedrooms', form.bedrooms, updateForm)} />
               </label>
               <label className="form-field">
                 <span>Bathrooms</span>

@@ -61,6 +61,15 @@ assert.equal(ready.safety.databaseWritesPerformed, false)
 assert.equal(ready.safety.imageDownloadsPerformed, false)
 assert.equal(ready.issues.length, 0)
 
+const optionalFields = createProperty24MigrationDryRun({
+  agents: { text: agentsCsv.replace('0600001123,jon@example.com', ',jon@example.com') },
+  listings: { text: listingsCsv.replace(',82,SquareMetres,5,2,2', ',,SquareMetres,5,2,2') },
+  images: { text: imagesCsv },
+  expectedAgencyId: 31382,
+})
+assert.equal(optionalFields.status, 'READY')
+assert.equal(optionalFields.inventory.listings[0].floorArea, null)
+
 const blankListingReferences = createProperty24MigrationDryRun({
   agents: { text: agentsCsv },
   listings: { text: listingsCsv.replace(/,ARCH9-VET-PHASE2-(?:RENT-NEWLANDS|SALE-SANDTON),/g, ',,') },

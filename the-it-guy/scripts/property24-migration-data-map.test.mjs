@@ -163,6 +163,20 @@ assert.equal(derivedListingReference.listingPlans[0].sourceReference, 'P24-31382
 assert.equal(derivedListingReference.listingPlans[0].privateListing.listingReference, 'P24-31382-100314819')
 assert.equal(derivedListingReference.listingPlans[0].property24Sync.privateListingKey, 'P24-31382-100314819')
 
+const duplicateSourceAndImage = createProperty24MigrationMappingPlan({
+  agents: { text: agentsCsv },
+  listings: { text: listingsCsv.replace('ARCH9-VET-PHASE2-SALE-SANDTON', 'ARCH9-VET-PHASE2-RENT-NEWLANDS') },
+  images: { text: imagesCsv.replace('100314819,Exterior,1,https://images.example.com/rental-1.jpg', '100314819,Exterior duplicate,3,https://images.example.com/rental-2.jpg\n100314819,Exterior,1,https://images.example.com/rental-1.jpg') },
+  expectedAgencyId: 31382,
+  organisationId,
+  environment: 'exdev',
+  arch9Agents,
+  catalog,
+})
+assert.equal(duplicateSourceAndImage.status, 'READY')
+assert.deepEqual(duplicateSourceAndImage.listingPlans.map((plan) => plan.sourceReference), ['P24-31382-100314819', 'P24-31382-100314820'])
+assert.equal(duplicateSourceAndImage.listingPlans[0].mediaPlan.images.length, 2)
+
 assert.equal(ready.fieldCoverage.agents.sourceFieldCount, 15)
 assert.equal(ready.fieldCoverage.images.preservedOnlyCount, 0)
 assert.equal(ready.relationships[0].imageCount, 2)

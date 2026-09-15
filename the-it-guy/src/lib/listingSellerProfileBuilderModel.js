@@ -142,6 +142,33 @@ function getCanonicalFacts(listing = {}) {
       : {}
 }
 
+export function isListingSellerOwnershipUnidentified(listing = {}) {
+  const facts = getCanonicalFacts(listing)
+  const seller = facts.seller && typeof facts.seller === 'object' ? facts.seller : {}
+  const form = getListingSellerFormData(listing)
+  const importSource = normalizeKey(pickFirst(
+    listing?.stockSource,
+    listing?.stock_source,
+    listing?.importSource,
+    listing?.import_source,
+  ))
+  const isProperty24Migration = importSource === 'property24_migration_import' || Boolean(facts?.property24Import)
+  if (!isProperty24Migration) return false
+
+  const ownerModel = pickFirst(
+    form.ownerStructureType,
+    form.owner_structure_type,
+    form.sellerLegalType,
+    form.seller_legal_type,
+    form.ownershipType,
+    form.sellerType,
+    seller.owner_structure_type,
+    seller.legal_type,
+    listing?.sellerType,
+  )
+  return !normalizeBranch(ownerModel, '')
+}
+
 export function resolveListingSellerProfileBranch(form = {}, listing = {}) {
   const facts = getCanonicalFacts(listing)
   const seller = facts.seller && typeof facts.seller === 'object' ? facts.seller : {}
@@ -161,6 +188,7 @@ export function resolveListingSellerProfileBranch(form = {}, listing = {}) {
   if (entity === 'foreign' && structure === 'company') return 'foreign_company'
   if (entity === 'foreign' && structure === 'trust') return 'foreign_trust'
   if (entity === 'foreign') return normalizeBranch(structure, 'foreign_individual')
+  if (isListingSellerOwnershipUnidentified(listing)) return ''
   return normalizeBranch(source, 'individual')
 }
 
@@ -268,6 +296,7 @@ export function updateListingSellerProfileDraftPerson(draft = {}, key = 'multipl
 }
 
 function resolveOwnerModel(branch) {
+  if (!branch) return { ownerEntityType: '', ownerStructureType: '', sellerLegalType: '' }
   if (branch === 'company') return { ownerEntityType: 'company', ownerStructureType: 'company', sellerLegalType: 'company' }
   if (branch === 'trust') return { ownerEntityType: 'trust', ownerStructureType: 'trust', sellerLegalType: 'trust' }
   if (branch === 'foreign_company') return { ownerEntityType: 'foreign', ownerStructureType: 'foreign_company', sellerLegalType: 'foreign_company' }
@@ -279,7 +308,7 @@ function resolveOwnerModel(branch) {
 }
 
 export function buildListingSellerProfileFormPatch(draft = {}) {
-  const branch = normalizeBranch(draft.branch)
+  const branch = normalizeBranch(draft.branch, '')
   const ownerModel = resolveOwnerModel(branch)
   const fullName = [draft.sellerFirstName, draft.sellerSurname].map(normalizeText).filter(Boolean).join(' ')
   const base = {
@@ -368,8 +397,9 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
 }
 
 export function validateListingSellerProfileBuilderDraft(draft = {}) {
-  const branch = normalizeBranch(draft.branch)
+  const branch = normalizeBranch(draft.branch, '')
   const errors = []
+  if (!branch) return ['Choose who owns this property before continuing.']
   const email = normalizeText(draft.email)
   const hasPrimarySeller = normalizeText(draft.sellerFirstName || draft.sellerSurname || draft.email || draft.phone || draft.idNumber)
   if (!hasPrimarySeller && !['company', 'trust', 'foreign_company', 'foreign_trust'].includes(branch)) {
@@ -404,6 +434,36 @@ export function buildListingSellerProfileCapturePayload(draft = {}, listing = {}
 }
 
 export function buildListingSellerProfileRequirementProjection(draft = {}, listing = {}, options = {}) {
+  const branch = normalizeBranch(draft.branch, '')
+  if (!branch) {
+    return {
+      projectionVersion: LISTING_SELLER_REQUIREMENT_PROJECTION_VERSION,
+      formPatch: {},
+      canonicalSellerFacts: {},
+      canonicalPayload: {},
+      projectedListing: listing,
+      requirementProfile: null,
+      generatedRequirements: [],
+      upsertRows: [],
+      markNotApplicableRows: [],
+      rows: [],
+      retiredRows: [],
+      allRequirementRows: [],
+      groups: REQUIREMENT_PREVIEW_GROUPS.map((group) => ({ ...group, rows: [], retiredRows: [] })),
+      summary: {
+        total: 0,
+        required: 0,
+        sellerVisible: 0,
+        internal: 0,
+        archived: 0,
+        retired: 0,
+        sellerBranch: '',
+        sellerType: '',
+        propertyStructureType: '',
+        ownerCount: 0,
+      },
+    }
+  }
   const { formPatch, canonicalSellerFacts, canonicalPayload } = buildListingSellerProfileCapturePayload(draft, listing, options)
   const existingFormData = getListingSellerFormData(listing)
   const nextFormData = {
@@ -511,6 +571,7 @@ export default {
   buildListingSellerProfileFormPatch,
   buildListingSellerProfileRequirementProjection,
   createListingSellerProfileBuilderDraft,
+  isListingSellerOwnershipUnidentified,
   removeListingSellerProfileDraftPerson,
   resolveListingSellerProfileBranch,
   updateListingSellerProfileDraftPerson,

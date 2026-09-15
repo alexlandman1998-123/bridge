@@ -33,4 +33,22 @@ assert.doesNotMatch(
   'Create listing draft writes must not call localStorage.setItem directly.',
 )
 
+assert.match(
+  source,
+  /async function saveCreateListingDraft\(\)[\s\S]*?createPrivateListing\(/,
+  'Saving a new listing draft must create a durable listing record, not only a browser snapshot.',
+)
+
+assert.match(
+  source,
+  /listingStatus:\s*'seller_lead'[\s\S]*?listingVisibility:\s*'internal'/,
+  'Saved drafts must remain internal and unpublished.',
+)
+
+assert.match(
+  source,
+  /navigate\(`\/listings\/\$\{encodeURIComponent\(listingId\)\}\/edit\?step=/,
+  'After saving, the user should be taken to the durable draft so it can be resumed.',
+)
+
 console.log('Create listing draft storage quota guard checks passed.')

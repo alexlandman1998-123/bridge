@@ -22,7 +22,7 @@ await test('AgentListingDetail renders retired requirement lifecycle surfaces', 
   assert.ok(source.includes('listing-seller-profile-retired-requirements-preview'), 'Builder preview should list requirements that will be retired.')
   assert.ok(source.includes('listing-seller-retired-requirements'), 'Documents tab should show retired requirements after save.')
   assert.ok(source.includes('sellerDocumentRequirementModel.retiredRows'), 'Documents model should expose retired requirement rows.')
-  assert.ok(source.includes('documentRequirements: requirementProjection.allRequirementRows.map'), 'Local listing state should preserve active and retired requirement rows.')
+  assert.ok(source.includes('const projectedDocumentRequirements = requirementProjection.allRequirementRows.map'), 'Local listing state should preserve active and retired requirement rows.')
 })
 
 await test('projection preserves stale company requirements as retired when switching to trust', () => {

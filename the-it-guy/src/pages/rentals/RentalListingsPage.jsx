@@ -291,7 +291,7 @@ export default function RentalListingsPage() {
               </p>
             </div>
 
-            <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:grid-cols-3 sm:max-w-[460px]">
+            <div className="grid w-full grid-cols-3 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[460px]">
               {RENTAL_LISTING_STATUS_TABS.map((tab) => {
                 const count = tab.key === 'all' ? summary.total : summary[tab.key] || 0
                 const active = statusTab === tab.key

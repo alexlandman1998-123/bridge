@@ -8,6 +8,7 @@ import {
   buildListingSellerProfileCapturePayload,
   buildListingSellerProfileFormPatch,
   createListingSellerProfileBuilderDraft,
+  isListingSellerOwnershipUnidentified,
   removeListingSellerProfileDraftPerson,
   updateListingSellerProfileDraftPerson,
   validateListingSellerProfileBuilderDraft,
@@ -32,11 +33,12 @@ await test('AgentListingDetail exposes the listing seller profile builder workfl
 
   assert.ok(source.includes("from '../lib/listingSellerProfileBuilderModel'"), 'AgentListingDetail should import the builder model.')
   assert.ok(source.includes('sellerProfileBuilderOpen'), 'AgentListingDetail should keep builder modal state.')
-  assert.ok(source.includes('title="Complete Seller Profile"'), 'The seller profile builder modal should be rendered.')
+  assert.ok(source.includes("'Capture Owner Details'"), 'The seller profile builder should prompt to capture an unknown owner.')
+  assert.ok(source.includes('Choose the property owner'), 'The seller profile builder should require an owner type selection.')
   assert.ok(source.includes('listing-seller-profile-builder-form'), 'The builder modal should submit through a dedicated form.')
   assert.ok(source.includes("requirementSyncReason: 'listing_seller_profile_capture'"), 'Saving should trigger seller requirement recalculation.')
   assert.ok(source.includes("key === 'complete_seller_facts'"), 'The follow-up action should route into the builder.')
-  assert.ok(source.includes('listing-seller-profile-builder-prompt'), 'Low-completion seller profiles should show a builder prompt.')
+  assert.ok(source.includes('Capture Owner Details'), 'Unidentified imported listings should show an owner-capture prompt.')
 })
 
 await test('inline seller detail edits refresh the seller requirement model for bulk uploaded listings', async () => {
@@ -104,6 +106,20 @@ await test('seeds an address-only bulk listing into an editable seller profile d
   assert.equal(draft.propertyAddress, '10 Example Road')
   assert.equal(draft.askingPrice, '2500000')
   assert.equal(draft.mandateType, 'sole')
+})
+
+await test('does not invent an individual owner for a Property24 migration import', () => {
+  const listing = {
+    id: 'property24-import-1',
+    stockSource: 'property24_migration_import',
+    addressLine1: '10 Imported Road',
+    sellerCanonicalFacts: { property24Import: { reference: '123' } },
+  }
+  const draft = createListingSellerProfileBuilderDraft(listing)
+
+  assert.equal(isListingSellerOwnershipUnidentified(listing), true)
+  assert.equal(draft.branch, '')
+  assert.deepEqual(validateListingSellerProfileBuilderDraft(draft), ['Choose who owns this property before continuing.'])
 })
 
 await test('builds company seller form data and canonical facts for document routing', () => {

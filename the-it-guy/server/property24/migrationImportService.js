@@ -319,10 +319,11 @@ function validateNonNegativeNumber(issues, role, row, field, value, { required =
   return Number(value)
 }
 
-function recordDuplicate(issues, role, row, field, value, seen, code) {
+function recordDuplicate(issues, role, row, field, value, seen, code, severity = 'error') {
   if (!value) return
   if (seen.has(value)) {
     issues.push(createIssue({
+      severity,
       code,
       role,
       rowNumber: row.__rowNumber,
@@ -350,7 +351,8 @@ function validateAgents(parsed) {
     const status = requireRowValue(issues, 'agents', row, 'Status')
     const sourceReference = requireRowValue(issues, 'agents', row, 'SourceReference')
     const countryIdValue = requireRowValue(issues, 'agents', row, 'CountryId')
-    requireRowValue(issues, 'agents', row, 'MobileNumber')
+    // Property24 permits agency profiles without a mobile number. The
+    // Property24 agent ID remains the migration identity in that case.
     const email = requireRowValue(issues, 'agents', row, 'EmailAddress')
     const published = requireRowValue(issues, 'agents', row, 'Published')
     const profilePictureUrl = fileValue(row, 'Property24ProfilePictureURL')
@@ -364,7 +366,18 @@ function validateAgents(parsed) {
     if (email && !isEmail(email)) {
       issues.push(createIssue({ code: 'invalid_email', role: 'agents', rowNumber: row.__rowNumber, field: 'EmailAddress', message: 'EmailAddress is invalid.' }))
     }
-    if (email) recordDuplicate(issues, 'agents', row, 'EmailAddress', email.toLowerCase(), emails, 'duplicate_agent_email')
+    if (email && emails.has(email.toLowerCase())) {
+      issues.push(createIssue({
+        severity: 'warning',
+        code: 'duplicate_agent_email',
+        role: 'agents',
+        rowNumber: row.__rowNumber,
+        field: 'EmailAddress',
+        message: 'EmailAddress is shared by more than one exported agent; map these agents by their Property24 agent IDs.',
+      }))
+    } else if (email) {
+      emails.add(email.toLowerCase())
+    }
     if (published && !isBooleanValue(published)) {
       issues.push(createIssue({ code: 'invalid_boolean', role: 'agents', rowNumber: row.__rowNumber, field: 'Published', message: 'Published must be a boolean or 0/1 value.' }))
     }
@@ -405,10 +418,12 @@ function validateListings(parsed) {
     const priceValue = requireRowValue(issues, 'listings', row, 'Price')
     requireRowValue(issues, 'listings', row, 'ListingVisibility')
     requireRowValue(issues, 'listings', row, 'Description')
-    requireRowValue(issues, 'listings', row, 'DescriptionHeader')
+    // Older or closed Property24 listings can legitimately have no display
+    // heading. The mapping layer provides a neutral generated title while the
+    // original blank source field remains preserved.
     const suburbIdValue = requireRowValue(issues, 'listings', row, 'SuburbId')
     const sourceReferenceValue = fileValue(row, 'SourceReference')
-    const floorAreaValue = requireRowValue(issues, 'listings', row, 'FloorArea')
+    const floorAreaValue = fileValue(row, 'FloorArea')
     requireRowValue(issues, 'listings', row, 'FloorAreaAreaUnit')
     const propertyTypeIdValue = requireRowValue(issues, 'listings', row, 'PropertyTypeId')
     const agencyId = validatePositiveInteger(issues, 'listings', row, 'AgencyId', agencyIdValue)
@@ -422,12 +437,12 @@ function validateListings(parsed) {
     const suburbId = validatePositiveInteger(issues, 'listings', row, 'SuburbId', suburbIdValue)
     const propertyTypeId = validatePositiveInteger(issues, 'listings', row, 'PropertyTypeId', propertyTypeIdValue)
     const price = validateNonNegativeNumber(issues, 'listings', row, 'Price', priceValue, { required: true })
-    const floorArea = validateNonNegativeNumber(issues, 'listings', row, 'FloorArea', floorAreaValue, { required: true })
+    const floorArea = validateNonNegativeNumber(issues, 'listings', row, 'FloorArea', floorAreaValue)
     const contacts = parseProperty24ContactAgentIds(contactAgentIdsValue)
 
     if (agencyId) agencyIds.add(agencyId)
     if (listingNumber) recordDuplicate(issues, 'listings', row, 'ListingNumber', listingNumber, listingNumbers, 'duplicate_listing_number')
-    recordDuplicate(issues, 'listings', row, 'SourceReference', sourceReference.toLowerCase(), sourceReferences, 'duplicate_listing_source_reference')
+    recordDuplicate(issues, 'listings', row, 'SourceReference', sourceReference.toLowerCase(), sourceReferences, 'duplicate_listing_source_reference', 'warning')
     if (contactAgentIdsValue && !contacts.valid) {
       issues.push(createIssue({ code: 'invalid_contact_agent_ids', role: 'listings', rowNumber: row.__rowNumber, field: 'ContactAgentIds', message: 'ContactAgentIds must contain one or more positive integer IDs separated by commas, semicolons, or pipes.' }))
     }
@@ -496,7 +511,7 @@ function validateImages(parsed) {
       recordDuplicate(issues, 'images', row, 'Ordinal', `${listingNumber}:${ordinal}`, identityKeys, 'duplicate_image_ordinal')
     }
     if (listingNumber && imageUrl) {
-      recordDuplicate(issues, 'images', row, 'Prop24ImageUrl', `${listingNumber}:${imageUrl}`, urlKeys, 'duplicate_listing_image_url')
+      recordDuplicate(issues, 'images', row, 'Prop24ImageUrl', `${listingNumber}:${imageUrl}`, urlKeys, 'duplicate_listing_image_url', 'warning')
     }
 
     records.push({

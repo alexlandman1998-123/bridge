@@ -3,10 +3,7 @@ export const RENTAL_LISTING_INDEX_VERSION = 'arch9_rental_listing_index_v1'
 export const RENTAL_LISTING_STATUS_TABS = Object.freeze([
   { key: 'all', label: 'All' },
   { key: 'draft', label: 'Drafts' },
-  { key: 'mandate', label: 'Mandate' },
-  { key: 'ready', label: 'Ready' },
   { key: 'published', label: 'Published' },
-  { key: 'applications', label: 'Applications' },
 ])
 
 const MANDATE_READY_STATUSES = new Set(['signed', 'signed_uploaded'])

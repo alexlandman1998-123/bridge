@@ -37,9 +37,12 @@ export function parseProperty24MigrationApplyArgs(argv = []) {
     concurrency: 4,
     attempts: 3,
     environment: 'exdev',
+    credentialsFile: '',
+    allowPartialImages: false,
   }
   for (const arg of argv) {
     if (arg === '--apply') options.apply = true
+    else if (arg === '--allow-partial-images') options.allowPartialImages = true
     else if (arg.startsWith('--mapping=')) options.mapping = normalize(arg.slice('--mapping='.length))
     else if (arg.startsWith('--image-output=')) options.imageOutput = normalize(arg.slice('--image-output='.length))
     else if (arg.startsWith('--output=')) options.output = normalize(arg.slice('--output='.length))
@@ -47,6 +50,7 @@ export function parseProperty24MigrationApplyArgs(argv = []) {
     else if (arg.startsWith('--concurrency=')) options.concurrency = parsePositiveInteger(arg.slice('--concurrency='.length), '--concurrency')
     else if (arg.startsWith('--attempts=')) options.attempts = parsePositiveInteger(arg.slice('--attempts='.length), '--attempts')
     else if (arg.startsWith('--environment=')) options.environment = normalize(arg.slice('--environment='.length)).toLowerCase()
+    else if (arg.startsWith('--credentials-file=')) options.credentialsFile = normalize(arg.slice('--credentials-file='.length))
     else throw new Error(`Unknown option: ${arg}`)
   }
   if (!options.mapping || !options.imageOutput || !options.output) throw new Error('Mapping, image output and evidence output paths are required.')
@@ -82,12 +86,16 @@ function parseEnvFile(filePath) {
   )
 }
 
-function loadConfig(environment = 'exdev') {
+function loadConfig(environment = 'exdev', credentialsFile = '') {
   const files = environment === 'production'
     ? ['.env', '.env.local', '.env.production.local', '.env.property24.production.local']
     : ['.env', '.env.local', '.env.property24.local']
+  const credentialOverrides = credentialsFile ? parseEnvFile(absolute(credentialsFile)) : {}
   const fromFiles = files.reduce((merged, file) => ({ ...merged, ...parseEnvFile(path.join(appRoot, file)) }), {})
-  const env = { ...fromFiles, ...process.env }
+  // The explicit credentials file is intentionally last. This lets a
+  // one-agency migration use its own account without replacing the default
+  // runtime credentials for another agency.
+  const env = { ...fromFiles, ...process.env, ...credentialOverrides }
   const config = {
     supabaseUrl: normalize(env.SUPABASE_URL || env.VITE_SUPABASE_URL),
     serviceRoleKey: normalize(env.SUPABASE_SERVICE_ROLE_KEY),
@@ -132,7 +140,7 @@ function createClients(config) {
 export async function runProperty24MigrationApplyReconcile(argv = process.argv.slice(2), dependencies = {}) {
   const options = parseProperty24MigrationApplyArgs(argv)
   const mappingPlan = readJson(options.mapping)
-  const config = dependencies.config || loadConfig(options.environment)
+  const config = dependencies.config || loadConfig(options.environment, options.credentialsFile)
   const clients = dependencies.clients || createClients(config)
   const repository = dependencies.repository || createSupabaseProperty24MigrationRepository(clients.supabase)
   const generatedAt = dependencies.generatedAt || new Date().toISOString()
@@ -165,24 +173,26 @@ export async function runProperty24MigrationApplyReconcile(argv = process.argv.s
     checkpointQueue = checkpointQueue.then(() => writeJsonAtomic(options.imageOutput, manifest))
     return checkpointQueue
   }
-  const imageManifest = await importProperty24MigrationImages({
-    mappingPlan,
-    storageClient: clients.supabase,
-    existingManifest,
-    apply: true,
-    bucket: PROPERTY24_MIGRATION_IMAGE_BUCKET,
-    listingIds: preflight.listingIds,
-    concurrency: options.concurrency,
-    attempts: options.attempts,
-    fetchImpl: dependencies.fetchImpl || globalThis.fetch,
-    dnsLookup: dependencies.dnsLookup,
-    imageInspector: dependencies.imageInspector,
-    onProgress: checkpoint,
-    generatedAt,
-  })
+  const imageManifest = options.allowPartialImages && existingManifest.status === 'PARTIAL'
+    ? existingManifest
+    : await importProperty24MigrationImages({
+      mappingPlan,
+      storageClient: clients.supabase,
+      existingManifest,
+      apply: true,
+      bucket: PROPERTY24_MIGRATION_IMAGE_BUCKET,
+      listingIds: preflight.listingIds,
+      concurrency: options.concurrency,
+      attempts: options.attempts,
+      fetchImpl: dependencies.fetchImpl || globalThis.fetch,
+      dnsLookup: dependencies.dnsLookup,
+      imageInspector: dependencies.imageInspector,
+      onProgress: checkpoint,
+      generatedAt,
+    })
   await checkpointQueue
   await writeJsonAtomic(options.imageOutput, imageManifest)
-  if (imageManifest.status !== 'COMPLETE') {
+  if (imageManifest.status !== 'COMPLETE' && !options.allowPartialImages) {
     const report = {
       ...preflight,
       status: 'BLOCKED',
@@ -203,6 +213,7 @@ export async function runProperty24MigrationApplyReconcile(argv = process.argv.s
     mappingPlan,
     imageManifest,
     apply: true,
+    allowPartialImages: options.allowPartialImages,
     fromDate: options.fromDate,
     generatedAt,
     idFactory: dependencies.idFactory,

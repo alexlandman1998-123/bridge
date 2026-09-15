@@ -72,6 +72,7 @@ import {
   getRequiredSellerDocuments,
   syncSellerDocumentRequirements as syncLocalSellerDocumentRequirements,
 } from '../lib/sellerDocumentRequirementEngine'
+import { isListingSellerOwnershipUnidentified } from '../lib/listingSellerProfileBuilderModel'
 import {
   getPropertyCategoryLabel,
   getPropertyStructureTypeLabel,
@@ -83,6 +84,7 @@ import {
 } from '../lib/propertyTaxonomy'
 import { buildFinalListingModuleOverview } from '../services/listings/finalListingModuleModel'
 import { setWebsiteListingPublication } from '../services/websiteListingPublicationService'
+import { getSyndicationChannelAvailability, UNAVAILABLE_SYNDICATION_CHANNELS } from '../services/syndicationChannelAvailabilityService'
 
 const LISTINGS_VIEW_STORAGE_KEY = 'itg:agent-listings:view-mode:v1'
 const CREATE_LISTING_DRAFT_STORAGE_KEY = 'itg:agent-listings:create-draft:v1'
@@ -982,7 +984,7 @@ function buildQuickListingPublicationFeatures(form = {}, keySellingPoints = []) 
   return Array.from(features)
 }
 
-function buildCreateListingPortalStatuses(form = {}) {
+function buildCreateListingPortalStatuses(form = {}, availability = UNAVAILABLE_SYNDICATION_CHANNELS, availabilityLoading = false) {
   const hasDescription = Boolean(normalizeText(form.listingDescription || form.notes))
   const hasImages = Array.isArray(form.listingImages) && form.listingImages.length > 0
   const property24Missing = [
@@ -1000,10 +1002,10 @@ function buildCreateListingPortalStatuses(form = {}) {
   ].filter(Boolean)
 
   return [
-    { key: 'property24', label: 'Property24', enabled: form.selectedSyndicationChannels?.includes('property24'), missing: property24Missing },
-    { key: 'private_property', label: 'Private Property', enabled: form.selectedSyndicationChannels?.includes('private_property'), missing: privatePropertyMissing },
-    { key: 'agency_website', label: 'Agency Website', enabled: form.selectedSyndicationChannels?.includes('agency_website'), missing: hasDescription ? [] : ['Description'] },
-    { key: 'arch9_seller_experience', label: 'Arch9 Seller Experience', enabled: true, missing: [] },
+    { key: 'property24', label: 'Property24', enabled: form.selectedSyndicationChannels?.includes('property24'), missing: property24Missing, availability: availability.property24, availabilityLoading },
+    { key: 'private_property', label: 'Private Property', enabled: form.selectedSyndicationChannels?.includes('private_property'), missing: privatePropertyMissing, availability: availability.private_property, availabilityLoading },
+    { key: 'agency_website', label: 'Agency Website', enabled: form.selectedSyndicationChannels?.includes('agency_website'), missing: hasDescription ? [] : ['Description'], availability: availability.agency_website, availabilityLoading },
+    { key: 'arch9_seller_experience', label: 'Arch9 Platform', enabled: true, missing: [], internalOnly: true, availability: { available: true }, availabilityLoading: false },
   ]
 }
 
@@ -1977,6 +1979,35 @@ function isDeletedListingRecord(row = {}) {
   )
 }
 
+function isProperty24MigrationImportRecord(row = {}) {
+  const facts = row?.sellerCanonicalFacts || row?.seller_canonical_facts_json || {}
+  const source = String(row?.stockSource || row?.stock_source || row?.listingSource || row?.listing_source || '').trim().toLowerCase()
+  return source === 'property24_migration_import' || Boolean(facts?.property24Import)
+}
+
+function isArchivedProperty24MigrationImport(row = {}) {
+  if (!isProperty24MigrationImportRecord(row)) return false
+  const status = String(row?.listingStatus || row?.listing_status || row?.status || '').trim().toLowerCase()
+  const visibility = String(row?.listingVisibility || row?.listing_visibility || '').trim().toLowerCase()
+  return ['sold', 'withdrawn', 'archived'].includes(status) || ['archived', 'deleted'].includes(visibility)
+}
+
+function shouldHideListingRecord(row = {}) {
+  return isDeletedListingRecord(row) && !isArchivedProperty24MigrationImport(row)
+}
+
+function getListingCollectionView(card = {}) {
+  const listing = card?.listingRecord || card
+  if (isArchivedProperty24MigrationImport(listing)) return 'archived_imports'
+  if (
+    card?.listingStatusKey === 'listing_review' ||
+    (isProperty24MigrationImportRecord(listing) && (!card?.assignedAgent?.isAssigned || isListingSellerOwnershipUnidentified(listing)))
+  ) {
+    return 'review'
+  }
+  return 'current'
+}
+
 function getListingStatusLabel(key) {
   const labels = {
     seller_lead: 'Seller Lead',
@@ -2738,14 +2769,14 @@ function mergePrivateListingRows(dbRows = [], runtimeRows = [], deletedIds = new
   const map = new Map()
   const seenKeys = new Set()
   for (const row of Array.isArray(dbRows) ? dbRows : []) {
-    if (rowMatchesDeletedListing(row, deletedIds) || isDeletedListingRecord(row)) continue
+    if (rowMatchesDeletedListing(row, deletedIds) || shouldHideListingRecord(row)) continue
     const keys = getListingIdentityKeys(row)
     if (!keys.length || keys.some((key) => seenKeys.has(key))) continue
     keys.forEach((key) => seenKeys.add(key))
     map.set(keys[0], row)
   }
   for (const row of Array.isArray(runtimeRows) ? runtimeRows : []) {
-    if (rowMatchesDeletedListing(row, deletedIds) || isDeletedListingRecord(row)) continue
+    if (rowMatchesDeletedListing(row, deletedIds) || shouldHideListingRecord(row)) continue
     const keys = getListingIdentityKeys(row)
     if (!keys.length || keys.some((key) => seenKeys.has(key))) continue
     keys.forEach((key) => seenKeys.add(key))
@@ -3297,21 +3328,9 @@ function extractBranchOptions(settingsContext = null) {
     .filter((branch) => branch.id || branch.name)
 }
 
-function getTransactionAddress(row = {}) {
-  return normalizeText(
-    row.propertyAddress ||
-      row.property_address ||
-      row.property_address_line_1 ||
-      row.propertyAddressLine1 ||
-      row.property_description ||
-      row.unit?.propertyAddress ||
-      row.unit?.address ||
-      row.listing?.propertyAddress,
-  )
-}
-
-function findQuickListingDuplicates({ form = {}, listings = [], transactions = [] } = {}) {
+function findQuickListingDuplicates({ form = {}, listings = [] } = {}) {
   const targetAddress = normalizeComparable(form.propertyAddress)
+  const targetPlaceId = normalizeText(form.googlePlaceId || form.propertyAddressValue?.googlePlaceId || form.propertyAddressValue?.placeId).toLowerCase()
   const targetSellerEmail = normalizeContact(form.sellerEmail)
   const targetSellerPhone = normalizeContact(form.sellerPhone)
   const matches = []
@@ -3322,10 +3341,16 @@ function findQuickListingDuplicates({ form = {}, listings = [], transactions = [
     if (!id || seen.has(`listing:${id}`) || isDeletedListingRecord(listing)) return
     const seller = getListingSeller(listing)
     const addressMatch = targetAddress && normalizeComparable(getListingAddress(listing)) === targetAddress
+    const listingPlaceId = normalizeText(listing.googlePlaceId || listing.google_place_id || listing.placeId || listing.place_id).toLowerCase()
+    const placeMatch = targetPlaceId && listingPlaceId === targetPlaceId
     const emailMatch = targetSellerEmail && normalizeContact(seller.email) === targetSellerEmail
     const phoneMatch = targetSellerPhone && normalizeContact(seller.phone) === targetSellerPhone
     const status = getPrivateListingStatus(listing)
-    if (addressMatch || emailMatch || phoneMatch) {
+    // A seller can own multiple properties, and addresses are often incomplete
+    // while an agent is capturing a listing. Only stop creation on a stable
+    // property identifier, or an exact address plus matching seller contact.
+    const strongAddressAndSellerMatch = addressMatch && (emailMatch || phoneMatch)
+    if (placeMatch || strongAddressAndSellerMatch) {
       seen.add(`listing:${id}`)
       matches.push({
         id,
@@ -3333,30 +3358,14 @@ function findQuickListingDuplicates({ form = {}, listings = [], transactions = [
         title: listing.listingTitle || listing.title || getListingAddress(listing) || 'Existing listing',
         label: listing.listingTitle || listing.title || getListingAddress(listing) || 'Existing listing',
         reason: [
-          addressMatch ? ['active', 'mandate_signed', 'under_offer', 'listing_review', 'mandate_ready'].includes(status) ? 'Existing listing on same property' : 'Same property address' : '',
+          placeMatch ? ['active', 'mandate_signed', 'under_offer', 'listing_review', 'mandate_ready'].includes(status) ? 'Existing listing on the same property' : 'Same property identifier' : '',
+          strongAddressAndSellerMatch ? 'Same address and seller contact' : '',
           emailMatch ? 'Seller email matches' : '',
           phoneMatch ? 'Seller phone matches' : '',
         ].filter(Boolean).join(' · '),
         path: `/agent/listings/${encodeURIComponent(id)}`,
       })
     }
-  })
-
-  ;(Array.isArray(transactions) ? transactions : []).forEach((transaction) => {
-    const address = getTransactionAddress(transaction)
-    const addressMatch = targetAddress && normalizeComparable(address) === targetAddress
-    if (!addressMatch) return
-    const id = normalizeText(transaction.id || transaction.transactionId || transaction.transaction_id || address)
-    if (!id || seen.has(`transaction:${id}`)) return
-    seen.add(`transaction:${id}`)
-    matches.push({
-      id,
-      type: 'transaction',
-      title: transaction.transactionName || transaction.name || address || 'Existing transaction',
-      label: transaction.transactionName || transaction.name || address || 'Existing transaction',
-      reason: 'Existing transaction on same property',
-      path: id ? `/transactions/${encodeURIComponent(id)}` : '/transactions',
-    })
   })
 
   return matches
@@ -3605,6 +3614,8 @@ function AgentListings({ initialTab = null } = {}) {
     return currentIds
   }, [getCurrentDeletedListingIds])
   const [organisationId, setOrganisationId] = useState('')
+  const [syndicationAvailability, setSyndicationAvailability] = useState(UNAVAILABLE_SYNDICATION_CHANNELS)
+  const [syndicationAvailabilityLoading, setSyndicationAvailabilityLoading] = useState(true)
   const [deletingListingId, setDeletingListingId] = useState('')
   const [listingPendingDeletion, setListingPendingDeletion] = useState(null)
   const [openListingMenuId, setOpenListingMenuId] = useState('')
@@ -3617,6 +3628,7 @@ function AgentListings({ initialTab = null } = {}) {
     search: '',
     sortBy: 'newest',
   })
+  const [listingCollectionView, setListingCollectionView] = useState('current')
   const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
   const [quickAddDuplicateAction, setQuickAddDuplicateAction] = useState('')
@@ -3735,7 +3747,10 @@ function AgentListings({ initialTab = null } = {}) {
             }
           : null
         if (listingScope) {
-          dbPrivateListings = await getAgentPrivateListingSummaries(profile.id, listingScope)
+          dbPrivateListings = await getAgentPrivateListingSummaries(profile.id, {
+            ...listingScope,
+            includeArchivedImports: true,
+          })
         }
 
         // Publish the lightweight listing rows first. Detailed compliance,
@@ -3779,6 +3794,7 @@ function AgentListings({ initialTab = null } = {}) {
               ...hydratedListingScope,
               assignedAgentEmail: profile?.email || '',
               includeMedia: true,
+              includeArchivedImports: true,
             }).catch((listingError) => {
               console.warn('[LISTINGS] Detailed listing hydration failed; keeping summary rows.', listingError)
               return dbPrivateListings
@@ -3832,6 +3848,28 @@ function AgentListings({ initialTab = null } = {}) {
       cancelled = true
     }
   }, [loadData])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!organisationId) {
+      setSyndicationAvailability(UNAVAILABLE_SYNDICATION_CHANNELS)
+      setSyndicationAvailabilityLoading(false)
+      return undefined
+    }
+    setSyndicationAvailabilityLoading(true)
+    getSyndicationChannelAvailability(organisationId)
+      .then((availability) => {
+        if (!cancelled) setSyndicationAvailability(availability)
+      })
+      .catch((availabilityError) => {
+        console.warn('[Listings] syndication availability check failed', availabilityError)
+        if (!cancelled) setSyndicationAvailability(UNAVAILABLE_SYNDICATION_CHANNELS)
+      })
+      .finally(() => {
+        if (!cancelled) setSyndicationAvailabilityLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [organisationId])
 
   const isPrimaryListingsRoute = role === 'agent' && !isListingEditorWorkspace && location.pathname === '/listings'
 
@@ -4185,7 +4223,10 @@ function AgentListings({ initialTab = null } = {}) {
 
   const createListingStepIndex = Math.max(0, listingEditorSteps.findIndex((step) => step.key === createListingStep))
   const sellerRequirementSummary = useMemo(() => buildCreateListingRequirementSummary(form), [form])
-  const createListingPortalStatuses = useMemo(() => buildCreateListingPortalStatuses(form), [form])
+  const createListingPortalStatuses = useMemo(
+    () => buildCreateListingPortalStatuses(form, syndicationAvailability, syndicationAvailabilityLoading),
+    [form, syndicationAvailability, syndicationAvailabilityLoading],
+  )
   const selectedCreateListingPortalStatuses = createListingPortalStatuses.filter((portal) => portal.enabled)
   const createListingRequiredNow = useMemo(() => {
     const required = []
@@ -4352,11 +4393,109 @@ function AgentListings({ initialTab = null } = {}) {
     })
   }
 
-  function saveCreateListingDraftLocally() {
-    const saved = saveCreateListingDraftToStorage(listingEditorDraftStorageKey, form)
-    setWorkflowMessage(saved
-      ? 'Draft saved. You can continue this listing workflow later.'
-      : 'Draft text saved where possible. Uploaded image previews are too large for browser draft storage, so add photos again before publishing.')
+  async function saveCreateListingDraft() {
+    // Retain a browser copy while the request is in flight. This is a safety
+    // net only; a saved draft must be a real listing record so it appears in
+    // Listings and can be resumed on another device.
+    const savedLocally = saveCreateListingDraftToStorage(listingEditorDraftStorageKey, form)
+    const listingOrganisationId = selectedWorkspaceOrganisationId || organisationId
+
+    if (!isSupabaseConfigured || MOCK_DATA_ENABLED || !listingOrganisationId) {
+      setWorkflowMessage(savedLocally
+        ? 'Draft saved in this browser. Connect an organisation workspace to save it to Listings.'
+        : 'Draft text saved where possible. Uploaded image previews are too large for browser draft storage, so add photos again before publishing.')
+      return
+    }
+
+    const propertyAddressValue = buildListingAddressValueFromForm(form)
+    const propertyAddress = normalizeText(form.propertyAddress)
+    const formattedAddress = normalizeText(propertyAddressValue?.formattedAddress || propertyAddress)
+    const streetAddress = normalizeText(propertyAddressValue?.streetAddress || propertyAddress)
+    const sellerName = getQuickAddSellerDisplayName(form)
+    const sellerEmail = normalizeText(form.sellerEmail)
+    const sellerPhone = normalizeText(form.sellerPhone)
+    const listingTitle = normalizeText(form.listingTitle) || [normalizeText(form.propertyType), normalizeText(form.suburb)].filter(Boolean).join(' - ') || propertyAddress || 'Untitled listing draft'
+    const draftFacts = {
+      ...buildListingPropertyCanonicalFacts(form),
+      sellerName,
+      name: sellerName,
+      fullName: sellerName,
+      email: sellerEmail,
+      sellerEmail,
+      phone: sellerPhone,
+      mobile: sellerPhone,
+    }
+
+    setIsListingSaving(true)
+    setError('')
+    try {
+      const created = await createPrivateListing({
+        organisationId: listingOrganisationId,
+        developmentId: form.developmentId || linkedDevelopmentId || null,
+        unitId: form.unitId || linkedUnitId || null,
+        branchId: form.branchId || currentBranchId || null,
+        assignedAgentId: form.assignedAgentId || profile?.id || null,
+        assignedAgentEmail: form.assignedAgentEmail || profile?.email || null,
+        listingStatus: 'seller_lead',
+        sellerOnboardingStatus: 'not_started',
+        mandateStatus: 'not_started',
+        listingVisibility: 'internal',
+        title: listingTitle,
+        propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
+        listingSource: form.developmentId || linkedDevelopmentId ? 'development' : 'private_listing',
+        propertyStructureType: normalizePropertyStructureType(form.propertyStructureType, { fallback: 'other' }),
+        propertyType: form.propertyType,
+        listingCategory: form.listingType === 'rental' ? 'rental' : 'private_sale',
+        askingPrice: Number(form.listingPrice || form.estimatedAskingPrice || 0) || null,
+        estimatedValue: Number(form.listingPrice || form.estimatedAskingPrice || 0) || null,
+        addressLine1: propertyAddress,
+        addressLine2: buildSectionalTitleAddressLine(form),
+        formattedAddress,
+        streetNumber: normalizeText(form.streetNumber),
+        streetName: normalizeText(form.streetName || form.route),
+        streetAddress,
+        suburb: normalizeText(form.suburb),
+        city: normalizeText(form.city),
+        province: normalizeText(form.province),
+        country: normalizeText(propertyAddressValue?.country || form.country) || 'South Africa',
+        postalCode: normalizeText(propertyAddressValue?.postalCode || form.postalCode),
+        latitude: propertyAddressValue?.latitude ?? form.latitude ?? null,
+        longitude: propertyAddressValue?.longitude ?? form.longitude ?? null,
+        googlePlaceId: normalizeText(propertyAddressValue?.googlePlaceId || propertyAddressValue?.placeId || form.googlePlaceId),
+        description: normalizeText(form.listingDescription || form.notes),
+        listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+        internalListingNotes: normalizeText(form.notes),
+        sellerType: form.sellerType,
+        mandateType: normalizeText(form.mandateType) || 'sole',
+        sellerCanonicalFacts: draftFacts,
+        sellerCanonicalFactReadiness: {
+          sellerName: Boolean(sellerName),
+          sellerEmail: Boolean(sellerEmail),
+          sellerPhone: Boolean(sellerPhone),
+        },
+        sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
+        source: 'listing_draft',
+        origin: 'listing_draft',
+      }, { includeRequirementsAndDocuments: false, syncRequirements: false })
+      const listingId = normalizeText(created?.listing?.id)
+      if (!listingId) throw new Error('Unable to save this listing draft.')
+
+      // Move the full in-progress form to the record-specific key before
+      // redirecting. The database is the durable source; this preserves
+      // uncommitted UI-only choices during the current browser session.
+      saveCreateListingDraftToStorage(`${CREATE_LISTING_DRAFT_STORAGE_KEY}:edit:${listingId}`, form)
+      if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
+      setPrivateListings((previous) => mergePrivateListingRows([created.listing], previous, deletedListingIds))
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      navigate(`/listings/${encodeURIComponent(listingId)}/edit?step=${encodeURIComponent(createListingStep)}`, {
+        replace: true,
+        state: { message: 'Draft saved to Listings.' },
+      })
+    } catch (draftError) {
+      setError(draftError?.message || 'Unable to save this draft to Listings. Your browser copy has been kept so you can retry.')
+    } finally {
+      setIsListingSaving(false)
+    }
   }
 
   function buildContextualInitialListingLeadForm(previous = {}) {
@@ -4860,9 +4999,7 @@ function AgentListings({ initialTab = null } = {}) {
   }
 
   async function uploadQuickAddDocumentsForListing(listingId, documentUploadQueue) {
-    const uploadedDocuments = []
-    const failedDocumentUploads = []
-    for (const documentUpload of documentUploadQueue) {
+    const results = await Promise.all(documentUploadQueue.map(async (documentUpload) => {
       let failure = null
       const uploadedDocument = await uploadPrivateListingDocument(listingId, documentUpload.file, {
         documentType: documentUpload.documentType,
@@ -4876,7 +5013,7 @@ function AgentListings({ initialTab = null } = {}) {
         return null
       })
       if (uploadedDocument) {
-        uploadedDocuments.push({
+        return { uploadedDocument: {
           kind: documentUpload.kind,
           id: uploadedDocument.id,
           category: uploadedDocument.category || documentUpload.documentCategory,
@@ -4884,9 +5021,9 @@ function AgentListings({ initialTab = null } = {}) {
           type: uploadedDocument.document_type || documentUpload.documentType,
           status: uploadedDocument.status || 'uploaded',
           visibility: 'internal',
-        })
-      } else {
-        failedDocumentUploads.push({
+        } }
+      }
+      return { failedDocument: {
           kind: documentUpload.kind,
           category: documentUpload.documentCategory,
           name: documentUpload.documentName,
@@ -4895,10 +5032,12 @@ function AgentListings({ initialTab = null } = {}) {
           documentCategory: documentUpload.documentCategory,
           documentName: documentUpload.documentName,
           message: describeQuickAddDocumentUploadFailure(failure),
-        })
-      }
+        } }
+    }))
+    return {
+      uploadedDocuments: results.flatMap((result) => result.uploadedDocument ? [result.uploadedDocument] : []),
+      failedDocumentUploads: results.flatMap((result) => result.failedDocument ? [result.failedDocument] : []),
     }
-    return { uploadedDocuments, failedDocumentUploads }
   }
 
   async function retryQuickAddDocumentUpload(failure) {
@@ -5791,22 +5930,38 @@ function AgentListings({ initialTab = null } = {}) {
           sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
           completeness,
           canonicalStructure: CANONICAL_LISTING_STRUCTURE,
+        }, {
+          // Requirements are created once below alongside the other post-create
+          // work. Avoid hydrating and synchronising them twice before showing
+          // the user that the listing exists.
+          includeRequirementsAndDocuments: false,
+          syncRequirements: false,
         })
         if (!created?.listing?.id) {
           throw new Error('Unable to create the quick listing record.')
         }
         createdListingId = created.listing.id
         createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
-        // The listing exists as soon as this point is reached. Distribution,
-        // seller-form persistence and document uploads touch independent
-        // services, so waiting for each one in sequence makes Quick Add feel
-        // much slower than the actual record creation.
-        const [distributionResult, _sellerFormResult, documentUploadResult] = await Promise.all([
-          syncQuickListingDistributionData(created.listing.id, form, {
-            title: listingTitle,
-            address: formattedAddress || propertyAddress,
-            listingStatus: resolvedListingStatus,
-          }),
+        // The listing now exists. Finish the independent enrichment work in
+        // the background so creation is not held hostage by uploads, email,
+        // or secondary projections.
+        void (async () => {
+        const distributionPromise = syncQuickListingDistributionData(created.listing.id, form, {
+          title: listingTitle,
+          address: formattedAddress || propertyAddress,
+          listingStatus: resolvedListingStatus,
+        })
+        const websitePublicationPromise = shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels)
+          ? distributionPromise
+            .then(() => setWebsiteListingPublication(created.listing.id, 'publish'))
+            .then((publication) => ({ attempted: true, publication }))
+            .catch((publicationError) => {
+              console.warn('[Listings] agency website publication needs attention after quick add', publicationError)
+              return { attempted: true, error: publicationError?.message || 'website_publication_failed' }
+            })
+          : Promise.resolve(null)
+        const [distributionResult, _sellerFormResult, documentUploadResult, requirementSyncResult, sellerPortalInviteResult, publishedWebsite] = await Promise.all([
+          distributionPromise,
           persistSellerProfileOnboardingFormData({
             listingId: created.listing.id,
             formData: directListingPersistence.sellerOnboardingFormData,
@@ -5820,21 +5975,6 @@ function AgentListings({ initialTab = null } = {}) {
           documentUploadQueue.length
             ? uploadQuickAddDocumentsForListing(created.listing.id, documentUploadQueue)
             : Promise.resolve(null),
-        ])
-        listingDistributionSync = distributionResult
-        if (documentUploadResult) {
-          uploadedDocuments = documentUploadResult.uploadedDocuments
-          failedDocumentUploads = documentUploadResult.failedDocumentUploads
-        }
-        if (shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels)) {
-          websitePublication = await setWebsiteListingPublication(created.listing.id, 'publish')
-            .then((publication) => ({ attempted: true, publication }))
-            .catch((publicationError) => {
-              console.warn('[Listings] agency website publication needs attention after quick add', publicationError)
-              return { attempted: true, error: publicationError?.message || 'website_publication_failed' }
-            })
-        }
-        ;[directListingRequirementSync, directListingSellerPortalInvite] = await Promise.all([
           syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created'),
           sendQuickAddSellerPortalInvite({
             listingId: created.listing.id,
@@ -5845,7 +5985,16 @@ function AgentListings({ initialTab = null } = {}) {
             agencyName: profile?.agencyName || profile?.company || workspace?.name || '',
             propertyAddress: formattedAddress || propertyAddress,
           }),
+          websitePublicationPromise,
         ])
+        listingDistributionSync = distributionResult
+        if (documentUploadResult) {
+          uploadedDocuments = documentUploadResult.uploadedDocuments
+          failedDocumentUploads = documentUploadResult.failedDocumentUploads
+        }
+        directListingRequirementSync = requirementSyncResult
+        directListingSellerPortalInvite = sellerPortalInviteResult
+        websitePublication = publishedWebsite
         handoffPlan = buildQuickAddHandoffPlan({
           listingId: created.listing.id,
           listingTitle: createdListingTitle,
@@ -5906,6 +6055,36 @@ function AgentListings({ initialTab = null } = {}) {
             },
           }).catch(() => null),
         ])
+        window.dispatchEvent(new Event('itg:listings-updated'))
+        })().catch((postCreateError) => {
+          console.warn('[Listings] post-create enrichment needs attention', postCreateError)
+        })
+
+        setShowNewListingModal(false)
+        resetForm()
+        setError('')
+        setQuickAddDuplicateMatches([])
+        setQuickAddDuplicateOverride(false)
+        setQuickAddSuccess({
+          id: createdListingId,
+          title: createdListingTitle,
+          statusLabel: activationTier.statusLabel,
+          mandateStatus,
+          complianceWarnings,
+          documentsUploaded: 0,
+          documentUploadFailures: [],
+          requirementSync: { synced: false, status: 'processing' },
+          sellerPortalInvite: { requested: directListingPersistence.sellerPortalInvite?.requested === true, status: 'processing' },
+          websitePublication: shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels) ? { attempted: true, status: 'processing' } : null,
+          handoffPlan: null,
+        })
+        setWorkflowMessage('Listing created. Documents, listing distribution, and any requested seller invitation are finishing in the background.')
+        window.dispatchEvent(new Event('itg:listings-updated'))
+        if (isCreateListingWorkspace && createdListingId) {
+          if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
+          navigate(`/agent/listings/${encodeURIComponent(createdListingId)}`)
+        }
+        return
       } else {
         uploadedDocuments = documentUploadQueue.map((documentUpload) => ({
           kind: documentUpload.kind,
@@ -6569,7 +6748,7 @@ function AgentListings({ initialTab = null } = {}) {
 
   const privateListingCards = useMemo(() => {
     return privateListings
-      .filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !isDeletedListingRecord(listing))
+      .filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !shouldHideListingRecord(listing))
       .map((listing) => {
       const statusKey = getPrivateListingStatus(listing)
       const propertyCategory = resolvePropertyCategory(listing)
@@ -6615,7 +6794,7 @@ function AgentListings({ initialTab = null } = {}) {
       const quickAddHandoffPlan = getQuickAddHandoffPlanFromListing(listing, quickMetadata)
       const quickAddHandoffActions = normalizeQuickAddHandoffActions(identityKeys[0] || String(listing.id || ''), quickAddHandoffPlan)
       const assignedAgent = resolveListingAssignedAgent(listing, organisationUsers)
-      return {
+      const card = {
         id: identityKeys[0] || String(listing.id || ''),
         identityKeys,
         typeLabel: developerDirectListing ? 'Development Unit' : resolveListingTypeLabel(listing),
@@ -6665,6 +6844,7 @@ function AgentListings({ initialTab = null } = {}) {
         agentName: assignedAgent.name,
         agentEmail: assignedAgent.email,
       }
+      return { ...card, collectionView: getListingCollectionView(card) }
     }).map((card) => {
       const baseFollowUpQueue = buildListingFollowUpQueue(card)
       const quickAddHandoffActions = reconcileQuickAddHandoffActions(card, baseFollowUpQueue, card.quickAddHandoffActions)
@@ -6704,12 +6884,13 @@ function AgentListings({ initialTab = null } = {}) {
 
     return sortListingCards(privateListingCards.filter((card) => {
       const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
+      const collectionMatch = card.collectionView === listingCollectionView
       const searchMatch = query
         ? [card.title, card.addressLabel, card.suburb, card.typeLabel, card.agentName, card.originLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
         : true
-      return categoryMatch && searchMatch
+      return categoryMatch && collectionMatch && searchMatch
     }), filters.sortBy)
-  }, [filters.search, filters.sortBy, isDeveloperWorkspace, listingsTab, privateListingCards])
+  }, [filters.search, filters.sortBy, isDeveloperWorkspace, listingCollectionView, listingsTab, privateListingCards])
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -6900,7 +7081,9 @@ function AgentListings({ initialTab = null } = {}) {
 
   const listingTabCounts = useMemo(
     () => ({
-      residential: privateListingCards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory)).length,
+      residential: privateListingCards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory) && card.collectionView === 'current').length,
+      archivedImports: privateListingCards.filter((card) => card.collectionView === 'archived_imports').length,
+      review: privateListingCards.filter((card) => card.collectionView === 'review').length,
       developments: developmentCards.length,
     }),
     [developmentCards.length, privateListingCards],
@@ -7289,7 +7472,7 @@ function AgentListings({ initialTab = null } = {}) {
               leftLabel={createListingStepIndex === 0 ? 'Cancel' : 'Back'}
               leftIcon={createListingStepIndex === 0 ? null : <ArrowLeft size={16} />}
               onCancel={createListingStepIndex === 0 ? cancelEditor : goToPreviousCreateListingStep}
-              onSaveDraft={isEditListingWorkspace ? undefined : saveCreateListingDraftLocally}
+              onSaveDraft={isEditListingWorkspace ? undefined : saveCreateListingDraft}
               onContinue={goToNextCreateListingStep}
               finalLabel={isEditListingWorkspace ? 'Save changes' : 'Create listing'}
               showSaveDraft={!isEditListingWorkspace}
@@ -7673,25 +7856,35 @@ function AgentListings({ initialTab = null } = {}) {
                 <div className="grid gap-3 md:grid-cols-2">
                   {createListingPortalStatuses.map((portal) => {
                     const isLocked = portal.key === 'arch9_seller_experience'
-                    const ready = portal.missing.length === 0
+                    const channelAvailable = portal.internalOnly || portal.availability?.available === true
+                    const ready = channelAvailable && portal.missing.length === 0
+                    const availabilityLabel = portal.internalOnly
+                      ? 'Internal only — not published to external portals'
+                      : portal.availabilityLoading
+                        ? 'Checking channel connection…'
+                        : !channelAvailable
+                          ? 'Not connected for this organisation'
+                          : ready
+                            ? 'Channel connected — listing details complete'
+                            : `${portal.missing.length} required field${portal.missing.length === 1 ? '' : 's'} missing`
                     return (
                       <button
                         key={portal.key}
                         type="button"
                         onClick={() => toggleCreateListingSyndicationChannel(portal.key)}
-                        disabled={isLocked}
-                        className={`rounded-[8px] border p-4 text-left transition ${portal.enabled ? 'border-[#1f7d44] bg-[#f0fbf4]' : 'border-[#dce6f2] bg-white hover:border-[#b7c8db]'}`}
+                        disabled={isLocked || !channelAvailable || portal.availabilityLoading}
+                        className={`rounded-[8px] border p-4 text-left transition ${portal.enabled && channelAvailable ? 'border-[#1f7d44] bg-[#f0fbf4]' : 'border-[#dce6f2] bg-white'} ${!isLocked && channelAvailable && !portal.availabilityLoading ? 'hover:border-[#b7c8db]' : 'cursor-not-allowed opacity-75'}`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-bold text-[#142132]">{portal.label}</p>
-                            <p className={`mt-1 text-xs font-semibold ${ready ? 'text-[#1f7d44]' : 'text-[#9a5b13]'}`}>
-                              {ready ? 'Ready to publish' : `${portal.missing.length} required field${portal.missing.length === 1 ? '' : 's'} missing`}
+                            <p className={`mt-1 text-xs font-semibold ${ready || portal.internalOnly ? 'text-[#1f7d44]' : 'text-[#9a5b13]'}`}>
+                              {availabilityLabel}
                             </p>
                           </div>
-                          {portal.enabled ? <CheckCircle2 size={18} className="text-[#1f7d44]" /> : <Circle size={18} className="text-[#8fa3b8]" />}
+                          {portal.enabled && channelAvailable ? <CheckCircle2 size={18} className="text-[#1f7d44]" /> : <Circle size={18} className="text-[#8fa3b8]" />}
                         </div>
-                        {portal.missing.length ? (
+                        {channelAvailable && portal.missing.length ? (
                           <Button
                             type="button"
                             size="sm"
@@ -7949,7 +8142,11 @@ function AgentListings({ initialTab = null } = {}) {
                 ? 'Listings'
                 : listingsTab === 'developments'
                 ? 'Development Listings'
-                : 'Residential Listings'}
+                : listingCollectionView === 'archived_imports'
+                  ? 'Archived Property24 Imports'
+                  : listingCollectionView === 'review'
+                    ? 'Listings for Review'
+                    : 'Current Listings'}
             </h2>
             <p className="mt-1 text-sm text-[#607387]">
               {isDeveloperWorkspace
@@ -7958,7 +8155,11 @@ function AgentListings({ initialTab = null } = {}) {
                 ? isDeveloperWorkspace
                   ? 'Development listings, portal syndication readiness, and buyer activity linked back to source developments.'
                   : 'Assigned developments, live buyer activity, and structured workspace access.'
-                : 'Agent-owned listings, seller onboarding, offers, and deal preparation.'}
+                : listingCollectionView === 'archived_imports'
+                  ? 'Historical records imported from Property24. They are retained for reference and are not part of current stock.'
+                  : listingCollectionView === 'review'
+                    ? 'Imported or internal listings that need an owner model, an assigned agent, or a listing review before they become current stock.'
+                    : 'Agent-owned listings, seller onboarding, offers, and deal preparation.'}
             </p>
             {!isDeveloperWorkspace && listingsTab === 'developments' ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -8029,6 +8230,36 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
           ) : null}
         </div>
+
+        {!isDeveloperWorkspace && listingsTab !== 'developments' ? (
+          <div className="mb-5 grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:grid-cols-3">
+            {[
+              { key: 'current', label: 'Current', count: listingTabCounts.residential || 0, description: 'Working stock and live listings' },
+              { key: 'archived_imports', label: 'Archived imports', count: listingTabCounts.archivedImports || 0, description: 'Historical Property24 records' },
+              { key: 'review', label: 'Review', count: listingTabCounts.review || 0, description: 'Owner or assignment needs attention' },
+            ].map((view) => {
+              const active = listingCollectionView === view.key
+              return (
+                <button
+                  key={view.key}
+                  type="button"
+                  onClick={() => setListingCollectionView(view.key)}
+                  className={`rounded-[12px] border px-3 py-2.5 text-left transition ${
+                    active
+                      ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.2)]'
+                      : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-3 text-sm font-semibold">
+                    {view.label}
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${active ? 'bg-white/18 text-white' : 'bg-[#edf4fa] text-[#4e6983]'}`}>{view.count}</span>
+                  </span>
+                  <span className={`mt-1 block text-xs ${active ? 'text-white/80' : 'text-[#7b8ca2]'}`}>{view.description}</span>
+                </button>
+              )
+            })}
+          </div>
+        ) : null}
 
         {loading ? (
           <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">Loading listings…</div>

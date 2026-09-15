@@ -171,6 +171,31 @@ assert.equal(dryPlan.listingOperations[0].privateListingRow.property24_status, '
 assert.equal(dryPlan.listingOperations[1].privateListingRow.listing_status, 'active')
 assert.equal(dryPlan.summary.unresolvedArch9AgentCount, 2)
 
+const fractionalAreaPlan = buildProperty24MigrationApplyPlan({
+  mappingPlan: {
+    ...mappingPlan,
+    listingPlans: [{
+      ...listingPlan(1005, 'Sale', 10, 'LISTING-1005'),
+      publicationData: {
+        ...listingPlan(1005, 'Sale', 10, 'LISTING-1005').publicationData,
+        bedrooms: 0.5,
+        erfSize: 21.4516,
+        floorSize: 80.6,
+      },
+    }],
+  },
+  liveSnapshot: {
+    ...liveSnapshot,
+    listings: [{ ...liveSnapshot.listings[1], listingNumber: 1005 }],
+  },
+  target,
+})
+assert.equal(fractionalAreaPlan.status, 'READY')
+assert.equal(fractionalAreaPlan.listingOperations[0].privateListingRow.erf_size_sqm, 21)
+assert.equal(fractionalAreaPlan.listingOperations[0].privateListingRow.floor_size_sqm, 81)
+assert.equal(fractionalAreaPlan.listingOperations[0].privateListingRow.bedrooms, 1)
+assert.equal(fractionalAreaPlan.listingOperations[0].publicationRow.bedrooms, 1)
+
 const imageManifest = {
   status: 'COMPLETE',
   summary: { completedImageCount: 2 },
@@ -269,6 +294,12 @@ const options = parseProperty24MigrationApplyArgs(['--apply', '--concurrency=2',
 assert.equal(options.apply, true)
 assert.equal(options.concurrency, 2)
 assert.equal(options.attempts, 2)
+
+const credentialFileOptions = parseProperty24MigrationApplyArgs(['--credentials-file=/tmp/kingdom.env'])
+assert.equal(credentialFileOptions.credentialsFile, '/tmp/kingdom.env')
+
+const partialImageOptions = parseProperty24MigrationApplyArgs(['--apply', '--allow-partial-images'])
+assert.equal(partialImageOptions.allowPartialImages, true)
 
 const appPackage = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 assert.equal(appPackage.scripts['property24:migration-apply-reconcile'], 'node scripts/property24-migration-apply-reconcile.mjs')

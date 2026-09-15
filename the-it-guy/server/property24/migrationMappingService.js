@@ -457,6 +457,10 @@ function buildAddress(row, location) {
   return { streetNumber: streetNumber || null, streetName: streetName || null, streetAddress, addressLine2, formattedAddress }
 }
 
+function buildListingTitle(row, listingNumber) {
+  return value(row, 'DescriptionHeader') || `Property24 listing ${listingNumber}`
+}
+
 function buildFeatureSnapshot(row) {
   return {
     bedrooms: toNumber(value(row, 'Bedrooms')),
@@ -527,15 +531,25 @@ function buildListingPlans(rows, {
   const plans = []
   const agentsById = new Map(agentPlans.map((plan) => [String(plan.property24AgentId), plan]))
   const imagesByListing = buildImagePlans(imageRows)
+  const sourceReferenceCounts = rows.reduce((counts, row) => {
+    const sourceReference = normalizeKey(value(row, 'SourceReference'))
+    if (sourceReference) counts.set(sourceReference, (counts.get(sourceReference) || 0) + 1)
+    return counts
+  }, new Map())
 
   for (const row of rows) {
     const listingNumber = toInteger(value(row, 'ListingNumber'))
     const listingType = value(row, 'ListingType')
     const sourceStatus = value(row, 'Status')
+    const title = buildListingTitle(row, listingNumber)
+    const exportedSourceReference = value(row, 'SourceReference')
     const sourceReference = resolveProperty24ListingSourceReference({
       agencyId: value(row, 'AgencyId'),
       listingNumber,
-      sourceReference: value(row, 'SourceReference'),
+      // A shared source reference is not a usable listing identity. Retain it
+      // in the raw Property24 payload and use the immutable listing number for
+      // Arch9's unique reference instead.
+      sourceReference: sourceReferenceCounts.get(normalizeKey(exportedSourceReference)) > 1 ? '' : exportedSourceReference,
     })
     const contacts = parseProperty24ContactAgentIds(value(row, 'ContactAgentIds')).ids
     const agentRelationships = contacts.map((property24AgentId) => {
@@ -591,7 +605,7 @@ function buildListingPlans(rows, {
       propertyStructureType: 'other',
       propertyType: propertyType.propertyType,
       listingCategory: normalizeKey(listingType) === 'rental' ? 'rental' : 'private_sale',
-      title: value(row, 'DescriptionHeader'),
+      title,
       description: value(row, 'Description'),
       askingPrice: toNumber(value(row, 'Price')),
       addressLine1: address.streetAddress,
@@ -634,7 +648,7 @@ function buildListingPlans(rows, {
       }),
     }
     const publicationData = {
-      title: value(row, 'DescriptionHeader'),
+      title,
       address: address.formattedAddress || address.streetAddress,
       suburb: location.suburb,
       province: location.province,
@@ -654,6 +668,7 @@ function buildListingPlans(rows, {
       amenities: [],
       status: status.publicationStatus,
     }
+    const sourceImageUrls = new Set()
     const sourceImages = (imagesByListing.get(String(listingNumber)) || [])
       .map((imageRow) => ({
         property24ListingNumber: listingNumber,
@@ -662,6 +677,12 @@ function buildListingPlans(rows, {
         sourceOrdinal: toInteger(value(imageRow, 'Ordinal')),
       }))
       .sort((left, right) => left.sourceOrdinal - right.sourceOrdinal)
+      .filter((image) => {
+        const key = normalizeKey(image.sourceUrl)
+        if (!key || sourceImageUrls.has(key)) return false
+        sourceImageUrls.add(key)
+        return true
+      })
       .map((image, index) => ({ ...image, sortOrder: index, isCover: index === 0 }))
     const property24Sync = {
       privateListingKey: sourceReference,

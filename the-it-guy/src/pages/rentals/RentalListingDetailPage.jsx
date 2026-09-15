@@ -545,7 +545,7 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
         <SelectField label="Lease period type" name="leasePeriodType" value={form.leasePeriodType} onChange={onChange} options={RENTAL_SELECT_OPTIONS.leasePeriodType} />
         <label className="form-field">
           <span>Bedrooms</span>
-          <input type="number" min="0" {...formField('bedrooms', form.bedrooms, onChange)} />
+          <input type="number" min="0" step="0.5" {...formField('bedrooms', form.bedrooms, onChange)} />
         </label>
         <label className="form-field">
           <span>Bathrooms</span>

@@ -23,7 +23,7 @@ await test('AgentListingDetail surfaces seller document impact in the builder an
   assert.ok(source.includes('listing-seller-profile-requirement-preview'), 'Builder modal should render the document impact preview.')
   assert.ok(source.includes('sellerDocumentRequirementModel'), 'Documents tab should compute the saved seller requirement model.')
   assert.ok(source.includes('listing-seller-document-model-summary'), 'Documents tab should render seller model summary.')
-  assert.ok(source.includes('documentRequirements: requirementProjection.allRequirementRows.map'), 'Saving should refresh local document requirements immediately.')
+  assert.ok(source.includes('const projectedDocumentRequirements = requirementProjection.allRequirementRows.map'), 'Saving should refresh local document requirements immediately.')
   assert.ok(source.includes("requirementSyncReason: 'listing_seller_profile_capture'"), 'Remote save should still trigger requirement sync.')
 })
 
