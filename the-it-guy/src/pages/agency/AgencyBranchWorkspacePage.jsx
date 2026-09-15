@@ -1,17 +1,24 @@
 import {
   ArrowLeft,
+  ArrowRight,
   ArrowRightLeft,
   Banknote,
   BarChart3,
+  BriefcaseBusiness,
   Building2,
   CalendarDays,
+  CircleAlert,
+  Clock3,
   Copy,
-  ExternalLink,
   FileCheck2,
+  FileSearch,
   Files,
+  Grid2X2,
+  Landmark,
   Mail,
   MapPin,
   Plus,
+  Search,
   Settings,
   ShieldCheck,
   TrendingUp,
@@ -21,6 +28,7 @@ import {
 import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
+import AgentTransactionsTable from '../../components/AgentTransactionsTable'
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import Modal from '../../components/ui/Modal'
@@ -44,14 +52,14 @@ import { getBranchWorkspaceOverview } from '../../services/branchWorkspaceOvervi
 import { buildBranchWorkspacePerformance } from '../../services/branchWorkspacePerformanceService'
 
 const TABS = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'staff', label: 'Staff' },
-  { key: 'listings', label: 'Listings' },
-  { key: 'leads', label: 'Leads' },
-  { key: 'transactions', label: 'Transactions' },
-  { key: 'performance', label: 'Performance' },
-  { key: 'compliance', label: 'Compliance' },
-  { key: 'settings', label: 'Settings' },
+  { key: 'overview', label: 'Overview', icon: Grid2X2 },
+  { key: 'staff', label: 'Staff', icon: Users },
+  { key: 'listings', label: 'Listings', icon: Building2 },
+  { key: 'leads', label: 'Leads', icon: Users },
+  { key: 'transactions', label: 'Transactions', icon: BriefcaseBusiness },
+  { key: 'performance', label: 'Performance', icon: TrendingUp },
+  { key: 'compliance', label: 'Compliance', icon: ShieldCheck },
+  { key: 'settings', label: 'Settings', icon: Settings },
 ]
 
 const BRANCH_AGENT_ROLE_VALUES = new Set([
@@ -277,6 +285,126 @@ function StatusPill({ children, tone = 'slate' }) {
       {children}
     </span>
   )
+}
+
+function leadStageTone(label = '') {
+  const value = normalizeLower(label)
+  if (value.includes('lost') || value.includes('overdue')) return 'border-[#f1cdc8] bg-[#fff5f4] text-[#9f3028]'
+  if (value.includes('qualified') || value.includes('converted') || value.includes('signed') || value.includes('live')) return 'border-[#cfe8dc] bg-[#effaf3] text-[#26724c]'
+  if (value.includes('pending') || value.includes('view')) return 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]'
+  return 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]'
+}
+
+function BranchLeadsTable({ leads, onOpenLead, assignedAgentName, canViewFinancials = false }) {
+  return (
+    <article className="overflow-hidden rounded-[18px] border border-[rgba(15,23,42,0.06)] bg-white shadow-[0_16px_42px_rgba(15,23,42,0.045)]">
+      <header className="border-b border-[rgba(15,23,42,0.06)] bg-[linear-gradient(180deg,#ffffff_0%,#fbfdff_100%)] px-4 py-4 sm:px-5 sm:py-5">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[1.45rem] font-semibold tracking-[-0.04em] text-[#142132]">Branch leads</h2>
+          <span className="rounded-full border border-[#dce7f2] bg-[#f8fbff] px-3 py-1 text-sm font-semibold text-[#35546c]">{leads.length}</span>
+        </div>
+        <p className="mt-1.5 text-sm font-medium text-[#60758b]">Leads currently assigned to this branch.</p>
+      </header>
+
+      <div className="hidden overflow-x-auto lg:block">
+        {leads.length ? (
+          <table className="w-full min-w-[900px] table-fixed text-left">
+            <thead className="bg-[#fbfdff] text-[0.68rem] uppercase tracking-[0.08em] text-[#7890a8]">
+              <tr><th className="w-[26%] px-5 py-3">Lead</th><th className="w-[15%] px-4 py-3">Category</th><th className="w-[18%] px-4 py-3">Stage</th><th className="w-[23%] px-4 py-3">Assigned agent</th>{canViewFinancials ? <th className="w-[10%] px-4 py-3">Value</th> : null}<th className="w-[12%] px-4 py-3">Updated</th></tr>
+            </thead>
+            <tbody>
+              {leads.map((lead) => {
+                const leadId = lead.lead_id || lead.id
+                const stage = lead.stage || lead.status || 'New'
+                return <tr key={leadId} tabIndex={0} className="cursor-pointer border-t border-[#edf2f7] hover:bg-[#fbfdff]" onClick={() => onOpenLead(leadId)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpenLead(leadId) } }}>
+                  <td className="px-5 py-4"><div className="truncate font-semibold text-[#142132]">{lead.name || lead.full_name || leadId}</div><div className="mt-1 truncate text-xs text-[#60758b]">{lead.email || lead.phone || 'Lead record'}</div></td>
+                  <td className="px-4 py-4"><span className="inline-flex rounded-full border border-[#dbe6f1] bg-white px-2.5 py-1 text-[0.7rem] font-semibold text-[#4d6782]">{lead.lead_category || 'Lead'}</span></td>
+                  <td className="px-4 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${leadStageTone(stage)}`}>{stage}</span></td>
+                  <td className="px-4 py-4"><span className="truncate font-semibold text-[#20364c]">{assignedAgentName(lead)}</span></td>
+                  {canViewFinancials ? <td className="px-4 py-4 font-semibold text-[#20364c]">{formatCurrency(lead.budget || lead.estimated_value || 0)}</td> : null}
+                  <td className="px-4 py-4 text-sm font-medium text-[#60758b]">{formatDateShort(lead.updated_at || lead.created_at)}</td>
+                </tr>
+              })}
+            </tbody>
+          </table>
+        ) : <EmptyState title="No leads match these filters" copy="Try clearing a filter to show the leads assigned to this branch." icon={Users} />}
+      </div>
+
+      <div className="space-y-3 p-4 lg:hidden">
+        {leads.length ? leads.map((lead) => {
+          const leadId = lead.lead_id || lead.id
+          const stage = lead.stage || lead.status || 'New'
+          return <button key={leadId} type="button" className="w-full rounded-[18px] border border-[#e1e8f0] bg-white p-4 text-left shadow-sm" onClick={() => onOpenLead(leadId)}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate font-semibold text-[#142132]">{lead.name || lead.full_name || leadId}</h3><p className="mt-1 truncate text-sm text-[#60758b]">{lead.lead_category || 'Lead'} · {assignedAgentName(lead)}</p></div><span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${leadStageTone(stage)}`}>{stage}</span></div><div className="mt-3 flex items-center justify-between border-t border-[#edf2f7] pt-3 text-sm">{canViewFinancials ? <span className="font-semibold text-[#20364c]">{formatCurrency(lead.budget || lead.estimated_value || 0)}</span> : <span />}<span className="text-[#60758b]">{formatDateShort(lead.updated_at || lead.created_at)}</span></div></button>
+        }) : <EmptyState title="No leads match these filters" copy="Try clearing a filter to show the leads assigned to this branch." icon={Users} />}
+      </div>
+    </article>
+  )
+}
+
+function StaffRosterCard({ agent, onOpen, canViewFinancials = false }) {
+  const statusLabel = agent.isPendingInvite ? 'Invite pending' : agent.status || 'Active'
+  const statusClass = agent.statusTone === 'active'
+    ? 'border-[#cfe8dc] bg-[#effaf3] text-[#26724c]'
+    : agent.statusTone === 'invited'
+      ? 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]'
+      : 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]'
+
+  return (
+    <button type="button" className="group w-full rounded-[20px] border border-[#e1eaf3] bg-white p-5 text-left shadow-[0_10px_26px_rgba(24,45,68,0.045)] transition hover:-translate-y-0.5 hover:border-[#bcd5c8] hover:shadow-[0_16px_32px_rgba(24,45,68,0.09)]" onClick={onOpen}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-[16px] bg-[#edf4fb] text-sm font-bold text-[#315f8f]">
+            {agent.avatarUrl ? <img src={agent.avatarUrl} alt="" className="h-full w-full object-cover" /> : getInitials(agent.name)}
+          </div>
+          <div className="min-w-0"><h3 className="truncate text-[1rem] font-semibold text-[#142132]">{agent.name}</h3><p className="mt-0.5 truncate text-sm text-[#60758b]">{agent.role}</p></div>
+        </div>
+        <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusClass}`}>{statusLabel}</span>
+      </div>
+      <p className="mt-4 truncate text-sm text-[#60758b]">{agent.email || 'No email address recorded'}</p>
+      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-[#edf2f7] pt-4">
+        <div className="rounded-[12px] bg-[#f8fbff] px-3 py-2.5"><p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">Active listings</p><p className="mt-1 text-xl font-semibold tracking-[-0.04em] text-[#142132]">{agent.listings || 0}</p></div>
+        <div className="rounded-[12px] bg-[#f8fbff] px-3 py-2.5"><p className="text-[0.65rem] font-semibold uppercase tracking-[0.1em] text-[#7b8ca2]">In progress</p><p className="mt-1 text-xl font-semibold tracking-[-0.04em] text-[#142132]">{agent.transactions || 0}</p></div>
+      </div>
+      <div className="mt-4 flex items-center justify-between gap-3 text-xs text-[#71849a]"><span>{agent.isPendingInvite ? 'Waiting for acceptance' : `Updated ${formatDateShort(agent.lastActive)}`}</span>{canViewFinancials ? <span className="font-semibold text-[#26724c]">{formatCurrency(agent.revenue || 0)}</span> : null}</div>
+    </button>
+  )
+}
+
+function BranchListingImage({ listing, alt }) {
+  const imageUrl = normalizeText(listing?.image_url || listing?.cover_image_url || listing?.imageUrl || listing?.coverImageUrl)
+  if (imageUrl) return <img src={imageUrl} alt={alt} className="h-full w-full object-cover" />
+  return <div className="relative h-full w-full bg-[linear-gradient(140deg,#1f4f78_0%,#4a7da8_55%,#a8c2dc_100%)]"><div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(255,255,255,0.24),transparent_52%)]" /><span className="absolute bottom-3 left-3 rounded-full border border-white/35 bg-white/20 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white">Listing image</span></div>
+}
+
+function BranchListingCard({ listing, onOpen, assignedAgentName, canViewFinancials = false }) {
+  const title = listing.listing_title || listing.title || listing.formatted_address || listing.id
+  const status = listing.listing_status || listing.stage || 'Active'
+  const statusKey = normalizeLower(status)
+  const statusDotClass = statusKey.includes('sold') ? 'bg-[#60758b]' : statusKey.includes('offer') ? 'bg-[#d79d32]' : statusKey.includes('withdrawn') ? 'bg-[#c65b51]' : 'bg-[#39a269]'
+  const agentName = assignedAgentName(listing)
+  const location = [listing.suburb, listing.city, listing.province].filter(Boolean).join(', ') || 'Location pending'
+
+  return (
+    <article onClick={onOpen} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen() } }} role="button" tabIndex={0} className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]">
+      <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]"><BranchListingImage listing={listing} alt={title} /><div className="absolute left-3 top-3 inline-flex max-w-[calc(100%-1.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur"><span className={`h-2 w-2 rounded-full ${statusDotClass}`} /><span className="truncate">{formatRoleLabel(status)}</span></div></div>
+      <div className="flex flex-1 flex-col gap-3 p-4">
+        <div><h3 className="truncate text-[1.02rem] font-semibold leading-6 text-[#142132]" title={title}>{title}</h3><p className="mt-1 truncate text-sm text-[#60758b]">{location}</p><p className="mt-2 text-[1.05rem] font-semibold text-[#1f4f78]">{canViewFinancials ? formatCurrency(listing.asking_price || listing.estimated_value || 0) : 'Price restricted'}</p></div>
+        <div className="grid grid-cols-2 gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#f9fbfe] px-3 py-2 text-center text-[0.76rem] font-semibold text-[#35546c]"><span className="truncate">{formatRoleLabel(status)}</span><span className="truncate">Updated {formatDateShort(listing.updated_at || listing.created_at)}</span></div>
+        <div className="mt-auto flex min-w-0 items-center gap-3 border-t border-[#eef3f8] pt-3"><span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#d7e2ee] bg-[#eef4fa] text-[0.72rem] font-bold text-[#1f4f78]">{getInitials(agentName)}</span><div className="min-w-0"><p className="truncate text-[0.84rem] font-semibold text-[#20364d]">{agentName}</p><p className="mt-0.5 truncate text-[0.72rem] text-[#6d8095]">Assigned agent</p></div></div>
+        <button type="button" onClick={(event) => { event.stopPropagation(); onOpen() }} className="inline-flex min-h-9 w-full min-w-0 items-center justify-center gap-1.5 rounded-full border border-[#c6d8ea] bg-white px-3 text-[0.76rem] font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff]"><span className="truncate">Open</span><ArrowRight size={14} className="shrink-0" /></button>
+      </div>
+    </article>
+  )
+}
+
+function ComplianceCredentialCard({ icon, label, description, status, detail, tone = 'slate' }) {
+  const toneClass = {
+    green: 'border-[#cfe8dc] bg-[#effaf3] text-[#26724c]',
+    gold: 'border-[#efdcb7] bg-[#fff9ec] text-[#8a641d]',
+    slate: 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]',
+  }[tone] || 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]'
+
+  return <article className="rounded-[18px] border border-[#e1eaf3] bg-white p-4 shadow-[0_8px_22px_rgba(24,45,68,0.04)]"><div className="flex items-start justify-between gap-3"><span className={`grid h-10 w-10 place-items-center rounded-[14px] ${tone === 'green' ? 'bg-[#effaf3] text-[#26724c]' : tone === 'gold' ? 'bg-[#fff7e8] text-[#8a641d]' : 'bg-[#edf4fb] text-[#315f8f]'}`}>{createElement(icon, { size: 18 })}</span><span className={`rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${toneClass}`}>{status}</span></div><h3 className="mt-4 text-sm font-semibold text-[#142132]">{label}</h3><p className="mt-1 text-sm leading-5 text-[#60758b]">{description}</p><p className="mt-3 border-t border-[#edf2f7] pt-3 text-xs font-semibold text-[#71849a]">{detail}</p></article>
 }
 
 function ActionButton({ children, icon, variant = 'default', ...props }) {
@@ -806,10 +934,7 @@ export default function AgencyBranchWorkspacePage() {
   const [preferredPartners, setPreferredPartners] = useState([])
   const [workspaceOverview, setWorkspaceOverview] = useState(null)
   const [workspacePerformance, setWorkspacePerformance] = useState(null)
-  const rangeFrom = searchParams.get('from') || ''
-  const rangeTo = searchParams.get('to') || ''
-  const period = rangeFrom && rangeTo ? 'custom' : searchParams.get('period') || 'this_month'
-  const [customRangeOpen, setCustomRangeOpen] = useState(Boolean(rangeFrom && rangeTo))
+  const period = 'this_month'
   const activeTab = TABS.some((item) => item.key === tab) ? tab : 'overview'
 
   useEffect(() => {
@@ -820,6 +945,7 @@ export default function AgencyBranchWorkspacePage() {
 
   function navigateToTab(nextTab, updates = {}) {
     const nextSearch = new URLSearchParams(searchParams)
+    ;['period', 'from', 'to'].forEach((key) => nextSearch.delete(key))
     Object.entries(updates).forEach(([key, value]) => {
       if (value == null || value === '') nextSearch.delete(key)
       else nextSearch.set(key, value)
@@ -845,14 +971,9 @@ export default function AgencyBranchWorkspacePage() {
   function switchBranch(nextBranchId) {
     const nextId = normalizeText(nextBranchId)
     if (!nextId || nextId === branchId) return
-    const periodParams = new URLSearchParams()
-    ;['period', 'from', 'to'].forEach((key) => {
-      const value = searchParams.get(key)
-      if (value) periodParams.set(key, value)
-    })
     navigate({
       pathname: activeTab === 'overview' ? `/agency/branches/${encodeURIComponent(nextId)}` : `/agency/branches/${encodeURIComponent(nextId)}/${activeTab}`,
-      search: periodParams.toString() ? `?${periodParams.toString()}` : '',
+      search: '',
     }, { state: { returnTo: location.state?.returnTo || '/agency/branches' } })
   }
 
@@ -865,7 +986,7 @@ export default function AgencyBranchWorkspacePage() {
         getBranchTransactions(branchId),
         getBranchListings(branchId),
         getAgentLeaderboard(branchId),
-        getBranchWorkspaceOverview(branchId, { period, from: rangeFrom, to: rangeTo }),
+        getBranchWorkspaceOverview(branchId, { period }),
         getBranches(),
       ])
 
@@ -879,7 +1000,7 @@ export default function AgencyBranchWorkspacePage() {
       setBranchListings(listings)
       setLeaderboard(topAgents)
       setWorkspaceOverview(overview)
-      setWorkspacePerformance(buildBranchWorkspacePerformance(branchRow, { period, from: rangeFrom, to: rangeTo }))
+      setWorkspacePerformance(buildBranchWorkspacePerformance(branchRow, { period }))
 
       const [settingsContext, structures, branchInvites, partners] = await Promise.all([
         fetchOrganisationSettings().catch(() => null),
@@ -903,7 +1024,7 @@ export default function AgencyBranchWorkspacePage() {
     } finally {
       setLoading(false)
     }
-  }, [branchId, period, rangeFrom, rangeTo])
+  }, [branchId, period])
 
   useEffect(() => {
     void loadWorkspace()
@@ -934,6 +1055,13 @@ export default function AgencyBranchWorkspacePage() {
   const canViewFinancials = ['owner', 'principal'].includes(membershipRole)
   const canViewCompliance = ['owner', 'principal', 'branch_manager', 'compliance'].includes(membershipRole)
   const canManageBranch = ['owner', 'principal', 'branch_manager'].includes(membershipRole)
+  const branchCompliance = workspacePerformance?.compliance || {}
+  const complianceExceptions = Array.isArray(branchCompliance.exceptions) ? branchCompliance.exceptions : []
+  const complianceControls = [branchCompliance.mandate, branchCompliance.transaction].filter((metric) => metric?.available)
+  const completedComplianceControls = complianceControls.reduce((total, metric) => total + Number(metric.complete || 0), 0)
+  const totalComplianceControls = complianceControls.reduce((total, metric) => total + Number(metric.total || 0), 0)
+  const complianceScore = totalComplianceControls ? Math.round((completedComplianceControls / totalComplianceControls) * 100) : null
+  const compliancePosture = complianceExceptions.length ? 'Action needed' : complianceScore !== null && complianceScore < 100 ? 'Review due' : 'Monitoring'
 
   const openBranchAgentInvite = useCallback(() => {
     setAgentInviteOpen(true)
@@ -967,6 +1095,7 @@ export default function AgencyBranchWorkspacePage() {
         statusTone: normalizeLower(member.status) === 'invited' ? 'invited' : normalizeLower(member.status) === 'active' ? 'active' : 'slate',
         lastActive: member.last_active_at || member.updated_at || member.created_at,
         email: member.email || '',
+        avatarUrl: member.avatar_url || member.profile_photo_url || member.photo_url || member.profile?.avatar_url || '',
         isPendingInvite: false,
       }
     })
@@ -982,6 +1111,7 @@ export default function AgencyBranchWorkspacePage() {
       statusTone: 'invited',
       lastActive: invite.created_at,
       email: invite.email || '',
+      avatarUrl: '',
       isPendingInvite: true,
     }))
     return [...invites, ...memberRows]
@@ -997,10 +1127,6 @@ export default function AgencyBranchWorkspacePage() {
   const leadSearch = normalizeLower(searchParams.get('leadSearch'))
   const leadStage = normalizeLower(searchParams.get('leadStage') || searchParams.get('stage'))
   const leadAttention = normalizeLower(searchParams.get('attention')) === 'unassigned_leads'
-  const transactionSearch = normalizeLower(searchParams.get('transactionSearch'))
-  const transactionStage = normalizeLower(searchParams.get('transactionStage') || searchParams.get('stage'))
-  const transactionSort = normalizeLower(searchParams.get('transactionSort') || (searchParams.get('sort') === 'value' ? 'value' : 'updated'))
-  const transactionAttention = normalizeLower(searchParams.get('attention')) === 'stale_transactions'
 
   const filteredStaffRows = useMemo(() => branchStaffRows.filter((agent) => {
     const haystack = normalizeLower(`${agent.name} ${agent.email} ${agent.role}`)
@@ -1008,6 +1134,25 @@ export default function AgencyBranchWorkspacePage() {
       && (!staffRole || normalizeLower(agent.role).includes(staffRole))
       && (!staffStatus || normalizeLower(agent.status) === staffStatus)
   }), [branchStaffRows, staffRole, staffSearch, staffStatus])
+
+  const leadAgentNames = useMemo(() => new Map(
+    branchStaffRows.flatMap((agent) => [
+      [normalizeText(agent.routeId || agent.id), agent.name],
+      [normalizeLower(agent.email), agent.name],
+    ]).filter(([key]) => key),
+  ), [branchStaffRows])
+
+  const getLeadAssignedAgent = useCallback((lead) => {
+    const assignedId = normalizeText(lead?.assigned_agent_id || lead?.assignedAgentId)
+    const assignedEmail = normalizeLower(lead?.assigned_agent_email || lead?.assignedAgentEmail)
+    return normalizeText(lead?.assigned_agent_name || lead?.assignedAgentName) || leadAgentNames.get(assignedId) || leadAgentNames.get(assignedEmail) || assignedId || 'Unassigned'
+  }, [leadAgentNames])
+
+  const getListingAssignedAgent = useCallback((listing) => {
+    const assignedId = normalizeText(listing?.assigned_agent_id || listing?.assignedAgentId)
+    const assignedEmail = normalizeLower(listing?.assigned_agent_email || listing?.assignedAgentEmail)
+    return normalizeText(listing?.assigned_agent_name || listing?.assignedAgentName) || leadAgentNames.get(assignedId) || leadAgentNames.get(assignedEmail) || assignedId || 'Unassigned'
+  }, [leadAgentNames])
 
   const filteredListings = useMemo(() => branchListings.filter((listing) => {
     const status = normalizeLower(listing.listing_status || listing.stage || 'active')
@@ -1025,19 +1170,25 @@ export default function AgencyBranchWorkspacePage() {
       && (!leadAttention || !normalizeText(lead.assigned_agent_id))
   }), [branchLeads, leadAttention, leadSearch, leadStage])
 
-  const filteredTransactions = useMemo(() => branchTransactions
-    .filter((row) => {
-      const stage = normalizeLower(row.stage || row.lifecycle_state)
-      const haystack = normalizeLower(`${row.transaction_reference || row.id || ''} ${row.assigned_agent || row.assigned_agent_email || ''} ${stage}`)
-      const updatedAt = new Date(row.updated_at || row.created_at || 0)
-      const stale = Number.isNaN(updatedAt.getTime()) || Date.now() - updatedAt.getTime() > 14 * 86400000
-      return (!transactionSearch || haystack.includes(transactionSearch))
-        && (!transactionStage || stage.includes(transactionStage))
-        && (!transactionAttention || stale)
-    })
-    .sort((left, right) => transactionSort === 'value'
-      ? Number(right.sales_price || right.purchase_price || 0) - Number(left.sales_price || left.purchase_price || 0)
-      : new Date(right.updated_at || right.created_at || 0) - new Date(left.updated_at || left.created_at || 0)), [branchTransactions, transactionAttention, transactionSearch, transactionSort, transactionStage])
+  const branchTransactionRows = useMemo(() => branchTransactions.map((transaction) => ({
+    transaction: {
+      ...transaction,
+      id: transaction.id,
+      transaction_reference: transaction.transaction_reference || transaction.reference || transaction.id,
+      current_main_stage: transaction.current_main_stage || transaction.main_stage || '',
+      property_address_line_1: transaction.property_address_line_1 || transaction.property_address || transaction.listing_title || '',
+      property_description: transaction.property_description || transaction.listing_title || '',
+    },
+    buyer: {
+      name: transaction.buyer_name || transaction.buyer_full_name || transaction.client_name || '',
+      email: transaction.buyer_email || transaction.client_email || '',
+      phone: transaction.buyer_phone || transaction.client_phone || '',
+    },
+    development: transaction.development || null,
+    unit: transaction.unit || null,
+    stage: transaction.stage || transaction.lifecycle_state || '',
+    mainStage: transaction.current_main_stage || transaction.main_stage || '',
+  })), [branchTransactions])
 
   function handleAgentRowClick(agent) {
     if (!agent) return
@@ -1077,7 +1228,7 @@ export default function AgencyBranchWorkspacePage() {
         <span aria-hidden="true">/</span>
         <span className="truncate font-semibold text-[#142132]" aria-current="page">{branchName}</span>
       </nav>
-      <section className="rounded-[24px] border border-[#dfe8f1] bg-white px-5 py-4 shadow-[0_14px_34px_rgba(24,45,68,0.06)]">
+      {activeTab !== 'settings' ? <section className="rounded-[24px] border border-[#dfe8f1] bg-white px-5 py-4 shadow-[0_14px_34px_rgba(24,45,68,0.06)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
           <div className="min-w-0">
             <div className="flex min-w-0 items-center gap-4">
@@ -1122,48 +1273,30 @@ export default function AgencyBranchWorkspacePage() {
             </button>
           </div>
         </div>
-      </section>
+      </section> : null}
 
-      <section className="overflow-x-auto rounded-[18px] border border-[#dfe8f1] bg-white px-2 py-1 shadow-[0_10px_24px_rgba(24,45,68,0.04)]">
-        <div className="flex min-w-max items-center gap-1" role="tablist" aria-label="Branch workspace sections">
-          {TABS.map((tabItem) => (
-            <button
+      <nav className="min-w-0 max-w-full overflow-x-auto rounded-2xl border border-[#dde6f1] bg-white p-2 shadow-sm" aria-label="Branch workspace sections">
+        <div className="flex min-w-max items-center gap-1 lg:min-w-full" role="tablist">
+          {TABS.map((tabItem) => {
+            const Icon = tabItem.icon
+            return <button
               key={tabItem.key}
               type="button"
               role="tab"
               aria-selected={activeTab === tabItem.key}
               onClick={() => navigateToTab(tabItem.key)}
-              className={`relative min-h-[42px] rounded-[12px] px-4 text-center text-sm font-semibold transition ${
+              className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-3.5 text-sm font-semibold transition lg:flex-1 ${
                 activeTab === tabItem.key
-                  ? 'bg-[#effaf3] text-[#08784b]'
-                  : 'text-[#5f7187] hover:bg-[#f6f9fc] hover:text-[#163247]'
+                  ? 'bg-[#0f2742] text-white shadow-sm'
+                  : 'text-[#405870] hover:bg-[#f6f9fc] hover:text-[#10243a]'
               }`}
             >
+              <Icon size={15} />
               {tabItem.label}
-              {activeTab === tabItem.key ? <span className="absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-[#08784b]" /> : null}
             </button>
-          ))}
+          })}
         </div>
-      </section>
-
-      <section className="space-y-3">
-        <div className="flex justify-end">
-          <div className="flex flex-wrap justify-end rounded-lg border border-[#dfe8f1] bg-white p-1">
-            {[['this_month', 'This month'], ['last_month', 'Last month'], ['90_days', '90 days']].map(([value, label]) => (
-              <button key={value} type="button" onClick={() => { const next = new URLSearchParams(searchParams); next.delete('from'); next.delete('to'); value === 'this_month' ? next.delete('period') : next.set('period', value); setCustomRangeOpen(false); setSearchParams(next) }} className={`min-h-[34px] rounded-md px-3 text-sm font-semibold ${period === value ? 'bg-[#effaf3] text-[#08784b]' : 'text-[#60758d]'}`}>{label}</button>
-            ))}
-            <button type="button" onClick={() => setCustomRangeOpen((open) => !open)} className={`min-h-[34px] rounded-md px-3 text-sm font-semibold ${period === 'custom' || customRangeOpen ? 'bg-[#effaf3] text-[#08784b]' : 'text-[#60758d]'}`}>Custom</button>
-          </div>
-        </div>
-        {customRangeOpen ? <form className="flex flex-wrap items-end justify-end gap-2 rounded-[14px] border border-[#dfe8f1] bg-white p-3" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); const from = String(data.get('from') || ''); const to = String(data.get('to') || ''); if (!from || !to || from > to) return; const next = new URLSearchParams(searchParams); next.delete('period'); next.set('from', from); next.set('to', to); setSearchParams(next) }}><label className="text-xs font-semibold text-[#60758d]">From<input required name="from" type="date" defaultValue={rangeFrom} className="mt-1 block rounded-md border border-[#dce7f2] px-2 py-1.5 text-sm text-[#142132]" /></label><label className="text-xs font-semibold text-[#60758d]">To<input required name="to" type="date" defaultValue={rangeTo} className="mt-1 block rounded-md border border-[#dce7f2] px-2 py-1.5 text-sm text-[#142132]" /></label><button type="submit" className="min-h-[34px] rounded-md bg-[#08784b] px-3 text-sm font-semibold text-white">Apply</button></form> : null}
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          {(workspaceOverview?.kpis || []).filter((kpi) => canViewFinancials || !['pipeline', 'commission'].includes(kpi.key)).map((kpi) => (
-            <button key={kpi.key} type="button" onClick={() => navigateToTab(kpi.tab, kpi.key === 'staff' ? { filter: 'agents' } : kpi.key === 'listings' || kpi.key === 'leads' || kpi.key === 'transactions' ? { filter: 'active' } : kpi.key === 'pipeline' ? { sort: 'value' } : {})} className="text-left">
-              <KpiCard label={kpi.label} value={kpi.currency ? formatCurrency(kpi.value) : kpi.value} helper={kpi.change === null ? 'No comparison data' : `${kpi.change >= 0 ? '+' : ''}${kpi.change}% vs previous period`} icon={kpi.key === 'commission' ? Banknote : kpi.key === 'pipeline' ? BarChart3 : Users} tone={kpi.key === 'commission' ? 'green' : 'blue'} />
-            </button>
-          ))}
-        </section>
-      </section>
+      </nav>
 
       <section>
         {activeTab === 'overview' ? (
@@ -1287,87 +1420,44 @@ export default function AgencyBranchWorkspacePage() {
 
         {activeTab === 'staff' ? (
           <section className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard label="Total staff" value={branchStaffRows.length} helper="Members and invitations" icon={Users} tone="slate" />
-              <KpiCard label="Active agents" value={branchStaffRows.filter((agent) => normalizeLower(agent.role).includes('agent') && normalizeLower(agent.status) === 'active').length} helper="Current sales team" icon={Users} tone="green" />
-              <KpiCard label="Operational staff" value={branchStaffRows.filter((agent) => !normalizeLower(agent.role).includes('agent') && !agent.isPendingInvite).length} helper="Coordinators and support" icon={Users} tone="blue" />
-              <KpiCard label="Pending invitations" value={branchStaffRows.filter((agent) => agent.isPendingInvite).length} helper="Awaiting acceptance" icon={Mail} tone="gold" />
-            </div>
-            <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-[#dfe8f1] bg-white p-3">
-              <input value={searchParams.get('staffSearch') || ''} onChange={(event) => updateTabFilters({ staffSearch: event.target.value })} placeholder="Search staff" className="min-h-[38px] min-w-[190px] flex-1 rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#142132] outline-none focus:border-[#61a98a]" />
-              <select value={searchParams.get('staffRole') || (searchParams.get('filter') === 'agents' ? 'agent' : '')} onChange={(event) => updateTabFilters({ staffRole: event.target.value, filter: '' })} className="min-h-[38px] rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#405b75]"><option value="">All roles</option><option value="agent">Agents</option><option value="principal">Principals</option><option value="admin">Administrators</option></select>
-              <select value={searchParams.get('staffStatus') || ''} onChange={(event) => updateTabFilters({ staffStatus: event.target.value })} className="min-h-[38px] rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#405b75]"><option value="">All statuses</option><option value="active">Active</option><option value="invited">Invited</option><option value="inactive">Inactive</option></select>
+            <div className="rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                <label className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border border-[#dbe6f1] bg-[#f8fbfe] px-3 focus-within:border-[#9db7cf] focus-within:bg-white"><Search size={16} className="shrink-0 text-[#7f92a6]" /><input value={searchParams.get('staffSearch') || ''} onChange={(event) => updateTabFilters({ staffSearch: event.target.value })} placeholder="Search staff" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]" /></label>
+                <select value={searchParams.get('staffRole') || (searchParams.get('filter') === 'agents' ? 'agent' : '')} onChange={(event) => updateTabFilters({ staffRole: event.target.value, filter: '' })} className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]"><option value="">All roles</option><option value="agent">Agents</option><option value="principal">Principals</option><option value="admin">Administrators</option></select>
+                <select value={searchParams.get('staffStatus') || ''} onChange={(event) => updateTabFilters({ staffStatus: event.target.value })} className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]"><option value="">All statuses</option><option value="active">Active</option><option value="invited">Invited</option><option value="inactive">Inactive</option></select>
+              </div>
             </div>
             {filteredStaffRows.length ? (
-              <SimpleTable
-                columns={['Staff member', 'Role', 'Listings', 'Transactions', ...(canViewFinancials ? ['Revenue'] : []), 'Status', 'Last update']}
-                rows={filteredStaffRows.map((agent) => ({
-                key: agent.isPendingInvite ? `invite-${agent.id}` : `agent-${agent.id}`,
-                onClick: () => handleAgentRowClick(agent),
-                cells: [
-                  <span className="inline-flex items-center gap-2 font-semibold text-[#142132]">
-                    {agent.name}
-                    {agent.isPendingInvite ? null : <ExternalLink size={13} className="text-[#8ca0b6]" />}
-                  </span>,
-                  agent.role,
-                  String(agent.listings || 0),
-                  String(agent.transactions || 0),
-                  ...(canViewFinancials ? [formatCurrency(agent.revenue || 0)] : []),
-                  <StatusPill tone={agent.statusTone}>{agent.status || 'Active'}</StatusPill>,
-                  formatDateShort(agent.lastActive),
-                ],
-              }))}
-              />
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{filteredStaffRows.map((agent) => <StaffRosterCard key={agent.isPendingInvite ? `invite-${agent.id}` : `agent-${agent.id}`} agent={agent} canViewFinancials={canViewFinancials} onOpen={() => handleAgentRowClick(agent)} />)}</div>
             ) : <EmptyState title="No staff match these filters" copy="Try clearing a filter or invite a member to this branch." icon={Users} action={<ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Invite staff</ActionButton>} />}
           </section>
         ) : null}
 
         {activeTab === 'listings' ? (
           <section className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard label="Active listings" value={branchListings.filter((item) => !['withdrawn', 'sold', 'archived'].includes(normalizeLower(item.listing_status))).length} helper="Current branch inventory" icon={Building2} tone="green" />
-              <KpiCard label="Under offer" value={branchListings.filter((item) => normalizeLower(item.listing_status).includes('offer')).length} helper="Awaiting outcome" icon={Building2} tone="gold" />
-              <KpiCard label="Sold" value={branchListings.filter((item) => normalizeLower(item.listing_status).includes('sold')).length} helper="Recorded branch sales" icon={FileCheck2} tone="blue" />
-              <KpiCard label="Unassigned" value={branchListings.filter((item) => !normalizeText(item.assigned_agent_id || item.assigned_agent_email)).length} helper="Needs an owner" icon={Users} tone="slate" />
+            <div className="rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                <label className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border border-[#dbe6f1] bg-[#f8fbfe] px-3 focus-within:border-[#9db7cf] focus-within:bg-white"><Search size={16} className="shrink-0 text-[#7f92a6]" /><input value={searchParams.get('listingSearch') || ''} onChange={(event) => updateTabFilters({ listingSearch: event.target.value })} placeholder="Search listings" className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]" /></label>
+                <select value={searchParams.get('listingStatus') || (searchParams.get('filter') === 'active' ? 'active' : '')} onChange={(event) => updateTabFilters({ listingStatus: event.target.value, filter: '' })} className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]"><option value="">All statuses</option><option value="active">Active</option><option value="offer">Under offer</option><option value="sold">Sold</option><option value="withdrawn">Withdrawn</option></select>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-[#dfe8f1] bg-white p-3">
-              <input value={searchParams.get('listingSearch') || ''} onChange={(event) => updateTabFilters({ listingSearch: event.target.value })} placeholder="Search listings" className="min-h-[38px] min-w-[190px] flex-1 rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#142132] outline-none focus:border-[#61a98a]" />
-              <select value={searchParams.get('listingStatus') || (searchParams.get('filter') === 'active' ? 'active' : '')} onChange={(event) => updateTabFilters({ listingStatus: event.target.value, filter: '' })} className="min-h-[38px] rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#405b75]"><option value="">All statuses</option><option value="active">Active</option><option value="offer">Under offer</option><option value="sold">Sold</option><option value="withdrawn">Withdrawn</option></select>
-            </div>
-            {filteredListings.length ? <SimpleTable columns={['Property', 'Status', ...(canViewFinancials ? ['Asking price'] : []), 'Assigned agent', 'Updated']} rows={filteredListings.map((listing) => ({ key: listing.id, onClick: () => navigate(`/agent/listings/${encodeURIComponent(listing.id)}`, { state: { returnTo: `${location.pathname}${location.search}` } }), cells: [listing.listing_title || listing.title || listing.id, <StatusPill>{listing.listing_status || listing.stage || 'Active'}</StatusPill>, ...(canViewFinancials ? [formatCurrency(listing.asking_price || 0)] : []), listing.assigned_agent_name || listing.assigned_agent_email || 'Unassigned', formatDateShort(listing.updated_at || listing.created_at)] }))} /> : <EmptyState title="No listings match these filters" copy="This branch has no visible listings for the selected filters." icon={Building2} />}
+            {filteredListings.length ? <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{filteredListings.map((listing) => <BranchListingCard key={listing.id} listing={listing} canViewFinancials={canViewFinancials} assignedAgentName={getListingAssignedAgent} onOpen={() => navigate(`/agent/listings/${encodeURIComponent(listing.id)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />)}</div> : <EmptyState title="No listings match these filters" copy="This branch has no visible listings for the selected filters." icon={Building2} />}
           </section>
         ) : null}
 
         {activeTab === 'transactions' ? (
-          <section className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard label="Active transactions" value={branchTransactions.filter((row) => !['registered', 'cancelled', 'archived', 'completed'].includes(normalizeLower(row.lifecycle_state || row.stage))).length} helper="Deals in motion" icon={ArrowRightLeft} tone="blue" />
-              <KpiCard label="Offers" value={branchTransactions.filter((row) => normalizeLower(row.stage || row.lifecycle_state).includes('offer')).length} helper="Accepted and negotiating" icon={ArrowRightLeft} tone="gold" />
-              <KpiCard label="In transfer" value={branchTransactions.filter((row) => normalizeLower(row.stage || row.lifecycle_state).includes('transfer')).length} helper="Legal progress" icon={FileCheck2} tone="green" />
-              {canViewFinancials ? <KpiCard label="Pipeline value" value={formatCurrency(branchTransactions.filter((row) => !['registered', 'cancelled', 'archived', 'completed'].includes(normalizeLower(row.lifecycle_state || row.stage))).reduce((sum, row) => sum + Number(row.sales_price || row.purchase_price || 0), 0))} helper="Active transaction value" icon={Banknote} tone="blue" /> : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-[#dfe8f1] bg-white p-3">
-              <input value={searchParams.get('transactionSearch') || ''} onChange={(event) => updateTabFilters({ transactionSearch: event.target.value })} placeholder="Search transactions" className="min-h-[38px] min-w-[190px] flex-1 rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#142132] outline-none focus:border-[#61a98a]" />
-              <select value={searchParams.get('transactionStage') || searchParams.get('stage') || ''} onChange={(event) => updateTabFilters({ transactionStage: event.target.value, stage: '' })} className="min-h-[38px] rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#405b75]"><option value="">All stages</option><option value="offer">Offer</option><option value="finance">Finance</option><option value="transfer">Transfer</option><option value="lodged">Lodged</option><option value="registered">Registered</option></select>
-              <select value={transactionSort} onChange={(event) => updateTabFilters({ transactionSort: event.target.value, sort: '' })} className="min-h-[38px] rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#405b75]"><option value="updated">Recently updated</option><option value="value">Highest value</option></select>
-            </div>
-            {filteredTransactions.length ? <SimpleTable columns={['Reference', 'Stage', 'Agent', ...(canViewFinancials ? ['Value'] : []), 'Status', 'Updated']} rows={filteredTransactions.map((row) => ({ key: row.id, onClick: () => navigate(`/transactions/${encodeURIComponent(row.id)}`, { state: { returnTo: `${location.pathname}${location.search}` } }), cells: [row.transaction_reference || row.id, <StatusPill>{row.stage || 'In progress'}</StatusPill>, row.assigned_agent || row.assigned_agent_email || 'Unassigned', ...(canViewFinancials ? [formatCurrency(row.sales_price || row.purchase_price || 0)] : []), row.lifecycle_state || 'Active', formatDateShort(row.updated_at || row.created_at)] }))} /> : <EmptyState title="No transactions match these filters" copy="This branch has no transactions for the selected stage or search." icon={ArrowRightLeft} />}
-          </section>
+          <AgentTransactionsTable rows={branchTransactionRows} title="Transactions" description="Manage the active deals and transaction progress assigned to this branch." isPrincipalView compactLayout searchValue={searchParams.get('transactionSearch') || ''} onSearchChange={(value) => updateTabFilters({ transactionSearch: value })} onRowClick={(row) => navigate(`/transactions/${encodeURIComponent(row.transaction.id)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />
         ) : null}
 
         {activeTab === 'leads' ? (
           <section className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <KpiCard label="New leads" value={branchLeads.filter((lead) => ['new', 'unqualified'].includes(normalizeLower(lead.stage || lead.status))).length} helper="Unqualified enquiries" icon={Users} tone="blue" />
-              <KpiCard label="Unassigned leads" value={branchLeads.filter((lead) => !normalizeText(lead.assigned_agent_id)).length} helper="Needs ownership" icon={Users} tone="gold" />
-              <KpiCard label="Qualified" value={branchLeads.filter((lead) => normalizeLower(lead.stage || lead.status).includes('qualif')).length} helper="Ready for next action" icon={FileCheck2} tone="green" />
-              <KpiCard label="Viewings" value={branchLeads.filter((lead) => normalizeLower(lead.stage || lead.status).includes('view')).length} helper="Viewing stage" icon={CalendarDays} tone="slate" />
+            <div className="rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                <label className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border border-[#dbe6f1] bg-[#f8fbfe] px-3 focus-within:border-[#9db7cf] focus-within:bg-white"><Search size={16} className="shrink-0 text-[#7f92a6]" /><input value={searchParams.get('leadSearch') || ''} onChange={(event) => updateTabFilters({ leadSearch: event.target.value })} placeholder="Search leads, clients, listings..." className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]" /></label>
+                <select value={searchParams.get('leadStage') || searchParams.get('stage') || ''} onChange={(event) => updateTabFilters({ leadStage: event.target.value, stage: '' })} className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]"><option value="">All stages</option><option value="new">New</option><option value="qualified">Qualified</option><option value="view">Viewings</option></select>
+              </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2 rounded-[18px] border border-[#dfe8f1] bg-white p-3">
-              <input value={searchParams.get('leadSearch') || ''} onChange={(event) => updateTabFilters({ leadSearch: event.target.value })} placeholder="Search leads" className="min-h-[38px] min-w-[190px] flex-1 rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#142132] outline-none focus:border-[#61a98a]" />
-              <select value={searchParams.get('leadStage') || searchParams.get('stage') || ''} onChange={(event) => updateTabFilters({ leadStage: event.target.value, stage: '' })} className="min-h-[38px] rounded-[10px] border border-[#dce7f2] px-3 text-sm text-[#405b75]"><option value="">All stages</option><option value="new">New</option><option value="qualified">Qualified</option><option value="view">Viewings</option></select>
-            </div>
-            {filteredLeads.length ? <SimpleTable columns={['Lead', 'Category', 'Stage', 'Assigned agent', ...(canViewFinancials ? ['Value'] : []), 'Updated']} rows={filteredLeads.map((lead) => ({ key: lead.lead_id, onClick: () => navigate(`/pipeline/leads/${encodeURIComponent(lead.lead_id)}`, { state: { returnTo: `${location.pathname}${location.search}` } }), cells: [lead.lead_id, lead.lead_category || 'Lead', <StatusPill>{lead.stage || lead.status || 'New'}</StatusPill>, lead.assigned_agent_id || 'Unassigned', ...(canViewFinancials ? [formatCurrency(lead.budget || lead.estimated_value || 0)] : []), formatDateShort(lead.updated_at || lead.created_at)] }))} /> : <EmptyState title="No leads match these filters" copy="This branch has no visible leads for the selected filters." icon={Users} />}
+            <BranchLeadsTable leads={filteredLeads} canViewFinancials={canViewFinancials} assignedAgentName={getLeadAssignedAgent} onOpenLead={(leadId) => navigate(`/pipeline/leads/${encodeURIComponent(leadId)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} />
           </section>
         ) : null}
 
@@ -1406,32 +1496,36 @@ export default function AgencyBranchWorkspacePage() {
 
         {activeTab === 'compliance' ? (
           canViewCompliance ? <section className="space-y-5">
-            <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-              {[
-                ['Mandate completion', workspacePerformance?.compliance?.mandate],
-                ['Transaction compliance', workspacePerformance?.compliance?.transaction],
-                ['Outstanding documents', workspacePerformance?.compliance?.documents],
-              ].map(([label, metric]) => {
-                const isDocuments = label === 'Outstanding documents'
-                const value = !metric?.available ? '—' : isDocuments ? metric.outstanding : `${metric.complete}/${metric.total}`
-                const helper = !metric?.available ? 'No compatible branch records available' : isDocuments ? 'Transactions flagged with missing documents' : 'Completed versus tracked records'
-                return <KpiCard key={label} label={label} value={value} helper={helper} icon={ShieldCheck} tone={isDocuments && metric?.outstanding ? 'gold' : 'green'} />
-              })}
+            <section className="relative overflow-hidden rounded-[24px] border border-[#163c58] bg-[linear-gradient(135deg,#102b43_0%,#174f63_55%,#19734e_140%)] p-5 text-white shadow-[0_20px_48px_rgba(15,45,67,0.22)] sm:p-7">
+              <div className="absolute -right-20 -top-24 h-64 w-64 rounded-full bg-[#74d3a8]/15 blur-2xl" />
+              <div className="relative grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(250px,0.7fr)] lg:items-end">
+                <div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#bce3d1]">Branch compliance centre</p><h2 className="mt-2 text-2xl font-semibold tracking-[-0.04em] sm:text-3xl">Know what is ready, what needs evidence, and who owns the next step.</h2><p className="mt-3 max-w-2xl text-sm leading-6 text-[#d2e5ed]">A single operational view for file controls, practitioner credentials, FICA evidence, and PPRA-related renewal readiness.</p><div className="mt-5 flex flex-wrap gap-2"><span className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-semibold">{compliancePosture}</span><span className="rounded-full border border-white/15 bg-black/10 px-3 py-1.5 text-sm font-medium">{complianceExceptions.length} open exception{complianceExceptions.length === 1 ? '' : 's'}</span></div></div>
+                <div className="rounded-[20px] border border-white/15 bg-white/10 p-5 backdrop-blur"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-[#bce3d1]">Control posture</p><div className="mt-2 flex items-end justify-between gap-3"><strong className="text-5xl font-semibold tracking-[-0.06em]">{complianceScore === null ? '—' : `${complianceScore}%`}</strong><span className="pb-1 text-sm text-[#d2e5ed]">{totalComplianceControls ? `${completedComplianceControls} of ${totalComplianceControls} tracked controls complete` : 'Awaiting compatible file data'}</span></div><div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15"><span className="block h-full rounded-full bg-[#8ee5b7]" style={{ width: `${complianceScore || 0}%` }} /></div></div>
+              </div>
             </section>
-            <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-              <SectionTitle eyebrow="Exceptions" title="Compliance follow-up" copy="Only record-level operational status is shown here; identity documents and verification details stay in their authorised workflows." />
-              {(workspacePerformance?.compliance?.exceptions || []).length ? <div className="mt-5 space-y-2">{workspacePerformance.compliance.exceptions.map((item) => <button key={item.id} type="button" onClick={() => navigate(item.kind === 'listing' ? `/agent/listings/${encodeURIComponent(item.recordId)}` : `/transactions/${encodeURIComponent(item.recordId)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} className="flex w-full items-center justify-between gap-4 rounded-[16px] border border-[#e5edf5] bg-[#fbfdff] px-4 py-3 text-left transition hover:border-[#d6ad6a] hover:bg-white"><span><span className="block text-sm font-semibold text-[#142132]">{item.title}</span><span className="mt-1 block text-xs text-[#71849a]">{item.detail}</span></span><span className="shrink-0 text-sm font-semibold text-[#08784b]">Review</span></button>)}</div> : <div className="mt-5"><EmptyState title="No tracked compliance exceptions" copy="There are no outstanding mandate, transaction-compliance, or document flags in the branch records available to this workspace." icon={ShieldCheck} /></div>}
+
+            <section className="grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(320px,0.75fr)]">
+              <div className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6"><SectionTitle eyebrow="Regulatory evidence register" title="Credential and firm-control readiness" copy="These are evidence registers, not automatic legal determinations. Record verified certificates and supporting documentation here as the workflow is connected." /><div className="mt-5 grid gap-3 sm:grid-cols-2"><ComplianceCredentialCard icon={ShieldCheck} label="PPRA / Fidelity Fund Certificates" description="Firm and practitioner certificate records, expiry dates, and renewal ownership." status="Evidence required" detail={`${branchStaffRows.filter((member) => !member.isPendingInvite).length} active branch practitioner${branchStaffRows.filter((member) => !member.isPendingInvite).length === 1 ? '' : 's'} to register`} tone="gold" /><ComplianceCredentialCard icon={FileSearch} label="FICA & KYC verification" description="Track identity, risk classification, and authorised evidence at the relevant client or transaction record." status="Evidence workflow" detail={`${branchCompliance.transaction?.total || 0} tracked transaction file${branchCompliance.transaction?.total === 1 ? '' : 's'}`} tone="slate" /><ComplianceCredentialCard icon={Landmark} label="FIC registration" description="Store the firm's registration evidence and nominate a compliance owner for renewal or review." status="Evidence required" detail="Firm-level control" tone="gold" /><ComplianceCredentialCard icon={Files} label="Trust account / exemption" description="Record the operating model, audit evidence, or a valid exemption where applicable." status="Confirm model" detail="Firm-level control" tone="slate" /></div></div>
+              <aside className="rounded-[22px] border border-[#dfe8f1] bg-[linear-gradient(180deg,#ffffff_0%,#f7fbff_100%)] p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6"><div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#fff7e8] text-[#8a641d]"><CircleAlert size={19} /></span><div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Priority queue</p><h2 className="text-lg font-semibold tracking-[-0.03em] text-[#142132]">Needs an owner</h2></div></div><div className="mt-5 space-y-2">{complianceExceptions.length ? complianceExceptions.slice(0, 5).map((item) => <button key={item.id} type="button" onClick={() => navigate(item.kind === 'listing' ? `/agent/listings/${encodeURIComponent(item.recordId)}` : `/transactions/${encodeURIComponent(item.recordId)}`, { state: { returnTo: `${location.pathname}${location.search}` } })} className="w-full rounded-[16px] border border-[#e5edf5] bg-white p-3 text-left transition hover:border-[#d6ad6a] hover:shadow-sm"><span className="flex items-start justify-between gap-3"><span><strong className="block text-sm text-[#142132]">{item.title}</strong><span className="mt-1 block text-xs leading-5 text-[#71849a]">{item.detail}</span></span><span className="shrink-0 text-xs font-semibold text-[#08784b]">Review</span></span></button>) : <div className="rounded-[16px] border border-dashed border-[#cfe3d9] bg-[#f4fcf7] p-4 text-center"><ShieldCheck className="mx-auto text-[#26724c]" size={22} /><p className="mt-2 text-sm font-semibold text-[#1f5c3e]">No record-level exceptions</p><p className="mt-1 text-xs leading-5 text-[#60758b]">Add credential evidence to complete the firm-level register.</p></div>}</div></aside>
             </section>
+
+            <section className="grid gap-4 lg:grid-cols-3"><ComplianceCredentialCard icon={FileCheck2} label="Mandates" description="Signed mandate evidence across tracked listings." status={branchCompliance.mandate?.available ? `${branchCompliance.mandate.complete}/${branchCompliance.mandate.total} complete` : 'Not tracked'} detail={branchCompliance.mandate?.available ? 'Record-level control' : 'No compatible listing records'} tone={branchCompliance.mandate?.available && branchCompliance.mandate.complete === branchCompliance.mandate.total ? 'green' : 'gold'} /><ComplianceCredentialCard icon={ShieldCheck} label="Transaction file checks" description="Operational transaction compliance status and required-file completion." status={branchCompliance.transaction?.available ? `${branchCompliance.transaction.complete}/${branchCompliance.transaction.total} complete` : 'Not tracked'} detail={branchCompliance.transaction?.available ? 'Record-level control' : 'No compatible transaction records'} tone={branchCompliance.transaction?.available && branchCompliance.transaction.complete === branchCompliance.transaction.total ? 'green' : 'gold'} /><ComplianceCredentialCard icon={Clock3} label="Outstanding documents" description="Files flagged as needing documents or a compliance review." status={branchCompliance.documents?.available ? `${branchCompliance.documents.outstanding || 0} open` : 'Not tracked'} detail={branchCompliance.documents?.available ? 'Prioritise the exception queue' : 'No compatible transaction records'} tone={branchCompliance.documents?.outstanding ? 'gold' : 'green'} /></section>
+
+            <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Audit readiness</p><h2 className="mt-1 text-[1.18rem] font-semibold tracking-[-0.03em] text-[#142132]">Evidence stays with the authorised record</h2><p className="mt-1 text-sm leading-6 text-[#60758b]">This overview exposes only operational status. Sensitive FICA and identity evidence should remain in the authorised client, listing, or transaction workflow.</p></div><span className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f1] bg-[#f8fbff] px-3 py-2 text-sm font-semibold text-[#405b75]"><Clock3 size={15} /> Review on change</span></div></section>
           </section> : <EmptyState title="Compliance access is restricted" copy="This summary is available only to authorised branch management and compliance roles." icon={ShieldCheck} />
         ) : null}
 
         {activeTab === 'settings' ? (
           canManageBranch ? <section className="space-y-5">
+            <header className="flex flex-col gap-4 rounded-[20px] border border-[#dfe8f1] bg-white px-5 py-5 shadow-[0_10px_24px_rgba(24,45,68,0.04)] sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div><p className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Branch administration</p><h1 className="mt-1 text-2xl font-semibold tracking-[-0.04em] text-[#142132]">Branch settings</h1><p className="mt-2 text-sm leading-6 text-[#60758b]">Manage branch details, people, operating connections, and trading status.</p></div>
+              <ActionButton icon={Settings} onClick={() => setSettingsOpen(true)}>Edit branch details</ActionButton>
+            </header>
             <section className="rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_12px_28px_rgba(24,45,68,0.05)] sm:p-6">
-              <SectionTitle eyebrow="Settings" title="Branch administration" copy="Edit the branch profile, manage its team, and review the organisation configurations available to this office." />
+              <SectionTitle eyebrow="Core setup" title="The essentials" copy="Keep the branch record, team access, and commercial configuration current." />
               <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5"><p className="text-sm font-semibold text-[#1f3348]">Branch information</p><p className="mt-2 text-sm leading-6 text-[#6b7d93]">{branchLocation} · {branch?.email || 'No branch email'} · {branch?.phone || 'No branch phone'}</p><div className="mt-4"><ActionButton icon={Building2} onClick={() => setSettingsOpen(true)}>Edit branch</ActionButton></div></article>
-                <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5"><p className="text-sm font-semibold text-[#1f3348]">Staff and roles</p><p className="mt-2 text-sm leading-6 text-[#6b7d93]">{branchStaffRows.filter((member) => !member.isPendingInvite).length} staff · {pendingInvites.length} pending invitation{pendingInvites.length === 1 ? '' : 's'}</p><div className="mt-4 flex flex-wrap gap-2"><ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Invite staff</ActionButton><ActionButton onClick={() => navigateToTab('staff')}>Manage staff</ActionButton></div></article>
+                <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5"><p className="text-sm font-semibold text-[#1f3348]">Branch details</p><p className="mt-2 text-sm leading-6 text-[#6b7d93]">{branchLocation}<br />{branch?.email || 'No branch email'} · {branch?.phone || 'No branch phone'}</p><div className="mt-4"><ActionButton icon={Building2} onClick={() => setSettingsOpen(true)}>Edit details</ActionButton></div></article>
+                <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5"><p className="text-sm font-semibold text-[#1f3348]">People and access</p><p className="mt-2 text-sm leading-6 text-[#6b7d93]">{branchStaffRows.filter((member) => !member.isPendingInvite).length} active staff · {pendingInvites.length} invitation{pendingInvites.length === 1 ? '' : 's'} awaiting acceptance.</p><div className="mt-4 flex flex-wrap gap-2"><ActionButton icon={UserPlus} onClick={openBranchAgentInvite}>Invite staff</ActionButton><ActionButton onClick={() => navigateToTab('staff')}>Manage team</ActionButton></div></article>
                 <article className="rounded-[18px] border border-[#e4ebf4] bg-[#fbfdff] p-5"><p className="text-sm font-semibold text-[#1f3348]">Commission configuration</p><p className="mt-2 text-sm leading-6 text-[#6b7d93]">{canViewFinancials ? `${commissionStructures.length} active structure${commissionStructures.length === 1 ? '' : 's'} available for branch staff.` : 'Commission configuration is restricted to authorised financial roles.'}</p>{canViewFinancials ? <div className="mt-4"><ActionButton onClick={() => navigate('/agency/commission')}>Manage commission</ActionButton></div> : null}</article>
               </div>
             </section>

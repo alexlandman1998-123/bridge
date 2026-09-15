@@ -590,6 +590,13 @@ function getStableRouteContentKey(pathname = '') {
   if (pathname.startsWith('/settings')) return 'settings-shell'
   if (pathname.startsWith('/pipeline/leads/')) return pathname
 
+  // A branch workspace owns several URL-addressable tabs. Treating each tab
+  // as a separate route remounts the workspace (and repeats its data load),
+  // which feels like a full-page refresh. Keep the branch workspace mounted
+  // while its selected tab changes.
+  const branchWorkspaceMatch = pathname.match(/^\/agency\/branches\/([^/]+)(?:\/[^/]+)?$/)
+  if (branchWorkspaceMatch) return `/agency/branches/${branchWorkspaceMatch[1]}`
+
   const rentalListingMatch = pathname.match(/^\/agent\/rentals\/listings\/([^/]+)(?:\/[^/]+)?$/)
   if (rentalListingMatch && rentalListingMatch[1] !== 'new') {
     return `/agent/rentals/listings/${rentalListingMatch[1]}`
@@ -3563,17 +3570,7 @@ function AppRoutes() {
                 }
               />
               <Route
-                path="/agency/branches/:branchId"
-                element={
-                  <AgentManagementRoute allowBranchOperations>
-                    <RoleRoute allowedRoles={['agent']}>
-                      <AgencyBranchWorkspacePage />
-                    </RoleRoute>
-                  </AgentManagementRoute>
-                }
-              />
-              <Route
-                path="/agency/branches/:branchId/:tab"
+                path="/agency/branches/:branchId/:tab?"
                 element={
                   <AgentManagementRoute allowBranchOperations>
                     <RoleRoute allowedRoles={['agent']}>
