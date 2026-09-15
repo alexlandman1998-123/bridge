@@ -2320,7 +2320,7 @@ function DistributionChannel({
       </div>
       <div className="flex justify-start lg:justify-end">
         {manageActions.length ? (
-          <details className="relative">
+          <details className="relative open:z-40">
             <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
               <SlidersHorizontal size={15} />
               Manage
@@ -10606,7 +10606,7 @@ function AgentListingDetail() {
           </article>
         </section>
 
-        <article id="listing-distribution-channels" className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+        <article id="listing-distribution-channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
           <div className="flex flex-col gap-3 border-b border-[#edf2f7] p-5 md:flex-row md:items-start md:justify-between">
             <div>
               <h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3>
