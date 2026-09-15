@@ -110,6 +110,17 @@ assert.equal(validSubmission.normalized.intent, 'buy')
 assert.equal(validSubmission.normalized.contactEmail, 'avery@example.com')
 assert.equal(validSubmission.normalized.selectedListings[0].slug, 'modern-home-abc123')
 
+const agentProfileSubmission = validateAgencyIntakeSubmission({
+  intent: 'buy',
+  idempotencyKey: 'agent-profile-intake-0001',
+  contact: { name: 'Avery Buyer', email: 'avery@example.com' },
+  sourceChannel: 'agent_profile',
+  privacyConsent: true,
+  privacyPolicyVersion: 'privacy-v2',
+}, { slug: 'kingstons-atlantic', enabled_intents: ['buy', 'sell'] })
+assert.deepEqual(agentProfileSubmission.errors, {})
+assert.equal(agentProfileSubmission.normalized.sourceChannel, 'agent_profile')
+
 const buyerCrmRows = buildAgencyPublicIntakeCrmRows({
   nowIso: '2026-07-29T10:00:00.000Z',
   link: {

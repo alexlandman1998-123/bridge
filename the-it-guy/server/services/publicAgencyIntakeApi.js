@@ -16,6 +16,7 @@ const ALLOWED_SOURCE_CHANNELS = new Set([
   'qr',
   'referral',
   'manual',
+  'agent_profile',
   'other',
 ])
 const DATABASE_SOURCE_CHANNEL_ALIASES = new Map([

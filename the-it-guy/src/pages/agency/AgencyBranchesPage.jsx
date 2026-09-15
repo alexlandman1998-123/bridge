@@ -765,7 +765,7 @@ function PrincipalManagerInviteModal({ open, onClose }) {
 export default function AgencyBranchesPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   const [overview, setOverview] = useState(EMPTY_OVERVIEW)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -808,10 +808,16 @@ export default function AgencyBranchesPage() {
     if (provinceFilter !== 'all') nextParams.set('province', provinceFilter)
     if (sortBy !== 'pipeline') nextParams.set('sort', sortBy)
     if (viewMode !== 'list') nextParams.set('view', viewMode)
-    if (nextParams.toString() !== searchParams.toString()) {
-      setSearchParams(nextParams, { replace: true })
-    }
-  }, [period, provinceFilter, searchParams, searchTerm, setSearchParams, sortBy, statusFilter, viewMode])
+    const nextSearch = nextParams.toString()
+    const currentSearch = typeof window === 'undefined' ? searchParams.toString() : window.location.search.replace(/^\?/, '')
+    if (nextSearch === currentSearch || typeof window === 'undefined') return
+
+    // These controls only refine the branch list. Updating them through the
+    // router remounts the route shell in some workspace configurations, which
+    // looks like a full-page refresh. Keep the shareable URL without navigating.
+    const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash || ''}`
+    window.history.replaceState(window.history.state, '', nextUrl)
+  }, [period, provinceFilter, searchParams, searchTerm, sortBy, statusFilter, viewMode])
 
   const provinceOptions = useMemo(() => {
     const values = [...new Set((overview.branches || []).map((row) => normalizeText(row?.province)).filter(Boolean))]
