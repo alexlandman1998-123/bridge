@@ -135,6 +135,7 @@ do $buyer_handoff_setup$
 declare
   v_onboarding_token text;
   v_transaction_id uuid;
+  v_buyer_id uuid;
 begin
   select onboarding.token, onboarding.transaction_id
     into v_onboarding_token, v_transaction_id
@@ -153,11 +154,38 @@ begin
     and lower(trim(coalesce(transaction_row.onboarding_status, ''))) in ('awaiting_client_onboarding', 'awaiting_signed_otp')
     and lower(trim(coalesce(transaction_row.reservation_status, ''))) in ('not_required', 'pending', 'paid', 'verified', 'rejected')
     and transaction_row.reservation_required is not null
-  order by onboarding.updated_at desc nulls last
+  order by (transaction_row.buyer_id is not null) desc, onboarding.updated_at desc nulls last
   limit 1;
 
   if v_onboarding_token is null or v_transaction_id is null then
     raise exception 'No active buyer-onboarding fixture has a valid current snapshot; no verification was run.' using errcode = 'P0002';
+  end if;
+
+  -- Staging may contain launch-ready onboarding rows that have not yet been
+  -- connected to a buyer profile. Bind a synthetic buyer only inside this
+  -- rollback-backed rehearsal so the portal handoff is exercised end to end
+  -- without creating persistent data or altering a real customer journey.
+  if not exists (
+    select 1 from public.transactions transaction_row
+    where transaction_row.id = v_transaction_id
+      and transaction_row.buyer_id is not null
+  ) then
+    insert into public.buyers (name, is_demo_data, demo_metadata)
+    values (
+      'Phase 4 staging verification buyer',
+      true,
+      jsonb_build_object('source', 'buyer_onboarding_portal_token_handoff_rls_smoke')
+    )
+    returning id into v_buyer_id;
+
+    update public.transactions
+       set buyer_id = v_buyer_id
+     where id = v_transaction_id
+       and buyer_id is null;
+
+    if not found then
+      raise exception 'Buyer onboarding fixture could not be bound to its temporary staging buyer.' using errcode = 'P0001';
+    end if;
   end if;
 
   perform set_config(

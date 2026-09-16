@@ -298,6 +298,7 @@ function rowMatchesQuickFilter(row, filterKey, searchTerm = '') {
       row?.unit?.unit_number,
       row?.transaction?.property_address_line_1,
       transaction.transaction_reference,
+      transaction.arch9_listing_reference,
       transaction.reference,
       transaction.property_description,
       financeType,
@@ -355,6 +356,7 @@ function buildVisibleTransactionRowModel(row, index) {
     propertyImageUrl: getPropertyImageUrl(row),
     propertyTypeLabel: getPropertyTypeLabel(row),
     transactionReference: row?.transaction?.transaction_reference || row?.transaction?.reference || '',
+    arch9ListingReference: row?.transaction?.arch9_listing_reference || row?.transaction?.arch9ListingReference || '',
     buyerBondOriginatorRequest: getBuyerBondOriginatorRequestSummary(row),
     bondOriginatorProgress: getBondOriginatorAgentProgressSummary(row),
   }
@@ -537,6 +539,7 @@ function AgentTransactionsTable({
                 propertyImageUrl,
                 propertyTypeLabel,
                 transactionReference,
+                arch9ListingReference,
                 buyerBondOriginatorRequest,
                 bondOriginatorProgress,
               } = model
@@ -574,7 +577,9 @@ function AgentTransactionsTable({
                         <strong className="transaction-property-title" title={propertyDisplay.title}>{propertyDisplay.title}</strong>
                         <small className="transaction-property-suburb" title={propertyDisplay.secondary}>{propertyDisplay.secondary}</small>
                         <span className={`transaction-property-badge ${getStageBadgeClass(mainStage.key)}`}>{mainStage.label}</span>
-                        {transactionReference ? (
+                        {arch9ListingReference ? (
+                          <small className="transaction-property-ref" title={arch9ListingReference}>Property {arch9ListingReference}</small>
+                        ) : transactionReference ? (
                           <small className="transaction-property-ref" title={transactionReference}>Ref {transactionReference}</small>
                         ) : null}
                         {buyerBondOriginatorRequest?.requested ? (

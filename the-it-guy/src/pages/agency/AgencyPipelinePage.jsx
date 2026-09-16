@@ -31581,7 +31581,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                      <span className="rounded-full border border-[#cfe8dc] bg-[#effaf3] px-2.5 py-1 text-xs font-semibold text-[#26724c]">Onboarding Ready</span>
 	                    ) : null}
 	                    <Button type="button" size="sm" variant="secondary" className="rounded-[10px]" onClick={() => openShowDayLead(row, 'activity')}>Open Lead</Button>
-		                    <Button type="button" size="sm" className="rounded-[10px]" onClick={() => openShowDayLead(row, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>Open Setup / Offer</Button>
+	                    <Button type="button" size="sm" className="rounded-[10px]" onClick={() => openShowDayLead(row, BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>Open Onboarding / OTP</Button>
                   </div>
                 </div>
               ))
@@ -31884,7 +31884,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                        <td className="px-3 py-2">{row.overdue ? 'Overdue' : row.offerReady ? 'Onboarding ready' : 'Follow-up due'}</td>
                         <td className="px-3 py-2">
                           <button type="button" className="text-xs font-semibold text-[#0b63f6]" onClick={() => openShowDayLead(row, row.offerReady ? BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY : 'activity')}>
-		                            {row.offerReady ? 'Open Setup / Offer' : 'Open Lead'}
+		                            {row.offerReady ? 'Open Onboarding / OTP' : 'Open Lead'}
                           </button>
                         </td>
                       </tr>
@@ -33041,7 +33041,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </Button>
 	                              <Button type="button" size="sm" className="rounded-[12px]" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}>
 	                                <Send className="h-4 w-4" />
-		                                Open Setup / Offer
+		                                Open Onboarding / OTP
 	                              </Button>
                             </div>
                           </div>

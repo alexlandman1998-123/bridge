@@ -170,7 +170,7 @@ assert.match(
 )
 assert.match(
   clientPortalPageSource,
-  /const CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS = 7000[\s\S]*?function withClientPortalLoadTimeout\(task,/s,
+  /const CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS = 30000[\s\S]*?function withClientPortalLoadTimeout\(task,/s,
   'client portal first paint loads should be bounded so mobile users cannot stay on the preparing screen indefinitely',
 )
 assert.match(
@@ -178,10 +178,10 @@ assert.match(
   /withClientPortalLoadTimeout\([\s\S]*?getClientPortalWorkspaceData\(token, requestedWorkspace,[\s\S]*?mode: 'core'[\s\S]*?phase: 'core', timeoutMs: CLIENT_PORTAL_CORE_LOAD_TIMEOUT_MS/s,
   'client portal core workspace fetch should use the bounded first-paint timeout',
 )
-assert.match(
+assert.doesNotMatch(
   clientPortalPageSource,
-  /isSellerPortalToken && effectiveSellerPortalAccessToken && isClientPortalLoadTimeoutError\(coreError\)[\s\S]*?requireSellerReauthentication\(\{ sessionExpired: true \}\)/s,
-  'seller portal core timeout with a stored access token should clear stale session state and show the password gate',
+  /isClientPortalLoadTimeoutError\(coreError\)\)\s*\{\s*requireSellerReauthentication/s,
+  'a seller request timeout must not invalidate a saved session',
 )
 assert.match(
   clientPortalWorkspaceSource,

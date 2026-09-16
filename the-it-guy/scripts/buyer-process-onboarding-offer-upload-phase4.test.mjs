@@ -83,7 +83,7 @@ assert.match(transactionDetailSource, /Arch9 terms/)
 assert.match(transactionDetailSource, /bondOriginatorAction/)
 assert.match(transactionDetailSource, /transferAttorneyAction/)
 assert.match(transactionDetailSource, /buyerPortalAction/)
-assert.match(transactionDetailSource, /buyerProcessHandoff=\{buyerProcessHandoff\}/)
+assert.match(transactionDetailSource, /<BuyerProcessHandoffPanel[\s\S]*?handoff=\{buyerProcessHandoff\}/)
 
 assert.doesNotMatch(source, /Send Offer Link/)
 assert.doesNotMatch(source, /Offer CTA/)
