@@ -31,7 +31,7 @@ function unique(values = []) {
   return [...new Set(values.map(normalizePrivatePropertyText).filter(Boolean))]
 }
 
-function parsePrivatePropertyActiveListings(xml = '') {
+export function parsePrivatePropertyActiveListings(xml = '') {
   return extractPrivatePropertyXmlBlocks(xml, 'ActiveListing').map((block) => ({
     listingType: extractPrivatePropertyXmlTag(block, 'ListingType'),
     privatePropertyRef: extractPrivatePropertyXmlTag(block, 'PrivatePropertyRef'),

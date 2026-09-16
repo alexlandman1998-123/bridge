@@ -920,10 +920,44 @@ function mapUnitAsListing(row = {}, development = {}) {
   }
 }
 
-function mapDirectOrganisation(row = {}) {
+function getOrganisationLogoUrl(row = {}, branding = {}) {
+  const metadata = branding.metadata_json || branding.metadataJson || branding.metadata || {}
+  return firstDashboardValue(branding, [
+    'logo_light_url',
+    'logoLightUrl',
+    'logo_dark_url',
+    'logoDarkUrl',
+    'logo_icon_url',
+    'logoIconUrl',
+    'logo_url',
+    'logoUrl',
+  ]) || firstDashboardValue(metadata, [
+    'logo_light_url',
+    'logoLightUrl',
+    'logo_dark_url',
+    'logoDarkUrl',
+    'logo_icon_url',
+    'logoIconUrl',
+    'logo_url',
+    'logoUrl',
+  ]) || firstDashboardValue(row, [
+    'logo_url',
+    'logoUrl',
+    'logo_light_url',
+    'logoLightUrl',
+    'logo_dark_url',
+    'logoDarkUrl',
+    'image_url',
+    'imageUrl',
+    'avatar_url',
+    'avatarUrl',
+  ])
+}
+
+function mapDirectOrganisation(row = {}, branding = {}) {
   return {
     id: firstDashboardValue(row, ['id', 'organisation_id', 'organization_id']),
-    logoUrl: firstDashboardValue(row, ['logo_url', 'logoUrl', 'logo_light_url', 'logoLightUrl', 'image_url', 'imageUrl', 'avatar_url', 'avatarUrl']),
+    logoUrl: getOrganisationLogoUrl(row, branding),
     name: getAdminOrganisationName(row) || 'Organisation',
     tradingName: firstDashboardValue(row, ['trading_name', 'tradingName', 'display_name', 'displayName']),
     status: firstDashboardValue(row, ['status', 'organisation_status', 'organization_status', 'is_active'], 'active'),
@@ -1053,7 +1087,7 @@ async function fetchAdminRows(table, select = '*') {
 }
 
 async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD) {
-  const [organisationsResult, profilesResult, orgUsersResult, listingsResult, transactionsResult, developmentsResult, unitsResult] = await Promise.all([
+  const [organisationsResult, profilesResult, orgUsersResult, listingsResult, transactionsResult, developmentsResult, unitsResult, brandingResult] = await Promise.all([
     fetchAdminRows('organisations'),
     fetchAdminRows('profiles'),
     fetchAdminRows('organisation_users'),
@@ -1061,6 +1095,7 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
     fetchAdminRows('transactions'),
     fetchAdminRows('developments'),
     fetchAdminRows('units'),
+    fetchAdminRows('organisation_branding'),
   ])
 
   const profileById = new Map()
@@ -1072,9 +1107,18 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
     if (email) profileByEmail.set(email, profile)
   }
 
+  const brandingByOrganisationId = new Map(
+    brandingResult.rows.map((branding) => [
+      firstDashboardValue(branding, ['organisation_id', 'organisationId', 'organization_id', 'organizationId']),
+      branding,
+    ]).filter(([organisationId]) => Boolean(organisationId)),
+  )
   const activeOrganisations = organisationsResult.rows
     .filter(isActiveOrganisationRow)
-    .map(mapDirectOrganisation)
+    .map((organisation) => mapDirectOrganisation(
+      organisation,
+      brandingByOrganisationId.get(firstDashboardValue(organisation, ['id', 'organisation_id', 'organization_id'])) || {},
+    ))
   const mockOrganisationIds = new Set(
     organisationsResult.rows
       .filter(isMockAdminOrganisation)
@@ -1163,6 +1207,7 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
     transactionsResult.warning,
     developmentsResult.warning,
     unitsResult.warning,
+    brandingResult.warning,
   ]
     .filter(Boolean)
     .map((message) => ({ message, type: 'admin_direct_data' }))
@@ -5444,11 +5489,12 @@ function OrganisationCardsView({ snapshot = EMPTY_DASHBOARD }) {
 }
 
 function OrganisationLogo({ organisation = {} }) {
+  const [imageFailed, setImageFailed] = useState(false)
   const name = organisation.name || organisation.tradingName || 'Organisation'
   const logoUrl = organisation.logoUrl || organisation.logo_url || ''
   return (
     <span className="organisation-logo" aria-label={`${name} logo`}>
-      {logoUrl ? <img alt="" src={logoUrl} /> : name.slice(0, 2).toUpperCase()}
+      {logoUrl && !imageFailed ? <img alt="" onError={() => setImageFailed(true)} src={logoUrl} /> : name.slice(0, 2).toUpperCase()}
     </span>
   )
 }

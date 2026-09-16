@@ -138,6 +138,12 @@ verify_jwt = false
 import_map = "./functions/meta-lead-ads-webhook/deno.json"
 entrypoint = "./functions/meta-lead-ads-webhook/index.ts"
 
+[functions.private-property-webhook]
+enabled = true
+verify_jwt = false
+import_map = "./functions/private-property-webhook/deno.json"
+entrypoint = "./functions/private-property-webhook/index.ts"
+
 [functions.meta-lead-ads-admin]
 enabled = true
 verify_jwt = false

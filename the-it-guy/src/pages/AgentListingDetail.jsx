@@ -4782,7 +4782,11 @@ function AgentListingDetail() {
     const accessToken = sessionResult.data?.session?.access_token
     if (!accessToken) throw new Error('Sign in again before using Private Property publishing.')
     const method = String(options.method || 'POST').toUpperCase()
-    const query = options.query instanceof URLSearchParams ? `?${options.query.toString()}` : ''
+    const queryParams = options.query instanceof URLSearchParams
+      ? new URLSearchParams(options.query)
+      : new URLSearchParams()
+    queryParams.set('environment', 'production')
+    const query = `?${queryParams.toString()}`
     const requestOptions = {
       method,
       headers: {
@@ -4792,6 +4796,7 @@ function AgentListingDetail() {
     if (method !== 'GET') {
       requestOptions.headers['Content-Type'] = 'application/json'
       requestOptions.body = JSON.stringify({
+        environment: 'production',
         photosChanged: true,
         ...body,
       })
@@ -4887,6 +4892,8 @@ function AgentListingDetail() {
 
   async function publishPrivatePropertyListing() {
     if (!await requireSyndicationReviewBeforePublish('privateProperty')) return null
+    const confirmation = `PRIVATE_PROPERTY_PUBLISH:${listingRecord?.id || ''}:production`
+    if (!window.confirm('Submit this exact Arch9 listing to Private Property production? Private Property will begin processing the listing after submission.')) return null
     setPrivatePropertyAction('publish')
     setDetailError('')
     setDetailMessage('Submitting to Private Property...')
@@ -4895,7 +4902,7 @@ function AgentListingDetail() {
         successMessage: '',
       })
       if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Private Property.')
-      const payload = await callPrivatePropertyListingAction('publish', {}, { fallbackMessage: 'Private Property publish failed.' })
+      const payload = await callPrivatePropertyListingAction('publish', { confirm: confirmation }, { fallbackMessage: 'Private Property publish failed.' })
       setPrivatePropertyPreview(payload)
       const privatePropertyReference = getPrivatePropertyReferenceFromResponse(payload)
       const nextStatus = payload?.report?.syncResult?.arch9Status || payload?.report?.externalStatus || 'submitted'

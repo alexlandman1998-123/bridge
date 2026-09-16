@@ -308,3 +308,6 @@
 .template-home-seekers .search-button:hover{background:var(--secondary)}
 .template-home-seekers .site-footer-dark{background:var(--primary)}
 .template-home-seekers .site-footer-dark .site-logo-image{filter:none}
+
+/* Feature pills introduce the property narrative. */
+.listing-feature-tags{margin:0 0 18px}

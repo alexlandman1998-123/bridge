@@ -22,6 +22,7 @@ import {
   persistCanonicalProperty24AgentMappings,
 } from '../../../server/property24/agentMappingService.js'
 import { resolveOrganisationProperty24Connection } from '../../../server/property24/organisationConnectionService.js'
+import { fetchOrganisationProperty24Credentials } from '../../../server/property24/organisationCredentialService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
 const appRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -137,19 +138,30 @@ async function authenticateRequest({ request, supabase, organisationId } = {}) {
   return { ok: true, user }
 }
 
-function createProperty24FromEnv(env = {}, environment = 'exdev') {
-  const runtime = resolveProperty24EnvironmentCredentials({ env, environment })
-  if (!runtime.configured) {
-    const error = new Error(`Property24 ${runtime.environment} credentials are incomplete: ${runtime.missing.join(', ')}.`)
+async function createProperty24ForOrganisation({ env = {}, connection, supabase, organisationId } = {}) {
+  const runtime = resolveProperty24EnvironmentCredentials({ env, environment: connection?.environment })
+  const credentials = await fetchOrganisationProperty24Credentials({
+    supabase,
+    organisationId,
+    environment: connection?.environment,
+  })
+  if (!runtime.environmentMatches || !runtime.baseUrl || !credentials?.username || !credentials?.password) {
+    const missing = [
+      ...(!runtime.baseUrl || !runtime.environmentMatches ? ['Property24 production endpoint'] : []),
+      ...(!credentials?.username ? ['organisation username'] : []),
+      ...(!credentials?.password ? ['organisation password'] : []),
+    ]
+    const error = new Error(`Property24 ${runtime.environment} connection is incomplete: ${missing.join(', ')}.`)
     error.code = 'property24_environment_credentials_missing'
     error.status = 503
     throw error
   }
   return createProperty24Client({
     baseUrl: runtime.baseUrl,
-    username: runtime.username,
-    password: runtime.password,
-    userGroupId: runtime.userGroupId,
+    apiVersion: runtime.apiVersion,
+    username: credentials.username,
+    password: credentials.password,
+    userGroupId: credentials.userGroupId,
   })
 }
 
@@ -215,7 +227,7 @@ export default async function handler(request, response) {
     })
     const agencyId = connection.agencyId
 
-    const property24 = createProperty24FromEnv(env, connection.environment)
+    const property24 = await createProperty24ForOrganisation({ env, connection, supabase, organisationId })
     const [agentSnapshot, arch9Agents, canonicalMappings] = await Promise.all([
       fetchProperty24AgencyAgentSnapshot({ property24, agencyId }),
       fetchArch9AgentCandidates({ supabase, organisationId }),

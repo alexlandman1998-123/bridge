@@ -27,10 +27,30 @@ function isUuid(value: string) {
     .test(value);
 }
 
-function serviceRoleRequest(request: Request, serviceRoleKey: string) {
+async function serviceRoleRequest(
+  request: Request,
+  serviceRoleKey: string,
+  supabaseUrl: string,
+) {
   const token = websiteLeadText(request.headers.get("authorization"), 4096)
     .replace(/^Bearer\s+/i, "");
-  return Boolean(serviceRoleKey) && token === serviceRoleKey;
+  if (Boolean(serviceRoleKey) && token === serviceRoleKey) return true;
+
+  // Website deployments can retain a still-valid service key while a function
+  // secret rotates. Verify that key has service-only access to the private
+  // submissions table instead of treating any signed-in caller as trusted.
+  if (!token || !supabaseUrl) return false;
+  const response = await fetch(
+    `${supabaseUrl.replace(/\/$/, "")}/rest/v1/website_lead_submissions?select=id&limit=1`,
+    {
+      headers: {
+        authorization: `Bearer ${token}`,
+        apikey: token,
+      },
+      signal: AbortSignal.timeout(5_000),
+    },
+  ).catch(() => null);
+  return response?.ok === true;
 }
 
 async function completeDelivery(
@@ -208,7 +228,7 @@ Deno.serve(async (request) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
     4096,
   );
-  if (!serviceRoleRequest(request, serviceRoleKey)) {
+  if (!await serviceRoleRequest(request, serviceRoleKey, supabaseUrl)) {
     return jsonResponse(403, {
       error: "Service-role authorization is required.",
     });

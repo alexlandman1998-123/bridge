@@ -1,5 +1,6 @@
 import { additionalMockProperties } from '@/lib/mock-properties'
 import { applyBlogMediaAssets, visiblePublishedBlogPosts } from '@/lib/blog-publication'
+import { resolveListingTransactionType } from '@/lib/listing-transaction-type'
 import { legacyPropertySlug, matchesPropertySlug, propertySlug } from '@/lib/property-urls'
 import { getServerSupabase } from '@/lib/supabase-server'
 import type { PublicBlogPost, PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
@@ -112,16 +113,15 @@ function mapPage(row: Record<string, unknown>): PublicPage {
   }
 }
 
-function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'] = []): PublicProperty {
-  const listingType = String(row.listing_type || '').trim().toLowerCase()
+function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'] = []): PublicProperty | null {
+  const transactionType = resolveListingTransactionType(row.listing_type)
+  if (!transactionType) return null
   const consultantName = String(row.consultant_name || '').trim()
   return {
     id: String(row.listing_id),
     reference: String(row.arch9_reference || row.listing_id),
     title: String(row.title || 'Property listing'),
-    // Property24 uses both "Rental" and "Rent" in historic feeds. Treat any
-    // rental spelling as a rental rather than silently labelling it for sale.
-    transactionType: ['rental', 'rent', 'to rent', 'to-rent'].includes(listingType) ? 'rental' : 'sale',
+    transactionType,
     propertyType: String(row.property_type || 'Property'),
     suburb: String(row.suburb || ''),
     province: row.province ? String(row.province) : undefined,
@@ -136,6 +136,15 @@ function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'
     amenities: strings(row.amenities),
     media,
   }
+}
+
+function mapPublishedProperties(listings: Array<{ row: Record<string, unknown>; media: PublicProperty['media'] }>): PublicProperty[] {
+  return listings.flatMap(({ row, media }) => {
+    const property = mapProperty(row, media)
+    if (property) return [property]
+    console.warn('[website-listing] Excluded listing with an unrecognised transaction type.', { listingId: row.listing_id, listingType: row.listing_type })
+    return []
+  })
 }
 
 function filterProperties(properties: PublicProperty[], query: Record<string, string | undefined> = {}): PublicProperty[] {
@@ -238,7 +247,7 @@ export async function getPublicProperties(site: ResolvedSite, query: Record<stri
   if (site.preview && site.id === demoSite.id) return filterProperties(site.properties, query)
   const supabase = getServerSupabase()
   const listings = await getPublishedWebsiteListings(supabase, site)
-  const publishedProperties = listings.map(({ row, media }) => mapProperty(row, media))
+  const publishedProperties = mapPublishedProperties(listings)
   return filterProperties(publishedProperties, query)
 }
 
@@ -403,7 +412,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
 
   const brand = (revisionResult.data?.brand_json || {}) as Record<string, unknown>
   const properties = await getPublishedWebsiteListings(supabase, { id: site.id, organisationId: site.organisation_id }, 12)
-  const publishedProperties = properties.map(({ row, media }) => mapProperty(row, media))
+  const publishedProperties = mapPublishedProperties(properties)
   return {
     id: site.id,
     organisationId: site.organisation_id,

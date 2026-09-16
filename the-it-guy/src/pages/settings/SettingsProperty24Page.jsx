@@ -26,7 +26,6 @@ import {
   updateWorkflowSettings,
 } from '../../lib/settingsApi'
 import {
-  createSuggestedProperty24AgentMappings,
   createSuggestedProperty24SourceReference,
   getCanonicalArch9AgentProfile,
   normalizeProperty24AgentRow,
@@ -600,20 +599,6 @@ export default function SettingsProperty24Page() {
     } finally {
       setSavingCredentials(false)
     }
-  }
-
-  async function applySuggestedMappings(nextProperty24Agents = settings.property24Agents) {
-    const suggested = createSuggestedProperty24AgentMappings({
-      arch9Agents: agentCandidates,
-      property24Agents: nextProperty24Agents,
-      existingMappings: settings.agentMappings,
-      sourceReferencePrefix: settings.sourceReferencePrefix,
-    })
-    await persistProperty24Settings({
-      ...settings,
-      property24Agents: nextProperty24Agents,
-      agentMappings: suggested,
-    }, 'Auto-matched and saved Property24 agents.')
   }
 
   function createNextMappingsForAgent(agent, patch) {
@@ -1227,9 +1212,9 @@ export default function SettingsProperty24Page() {
             }`}>
               {agentConnectionLabel}
             </span>
-            <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={() => applySuggestedMappings()} disabled={saving}>
+            <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={syncProperty24Agents} disabled={saving || syncing || !settings.agencyId}>
               <Wand2 className="h-4 w-4" />
-              Auto-match agents
+              {syncing ? 'Syncing profiles...' : 'Sync profiles & auto-match'}
             </button>
           </div>
         </div>
@@ -1369,7 +1354,7 @@ export default function SettingsProperty24Page() {
         )}
       </section>
 
-      <section className="rounded-[16px] border border-[#e1e8ef] bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
+      <section className="hidden" aria-hidden="true">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-[#17233a]">Sync Status</h2>

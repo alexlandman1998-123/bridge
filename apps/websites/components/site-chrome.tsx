@@ -5,7 +5,7 @@ import resourceStyles from './resource-navigation.module.css'
 import { hasPublishedBlogPosts } from '@/lib/site-repository'
 import type { ResolvedSite } from '@/lib/types'
 import { isHomeSeekersTemplate, templateNavigation } from '@/lib/site-templates'
-import { publicWebsiteHref, selectWebsiteLogo } from '@/lib/website-brand'
+import { selectWebsiteLogo } from '@/lib/website-brand'
 
 function resourceLinks(hasBlogPosts: boolean) {
   return [
@@ -37,10 +37,9 @@ export async function SiteFooter({ site }: { site: ResolvedSite }) {
   const agency = homeSeekers ? [{ href: '/about', label: 'About us' }, { href: '/about', label: 'Our team' }, { href: '/contact', label: 'Contact' }] : templateNavigation(site.templateKey)
   explore.push(...resources)
   const social = Object.entries(site.socialLinks || {}) as Array<[string, string]>
-  const externalWebsite = publicWebsiteHref(site.website)
 
   return <footer className="site-footer-dark"><div className="footer-top">
-    <div className="footer-identity"><Link className="footer-brand" href="/" aria-label={`${site.name} home`}><SiteLogo site={site} dark /></Link>{site.tagline ? <p>{site.tagline}</p> : null}{externalWebsite ? <a className="footer-external-website" href={externalWebsite} target="_blank" rel="noreferrer">Visit website <span aria-hidden="true">↗</span></a> : null}{social.length ? <div className="footer-socials">{social.map(([network, href]) => <a aria-label={network} href={href} key={network} rel="noreferrer" target="_blank">{network.slice(0, 1).toUpperCase()}</a>)}</div> : null}</div>
+    <div className="footer-identity"><Link className="footer-brand" href="/" aria-label={`${site.name} home`}><SiteLogo site={site} dark /></Link>{site.tagline ? <p>{site.tagline}</p> : null}{social.length ? <div className="footer-socials">{social.map(([network, href]) => <a aria-label={network} href={href} key={network} rel="noreferrer" target="_blank">{network.slice(0, 1).toUpperCase()}</a>)}</div> : null}</div>
     <nav className="footer-column" aria-label="Explore"><p>Explore</p>{explore.map((item) => <Link href={item.href} key={`${item.href}-${item.label}`}>{item.label}</Link>)}</nav>
     <nav className="footer-column" aria-label="Agency"><p>{site.name}</p>{agency.map((item) => <Link href={item.href} key={`${item.href}-${item.label}`}>{item.label}</Link>)}</nav>
     <div className="footer-cta"><h2>Find your next chapter.</h2><Link href="/properties">Browse properties <span aria-hidden="true">↗</span></Link></div>
