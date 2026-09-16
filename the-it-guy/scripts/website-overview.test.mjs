@@ -79,6 +79,7 @@ assert.ok(component.includes('blogValidationMessage') && component.includes('Com
 assert.ok(component.includes('Publication date and time') && component.includes('Schedule post') && !component.includes('Schedule date and time (for example'), 'Scheduling should use a validated date control rather than a browser prompt.')
 assert.ok(component.includes('BlogRenderedPreview') && component.includes('wlo-rendered-preview'), 'Preview mode should render the article blocks rather than only showing editor metadata.')
 assert.ok(component.includes('blogSlugFromTitle') && component.includes("field === 'title' && !current.slug"), 'A new article URL should be generated from its title without overwriting an edited slug.')
+assert.ok(component.includes('wlo-blog-editor-loading') && component.includes('Loading article editor…'), 'The routed editor must tolerate the initial load before an article is available.')
 assert.ok(component.includes('createWebsiteBlogPost') && component.includes('updateWebsiteBlogPost'), 'Blog management should save dedicated posts rather than temporary website pages.')
 assert.ok(!component.includes('createWebsiteBlogPage'), 'The Blog tab must not use the retired temporary blog-page creator.')
 assert.ok(component.includes('changesReadyCount'), 'Website editing should retain a revision-wide change count.')
