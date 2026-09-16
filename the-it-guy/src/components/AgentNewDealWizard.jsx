@@ -44,6 +44,13 @@ const PARTNER_MODE_BUYER = 'buyer'
 const PROPERTY_MODE_PRIVATE = 'private'
 const PROPERTY_MODE_DEVELOPMENT = 'development'
 const PROPERTY_MODE_IMPORT = 'import'
+const QUICK_CAPTURE_STRUCTURE_OPTIONS = [
+  { value: 'full_title', label: 'Full title' },
+  { value: 'sectional_title', label: 'Sectional title' },
+  { value: 'estate', label: 'Estate / new development' },
+  { value: 'share_block', label: 'Share block' },
+  { value: 'other', label: 'Other / not yet known' },
+]
 const CANONICAL_TRANSACTION_STRUCTURE = [
   'transaction',
   'property',
@@ -682,13 +689,13 @@ function normalizeFinanceTypeForApi(value) {
 
 function getCreationOrigin(propertyMode) {
   if (propertyMode === PROPERTY_MODE_DEVELOPMENT) return 'development_unit'
-  if (propertyMode === PROPERTY_MODE_IMPORT) return 'imported_existing_deal'
+  if (propertyMode === PROPERTY_MODE_IMPORT) return 'quick_address_capture'
   return 'active_listing'
 }
 
 function getOriginLabel(propertyMode) {
   if (propertyMode === PROPERTY_MODE_DEVELOPMENT) return 'Created via development unit'
-  if (propertyMode === PROPERTY_MODE_IMPORT) return 'Imported existing deal'
+  if (propertyMode === PROPERTY_MODE_IMPORT) return 'Quick address-first capture'
   return 'Created via active listing'
 }
 
@@ -774,15 +781,17 @@ function buildCompletenessSnapshot({ form, listing = null, propertyMode = PROPER
   const checks = [
     {
       label: 'Signed mandate',
-      complete: propertyMode !== PROPERTY_MODE_PRIVATE ||
+      complete: propertyMode === PROPERTY_MODE_IMPORT
+        ? Boolean(form.importMandateUploaded)
+        : propertyMode !== PROPERTY_MODE_PRIVATE ||
         Boolean(form.importMandateUploaded) ||
         getListingMandateReady(listing),
     },
     {
       label: 'Seller FICA',
-      complete: propertyMode !== PROPERTY_MODE_PRIVATE ||
-        getSellerFicaReady(listing) ||
-        propertyMode === PROPERTY_MODE_IMPORT,
+      complete: propertyMode === PROPERTY_MODE_IMPORT
+        ? false
+        : propertyMode !== PROPERTY_MODE_PRIVATE || getSellerFicaReady(listing),
     },
     {
       label: 'Buyer ID',
@@ -889,6 +898,10 @@ function AgentNewDealWizard({
     importSellerName: '',
     importSellerEmail: '',
     importSellerPhone: '',
+    importPropertyStructure: 'full_title',
+    importSchemeName: '',
+    importUnitNumber: '',
+    importDevelopmentName: '',
     importCurrentStage: AGENT_TRANSACTION_STAGE_OPTIONS[0],
     importMandateUploaded: false,
     importOtpUploaded: false,
@@ -1959,6 +1972,7 @@ function AgentNewDealWizard({
       privateListingId: '',
       developmentId: nextMode === PROPERTY_MODE_DEVELOPMENT ? previous.developmentId || initialDevelopmentId || '' : '',
       unitId: '',
+      connectBuyerNow: nextMode === PROPERTY_MODE_IMPORT ? false : previous.connectBuyerNow,
     }))
   }
 
@@ -1980,9 +1994,6 @@ function AgentNewDealWizard({
         if (!form.unitId) nextErrors.unitId = 'Select an available unit.'
       } else {
         if (!normalizeText(form.importPropertyAddress)) nextErrors.importPropertyAddress = 'Property address is required.'
-        if (!normalizeText(form.importSellerName)) nextErrors.importSellerName = 'Seller name is required.'
-        if (!normalizeText(form.importSellerEmail)) nextErrors.importSellerEmail = 'Seller email is required.'
-        if (!normalizeText(form.importSellerPhone)) nextErrors.importSellerPhone = 'Seller phone is required.'
         if (!normalizeText(form.importCurrentStage)) nextErrors.importCurrentStage = 'Current stage is required.'
       }
     }
@@ -1994,7 +2005,7 @@ function AgentNewDealWizard({
       if (!String(form.clientPhone || '').trim()) nextErrors.clientPhone = `${buyerCaptureLabels.phone} is required.`
     }
 
-    if (stepKey === 'attorney') {
+    if (stepKey === 'attorney' && form.propertyMode !== PROPERTY_MODE_IMPORT) {
       const transferChoice = routingRecommendationChoices.transfer_attorney || ''
       const bondOriginatorChoice = routingRecommendationChoices.bond_originator || ''
       const cancellationAttorneyChoice = routingRecommendationChoices.cancellation_attorney || ''
@@ -2391,15 +2402,36 @@ function AgentNewDealWizard({
               : propertyMode === PROPERTY_MODE_PRIVATE
               ? mapPrivateListingToTransactionPropertyCategory(privateListing)
               : 'residential',
+          propertyTenure:
+            propertyMode === PROPERTY_MODE_IMPORT
+              ? form.importPropertyStructure
+              : propertyMode === PROPERTY_MODE_PRIVATE
+                ? privateListing?.propertyStructureType || privateListing?.property_structure_type || ''
+                : '',
           developmentId: propertyMode === PROPERTY_MODE_DEVELOPMENT ? form.developmentId : '',
           unitId: propertyMode === PROPERTY_MODE_DEVELOPMENT ? form.unitId : '',
           propertyAddressLine1: resolvedPropertyAddress || importAddressParts.join(', '),
-          propertyAddressLine2: '',
+          propertyAddressLine2: propertyMode === PROPERTY_MODE_IMPORT
+            ? [
+                form.importSchemeName ? `Scheme / complex: ${form.importSchemeName}` : '',
+                form.importUnitNumber ? `Unit / section: ${form.importUnitNumber}` : '',
+                form.importDevelopmentName ? `Development: ${form.importDevelopmentName}` : '',
+              ].filter(Boolean).join(' • ')
+            : '',
           suburb: propertyMode === PROPERTY_MODE_IMPORT ? form.importSuburb : propertyMode === PROPERTY_MODE_PRIVATE ? privateListing?.propertyDetails?.suburb || privateListing?.suburb || '' : '',
           city: resolvedCity,
           province: propertyMode === PROPERTY_MODE_IMPORT ? form.importProvince : propertyMode === PROPERTY_MODE_PRIVATE ? privateListing?.propertyDetails?.province || privateListing?.province || '' : '',
           postalCode: '',
-          propertyDescription: propertyMode === PROPERTY_MODE_IMPORT ? form.importNotes : propertyMode === PROPERTY_MODE_PRIVATE ? privateListing?.propertyDetails?.description || privateListing?.marketing?.description || '' : '',
+          propertyDescription: propertyMode === PROPERTY_MODE_IMPORT
+            ? [
+                form.importNotes,
+                form.importSchemeName ? `Scheme / complex: ${form.importSchemeName}` : '',
+                form.importUnitNumber ? `Unit / section: ${form.importUnitNumber}` : '',
+                form.importDevelopmentName ? `Development: ${form.importDevelopmentName}` : '',
+              ].filter(Boolean).join('\n')
+            : propertyMode === PROPERTY_MODE_PRIVATE
+              ? privateListing?.propertyDetails?.description || privateListing?.marketing?.description || ''
+              : '',
           buyerFirstName: buyerConnected ? form.clientName : '',
           buyerLastName: buyerConnected ? form.clientSurname : '',
           buyerName,
@@ -2472,6 +2504,10 @@ function AgentNewDealWizard({
             listingSource: propertyMode === PROPERTY_MODE_PRIVATE ? normalizeText(privateListing?.listingSource || privateListing?.marketing?.source) : null,
             mandateStatus: propertyMode === PROPERTY_MODE_PRIVATE ? normalizeText(privateListing?.mandateStatus || privateListing?.mandate_status) : null,
             commissionStructure: propertyMode === PROPERTY_MODE_IMPORT ? normalizeText(form.importCommissionStructure) : privateListing?.commission || null,
+            importPropertyStructure: propertyMode === PROPERTY_MODE_IMPORT ? normalizeText(form.importPropertyStructure) : null,
+            importSchemeName: propertyMode === PROPERTY_MODE_IMPORT ? normalizeText(form.importSchemeName) : null,
+            importUnitNumber: propertyMode === PROPERTY_MODE_IMPORT ? normalizeText(form.importUnitNumber) : null,
+            importDevelopmentName: propertyMode === PROPERTY_MODE_IMPORT ? normalizeText(form.importDevelopmentName) : null,
             developmentId: propertyMode === PROPERTY_MODE_DEVELOPMENT ? normalizeText(form.developmentId) : null,
             unitId: propertyMode === PROPERTY_MODE_DEVELOPMENT ? normalizeText(form.unitId) : null,
             unitStatus: propertyMode === PROPERTY_MODE_DEVELOPMENT ? normalizeText(selectedUnit?.status) : null,
@@ -2609,11 +2645,32 @@ function AgentNewDealWizard({
               <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_32px_rgba(15,23,42,0.05)]">
                 <div className="mb-5 rounded-[18px] border border-[#d8e5f2] bg-[#f7fbff] px-4 py-3">
                   <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#52708d]">
-                    Listing transaction
+                    Transaction property
                   </span>
                   <p className="mt-1 text-sm leading-6 text-[#48627f]">
-                    Select the active listing that already has a signed OTP. Development stock is handled inside the developer transaction flow.
+                    Use an existing property where it is available, or capture an address first and complete the listing, FICA, OTP, and contact information later.
                   </p>
+                </div>
+
+                <div className="mb-5 grid gap-3 md:grid-cols-3">
+                  {[
+                    { value: PROPERTY_MODE_PRIVATE, label: 'Existing listing', detail: 'Link the transaction to a property already on Arch9.' },
+                    { value: PROPERTY_MODE_IMPORT, label: 'Quick address capture', detail: 'Fast capture for an OTP or historical deal when no listing exists yet.' },
+                    { value: PROPERTY_MODE_DEVELOPMENT, label: 'Existing development unit', detail: 'Use a unit that is already set up in the development catalogue.' },
+                  ].map((option) => {
+                    const selected = form.propertyMode === option.value
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => updatePropertyMode(option.value)}
+                        className={`rounded-[16px] border p-4 text-left transition ${selected ? 'border-[#1f4f78] bg-[#edf4fb] shadow-[0_10px_24px_rgba(31,79,120,0.08)]' : 'border-[#dce6f2] bg-white hover:border-[#b9cadc]'}`}
+                      >
+                        <span className="block text-sm font-semibold text-[#22374d]">{option.label}</span>
+                        <span className="mt-1 block text-xs leading-5 text-[#60758d]">{option.detail}</span>
+                      </button>
+                    )
+                  })}
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -2690,9 +2747,39 @@ function AgentNewDealWizard({
                     </>
                   ) : (
                     <>
+                      <div className="md:col-span-2 rounded-[14px] border border-[#d8e5f2] bg-[#fbfdff] px-4 py-3 text-sm leading-6 text-[#48627f]">
+                        Only the address and current transaction stage are required. This creates an address-first transaction; it does not publish a listing or pretend that documents have been uploaded.
+                      </div>
+                      <Field label="Property Structure" fullWidth>
+                        <select className={fieldClass()} value={form.importPropertyStructure} onChange={(event) => updateField('importPropertyStructure', event.target.value)}>
+                          {QUICK_CAPTURE_STRUCTURE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>{option.label}</option>
+                          ))}
+                        </select>
+                      </Field>
                       <Field label="Property Address" error={errors.importPropertyAddress} fullWidth>
                         <input className={fieldClass()} value={form.importPropertyAddress} onChange={(event) => updateField('importPropertyAddress', event.target.value)} />
                       </Field>
+                      {form.importPropertyStructure === 'sectional_title' || form.importPropertyStructure === 'share_block' ? (
+                        <>
+                          <Field label="Scheme / Complex Name" hint="Capture if known; it can be completed later.">
+                            <input className={fieldClass()} value={form.importSchemeName} onChange={(event) => updateField('importSchemeName', event.target.value)} />
+                          </Field>
+                          <Field label="Unit / Section Number" hint="Capture if known; it can be completed later.">
+                            <input className={fieldClass()} value={form.importUnitNumber} onChange={(event) => updateField('importUnitNumber', event.target.value)} />
+                          </Field>
+                        </>
+                      ) : null}
+                      {form.importPropertyStructure === 'estate' ? (
+                        <>
+                          <Field label="Development / Estate Name" hint="For an unconfigured development, this is kept with the transaction until it can be linked later.">
+                            <input className={fieldClass()} value={form.importDevelopmentName} onChange={(event) => updateField('importDevelopmentName', event.target.value)} />
+                          </Field>
+                          <Field label="Unit / Erf Number" hint="Capture if known; it can be completed later.">
+                            <input className={fieldClass()} value={form.importUnitNumber} onChange={(event) => updateField('importUnitNumber', event.target.value)} />
+                          </Field>
+                        </>
+                      ) : null}
                       <Field label="Suburb">
                         <input className={fieldClass()} value={form.importSuburb} onChange={(event) => updateField('importSuburb', event.target.value)} />
                       </Field>
@@ -2709,13 +2796,13 @@ function AgentNewDealWizard({
                           ))}
                         </select>
                       </Field>
-                      <Field label="Seller Name" error={errors.importSellerName}>
+                      <Field label="Seller Name" hint="Optional — add it now only if it is on hand.">
                         <input className={fieldClass()} value={form.importSellerName} onChange={(event) => updateField('importSellerName', event.target.value)} />
                       </Field>
-                      <Field label="Seller Email" error={errors.importSellerEmail}>
+                      <Field label="Seller Email" hint="Optional — required later for seller communication.">
                         <input className={fieldClass()} type="email" value={form.importSellerEmail} onChange={(event) => updateField('importSellerEmail', event.target.value)} />
                       </Field>
-                      <Field label="Seller Phone" error={errors.importSellerPhone}>
+                      <Field label="Seller Phone" hint="Optional — required later for seller communication.">
                         <input className={fieldClass()} value={form.importSellerPhone} onChange={(event) => updateField('importSellerPhone', normalizePhoneInput(event.target.value))} />
                       </Field>
                       <Field label="Property24 Link">
@@ -3467,7 +3554,7 @@ function AgentNewDealWizard({
                         {form.propertyMode === PROPERTY_MODE_PRIVATE
                           ? formatListingDealOption(selectedPrivateListing || {})
                           : form.propertyMode === PROPERTY_MODE_IMPORT
-                            ? form.importPropertyAddress || 'Imported property pending'
+                            ? `${QUICK_CAPTURE_STRUCTURE_OPTIONS.find((option) => option.value === form.importPropertyStructure)?.label || 'Property'} • ${form.importPropertyAddress || 'Address pending'}`
                           : selectedDevelopment && selectedUnit
                             ? `${selectedDevelopment.name} • Unit ${selectedUnit.unit_number}`
                             : 'Development selection pending'}
@@ -3617,7 +3704,7 @@ function AgentNewDealWizard({
                         ? 'Listing will move into an in-progress state.'
                         : form.propertyMode === PROPERTY_MODE_DEVELOPMENT
                           ? 'Unit will move out of available status once the transaction is active.'
-                          : 'Imported deal will use the same transaction workspace as every other deal.',
+                          : 'Address-first deal will use the same transaction workspace as every other deal and can be linked to a listing or development later.',
                     ].map((item) => (
                       <div key={item} className="flex gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5">
                         <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-[#1f7d44]" />

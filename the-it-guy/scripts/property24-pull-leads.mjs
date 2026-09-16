@@ -8,6 +8,7 @@ import {
   createProperty24Client,
   normalizeProperty24Text,
   pullAndImportProperty24Leads,
+  resolveProperty24EnvironmentCredentials,
   summarizeProperty24Payload,
 } from '../server/property24/index.js'
 
@@ -17,6 +18,7 @@ function parseArgs(argv) {
   const options = {
     agencyId: '',
     after: '',
+    environment: 'production',
     applyLeads: false,
     limit: 500,
     output: '',
@@ -29,6 +31,8 @@ function parseArgs(argv) {
       options.agencyId = normalizeProperty24Text(arg.slice('--agency-id='.length))
     } else if (arg.startsWith('--after=')) {
       options.after = normalizeProperty24Text(arg.slice('--after='.length))
+    } else if (arg.startsWith('--environment=')) {
+      options.environment = normalizeProperty24Text(arg.slice('--environment='.length)).toLowerCase()
     } else if (arg.startsWith('--limit=')) {
       options.limit = Number(arg.slice('--limit='.length)) || 500
     } else if (arg.startsWith('--output=')) {
@@ -58,7 +62,7 @@ function parseEnvFile(filePath) {
 }
 
 function loadEnv() {
-  const files = ['.env', '.env.local', '.env.staging.local', '.env.property24.local']
+  const files = ['.env', '.env.local', '.env.staging.local', '.env.property24.local', '.env.property24.production.local']
   const fromFiles = files.reduce((merged, file) => ({ ...merged, ...parseEnvFile(path.join(appRoot, file)) }), {})
   const processOverrides = Object.fromEntries(Object.entries(process.env).filter(([, value]) => normalizeProperty24Text(value)))
   return { ...fromFiles, ...processOverrides }
@@ -66,23 +70,27 @@ function loadEnv() {
 
 function buildConfig(options) {
   const env = loadEnv()
-  const property24BaseUrl = normalizeProperty24Text(env.PROPERTY24_BASE_URL) || PROPERTY24_EXDEV_BASE_URL
-  const environment = normalizeProperty24Text(env.PROPERTY24_ENVIRONMENT) ||
-    (property24BaseUrl.includes('property24-test.com') ? 'exdev' : 'production')
+  const requestedEnvironment = options.environment || 'production'
+  if (!['production', 'exdev'].includes(requestedEnvironment)) {
+    throw new Error('--environment must be production or exdev.')
+  }
+  const credentials = resolveProperty24EnvironmentCredentials({ env, environment: requestedEnvironment })
   const config = {
-    property24BaseUrl,
-    property24Username: normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_USERNAME || env.PROPERTY24_USERNAME),
-    property24Password: normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_PASSWORD || env.PROPERTY24_PASSWORD),
-    property24UserGroupId: normalizeProperty24Text(env.PROPERTY24_USER_GROUP_ID),
+    property24BaseUrl: credentials.baseUrl,
+    property24Username: credentials.username,
+    property24Password: credentials.password,
+    property24UserGroupId: credentials.userGroupId,
+    property24ApiVersion: credentials.apiVersion,
     supabaseUrl: normalizeProperty24Text(env.SUPABASE_URL || env.VITE_SUPABASE_URL),
     serviceRoleKey: normalizeProperty24Text(env.SUPABASE_SERVICE_ROLE_KEY),
-    environment,
+    environment: credentials.environment,
     agencyId: normalizeProperty24Text(options.agencyId || env.PROPERTY24_DEFAULT_AGENCY_ID || '31382'),
     after: options.after,
     applyLeads: options.applyLeads,
     limit: options.limit,
   }
   config.missing = []
+  if (!credentials.configured) config.missing.push(...credentials.missing)
   if (!config.property24Username) config.missing.push('PROPERTY24_BASIC_AUTH_USERNAME')
   if (!config.property24Password) config.missing.push('PROPERTY24_BASIC_AUTH_PASSWORD')
   if (!config.supabaseUrl) config.missing.push('SUPABASE_URL or VITE_SUPABASE_URL')
@@ -128,6 +136,7 @@ async function run() {
     username: config.property24Username,
     password: config.property24Password,
     userGroupId: config.property24UserGroupId,
+    apiVersion: config.property24ApiVersion,
   })
   const report = await pullAndImportProperty24Leads({ supabase, property24, config })
   const output = writeReport(report, options.output)

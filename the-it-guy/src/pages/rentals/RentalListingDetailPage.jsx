@@ -19,15 +19,7 @@ import {
   X,
 } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  ListingWorkspacePortalActionPanel,
-  ListingWorkspacePortalChecklist,
-  ListingWorkspacePortalFixGuide,
-  ListingWorkspacePortalGoLiveProof,
-  ListingWorkspacePortalPublishGate,
-  ListingWorkspacePortalReadinessGrid,
-  ListingWorkspaceTabs,
-} from '../../components/listings/ListingWorkspaceShell'
+import { ListingWorkspaceTabs } from '../../components/listings/ListingWorkspaceShell'
 import ListingAgentReassignmentPanel from '../../components/listings/ListingAgentReassignmentPanel'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
@@ -55,12 +47,6 @@ import {
   resolveRentalWorkspaceScope,
 } from '../../services/rentals/rentalWorkspaceScope'
 import {
-  buildListingWorkspacePortalActionPlan,
-  buildListingWorkspacePortalChecklist,
-  buildListingWorkspacePortalFixGuide,
-  buildListingWorkspacePortalGoLiveProof,
-  buildListingWorkspacePortalPublishGate,
-  buildListingWorkspacePortalSummary,
   buildListingWorkspaceTabs,
   resolveRentalListingWorkspaceTabFromDetailTab,
   resolveRentalListingWorkspaceTarget,
@@ -672,6 +658,49 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
   )
 }
 
+function RentalOverview({ detail, onOpenApplications, onOpenMarketing }) {
+  const row = detail.row
+  const readiness = detail.readinessItems || []
+  const completed = readiness.filter((item) => item.complete).length
+  const pipeline = [
+    { label: 'Applications', value: row.applicationCount || 0, fill: 100 },
+    { label: 'Screening', value: 0, fill: 0 },
+    { label: 'Approved', value: 0, fill: 0 },
+  ]
+  return (
+    <section className="space-y-5">
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div className="min-w-0"><p className="text-[1.08rem] font-semibold text-[#142132]">{row.title}</p><p className="mt-1 text-sm text-[#607387]">{[row.address, row.location].filter(Boolean).join(', ') || 'Location pending'}</p></div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">{row.propertyType || 'Rental property'}</span>
+            <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">{detail.statusLabel}</span>
+            <button type="button" className="ui-pill-button ui-pill-button-active" onClick={onOpenApplications}><Users size={15} />View tenant applications</button>
+          </div>
+        </div>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        {[
+          { label: 'Applications', value: row.applicationCount || 0, meta: 'Interested tenants' },
+          { label: 'Available from', value: formatDate(row.availableFrom), meta: 'Occupation date' },
+          { label: 'Monthly rent', value: formatCurrency(row.monthlyRent), meta: 'Advertised rental' },
+          { label: 'Lease term', value: row.leasePeriodMonths ? `${row.leasePeriodMonths} months` : '—', meta: 'Proposed lease period' },
+          { label: 'Property24', value: detail.property24StatusLabel, meta: 'Listing channel status' },
+        ].map((card) => <article key={card.label} className="flex min-h-[132px] flex-col justify-between rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"><p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{card.label}</p><p className="text-[1.25rem] font-semibold text-[#142132]">{card.value}</p><p className="text-sm text-[#607387]">{card.meta}</p></article>)}
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-3">
+        <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><h3 className="text-[1rem] font-semibold text-[#142132]">Listing readiness</h3><p className="mt-1 text-sm text-[#607387]">What the landlord listing still needs before it can go live.</p><div className="mt-5 space-y-3">{readiness.map((item) => <div key={item.key} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5"><span className="text-sm font-medium text-[#22374d]">{item.label}</span><span className={`text-xs font-semibold ${item.complete ? 'text-[#1f7d44]' : 'text-[#9a5b13]'}`}>{item.complete ? 'Complete' : 'Needs attention'}</span></div>)}</div></article>
+        <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><h3 className="text-[1rem] font-semibold text-[#142132]">Tenant journey</h3><p className="mt-1 text-sm text-[#607387]">How prospective tenants are progressing through the rental pipeline.</p><div className="mt-5 space-y-3">{pipeline.map((step) => <div key={step.label} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5"><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold text-[#22374d]">{step.label}</span><span className="text-sm font-semibold text-[#142132]">{step.value}</span></div><div className="mt-3 h-3 overflow-hidden rounded-full bg-[#dbe6f2]"><div className="h-full rounded-full bg-[#1f4f78]" style={{ width: `${step.fill}%` }} /></div></div>)}</div></article>
+        <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><h3 className="text-[1rem] font-semibold text-[#142132]">Rental pricing</h3><p className="mt-1 text-sm text-[#607387]">Current advertised monthly rent and rental terms.</p><div className="mt-5 space-y-4"><div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold text-[#22374d]">Monthly rent</span><span className="text-sm font-semibold text-[#142132]">{formatCurrency(row.monthlyRent)}</span></div><div className="mt-3 h-3 overflow-hidden rounded-full bg-[#dbe6f2]"><div className="h-full w-full rounded-full bg-[#1f4f78]" /></div></div><div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4"><p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Deposit</p><p className="mt-2 text-[1.2rem] font-semibold text-[#142132]">{formatCurrency(row.depositAmount)}</p><p className="mt-1 text-sm text-[#607387]">{row.furnishedStatus || 'Rental terms pending'}</p></div></div></article>
+      </section>
+
+      <section className="grid gap-5 xl:grid-cols-2"><article className="flex flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Next best action</p><h3 className="mt-2 text-[1.02rem] font-semibold text-[#142132]">{row.nextAction || 'Prepare rental marketing'}</h3><p className="mt-2 text-sm leading-6 text-[#607387]">{completed} of {readiness.length} listing readiness checks are complete. Use Marketing to prepare the public listing and Property24 publishing.</p><div className="mt-5"><button type="button" className="ui-pill-button ui-pill-button-active" onClick={onOpenMarketing}>Open Marketing</button></div></article><article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><h3 className="text-[1rem] font-semibold text-[#142132]">Landlord and listing activity</h3><p className="mt-1 text-sm text-[#607387]">Latest rental listing updates and required landlord actions.</p><div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5"><p className="text-sm font-semibold text-[#22374d]">Rental listing ready for review</p><p className="mt-1 text-sm text-[#607387]">Complete any outstanding listing details, then publish through the Marketing workspace.</p></div></article></section>
+    </section>
+  )
+}
+
 function RentalTabContent({
   activeTab,
   detail,
@@ -683,6 +712,8 @@ function RentalTabContent({
   property24PreviewError,
   onCheckProperty24,
   onOpenSyndication,
+  onOpenMarketing,
+  onOpenEdit,
   onOpenApplications,
   property24ExpiryDate,
   onProperty24ExpiryChange,
@@ -780,6 +811,17 @@ function RentalTabContent({
           </div>
         </div>
 
+        <section className="mt-5 grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)]">
+          <article className="flex h-full flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+            <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Listing Content</h3><p className="mt-1 text-sm text-[#607387]">Marketing-facing copy tenants will see.</p></div><button type="button" className="ui-pill-button" onClick={onOpenEdit}>Edit listing details</button></div>
+            <div className="mt-5 grid gap-4"><div><p className="text-sm font-semibold text-[#2d445e]">Headline</p><p className="mt-2 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5 text-sm font-medium text-[#22374d]">{row.title}</p></div><div><p className="text-sm font-semibold text-[#2d445e]">Description</p><p className="mt-2 min-h-24 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5 text-sm leading-6 text-[#607387]">{detail.listing?.description || 'Add a public rental description for prospective tenants.'}</p></div></div>
+          </article>
+          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+            <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Media</h3><p className="mt-1 text-sm text-[#607387]">Control what tenants see across rental marketing channels.</p></div><button type="button" className="ui-pill-button" onClick={onOpenEdit}>Edit media</button></div>
+            <div className="mt-5 grid min-h-[168px] place-items-center rounded-[14px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-5 text-center"><div><Home size={20} className="mx-auto text-[#607387]" /><p className="mt-2 text-sm font-semibold text-[#22374d]">Media is managed with rental listing details</p><p className="mt-1 text-sm text-[#607387]">Add photos and select the cover image before publishing.</p></div></div>
+          </article>
+        </section>
+
         <section className="mt-5 rounded-[18px] border border-[#cfe0ef] bg-[#f8fbff] p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
@@ -832,21 +874,7 @@ function RentalTabContent({
       </DetailPanel>
     )
   }
-  return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <DetailPanel eyebrow="Readiness" title="Listing Readiness">
-        <div className="grid gap-3 md:grid-cols-2">
-          {detail.readinessItems.map((item) => <ReadinessCard key={item.key} item={item} />)}
-        </div>
-      </DetailPanel>
-      <DetailPanel eyebrow="Next action" title={row.nextAction}>
-        <DetailRow label="Mandate" value={detail.mandateStatusLabel} />
-        <DetailRow label="Marketing" value={detail.marketingApprovalStatusLabel} />
-        <DetailRow label="Property24" value={detail.property24StatusLabel} />
-        <DetailRow label="Applications" value={row.applicationCount} />
-      </DetailPanel>
-    </div>
-  )
+  return <RentalOverview detail={detail} onOpenApplications={onOpenApplications} onOpenMarketing={onOpenMarketing} />
 }
 
 export default function RentalListingDetailPage() {
@@ -880,57 +908,6 @@ export default function RentalListingDetailPage() {
   const activeRentalWorkspaceTab = useMemo(
     () => resolveRentalListingWorkspaceTabFromDetailTab(activeTab),
     [activeTab],
-  )
-  const rentalPortalReadinessSummaries = useMemo(() => {
-    if (!detail) return []
-    const property24Readiness = detail.property24Readiness || {}
-    const property24StatusKey = String(detail.row?.property24Status || '')
-      .trim()
-      .toLowerCase()
-      .replace(/[\s-]+/g, '_')
-    const property24Published = ['published', 'live', 'active', 'on_portal'].includes(property24StatusKey)
-    const previewStatus = getProperty24ReadinessStatus(property24Preview)
-    const previewIssues = getProperty24PreviewIssues(property24Preview).map((item) => item.label)
-    const localBlockers = Array.isArray(property24Readiness.blockers)
-      ? property24Readiness.blockers.map((item) => item.detail || item.label).filter(Boolean)
-      : []
-
-    return [
-      buildListingWorkspacePortalSummary({
-        type: 'rentals',
-        portal: 'Property24',
-        logoSrc: '/lead-sources/property24.png',
-        published: property24Published,
-        checked: Boolean(property24Preview) || Boolean(property24Readiness.readyToPublish),
-        missingFields: property24Preview ? previewIssues : localBlockers,
-        reference: detail.row?.property24Reference || detail.listing?.property24Reference || detail.listing?.property24_reference || '',
-        detail: property24Preview
-          ? previewStatus.detail
-          : `${property24Readiness.readinessPercent || 0}% local Property24 checks complete.`,
-        actionLabel: property24Preview ? 'Open syndication' : 'Check readiness',
-        actionTarget: 'property24',
-      }),
-    ]
-  }, [detail, property24Preview])
-  const rentalPortalActionPlan = useMemo(
-    () => buildListingWorkspacePortalActionPlan(rentalPortalReadinessSummaries, { type: 'rentals' }),
-    [rentalPortalReadinessSummaries],
-  )
-  const rentalPortalPublishGate = useMemo(
-    () => buildListingWorkspacePortalPublishGate(rentalPortalReadinessSummaries, { type: 'rentals' }),
-    [rentalPortalReadinessSummaries],
-  )
-  const rentalPortalGoLiveProof = useMemo(
-    () => buildListingWorkspacePortalGoLiveProof(rentalPortalReadinessSummaries, { type: 'rentals' }),
-    [rentalPortalReadinessSummaries],
-  )
-  const rentalPortalChecklist = useMemo(
-    () => buildListingWorkspacePortalChecklist(rentalPortalReadinessSummaries, { type: 'rentals' }),
-    [rentalPortalReadinessSummaries],
-  )
-  const rentalPortalFixGuide = useMemo(
-    () => buildListingWorkspacePortalFixGuide(rentalPortalReadinessSummaries, { type: 'rentals' }),
-    [rentalPortalReadinessSummaries],
   )
   const editValidationErrors = useMemo(
     () => validateRentalListingEditForm(editForm, { organisationId }),
@@ -1145,29 +1122,11 @@ export default function RentalListingDetailPage() {
     navigate(buildRentalListingDetailPath(row.id, target.detailTab || 'overview'))
   }
 
-  function handleRentalPortalReadinessAction(item) {
-    if (item?.actionTarget !== 'property24') return
-    if (property24Preview) {
-      navigate(buildRentalListingDetailPath(row.id, 'syndication'))
-      return
-    }
-    void handleCheckProperty24Readiness()
-  }
-
-  function handleRentalPortalFixGuideAction(item) {
-    const target = item?.actionTarget || 'property'
-    if (rentalWorkspaceTabs.some((tab) => tab.key === target)) {
-      openRentalListingWorkspaceTab(target)
-      return
-    }
-    handleRentalPortalReadinessAction(item)
-  }
-
   return (
     <section className="page-content">
       <div className="ui-section-stack">
-        <header className="ui-toolbar">
-          <div className="ui-toolbar-group">
+        <header className="flex flex-col gap-4 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] xl:flex-row xl:items-start xl:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]">
               <Home size={20} aria-hidden="true" />
             </span>
@@ -1237,49 +1196,19 @@ export default function RentalListingDetailPage() {
           <FactCard label="Readiness" value={`${detail.readinessPercent}%`} detail={`${detail.completedReadinessCount}/${detail.totalReadinessCount} checks complete`} icon={<BadgeCheck size={18} aria-hidden="true" />} />
         </div>
 
-        <div className="ui-panel ui-panel-body" data-testid="rental-listing-shared-workspace-tabs">
+        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" data-testid="rental-listing-shared-workspace-tabs">
+          <div className="flex flex-col gap-3 border-b border-[#e5edf6] pb-4 xl:flex-row xl:items-start xl:justify-between">
+            <div><p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Listing workspace</p><p className="mt-1 text-sm text-[#607387]">Manage landlord details, property information, rental marketing, tenant applications, and syndication.</p></div>
+            <span className="inline-flex self-start rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-4 py-2 text-[0.92rem] font-semibold text-[#5f748a]">Rental listing</span>
+          </div>
           <ListingWorkspaceTabs
-            className="rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff]"
+            className="mt-4 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff]"
             tabs={rentalWorkspaceTabs}
             activeTab={activeRentalWorkspaceTab}
             onTabChange={openRentalListingWorkspaceTab}
             ariaLabel="Rental listing workspace sections"
           />
-          <ListingWorkspacePortalActionPanel
-            className="mt-4"
-            plan={rentalPortalActionPlan}
-            onAction={handleRentalPortalReadinessAction}
-            testId="rental-listing-portal-action-plan"
-          />
-          <ListingWorkspacePortalPublishGate
-            className="mt-4"
-            gate={rentalPortalPublishGate}
-            onAction={handleRentalPortalReadinessAction}
-            testId="rental-listing-portal-publish-gate"
-          />
-          <ListingWorkspacePortalGoLiveProof
-            className="mt-4"
-            proof={rentalPortalGoLiveProof}
-            testId="rental-listing-portal-go-live-proof"
-          />
-          <ListingWorkspacePortalChecklist
-            className="mt-4"
-            items={rentalPortalChecklist}
-            testId="rental-listing-portal-checklist"
-          />
-          <ListingWorkspacePortalFixGuide
-            className="mt-4"
-            items={rentalPortalFixGuide}
-            onAction={handleRentalPortalFixGuideAction}
-            testId="rental-listing-portal-fix-guide"
-          />
-          <ListingWorkspacePortalReadinessGrid
-            className="mt-4"
-            items={rentalPortalReadinessSummaries}
-            onAction={handleRentalPortalReadinessAction}
-            testId="rental-listing-portal-readiness"
-          />
-        </div>
+        </section>
 
         <div className="grid gap-4 md:grid-cols-3">
           <FactCard label="Mandate" value={detail.mandateStatusLabel} detail="Rental authority" icon={<ClipboardList size={18} aria-hidden="true" />} />
@@ -1298,6 +1227,8 @@ export default function RentalListingDetailPage() {
           property24PreviewError={property24PreviewError}
           onCheckProperty24={handleCheckProperty24Readiness}
           onOpenSyndication={() => navigate(buildRentalListingDetailPath(row.id, 'syndication'))}
+          onOpenMarketing={() => navigate(buildRentalListingDetailPath(row.id, 'marketing'))}
+          onOpenEdit={openEditPanel}
           onOpenApplications={() => navigate(buildRentalListingDetailPath(row.id, 'applications'))}
           property24ExpiryDate={property24ExpiryDate}
           onProperty24ExpiryChange={setProperty24ExpiryDate}
