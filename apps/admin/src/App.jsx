@@ -99,6 +99,7 @@ const PROSPECT_DEMO_SELECT = [
 ].join(', ')
 
 const PROSPECT_DEMO_DRAFT_STORAGE_KEY = 'arch9-admin-prospect-demo-draft-v1'
+const PROSPECT_DEMO_SESSION_STORAGE_KEY = 'arch9-admin-prospect-demo-session-v1'
 
 const DEFAULT_PROSPECT_DEMO_FORM = {
   agencyName: '',
@@ -159,6 +160,26 @@ function createProspectDemoDraft(form, savedConfig, slugTouched) {
     savedConfig: assetsNeedReupload ? null : savedConfig,
     slugTouched,
     assetsNeedReupload,
+  }
+}
+
+function restoreProspectDemoSession() {
+  const fallback = { activeTab: 'create', generatedDemos: [], hasLoadedGeneratedDemos: false }
+  if (typeof window === 'undefined') return fallback
+
+  try {
+    const storedSession = JSON.parse(window.sessionStorage.getItem(PROSPECT_DEMO_SESSION_STORAGE_KEY) || '')
+    if (!storedSession || typeof storedSession !== 'object') return fallback
+
+    return {
+      activeTab: storedSession.activeTab === 'generated' ? 'generated' : 'create',
+      generatedDemos: Array.isArray(storedSession.generatedDemos)
+        ? storedSession.generatedDemos.map(mapProspectDemoConfig).filter((config) => config.slug)
+        : [],
+      hasLoadedGeneratedDemos: Boolean(storedSession.hasLoadedGeneratedDemos),
+    }
+  } catch {
+    return fallback
   }
 }
 
@@ -3519,6 +3540,8 @@ function ProspectLinkCard({ copied, label, link, onCopy }) {
 function ProspectGeneratedDemoCard({ config, copiedKey, onCopy, onEdit }) {
   const onboardingLink = buildDemoLink(config.slug, 'onboarding')
   const buyerLink = buildDemoLink(config.slug, 'buyer')
+  const tenantLink = buildDemoLink(config.slug, 'tenant')
+  const landlordLink = buildDemoLink(config.slug, 'landlord')
   const logoUrl = config.logoLightUrl || config.logoUrl || config.logoDarkUrl
 
   return (
@@ -3555,6 +3578,8 @@ function ProspectGeneratedDemoCard({ config, copiedKey, onCopy, onEdit }) {
           link={buyerLink}
           onCopy={() => void onCopy(`${config.slug}-buyer`, buyerLink)}
         />
+        <ProspectLinkCard copied={copiedKey === `${config.slug}-tenant`} label="Tenant Portal" link={tenantLink} onCopy={() => void onCopy(`${config.slug}-tenant`, tenantLink)} />
+        <ProspectLinkCard copied={copiedKey === `${config.slug}-landlord`} label="Landlord Portal" link={landlordLink} onCopy={() => void onCopy(`${config.slug}-landlord`, landlordLink)} />
       </div>
       <button className="secondary-button compact" onClick={() => onEdit(config)} type="button">
         <NotebookPen size={15} />
@@ -3565,9 +3590,11 @@ function ProspectGeneratedDemoCard({ config, copiedKey, onCopy, onEdit }) {
 }
 
 function ProspectDemoGeneratorView() {
+  const [restoredSession] = useState(restoreProspectDemoSession)
   const [form, setForm] = useState(DEFAULT_PROSPECT_DEMO_FORM)
-  const [activeTab, setActiveTab] = useState('create')
-  const [generatedDemos, setGeneratedDemos] = useState([])
+  const [activeTab, setActiveTab] = useState(restoredSession.activeTab)
+  const [generatedDemos, setGeneratedDemos] = useState(restoredSession.generatedDemos)
+  const [hasLoadedGeneratedDemos, setHasLoadedGeneratedDemos] = useState(restoredSession.hasLoadedGeneratedDemos)
   const [isLoadingDemos, setIsLoadingDemos] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState('')
@@ -3583,6 +3610,8 @@ function ProspectDemoGeneratorView() {
   const activeSlug = normalizeDemoSlug(form.slug || form.agencyName || savedConfig?.slug)
   const buyerOnboardingLink = buildDemoLink(activeSlug, 'onboarding')
   const buyerPortalLink = buildDemoLink(activeSlug, 'buyer')
+  const tenantPortalLink = buildDemoLink(activeSlug, 'tenant')
+  const landlordPortalLink = buildDemoLink(activeSlug, 'landlord')
   const generatedConfig = {
     slug: activeSlug,
     agencyName: form.agencyName.trim(),
@@ -3598,9 +3627,22 @@ function ProspectDemoGeneratorView() {
   const showLinks = Boolean(savedConfig?.slug)
 
   useEffect(() => {
-    if (!supabase) return
+    if (!supabase || hasLoadedGeneratedDemos) return
     void loadGeneratedDemos()
-  }, [])
+  }, [hasLoadedGeneratedDemos])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    try {
+      window.sessionStorage.setItem(PROSPECT_DEMO_SESSION_STORAGE_KEY, JSON.stringify({
+        activeTab,
+        generatedDemos,
+        hasLoadedGeneratedDemos,
+      }))
+    } catch {
+      // The generated-demo cache is a convenience only; the live list remains available via Refresh.
+    }
+  }, [activeTab, generatedDemos, hasLoadedGeneratedDemos])
 
   useEffect(() => {
     const draft = restoreProspectDemoDraft()
@@ -3654,6 +3696,7 @@ function ProspectDemoGeneratorView() {
 
       if (loadError) throw loadError
       setGeneratedDemos((data || []).map(mapProspectDemoConfig))
+      setHasLoadedGeneratedDemos(true)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load generated demos.')
     } finally {
@@ -3722,6 +3765,7 @@ function ProspectDemoGeneratorView() {
         }
         return [nextConfig, ...previous.filter((item) => item.slug !== nextConfig.slug)]
       })
+      setHasLoadedGeneratedDemos(true)
       setSuccess('Prospect demo generated. Copy the links below and send them to the prospect.')
       setActiveTab('create')
     } catch (saveError) {
@@ -3805,7 +3849,7 @@ function ProspectDemoGeneratorView() {
             className={activeTab === 'generated' ? 'active' : ''}
             onClick={() => {
               setActiveTab('generated')
-              void loadGeneratedDemos()
+              if (!hasLoadedGeneratedDemos && !isLoadingDemos) void loadGeneratedDemos()
             }}
             role="tab"
             type="button"
@@ -4021,6 +4065,8 @@ function ProspectDemoGeneratorView() {
               link={buyerPortalLink}
               onCopy={() => void copyLink('buyer', buyerPortalLink)}
             />
+            <ProspectLinkCard copied={copiedKey === 'tenant'} label="Tenant Portal" link={tenantPortalLink} onCopy={() => void copyLink('tenant', tenantPortalLink)} />
+            <ProspectLinkCard copied={copiedKey === 'landlord'} label="Landlord Portal" link={landlordPortalLink} onCopy={() => void copyLink('landlord', landlordPortalLink)} />
           </div>
         </section>
       ) : null}

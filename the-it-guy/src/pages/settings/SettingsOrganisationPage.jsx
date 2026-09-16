@@ -2981,7 +2981,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
           </section>
         ) : null}
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,920px)_280px] xl:items-start">
+        <div className="max-w-[920px] space-y-6">
           <div className="space-y-6">
             {!showBrandingOnly ? (
               <>
@@ -3217,59 +3217,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
               </>
             ) : null}
 
-            <BrandingEssentialsCard
-              organisationName={organisationName}
-              logoUrl={primaryAssetUrl}
-              darkLogoUrl={branding.logoDark}
-              iconUrl={iconAssetUrl}
-              colours={brandColourValues}
-              canEdit={canEdit}
-              uploadingLogoTarget={uploadingLogoTarget}
-              onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
-              onColourChange={(key, value) => updateBrandColour(key, value)}
-              onCopyColour={(value) => copyBrandHex(value)}
-            />
-
-            <OnboardingLandingBrandingCard
-              organisationName={organisationName}
-              logoUrl={primaryAssetUrl}
-              darkLogoUrl={branding.logoDark}
-              iconUrl={iconAssetUrl}
-              colours={onboardingLandingColours}
-              activePortalType={onboardingPreviewType}
-              setActivePortalType={setOnboardingPreviewType}
-              canEdit={canEdit}
-              uploadingLogoTarget={uploadingLogoTarget}
-              onUploadLogo={(file, targetKey) => handleLogoUpload(file, targetKey)}
-              onColourChange={(key, value) => updateBrandColour(key, value)}
-              onCopyColour={(value) => copyBrandHex(value)}
-            />
-
-            {showPublicIntakeControls ? (
-              <section id="public-intake" className="scroll-mt-24 space-y-6">
-                <PublicIntakeLinkCard
-                  canEdit={canEdit}
-                  draft={publicIntakeDraft}
-                  loading={publicIntakeLoading}
-                  schemaReady={publicIntakeSchemaReady}
-                  saving={publicIntakeSaving}
-                  urls={publicIntakeUrls}
-                  onChange={updatePublicIntakeField}
-                  onCopy={copyPublicIntakeUrl}
-                  onDisable={disablePublicIntakeLink}
-                  onOpen={openPublicIntakeUrl}
-                  onSave={savePublicIntakeLink}
-                  onToggleIntent={togglePublicIntakeIntent}
-                />
-                <PublicIntakePerformanceCard
-                  loading={publicIntakePerformanceLoading}
-                  schemaReady={publicIntakePerformanceSchemaReady}
-                  performance={publicIntakePerformance}
-                  onRefresh={refreshPublicIntakePerformance}
-                />
-              </section>
-            ) : null}
-
             {!showBrandingOnly ? (
               <>
                 <OrganisationCard title="Permissions & Visibility" description="Grouped controls for workspace scope, lead visibility and collaboration defaults.">
@@ -3435,21 +3382,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
             ) : null}
           </div>
 
-          <aside className="hidden xl:block">
-            <div className="sticky top-4 space-y-4 rounded-[22px] border border-[#dfe8f1] bg-white p-5 shadow-[0_14px_36px_rgba(15,23,42,0.045)]">
-              <div>
-                <h2 className="text-base font-semibold text-[#17233a]">Organisation Overview</h2>
-                <p className="mt-2 text-sm leading-6 text-[#60758d]">Status signals for this workspace.</p>
-              </div>
-              <div className="space-y-3 border-y border-[#e5edf4] py-4">
-                <OverviewRow label="Agency Status" value={isPpraVerified ? 'Verified' : 'Pending'} verified={isPpraVerified} />
-                <OverviewRow label="Users" value={userCount} />
-                <OverviewRow label="Branches" value={branchCount} />
-                <OverviewRow label="Branding" value={isBrandingConfigured ? 'Configured' : 'Incomplete'} verified={isBrandingConfigured} />
-                <OverviewRow label="PPRA" value={isPpraVerified ? 'Verified' : 'Pending'} verified={isPpraVerified} />
-              </div>
-            </div>
-          </aside>
         </div>
       </form>
 

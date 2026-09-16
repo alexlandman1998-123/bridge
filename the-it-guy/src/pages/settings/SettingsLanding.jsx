@@ -12,15 +12,11 @@ const STATUS_TONE_CLASS = {
   neutral: 'settings-dashboard-chip-neutral',
 }
 
-function getStatusForItem(item, { branding, currentWorkspace, profile }) {
+function getStatusForItem(item, { branding, profile }) {
   if (item.label === 'Profile') {
     return profile?.avatarUrl || profile?.avatar_url
       ? { tone: 'success', label: 'Profile complete' }
       : { tone: 'warning', label: 'Missing profile image' }
-  }
-
-  if (item.label === 'Organisation' && currentWorkspace?.name) {
-    return { tone: 'neutral', label: currentWorkspace.name }
   }
 
   if (item.label === 'Branding') {
@@ -58,7 +54,7 @@ export default function SettingsLanding() {
               <div className="settings-dashboard-card-grid">
                 {group.items.map((item) => {
                   const Icon = item.icon
-                  const status = getStatusForItem(item, { branding, currentWorkspace, profile })
+                  const status = getStatusForItem(item, { branding, profile })
                   return (
                     <Link
                       key={item.to}

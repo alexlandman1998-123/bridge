@@ -4108,6 +4108,8 @@ function AppRoutes() {
           <Route path="/demo/:token/onboarding" element={<AppErrorBoundary scope="client-portal-route" title="Buyer onboarding demo failed to load"><ClientOnboarding /></AppErrorBoundary>} />
           <Route path="/demo/:token/buyer" element={<AppErrorBoundary scope="prospect-buyer-demo-route" title="Buyer portal demo failed to load"><ProspectBuyerDemo /></AppErrorBoundary>} />
           <Route path="/demo/:token/buyer/:section" element={<AppErrorBoundary scope="prospect-buyer-demo-route" title="Buyer portal demo failed to load"><ProspectBuyerDemo /></AppErrorBoundary>} />
+          <Route path="/demo/:token/tenant" element={<AppErrorBoundary scope="prospect-tenant-demo-route" title="Tenant portal demo failed to load"><RentalTenantPortalPage demo /></AppErrorBoundary>} />
+          <Route path="/demo/:token/landlord" element={<AppErrorBoundary scope="prospect-landlord-demo-route" title="Landlord portal demo failed to load"><RentalLandlordPortalPage demo /></AppErrorBoundary>} />
           <Route path="/client/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/:token/buying/:section" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Client portal failed to load"><ClientPortal /></AppErrorBoundary></TokenRouteGate>} />
