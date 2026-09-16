@@ -7,6 +7,7 @@ import {
   createProperty24SynchronisationPreview,
   createRedactedProperty24SynchronisationPreview,
   fetchProperty24CatalogSnapshot,
+  fetchArch9AgentCandidates,
   normalizeArch9AgentCandidate,
   normalizeProperty24Agent,
 } from '../server/property24/index.js'
@@ -35,6 +36,61 @@ const arch9Agent = normalizeArch9AgentCandidate({
 })
 assert.equal(arch9Agent.email, 'alex@arch9.co.za')
 assert.equal(arch9Agent.fullName, 'Alex Landman')
+
+const agentCandidateQueries = []
+const agentCandidateSupabase = {
+  from(table) {
+    const query = {
+      selectedColumns: '',
+      select(columns) {
+        this.selectedColumns = columns
+        agentCandidateQueries.push({ table, columns })
+        return this
+      },
+      eq() {
+        return this
+      },
+      then(resolve) {
+        if (table === 'organisation_users') {
+          return Promise.resolve({
+            data: [{
+              id: 'membership-1',
+              user_id: arch9Agent.userId,
+              organisation_id: 'org-1',
+              first_name: 'Alex',
+              last_name: 'Landman',
+              email: 'alex@arch9.co.za',
+              phone_number: '067 612 5009',
+              role: 'agent',
+              status: 'active',
+            }],
+            error: null,
+          }).then(resolve)
+        }
+        return Promise.resolve({
+          data: [{
+            id: arch9Agent.userId,
+            full_name: 'Alex Landman',
+            email: 'alex@arch9.co.za',
+            avatar_url: 'https://cdn.example.test/alex.jpg',
+          }],
+          error: null,
+        }).then(resolve)
+      },
+    }
+    return query
+  },
+}
+const fetchedAgentCandidates = await fetchArch9AgentCandidates({
+  supabase: agentCandidateSupabase,
+  organisationId: 'org-1',
+})
+assert.equal(fetchedAgentCandidates.length, 1)
+assert.equal(fetchedAgentCandidates[0].status, 'active')
+assert.equal(fetchedAgentCandidates[0].avatarUrl, 'https://cdn.example.test/alex.jpg')
+const profilesCandidateQuery = agentCandidateQueries.find((query) => query.table === 'profiles')
+assert.ok(profilesCandidateQuery)
+assert.doesNotMatch(profilesCandidateQuery.columns, /status/)
 
 const property24Agent = normalizeProperty24Agent({
   agentId: 77959,

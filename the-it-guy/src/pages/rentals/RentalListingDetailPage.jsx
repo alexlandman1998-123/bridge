@@ -1144,43 +1144,50 @@ export default function RentalListingDetailPage() {
   return (
     <section className="page-content">
       <div className="ui-section-stack">
-        <header className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-          <div className="h-[220px] w-full border-b border-[#e5edf6] sm:h-[280px]">
+        <header className="relative isolate min-h-[330px] overflow-hidden rounded-[24px] border border-[#d7e1eb] bg-[#153751] shadow-[0_12px_28px_rgba(15,23,42,0.12)] sm:min-h-[360px]">
+          <div className="absolute inset-0 -z-20">
             <RentalListingImage src={row.imageUrl} title={row.title} />
           </div>
-          <div className="space-y-4 p-5">
-            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/agent/rentals/listings')}
-                    className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.74rem] font-semibold text-[#35546c]"
-                  >
-                    <ArrowLeft size={13} aria-hidden="true" />
-                    Back
-                  </button>
-                  <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">Rental listing</span>
-                  <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">{detail.statusLabel}</span>
-                </div>
-                <h1 className="mt-3 text-[1.4rem] font-semibold tracking-[-0.03em] text-[#142132]">{row.title}</h1>
-                <p className="mt-1 text-sm text-[#607387]">{[row.address, row.location].filter(Boolean).join(', ') || 'Location pending'}</p>
-                <p className="mt-3 text-[1.45rem] font-semibold text-[#1f4f78]">{formatCurrency(row.monthlyRent)} <span className="text-base font-medium text-[#607387]">per month</span></p>
-              </div>
+          <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(8,35,56,0.94)_0%,rgba(13,49,75,0.83)_46%,rgba(20,55,81,0.42)_100%)]" />
+          <div className="flex min-h-[330px] flex-col justify-between gap-8 p-5 sm:min-h-[360px] sm:p-8 lg:p-10">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" className="ui-pill-button" onClick={loadListing} disabled={loading}>
+                <button
+                  type="button"
+                  onClick={() => navigate('/agent/rentals/listings')}
+                  className="inline-flex items-center gap-1 rounded-full border border-white/25 bg-white/10 px-3 py-1.5 text-[0.74rem] font-semibold text-white backdrop-blur-sm transition hover:bg-white/20"
+                >
+                  <ArrowLeft size={13} aria-hidden="true" />
+                  Back to listings
+                </button>
+                <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold text-white/90 backdrop-blur-sm">Rental listing</span>
+                <span className="inline-flex rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-[0.72rem] font-semibold text-white/90 backdrop-blur-sm">{detail.statusLabel}</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button type="button" className="ui-pill-button border-white/20 bg-white/10 text-white shadow-none hover:bg-white/20" onClick={loadListing} disabled={loading}>
                   <RefreshCw size={16} aria-hidden="true" />
                   Refresh
                 </button>
-                <button type="button" className="ui-pill-button ui-pill-button-active" onClick={openEditPanel}>
+                <button type="button" className="ui-pill-button border-white bg-white text-[#163956] shadow-none hover:bg-[#edf5fb]" onClick={openEditPanel}>
                   <Pencil size={16} aria-hidden="true" />
                   Edit Listing
                 </button>
-                <button type="button" className="ui-pill-button" onClick={handleDeleteRentalListing} disabled={deletingListing}>
+                <button type="button" className="ui-pill-button border-white/20 bg-white/10 text-white shadow-none hover:bg-white/20" onClick={handleDeleteRentalListing} disabled={deletingListing}>
                   {deletingListing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
                   Delete Listing
                 </button>
               </div>
+            </div>
+            <div className="max-w-5xl">
+              <h1 className="text-3xl font-semibold tracking-[-0.045em] text-white sm:text-4xl lg:text-[2.75rem]">{row.title}</h1>
+              <p className="mt-3 text-base font-medium text-white/85 sm:text-lg">{[row.address, row.location].filter(Boolean).join(', ') || 'Location pending'}</p>
+              <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-white/85 sm:text-base">
+                <span>{row.propertyType || 'Rental property'}</span>
+                {row.bedrooms ? <><span className="text-white/50">•</span><span>{row.bedrooms} {Number(row.bedrooms) === 1 ? 'bed' : 'beds'}</span></> : null}
+                {row.bathrooms ? <><span className="text-white/50">•</span><span>{row.bathrooms} {Number(row.bathrooms) === 1 ? 'bath' : 'baths'}</span></> : null}
+                {row.parkingBays ? <><span className="text-white/50">•</span><span>{row.parkingBays} parking {Number(row.parkingBays) === 1 ? 'bay' : 'bays'}</span></> : null}
+              </div>
+              <p className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-white sm:text-3xl">{formatCurrency(row.monthlyRent)} <span className="text-base font-medium text-white/75 sm:text-lg">per month</span></p>
             </div>
           </div>
         </header>
@@ -1218,13 +1225,9 @@ export default function RentalListingDetailPage() {
           />
         ) : null}
 
-        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" data-testid="rental-listing-shared-workspace-tabs">
-          <div className="flex flex-col gap-3 border-b border-[#e5edf6] pb-4 xl:flex-row xl:items-start xl:justify-between">
-            <div><p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Listing workspace</p><p className="mt-1 text-sm text-[#607387]">Manage landlord details, property information, rental marketing, tenant applications, and syndication.</p></div>
-            <span className="inline-flex self-start rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-4 py-2 text-[0.92rem] font-semibold text-[#5f748a]">Rental listing</span>
-          </div>
+        <section className="rounded-[24px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" data-testid="rental-listing-shared-workspace-tabs">
           <ListingWorkspaceTabs
-            className="mt-4 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff]"
+            className="rounded-[18px] border border-[#e1e8ef] bg-[#fbfdff] p-1.5 [&_button]:rounded-[13px] [&_button]:border-b-0 [&_button]:px-5 [&_button]:text-[#64788f] [&_button[aria-selected=true]]:bg-[#153f60] [&_button[aria-selected=true]]:text-white [&_button[aria-selected=true]]:shadow-[0_5px_14px_rgba(15,54,82,0.18)]"
             tabs={rentalWorkspaceTabs}
             activeTab={activeRentalWorkspaceTab}
             onTabChange={openRentalListingWorkspaceTab}

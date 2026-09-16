@@ -415,11 +415,14 @@ export async function fetchArch9AgentCandidates({ supabase, organisationId } = {
 
   let profilesResult = await supabase
     .from('profiles')
-    .select('id, full_name, first_name, last_name, email, phone_number, avatar_url, role, status')
+    // `organisation_users` owns membership state. The legacy `profiles` table
+    // does not have a `status` column in every deployed environment, so asking
+    // it for one prevents the whole Property24 agent sync from starting.
+    .select('id, full_name, first_name, last_name, email, phone_number, avatar_url, role')
   if (isMissingColumnError(profilesResult.error, 'phone_number')) {
     profilesResult = await supabase
       .from('profiles')
-      .select('id, full_name, first_name, last_name, email, avatar_url, role, status')
+      .select('id, full_name, first_name, last_name, email, avatar_url, role')
   }
   if (usersResult.error) throw usersResult.error
   if (profilesResult.error && profilesResult.error.code !== '42P01') throw profilesResult.error

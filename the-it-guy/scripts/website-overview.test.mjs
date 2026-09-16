@@ -10,6 +10,7 @@ const service = await readFile(new URL('../src/services/websiteWorkspaceService.
 const migration = await readFile(new URL('../../supabase/migrations/20260913094220_website_workspace_sections.sql', import.meta.url), 'utf8')
 const leadOperationsMigration = await readFile(new URL('../../supabase/migrations/20260913115029_website_workspace_lead_operations.sql', import.meta.url), 'utf8')
 const leadWindowRepairMigration = await readFile(new URL('../../supabase/migrations/20260916183940_fix_website_workspace_leads_window.sql', import.meta.url), 'utf8')
+const mediaUploadPathRepairMigration = await readFile(new URL('../../supabase/migrations/20260916190000_fix_website_media_upload_path_validation.sql', import.meta.url), 'utf8')
 const recoveryMigration = await readFile(new URL('../../supabase/migrations/20260913113900_website_blog_revision_workflow.sql', import.meta.url), 'utf8')
 const blogDraftCloneMigration = await readFile(new URL('../../supabase/migrations/20260916113000_website_blog_draft_clone_integrity.sql', import.meta.url), 'utf8')
 
@@ -72,6 +73,9 @@ assert.ok(component.includes('Image from media library') && component.includes('
 assert.ok(component.includes('Save image description'), 'Blog management should keep the shared media-description update available.')
 assert.ok(component.includes('Write the article') && component.includes('Add text') && component.includes('Add heading'), 'Blog management should present a focused writing canvas instead of a permanent block toolbar.')
 assert.ok(component.includes('Move block up') && component.includes('Move block down') && component.includes('const move ='), 'Blog authors should be able to reorder article blocks without rebuilding the article.')
+assert.ok(component.includes('const [moreOpen, setMoreOpen]') && component.includes('wlo-block-more'), 'The additional block menu should be a controlled editor control rather than a fragile native disclosure.')
+assert.ok(component.includes('Upload image') && component.includes('uploadInlineImage') && component.includes('Save image description'), 'Inline article-image blocks should support uploading and describing a new image in place.')
+assert.ok(component.includes('No live website listings available'), 'Listing blocks should clearly explain when no publishable listings are available.')
 assert.ok(component.includes('words ·') && component.includes('min read'), 'The writing canvas should provide a compact editorial reading estimate.')
 assert.ok(component.includes('Changes remain private until the website revision is published.') && component.includes('Article saved to the website draft.'), 'Blog changes should join the reviewed website revision rather than publish independently.')
 assert.ok(component.includes('wlo-blog-card-grid') && component.includes('All posts'), 'Blog management should open from a visual card library.')
@@ -110,6 +114,8 @@ assert.match(leadOperationsMigration, /bridge_has_organisation_membership/i, 'We
 assert.match(leadOperationsMigration, /revoke all on function public\.website_workspace_leads/i, 'The replacement operational read model must not be callable publicly.')
 assert.match(leadWindowRepairMigration, /greatest\(1, least\(coalesce\(p_days, 30\), 90\)\)/i, 'The lead read model must calculate its bounded date window with valid PostgreSQL expressions.')
 assert.doesNotMatch(leadWindowRepairMigration, /pg_catalog\.least|pg_catalog\.greatest/i, 'The lead read model must not schema-qualify PostgreSQL least/greatest expressions.')
+assert.match(mediaUploadPathRepairMigration, /storage\.filename\(object_name\)/i, 'Website media validation must inspect the filename instead of treating it as a folder.')
+assert.doesNotMatch(mediaUploadPathRepairMigration, /foldername\(object_name\)\)\[4\]/i, 'Website media validation must not expect a nonexistent fourth folder.')
 assert.ok(!styles.includes('kingdom-hero-v1'), 'The global website overview cannot depend on Kingdom-specific assets.')
 
 console.log('website overview checks passed')
