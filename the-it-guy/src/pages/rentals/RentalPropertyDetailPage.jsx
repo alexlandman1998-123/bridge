@@ -1,24 +1,22 @@
 import {
   ArrowLeft,
-  Building2,
   CalendarDays,
   ChevronRight,
   CircleDollarSign,
   Clock3,
   FileText,
-  Home,
   Landmark,
   Loader2,
   Mail,
-  MoreHorizontal,
   Phone,
   ShieldCheck,
   UserRound,
   Wrench,
 } from "lucide-react";
-import { createElement, useCallback, useEffect, useMemo, useState } from "react";
-import { Link, NavLink, useLocation, useParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, NavLink, useLocation, useNavigate, useParams } from "react-router-dom";
 import { useWorkspace } from "../../context/WorkspaceContext";
+import TransactionWorkspaceHeader from "../../components/TransactionWorkspaceHeader";
 import { RentalLandlordMandatePanel } from "../../modules/rentals/shared/landlords/RentalLandlordMandatePanel.jsx";
 import { listPersistedRentalTenancies } from "../../services/rentals/rentalApplicationRepository.js";
 import {
@@ -93,7 +91,7 @@ function Panel({
 }) {
   return (
     <section
-      className={`rounded-[16px] border border-[#dfe7f0] bg-white p-4 shadow-[0_8px_20px_rgba(15,23,42,.035)] ${className}`}
+      className={`rounded-[20px] border border-[#dfe7f0] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,.045)] sm:p-6 ${className}`}
     >
       <header className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-[#142132]">
@@ -104,30 +102,6 @@ function Panel({
       </header>
       {children}
     </section>
-  );
-}
-function Stat({
-  icon: Icon,
-  label,
-  value,
-  tone = "bg-[#f3f7fb] text-[#35546c]",
-  to,
-}) {
-  return (
-    <Link
-      to={to}
-      className="flex min-w-[160px] flex-1 items-center gap-3 rounded-xl border border-[#e1e8f0] bg-white px-3 py-3 transition hover:border-[#bdd6c9]"
-    >
-      <span className={`grid h-9 w-9 place-items-center rounded-xl ${tone}`}>
-        {createElement(Icon, { size: 18 })}
-      </span>
-      <span>
-        <span className="block text-xs text-[#60758b]">{label}</span>
-        <span className="mt-0.5 block text-sm font-semibold text-[#142132]">
-          {value}
-        </span>
-      </span>
-    </Link>
   );
 }
 function EmptyPanel({ title: heading, description, action }) {
@@ -149,6 +123,7 @@ export default function RentalPropertyDetailPage() {
   const workspace = useWorkspace();
   const { propertyId } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const [property, setProperty] = useState(null);
   const [data, setData] = useState({
     units: [],
@@ -161,7 +136,14 @@ export default function RentalPropertyDetailPage() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const basePath = `/agent/rentals/properties/${propertyId}`;
+  // Keep tab navigation inside the route the property was opened from. Moving
+  // between the portfolio and legacy property routes remounts this workspace,
+  // making a simple tab change look like a full page refresh.
+  const basePath = location.pathname.startsWith(
+    `/agent/rentals/portfolio/properties/${propertyId}`,
+  )
+    ? `/agent/rentals/portfolio/properties/${propertyId}`
+    : `/agent/rentals/properties/${propertyId}`;
   const current =
     tabs.find(([id]) => location.pathname.endsWith(`/${id}`))?.[0] ||
     "overview";
@@ -336,56 +318,7 @@ export default function RentalPropertyDetailPage() {
           {next[2]}
         </Link>
       </section>
-      <section className="flex gap-2 overflow-x-auto pb-1">
-        <Stat
-          icon={Home}
-          label="Occupancy"
-          value={
-            unitCount ? `${occupied}/${unitCount} occupied` : "No units yet"
-          }
-          tone={
-            occupied
-              ? "bg-[#effaf3] text-[#16734f]"
-              : "bg-[#fff7eb] text-[#c86400]"
-          }
-          to={tabPath("tenancy")}
-        />
-        <Stat
-          icon={CircleDollarSign}
-          label="Rent"
-          value={money(summary.rent)}
-          to={tabPath("financials")}
-        />
-        <Stat
-          icon={CalendarDays}
-          label="Lease"
-          value={summary.end ? `${days} days remaining` : "No active lease"}
-          tone={summary.end ? "bg-[#fff7eb] text-[#c86400]" : undefined}
-          to={tabPath("tenancy")}
-        />
-        <Stat
-          icon={Wrench}
-          label="Maintenance"
-          value={`${summary.open.length} open`}
-          tone={
-            summary.urgent.length
-              ? "bg-[#fff7eb] text-[#c86400]"
-              : "bg-[#effaf3] text-[#16734f]"
-          }
-          to={tabPath("maintenance")}
-        />
-        <Stat
-          icon={ShieldCheck}
-          label="Compliance"
-          value={
-            data.documents.length
-              ? `${data.documents.length} documents`
-              : "Not captured"
-          }
-          to={tabPath("documents")}
-        />
-      </section>
-      <section className="grid gap-3 xl:grid-cols-2">
+      <section className="grid gap-5 xl:grid-cols-2">
         <Panel
           title={summary.tenancy ? "Current tenancy" : "Current vacancy"}
           icon={UserRound}
@@ -782,8 +715,8 @@ export default function RentalPropertyDetailPage() {
     ),
   };
   return (
-    <main className="mx-auto w-full px-2 py-2 sm:px-3 lg:px-4">
-      <section className="space-y-3 pb-6">
+    <main className="mx-auto w-full px-3 py-4 sm:px-5 lg:px-6">
+      <section className="space-y-5 pb-8">
         <Link
           to="/agent/rentals/portfolio/properties"
           className="inline-flex items-center gap-1 text-sm font-semibold text-[#1769d1]"
@@ -791,101 +724,64 @@ export default function RentalPropertyDetailPage() {
           <ArrowLeft size={15} />
           Back to properties
         </Link>
-        <section className="overflow-hidden rounded-[18px] border border-[#dfe7f0] bg-white shadow-[0_12px_30px_rgba(15,23,42,.05)]">
-          <div className="grid lg:grid-cols-[220px_minmax(0,1fr)_270px]">
-            <div className="grid min-h-40 place-items-center bg-[linear-gradient(135deg,#eaf4ff,#f8fbff)] text-center text-[#1769d1]">
-              <div>
-                <span className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-white shadow-sm">
-                  <Building2 size={26} />
-                </span>
-                <p className="mt-2 text-xs font-semibold text-[#60758b]">
-                  No property image
-                </p>
-              </div>
-            </div>
-            <div className="p-4 sm:p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h1 className="text-2xl font-semibold tracking-[-.02em] text-[#102236]">
-                    {property.name}
-                  </h1>
-                  <p className="mt-1 text-sm text-[#47698d]">
-                    {address || "Address pending"}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  aria-label="More property actions"
-                  className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe6f1] text-[#58718b]"
-                >
-                  <MoreHorizontal size={18} />
-                </button>
-              </div>
-              <p className="mt-3 text-sm text-[#35546c]">
-                {title(property.propertyType)} · {unitCount} unit
-                {unitCount === 1 ? "" : "s"}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <span
-                  className={`rounded-full px-3 py-1 text-xs font-semibold ${summary.tenancy ? "bg-[#e5f8ef] text-[#087a55]" : "bg-[#fff6e8] text-[#a55a00]"}`}
-                >
-                  {summary.tenancy ? "Occupied" : "Vacant"}
-                </span>
-                <span className="rounded-full bg-[#f0f5fb] px-3 py-1 text-xs font-semibold text-[#35546c]">
-                  {summary.tenancy ? "Lease active" : "No active lease"}
-                </span>
-                {summary.open.length ? (
-                  <span className="rounded-full bg-[#fff3e9] px-3 py-1 text-xs font-semibold text-[#c86400]">
-                    {summary.open.length} open maintenance issue
-                    {summary.open.length === 1 ? "" : "s"}
-                  </span>
-                ) : null}
-              </div>
-            </div>
-            <aside className="border-t border-[#e5edf5] p-4 lg:border-l lg:border-t-0">
-              <p className="text-xl font-semibold text-[#102236]">
-                {money(summary.rent)}
-                {summary.rent ? (
-                  <span className="text-sm font-medium text-[#60758b]">
-                    {" "}
-                    / month
-                  </span>
-                ) : null}
-              </p>
-              <p className="mt-1 text-sm text-[#60758b]">
-                {summary.end
-                  ? `Lease ends ${date(summary.end)}`
-                  : "No active lease"}
-              </p>
-              {summary.tenancy ? (
-                <div className="mt-4 flex items-center gap-2">
-                  <span className="grid h-9 w-9 place-items-center rounded-full bg-[#edf5ff] text-[#1769d1]">
-                    <UserRound size={17} />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-[#20364d]">
-                      {tenantName(summary.tenancy)}
-                    </p>
-                    <p className="text-xs text-[#60758b]">Current tenant</p>
-                  </div>
-                </div>
-              ) : null}
-              <Link
-                to={
-                  summary.tenancy
-                    ? tabPath("tenancy")
-                    : "/agent/rentals/listings/new"
-                }
-                className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-[10px] bg-[#087a55] px-3 text-sm font-semibold text-white"
-              >
-                {summary.tenancy ? "View tenancy" : "Create listing"}
-              </Link>
-            </aside>
-          </div>
-        </section>
+        <TransactionWorkspaceHeader
+          contextLabel="RENTAL PROPERTY"
+          title={property.name}
+          unitLabel={`${unitCount} unit${unitCount === 1 ? "" : "s"}`}
+          subtitle={`${title(property.propertyType)} · ${address || "Address pending"}`}
+          pills={[
+            {
+              label: summary.tenancy ? "Occupied" : "Vacant",
+              tone: summary.tenancy ? "green" : "amber",
+              icon: "status",
+            },
+            {
+              label: summary.tenancy ? "Lease active" : "No active lease",
+              tone: "slate",
+              icon: "time",
+            },
+            summary.owner
+              ? { label: `${summary.owner.name} · landlord`, tone: "blue", icon: "user" }
+              : { label: "Landlord needed", tone: "amber", icon: "user" },
+          ]}
+          stats={[
+            {
+              label: "Occupancy",
+              value: unitCount ? `${occupied}/${unitCount} occupied` : "No units yet",
+              helperText: summary.tenancy ? "Active tenancy" : "Ready to let",
+              icon: "stage",
+            },
+            {
+              label: "Monthly rent",
+              value: money(summary.rent),
+              helperText: summary.rent ? "Current lease terms" : "Add rental terms",
+              icon: "price",
+            },
+            {
+              label: "Lease",
+              value: summary.end ? `${days} days remaining` : "No active lease",
+              helperText: summary.end ? `Ends ${date(summary.end)}` : "Capture tenancy to track renewal",
+              icon: "time",
+            },
+            {
+              label: "Maintenance",
+              value: `${summary.open.length} open`,
+              helperText: summary.urgent.length ? "Urgent review required" : "No urgent issues",
+              icon: "health",
+            },
+          ]}
+          actions={[
+            {
+              id: "property-primary-action",
+              label: summary.tenancy ? "View tenancy" : "Create listing",
+              icon: summary.tenancy ? "user" : "stage",
+              onClick: () => navigate(summary.tenancy ? tabPath("tenancy") : "/agent/rentals/listings/new"),
+            },
+          ]}
+        />
         <nav
           aria-label="Property workspace"
-          className="flex overflow-x-auto rounded-[14px] border border-[#dbe6f2] bg-white p-1.5"
+          className="flex overflow-x-auto rounded-[18px] border border-[#dbe6f2] bg-white p-2 shadow-[0_8px_20px_rgba(15,23,42,.035)]"
         >
           {tabs.map(([id, label]) => (
             <NavLink
@@ -893,7 +789,7 @@ export default function RentalPropertyDetailPage() {
               to={tabPath(id)}
               end={id === "overview"}
               className={({ isActive }) =>
-                `min-w-[118px] shrink-0 rounded-[10px] px-4 py-2.5 text-center text-sm font-semibold transition ${isActive ? "bg-[#edf7f3] text-[#087a55]" : "text-[#60758b] hover:bg-[#f8fbff]"}`
+                `min-w-[126px] shrink-0 rounded-[12px] px-5 py-3 text-center text-sm font-semibold transition ${isActive ? "bg-[#edf7f3] text-[#087a55] shadow-sm" : "text-[#60758b] hover:bg-[#f8fbff]"}`
               }
             >
               {label}

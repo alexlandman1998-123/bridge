@@ -143,6 +143,7 @@ export function buildRentalListingEditForm(listing = {}) {
     mandateStatus: normalizeText(row.mandateStatus) || RENTAL_LISTING_INITIAL_FORM.mandateStatus,
     mandateStartDate: normalizeText(row.mandateStartDate),
     mandateEndDate: normalizeText(row.mandateEndDate),
+    property24ExpiryDate: normalizeText(raw.property24ExpiryDate || raw.property24_expiry_date || publication.property24ExpiryDate || publication.property24_expiry_date || raw.expiryDate),
     marketingApprovalStatus: normalizeText(row.marketingApprovalStatus) || RENTAL_LISTING_INITIAL_FORM.marketingApprovalStatus,
     description: normalizeText(raw.description || raw.listingPreviewDescription || raw.listing_preview_description),
     selectedFeatures: Array.isArray(propertyProfile.selectedFeatures)
@@ -194,7 +195,7 @@ export function buildRentalListingUpdatePayload(form = {}) {
     mandateStatus: normalizeText(form.mandateStatus) || 'not_started',
     mandateStartDate: normalizeText(form.mandateStartDate),
     mandateEndDate: normalizeText(form.mandateEndDate),
-    expiryDate: normalizeText(form.mandateEndDate),
+    expiryDate: normalizeText(form.property24ExpiryDate) || normalizeText(form.mandateEndDate),
     sellerCanonicalFacts: canonicalFacts,
     sellerCanonicalFactReadiness: buildRentalCanonicalFactReadiness(form),
     sellerCanonicalFactsUpdatedAt: new Date().toISOString(),

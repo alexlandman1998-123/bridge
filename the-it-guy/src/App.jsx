@@ -37,6 +37,11 @@ import { isWorkspaceExtensionFeatureEnabled, REVO_EXTENSION_KEY } from './module
 import {
   RentalTenantPortalPage,
   RentalLandlordPortalPage,
+  RentalClientPortalActivationPage,
+  RentalClientPortalHubPage,
+  RentalAuthenticatedTenantPortalPage,
+  RentalAuthenticatedLandlordPortalPage,
+  RentalClientPortalAccessManagerPage,
   RentalCalendarPage,
   ShortTermRentalCalendarPage,
   ShortTermRentalDashboardPage,
@@ -86,6 +91,7 @@ import {
   RentalPortfoliosPage,
   RentalPropertiesPage,
   RentalPropertyDetailPage,
+  RentalOwnerDetailPage,
   RentalTenanciesPage,
   RentalTenancyDetailPage,
   RentalVacanciesPage,
@@ -1920,6 +1926,10 @@ function AppRoutes() {
           <Route path="/rental-application/:token" element={<AppErrorBoundary scope="rental-applicant-journey" title="Rental application failed to load"><RentalApplicantJourneyPage /></AppErrorBoundary>} />
           <Route path="/tenant/:token" element={<AppErrorBoundary scope="rental-tenant-portal" title="Tenant portal failed to load"><RentalTenantPortalPage /></AppErrorBoundary>} />
           <Route path="/landlord/:token" element={<AppErrorBoundary scope="rental-landlord-portal" title="Landlord portal failed to load"><RentalLandlordPortalPage /></AppErrorBoundary>} />
+          <Route path="/rentals/portal/activate/:token" element={<AppErrorBoundary scope="rental-client-portal-activation" title="Client account activation failed to load"><RentalClientPortalActivationPage /></AppErrorBoundary>} />
+          <Route path="/rentals/portal" element={<AppErrorBoundary scope="rental-client-portal" title="Client portal failed to load"><RentalClientPortalHubPage /></AppErrorBoundary>} />
+          <Route path="/rentals/portal/tenant/:membershipId" element={<AppErrorBoundary scope="rental-client-tenant-portal" title="Tenant portal failed to load"><RentalAuthenticatedTenantPortalPage /></AppErrorBoundary>} />
+          <Route path="/rentals/portal/landlord/:membershipId" element={<AppErrorBoundary scope="rental-client-landlord-portal" title="Landlord portal failed to load"><RentalAuthenticatedLandlordPortalPage /></AppErrorBoundary>} />
           <Route path="/intake/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/a/:agencySlug" element={<AppErrorBoundary scope="agency-public-intake" title="Agency intake page failed to load"><PublicAgencyIntakePage /></AppErrorBoundary>} />
           <Route path="/young-law" element={<AppErrorBoundary scope="young-law-calculators" title="Young Law calculators failed to load"><YoungLawCalculatorsPage /></AppErrorBoundary>} />
@@ -3171,6 +3181,7 @@ function AppRoutes() {
               />
               <Route path="/agent/rentals/pilot-readiness" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalPilotReadinessPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/rollout-controls" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalRolloutControlsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
+              <Route path="/agent/rentals/client-access" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalClientPortalAccessManagerPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/pilot-launch" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalPilotLaunchPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/pilot-execution" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalPilotExecutionPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
               <Route path="/agent/rentals/pilot-reviews" element={<RoleRoute allowedRoles={['agent']}><RentalWorkspaceGuard><RentalModuleGate moduleId={RENTAL_MODULES.dashboard}><RentalPilotReviewsPage /></RentalModuleGate></RentalWorkspaceGuard></RoleRoute>} />
@@ -3260,6 +3271,18 @@ function AppRoutes() {
                 }
               />
               <Route
+                path="/agent/rentals/owners/:ownerId/*"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalOwnerDetailPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
                 path="/agent/rentals/portfolio"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
@@ -3273,6 +3296,42 @@ function AppRoutes() {
               />
               <Route
                 path="/agent/rentals/portfolio/properties"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalPropertiesPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/portfolio/units"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalPropertiesPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/portfolio/buildings"
+                element={
+                  <RoleRoute allowedRoles={['agent']}>
+                    <RentalWorkspaceGuard>
+                      <RentalModuleGate moduleId={RENTAL_MODULES.properties}>
+                        <RentalPropertiesPage />
+                      </RentalModuleGate>
+                    </RentalWorkspaceGuard>
+                  </RoleRoute>
+                }
+              />
+              <Route
+                path="/agent/rentals/portfolio/owners"
                 element={
                   <RoleRoute allowedRoles={['agent']}>
                     <RentalWorkspaceGuard>

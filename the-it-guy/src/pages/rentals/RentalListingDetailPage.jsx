@@ -14,6 +14,7 @@ import {
   Save,
   Send,
   ShieldCheck,
+  Trash2,
   Users,
   X,
 } from 'lucide-react'
@@ -35,6 +36,7 @@ import {
   publishRentalProperty24Listing,
   updateRentalListingDraft,
 } from '../../services/rentals/rentalListingDraftService'
+import { deletePrivateListing } from '../../services/privateListingService'
 import {
   RENTAL_LISTING_INITIAL_FORM,
   RENTAL_SELECT_OPTIONS,
@@ -681,6 +683,11 @@ function RentalTabContent({
   property24PreviewError,
   onCheckProperty24,
   onOpenSyndication,
+  onOpenApplications,
+  property24ExpiryDate,
+  onProperty24ExpiryChange,
+  onSaveProperty24Expiry,
+  savingProperty24Expiry,
 }) {
   const row = detail.row
   if (activeTab === 'property') {
@@ -742,34 +749,57 @@ function RentalTabContent({
         ? 'border-[#f0d5b5] bg-[#fffaf2] text-[#9f5f15]'
         : 'border-[#dbe6f2] bg-white text-[#42617f]'
     return (
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <DetailPanel eyebrow="Marketing" title="Marketing Approval">
-          <DetailRow label="Approval status" value={detail.marketingApprovalStatusLabel} />
-          <DetailRow label="Property24 status" value={detail.property24StatusLabel} />
-        </DetailPanel>
-        <DetailPanel eyebrow="Property24" title="Rental Readiness">
-          <div className="flex items-start gap-3 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
-            <img src="/lead-sources/property24.png" alt="Property24" className="h-12 w-16 shrink-0 object-contain" />
-            <div className="min-w-0 flex-1">
-              <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${statusToneClasses}`}>
-                {previewStatus.tone === 'success' ? <CheckCircle2 size={14} aria-hidden="true" /> : previewStatus.tone === 'warning' ? <CircleAlert size={14} aria-hidden="true" /> : <ShieldCheck size={14} aria-hidden="true" />}
-                {previewStatus.label}
-              </span>
-              <p className="mt-2 text-sm font-semibold leading-6 text-[#607891]">{previewStatus.detail}</p>
-              {property24PreviewError ? <p className="mt-2 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p> : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" className="ui-pill-button ui-pill-button-active" onClick={onCheckProperty24} disabled={checkingProperty24}>
-                  {checkingProperty24 ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
-                  Check Readiness
-                </button>
-                <button type="button" className="ui-pill-button" onClick={onOpenSyndication}>
-                  Open Syndication
-                </button>
-              </div>
+      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:p-6">
+        <div className="flex flex-col gap-4 border-b border-[#e5edf6] pb-5 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Marketing workspace</p>
+            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#142132]">Rental marketing and syndication</h2>
+            <p className="mt-1 text-sm leading-6 text-[#607387]">Prepare the listing, control its Property24 expiry, and publish or update it from one place.</p>
+          </div>
+          <span className={`inline-flex self-start items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${statusToneClasses}`}>
+            {previewStatus.tone === 'success' ? <CheckCircle2 size={14} aria-hidden="true" /> : previewStatus.tone === 'warning' ? <CircleAlert size={14} aria-hidden="true" /> : <ShieldCheck size={14} aria-hidden="true" />}
+            {previewStatus.label}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing status</p>
+            <p className="mt-2 text-lg font-semibold text-[#142132]">{detail.marketingApprovalStatusLabel}</p>
+            <p className="mt-1 text-sm text-[#607387]">Landlord marketing approval</p>
+          </div>
+          <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property24</p>
+            <p className="mt-2 text-lg font-semibold text-[#142132]">{detail.property24StatusLabel}</p>
+            <p className="mt-1 text-sm text-[#607387]">{previewStatus.detail}</p>
+          </div>
+          <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Rental enquiries</p>
+            <p className="mt-2 text-lg font-semibold text-[#142132]">{row.applicationCount || 0}</p>
+            <p className="mt-1 text-sm text-[#607387]">Tenant applications received</p>
+          </div>
+        </div>
+
+        <section className="mt-5 rounded-[18px] border border-[#cfe0ef] bg-[#f8fbff] p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[#1f4f78]"><CalendarDays size={18} /><p className="text-sm font-semibold">Property24 expiry date</p></div>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-[#607387]">Choose when this rental should be removed from Property24. This is separate from the landlord mandate expiry.</p>
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
+              <label className="grid min-w-[210px] gap-1.5"><span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718198]">Expires on</span><input type="date" value={property24ExpiryDate} onChange={(event) => onProperty24ExpiryChange(event.target.value)} className="min-h-10 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-medium text-[#18324b]" disabled={savingProperty24Expiry} /></label>
+              <button type="button" className="ui-pill-button ui-pill-button-active" onClick={onSaveProperty24Expiry} disabled={savingProperty24Expiry}>{savingProperty24Expiry ? <Loader2 size={16} className="animate-spin" /> : <CalendarDays size={16} />}Save expiry</button>
             </div>
           </div>
-        </DetailPanel>
-      </div>
+        </section>
+
+        <section className="mt-5 grid gap-3 lg:grid-cols-3">
+          <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">1. Check</p><button type="button" className="ui-pill-button mt-3 w-full justify-center" onClick={onCheckProperty24} disabled={checkingProperty24}>{checkingProperty24 ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}Preview readiness</button></div>
+          <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Publish</p><button type="button" className="ui-pill-button ui-pill-button-active mt-3 w-full justify-center" onClick={onOpenSyndication}><Send size={16} />Open publish controls</button></div>
+          <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">3. Tenant pipeline</p><button type="button" className="ui-pill-button mt-3 w-full justify-center" onClick={onOpenApplications}><Users size={16} />View applications</button></div>
+        </section>
+        {property24PreviewError ? <p className="mt-4 rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p> : null}
+      </section>
     )
   }
   if (activeTab === 'syndication') {
@@ -841,6 +871,9 @@ export default function RentalListingDetailPage() {
   const [checkingProperty24, setCheckingProperty24] = useState(false)
   const [property24PreviewError, setProperty24PreviewError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
+  const [property24ExpiryDate, setProperty24ExpiryDate] = useState('')
+  const [savingProperty24Expiry, setSavingProperty24Expiry] = useState(false)
+  const [deletingListing, setDeletingListing] = useState(false)
 
   const detail = useMemo(() => (listing ? buildRentalListingDetailView(listing) : null), [listing])
   const rentalWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('rentals'), [])
@@ -926,6 +959,7 @@ export default function RentalListingDetailPage() {
       }
       setListing(row)
       setEditForm(buildRentalListingEditForm(row))
+      setProperty24ExpiryDate(buildRentalListingEditForm(row).property24ExpiryDate || '')
       setProperty24Preview(null)
       setProperty24PreviewError('')
     } catch (loadError) {
@@ -1037,6 +1071,48 @@ export default function RentalListingDetailPage() {
     }
   }
 
+  async function handleSaveProperty24Expiry() {
+    if (!property24ExpiryDate) {
+      setProperty24PreviewError('Choose a Property24 expiry date before saving.')
+      return
+    }
+    if (property24ExpiryDate <= new Date().toISOString().slice(0, 10)) {
+      setProperty24PreviewError('Property24 expiry must be a future date.')
+      return
+    }
+    try {
+      setSavingProperty24Expiry(true)
+      setProperty24PreviewError('')
+      const result = await updateRentalListingDraft(listingId, { ...editForm, property24ExpiryDate }, {
+        organisationId,
+        assignedAgentId,
+        performedBy: assignedAgentId,
+      })
+      setListing(result.listing)
+      setEditForm(buildRentalListingEditForm(result.listing))
+      setSuccessMessage('Property24 expiry date saved.')
+    } catch (saveError) {
+      setProperty24PreviewError(saveError?.message || 'Unable to save the Property24 expiry date.')
+    } finally {
+      setSavingProperty24Expiry(false)
+    }
+  }
+
+  async function handleDeleteRentalListing() {
+    const title = String(row?.title || 'this rental listing').trim()
+    if (!window.confirm(`Permanently delete "${title}"?\n\nThis removes the rental listing and its linked workflow data. This cannot be undone.`)) return
+    try {
+      setDeletingListing(true)
+      setError('')
+      await deletePrivateListing(listingId, { organisationId })
+      navigate('/agent/rentals/listings', { replace: true, state: { message: `"${title}" was permanently deleted.` } })
+    } catch (deleteError) {
+      setError(deleteError?.message || 'Unable to delete this rental listing.')
+    } finally {
+      setDeletingListing(false)
+    }
+  }
+
   if (loading) {
     return (
       <section className="page-content">
@@ -1113,6 +1189,10 @@ export default function RentalListingDetailPage() {
             <button type="button" className="ui-pill-button ui-pill-button-active" onClick={openEditPanel}>
               <Pencil size={16} aria-hidden="true" />
               Edit Details
+            </button>
+            <button type="button" className="ui-pill-button" onClick={handleDeleteRentalListing} disabled={deletingListing}>
+              {deletingListing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
+              Delete Listing
             </button>
           </div>
         </header>
@@ -1218,6 +1298,11 @@ export default function RentalListingDetailPage() {
           property24PreviewError={property24PreviewError}
           onCheckProperty24={handleCheckProperty24Readiness}
           onOpenSyndication={() => navigate(buildRentalListingDetailPath(row.id, 'syndication'))}
+          onOpenApplications={() => navigate(buildRentalListingDetailPath(row.id, 'applications'))}
+          property24ExpiryDate={property24ExpiryDate}
+          onProperty24ExpiryChange={setProperty24ExpiryDate}
+          onSaveProperty24Expiry={handleSaveProperty24Expiry}
+          savingProperty24Expiry={savingProperty24Expiry}
         />
       </div>
     </section>

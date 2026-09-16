@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Home,
   Loader2,
-  MoreVertical,
   Plus,
   Search,
 } from 'lucide-react'
@@ -102,14 +101,6 @@ function RentalListingIndexCard({ row, onOpen }) {
           <span className={`h-2 w-2 rounded-full ${rentalDotClass(row.statusGroup)}`} />
           <span className="truncate">{formatRentalIndexStatusLabel(row.statusGroup)}</span>
         </div>
-        <button
-          type="button"
-          onClick={(event) => event.stopPropagation()}
-          className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/45 bg-white/90 text-[#607387] shadow-[0_8px_18px_rgba(9,19,34,0.14)] transition hover:bg-white"
-          aria-label={`Open actions for ${row.title}`}
-        >
-          <MoreVertical size={16} aria-hidden="true" />
-        </button>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
