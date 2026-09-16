@@ -113,11 +113,15 @@ function mapPage(row: Record<string, unknown>): PublicPage {
 }
 
 function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'] = []): PublicProperty {
+  const listingType = String(row.listing_type || '').trim().toLowerCase()
+  const consultantName = String(row.consultant_name || '').trim()
   return {
     id: String(row.listing_id),
     reference: String(row.arch9_reference || row.listing_id),
     title: String(row.title || 'Property listing'),
-    transactionType: String(row.listing_type).toLowerCase() === 'rental' ? 'rental' : 'sale',
+    // Property24 uses both "Rental" and "Rent" in historic feeds. Treat any
+    // rental spelling as a rental rather than silently labelling it for sale.
+    transactionType: ['rental', 'rent', 'to rent', 'to-rent'].includes(listingType) ? 'rental' : 'sale',
     propertyType: String(row.property_type || 'Property'),
     suburb: String(row.suburb || ''),
     province: row.province ? String(row.province) : undefined,
@@ -127,6 +131,7 @@ function mapProperty(row: Record<string, unknown>, media: PublicProperty['media'
     parkingBays: typeof row.parking_bays === 'number' ? row.parking_bays : Number(row.parking_bays || 0) || undefined,
     floorSize: typeof row.floor_size === 'number' ? row.floor_size : Number(row.floor_size || 0) || undefined,
     description: row.description ? String(row.description) : undefined,
+    consultant: consultantName ? { name: consultantName, email: row.consultant_email ? String(row.consultant_email) : undefined, phone: row.consultant_phone ? String(row.consultant_phone) : undefined, avatarUrl: row.consultant_avatar_url ? String(row.consultant_avatar_url) : undefined } : undefined,
     features: strings(row.features),
     amenities: strings(row.amenities),
     media,
@@ -188,23 +193,42 @@ async function getPublishedWebsiteListings(
 
   const eligibilityResult = await supabase
     .from('listing_publication_data')
-    .select('listing_id, private_listings!inner(organisation_id, arch9_reference)')
+    .select('listing_id, private_listings!inner(organisation_id, arch9_reference, assigned_agent_id)')
     .in('listing_id', listingIds)
     .eq('status', 'Published')
     .eq('private_listings.organisation_id', site.organisationId)
   if (eligibilityResult.error) throw eligibilityResult.error
-  const eligibleReferences = new Map((eligibilityResult.data || []).flatMap((row) => {
+  const eligibleListings = new Map((eligibilityResult.data || []).flatMap((row) => {
     const listing = Array.isArray(row.private_listings) ? row.private_listings[0] : row.private_listings
-    const reference = listing && typeof listing === 'object' ? String((listing as Record<string, unknown>).arch9_reference || '') : ''
-    return reference ? [[String(row.listing_id), reference] as const] : []
+    if (!listing || typeof listing !== 'object') return []
+    const privateListing = listing as Record<string, unknown>
+    const reference = String(privateListing.arch9_reference || '')
+    const assignedAgentId = String(privateListing.assigned_agent_id || '')
+    return reference ? [[String(row.listing_id), { reference, assignedAgentId }] as const] : []
   }))
+
+  const assignedAgentIds = [...new Set([...eligibleListings.values()].map((listing) => listing.assignedAgentId).filter(Boolean))]
+  const consultants = new Map<string, { name: string; email?: string; phone?: string; avatarUrl?: string }>()
+  if (assignedAgentIds.length) {
+    const { data: members, error: membersError } = await supabase.from('organisation_users').select('user_id, first_name, last_name, email').eq('organisation_id', site.organisationId).in('user_id', assignedAgentIds)
+    if (membersError) throw membersError
+    const { data: profiles, error: profilesError } = await supabase.from('profiles').select('id, full_name, first_name, last_name, phone_number, avatar_url').in('id', assignedAgentIds)
+    if (profilesError) throw profilesError
+    const profilesById = new Map((profiles || []).map((profile) => [String(profile.id), profile]))
+    for (const member of members || []) {
+      const profile = profilesById.get(String(member.user_id))
+      const name = [profile?.first_name || member.first_name, profile?.last_name || member.last_name].filter(Boolean).join(' ') || String(profile?.full_name || '').trim()
+      if (name) consultants.set(String(member.user_id), { name, email: String(member.email || '').trim() || undefined, phone: String(profile?.phone_number || '').trim() || undefined, avatarUrl: String(profile?.avatar_url || '').trim() || undefined })
+    }
+  }
 
   return (channelResult.data || []).flatMap((channel) => {
     const listingId = String(channel.listing_id)
-    const reference = eligibleReferences.get(listingId)
-    if (!reference || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
+    const listing = eligibleListings.get(listingId)
+    if (!listing || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
+    const consultant = consultants.get(listing.assignedAgentId)
     return [{
-      row: { ...(channel.publication_json as Record<string, unknown>), listing_id: listingId, arch9_reference: reference },
+      row: { ...(channel.publication_json as Record<string, unknown>), listing_id: listingId, arch9_reference: listing.reference, consultant_name: consultant?.name, consultant_email: consultant?.email, consultant_phone: consultant?.phone, consultant_avatar_url: consultant?.avatarUrl },
       media: mapSnapshotMedia(channel.media_json),
     }]
   })

@@ -1,4 +1,4 @@
-import { CalendarDays, CircleHelp, CreditCard, FileText, Home, MessageCircle, ReceiptText, Wrench } from 'lucide-react'
+import { Building2, CalendarDays, CircleHelp, CreditCard, FileText, Home, MessageCircle, ReceiptText, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import BuyerPortalDesktopSidebar from '../client-portal/BuyerPortalDesktopSidebar'
 import { BuyerMobileBottomNavigation, BuyerMobileHeader, BuyerMobilePropertyHero } from '../client-portal/BuyerMobileChrome'
