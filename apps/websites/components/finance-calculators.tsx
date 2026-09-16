@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { loanFromBudget, repayment, savingsMonths } from '@/lib/finance'
 import styles from './resources.module.css'
@@ -16,6 +16,10 @@ const modes: { key: Mode; title: string; description: string }[] = [
 export function FinanceCalculators() {
   const [mode, setMode] = useState<Mode>('repayment')
   const [values, setValues] = useState<Record<string, string>>({ price: '2000000', deposit: '200000', rate: '10', years: '20', income: '45000', expenses: '18000', debt: '3000', reserve: '8000', saved: '50000', monthly: '5000', target: '200000' })
+  useEffect(() => {
+    const price = Number(new URLSearchParams(window.location.search).get('price'))
+    if (Number.isFinite(price) && price > 0 && price <= 1_000_000_000) setValues(current => ({ ...current, price: String(Math.round(price)) }))
+  }, [])
   const n = (key: string) => Number(values[key])
   const fields = mode === 'repayment' ? ['price', 'deposit', 'rate', 'years'] : mode === 'affordability' ? ['income', 'expenses', 'debt', 'reserve', 'deposit', 'rate', 'years'] : ['target', 'saved', 'monthly']
   const valid = fields.every(key => values[key] !== '' && Number.isFinite(n(key)) && n(key) >= (key === 'years' ? 1 : 0) && n(key) <= (key === 'rate' ? 30 : key === 'years' ? 30 : 1_000_000_000))
@@ -26,7 +30,7 @@ export function FinanceCalculators() {
   const affordableLoan = loanFromBudget(budget, n('rate'), n('years'))
   const months = savingsMonths(n('target'), n('saved'), n('monthly'))
   const labels: Record<string, string> = { price: 'Purchase price (R)', deposit: 'Deposit (R)', rate: 'Annual interest rate (%)', years: 'Loan term (years)', income: 'Monthly take-home income (R)', expenses: 'Living costs, rates, levies & insurance (R/month)', debt: 'Existing debt repayments (R/month)', reserve: 'Monthly savings & safety buffer (R)', target: 'Deposit savings goal (R)', saved: 'Already saved (R)', monthly: 'Monthly contribution (R)' }
-  return <section className={styles.calculator}>
+  return <section className={styles.calculator} id="bond-calculator">
     <div className={styles.tabs} aria-label="Choose a calculator">{modes.map(item => <button key={item.key} type="button" aria-pressed={mode === item.key} onClick={() => setMode(item.key)}>{item.title}</button>)}</div>
     <div className={styles.calcGrid}>
       <div><h2>{modes.find(item => item.key === mode)?.description}</h2><div className={styles.fields}>{fields.map(key => <label key={key}>{labels[key]}<input type="number" inputMode="decimal" min={key === 'years' ? 1 : 0} max={key === 'rate' ? 30 : key === 'years' ? 30 : 1_000_000_000} step={key === 'years' ? 1 : 'any'} value={values[key]} onChange={event => setValues(current => ({ ...current, [key]: event.target.value }))} /></label>)}</div>{mode !== 'deposit' && <p className={styles.note}>10% is an illustrative starting rate, not a current bank quote. Enter your offered rate.</p>}</div>

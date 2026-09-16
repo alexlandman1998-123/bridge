@@ -2,6 +2,7 @@ export type PublicProperty = {
   id: string
   title: string
   reference: string
+  legacyReference?: string
   transactionType: 'sale' | 'rental'
   propertyType: string
   suburb: string
