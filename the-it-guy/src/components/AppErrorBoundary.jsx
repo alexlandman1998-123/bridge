@@ -3,12 +3,12 @@ import { Link } from 'react-router-dom'
 import { reportError } from '../services/observability/errorTracking'
 
 // A stale HTML shell can reference a JavaScript asset from a previous release.
-// Retry once automatically, then stop. Keeping this limit release-independent
-// prevents a changed shell from resetting the counter and reloading forever.
-const STALE_CHUNK_AUTO_RELOAD_LIMIT = 6
+// Make one automatic recovery attempt only. Retrying the same vanished asset
+// several times strands people behind this boundary instead of at sign-in.
+const STALE_CHUNK_AUTO_RELOAD_LIMIT = 1
 const STALE_CHUNK_FORCE_RELOAD_AFTER_PROBE_ATTEMPT = 1
 const STALE_CHUNK_RELOAD_MARKER_TTL_MS = 10 * 60 * 1000
-const STALE_CHUNK_RETRY_DELAYS_MS = [250, 1500, 4000, 8000, 15000, 30000]
+const STALE_CHUNK_RETRY_DELAYS_MS = [250]
 const CREATE_LISTING_DRAFT_STORAGE_PREFIX = 'itg:agent-listings:create-draft:v1:'
 
 function getErrorMessage(error) {
@@ -351,6 +351,13 @@ class AppErrorBoundary extends Component {
     await reloadWithFreshAppShell()
   }
 
+  async refreshStaleChunkApp() {
+    // Deliberately preserve the exhausted marker. If the fresh navigation
+    // still cannot load, the user sees a stable recovery action rather than
+    // being sent through the automatic loop again.
+    await reloadWithFreshAppShell()
+  }
+
   render() {
     if (!this.state.hasError) {
       return this.props.children
@@ -393,7 +400,7 @@ class AppErrorBoundary extends Component {
               className="auth-primary-cta"
               onClick={() => {
                 if (staleChunkError) {
-                  this.recoverFromStaleChunk({ force: true })
+                  void this.refreshStaleChunkApp()
                   return
                 }
                 if (browserStorageQuotaError) {

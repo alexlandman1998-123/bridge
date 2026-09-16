@@ -468,7 +468,7 @@ function OrganisationWorkspaceSwitcher({ currentWorkspace = null, memberships = 
 
 function Sidebar() {
   const workspaceContext = useWorkspace()
-  const { workspace, setWorkspace, allWorkspace, role, baseRole, profile } = workspaceContext
+  const { workspace, role, baseRole, profile } = workspaceContext
   const {
     branding,
     loading: organisationLoading,
@@ -726,14 +726,6 @@ function Sidebar() {
       </div>
     )
   }
-
-  useEffect(() => {
-    if (role === 'client' || role === 'attorney' || workspace.id === 'all') {
-      return
-    }
-
-    setWorkspace(allWorkspace)
-  }, [allWorkspace, role, setWorkspace, workspace.id])
 
   const currentLogoLoadStatus = logoLoadState.url === branding.logoUrl ? logoLoadState.status : 'loading'
   const logoLoadFailed = currentLogoLoadStatus === 'failed'

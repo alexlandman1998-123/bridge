@@ -840,6 +840,26 @@ function AgentNewDealWizard({
   const [saveError, setSaveError] = useState('')
   const [errors, setErrors] = useState({})
   const [createdDeal, setCreatedDeal] = useState(null)
+
+  useEffect(() => {
+    const handlePostCreateComplete = (event) => {
+      const result = event?.detail
+      if (!result?.transactionId) return
+
+      setCreatedDeal((current) => {
+        if (!current || current.transactionId !== result.transactionId) return current
+        return {
+          ...current,
+          ...result,
+          buyerDocumentsUrl: resolveBuyerDocumentsPortal(result).url,
+        }
+      })
+    }
+
+    window.addEventListener('itg:transaction-post-create-complete', handlePostCreateComplete)
+    return () => window.removeEventListener('itg:transaction-post-create-complete', handlePostCreateComplete)
+  }, [])
+
   const [commissionPreview, setCommissionPreview] = useState(null)
   const [salesAgentSplitOverride, setSalesAgentSplitOverride] = useState('')
   const [privateListings, setPrivateListings] = useState([])
@@ -1098,6 +1118,14 @@ function AgentNewDealWizard({
             profile,
             currentMembership,
           }
+          // The saved Third Parties directory is the primary transaction
+          // source. Make it usable immediately instead of withholding it
+          // behind the optional legacy network snapshot, which can time out
+          // on organisations with a large relationship history.
+          const directPreferredPartners = mergePreferredPartnerOptions(partnerRows)
+          setPreferredPartners(directPreferredPartners)
+          setPreferredPartnersError(partnerRowsLoadFailed ? 'Could not load agency preferred partners. Try refreshing the page.' : '')
+          setPreferredPartnersLoading(false)
           let fallbackRows = []
           let routingRows = []
           let fetchedPartnerSnapshot = null
@@ -3728,6 +3756,8 @@ function AgentNewDealWizard({
                     <ExternalLink size={14} />
                     Open buyer documents link
                   </a>
+                ) : createdDeal.setupPending ? (
+                  <p className="text-sm text-[#315f89]">Buyer documents and partner setup are being prepared in the background.</p>
                 ) : null}
                 {createdDeal.attorneyChangeRequested ? (
                   <p className="text-sm text-[#9a5b13]">Buyer-appointed role player recorded and saved against this transaction setup.</p>

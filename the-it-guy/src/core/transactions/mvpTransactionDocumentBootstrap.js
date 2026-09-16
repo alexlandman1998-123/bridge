@@ -1,5 +1,30 @@
 export const MVP_TRANSACTION_DOCUMENT_BOOTSTRAP_VERSION = 'arch9_mvp_transaction_document_bootstrap_v1'
 
+// The atomic transaction-creation RPC writes this value into the legacy
+// `transaction_required_documents.required_from_role` column. That column is
+// deliberately limited to party-level roles, while the workflow can retain
+// more specific participant roles elsewhere.
+const LEGACY_REQUIRED_DOCUMENT_ROLE_ALIASES = Object.freeze({
+  additional_buyer: 'buyer',
+  buyer_spouse: 'buyer',
+  foreign_buyer_signatory: 'buyer',
+  buyer_company_signatory: 'buyer',
+  buyer_company_director: 'buyer',
+  buyer_trustee: 'buyer',
+  seller_spouse: 'seller',
+  seller_company_signatory: 'seller',
+  seller_company_director: 'seller',
+  seller_trustee: 'seller',
+  transfer_attorney: 'attorney',
+  bond_attorney: 'attorney',
+  cancellation_attorney: 'attorney',
+})
+
+function requiredDocumentRole(role = 'client') {
+  const normalized = String(role || '').trim().toLowerCase()
+  return LEGACY_REQUIRED_DOCUMENT_ROLE_ALIASES[normalized] || normalized || 'client'
+}
+
 function isDevelopmentSale(profile = {}) {
   return (
     profile.isDeveloperSale === true ||
@@ -12,7 +37,7 @@ function requirement(key, label, requiredFromRole, groupKey, description, option
   return {
     key,
     label,
-    requiredFromRole,
+    requiredFromRole: requiredDocumentRole(requiredFromRole),
     groupKey,
     description,
     required: true,

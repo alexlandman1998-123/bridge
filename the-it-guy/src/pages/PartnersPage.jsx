@@ -2587,7 +2587,17 @@ export default function PartnersPage() {
   }, [allowedScopes, inviteScopeValue, organisationId])
 
   const inviteScopeNeedsTarget = Boolean(selectedInviteScope?.requiresTarget)
+  // The agency Partners landing page is a lightweight directory of reusable
+  // third parties. Loading the full organisation-network snapshot here starts
+  // several historical relationship queries that the view does not consume,
+  // and can make the Add actions unavailable when those queries time out.
+  const shouldDeferNetworkSnapshot = !isBondPartnersRoute && !partnerId && !isAttorneyNetworkWorkspace && activeTab === 'preferred'
   const loadSnapshot = useCallback(async () => {
+    if (shouldDeferNetworkSnapshot) {
+      setLoading(false)
+      return
+    }
+
     const shouldShowSnapshotLoader = !hasLoadedSnapshotRef.current
     try {
       if (shouldShowSnapshotLoader) {
@@ -2614,7 +2624,7 @@ export default function PartnersPage() {
         setLoading(false)
       }
     }
-  }, [accessContext, organisationId, profile?.id, resolvedWorkspaceType])
+  }, [accessContext, organisationId, profile?.id, resolvedWorkspaceType, shouldDeferNetworkSnapshot])
 
   const loadDiscoverDirectory = useCallback(async () => {
     if (!organisationId || discoverDirectoryLoading || snapshot?.directoryHydrated) return

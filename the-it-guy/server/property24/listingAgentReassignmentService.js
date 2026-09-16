@@ -65,7 +65,7 @@ function getProperty24Status(listing = {}, sync = null) {
   ))
 }
 
-export function buildListingAgentReassignmentPlan({ listing = {}, targetAgent = {}, sync = null } = {}) {
+export function buildListingAgentReassignmentPlan({ listing = {}, targetAgent = {}, sync = null, connection = null } = {}) {
   const listingId = normalizeProperty24Text(listing.id)
   const organisationId = firstText(listing.organisation_id, listing.organisationId)
   const previousAgentId = firstText(listing.assigned_agent_id, listing.assignedAgentId)
@@ -73,6 +73,8 @@ export function buildListingAgentReassignmentPlan({ listing = {}, targetAgent = 
   const property24Reference = getProperty24Reference(listing, sync)
   const property24Status = getProperty24Status(listing, sync)
   const property24Closed = CLOSED_PROPERTY24_STATUSES.has(property24Status)
+  const property24ListingIsLive = Boolean(property24Reference && !property24Closed)
+  const property24ConnectionEnabled = connection?.enabled === true
 
   return {
     listingId,
@@ -91,7 +93,14 @@ export function buildListingAgentReassignmentPlan({ listing = {}, targetAgent = 
     listingType: isRentalListing(listing) ? 'rental' : 'sale',
     property24Reference: property24Reference || null,
     property24Status: property24Status || null,
-    requiresProperty24Sync: Boolean(property24Reference && !property24Closed),
+    // A reference can remain on an Arch9 listing from an import or a former
+    // integration. Only require an external reassignment when this agency has
+    // an enabled Property24 connection; otherwise complete the Arch9-only
+    // ownership handover without pretending it was sent to Property24.
+    requiresProperty24Sync: property24ListingIsLive && property24ConnectionEnabled,
+    property24SyncSkipped: property24ListingIsLive && !property24ConnectionEnabled
+      ? 'connection_disabled'
+      : null,
     changed: Boolean(previousAgentId !== targetAgentId),
   }
 }
@@ -133,7 +142,7 @@ export async function prepareProperty24ListingAgentReassignment({
     throw reassignmentError('listing_not_found', 'This listing could not be found in the current agency.', 404)
   }
 
-  const [targetAgent, sync] = await Promise.all([
+  const [targetAgent, sync, connection] = await Promise.all([
     fetchCanonicalProperty24AgentProfile({
       supabase,
       organisationId: listing.organisation_id,
@@ -142,6 +151,11 @@ export async function prepareProperty24ListingAgentReassignment({
     fetchProperty24ListingSync({
       supabase,
       listingId: normalizedListingId,
+      environment,
+    }),
+    fetchOrganisationProperty24Connection({
+      supabase,
+      organisationId: listing.organisation_id,
       environment,
     }),
   ])
@@ -154,7 +168,7 @@ export async function prepareProperty24ListingAgentReassignment({
     )
   }
 
-  return buildListingAgentReassignmentPlan({ listing, targetAgent, sync })
+  return buildListingAgentReassignmentPlan({ listing, targetAgent, sync, connection })
 }
 
 function normalizeLegacyMapping(mapping = {}) {
@@ -312,6 +326,7 @@ export async function recordListingAgentReassignmentActivity({
         targetAgentId: plan.targetAgentId,
         listingType: plan.listingType,
         property24SyncRequired: plan.requiresProperty24Sync,
+        property24SyncSkipped: plan.property24SyncSkipped,
         property24Status: property24?.status || null,
         property24ListingNumber: plan.property24Reference,
         rollbackApplied: failed,
@@ -324,4 +339,3 @@ export async function recordListingAgentReassignmentActivity({
   }
   return { saved: !result.error, warning: null }
 }
-

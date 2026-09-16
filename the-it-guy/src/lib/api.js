@@ -31395,6 +31395,20 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
       throw persistenceError
     }
   }
+
+  // Saving the deal and reserving its unit are the interactive boundary. The
+  // remaining setup can involve several independent database workflows (legal
+  // routing, requirement generation and portal provisioning), so it must not
+  // hold the creator on the final wizard step.
+  if (setup.unitId) {
+    const unitUpdatePayload = { status: resolvedDetailedStage }
+    const normalizedSalesPrice = normalizeOptionalNumber(setup.salesPrice)
+    if (normalizedSalesPrice !== null) unitUpdatePayload.price = normalizedSalesPrice
+
+    const { error: updateUnitError } = await client.from('units').update(unitUpdatePayload).eq('id', setup.unitId)
+    if (updateUnitError) throw updateUnitError
+  }
+
   const setupWarnings = []
   const recordSetupWarning = (area, error, fallbackMessage = 'Transaction setup step could not be completed.') => {
     const warning = {
@@ -31407,6 +31421,15 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
   }
   let persistedReservationRequired = Boolean(transactionPayload.reservation_required)
   let persistedReservationAmount = transactionPayload.reservation_amount ?? null
+  let onboardingRecord = null
+  let clientPortalLink = null
+  let participantRows = []
+  let propagationResult = { participants: [], attorneyAssignments: [], bondApplications: [] }
+  let onboardingSnapshot = null
+  let requiredDocumentRows = []
+  let sellerHandoff = null
+
+  const runCriticalSetup = async () => {
 
   if (persistedReservationRequired) {
     const persistedReservation = await persistReservationStateIfPossible(client, {
@@ -31538,14 +31561,6 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     }
     recordSetupWarning('workflow_subprocesses', error, 'Workflow subprocess setup could not be completed.')
   }
-
-  let onboardingRecord = null
-  let clientPortalLink = null
-  let participantRows = []
-  let propagationResult = { participants: [], attorneyAssignments: [], bondApplications: [] }
-  let onboardingSnapshot = null
-  let requiredDocumentRows = []
-  let sellerHandoff = null
 
   try {
     const participantsResult = await ensureTransactionParticipants(client, {
@@ -31825,28 +31840,17 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     })
   }
 
-  // Reserve the unit before reporting success. This remains synchronous so a
-  // second creator cannot treat the unit as still available while the
-  // non-critical post-create work runs.
-  if (setup.unitId) {
-    const unitUpdatePayload = { status: resolvedDetailedStage }
-    const normalizedSalesPrice = normalizeOptionalNumber(setup.salesPrice)
-    if (normalizedSalesPrice !== null) unitUpdatePayload.price = normalizedSalesPrice
-
-    const { error: updateUnitError } = await client.from('units').update(unitUpdatePayload).eq('id', setup.unitId)
-    if (updateUnitError) throw updateUnitError
-  }
-
   await persistCreationLifecyclePatch(buildTransactionCreationPersistencePatch({
     lifecycle: creationLifecycle,
     status: 'complete',
     warnings: setupWarnings,
   }))
+  }
 
   // The transaction is now safe to open: its required onboarding, portal and
   // canonical document setup have completed. Keep telemetry, notification and
   // projection work off the interactive create path.
-  void (async () => {
+  const runPostCreateWork = async () => {
   const financePayload = {
     transaction_id: transaction.id,
     proof_of_funds_received: normalizeOptionalBoolean(finance.proofOfFundsReceived),
@@ -32092,6 +32096,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     buyerPartyCount: buyerParties.length,
     rolePlayerCount: mergedRolePlayerSelections.length,
     handoffChecklist,
+    setupPending: false,
     setupHealth,
     setupWarnings,
   }
@@ -32100,11 +32105,16 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     window.dispatchEvent(new CustomEvent('itg:transaction-post-create-complete', {
       detail: postCreateResult,
     }))
+    window.dispatchEvent(new Event('itg:transaction-updated'))
   }
   return postCreateResult
-  })().catch((error) => {
-    console.warn('[createTransactionFromWizard] post-create work failed', error)
-  })
+  }
+
+  void runCriticalSetup()
+    .then(runPostCreateWork)
+    .catch((error) => {
+      console.warn('[createTransactionFromWizard] asynchronous setup failed', error)
+    })
 
   return {
     transactionId: transaction.id,
@@ -32118,19 +32128,17 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
           setup.propertyDescription ||
           'Private property matter'
         : null,
-    onboardingToken: onboardingRecord?.token || null,
-    clientPortalToken: clientPortalLink?.token || null,
-    clientPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
-    buyerPortalToken: clientPortalLink?.token || null,
-    buyerPortalPath: clientPortalLink?.token ? `/client/${clientPortalLink.token}` : '',
-    privateListingId: sellerHandoff?.privateListingId || linkedPrivateListingId || null,
-    sellerOnboardingToken: sellerHandoff?.sellerOnboardingToken || null,
-    sellerPortalToken: sellerHandoff?.sellerPortalToken || null,
-    sellerPortalPath: sellerHandoff?.sellerOnboardingToken
-      ? `/client/${sellerHandoff.sellerOnboardingToken}/selling`
-      : '',
-    reservationRequired: persistedReservationRequired,
-    reservationAmount: persistedReservationAmount,
+    onboardingToken: null,
+    clientPortalToken: null,
+    clientPortalPath: '',
+    buyerPortalToken: null,
+    buyerPortalPath: '',
+    privateListingId: linkedPrivateListingId || null,
+    sellerOnboardingToken: null,
+    sellerPortalToken: null,
+    sellerPortalPath: '',
+    reservationRequired: Boolean(transactionPayload.reservation_required),
+    reservationAmount: transactionPayload.reservation_amount ?? null,
     reservationAmountType: transactionPayload.reservation_amount_type,
     reservationTreatment: transactionPayload.reservation_treatment,
     reservationPayableTo: transactionPayload.reservation_payable_to,
@@ -32138,6 +32146,7 @@ export async function createTransactionFromWizard({ setup = {}, finance = {}, st
     buyerPartyCount: buyerParties.length,
     rolePlayerCount: mergedRolePlayerSelections.length,
     handoffChecklist,
+    setupPending: true,
     setupHealth: buildNewTransactionSetupHealth({
       setupWarnings,
       handoffChecklist,
@@ -51873,10 +51882,15 @@ async function createDocumentUploadIdempotencyKey({
     documentType: normalizeDocumentKeyCandidate(documentType),
     category: normalizeDocumentKeyCandidate(category),
   })
+  // Reading an entire PDF into memory just to create a retry key made larger
+  // uploads appear frozen before the Storage request even began. The file
+  // metadata is stable for a selected file and is sufficient to deduplicate a
+  // repeated browser submission within this transaction/document scope.
+  const fileIdentity = [file?.name, file?.size, file?.type, file?.lastModified].join('|')
   const digest = globalThis.crypto?.subtle
     ? await globalThis.crypto.subtle.digest(
         'SHA-256',
-        await new Blob([scope, file]).arrayBuffer(),
+        new TextEncoder().encode(`${scope}|${fileIdentity}`),
       )
     : null
 
@@ -51886,7 +51900,7 @@ async function createDocumentUploadIdempotencyKey({
 
   // All supported browsers provide Web Crypto. This deterministic fallback is
   // retained for unusual embedded clients so a retry remains safe even there.
-  const fallback = [scope, file?.name, file?.size, file?.type, file?.lastModified].join('|')
+  const fallback = `${scope}|${fileIdentity}`
   let hash = 2166136261
   for (let index = 0; index < fallback.length; index += 1) {
     hash ^= fallback.charCodeAt(index)
@@ -52116,12 +52130,19 @@ export async function uploadDocument({
   attorneyLaneKey = null,
   attorneyRole = null,
   inferCanonicalRequirement = true,
+  onProgress = null,
 }) {
+  const reportProgress = (stage, message) => {
+    if (typeof onProgress === 'function') onProgress({ stage, message })
+  }
+
+  reportProgress('preparing', 'Checking the document and preparing a secure upload…')
   const client = requireClient()
   const activeTransactionId = await assertActiveTransactionForDocumentUpload(client, transactionId)
   const activeProfile = await resolveActiveProfileContext(client)
   const filePolicy = validateDocumentUploadFile(file, { surface: 'internal_transaction', transactionId: activeTransactionId })
   const attorneyLaneMetadata = resolveAttorneyDocumentLaneMetadata({ attorneyLaneKey, attorneyRole })
+  reportProgress('matching', 'Matching the document to this transaction…')
   const canonicalTarget = inferCanonicalRequirement ? await resolveCanonicalRequirementTargetForUpload(client, {
     transactionId: activeTransactionId,
     canonicalRequirementInstanceId,
@@ -52156,6 +52177,7 @@ export async function uploadDocument({
   })
 
   if (existingDocument) {
+    reportProgress('complete', 'This document was already saved. Reusing the existing upload…')
     reportDocumentUploadTelemetry({
       surface: 'internal_transaction',
       stage: 'idempotency',
@@ -52178,6 +52200,7 @@ export async function uploadDocument({
 
   let uploadedBucket
   try {
+    reportProgress('uploading', `Uploading ${safeName} to secure storage…`)
     uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
   } catch (error) {
     reportDocumentUploadTelemetry({
@@ -52248,6 +52271,9 @@ export async function uploadDocument({
     'created_at',
   ].join(', ')
 
+  // Storage has accepted the file; persist its transaction record before
+  // doing any downstream document automation.
+  reportProgress('saving', 'File uploaded. Saving it to the transaction document library…')
   let result = await client
     .from('documents')
     .insert(documentInsertPayload)
@@ -52320,6 +52346,7 @@ export async function uploadDocument({
     transactionId: activeTransactionId,
     documentId: result.data.id,
   })
+  reportProgress('saved', 'Document saved. Finalising the upload…')
 
   // Storage and the document row are the durable upload boundary. Do not wait
   // for projections after this point: a temporary automation/linking failure
@@ -52345,7 +52372,10 @@ export async function uploadDocument({
     canonicalRequirementInstanceId:
       canonicalTarget?.canonicalRequirementInstanceId || result.data.canonical_requirement_instance_id || null,
     postUploadProcessing: 'queued',
-    url: await getSignedUrl(result.data.file_path),
+    url: await getSignedUrl(result.data.file_path, {
+      client,
+      fileBucket: result.data.file_bucket || uploadedBucket || '',
+    }),
   }
 }
 

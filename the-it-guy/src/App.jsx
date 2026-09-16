@@ -1974,7 +1974,7 @@ function AppRoutes() {
           </Route>
           <Route
             element={
-              <AppErrorBoundary scope="main-shell" title="Unable to load application shell" resetKey={`${location.pathname}${location.search}`}>
+              <AppErrorBoundary scope="main-shell" title="Unable to load application shell" fallbackPath="/auth" fallbackLabel="Open sign-in" resetKey={`${location.pathname}${location.search}`}>
                 <AuthGate
                   authLoading={authLoading}
                   session={session}

@@ -9461,7 +9461,7 @@ const LEAD_DETAIL_DEFAULT_APPOINTMENT = {
     email: '',
     phone: '',
     participantRole: 'Buyer',
-    isRequired: true,
+    isRequired: false,
     rsvpStatus: 'Pending',
   },
 }
@@ -19526,10 +19526,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       rows.push({ ...participant, key, source, sourceIndex: index })
     }
 
-    selectedSuggestedAppointmentParticipants.forEach((participant, index) => addParticipant(participant, 'suggested', index))
     ;(appointmentForm.participants || []).forEach((participant, index) => addParticipant(participant, 'manual', index))
     return rows
-  }, [appointmentForm.participants, selectedSuggestedAppointmentParticipants])
+  }, [appointmentForm.participants])
 
   const calendarAppointmentsByDate = useMemo(() => {
     const groups = new Map()
@@ -22959,10 +22958,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function buildAppointmentParticipantsForSave(baseParticipants = []) {
     const byKey = new Map()
-    for (const participant of selectedSuggestedAppointmentParticipants) {
-      const key = buildParticipantIdentityKey(participant)
-      if (key) byKey.set(key, participant)
-    }
     for (const participant of Array.isArray(baseParticipants) ? baseParticipants : []) {
       const key = buildParticipantIdentityKey(participant)
       if (key) byKey.set(key, participant)
@@ -23030,16 +23025,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         email: explicitRecipientEmail,
         phone: normalizeText(selectedLeadContact?.phone || linkedLead?.phone),
         participantRole: linkedLeadParticipantRole || 'Client',
-        isRequired: true,
-        rsvpStatus: 'Pending',
-      })
-    }
-    if (linkedLead && linkedLeadEmail && !participantSeed.some((participant) => normalizeText(participant?.email).toLowerCase() === linkedLeadEmail.toLowerCase())) {
-      participantSeed.push({
-        name: [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || linkedLead?.name || linkedLeadEmail,
-        email: linkedLeadEmail,
-        phone: normalizeText(selectedLeadContact?.phone || linkedLead?.phone),
-        participantRole: linkedLeadParticipantRole,
         isRequired: true,
         rsvpStatus: 'Pending',
       })
@@ -23450,7 +23435,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         email: '',
         phone: '',
         participantRole: 'Buyer',
-        isRequired: true,
+        isRequired: false,
         rsvpStatus: 'Pending',
       },
     }))
@@ -23555,7 +23540,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listingId: normalizeText(selectedLead?.listingId) || '',
         relatedEntityType: selectedLead ? 'lead' : 'none',
         relatedEntityId: normalizeText(selectedLead?.leadId) || '',
-        recipientEmail: normalizeText(selectedLeadContact?.email || selectedLead?.email) || '',
+        recipientEmail: '',
       }))
       setAppointmentOutcomeForm({
         outcomeSummary: '',
@@ -40335,7 +40320,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
           <section className="grid gap-3">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-semibold text-[#102033]">Attendees</p>
+              <p className="text-sm font-semibold text-[#102033]">Attendees <span className="font-normal text-[#7a8da3]">(optional)</span></p>
               <button
                 type="button"
                 className="inline-flex items-center gap-2 text-sm font-semibold text-[#0f7b4e]"
@@ -40377,7 +40362,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               </div>
             ) : (
               <p className="rounded-[14px] border border-dashed border-[#d5e1ee] bg-[#fbfdff] px-3 py-3 text-xs text-[#6f839c]">
-                The lead or linked record will populate attendees automatically.
+                Add an attendee only when an invite or RSVP is needed.
               </p>
             )}
             {appointmentManualParticipantOpen ? (

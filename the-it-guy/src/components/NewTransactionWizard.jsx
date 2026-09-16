@@ -1971,6 +1971,27 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
   const buyerDocumentsUrl =
     createdTransaction?.buyerDocumentsUrl ||
     resolveBuyerDocumentsPortal(createdTransaction).url
+
+  useEffect(() => {
+    const handlePostCreateComplete = (event) => {
+      const result = event?.detail
+      if (!result?.transactionId) return
+
+      setCreatedTransaction((current) => {
+        if (!current || current.transactionId !== result.transactionId) return current
+        const buyerDocumentsPortal = resolveBuyerDocumentsPortal(result)
+        return {
+          ...current,
+          ...result,
+          buyerDocumentsToken: buyerDocumentsPortal.token,
+          buyerDocumentsUrl: buyerDocumentsPortal.url,
+        }
+      })
+    }
+
+    window.addEventListener('itg:transaction-post-create-complete', handlePostCreateComplete)
+    return () => window.removeEventListener('itg:transaction-post-create-complete', handlePostCreateComplete)
+  }, [])
   const attorneyAssignmentNeedsAttention = Boolean(
     createdTransaction?.setupWarnings?.some((warning) => warning?.area === 'attorney_assignment'),
   )
@@ -3844,7 +3865,9 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                 {isPrivateTransactionType(createdTransaction.transactionType)
                   ? `${createdTransaction.propertyLabel || 'Private property matter'} has been created.`
                   : `Unit ${createdTransaction.unitNumber} has been created.`}{' '}
-                {createdTransaction.buyerEmail
+                {createdTransaction.setupPending ? (
+                  <>Buyer document and partner setup are being prepared in the background.</>
+                ) : createdTransaction.buyerEmail
                   ? (
                     <>The buyer document request is ready for <strong>{createdTransaction.buyerEmail}</strong>.</>
                   )
@@ -3910,6 +3933,10 @@ function NewTransactionWizard({ open, onClose, initialDevelopmentId = '', initia
                 <span className="block text-[0.72rem] font-semibold uppercase tracking-[0.18em] text-[#8ba0b8]">Request Buyer Documents</span>
                 <strong className="mt-2 block break-all text-sm text-[#142132]">{buyerDocumentsUrl}</strong>
               </section>
+            ) : createdTransaction.setupPending ? (
+              <p className="rounded-[18px] border border-[#cdddf0] bg-[#f7fbff] px-4 py-3 text-sm font-medium text-[#315f89]">
+                Transaction saved. Preparing the buyer document request link in the background.
+              </p>
             ) : (
               <p className="rounded-[18px] border border-[#f1c9c5] bg-[#fff5f4] px-4 py-3 text-sm font-medium text-[#b42318]">
                 The transaction was created, but the buyer document request link is not available yet.

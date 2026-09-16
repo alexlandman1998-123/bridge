@@ -16100,6 +16100,7 @@ function AttorneyTransactionDetail() {
     notes: '',
     requestTitle: '',
   })
+  const [documentUploadProgress, setDocumentUploadProgress] = useState(null)
   const [routingProfileModalOpen, setRoutingProfileModalOpen] = useState(false)
   const [routingProfileSaving, setRoutingProfileSaving] = useState(false)
   const [routingProfileError, setRoutingProfileError] = useState('')
@@ -22412,6 +22413,10 @@ function AttorneyTransactionDetail() {
     try {
       setSaving(true)
       setError('')
+      setDocumentUploadProgress({
+        stage: 'preparing',
+        message: 'Checking the document and preparing a secure upload…',
+      })
       await uploadDocument({
         transactionId: transaction.id,
         file: uploadDraft.file,
@@ -22428,6 +22433,7 @@ function AttorneyTransactionDetail() {
         uploadedByParty,
         attorneyLaneKey: attorneyLane?.laneKey || null,
         attorneyRole: attorneyLane?.attorneyRole || null,
+        onProgress: setDocumentUploadProgress,
       })
       setUploadDraft((previous) => ({
         ...previous,
@@ -22444,11 +22450,19 @@ function AttorneyTransactionDetail() {
       }))
       setUploadInputVersion((previous) => previous + 1)
       setUploadDocumentModalOpen(false)
-      await loadData()
+      window.dispatchEvent(new Event('itg:transaction-updated'))
+      // The storage object and document record have already been saved. A
+      // full workspace reload can be slow, so refresh it without holding the
+      // upload dialog open or implying that the file was not persisted.
+      void loadData().catch((refreshError) => {
+        console.warn('[AttorneyTransactionDetail] document saved but refresh failed', refreshError)
+        setError('Document uploaded successfully, but the document list could not refresh yet. Reopen this category to see it.')
+      })
     } catch (uploadError) {
       setError(uploadError.message || 'Unable to upload document.')
     } finally {
       setSaving(false)
+      setDocumentUploadProgress(null)
     }
   }
 
@@ -23135,8 +23149,14 @@ function AttorneyTransactionDetail() {
               </form>
             </Modal>
 
-            <Modal open={uploadDocumentModalOpen} onClose={() => setUploadDocumentModalOpen(false)} title="Upload Document" className="max-w-2xl">
+            <Modal open={uploadDocumentModalOpen} onClose={() => { if (!saving) setUploadDocumentModalOpen(false) }} title="Upload Document" className="max-w-2xl">
               <form onSubmit={handleUploadDocument} className="grid gap-4">
+                {documentUploadProgress ? (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800" role="status" aria-live="polite">
+                    <span className="mr-2 inline-block size-3 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700 align-[-1px]" />
+                    {documentUploadProgress.message}
+                  </div>
+                ) : null}
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">File</span>
                   <Field key={`archline-upload-input-${uploadInputVersion}`} type="file" onChange={(event) => {
@@ -23204,8 +23224,8 @@ function AttorneyTransactionDetail() {
                   <Field as="textarea" rows={3} value={uploadDraft.notes} onChange={(event) => setUploadDraft((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Optional upload note" />
                 </label>
                 <div className="flex flex-wrap justify-end gap-3 border-t border-borderSoft pt-4">
-                  <Button type="button" variant="secondary" onClick={() => setUploadDocumentModalOpen(false)}>Cancel</Button>
-                  <Button type="submit" disabled={saving || !uploadDraft.file}>{saving ? 'Uploading...' : 'Upload Document'}</Button>
+                  <Button type="button" variant="secondary" onClick={() => setUploadDocumentModalOpen(false)} disabled={saving}>Cancel</Button>
+                  <Button type="submit" disabled={saving || !uploadDraft.file}>{saving ? documentUploadProgress?.message || 'Uploading…' : 'Upload Document'}</Button>
                 </div>
               </form>
             </Modal>

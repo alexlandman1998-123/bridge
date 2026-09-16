@@ -7,12 +7,12 @@ const packageDefinition = JSON.parse(await readFile('package.json', 'utf8'))
 
 const reloadLimitMatch = boundarySource.match(/const\s+STALE_CHUNK_AUTO_RELOAD_LIMIT\s*=\s*(\d+)/)
 assert.ok(reloadLimitMatch, 'Stale chunk recovery must define an auto-reload limit.')
-assert.ok(Number(reloadLimitMatch[1]) >= 6, 'Stale chunk recovery must cover realistic edge propagation delays.')
+assert.equal(Number(reloadLimitMatch[1]), 1, 'Stale chunk recovery must make only one automatic reload attempt.')
 
 assert.match(
   boundarySource,
-  /STALE_CHUNK_RETRY_DELAYS_MS\s*=\s*\[[^\]]*15000[^\]]*30000[^\]]*\]/s,
-  'Stale chunk recovery must use delayed backoff instead of rapid repeated reloads.',
+  /STALE_CHUNK_RETRY_DELAYS_MS\s*=\s*\[250\]/,
+  'Stale chunk recovery must make one short, bounded automatic retry.',
 )
 assert.match(
   boundarySource,
@@ -46,8 +46,8 @@ assert.match(
 )
 assert.match(
   boundarySource,
-  /this\.recoverFromStaleChunk\(\{\s*force:\s*false\s*\}\)/,
-  'Manual refresh must reset once, then continue through the normal bounded recovery sequence.',
+  /refreshStaleChunkApp[\s\S]*?reloadWithFreshAppShell/,
+  'Manual refresh must load a fresh app shell without resetting the exhausted-loop marker.',
 )
 
 assert.match(

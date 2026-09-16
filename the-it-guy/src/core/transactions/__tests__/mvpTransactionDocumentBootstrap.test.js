@@ -19,5 +19,9 @@ assert.equal(developerRows.some((row) => row.key === 'seller_spouse_consent'), f
 const developerCompanyRows = buildMvpTransactionDocumentBootstrap({ transactionType: 'developer_sale', sellerEntityType: 'company' }).requirements
 assert.equal(developerCompanyRows.find((row) => row.key === 'seller_company_authority')?.label, 'Developer company authority')
 assert.equal(developerCompanyRows.find((row) => row.key === 'seller_company_authority')?.requiredFromRole, 'developer')
+
+assert.equal(rows.find((row) => row.key === 'buyer_trust_authority')?.requiredFromRole, 'buyer')
+assert.equal(rows.find((row) => row.key === 'seller_company_authority')?.requiredFromRole, 'seller')
+assert.equal(rows.find((row) => row.key === 'bond_cancellation_figures')?.requiredFromRole, 'attorney')
 assert.equal(developerCompanyRows.find((row) => row.key === 'seller_director_fica')?.label, 'Developer director FICA')
 console.log('mvp transaction document bootstrap tests passed')

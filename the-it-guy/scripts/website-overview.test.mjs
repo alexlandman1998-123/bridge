@@ -9,6 +9,7 @@ const service = await readFile(new URL('../src/services/websiteWorkspaceService.
 const migration = await readFile(new URL('../../supabase/migrations/20260913094220_website_workspace_sections.sql', import.meta.url), 'utf8')
 const leadOperationsMigration = await readFile(new URL('../../supabase/migrations/20260913115029_website_workspace_lead_operations.sql', import.meta.url), 'utf8')
 const recoveryMigration = await readFile(new URL('../../supabase/migrations/20260913113900_website_blog_revision_workflow.sql', import.meta.url), 'utf8')
+const blogDraftCloneMigration = await readFile(new URL('../../supabase/migrations/20260916113000_website_blog_draft_clone_integrity.sql', import.meta.url), 'utf8')
 
 for (const marker of [
   'WebsiteStats',
@@ -71,6 +72,9 @@ assert.ok(!component.includes('createWebsiteBlogPage'), 'The Blog tab must not u
 assert.ok(component.includes('changesReadyCount'), 'Website editing should retain a revision-wide change count.')
 assert.ok(!component.includes('DRAFT CONTENT PREVIEW'), 'Internal draft inventory should not be shown in the simplified editor.')
 assert.ok(service.includes("website_save_draft_blog_post"), 'Blog edits must save through the draft-only database contract.')
+assert.match(blogDraftCloneMigration, /source_revision_id/i, 'A new website draft must retain its published source revision for blog cloning.')
+assert.match(blogDraftCloneMigration, /content_blocks/i, 'A cloned blog draft must retain structured article blocks.')
+assert.match(blogDraftCloneMigration, /website_blog_listing_links/i, 'A cloned blog draft must rebuild listing-card links.')
 assert.ok(component.includes('Last 7 days') && component.includes('Last 90 days'), 'Website lead operations should support focused date windows.')
 assert.ok(component.includes('onOpenListing') && component.includes('mailto:'), 'Website leads should support property and contact actions.')
 assert.ok(component.includes('Loading website leads') && component.includes('Loading submission delivery'), 'Lead operations should have clear loading states.')
