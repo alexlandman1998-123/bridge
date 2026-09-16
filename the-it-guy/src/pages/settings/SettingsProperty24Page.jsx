@@ -35,7 +35,7 @@ import {
   serializeProperty24SettingsForPersistence,
   summarizeProperty24SettingsReadiness,
 } from './property24SettingsModel'
-import { runProperty24OrganisationReconciliation } from '../../services/property24ReconciliationService'
+import { expireAllLiveProperty24Listings as requestProperty24BulkExpiry, expireProperty24Listing, runProperty24OrganisationReconciliation } from '../../services/property24ReconciliationService'
 import {
   getProperty24StatisticsSyncRuns,
   runProperty24StatisticsSync,
@@ -390,6 +390,7 @@ export default function SettingsProperty24Page() {
   const [statisticsLoading, setStatisticsLoading] = useState(false)
   const [statisticsSyncing, setStatisticsSyncing] = useState(false)
   const [reconciliationLoading, setReconciliationLoading] = useState(false)
+  const [expiringAllLive, setExpiringAllLive] = useState(false)
   const [vettingPackLoading, setVettingPackLoading] = useState(false)
   const [liveCutoverLoading, setLiveCutoverLoading] = useState(false)
   const [liveCutoverAction, setLiveCutoverAction] = useState('')
@@ -436,7 +437,7 @@ export default function SettingsProperty24Page() {
           try {
             const query = new URLSearchParams({
               organisationId: organisationContext.organisation.id,
-              environment: legacySettings.environment,
+              environment: 'production',
             })
             const connectionResponse = await fetch(`/api/property24/settings/connection?${query.toString()}`, {
               headers: { Authorization: `Bearer ${accessToken}` },
@@ -447,7 +448,7 @@ export default function SettingsProperty24Page() {
                 ...legacySettings,
                 enabled: connectionPayload.connection.enabled,
                 agencyId: connectionPayload.connection.agencyId,
-                environment: connectionPayload.connection.environment,
+                environment: 'production',
                 lastAgentSyncAt: connectionPayload.connection.lastAgentSyncAt || legacySettings.lastAgentSyncAt,
               })
               setCredentialsConfigured(connectionPayload.connection.credentialsConfigured === true)
@@ -524,6 +525,9 @@ export default function SettingsProperty24Page() {
   const latestStatisticsRun = statisticsRuns[0] || null
   const statisticsNeedReview = latestStatisticsRun?.status === 'failed' || latestStatisticsRun?.status === 'partial'
   const reconciliationView = property24Reconciliation?.view || null
+  const property24OnlyListings = Array.isArray(property24Reconciliation?.report?.reconciliation?.unexpectedOnProperty24)
+    ? property24Reconciliation.report.reconciliation.unexpectedOnProperty24
+    : []
   const vettingPackView = property24VettingPack?.view || null
   const liveCutoverView = property24LiveCutover || null
   const connectionReady = Boolean(settings.enabled && settings.agencyId)
@@ -565,7 +569,7 @@ export default function SettingsProperty24Page() {
       body: JSON.stringify({
         organisationId: context.organisation.id,
         agencyId: nextSettings.agencyId,
-        environment: nextSettings.environment,
+        environment: 'production',
         enabled: nextSettings.enabled,
         ...(credentials ? {
           username: credentials.username,
@@ -758,6 +762,67 @@ export default function SettingsProperty24Page() {
       setReconciliationError(reconciliationFailure.message || 'Property24 reconciliation failed.')
     } finally {
       setReconciliationLoading(false)
+    }
+  }
+
+  async function expireAllLiveProperty24Listings() {
+    const organisationId = context?.organisation?.id
+    if (!organisationId) return
+    setExpiringAllLive(true)
+    setReconciliationError('')
+    let expectedLiveCount = 0
+    try {
+      const refreshed = await runProperty24OrganisationReconciliation({
+        organisationId,
+        includePortalChecks: false,
+        limit: 100,
+      })
+      setProperty24Reconciliation(refreshed)
+      expectedLiveCount = Number(refreshed.view?.summary?.liveProperty24Listings || 0)
+    } catch (refreshFailure) {
+      setReconciliationError(refreshFailure.message || 'Property24 live count could not be refreshed.')
+      setExpiringAllLive(false)
+      return
+    }
+    if (!expectedLiveCount) {
+      setReconciliationError('Property24 reports no live listings to expire.')
+      setExpiringAllLive(false)
+      return
+    }
+    if (!window.confirm(`Expire all ${expectedLiveCount} currently live Kingdom listings on Property24? This cannot be undone here.`)) {
+      setExpiringAllLive(false)
+      return
+    }
+    try {
+      const result = await requestProperty24BulkExpiry({ organisationId, expectedLiveCount })
+      setSuccess(`${result.verifiedOffPortalCount} Property24 listing${result.verifiedOffPortalCount === 1 ? '' : 's'} expired and verified off portal.`)
+      await runProperty24Reconciliation()
+    } catch (expiryFailure) {
+      if (expiryFailure.code === 'live_count_changed') {
+        await runProperty24Reconciliation()
+        setReconciliationError(`Property24 changed again before expiry. The live count has been refreshed to ${expiryFailure.details?.liveCount ?? 'the latest value'}; review it and confirm the action again.`)
+      } else {
+        setReconciliationError(expiryFailure.message || 'Property24 bulk expiry needs review.')
+      }
+    } finally {
+      setExpiringAllLive(false)
+    }
+  }
+
+  async function expireUnexpectedProperty24Listing(listingNumber) {
+    const organisationId = context?.organisation?.id
+    if (!organisationId || !Number.isFinite(Number(listingNumber))) return
+    if (!window.confirm(`Expire Property24 listing ${listingNumber}? It is returned by Property24 for this agency but is not classified as live in its reconciliation feed. This cannot be undone here.`)) return
+    setExpiringAllLive(true)
+    setReconciliationError('')
+    try {
+      const result = await expireProperty24Listing({ organisationId, listingNumber })
+      setSuccess(`Property24 listing ${result.listingNumber} expired and verified off portal.`)
+      await runProperty24Reconciliation()
+    } catch (expiryFailure) {
+      setReconciliationError(expiryFailure.message || 'Property24 listing expiry needs review.')
+    } finally {
+      setExpiringAllLive(false)
     }
   }
 
@@ -1008,6 +1073,7 @@ export default function SettingsProperty24Page() {
       ...settings,
       enabled: nextEnabled,
       agencyId: settings.agencyId,
+      environment: 'production',
     })
     if (nextEnabled && !nextProperty24.agencyId) {
       setError('Enter the Property24 agency ID before enabling Property24.')
@@ -1071,10 +1137,6 @@ export default function SettingsProperty24Page() {
           {connectionReady ? (
             <div className="flex flex-wrap items-center gap-3">
               <ConnectionBadge connected />
-              <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={() => setAdvancedOpen(true)}>
-                <Settings2 className="h-4 w-4" />
-                Manage connection
-              </button>
             </div>
           ) : (
             <div className="grid gap-3 sm:min-w-[360px]">
@@ -1130,7 +1192,7 @@ export default function SettingsProperty24Page() {
           tone={serverCredentialsReady ? 'success' : 'pending'}
           icon={<KeyRound className="h-4 w-4" />}
           label="Credentials"
-          value={serverCredentialsReady ? 'Credentials working' : 'Credentials needed'}
+          value={serverCredentialsReady ? 'Credentials saved' : 'Credentials needed'}
           description="Property24 login details stay server-side."
         />
         <SetupStatusItem
@@ -1416,12 +1478,37 @@ export default function SettingsProperty24Page() {
           {reconciliationError ? <div className="mt-4"><SettingsBanner>{reconciliationError}</SettingsBanner></div> : null}
           {reconciliationView ? (
             <div className="mt-4 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <HealthMetric label="Arch9 tracked" value={reconciliationView.summary.trackedListings} />
                 <HealthMetric label="Property24 returned" value={reconciliationView.summary.property24Listings} />
                 <HealthMetric label="Matched" value={reconciliationView.summary.matchedListings} />
                 <HealthMetric label="Needs review" value={reconciliationView.summary.issueCount} />
+                <HealthMetric label="Safe link matches" value={reconciliationView.summary.readyToLink} />
               </div>
+
+              {reconciliationView.summary.unexpectedOnProperty24 ? (
+                <p className="rounded-[12px] border border-[#dfe8f1] bg-[#f9fbfe] px-4 py-3 text-sm leading-6 text-[#40546b]">
+                  Arch9 only proposes a link where Property24’s source reference exactly and uniquely matches an Arch9 listing reference. It never uses a title or address, and this check does not write to Arch9 or Property24.
+                </p>
+              ) : null}
+
+              {reconciliationView.summary.liveProperty24Listings ? (
+                <div className="flex flex-col gap-3 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm leading-6 text-[#8a5710]">Property24 returned {reconciliationView.summary.property24Listings} records, of which {reconciliationView.summary.liveProperty24Listings} are currently live. Expire only those live listings; Arch9 re-checks the count before it sends any expiry.</p>
+                  <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={expireAllLiveProperty24Listings} disabled={expiringAllLive || reconciliationLoading}>
+                    {expiringAllLive ? 'Expiring...' : `Expire all ${reconciliationView.summary.liveProperty24Listings} live listings`}
+                  </button>
+                </div>
+              ) : null}
+
+              {property24OnlyListings.map((listing) => (
+                <div key={listing.listingNumber} className="flex flex-col gap-3 rounded-[12px] border border-[#f3d9a8] bg-[#fff8ec] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm leading-6 text-[#8a5710]">Property24 record #{listing.listingNumber} is returned for this agency but is not linked to Arch9. Its reported status is {listing.status || 'unknown'}.</p>
+                  <button type="button" className={SECONDARY_BUTTON_CLASS} onClick={() => expireUnexpectedProperty24Listing(listing.listingNumber)} disabled={expiringAllLive || reconciliationLoading}>
+                    {expiringAllLive ? 'Expiring...' : `Expire #${listing.listingNumber}`}
+                  </button>
+                </div>
+              ))}
 
               {reconciliationView.issues.length ? (
                 <div className="overflow-hidden rounded-[12px] border border-[#e3ebf3] bg-white">
@@ -1459,7 +1546,8 @@ export default function SettingsProperty24Page() {
           )}
         </div>
 
-        <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
+        {isSandboxEnvironment ? (
+          <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1533,7 +1621,8 @@ export default function SettingsProperty24Page() {
               Generate this after the listing, agent, update and status workflows have been exercised in ExDev.
             </p>
           )}
-        </div>
+          </div>
+        ) : null}
 
         <div className="hidden mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1655,7 +1744,7 @@ export default function SettingsProperty24Page() {
         </div>
       </section>
 
-      <section className="rounded-[16px] border border-[#e1e8ef] bg-white shadow-[0_10px_28px_rgba(15,23,42,0.035)]">
+      <section className="hidden" aria-hidden="true">
         <button
           type="button"
           className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"

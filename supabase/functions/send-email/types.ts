@@ -312,6 +312,7 @@ export type SendLeadOperationsNotificationPayload = {
   type:
     | "new_enquiry_assigned_agent"
     | "new_enquiry_unassigned_manager"
+    | "new_website_enquiry_principal"
     | "lead_assigned"
     | "lead_reassigned"
     | "lead_unassigned"
@@ -355,6 +356,16 @@ export type SendLeadOperationsNotificationPayload = {
   lead_status?: string;
   propertyLabel?: string;
   property_label?: string;
+  propertyAddress?: string;
+  property_address?: string;
+  propertyPrice?: string;
+  property_price?: string;
+  enquiryType?: string;
+  enquiry_type?: string;
+  enquiryIntent?: string;
+  enquiry_intent?: string;
+  enquiryMessage?: string;
+  enquiry_message?: string;
   availabilityWindows?: string[] | string;
   availability_windows?: string[] | string;
   budgetLabel?: string;

@@ -25,6 +25,11 @@ const primary = {
     leadPhone: "+27 82 000 0000",
     leadCategory: "buyer",
     propertyLabel: "12 Pilot Road",
+    propertyAddress: "Pilot Suburb",
+    propertyPrice: "R 2,500,000.00",
+    enquiryType: "property enquiry",
+    enquiryIntent: "buy",
+    enquiryMessage: "Please arrange a viewing.",
   },
   metadata_json: {
     websiteSubmissionId: "44444444-4444-4444-8444-444444444444",
@@ -51,6 +56,10 @@ Deno.test("website lead dispatcher builds a tenant-bound provider payload", () =
       "44444444-4444-4444-8444-444444444444",
     "receipt identity should be retained",
   );
+  expect(payload.propertyAddress === "Pilot Suburb", "listing address should be included");
+  expect(payload.propertyPrice === "R 2,500,000.00", "listing price should be included");
+  expect(payload.enquiryType === "property enquiry", "enquiry type should be included");
+  expect(payload.enquiryMessage === "Please arrange a viewing.", "enquiry message should be included");
 });
 
 Deno.test("website lead dispatcher distinguishes provider outcomes", () => {

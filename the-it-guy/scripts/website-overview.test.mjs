@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const component = await readFile(new URL('../src/components/marketing/WebsiteWorkspace.jsx', import.meta.url), 'utf8')
+const marketingPage = await readFile(new URL('../src/pages/MarketingComingSoonPage.jsx', import.meta.url), 'utf8')
 const brandEditor = await readFile(new URL('../src/components/marketing/WebsiteBrandEditor.jsx', import.meta.url), 'utf8')
 const pageEditor = await readFile(new URL('../src/components/marketing/WebsitePageEditor.jsx', import.meta.url), 'utf8')
 const styles = await readFile(new URL('../src/components/marketing/WebsiteWorkspace.css', import.meta.url), 'utf8')
@@ -71,7 +72,13 @@ assert.ok(component.includes('Save image description') && component.includes('wh
 assert.ok(component.includes('Write the article') && component.includes('Add text') && component.includes('Add heading'), 'Blog management should present a focused writing canvas instead of a permanent block toolbar.')
 assert.ok(component.includes('Move block up') && component.includes('Move block down') && component.includes('const move ='), 'Blog authors should be able to reorder article blocks without rebuilding the article.')
 assert.ok(component.includes('words ·') && component.includes('min read'), 'The writing canvas should provide a compact editorial reading estimate.')
-assert.ok(component.includes('Save to website draft') && component.includes('Publish changes'), 'Blog changes should join the reviewed website revision rather than publish independently.')
+assert.ok(component.includes('Changes remain private until the website revision is published.') && component.includes('Article saved to the website draft.'), 'Blog changes should join the reviewed website revision rather than publish independently.')
+assert.ok(component.includes('wlo-blog-card-grid') && component.includes('All posts'), 'Blog management should open from a visual card library.')
+assert.ok(marketingPage.includes('blog-edit') && component.includes('onOpenEditor') && component.includes('Saved just now'), 'A selected post should open a focused editor route with an autosave state.')
+assert.ok(component.includes('blogValidationMessage') && component.includes('Complete required fields'), 'The editor should reject invalid local article content before attempting an autosave request.')
+assert.ok(component.includes('Publication date and time') && component.includes('Schedule post') && !component.includes('Schedule date and time (for example'), 'Scheduling should use a validated date control rather than a browser prompt.')
+assert.ok(component.includes('BlogRenderedPreview') && component.includes('wlo-rendered-preview'), 'Preview mode should render the article blocks rather than only showing editor metadata.')
+assert.ok(component.includes('blogSlugFromTitle') && component.includes("field === 'title' && !current.slug"), 'A new article URL should be generated from its title without overwriting an edited slug.')
 assert.ok(component.includes('createWebsiteBlogPost') && component.includes('updateWebsiteBlogPost'), 'Blog management should save dedicated posts rather than temporary website pages.')
 assert.ok(!component.includes('createWebsiteBlogPage'), 'The Blog tab must not use the retired temporary blog-page creator.')
 assert.ok(component.includes('changesReadyCount'), 'Website editing should retain a revision-wide change count.')

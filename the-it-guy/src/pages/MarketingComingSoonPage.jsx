@@ -55,7 +55,11 @@ export default function MarketingComingSoonPage() {
         : <WhatsAppCampaignOverview onCreateCampaign={openCreateCampaign} onOpenCampaign={openCampaign} />
   }
 
-  if (section === 'website') return <WebsiteWorkspace onBack={() => setSearchParams({})} />
+  if (section === 'website') {
+    const openBlogEditor = (id) => setSearchParams({ section: 'website', view: 'blog-edit', id })
+    const closeBlogEditor = () => setSearchParams({ section: 'website' })
+    return <WebsiteWorkspace onBack={() => setSearchParams({})} blogEditorId={campaignView === 'blog-edit' ? searchParams.get('id') : ''} onOpenBlogEditor={openBlogEditor} onCloseBlogEditor={closeBlogEditor} />
+  }
 
   const openMarketingSection = (nextSection) => setSearchParams({ section: nextSection })
   return <MarketingDashboard onNavigate={openMarketingSection} />

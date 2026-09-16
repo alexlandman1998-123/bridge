@@ -683,6 +683,36 @@ Deno.test("lead operations template uses branded shell", () => {
   assertIncludes(text, "Lead: Buyer One");
 });
 
+Deno.test("principal website enquiry template includes property and enquiry context", () => {
+  const { html, text } = buildLeadOperationsNotificationEmail({
+    eventKind: "new_website_enquiry_principal",
+    recipientName: "Principal One",
+    title: "New Website Enquiry",
+    message: "Buyer One submitted a website enquiry.",
+    actionLink: "https://app.example.test/pipeline/leads/lead-1",
+    leadName: "Buyer One",
+    leadEmail: "buyer@example.test",
+    leadPhone: "+27 21 000 0000",
+    leadSource: "Website",
+    leadCategory: "buyer",
+    leadStatus: "New Lead",
+    propertyLabel: "12 Ocean Road",
+    propertyAddress: "Camps Bay, Cape Town",
+    propertyPrice: "R 4,500,000.00",
+    enquiryType: "Property enquiry",
+    enquiryIntent: "buy",
+    enquiryMessage: "Please send the property pack.",
+    branding,
+  });
+
+  assertIncludes(html, "New Website Enquiry");
+  assertIncludes(html, "12 Ocean Road");
+  assertIncludes(html, "Camps Bay, Cape Town");
+  assertIncludes(html, "R 4,500,000.00");
+  assertIncludes(html, "Please send the property pack.");
+  assertIncludes(text, "Enquiry type: Property enquiry");
+});
+
 Deno.test("transaction operations template uses branded shell", () => {
   const { html, text } = buildTransactionOperationsNotificationEmail({
     eventKind: "transaction_partner_declined",

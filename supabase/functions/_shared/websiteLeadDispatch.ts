@@ -94,6 +94,11 @@ export function buildWebsiteLeadEmailPayload(
     leadCategory: websiteLeadText(payload.leadCategory, 80) || undefined,
     leadStatus: "New Lead",
     propertyLabel: websiteLeadText(payload.propertyLabel, 300) || undefined,
+    propertyAddress: websiteLeadText(payload.propertyAddress, 300) || undefined,
+    propertyPrice: websiteLeadText(payload.propertyPrice, 80) || undefined,
+    enquiryType: websiteLeadText(payload.enquiryType, 80) || undefined,
+    enquiryIntent: websiteLeadText(payload.enquiryIntent, 80) || undefined,
+    enquiryMessage: websiteLeadText(payload.enquiryMessage, 4000) || undefined,
     actionLink: leadId
       ? `${appUrl.replace(/\/$/, "")}/pipeline/leads/${leadId}`
       : undefined,

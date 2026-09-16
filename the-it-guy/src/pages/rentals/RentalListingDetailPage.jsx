@@ -5,7 +5,6 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleAlert,
-  ClipboardList,
   Eye,
   Home,
   Loader2,
@@ -96,6 +95,19 @@ function formatDate(value) {
     month: 'short',
     year: 'numeric',
   }).format(date)
+}
+
+function RentalListingImage({ src, title }) {
+  if (src) {
+    return <img src={src} alt={title} className="h-full w-full object-cover" />
+  }
+
+  return (
+    <div className="relative flex h-full w-full items-center justify-center overflow-hidden bg-[linear-gradient(130deg,#163956_0%,#1f4f78_55%,#aac6dc_100%)]">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_20%,rgba(255,255,255,0.28),transparent_48%)]" />
+      <Home className="relative text-white/80" size={42} aria-hidden="true" />
+    </div>
+  )
 }
 
 function FactCard({ label, value, detail, icon }) {
@@ -669,6 +681,13 @@ function RentalOverview({ detail, onOpenApplications, onOpenMarketing }) {
   ]
   return (
     <section className="space-y-5">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <FactCard label="Monthly rent" value={formatCurrency(row.monthlyRent)} detail="Rental terms" icon={<Home size={18} aria-hidden="true" />} />
+        <FactCard label="Available" value={formatDate(row.availableFrom)} detail={row.leasePeriodMonths ? `${row.leasePeriodMonths} month lease` : 'Lease period pending'} icon={<CalendarDays size={18} aria-hidden="true" />} />
+        <FactCard label="Landlord" value={row.landlordName || 'Not captured'} detail={row.landlordContact || 'Contact pending'} icon={<Users size={18} aria-hidden="true" />} />
+        <FactCard label="Readiness" value={`${detail.readinessPercent}%`} detail={`${detail.completedReadinessCount}/${detail.totalReadinessCount} checks complete`} icon={<BadgeCheck size={18} aria-hidden="true" />} />
+      </section>
+
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0"><p className="text-[1.08rem] font-semibold text-[#142132]">{row.title}</p><p className="mt-1 text-sm text-[#607387]">{[row.address, row.location].filter(Boolean).join(', ') || 'Location pending'}</p></div>
@@ -1125,34 +1144,44 @@ export default function RentalListingDetailPage() {
   return (
     <section className="page-content">
       <div className="ui-section-stack">
-        <header className="flex flex-col gap-4 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] xl:flex-row xl:items-start xl:justify-between">
-          <div className="flex min-w-0 items-start gap-3">
-            <span className="inline-flex h-11 w-11 items-center justify-center rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]">
-              <Home size={20} aria-hidden="true" />
-            </span>
-            <div>
-              <p className="text-xs font-semibold uppercase text-[#607891]">Rental listing</p>
-              <h1 className="text-2xl font-semibold text-[#18324b]">{row.title}</h1>
-              <p className="status-message">{row.address || 'Address pending'}</p>
-            </div>
+        <header className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+          <div className="h-[220px] w-full border-b border-[#e5edf6] sm:h-[280px]">
+            <RentalListingImage src={row.imageUrl} title={row.title} />
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <button type="button" className="ui-pill-button" onClick={() => navigate('/agent/rentals/listings')}>
-              <ArrowLeft size={16} aria-hidden="true" />
-              Back to Listings
-            </button>
-            <button type="button" className="ui-pill-button" onClick={loadListing} disabled={loading}>
-              <RefreshCw size={16} aria-hidden="true" />
-              Refresh
-            </button>
-            <button type="button" className="ui-pill-button ui-pill-button-active" onClick={openEditPanel}>
-              <Pencil size={16} aria-hidden="true" />
-              Edit Details
-            </button>
-            <button type="button" className="ui-pill-button" onClick={handleDeleteRentalListing} disabled={deletingListing}>
-              {deletingListing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
-              Delete Listing
-            </button>
+          <div className="space-y-4 p-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/agent/rentals/listings')}
+                    className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.74rem] font-semibold text-[#35546c]"
+                  >
+                    <ArrowLeft size={13} aria-hidden="true" />
+                    Back
+                  </button>
+                  <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">Rental listing</span>
+                  <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.72rem] font-semibold text-[#35546c]">{detail.statusLabel}</span>
+                </div>
+                <h1 className="mt-3 text-[1.4rem] font-semibold tracking-[-0.03em] text-[#142132]">{row.title}</h1>
+                <p className="mt-1 text-sm text-[#607387]">{[row.address, row.location].filter(Boolean).join(', ') || 'Location pending'}</p>
+                <p className="mt-3 text-[1.45rem] font-semibold text-[#1f4f78]">{formatCurrency(row.monthlyRent)} <span className="text-base font-medium text-[#607387]">per month</span></p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className="ui-pill-button" onClick={loadListing} disabled={loading}>
+                  <RefreshCw size={16} aria-hidden="true" />
+                  Refresh
+                </button>
+                <button type="button" className="ui-pill-button ui-pill-button-active" onClick={openEditPanel}>
+                  <Pencil size={16} aria-hidden="true" />
+                  Edit Listing
+                </button>
+                <button type="button" className="ui-pill-button" onClick={handleDeleteRentalListing} disabled={deletingListing}>
+                  {deletingListing ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Trash2 size={16} aria-hidden="true" />}
+                  Delete Listing
+                </button>
+              </div>
+            </div>
           </div>
         </header>
 
@@ -1189,13 +1218,6 @@ export default function RentalListingDetailPage() {
           />
         ) : null}
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <FactCard label="Monthly rent" value={formatCurrency(row.monthlyRent)} detail="Rental terms" icon={<Home size={18} aria-hidden="true" />} />
-          <FactCard label="Available" value={formatDate(row.availableFrom)} detail={row.leasePeriodMonths ? `${row.leasePeriodMonths} month lease` : 'Lease period pending'} icon={<CalendarDays size={18} aria-hidden="true" />} />
-          <FactCard label="Landlord" value={row.landlordName || 'Not captured'} detail={row.landlordContact || 'Contact pending'} icon={<Users size={18} aria-hidden="true" />} />
-          <FactCard label="Readiness" value={`${detail.readinessPercent}%`} detail={`${detail.completedReadinessCount}/${detail.totalReadinessCount} checks complete`} icon={<BadgeCheck size={18} aria-hidden="true" />} />
-        </div>
-
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" data-testid="rental-listing-shared-workspace-tabs">
           <div className="flex flex-col gap-3 border-b border-[#e5edf6] pb-4 xl:flex-row xl:items-start xl:justify-between">
             <div><p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Listing workspace</p><p className="mt-1 text-sm text-[#607387]">Manage landlord details, property information, rental marketing, tenant applications, and syndication.</p></div>
@@ -1209,12 +1231,6 @@ export default function RentalListingDetailPage() {
             ariaLabel="Rental listing workspace sections"
           />
         </section>
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <FactCard label="Mandate" value={detail.mandateStatusLabel} detail="Rental authority" icon={<ClipboardList size={18} aria-hidden="true" />} />
-          <FactCard label="Marketing" value={detail.marketingApprovalStatusLabel} detail="Landlord approval" icon={<ShieldCheck size={18} aria-hidden="true" />} />
-          <FactCard label="Property24" value={detail.property24StatusLabel} detail="Rental syndication" icon={<CheckCircle2 size={18} aria-hidden="true" />} />
-        </div>
 
         <RentalTabContent
           activeTab={activeTab}

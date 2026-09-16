@@ -9,6 +9,7 @@ import {
   summarizeProperty24Payload,
 } from '../../../server/property24/client.js'
 import { resolveProperty24EnvironmentCredentials } from '../../../server/property24/environmentService.js'
+import { fetchOrganisationProperty24Credentials } from '../../../server/property24/organisationCredentialService.js'
 import { fetchOrganisationProperty24Connection } from '../../../server/property24/organisationConnectionService.js'
 import { runProperty24ReconciliationJob } from '../../../server/property24/reconciliationService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
@@ -171,7 +172,27 @@ export default async function handler(request, response) {
       return
     }
 
-    const property24Runtime = resolveProperty24EnvironmentCredentials({ env, environment: connection.environment })
+    const environmentRuntime = resolveProperty24EnvironmentCredentials({ env, environment: connection.environment })
+    const organisationCredentials = await fetchOrganisationProperty24Credentials({
+      supabase,
+      organisationId,
+      environment: connection.environment,
+    })
+    const property24Runtime = {
+      ...environmentRuntime,
+      username: organisationCredentials?.username || environmentRuntime.username,
+      password: organisationCredentials?.password || environmentRuntime.password,
+      // A group belongs to the organisation credential itself. Do not leak a
+      // legacy/global group into an agency that was not issued one by P24.
+      userGroupId: organisationCredentials ? organisationCredentials.userGroupId : environmentRuntime.userGroupId,
+      configured: Boolean(
+        environmentRuntime.baseUrl &&
+        (organisationCredentials?.username || environmentRuntime.username) &&
+        (organisationCredentials?.password || environmentRuntime.password) &&
+        environmentRuntime.environmentMatches,
+      ),
+      credentialSource: organisationCredentials?.source || environmentRuntime.credentialSource,
+    }
     if (!property24Runtime.configured) {
       writeNodeJsonResponse(response, buildResponse(503, {
         error: 'property24_environment_credentials_missing',
@@ -185,6 +206,7 @@ export default async function handler(request, response) {
       username: property24Runtime.username,
       password: property24Runtime.password,
       userGroupId: property24Runtime.userGroupId,
+      apiVersion: property24Runtime.apiVersion,
     })
     const report = await runProperty24ReconciliationJob({
       supabase,

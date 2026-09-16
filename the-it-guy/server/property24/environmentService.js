@@ -52,6 +52,9 @@ export function resolveProperty24EnvironmentCredentials({ env = {}, environment 
     configured: Boolean(baseUrl && username && password && resolvedEnvironment === targetEnvironment),
     environmentMatches: resolvedEnvironment === targetEnvironment,
     credentialSource: specificBaseUrl ? 'environment_specific' : 'legacy_generic',
+    // A generic value is retained only for a controlled transition. Production
+    // callers must still reject it when it resolves to the ExDev host.
+    usingLegacyGenericBaseUrl: Boolean(production && !specificBaseUrl && genericBaseUrl),
     missing: [
       ...(!baseUrl ? [`PROPERTY24_${targetEnvironment.toUpperCase()}_BASE_URL`] : []),
       ...(!username ? [`PROPERTY24_${targetEnvironment.toUpperCase()}_BASIC_AUTH_USERNAME`] : []),

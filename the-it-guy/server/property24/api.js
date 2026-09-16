@@ -577,7 +577,7 @@ async function resolveExistingProperty24ListingEnvironment({ supabase, config = 
     property24BaseUrl: credentials.baseUrl || config.property24BaseUrl,
     property24Username: organisationCredentials?.username || credentials.username,
     property24Password: organisationCredentials?.password || credentials.password,
-    property24UserGroupId: organisationCredentials?.userGroupId || credentials.userGroupId,
+    property24UserGroupId: organisationCredentials ? organisationCredentials.userGroupId : credentials.userGroupId,
     property24ApiVersion: credentials.apiVersion || config.property24ApiVersion,
     property24SendUserGroupHeader: credentials.sendUserGroupHeader ?? config.property24SendUserGroupHeader,
     property24CredentialSource: organisationCredentials?.source || 'environment_fallback',

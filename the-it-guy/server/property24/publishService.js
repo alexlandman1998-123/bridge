@@ -296,7 +296,10 @@ export async function resolveProperty24ListingPublishConfiguration({
     ...(credentials ? {
       property24Username: credentials.username,
       property24Password: credentials.password,
-      property24UserGroupId: credentials.userGroupId || config.property24UserGroupId,
+      // An empty organisation-scoped group is intentional: Property24 did
+      // not issue one for that agency. Never fall back to another account's
+      // global group in that case.
+      property24UserGroupId: credentials.userGroupId,
       property24CredentialSource: credentials.source,
     } : {}),
     syndicationEnabled: Boolean(

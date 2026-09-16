@@ -8,7 +8,6 @@ import {
   fetchOrganisationProperty24Connection,
   upsertOrganisationProperty24Connection,
 } from '../../../server/property24/organisationConnectionService.js'
-import { saveOrganisationProperty24Credentials } from '../../../server/property24/organisationCredentialService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
 const appRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -104,8 +103,25 @@ export default async function handler(request, response) {
 
     const requestUrl = new URL(request.url || '/api/property24/settings/connection', `https://${getHeader(request.headers, 'host') || 'app.arch9.co.za'}`)
     const body = request.method === 'PUT' ? await readJsonBody(request) : {}
+    if (body.username !== undefined || body.password !== undefined || body.userGroupId !== undefined) {
+      writeNodeJsonResponse(response, buildResponse(403, {
+        error: 'property24_credentials_internal_only',
+        message: 'Property24 credentials are managed by Arch9 and cannot be changed by agencies.',
+      }))
+      return
+    }
     const organisationId = normalizeProperty24Text(body.organisationId || requestUrl.searchParams.get('organisationId'))
-    const environment = normalizeProperty24Text(body.environment || requestUrl.searchParams.get('environment'))
+    // Agency-facing settings are production-only. ExDev is an internal
+    // platform environment and must never be selectable or callable here.
+    const requestedEnvironment = normalizeProperty24Text(body.environment || requestUrl.searchParams.get('environment')).toLowerCase()
+    if (requestedEnvironment && requestedEnvironment !== 'production') {
+      writeNodeJsonResponse(response, buildResponse(403, {
+        error: 'property24_environment_not_available',
+        message: 'Property24 environment selection is managed by Arch9.',
+      }))
+      return
+    }
+    const environment = 'production'
     if (!organisationId) {
       writeNodeJsonResponse(response, buildResponse(400, { error: 'organisation_id_required', message: 'Organisation ID is required.' }))
       return
@@ -127,21 +143,6 @@ export default async function handler(request, response) {
           enabled: body.enabled,
         })
       : await fetchOrganisationProperty24Connection({ supabase, organisationId, environment })
-    if (request.method === 'PUT' && (body.username !== undefined || body.password !== undefined)) {
-      const credentials = await saveOrganisationProperty24Credentials({
-        supabase,
-        organisationId,
-        environment: connection.environment,
-        username: body.username,
-        password: body.password,
-        userGroupId: body.userGroupId,
-      })
-      connection = {
-        ...connection,
-        credentialsConfigured: credentials.configured,
-        credentialsUpdatedAt: credentials.updatedAt,
-      }
-    }
     writeNodeJsonResponse(response, buildResponse(200, { connection }))
   } catch (error) {
     writeNodeJsonResponse(response, buildResponse(Number(error.status || 500), {

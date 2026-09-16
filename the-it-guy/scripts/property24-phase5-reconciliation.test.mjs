@@ -4,6 +4,7 @@ import {
   clampProperty24LeadsAfter,
   clampProperty24UpdatesFromDate,
   createProperty24ApiResponse,
+  createProperty24LinkPlan,
   createProperty24ReconciliationComparison,
   fetchProperty24LocalSyncRows,
   normalizeProperty24LeadForImport,
@@ -105,6 +106,21 @@ assert.equal(comparison.summary.statusDriftCount, 1)
 assert.equal(comparison.summary.missingOnProperty24Count, 1)
 assert.equal(comparison.summary.unexpectedOnProperty24Count, 1)
 assert.equal(comparison.statusDrift[0].listingId, 'listing-1')
+
+const linkPlan = createProperty24LinkPlan({
+  remoteRows: [
+    { ListingNumber: 300, SourceReference: 'KING-001' },
+    { ListingNumber: 301, Title: 'A matching title must not be enough' },
+  ],
+  localListings: [
+    { id: 'listing-3', title: 'A matching title must not be enough', listing_reference: 'KING-001' },
+  ],
+})
+assert.equal(linkPlan.mode, 'REVIEW_ONLY')
+assert.equal(linkPlan.safety.databaseWritten, false)
+assert.equal(linkPlan.summary.readyToLinkCount, 1)
+assert.equal(linkPlan.suggestions[0].candidate.listingId, 'listing-3')
+assert.equal(linkPlan.suggestions[1].candidate, null)
 
 const listingMap = new Map([
   [

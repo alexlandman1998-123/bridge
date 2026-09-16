@@ -25,6 +25,7 @@ export function buildProperty24ReconciliationOperatorView(report = {}) {
   const reconciliationSummary = reconciliation.summary || {}
   const updateSummary = report.updates?.summary || {}
   const visibilitySummary = report.portalVisibility?.summary || {}
+  const linkPlan = report.linkPlan || {}
   const issues = []
 
   asArray(reconciliation.statusDrift).forEach((item) => {
@@ -48,12 +49,17 @@ export function buildProperty24ReconciliationOperatorView(report = {}) {
     }))
   })
   asArray(reconciliation.unexpectedOnProperty24).forEach((item) => {
+    const suggestion = asArray(linkPlan.suggestions).find((candidate) => Number(candidate.listingNumber) === Number(item.listingNumber))
     issues.push(createIssue({
       type: 'unexpected_on_property24',
       listingNumber: item.listingNumber,
       title: `Property24 #${item.listingNumber}`,
-      detail: `Property24 returned an unlinked listing with status ${item.status || 'unknown'}.`,
-      action: 'Confirm whether it belongs to this agency migration before mapping or importing it into Arch9.',
+      detail: suggestion?.candidate
+        ? `Property24 returned an unlinked listing with an exact source-reference match to “${suggestion.candidate.title || suggestion.candidate.listingReference}”.`
+        : `Property24 returned an unlinked listing with status ${item.status || 'unknown'}. ${suggestion?.reason || ''}`.trim(),
+      action: suggestion?.candidate
+        ? 'Review the proposed link, then explicitly approve linking it. This check has not changed either system.'
+        : 'Confirm its Arch9 source reference before mapping or importing it. No title/address matching is used.',
     }))
   })
   asArray(report.portalVisibility?.checks).filter((item) => item.drift || item.error).forEach((item) => {
@@ -86,6 +92,7 @@ export function buildProperty24ReconciliationOperatorView(report = {}) {
     summary: {
       trackedListings: Number(reconciliationSummary.localCount || 0),
       property24Listings: Number(reconciliationSummary.remoteCount || 0),
+      liveProperty24Listings: Number(reconciliationSummary.liveRemoteCount || 0),
       matchedListings: Number(reconciliationSummary.matchedCount || 0),
       statusDrift: Number(reconciliationSummary.statusDriftCount || 0),
       missingOnProperty24: Number(reconciliationSummary.missingOnProperty24Count || 0),
@@ -93,6 +100,7 @@ export function buildProperty24ReconciliationOperatorView(report = {}) {
       unmatchedUpdates: Number(updateSummary.unmatchedCount || 0),
       portalVisibilityDrift: Number(visibilitySummary.driftCount || 0),
       portalCheckFailures: Number(visibilitySummary.failedCount || 0),
+      readyToLink: Number(linkPlan.summary?.readyToLinkCount || 0),
       issueCount: uniqueIssues.length,
     },
     issues: uniqueIssues,
@@ -130,4 +138,46 @@ export async function runProperty24OrganisationReconciliation({ organisationId, 
     report: payload.report,
     view: buildProperty24ReconciliationOperatorView(payload.report),
   }
+}
+
+export async function expireAllLiveProperty24Listings({ organisationId, expectedLiveCount } = {}) {
+  const normalizedOrganisationId = normalizeText(organisationId)
+  if (!normalizedOrganisationId) throw new Error('Organisation ID is required before expiring Property24 listings.')
+  const sessionResult = await supabase.auth.getSession()
+  const accessToken = sessionResult.data?.session?.access_token
+  if (!accessToken) throw new Error('Sign in again before expiring Property24 listings.')
+  const response = await fetch('/api/property24/settings/expire-all-live', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organisationId: normalizedOrganisationId, expectedLiveCount, confirmExpireAllLive: true }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const error = new Error(payload.message || 'Property24 bulk expiry needs review.')
+    error.code = payload.error || 'property24_bulk_expiry_failed'
+    error.details = payload
+    throw error
+  }
+  return payload
+}
+
+export async function expireProperty24Listing({ organisationId, listingNumber } = {}) {
+  const normalizedOrganisationId = normalizeText(organisationId)
+  const normalizedListingNumber = Number(listingNumber)
+  if (!normalizedOrganisationId || !Number.isFinite(normalizedListingNumber)) throw new Error('Organisation and Property24 listing number are required.')
+  const sessionResult = await supabase.auth.getSession()
+  const accessToken = sessionResult.data?.session?.access_token
+  if (!accessToken) throw new Error('Sign in again before expiring the Property24 listing.')
+  const response = await fetch('/api/property24/settings/expire-listing', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ organisationId: normalizedOrganisationId, listingNumber: normalizedListingNumber, confirmExpireListing: true }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const error = new Error(payload.message || 'Property24 listing expiry needs review.')
+    error.code = payload.error || 'property24_listing_expiry_failed'
+    throw error
+  }
+  return payload
 }

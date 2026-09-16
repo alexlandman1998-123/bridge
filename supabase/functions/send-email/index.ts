@@ -472,6 +472,7 @@ Deno.serve(async (req: Request) => {
       [
         "new_enquiry_assigned_agent",
         "new_enquiry_unassigned_manager",
+        "new_website_enquiry_principal",
         "lead_assigned",
         "lead_reassigned",
         "lead_unassigned",

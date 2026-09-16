@@ -127,6 +127,67 @@ function summarizeRemoteListing(value = {}) {
     syncStatusKey: mapProperty24StatusToSyncStatus({ status, isOnPortal }),
     isOnPortal,
     updatedAt: extractUpdatedAt(value) || null,
+    // Property24 migrations commonly retain the source/office reference. Keep
+    // it for reconciliation, but never use a title or address as a link key.
+    sourceReference: normalizeProperty24Text(
+      value.sourceReference || value.SourceReference || value.reference || value.Reference ||
+      value.listingReference || value.ListingReference || value.clientReference || value.ClientReference,
+    ) || null,
+  }
+}
+
+function normalizeLinkReference(value = '') {
+  return normalizeProperty24Text(value).toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+export function createProperty24LinkPlan({ remoteRows = [], localListings = [], linkedNumbers = new Set() } = {}) {
+  const localByReference = new Map()
+  for (const listing of localListings) {
+    // Only an explicit, immutable local reference can qualify. Titles and
+    // addresses are deliberately excluded: they are not safe migration keys.
+    for (const reference of [listing.listing_reference, listing.arch9_reference]) {
+      const key = normalizeLinkReference(reference)
+      if (!key) continue
+      const matches = localByReference.get(key) || []
+      matches.push(listing)
+      localByReference.set(key, matches)
+    }
+  }
+
+  const suggestions = remoteRows
+    .map(summarizeRemoteListing)
+    .filter((remote) => remote.listingNumber && !linkedNumbers.has(remote.listingNumber))
+    .map((remote) => {
+      const key = normalizeLinkReference(remote.sourceReference)
+      const matches = key ? (localByReference.get(key) || []) : []
+      return {
+        listingNumber: remote.listingNumber,
+        sourceReference: remote.sourceReference,
+        status: remote.status,
+        candidate: matches.length === 1 ? {
+          listingId: matches[0].id,
+          title: matches[0].title || null,
+          listingReference: matches[0].listing_reference || matches[0].arch9_reference || null,
+        } : null,
+        reason: !remote.sourceReference
+          ? 'Property24 did not return a source reference.'
+          : matches.length === 1
+            ? 'Exact unique source reference match.'
+            : matches.length > 1
+              ? 'The source reference matches more than one Arch9 listing.'
+              : 'No Arch9 listing has this exact source reference.',
+      }
+    })
+
+  return {
+    mode: 'REVIEW_ONLY',
+    safety: { databaseWritten: false, portalChanged: false },
+    summary: {
+      unlinkedCount: suggestions.length,
+      readyToLinkCount: suggestions.filter((item) => item.candidate).length,
+      needsManualReviewCount: suggestions.filter((item) => !item.candidate).length,
+    },
+    suggestions,
   }
 }
 
@@ -249,11 +310,13 @@ export function createProperty24ReconciliationComparison({ localRows = [], remot
 
   const missingOnProperty24 = local.filter((row) => row.listingNumber && !remoteByNumber.has(row.listingNumber))
   const unexpectedOnProperty24 = remote.filter((row) => row.listingNumber && !localByNumber.has(row.listingNumber))
+  const liveRemoteCount = remote.filter((row) => row.syncStatusKey === 'on_portal').length
 
   return {
     summary: {
       localCount: local.length,
       remoteCount: remote.length,
+      liveRemoteCount,
       matchedCount: matched.length,
       missingOnProperty24Count: missingOnProperty24.length,
       unexpectedOnProperty24Count: unexpectedOnProperty24.length,
@@ -287,6 +350,14 @@ export async function createProperty24ReconciliationReport({
     agentId: normalizeProperty24Text(config.agentId),
   })
   const remoteRows = asArray(result.data)
+  const organisationListings = await selectRows(
+    supabase
+      .from('private_listings')
+      .select('id, title, listing_reference, arch9_reference')
+      .eq('organisation_id', normalizeProperty24Text(config.organisationId))
+      .limit(Math.max(Number(config.limit || 500), 5000)),
+  )
+  const linkedNumbers = new Set(localRows.map(({ sync }) => toNumber(sync?.listing_number)).filter(Boolean))
   return {
     generatedAt: toIsoDate(now),
     environment,
@@ -297,6 +368,7 @@ export async function createProperty24ReconciliationReport({
       summary: summarizeProperty24Payload(result.data),
     },
     ...createProperty24ReconciliationComparison({ localRows, remoteRows }),
+    linkPlan: createProperty24LinkPlan({ remoteRows, localListings: organisationListings, linkedNumbers }),
   }
 }
 

@@ -41,6 +41,7 @@ import {
 } from './lib/adminRoutes'
 import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from './lib/supabaseClient'
 import EmailOperationsView from './EmailOperationsView'
+import Property24CredentialsView from './Property24CredentialsView'
 
 const APP_ENV = import.meta.env || {}
 const ARCH9_EXPLORE_URL = APP_ENV.VITE_ARCH9_EXPLORE_URL || '/'
@@ -478,6 +479,7 @@ const EMPTY_DASHBOARD = {
     registeredThisMonth: 0,
     sellerSignedBuyerSigned: 0,
     stalledTransactions: 0,
+    totalUsers: 0,
   },
   pipeline: [],
   range: {},
@@ -921,6 +923,7 @@ function mapUnitAsListing(row = {}, development = {}) {
 function mapDirectOrganisation(row = {}) {
   return {
     id: firstDashboardValue(row, ['id', 'organisation_id', 'organization_id']),
+    logoUrl: firstDashboardValue(row, ['logo_url', 'logoUrl', 'logo_light_url', 'logoLightUrl', 'image_url', 'imageUrl', 'avatar_url', 'avatarUrl']),
     name: getAdminOrganisationName(row) || 'Organisation',
     tradingName: firstDashboardValue(row, ['trading_name', 'tradingName', 'display_name', 'displayName']),
     status: firstDashboardValue(row, ['status', 'organisation_status', 'organization_status', 'is_active'], 'active'),
@@ -1169,7 +1172,12 @@ async function enhanceDashboardSnapshotWithDirectData(snapshot = EMPTY_DASHBOARD
     activeTransactions: activeTransactions.length ? activeTransactions : snapshot?.activeTransactions || [],
     drilldowns: {
       ...(snapshot?.drilldowns || {}),
-      activeOrganisations: (snapshot?.drilldowns?.activeOrganisations || []).length ? snapshot.drilldowns.activeOrganisations : activeOrganisations,
+      activeOrganisations: (snapshot?.drilldowns?.activeOrganisations || []).length
+        ? snapshot.drilldowns.activeOrganisations.map((organisation) => ({
+            ...activeOrganisations.find((candidate) => candidate.id && candidate.id === organisation.id),
+            ...organisation,
+          }))
+        : activeOrganisations,
       activeAgents: (snapshot?.drilldowns?.activeAgents || []).length ? snapshot.drilldowns.activeAgents : directAgents,
       activeListings: (snapshot?.drilldowns?.activeListings || []).length ? snapshot.drilldowns.activeListings : activeListings,
       activeTransactions: (snapshot?.drilldowns?.activeTransactions || []).length ? snapshot.drilldowns.activeTransactions : activeTransactions,
@@ -1726,19 +1734,19 @@ function getDashboardDrilldowns(snapshot = EMPTY_DASHBOARD, support = EMPTY_SUPP
       title: 'Active Agents',
       type: 'agents',
     },
+    totalUsers: {
+      empty: 'No user detail records returned by the current data contract.',
+      meta: `${formatCount(kpis.totalUsers)} total users · active agent records shown below`,
+      rows: drilldowns.activeAgents || [],
+      title: 'Users',
+      type: 'agents',
+    },
     activeListings: {
       empty: 'No active listings returned by the current data contract.',
       meta: `${formatCount(kpis.activeListings)} active`,
       rows: drilldowns.activeListings || [],
       title: 'Active Listings',
       type: 'listings',
-    },
-    pipeline: {
-      empty: 'No seller/buyer signed pipeline items yet.',
-      meta: `${formatCount(pipelineRows.length)} sampled`,
-      rows: pipelineRows,
-      title: 'Seller + Buyer Signed Pipeline',
-      type: 'transactions',
     },
     activeTransactions: {
       empty: 'No seller/buyer signed active transactions yet.',
@@ -1818,14 +1826,29 @@ async function loadAdminAccess() {
 async function loadDashboardSnapshot(rangeId) {
   if (!supabase) return { data: EMPTY_DASHBOARD, error: 'Supabase is not configured.' }
   const range = getRangeWindow(rangeId)
-  const { data, error } = await supabase.rpc('arch9_admin_dashboard_snapshot', {
-    p_range_end: range.end,
-    p_range_start: range.start,
+  const [dashboardResult, toplineResult] = await Promise.all([
+    supabase.rpc('arch9_admin_dashboard_snapshot', {
+      p_range_end: range.end,
+      p_range_start: range.start,
+    }),
+    supabase.rpc('arch9_admin_dashboard_topline_metrics'),
+  ])
+  const dashboardKpis = dashboardResult.data?.kpis || EMPTY_DASHBOARD.kpis
+  const toplineWarning = toplineResult.error
+    ? [{ type: 'admin_topline_metrics', message: `Topline metrics unavailable: ${toplineResult.error.message || 'Unknown error'}` }]
+    : []
+  const snapshot = await enhanceDashboardSnapshotWithDirectData({
+    ...(dashboardResult.data || EMPTY_DASHBOARD),
+    kpis: {
+      ...dashboardKpis,
+      activeOrganisations: Number(toplineResult.data?.organisations) || Number(dashboardKpis.activeOrganisations) || 0,
+      totalUsers: Number(toplineResult.data?.users) || Number(dashboardKpis.activeAgents) || 0,
+    },
+    warnings: [...(dashboardResult.data?.warnings || []), ...toplineWarning],
   })
-  const snapshot = await enhanceDashboardSnapshotWithDirectData(data || EMPTY_DASHBOARD)
   return {
     data: snapshot,
-    error: error?.message || '',
+    error: dashboardResult.error?.message || '',
   }
 }
 
@@ -3364,7 +3387,7 @@ function Topbar({ activeView, generatedAt, isLoading, onRefresh, rangeId, setRan
 
   return (
     <header className={`topbar${isDashboard ? ' dashboard-topbar' : ''}`}>
-      {!isDashboard ? (
+      {!isDashboard && !['inboundLeads', 'organisations'].includes(activeView) ? (
         <div>
           <p className="eyebrow">Arch9 Admin</p>
           <h1>{title}</h1>
@@ -4141,13 +4164,13 @@ function RevenuePath({ activeKey = '', onSelect, snapshot }) {
   const steps = [
     {
       label: 'Seller + Buyer Signed',
-      drilldown: 'pipeline',
+      drilldown: 'activeTransactions',
       meta: 'Registration pending',
       value: formatCount(kpis.sellerSignedBuyerSigned || pipeline.count),
     },
     {
       label: 'Pipeline Revenue',
-      drilldown: 'pipeline',
+      drilldown: 'activeTransactions',
       meta: 'Arch9 operating revenue',
       value: formatMoney(kpis.pipelineRevenue || pipeline.amount),
     },
@@ -4233,7 +4256,7 @@ function SupportBrief({ onSelect, support }) {
 }
 
 function DashboardView({ inboundSnapshot, isLoading, snapshot, support, onOpenLeads }) {
-  const [drilldownKey, setDrilldownKey] = useState('pipeline')
+  const [drilldownKey, setDrilldownKey] = useState('')
   const kpis = snapshot?.kpis || EMPTY_DASHBOARD.kpis
   const warnings = snapshot?.warnings || []
   const pipelineRows = snapshot?.pipeline || []
@@ -4242,7 +4265,6 @@ function DashboardView({ inboundSnapshot, isLoading, snapshot, support, onOpenLe
   const missingRevenue = countMissingRevenue([...pipelineRows, ...registeredRows], warnings)
   const drilldowns = useMemo(() => getDashboardDrilldowns(snapshot, support), [snapshot, support])
   const selectedDrilldown = drilldowns[drilldownKey]
-  const activeTransactionRows = snapshot?.activeTransactions || snapshot?.drilldowns?.activeTransactions || []
   const listingPipelineRevenue = (Number(kpis.activeListings) || 0) * ARCH9_LISTING_PIPELINE_FEE
   const activitySeries = useMemo(
     () => buildActivitySeries([...pipelineRows, ...registeredRows], snapshot?.range || {}),
@@ -4260,7 +4282,6 @@ function DashboardView({ inboundSnapshot, isLoading, snapshot, support, onOpenLe
     { otp: 0, registered: registeredRows.length, stalled: kpis.stalledTransactions || attentionRows.length, transfer: 0 },
   )
   const pipelineCount = kpis.sellerSignedBuyerSigned || pipelineRows.length
-  const activeTransactionCount = kpis.activeTransactions || activeTransactionRows.length
   const feeContext =
     pipelineCount && kpis.pipelineRevenue
       ? `${formatCount(pipelineCount)} signed transactions`
@@ -4271,31 +4292,36 @@ function DashboardView({ inboundSnapshot, isLoading, snapshot, support, onOpenLe
       drilldown: 'activeOrganisations',
       icon: Building2,
       label: 'Organisations',
+      meta: 'All records with a valid ID',
       value: formatCount(kpis.activeOrganisations),
     },
     {
-      drilldown: 'activeAgents',
+      drilldown: 'totalUsers',
       icon: UserRoundCheck,
-      label: 'Agents',
-      value: formatCount(kpis.activeAgents),
+      label: 'Users',
+      meta: 'All user types with a valid ID',
+      value: formatCount(kpis.totalUsers),
     },
     {
       drilldown: 'activeListings',
       icon: Home,
       label: 'Active Listings',
+      meta: 'Actively promoted listings',
       value: formatCount(kpis.activeListings),
     },
     {
       drilldown: 'activeListings',
       icon: CircleDollarSign,
-      label: 'Listing Pipeline',
+      label: 'Pipeline',
+      meta: `${formatCount(kpis.activeListings)} listings × R1,500`,
       value: formatMoney(listingPipelineRevenue),
     },
     {
       drilldown: 'activeTransactions',
       icon: ListChecks,
-      label: 'Active Transactions',
-      value: formatCount(activeTransactionCount),
+      label: 'Active Revenue',
+      meta: 'Revenue from transactions in progress',
+      value: formatMoney(kpis.pipelineRevenue),
     },
   ]
 
@@ -4402,7 +4428,7 @@ function TransactionActivityCard({ activitySeries = [], isLoading = false, onSel
             <button
               className={`stage-node ${stage.tone || ''}`}
               key={stage.key}
-              onClick={() => onSelect?.(stage.key === 'registered' ? 'registered' : stage.key === 'stalled' ? 'stalled' : 'pipeline')}
+              onClick={() => onSelect?.(stage.key === 'registered' ? 'registered' : stage.key === 'stalled' ? 'stalled' : 'activeTransactions')}
               type="button"
             >
               <div>
@@ -4453,7 +4479,7 @@ function RevenuePerformanceCard({ feeContext, missingRevenue = 0, onSelect, pipe
           <small>{formatCount(kpis.registeredThisMonth || registered.count || 0)} registered in range</small>
           <MiniAreaChart label="Registered revenue trend" points={registeredSeries} />
         </button>
-        <button className="revenue-primary compact-revenue" onClick={() => onSelect?.('pipeline')} type="button">
+        <button className="revenue-primary compact-revenue" onClick={() => onSelect?.('activeTransactions')} type="button">
           <span>Pipeline Revenue</span>
           <strong>{formatMoney(pipelineAmount)}</strong>
           <small>{feeContext}</small>
@@ -5354,14 +5380,85 @@ function QueuePanel({ empty, rows = [], title }) {
   )
 }
 
+function OrganisationCardsView({ snapshot = EMPTY_DASHBOARD }) {
+  const [selectedOrganisationId, setSelectedOrganisationId] = useState('')
+  const drilldowns = snapshot?.drilldowns || EMPTY_DASHBOARD.drilldowns
+  const organisations = drilldowns.activeOrganisations || []
+  const selectedOrganisation = organisations.find((organisation) => organisation.id === selectedOrganisationId) || null
+  const organisationKey = selectedOrganisation?.id || ''
+  const agents = (drilldowns.activeAgents || []).filter((agent) => getOrgKey(agent) === organisationKey)
+  const listings = (drilldowns.activeListings || []).filter((listing) => getOrgKey(listing) === organisationKey)
+  const transactions = [...(snapshot?.pipeline || []), ...(snapshot?.registered || [])]
+    .filter((transaction) => getOrgKey(transaction) === organisationKey)
+
+  if (selectedOrganisation) {
+    return (
+      <div className="organisation-workspace">
+        <div className="organisation-workspace-bar">
+          <button className="secondary-button compact" onClick={() => setSelectedOrganisationId('')} type="button">
+            <ChevronRight size={16} className="back-chevron" />
+            <span>All organisations</span>
+          </button>
+        </div>
+        <section className="organisation-workspace-hero">
+          <OrganisationLogo organisation={selectedOrganisation} />
+          <div>
+            <span className="eyebrow">Organisation workspace</span>
+            <h2>{selectedOrganisation.name || selectedOrganisation.tradingName || 'Organisation'}</h2>
+            <p>{selectedOrganisation.tradingName || selectedOrganisation.status || 'Active organisation'}</p>
+          </div>
+        </section>
+        <section className="metric-grid compact-grid" aria-label="Organisation metrics">
+          <MetricCard icon={UsersRound} label="Users" value={formatCount(agents.length)} />
+          <MetricCard icon={Home} label="Active Listings" value={formatCount(listings.length)} tone="blue" />
+          <MetricCard icon={ListChecks} label="Transactions" value={formatCount(transactions.length)} tone="teal" />
+          <MetricCard icon={CalendarDays} label="Last Updated" value={formatDate(selectedOrganisation.updatedAt || selectedOrganisation.createdAt)} tone="amber" />
+        </section>
+        <section className="data-panel organisation-summary-panel">
+          <div className="panel-title"><h2>Organisation details</h2><span>{selectedOrganisation.status || 'Active'}</span></div>
+          <dl>
+            <div><dt>Organisation ID</dt><dd>{selectedOrganisation.id || 'Not available'}</dd></div>
+            <div><dt>Owner</dt><dd>{selectedOrganisation.ownerId || 'Not assigned'}</dd></div>
+            <div><dt>Created</dt><dd>{formatDateTime(selectedOrganisation.createdAt)}</dd></div>
+          </dl>
+        </section>
+      </div>
+    )
+  }
+
+  return (
+    <section className="organisation-card-grid" aria-label="Organisations">
+      {organisations.map((organisation) => (
+        <button className="organisation-card" key={organisation.id || organisation.name} onClick={() => setSelectedOrganisationId(organisation.id)} type="button">
+          <OrganisationLogo organisation={organisation} />
+          <div className="organisation-card-copy">
+            <strong>{organisation.name || organisation.tradingName || 'Organisation'}</strong>
+            <span>{organisation.tradingName || organisation.status || 'Active'}</span>
+          </div>
+          <ChevronRight className="organisation-card-arrow" size={18} />
+        </button>
+      ))}
+      {!organisations.length ? <p className="empty-state">No active organisations returned by the current data contract.</p> : null}
+    </section>
+  )
+}
+
+function OrganisationLogo({ organisation = {} }) {
+  const name = organisation.name || organisation.tradingName || 'Organisation'
+  const logoUrl = organisation.logoUrl || organisation.logo_url || ''
+  return (
+    <span className="organisation-logo" aria-label={`${name} logo`}>
+      {logoUrl ? <img alt="" src={logoUrl} /> : name.slice(0, 2).toUpperCase()}
+    </span>
+  )
+}
+
 function AdminWorkspaceView({ snapshot, type }) {
   const drilldowns = getDashboardDrilldowns(snapshot, EMPTY_SUPPORT)
 
   if (type === 'organisations') {
     return (
-      <div className="view-stack">
-        <DrilldownPanel config={drilldowns.activeOrganisations} />
-      </div>
+      <OrganisationCardsView snapshot={snapshot} />
     )
   }
 
@@ -5912,7 +6009,7 @@ function InboundLeadsView({ onRefresh, snapshot }) {
   const leads = snapshot?.leads || []
   const owners = snapshot?.owners || []
   const activities = snapshot?.activities || []
-  const selectedLead = leads.find((lead) => lead.id === selectedLeadId) || leads[0] || null
+  const selectedLead = leads.find((lead) => lead.id === selectedLeadId) || null
   const visibleLeads = leads.filter((lead) => {
     const search = normalizeToken([lead.fullName, lead.organisationName, lead.email, lead.mobile].join(' '))
     const createdAt = new Date(lead.created_at || 0).getTime()
@@ -5937,7 +6034,7 @@ function InboundLeadsView({ onRefresh, snapshot }) {
       setSelectedLeadId('')
       return
     }
-    if (!leads.some((lead) => lead.id === selectedLeadId)) setSelectedLeadId(leads[0].id)
+    if (selectedLeadId && !leads.some((lead) => lead.id === selectedLeadId)) setSelectedLeadId('')
   }, [leads, selectedLeadId])
 
   function setFilter(key, value) {
@@ -5957,62 +6054,72 @@ function InboundLeadsView({ onRefresh, snapshot }) {
 
   return (
     <div className="view-stack inbound-workspace">
-      <section className="inbound-actions-row">
-        <div className="inbound-search">
-          <Search size={18} />
-          <input onChange={(event) => setQuery(event.target.value)} placeholder="Search name, organisation, email or mobile..." value={query} />
-        </div>
-        <button className="secondary-button compact" onClick={exportCsv} type="button">
-          <Download size={16} />
-          <span>Export</span>
-        </button>
-        <button className="primary-button compact" onClick={() => setShowAddLead(true)} type="button">
-          <Plus size={16} />
-          <span>Add Lead</span>
-        </button>
-      </section>
+      {selectedLead ? (
+        <section className="inbound-detail-page">
+          <div className="inbound-detail-page-bar">
+            <button className="secondary-button compact" onClick={() => setSelectedLeadId('')} type="button">
+              <ChevronRight size={16} className="back-chevron" />
+              <span>All leads</span>
+            </button>
+            <span>{selectedLead.fullName || selectedLead.email || 'Lead detail'}</span>
+          </div>
+          <InboundLeadDetail activities={activities} lead={selectedLead} onRefresh={onRefresh} owners={owners} />
+        </section>
+      ) : (
+        <>
+          <section className="inbound-actions-row">
+            <div className="inbound-search">
+              <Search size={18} />
+              <input onChange={(event) => setQuery(event.target.value)} placeholder="Search name, organisation, email or mobile..." value={query} />
+            </div>
+            <button className="secondary-button compact" onClick={exportCsv} type="button">
+              <Download size={16} />
+              <span>Export</span>
+            </button>
+            <button className="primary-button compact" onClick={() => setShowAddLead(true)} type="button">
+              <Plus size={16} />
+              <span>Add Lead</span>
+            </button>
+          </section>
 
-      <section className="inbound-filters">
-        <select onChange={(event) => setFilter('source', event.target.value)} value={filters.source}>
-          <option value="all">All Sources</option>
-          {SOURCE_OPTIONS.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}
-        </select>
-        <select onChange={(event) => setFilter('role', event.target.value)} value={filters.role}>
-          <option value="all">All Roles</option>
-          {Object.entries(ROLE_CONFIGS).map(([id, config]) => <option key={id} value={id}>{config.shortLabel}</option>)}
-        </select>
-        <select onChange={(event) => setFilter('owner', event.target.value)} value={filters.owner}>
-          <option value="all">All Owners</option>
-          <option value="unassigned">Unassigned</option>
-          {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.full_name || owner.email}</option>)}
-        </select>
-        <select onChange={(event) => setFilter('status', event.target.value)} value={filters.status}>
-          <option value="all">All Statuses</option>
-          {INBOUND_STATUSES.map((status) => <option key={status.id} value={status.id}>{status.label}</option>)}
-        </select>
-        <select onChange={(event) => setFilter('date', event.target.value)} value={filters.date}>
-          <option value="all">Date range</option>
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="month">This month</option>
-        </select>
-        <button className="secondary-button compact" type="button">
-          <Filter size={16} />
-          <span>Filters</span>
-        </button>
-      </section>
+          <section className="inbound-filters">
+            <select onChange={(event) => setFilter('source', event.target.value)} value={filters.source}>
+              <option value="all">All Sources</option>
+              {SOURCE_OPTIONS.map((source) => <option key={source.id} value={source.id}>{source.label}</option>)}
+            </select>
+            <select onChange={(event) => setFilter('role', event.target.value)} value={filters.role}>
+              <option value="all">All Roles</option>
+              {Object.entries(ROLE_CONFIGS).map(([id, config]) => <option key={id} value={id}>{config.shortLabel}</option>)}
+            </select>
+            <select onChange={(event) => setFilter('owner', event.target.value)} value={filters.owner}>
+              <option value="all">All Owners</option>
+              <option value="unassigned">Unassigned</option>
+              {owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.full_name || owner.email}</option>)}
+            </select>
+            <select onChange={(event) => setFilter('status', event.target.value)} value={filters.status}>
+              <option value="all">All Statuses</option>
+              {INBOUND_STATUSES.map((status) => <option key={status.id} value={status.id}>{status.label}</option>)}
+            </select>
+            <select onChange={(event) => setFilter('date', event.target.value)} value={filters.date}>
+              <option value="all">Date range</option>
+              <option value="7d">Last 7 days</option>
+              <option value="30d">Last 30 days</option>
+              <option value="month">This month</option>
+            </select>
+            <button className="secondary-button compact" type="button">
+              <Filter size={16} />
+              <span>Filters</span>
+            </button>
+          </section>
 
-      <PipelineSummary activeStatus={filters.status} leads={leads} onSelect={(status) => setFilter('status', status)} />
+          {showAddLead ? <AddInboundLeadPanel onCancel={() => setShowAddLead(false)} onCreated={async () => {
+            setShowAddLead(false)
+            await onRefresh?.()
+          }} /> : null}
 
-      {showAddLead ? <AddInboundLeadPanel onCancel={() => setShowAddLead(false)} onCreated={async () => {
-        setShowAddLead(false)
-        await onRefresh?.()
-      }} /> : null}
-
-      <section className="inbound-layout">
-        <InboundLeadTable leads={visibleLeads} onSelect={(lead) => setSelectedLeadId(lead.id)} selectedLeadId={selectedLead?.id} />
-        <InboundLeadDetail activities={activities} lead={selectedLead} onRefresh={onRefresh} owners={owners} />
-      </section>
+          <InboundLeadTable leads={visibleLeads} onSelect={(lead) => setSelectedLeadId(lead.id)} />
+        </>
+      )}
     </div>
   )
 }
@@ -6029,20 +6136,23 @@ function SettingsView({ access, profile }) {
   ]
 
   return (
-    <section className="data-panel settings-panel">
-      <div className="panel-title">
-        <h2>Console Settings</h2>
-        <span>{configStatus.ok ? 'Connected' : 'Needs config'}</span>
-      </div>
-      <dl>
-        {rows.map(([label, value]) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+    <div className="admin-settings-stack">
+      <section className="data-panel settings-panel">
+        <div className="panel-title">
+          <h2>Console Settings</h2>
+          <span>{configStatus.ok ? 'Connected' : 'Needs config'}</span>
+        </div>
+        <dl>
+          {rows.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+      <Property24CredentialsView access={access} />
+    </div>
   )
 }
 
@@ -6078,6 +6188,17 @@ export default function App() {
   const [accessError, setAccessError] = useState('')
   const [accessRefreshKey, setAccessRefreshKey] = useState(0)
   const [pathname, setPathname] = useState(() => (typeof window === 'undefined' ? '/admin' : window.location.pathname))
+
+  function keepCurrentSessionWhenIdentityMatches(nextSession) {
+    setSession((currentSession) => {
+      const currentUserId = currentSession?.user?.id || ''
+      const nextUserId = nextSession?.user?.id || ''
+      // Supabase emits token refreshes when a tab regains focus. The client
+      // already owns the fresh token; changing React state here remounts the
+      // active view and discards any unfinished internal form.
+      return currentUserId === nextUserId ? currentSession : nextSession
+    })
+  }
 
   const allowedViews = useMemo(
     () => getAllowedAdminViews(access.level),
@@ -6148,8 +6269,7 @@ export default function App() {
     function refreshSessionAfterReturn() {
       if (document.visibilityState === 'hidden') return
       void supabase.auth.getSession().then(({ data }) => {
-        setSession(data.session || null)
-        setAccessRefreshKey((current) => current + 1)
+        keepCurrentSessionWhenIdentityMatches(data.session || null)
       })
     }
 
@@ -6176,7 +6296,7 @@ export default function App() {
       const {
         data: { subscription },
       } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-        setSession(nextSession)
+        keepCurrentSessionWhenIdentityMatches(nextSession)
         setAuthError('')
       })
 

@@ -86,6 +86,29 @@ function cleanBlogPost(post = {}) {
 
 const BLOG_BLOCK_LABELS = { paragraph: 'Paragraph', heading_2: 'Section heading', heading_3: 'Small heading', bullet_list: 'Bulleted list', numbered_list: 'Numbered list', quote: 'Quote', divider: 'Divider', image: 'Image', tip: 'Practical tip', listing_card: 'Live listing' }
 
+function blogValidationMessage(post, mediaAssets = [], websiteListings = []) {
+  const title = String(post?.title || '').trim()
+  const slug = String(post?.slug || '').trim()
+  const blocks = Array.isArray(post?.contentBlocks) ? post.contentBlocks : []
+  if (!title) return 'Add an article title before saving.'
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) return 'Use lowercase words and hyphens for the article URL.'
+  if (post?.coverImageUrl && !String(post?.coverImageAlt || '').trim()) return 'Add alt text for the featured image before saving.'
+  if (!blocks.length) return 'Add at least one article block before saving.'
+  for (const block of blocks) {
+    if (!['divider', 'image', 'listing_card'].includes(block.type) && !String(block.text || '').trim()) return `Complete the ${BLOG_BLOCK_LABELS[block.type] || 'article'} block before saving.`
+    if (block.type === 'image') {
+      const asset = mediaAssets.find((item) => item.id === block.assetId)
+      if (!asset || !String(asset.alt_text || '').trim()) return 'Choose an uploaded image with alt text for every image block.'
+    }
+    if (block.type === 'listing_card' && !websiteListings.some((item) => item.listing_id === block.listingId)) return 'Choose a live website listing for every property card.'
+  }
+  return ''
+}
+
+function blogSlugFromTitle(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80)
+}
+
 function BlogBlockEditor({ blocks = [], disabled, mediaAssets = [], websiteListings = [], onChange }) {
   const update = (index, patch) => onChange(blocks.map((block, blockIndex) => blockIndex === index ? { ...block, ...patch } : block))
   const add = (type) => onChange([...blocks, { id: `block-${Date.now()}-${blocks.length}`, type, text: '', order: blocks.length }])
@@ -113,18 +136,58 @@ function BlogDraftPreview({ post, websiteListings = [] }) {
   return <aside className="wlo-blog-preview" aria-label="Draft article preview"><div><span>ARTICLE PREVIEW</span><strong>{post.title || 'Your article title'}</strong><p>{post.summary || 'Your short article introduction will appear here.'}</p></div>{cover ? <img src={cover.public_url} alt="" /> : null}<section><span>BLOG CARD</span><div className="wlo-blog-preview-card">{cover ? <img src={cover.public_url} alt="" /> : null}<strong>{post.title || 'Your article title'}</strong><p>{post.summary || 'Your article summary will appear on the blog page.'}</p></div></section><section className="wlo-seo-preview"><span>SEARCH PREVIEW</span><strong>{post.seoTitle || post.title || 'Your article title'}</strong><small>your-domain.co.za/blog/{post.slug || 'article-url'}</small><p>{post.seoDescription || post.summary || 'Your summary is used when no SEO description is provided.'}</p></section><small>{post.contentBlocks.filter((block) => block.type === 'image').length} inline image{post.contentBlocks.filter((block) => block.type === 'image').length === 1 ? '' : 's'} · {post.contentBlocks.filter((block) => block.type === 'listing_card').length} linked live listing{post.contentBlocks.filter((block) => block.type === 'listing_card').length === 1 ? '' : 's'} · {websiteListings.length} available listing{websiteListings.length === 1 ? '' : 's'}</small></aside>
 }
 
-function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAssets = [], websiteListings = [], canEdit, error, mediaError, listingError, saving, uploading, updatingMedia, onSave, onUpload, onUpdateMedia, onManage }) {
+function BlogRenderedPreview({ post, mediaAssets = [], websiteListings = [], device = 'desktop' }) {
+  const assetFor = (id) => mediaAssets.find((asset) => asset.id === id)
+  const listingFor = (id) => websiteListings.find((listing) => listing.listing_id === id)
+  const blocks = Array.isArray(post?.contentBlocks) ? post.contentBlocks : []
+  return <article className={`wlo-rendered-preview ${device}`} aria-label="Article website preview"><header><p>PROPERTY JOURNAL</p><small>{post?.authorName || 'Your agency'} · {Math.max(1, Math.ceil(blocks.reduce((total, block) => total + String(block.text || '').trim().split(/\s+/).filter(Boolean).length, 0) / 200))} min read</small><h1>{post?.title || 'Your article title'}</h1><strong>{post?.summary || 'Your article summary will appear here.'}</strong></header>{post?.coverImageUrl ? <img className="hero" src={post.coverImageUrl} alt="" /> : null}<div className="content">{blocks.map((block) => { const asset = block.type === 'image' ? assetFor(block.assetId) : null; const listing = block.type === 'listing_card' ? listingFor(block.listingId) : null; if (block.type === 'heading_2') return <h2 key={block.id}>{block.text}</h2>; if (block.type === 'heading_3') return <h3 key={block.id}>{block.text}</h3>; if (block.type === 'quote') return <blockquote key={block.id}>{block.text}</blockquote>; if (block.type === 'divider') return <hr key={block.id} />; if (block.type === 'bullet_list') return <ul key={block.id}>{String(block.text || '').split('\n').filter(Boolean).map((item) => <li key={item}>{item}</li>)}</ul>; if (block.type === 'numbered_list') return <ol key={block.id}>{String(block.text || '').split('\n').filter(Boolean).map((item) => <li key={item}>{item}</li>)}</ol>; if (block.type === 'image' && asset) return <figure key={block.id}><img src={asset.public_url} alt="" />{block.caption ? <figcaption>{block.caption}</figcaption> : null}</figure>; if (block.type === 'tip') return <aside key={block.id}><b>{block.tipRole === 'seller' ? 'SELLER TIP' : 'BUYER TIP'}</b><p>{block.text}</p></aside>; if (block.type === 'listing_card' && listing) return <section className="listing" key={block.id}><b>FEATURED PROPERTY</b><strong>{listing.title}</strong><span>{listing.suburb || 'View property'}</span></section>; return <p key={block.id}>{block.text}</p> })}</div></article>
+}
+
+function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAssets = [], websiteListings = [], canEdit, error, mediaError, listingError, saving, uploading, updatingMedia, onSave, onUpload, onUpdateMedia, onManage, editorPostId = '', onOpenEditor, onCloseEditor }) {
   const [view, setView] = useState('drafts')
-  const [editing, setEditing] = useState(null)
   const [query, setQuery] = useState('')
+  const [editing, setEditing] = useState(null)
+  const [savedSnapshot, setSavedSnapshot] = useState('')
+  const [saveState, setSaveState] = useState('saved')
+  const [showPreview, setShowPreview] = useState(false)
+  const [previewDevice, setPreviewDevice] = useState('desktop')
+  const [scheduledFor, setScheduledFor] = useState('')
+  const [editorError, setEditorError] = useState('')
   const [mediaUploadError, setMediaUploadError] = useState('')
   const [mediaUploadNotice, setMediaUploadNotice] = useState('')
   const editablePosts = draftPosts.length || canEdit ? draftPosts : posts.filter((post) => post.status === 'draft')
   const livePosts = publishedPosts.length || !canEdit ? publishedPosts : posts.filter((post) => post.status === 'published')
-  const visiblePosts = (view === 'published' ? livePosts : editablePosts).filter((post) => `${post.title} ${post.summary} ${post.slug}`.toLowerCase().includes(query.trim().toLowerCase()))
-  const openNew = () => { if (canEdit) { setView('drafts'); setMediaUploadError(''); setMediaUploadNotice(''); setEditing(cleanBlogPost()) } }
-  const openPost = (post) => { setMediaUploadError(''); setMediaUploadNotice(''); setEditing(cleanBlogPost(post)) }
-  const change = (field, value) => setEditing((current) => ({ ...current, [field]: value }))
+  const allPosts = [...editablePosts, ...livePosts.filter((post) => !editablePosts.some((draft) => draft.id === post.id))]
+  const visiblePosts = (view === 'all' ? allPosts : view === 'published' ? livePosts : editablePosts).filter((post) => `${post.title} ${post.summary} ${post.slug}`.toLowerCase().includes(query.trim().toLowerCase()))
+  const fingerprint = (post) => JSON.stringify({ title: post?.title, slug: post?.slug, summary: post?.summary, coverImageUrl: post?.coverImageUrl, coverImageAlt: post?.coverImageAlt, contentBlocks: post?.contentBlocks, authorName: post?.authorName, seoTitle: post?.seoTitle, seoDescription: post?.seoDescription })
+  useEffect(() => {
+    if (!editorPostId) { setEditing(null); setSavedSnapshot(''); setShowPreview(false); return }
+    const source = editorPostId === 'new' ? cleanBlogPost() : allPosts.find((post) => post.id === editorPostId)
+    if (!source) return
+    const next = cleanBlogPost(source)
+    setEditing(next); setSavedSnapshot(fingerprint(next)); setSaveState('saved'); setShowPreview(false); setScheduledFor(next.scheduledFor ? String(next.scheduledFor).slice(0, 16) : ''); setEditorError(''); setMediaUploadError(''); setMediaUploadNotice('')
+  }, [editorPostId, posts, draftPosts, publishedPosts])
+  const isDirty = Boolean(editing && fingerprint(editing) !== savedSnapshot)
+  const validationMessage = blogValidationMessage(editing, mediaAssets, websiteListings)
+  useEffect(() => {
+    if (!editing?.id || !isDirty || !canEdit || validationMessage) return undefined
+    setSaveState('saving')
+    const snapshot = fingerprint(editing)
+    const timer = window.setTimeout(() => {
+      void onSave(editing).then((saved) => {
+        if (saved) { setSavedSnapshot(snapshot); setSaveState('saved') } else setSaveState('failed')
+      })
+    }, 900)
+    return () => window.clearTimeout(timer)
+  }, [editing, isDirty, canEdit, onSave, validationMessage])
+  useEffect(() => {
+    const warn = (event) => { if (isDirty) { event.preventDefault(); event.returnValue = '' } }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [isDirty])
+  const openNew = () => { if (canEdit) onOpenEditor?.('new') }
+  const openPost = (post) => onOpenEditor?.(post.id)
+  const change = (field, value) => { setEditorError(''); setEditing((current) => ({ ...current, [field]: value, ...(field === 'title' && !current.slug ? { slug: blogSlugFromTitle(value) } : {}) })) }
   const chooseCover = (assetId) => { const asset = mediaAssets.find((item) => item.id === assetId); change('coverImageUrl', asset?.public_url || ''); change('coverImageAlt', asset?.alt_text || '') }
   const selectedCoverAsset = mediaAssets.find((asset) => asset.public_url === editing?.coverImageUrl)
   const updateSelectedMediaDescription = async () => {
@@ -139,28 +202,36 @@ function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAs
   }
   const save = async () => {
     if (!editing) return
+    if (validationMessage) { setEditorError(validationMessage); setSaveState('needs-attention'); return }
+    setEditorError('')
+    setSaveState('saving')
     const saved = await onSave(editing)
-    if (saved) setEditing(cleanBlogPost({ ...editing, ...saved, status: 'draft' }))
+    if (saved) {
+      const next = cleanBlogPost({ ...editing, ...saved, status: 'draft' })
+      setEditing(next); setSavedSnapshot(fingerprint(next)); setSaveState('saved')
+      if (!editing.id && saved.id) onOpenEditor?.(saved.id)
+    } else setSaveState('failed')
   }
-  const manage = async (action) => {
+  const manage = async (action, requestedSchedule = '') => {
     if (!editing?.id) return
-    const scheduledFor = action === 'schedule' ? window.prompt('Schedule date and time (for example 2026-10-01T09:00:00+02:00)') : null
-    if (action === 'schedule' && !scheduledFor) return
-    const result = await onManage(editing.id, action, scheduledFor)
+    const nextSchedule = action === 'schedule' ? requestedSchedule : null
+    if (action === 'schedule' && (!nextSchedule || Number.isNaN(new Date(nextSchedule).getTime()) || new Date(nextSchedule) <= new Date())) { setEditorError('Choose a future date and time before scheduling this post.'); return }
+    setEditorError('')
+    const result = await onManage(editing.id, action, nextSchedule ? new Date(nextSchedule).toISOString() : null)
     if (!result) return
-    if (action === 'delete') { setEditing(null); return }
+    if (action === 'delete') { onCloseEditor?.(); return }
     setEditing((current) => ({ ...current, lifecycleStatus: result.status || current.lifecycleStatus, scheduledFor: result.scheduledFor || null }))
   }
-  return <section className="wlo-section-card wlo-blog" aria-label="Website blog"><WebsiteSectionHeading title="Blog and resources" detail="Article edits are saved into the current website draft and only become public with the approved website revision." action={<button className="ww-publish" type="button" disabled={!canEdit} onClick={openNew}>Create post</button>} />
+  if (!editorPostId) return <section className="wlo-section-card wlo-blog-library" aria-label="Website blog"><WebsiteSectionHeading title="Blog & resources" detail="Share useful local insight and build trust with buyers, sellers and landlords." action={<button className="ww-publish" type="button" disabled={!canEdit} onClick={openNew}>Create post</button>} />
     {error ? <p className="ww-error">Blog posts will be available once the Website workspace migration is applied.</p> : null}
-    {editing?.id && canEdit ? <div className="wlo-blog-operations"><span>Status: {String(editing.lifecycleStatus || 'draft').replaceAll('_', ' ')}</span><button type="button" onClick={() => void manage('ready_for_review')}>Ready for review</button><button type="button" onClick={() => void manage('schedule')}>Schedule</button><button type="button" onClick={() => void manage('duplicate')}>Duplicate</button><button type="button" onClick={() => void manage('archive')}>Archive</button><button type="button" className="danger" onClick={() => { if (window.confirm('Delete this article from the current website draft?')) void manage('delete') }}>Delete</button></div> : null}
-    <div className="wlo-blog-layout"><div><input className="wlo-blog-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search articles…" aria-label="Search articles" /><nav className="wlo-blog-tabs" aria-label="Blog post status"><button className={view === 'drafts' ? 'active' : ''} type="button" onClick={() => setView('drafts')}>Drafts <b>{editablePosts.length}</b></button><button className={view === 'published' ? 'active' : ''} type="button" onClick={() => setView('published')}>Published <b>{livePosts.length}</b></button></nav><div className="wlo-blog-list">{visiblePosts.length ? visiblePosts.map((post) => <button type="button" key={post.id} className={editing?.id === post.id ? 'active' : ''} onClick={() => openPost(post)}><FileText size={18} /><span><strong>{post.title}</strong><small>{String(post.lifecycle_status || post.status || 'draft').replaceAll('_', ' ')} · /blog/{post.slug}</small></span><ChevronRight size={17} /></button>) : <p className="wlo-table-empty">{query ? 'No articles match your search.' : `No ${view === 'published' ? 'published' : 'draft'} posts yet.`}</p>}</div></div>
-      {editing ? <form className="wlo-blog-editor" onSubmit={(event) => { event.preventDefault(); void save() }}>
-        <div className="wlo-blog-editor-heading"><div><strong>{editing.id ? 'Edit post' : 'New post'}</strong><small>{canEdit ? 'Saved changes are included in the website draft for review and release. Use Publish changes in the Website overview when the review is complete.' : 'Create website changes before editing this published article.'}</small></div><button type="button" className="wlo-editor-close" onClick={() => setEditing(null)}>Close</button></div>
-        <label>Title<input disabled={!canEdit} required maxLength={160} value={editing.title} onChange={(event) => change('title', event.target.value)} placeholder="Article title" /></label>
-        <label>URL slug<input disabled={!canEdit} required maxLength={80} value={editing.slug} onChange={(event) => change('slug', event.target.value)} placeholder="market-update" /></label>
-        <label className="wide">Summary<textarea disabled={!canEdit} maxLength={600} value={editing.summary} onChange={(event) => change('summary', event.target.value)} placeholder="A concise introduction for the blog index and search." /></label>
-        <section className="wide wlo-cover-image" aria-labelledby="cover-image-heading">
+    <div className="wlo-blog-library-controls"><input className="wlo-blog-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search posts, topics or keywords…" aria-label="Search blog posts" /><nav className="wlo-blog-tabs" aria-label="Blog post status"><button className={view === 'all' ? 'active' : ''} type="button" onClick={() => setView('all')}>All <b>{allPosts.length}</b></button><button className={view === 'drafts' ? 'active' : ''} type="button" onClick={() => setView('drafts')}>Drafts <b>{editablePosts.length}</b></button><button className={view === 'published' ? 'active' : ''} type="button" onClick={() => setView('published')}>Published <b>{livePosts.length}</b></button></nav></div>
+    <div className="wlo-blog-card-grid">{visiblePosts.length ? visiblePosts.map((post) => { const cover = post.cover_image_url || post.coverImageUrl; const state = String(post.lifecycle_status || post.status || 'draft').replaceAll('_', ' '); return <button type="button" key={post.id} className="wlo-blog-card" onClick={() => openPost(post)}>{cover ? <img src={cover} alt="" /> : <div className="wlo-blog-card-placeholder"><FileText size={26} /></div>}<span className="wlo-blog-card-status"><i className={state === 'published' ? 'published' : ''} />{state}</span><div><strong>{post.title || 'Untitled article'}</strong><p>{post.summary || 'Start writing a useful local property story.'}</p><small>{post.author_name || post.authorName || 'Your agency'} · /blog/{post.slug || 'new-post'}</small></div></button> }) : <p className="wlo-table-empty">{query ? 'No articles match your search.' : 'No posts in this view yet.'}</p>}</div>
+  </section>
+
+  return <section className="wlo-blog-workspace" aria-label="Blog post editor"><header className="wlo-blog-topbar"><button className="wlo-blog-back" type="button" onClick={() => { if (!isDirty || window.confirm('You have unsaved local changes. Leave this editor?')) onCloseEditor?.() }}><ArrowLeft size={17} /> All posts</button><p className={saveState}>{saveState === 'saving' ? 'Saving…' : saveState === 'failed' ? 'Unable to save — retry' : saveState === 'needs-attention' ? 'Complete required fields' : 'Saved just now'}</p><div><button className="ww-rollback" type="button" onClick={() => setShowPreview((current) => !current)}>{showPreview ? 'Continue editing' : 'Preview'}</button><select aria-label="Publication status" disabled={!editing?.id || !canEdit} value={editing?.lifecycleStatus || 'draft'} onChange={(event) => { const next = event.target.value; if (next === 'scheduled') setEditorError('Set a future publication date in the Publish panel, then choose Schedule post.'); else if (next === 'ready_for_review') void manage('ready_for_review'); else void manage('draft') }}><option value="draft">Draft</option><option value="ready_for_review">Ready for review</option><option value="scheduled">Scheduled</option></select><button className="ww-publish" type="button" disabled={!canEdit || saving || uploading} onClick={() => void save()}>{saving ? 'Saving…' : 'Save post'}</button></div></header>
+    {showPreview ? <div className="wlo-blog-full-preview"><div className="wlo-preview-device-toggle"><button type="button" className={previewDevice === 'desktop' ? 'active' : ''} onClick={() => setPreviewDevice('desktop')}>Desktop</button><button type="button" className={previewDevice === 'mobile' ? 'active' : ''} onClick={() => setPreviewDevice('mobile')}>Mobile</button></div><BlogRenderedPreview post={editing} mediaAssets={mediaAssets} websiteListings={websiteListings} device={previewDevice} /></div> : <form className="wlo-blog-editor-page" onSubmit={(event) => { event.preventDefault(); void save() }}>
+      <main className="wlo-blog-editor-canvas"><label className="wlo-blog-category">PROPERTY JOURNAL</label><input className="wlo-blog-title" disabled={!canEdit} required maxLength={160} value={editing?.title || ''} onChange={(event) => change('title', event.target.value)} placeholder="Give your article a clear, useful title" /><label className="wlo-blog-slug">your website /blog/<input disabled={!canEdit} required maxLength={80} value={editing?.slug || ''} onChange={(event) => change('slug', event.target.value)} placeholder="article-url" /></label>
+        <section className="wlo-cover-image" aria-labelledby="cover-image-heading">
           <div><strong id="cover-image-heading">Featured image</strong><small>A strong cover image gives the article a complete public hero and card.</small></div>
           <div className="wlo-media-library" role="group" aria-label="Choose a featured image from the media library">{mediaAssets.length ? mediaAssets.map((asset) => <button key={asset.id} className={selectedCoverAsset?.id === asset.id ? 'active' : ''} disabled={!canEdit} type="button" onClick={() => { chooseCover(asset.id); setMediaUploadError(''); setMediaUploadNotice('') }}><img src={asset.public_url} alt="" /><span>{asset.alt_text || 'Untitled image'}</span></button>) : <p>No images in the media library yet. Add a description, then upload your first image below.</p>}</div>
           <div className="wlo-cover-actions"><button className="ww-rollback" type="button" disabled={!canEdit || !editing.coverImageUrl} onClick={() => { chooseCover(''); setMediaUploadError(''); setMediaUploadNotice('') }}>Remove featured image</button>{selectedCoverAsset ? <span>Selected from your media library</span> : null}</div>
@@ -171,13 +242,12 @@ function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAs
           {mediaUploadError || mediaError ? <p className="ww-error" role="status">{mediaUploadError || `Media library: ${mediaError}`}</p> : null}
           {mediaUploadNotice ? <p className="ww-notice" role="status">{mediaUploadNotice}</p> : null}
         </section>
-        <label className="wide">Article content<BlogBlockEditor blocks={editing.contentBlocks} disabled={!canEdit} mediaAssets={mediaAssets} websiteListings={websiteListings} onChange={(contentBlocks) => change('contentBlocks', contentBlocks)} />{listingError ? <small className="ww-error">Live listings: {listingError}</small> : null}</label>
-        <label>Author<input disabled={!canEdit} maxLength={160} value={editing.authorName} onChange={(event) => change('authorName', event.target.value)} placeholder="Agency team" /></label>
-        <label>SEO title<input disabled={!canEdit} maxLength={180} value={editing.seoTitle} onChange={(event) => change('seoTitle', event.target.value)} placeholder="Optional search title" /></label>
-        <label className="wide">SEO description<textarea disabled={!canEdit} maxLength={320} value={editing.seoDescription} onChange={(event) => change('seoDescription', event.target.value)} placeholder="Optional search description" /></label>
-        <div className="wide"><BlogDraftPreview post={editing} mediaAssets={mediaAssets} websiteListings={websiteListings} /></div>
-        {canEdit ? <div className="wlo-blog-editor-actions"><button className="ww-publish" type="submit" disabled={saving || uploading}>{saving ? 'Saving…' : uploading ? 'Uploading…' : 'Save to website draft'}</button></div> : null}
-      </form> : <div className="wlo-blog-editor-empty"><Pencil size={24} /><strong>Select a post to edit</strong><span>{canEdit ? 'Or start a new structured article.' : 'Create website changes before changing or adding articles.'}</span><button className="ww-rollback" type="button" disabled={!canEdit} onClick={openNew}>Create post</button></div>}</div></section>
+        <label className="wlo-blog-excerpt">Article excerpt<textarea disabled={!canEdit} maxLength={600} value={editing?.summary || ''} onChange={(event) => change('summary', event.target.value)} placeholder="Summarise why someone should read this article." /></label>
+        {editorError ? <p className="ww-error" role="alert">{editorError}</p> : null}<BlogBlockEditor blocks={editing?.contentBlocks || []} disabled={!canEdit} mediaAssets={mediaAssets} websiteListings={websiteListings} onChange={(contentBlocks) => change('contentBlocks', contentBlocks)} />{listingError ? <small className="ww-error">Live listings: {listingError}</small> : null}
+      </main>
+      <aside className="wlo-blog-settings"><details open><summary>Publish</summary><label>Author<input disabled={!canEdit} maxLength={160} value={editing?.authorName || ''} onChange={(event) => change('authorName', event.target.value)} placeholder="Agency team" /></label><label>Status<select disabled={!editing?.id || !canEdit} value={editing?.lifecycleStatus || 'draft'} onChange={(event) => { const next = event.target.value; if (next === 'scheduled') setEditorError('Set a future publication date below, then choose Schedule post.'); else if (next === 'ready_for_review') void manage('ready_for_review'); else void manage('draft') }}><option value="draft">Draft</option><option value="ready_for_review">Ready for review</option><option value="scheduled">Scheduled</option></select></label><label>Publication date and time<input disabled={!editing?.id || !canEdit} type="datetime-local" value={scheduledFor} onChange={(event) => { setEditorError(''); setScheduledFor(event.target.value) }} /></label><button type="button" disabled={!editing?.id || !canEdit} onClick={() => void manage('schedule', scheduledFor)}>Schedule post</button><p>{editing?.scheduledFor ? `Scheduled for ${new Date(editing.scheduledFor).toLocaleString()}` : 'Changes remain private until the website revision is published.'}</p></details><details open><summary>SEO</summary><label>SEO title<input disabled={!canEdit} maxLength={180} value={editing?.seoTitle || ''} onChange={(event) => change('seoTitle', event.target.value)} placeholder="Optional search title" /></label><label>Meta description<textarea disabled={!canEdit} maxLength={320} value={editing?.seoDescription || ''} onChange={(event) => change('seoDescription', event.target.value)} placeholder="Optional search description" /></label><small>{(editing?.seoDescription || '').length}/320</small><BlogDraftPreview post={editing} websiteListings={websiteListings} /></details>{editing?.id && canEdit ? <details><summary>Post actions</summary><button type="button" onClick={() => void manage('duplicate')}>Duplicate post</button><button type="button" onClick={() => void manage('archive')}>Archive post</button><button className="danger" type="button" onClick={() => { if (window.confirm('Delete this article from the current website draft?')) void manage('delete') }}>Delete post</button></details> : null}</aside>
+    </form>}
+  </section>
 }
 
 function WebsiteAnalytics({ analytics, error }) {
@@ -218,7 +288,7 @@ function WebsiteReleasePreview({ previewUrl, draftRevision, publishedRevision, p
   return <section className="wwo-release-preview"><div className="wwo-release-heading"><div><span className="md-eyebrow">PREVIEW & PUBLISHING</span><h2>Review the public site before releasing changes.</h2><p>The embedded preview always shows the current public revision. Draft edits remain isolated until the publishing checks pass.</p></div><div className="wwo-device-toggle"><button type="button" className={device === 'desktop' ? 'active' : ''} onClick={() => setDevice('desktop')}>Desktop</button><button type="button" className={device === 'mobile' ? 'active' : ''} onClick={() => setDevice('mobile')}>Mobile</button></div></div><div className="wwo-release-grid"><div className="wwo-preview-frame-wrap"><div className={`wwo-preview-frame ${device}`}>{previewUrl ? <iframe title="Current public website preview" src={previewUrl} /> : <p className="wwo-empty-data">A connected preview URL is required to render the public website.</p>}</div>{previewUrl && <a href={previewUrl} target="_blank" rel="noreferrer">Open public preview <ArrowUpRight size={14} /></a>}</div><div className="wwo-release-status"><article><small>DRAFT</small><strong>{draftRevision ? `Revision ${draftRevision.revision_number}` : 'No active draft'}</strong><span>{draftRevision ? `Updated ${new Date(draftRevision.updated_at).toLocaleString()}` : 'Create website changes to begin.'}</span></article><article><small>PUBLISHED</small><strong>{publishedRevision ? `Revision ${publishedRevision.revision_number}` : 'No published revision'}</strong><span>{publishedAt} · {publisher}</span></article><div className={blockers.length ? 'wwo-blockers blocked' : 'wwo-blockers ready'}><strong>{draftRevision ? blockers.length ? 'Release blockers' : 'Ready to publish' : 'No draft to review'}</strong>{blockers.length ? <ul>{blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul> : <p>{draftRevision ? 'Required website, content and domain checks have passed.' : 'The published site remains unchanged.'}</p>}</div><button type="button" className="ww-publish" onClick={onManage}>{draftRevision ? 'Review website changes' : 'Edit website'}</button></div></div></section>
 }
 
-export default function WebsiteWorkspace({ onBack }) {
+export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlogEditor, onCloseBlogEditor }) {
   const { authState } = useAuthSession()
   const navigate = useNavigate()
   const organisationId = useMemo(() => getOrganisationId(authState), [authState])
@@ -240,6 +310,7 @@ export default function WebsiteWorkspace({ onBack }) {
   }
 
   useEffect(() => { void refresh() }, [organisationId, leadWindowDays])
+  useEffect(() => { if (blogEditorId) setActiveSection('blog') }, [blogEditorId])
   const primaryDomain = overview.domains.find((domain) => domain.is_primary) || overview.domains.find((domain) => domain.domain_kind === 'preview')
   const hasPublishedSite = overview.site?.status === 'published' && Boolean(overview.publishedRevision)
   const previewUrl = primaryDomain?.hostname
@@ -399,7 +470,7 @@ export default function WebsiteWorkspace({ onBack }) {
       {activeSection === 'leads' ? <WebsiteLeads leads={overview.websiteLeads} error={overview.websiteLeadsError} loading={overview.mode === 'loading'} windowDays={leadWindowDays} onWindowChange={setLeadWindowDays} onOpenListing={(listingId) => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} /> : null}
       {activeSection === 'analytics' ? <WebsiteAnalytics analytics={overview.analytics} error={overview.analyticsError} /> : null}
       {activeSection === 'submissions' ? <WebsiteFormSubmissions submissions={overview.websiteSubmissions || []} error={overview.websiteSubmissionsError} loading={overview.mode === 'loading'} windowDays={leadWindowDays} onWindowChange={setLeadWindowDays} /> : null}
-      {activeSection === 'blog' ? <WebsiteBlog posts={overview.blogPosts} draftPosts={overview.draftBlogPosts} publishedPosts={overview.publishedBlogPosts} mediaAssets={overview.mediaAssets} websiteListings={overview.websiteListings} canEdit={Boolean(overview.draftRevision)} error={overview.blogPostsError} mediaError={overview.mediaAssetsError} listingError={overview.websiteListingsError} saving={action === 'blog'} uploading={action === 'blog-media'} updatingMedia={action === 'blog-media-meta'} onSave={saveBlog} onUpload={uploadBlogMedia} onUpdateMedia={updateBlogMedia} onManage={manageBlog} /> : null}
+      {activeSection === 'blog' ? <WebsiteBlog posts={overview.blogPosts} draftPosts={overview.draftBlogPosts} publishedPosts={overview.publishedBlogPosts} mediaAssets={overview.mediaAssets} websiteListings={overview.websiteListings} canEdit={Boolean(overview.draftRevision)} error={overview.blogPostsError} mediaError={overview.mediaAssetsError} listingError={overview.websiteListingsError} saving={action === 'blog'} uploading={action === 'blog-media'} updatingMedia={action === 'blog-media-meta'} onSave={saveBlog} onUpload={uploadBlogMedia} onUpdateMedia={updateBlogMedia} onManage={manageBlog} editorPostId={blogEditorId} onOpenEditor={onOpenBlogEditor} onCloseEditor={onCloseBlogEditor} /> : null}
     </div>
   )
 

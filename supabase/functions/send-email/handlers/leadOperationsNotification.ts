@@ -23,6 +23,10 @@ const EVENT_LABELS: Record<string, { title: string; subject: string }> = {
     title: "New Unassigned Enquiry",
     subject: "New enquiry needs assignment",
   },
+  new_website_enquiry_principal: {
+    title: "New Website Enquiry",
+    subject: "New website enquiry received",
+  },
   lead_assigned: {
     title: "Lead Assigned",
     subject: "Lead assigned to you",
@@ -108,6 +112,9 @@ function defaultMessage({
       leadName || "A new lead"
     } came in without an assigned owner. Please assign it to an agent.`;
   }
+  if (eventKind === "new_website_enquiry_principal") {
+    return `${leadName || "A new lead"} submitted a website enquiry. Review the details and make sure the lead is followed up.`;
+  }
   if (eventKind === "lead_reassigned") {
     return `${leadName || "A lead"} was reassigned${
       assignedAgentName ? ` to ${assignedAgentName}` : ""
@@ -151,6 +158,11 @@ export function buildLeadOperationsNotificationEmail({
   leadCategory,
   leadStatus,
   propertyLabel,
+  propertyAddress,
+  propertyPrice,
+  enquiryType,
+  enquiryIntent,
+  enquiryMessage,
   availabilityWindows,
   budgetLabel,
   assignedAgentName,
@@ -172,6 +184,11 @@ export function buildLeadOperationsNotificationEmail({
   leadCategory?: string;
   leadStatus?: string;
   propertyLabel?: string;
+  propertyAddress?: string;
+  propertyPrice?: string;
+  enquiryType?: string;
+  enquiryIntent?: string;
+  enquiryMessage?: string;
   availabilityWindows?: string;
   budgetLabel?: string;
   assignedAgentName?: string;
@@ -189,6 +206,11 @@ export function buildLeadOperationsNotificationEmail({
     { label: "Category", value: leadCategory || "" },
     { label: "Status", value: leadStatus || "" },
     { label: "Property", value: propertyLabel || "" },
+    { label: "Property Address", value: propertyAddress || "" },
+    { label: "Asking Price", value: propertyPrice || "" },
+    { label: "Enquiry Type", value: enquiryType || "" },
+    { label: "Enquiry Intent", value: enquiryIntent || "" },
+    { label: "Message", value: enquiryMessage || "" },
     { label: "Client Availability", value: availabilityWindows || "" },
     { label: "Budget", value: budgetLabel || "" },
     {
@@ -234,6 +256,11 @@ export function buildLeadOperationsNotificationEmail({
     leadPhone ? `Phone: ${leadPhone}` : "",
     leadSource ? `Source: ${leadSource}` : "",
     propertyLabel ? `Property: ${propertyLabel}` : "",
+    propertyAddress ? `Property address: ${propertyAddress}` : "",
+    propertyPrice ? `Asking price: ${propertyPrice}` : "",
+    enquiryType ? `Enquiry type: ${enquiryType}` : "",
+    enquiryIntent ? `Enquiry intent: ${enquiryIntent}` : "",
+    enquiryMessage ? `Message: ${enquiryMessage}` : "",
     availabilityWindows ? `Client availability:\n${availabilityWindows}` : "",
     budgetLabel ? `Budget: ${budgetLabel}` : "",
     assignedAgentName || assignedAgentEmail
@@ -377,6 +404,31 @@ export async function handleLeadOperationsNotificationEmail(
       payload.propertyLabel,
       payload.property_label,
       metadata.propertyLabel,
+    ),
+    propertyAddress: firstText(
+      payload.propertyAddress,
+      payload.property_address,
+      metadata.propertyAddress,
+    ),
+    propertyPrice: firstText(
+      payload.propertyPrice,
+      payload.property_price,
+      metadata.propertyPrice,
+    ),
+    enquiryType: firstText(
+      payload.enquiryType,
+      payload.enquiry_type,
+      metadata.enquiryType,
+    ),
+    enquiryIntent: firstText(
+      payload.enquiryIntent,
+      payload.enquiry_intent,
+      metadata.enquiryIntent,
+    ),
+    enquiryMessage: firstText(
+      payload.enquiryMessage,
+      payload.enquiry_message,
+      metadata.enquiryMessage,
     ),
     availabilityWindows: normalizeListText(
       payload.availabilityWindows ||
