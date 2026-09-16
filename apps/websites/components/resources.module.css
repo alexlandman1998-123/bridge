@@ -30,20 +30,29 @@
 .page .cardImage { position: relative; aspect-ratio: 1.4; overflow: hidden; border-radius: 6px; margin-bottom: 24px; background: #eaece3; }
 .page .cardImage img { object-fit: cover; transition: transform .3s ease; }
 .page .articleCard:hover img { transform: scale(1.025); }
+.page .cardImageFallback, .page .relatedImageFallback { display: flex; align-items: flex-end; padding: 20px; box-sizing: border-box; background: linear-gradient(135deg, #dfe5d9, #b9c5ad); color: #31402e; }
+.page .cardImageFallback span, .page .relatedImageFallback span { font-size: 10px; font-weight: 600; letter-spacing: .16em; }
 .page .articleCard h2 { font: 400 30px/1.18 Georgia, serif; letter-spacing: -.035em; margin: 14px 0; }
 .page .articleCard > p:not(.eyebrow) { color: #626e5d; font-size: 14px; line-height: 1.7; }
 .page .readMore { display: flex; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid #d9dfd2; font-size: 13px; }
 .page .empty { padding: 64px 24px; text-align: center; background: #eef0e8; }
 .page .empty p { color: #626e5d; margin-bottom: 28px; }
-.page .articleIntro { max-width: 980px; text-align: center; }
+.page .articleIntro { max-width: 900px; padding-top: 58px; padding-bottom: 48px; text-align: center; }
+.page .articleIntro h1 { max-width: 810px; margin: 20px auto 24px; font-size: clamp(43px, 5.7vw, 76px); }
 .page .articleIntro > p { margin-left: auto; margin-right: auto; }
-.page .articleIntro time { color: #65715f; font-size: 12px; }
-.page .back { display: inline-block; color: #626e5d; text-decoration: none; margin-bottom: 32px; font-size: 13px; }
-.page .articleHero { max-width: 1240px; height: clamp(230px, 42vw, 520px); margin: auto; position: relative; }
+.page .articleDeck { max-width: 650px !important; margin-bottom: 0; font-size: 18px !important; line-height: 1.65 !important; }
+.page .articleMeta { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 14px; color: #65715f; font-size: 12px; line-height: 1.5; }
+.page .articleMeta span + span::before, .page .articleMeta time::before { content: '·'; margin-right: 14px; }
+.page .back { display: inline-block; color: #626e5d; text-decoration: none; margin-bottom: 28px; font-size: 13px; }
+.page .articleHero { max-width: 1160px; height: clamp(250px, 43vw, 560px); margin: 0 auto; position: relative; overflow: hidden; border-radius: 4px; }
 .page .articleHero img { object-fit: cover; }
-.page .prose { max-width: 760px; margin: auto; padding: 56px 32px; }
+.page .prose { max-width: 720px; margin: auto; padding: 68px 32px 78px; }
 .page .prose section { margin-bottom: 44px; }
 .page .prose p, .page .prose li { color: #58634f; font-size: 16px; line-height: 1.85; }
+.page .prose h2 { margin: 64px 0 20px; }
+.page .prose h3 { margin: 40px 0 16px; font: 400 24px/1.25 Georgia, serif; letter-spacing: -.025em; }
+.page .prose blockquote { border-left: 2px solid #718164; color: #364335; font: 400 25px/1.45 Georgia, serif; letter-spacing: -.02em; margin: 40px 0; padding-left: 25px; }
+.page .prose hr { border: 0; border-top: 1px solid #d9dfd2; margin: 48px 0; }
 .page .prose li { margin-bottom: 12px; }
 .page .articleImage { margin: 40px 0; }
 .page .articleImage img { border-radius: 6px; height: auto; width: 100%; }
@@ -55,11 +64,22 @@
 .page .articleProperty h3 { font: 400 25px/1.2 Georgia, serif; letter-spacing: -.03em; margin: 8px 0; }
 .page .articleProperty p:not(.eyebrow) { font-size: 14px; margin: 0 0 14px; }
 .page .articleProperty b { font-size: 13px; }
-.page .articleCta { background: #eaece3; margin-top: 56px; padding: 32px; border-radius: 5px; }
+.page .articleCta { background: #e6ebdf; margin-top: 72px; padding: 40px; border-radius: 5px; }
+.page .articleCta h2 { max-width: 450px; margin: 12px 0; }
+.page .articleCta > p:not(.eyebrow) { max-width: 510px; margin-bottom: 24px; }
+.page .articleCtaActions { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; }
+.page .articleCtaActions > a:not(.button) { color: #354334; font-size: 13px; text-underline-offset: 4px; }
+.page .relatedSection { padding-bottom: 96px; }
+.page .relatedHeading { display: flex; align-items: end; justify-content: space-between; margin-bottom: 28px; border-top: 1px solid #d9dfd2; padding-top: 28px; }
+.page .relatedHeading h2 { margin: 6px 0 0; }
 .page .related { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; }
-.page .related a { border-top: 1px solid #d9dfd2; padding: 24px 0; color: inherit; text-decoration: none; }
-.page .related h3 { font: 400 27px/1.2 Georgia, serif; }
-.page .related p:not(.eyebrow) { font-size: 14px; line-height: 1.7; color: #626e5d; }
+.page .relatedCard { color: inherit; text-decoration: none; }
+.page .relatedImage { position: relative; aspect-ratio: 1.55; overflow: hidden; border-radius: 5px; margin-bottom: 20px; background: #eaece3; }
+.page .relatedImage img { object-fit: cover; transition: transform .3s ease; }
+.page .relatedCard:hover img { transform: scale(1.025); }
+.page .related h3 { font: 400 29px/1.18 Georgia, serif; letter-spacing: -.035em; margin: 12px 0; }
+.page .related h3 span { white-space: nowrap; }
+.page .related p:not(.eyebrow) { font-size: 14px; line-height: 1.7; color: #626e5d; margin-bottom: 0; }
 .page .preapproval { display: grid; grid-template-columns: 1fr 1.05fr; gap: 90px; padding-top: 70px; }
 .page .preapproval .intro { padding: 0; }
 .page .preapproval .intro h1 { font-size: clamp(40px, 4.4vw, 64px); }
@@ -92,7 +112,10 @@
   .page .search button { padding: 15px 18px; }
   .page .articleGrid { grid-template-columns: 1fr; gap: 36px; }
   .page .cardImage { aspect-ratio: 1.6; }
-  .page .prose { padding: 36px 20px; } .page .articleCta { padding: 24px; } .page .articleProperty { grid-template-columns: 1fr; } .page .articleProperty img { height: auto; }
+  .page .articleIntro { padding-top: 38px; padding-bottom: 36px; } .page .articleIntro h1 { font-size: clamp(40px, 12vw, 54px); } .page .articleMeta { font-size: 11px; }
+  .page .articleMeta span + span::before, .page .articleMeta time::before { margin-right: 8px; } .page .articleHero { border-radius: 0; min-height: 240px; }
+  .page .prose { padding: 46px 20px 58px; } .page .prose h2 { margin-top: 48px; } .page .prose blockquote { font-size: 22px; padding-left: 18px; } .page .articleCta { margin-top: 56px; padding: 28px 24px; } .page .articleProperty { grid-template-columns: 1fr; } .page .articleProperty img { height: auto; }
+  .page .relatedHeading { display: block; } .page .relatedSection { padding-bottom: 64px; }
   .page .preapproval { padding-top: 44px; } .page .application { border-left: 0; border-top: 1px solid #d3dacb; padding: 32px 0 0; }
 }
 @media (max-width: 380px) { .page .fields { grid-template-columns: 1fr; } .page .result dl div { gap: 10px; } }

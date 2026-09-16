@@ -357,6 +357,7 @@ export function createProperty24ListingPlan({
 
   const dataBlockers = []
   const technicalBlockers = []
+  const qualityWarnings = []
 
   dataBlockers.push(...categoryContract.blockers)
   dataBlockers.push(...categoryModel.blockers)
@@ -366,10 +367,9 @@ export function createProperty24ListingPlan({
     if (sandboxPayloadTestMode) technicalBlockers.push('sandbox_property24_agent_id_required_before_submit')
     else dataBlockers.push('missing_property24_agent_id')
   }
-  if (!sourceReference) {
-    if (sandboxPayloadTestMode) technicalBlockers.push('sandbox_agent_source_reference_required_before_submit')
-    else dataBlockers.push('missing_agent_source_reference')
-  }
+  // Property24 receives the numeric contactAgentIds. This reference is useful
+  // for our local mapping but is not a Property24 submission requirement.
+  if (!sourceReference) qualityWarnings.push('missing_agent_source_reference')
   if (!description) dataBlockers.push('missing_description')
   if (!expiryDate) dataBlockers.push('missing_expiry_date')
   if (expiryDate && !isFutureProperty24ExpiryDate(expiryDate)) dataBlockers.push('property24_expiry_date_must_be_future')
@@ -378,15 +378,14 @@ export function createProperty24ListingPlan({
   if (!price && !isPOA) dataBlockers.push('missing_price_or_poa')
   if (!imageRows.length && isNew) dataBlockers.push('missing_listing_image')
 
-  // These are Arch9 quality gates for the Property24 residential experience.
-  // They intentionally apply only to verified dwelling types, never to land or
-  // categories whose Property24 schema is not yet approved.
+  // These improve an advert but are not Property24 submission requirements.
+  // Keep them visible without preventing normal listing management.
   if (categoryContract.category === 'residential') {
-    if (!descriptionHeader) dataBlockers.push('missing_marketing_title')
+    if (!descriptionHeader) qualityWarnings.push('missing_marketing_title')
     if (RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS.has(propertyTypeId)) {
-      if (!propertyInfo.floorArea?.size) dataBlockers.push('missing_floor_size')
-      if (!propertyFeatures.bedrooms) dataBlockers.push('missing_bedrooms')
-      if (!propertyFeatures.bathrooms?.bathrooms) dataBlockers.push('missing_bathrooms')
+      if (!propertyInfo.floorArea?.size) qualityWarnings.push('missing_floor_size')
+      if (!propertyFeatures.bedrooms) qualityWarnings.push('missing_bedrooms')
+      if (!propertyFeatures.bathrooms?.bathrooms) qualityWarnings.push('missing_bathrooms')
     }
   }
   if (!propertyFeatures.petsAllowed) dataBlockers.push('missing_pets_allowed_value')
@@ -432,6 +431,7 @@ export function createProperty24ListingPlan({
     canSubmit,
     dataBlockers,
     technicalBlockers,
+    qualityWarnings,
     summary: {
       agencyId,
       contactAgentIds: property24AgentId ? [property24AgentId] : [],

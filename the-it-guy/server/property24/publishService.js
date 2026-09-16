@@ -13,6 +13,7 @@ import {
 } from './client.js'
 import { recordProperty24ListingSync } from './syncService.js'
 import { assertProperty24ProductionWriteAllowed } from './liveCutoverService.js'
+import { fetchOrganisationProperty24Credentials } from './organisationCredentialService.js'
 
 function normalizeLower(value = '') {
   return normalizeProperty24PreviewText(value).toLowerCase()
@@ -280,12 +281,24 @@ export async function resolveProperty24ListingPublishConfiguration({
     config.explicitAgentSourceReference ||
     config.agentSourceReference
 
+  const credentials = await fetchOrganisationProperty24Credentials({
+    supabase,
+    organisationId,
+    environment: accountSettings.environment || config.environment,
+  })
+
   return {
     ...config,
     organisationId,
     agencyId,
     agentId,
     agentSourceReference,
+    ...(credentials ? {
+      property24Username: credentials.username,
+      property24Password: credentials.password,
+      property24UserGroupId: credentials.userGroupId || config.property24UserGroupId,
+      property24CredentialSource: credentials.source,
+    } : {}),
     syndicationEnabled: Boolean(
       config.syndicationEnabled && (
         accountSettings.configured

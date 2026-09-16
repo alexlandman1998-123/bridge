@@ -113,12 +113,26 @@ const productionRuntime = resolveProperty24EnvironmentCredentials({
     PROPERTY24_PRODUCTION_BASE_URL: 'https://api.property24.com',
     PROPERTY24_PRODUCTION_BASIC_AUTH_USERNAME: 'production-user',
     PROPERTY24_PRODUCTION_BASIC_AUTH_PASSWORD: 'production-password',
+    PROPERTY24_PRODUCTION_USER_GROUP_ID: 'south-africa-group',
   },
 })
 assert.equal(productionRuntime.environment, 'production')
 assert.equal(productionRuntime.configured, true)
 assert.equal(productionRuntime.credentialSource, 'environment_specific')
 assert.equal(productionRuntime.username, 'production-user')
+assert.equal(productionRuntime.sendUserGroupHeader, true)
+
+const productionRuntimeWithExplicitHeaderOptOut = resolveProperty24EnvironmentCredentials({
+  environment: 'production',
+  env: {
+    PROPERTY24_PRODUCTION_BASE_URL: 'https://api.property24.com',
+    PROPERTY24_PRODUCTION_BASIC_AUTH_USERNAME: 'production-user',
+    PROPERTY24_PRODUCTION_BASIC_AUTH_PASSWORD: 'production-password',
+    PROPERTY24_PRODUCTION_USER_GROUP_ID: 'south-africa-group',
+    PROPERTY24_PRODUCTION_SEND_USER_GROUP_HEADER: 'false',
+  },
+})
+assert.equal(productionRuntimeWithExplicitHeaderOptOut.sendUserGroupHeader, false)
 
 const mismatchedRuntime = resolveProperty24EnvironmentCredentials({
   environment: 'production',
@@ -357,7 +371,8 @@ const apiSource = read('../server/property24/api.js')
 assert.match(apiSource, /productionWriteRequired/)
 assert.match(apiSource, /productionRollbackOnly/)
 assert.match(apiSource, /'expired'/)
-assert.match(apiSource, /PROPERTY24_PUBLISH_PERMISSION = 'publish_listings'/)
+assert.match(apiSource, /hasActiveProperty24Membership/)
+assert.doesNotMatch(apiSource, /PROPERTY24_PUBLISH_PERMISSION = 'publish_listings'/)
 const endpointSource = read('../api/property24/settings/live-cutover.js')
 assert.match(endpointSource, /supabase\.auth\.getUser\(token\)/)
 assert.match(endpointSource, /createProperty24OrganisationVettingPack/)

@@ -1024,6 +1024,10 @@ function formatProperty24Blocker(value = '') {
 function getProperty24ApiMessage(payload = {}, fallback = 'Property24 request failed.') {
   const missing = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
   if (missing.length) return `Property24 setup is incomplete: ${missing.join(', ')}.`
+  const workflowError = payload?.report?.error || payload?.error
+  const upstreamMessage = workflowError?.response?.sample?.message || workflowError?.response?.sample?.errorMessage || ''
+  if (upstreamMessage) return `Property24 rejected this request: ${upstreamMessage}`
+  if (workflowError?.message) return workflowError.message
   const dataBlockers = payload?.preview?.dataBlockers || payload?.report?.preview?.dataBlockers || []
   const technicalBlockers = payload?.preview?.technicalBlockers || payload?.report?.preview?.technicalBlockers || []
   if (technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit')) {
@@ -4736,7 +4740,6 @@ function AgentListingDetail() {
   }
 
   async function publishProperty24Listing() {
-    if (!await requireSyndicationReviewBeforePublish('property24')) return null
     const expiryError = getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate)
     if (expiryError) {
       setDetailMessage('')

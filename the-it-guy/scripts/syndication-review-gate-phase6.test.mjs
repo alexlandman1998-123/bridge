@@ -53,11 +53,10 @@ assert.equal(shouldRequireSyndicationReview({
 const pageSource = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 for (const expected of [
   "requireSyndicationReviewBeforePublish('privateProperty')",
-  "requireSyndicationReviewBeforePublish('property24')",
   "continueSyndicationReview('privateProperty', previewPrivatePropertyListing)",
-  "continueSyndicationReview('property24', previewProperty24Listing)",
 ]) {
   assert.ok(pageSource.includes(expected), `Expected Phase 6 review gate: ${expected}`)
 }
+assert.ok(!pageSource.includes("requireSyndicationReviewBeforePublish('property24')"), 'Property24 publishing should not be blocked behind a review gate')
 
 console.log('Syndication review gate phase 6 contract passed')

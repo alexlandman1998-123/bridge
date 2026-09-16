@@ -88,7 +88,7 @@ assert.equal(fakeAgentIdPreview.canPreview, true)
 assert.equal(fakeAgentIdPreview.canSubmit, false)
 assert.deepEqual(fakeAgentIdPreview.previewPayload.contactAgentIds, [])
 assert.ok(fakeAgentIdPreview.technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit'))
-assert.ok(fakeAgentIdPreview.technicalBlockers.includes('sandbox_agent_source_reference_required_before_submit'))
+assert.ok(fakeAgentIdPreview.qualityWarnings.includes('missing_agent_source_reference'))
 assert.equal(fakeAgentRows.contactAgentIds.status, RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED)
 assert.equal(
   JSON.stringify(fakeAgentIdPreview.previewPayload).includes('p24-agent-1'),
@@ -113,10 +113,10 @@ const missingAvailability = createProperty24RentalListingPlan({
   },
 })
 
-assert.equal(missingAvailability.canPreview, false)
-assert.equal(missingAvailability.status, 'BLOCKED')
-assert.ok(missingAvailability.dataBlockers.includes('missing_rental_occupation_date'))
-assert.equal(missingAvailability.previewPayload, null)
+assert.equal(missingAvailability.canPreview, true)
+assert.equal(missingAvailability.status, 'PREVIEW_READY')
+assert.ok(missingAvailability.qualityWarnings.includes('missing_rental_occupation_date'))
+assert.ok(missingAvailability.previewPayload)
 
 const missingRentalApproval = createProperty24RentalListingPlan({
   listing: {
@@ -142,9 +142,9 @@ const missingRentalApproval = createProperty24RentalListingPlan({
   options: { includeSubmitPayload: true },
 })
 
-assert.equal(missingRentalApproval.canPreview, false)
-assert.equal(missingRentalApproval.canSubmit, false)
-assert.ok(missingRentalApproval.dataBlockers.includes('rental_mandate_not_signed'))
-assert.ok(missingRentalApproval.dataBlockers.includes('rental_marketing_not_approved'))
+assert.equal(missingRentalApproval.canPreview, true)
+assert.equal(missingRentalApproval.canSubmit, true)
+assert.ok(missingRentalApproval.qualityWarnings.includes('rental_mandate_not_signed'))
+assert.ok(missingRentalApproval.qualityWarnings.includes('rental_marketing_not_approved'))
 
 console.log('Rental Property24 backend adapter contract passed')

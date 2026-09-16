@@ -47,7 +47,7 @@ export async function fetchOrganisationProperty24Connection({ supabase, organisa
 
   const accountResult = await supabase
     .from('property24_accounts')
-    .select('organisation_id, environment, agency_id, enabled, last_auth_check_at, last_catalog_sync_at, last_agent_sync_at, updated_at')
+    .select('organisation_id, environment, agency_id, enabled, username_secret_id, password_secret_id, user_group_id, credentials_updated_at, last_auth_check_at, last_catalog_sync_at, last_agent_sync_at, updated_at')
     .eq('organisation_id', normalizedOrganisationId)
     .order('enabled', { ascending: false })
     .order('updated_at', { ascending: false })
@@ -61,6 +61,9 @@ export async function fetchOrganisationProperty24Connection({ supabase, organisa
     environment: normalizeProperty24Text(row.environment).toLowerCase() || 'exdev',
     sourceReferencePrefix: 'ARCH9',
     configured: Boolean(positiveIntegerText(row.agency_id)),
+    credentialsConfigured: Boolean(row.username_secret_id && row.password_secret_id),
+    credentialsUpdatedAt: row.credentials_updated_at || null,
+    userGroupId: normalizeProperty24Text(row.user_group_id),
     lastAuthCheckAt: row.last_auth_check_at || null,
     lastCatalogSyncAt: row.last_catalog_sync_at || null,
     lastAgentSyncAt: row.last_agent_sync_at || null,
@@ -119,7 +122,7 @@ export async function upsertOrganisationProperty24Connection({
       agency_id: Number(normalizedAgencyId),
       enabled: enabled === true,
     }, { onConflict: 'organisation_id,environment' })
-    .select('organisation_id, environment, agency_id, enabled, last_auth_check_at, last_catalog_sync_at, last_agent_sync_at, updated_at')
+    .select('organisation_id, environment, agency_id, enabled, username_secret_id, password_secret_id, user_group_id, credentials_updated_at, last_auth_check_at, last_catalog_sync_at, last_agent_sync_at, updated_at')
     .single()
   if (result.error) throw result.error
   return {
@@ -130,6 +133,9 @@ export async function upsertOrganisationProperty24Connection({
     environment: result.data.environment,
     agencyId: positiveIntegerText(result.data.agency_id),
     enabled: result.data.enabled === true,
+    credentialsConfigured: Boolean(result.data.username_secret_id && result.data.password_secret_id),
+    credentialsUpdatedAt: result.data.credentials_updated_at || null,
+    userGroupId: normalizeProperty24Text(result.data.user_group_id),
     lastAuthCheckAt: result.data.last_auth_check_at || null,
     lastCatalogSyncAt: result.data.last_catalog_sync_at || null,
     lastAgentSyncAt: result.data.last_agent_sync_at || null,

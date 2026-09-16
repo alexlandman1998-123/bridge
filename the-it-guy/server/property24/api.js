@@ -23,6 +23,7 @@ import {
   resolveProperty24Environment,
 } from './publishService.js'
 import { resolveProperty24EnvironmentCredentials } from './environmentService.js'
+import { fetchOrganisationProperty24Credentials } from './organisationCredentialService.js'
 import {
   applyControlledProperty24ListingPublish,
   applyControlledProperty24StatusUpdate,
@@ -315,8 +316,11 @@ function getMissingConfiguration(config = {}, needs = {}) {
   if (needs.rentalEnabled && !config.rentalLivePublishEnabled) missing.push('PROPERTY24_RENTAL_LIVE_PUBLISH_ENABLED=true')
   if (needs.supabase && !config.supabaseUrl) missing.push('SUPABASE_URL or VITE_SUPABASE_URL')
   if (needs.supabase && !config.serviceRoleKey) missing.push('SUPABASE_SERVICE_ROLE_KEY')
-  if (needs.property24 && !config.property24Username) missing.push('PROPERTY24_BASIC_AUTH_USERNAME')
-  if (needs.property24 && !config.property24Password) missing.push('PROPERTY24_BASIC_AUTH_PASSWORD')
+  // Listing routes resolve the owning organisation's encrypted credentials
+  // after loading the listing. Non-listing routes still require a runtime
+  // credential because there is no organisation to select.
+  if (needs.property24 && !config.property24Username && !config.listingId) missing.push('PROPERTY24_BASIC_AUTH_USERNAME')
+  if (needs.property24 && !config.property24Password && !config.listingId) missing.push('PROPERTY24_BASIC_AUTH_PASSWORD')
   if (needs.listing && !config.listingId) missing.push('listingId')
   if (needs.mapping && !config.agencyId) missing.push('PROPERTY24_DEFAULT_AGENCY_ID or agencyId')
   if (needs.mapping && !allowMissingAgentMapping && !config.agentId) missing.push('PROPERTY24_DEFAULT_AGENT_ID or agentId')
@@ -367,31 +371,9 @@ function getAuthFailure({ headers = {}, config = {}, route = {} } = {}) {
   })
 }
 
-const PROPERTY24_PUBLISH_PERMISSION = 'publish_listings'
-const PROPERTY24_PUBLISH_ROLES = new Set([
-  'principal',
-  'owner',
-  'admin',
-  'manager',
-  'branch_manager',
-  'agency_principal',
-  'agent',
-  'estate_agent',
-  'sales_agent',
-])
-
-function hasProperty24PublishRole(row = {}) {
-  const role = normalizeProperty24Text(row.workspace_role || row.organisation_role || row.organization_role || row.role).toLowerCase()
+function hasActiveProperty24Membership(row = {}) {
   const status = normalizeProperty24Text(row.membership_status || row.status).toLowerCase()
-  if (!['active', 'accepted', 'approved'].includes(status)) return false
-  return PROPERTY24_PUBLISH_ROLES.has(role)
-}
-
-function hasProperty24AdminPublishRole(row = {}) {
-  const role = normalizeProperty24Text(row.workspace_role || row.organisation_role || row.organization_role || row.role).toLowerCase()
-  const status = normalizeProperty24Text(row.membership_status || row.status).toLowerCase()
-  if (!['active', 'accepted', 'approved'].includes(status)) return false
-  return ['principal', 'owner', 'admin', 'manager', 'branch_manager', 'agency_principal'].includes(role)
+  return ['active', 'accepted', 'approved'].includes(status)
 }
 
 async function authenticateBrowserProperty24ListingReassignment({ supabase, headers = {}, config = {} } = {}) {
@@ -437,12 +419,12 @@ async function authenticateBrowserProperty24ListingReassignment({ supabase, head
     .or(`user_id.eq.${user.id},email.eq.${user.email || ''}`)
     .limit(5)
   if (membership.error) throw membership.error
-  if (!(membership.data || []).some(hasProperty24AdminPublishRole)) {
+  if (!(membership.data || []).some(hasActiveProperty24Membership)) {
     return {
       actorUserId: user.id,
       failure: buildJsonResponse(403, {
         error: 'forbidden',
-        message: 'Only an agency principal, manager, or admin can reassign listings.',
+        message: 'You need an active organisation membership to reassign this listing.',
       }),
     }
   }
@@ -494,23 +476,11 @@ async function authenticateBrowserProperty24ListingRequest({ supabase, headers =
 
   if (membership.error) throw membership.error
   const memberships = membership.data || []
-  const activeMembership = memberships.find(hasProperty24PublishRole)
+  const activeMembership = memberships.find(hasActiveProperty24Membership)
   if (!activeMembership) {
     return buildJsonResponse(403, {
       error: 'forbidden',
-      permission: PROPERTY24_PUBLISH_PERMISSION,
-      message: 'You need the publish_listings permission before publishing this listing to Property24.',
-    })
-  }
-
-  const userEmail = normalizeProperty24Text(user.email || activeMembership.email).toLowerCase()
-  const ownsListing = listing.assigned_agent_id === user.id ||
-    listing.created_by === user.id ||
-    normalizeProperty24Text(listing.assigned_agent_email).toLowerCase() === userEmail
-  if (!ownsListing && !memberships.some(hasProperty24AdminPublishRole)) {
-    return buildJsonResponse(403, {
-      error: 'forbidden',
-      message: 'Only the assigned agent or an agency admin can publish this listing to Property24.',
+      message: 'You need an active organisation membership before managing this listing on Property24.',
     })
   }
 
@@ -584,7 +554,16 @@ async function resolveExistingProperty24ListingEnvironment({ supabase, config = 
   if (!productionSync) return config
 
   const credentials = resolveProperty24EnvironmentCredentials({ env, environment: 'production' })
-  if (!credentials.configured) {
+  const listingResult = await fetchMaybeSingle(
+    supabase.from('private_listings').select('organisation_id').eq('id', config.listingId),
+  )
+  if (listingResult.error && listingResult.error.code !== 'PGRST116') throw listingResult.error
+  const organisationCredentials = await fetchOrganisationProperty24Credentials({
+    supabase,
+    organisationId: listingResult.data?.organisation_id,
+    environment: 'production',
+  })
+  if (!organisationCredentials && !credentials.configured) {
     const error = new Error('This listing is live on Property24 production, but production credentials are not configured. No status change was sent.')
     error.code = 'property24_production_credentials_missing'
     error.status = 409
@@ -595,12 +574,13 @@ async function resolveExistingProperty24ListingEnvironment({ supabase, config = 
   return {
     ...config,
     environment: 'production',
-    property24BaseUrl: credentials.baseUrl,
-    property24Username: credentials.username,
-    property24Password: credentials.password,
-    property24UserGroupId: credentials.userGroupId,
-    property24ApiVersion: credentials.apiVersion,
-    property24SendUserGroupHeader: credentials.sendUserGroupHeader,
+    property24BaseUrl: credentials.baseUrl || config.property24BaseUrl,
+    property24Username: organisationCredentials?.username || credentials.username,
+    property24Password: organisationCredentials?.password || credentials.password,
+    property24UserGroupId: organisationCredentials?.userGroupId || credentials.userGroupId,
+    property24ApiVersion: credentials.apiVersion || config.property24ApiVersion,
+    property24SendUserGroupHeader: credentials.sendUserGroupHeader ?? config.property24SendUserGroupHeader,
+    property24CredentialSource: organisationCredentials?.source || 'environment_fallback',
     agencyId: normalizeProperty24Text(productionSync.agency_id) || config.agencyId,
     listingNumber: requestedListingNumber || normalizeProperty24Text(productionSync.listing_number),
   }
@@ -1210,7 +1190,13 @@ export async function createProperty24ApiResponse({
         allowPublishWithoutMandate: true,
         publishWithoutMandateReason: 'Property24 API publish accepted before mandate evidence upload.',
       })
-      return buildJsonResponse(report.status === 'FAILED' ? 502 : 200, {
+      const upstreamStatus = Number(report?.error?.httpStatus)
+      const responseStatus = report.status === 'FAILED' && upstreamStatus >= 400 && upstreamStatus <= 599
+        ? upstreamStatus
+        : report.status === 'FAILED'
+          ? 502
+          : 200
+      return buildJsonResponse(responseStatus, {
         route: route.name,
         status: report.status,
         listingId: resolvedConfig.listingId,
@@ -1288,7 +1274,13 @@ export async function createProperty24ApiResponse({
           report,
         })
       }
-      return buildJsonResponse(report.status === 'FAILED' ? 502 : 200, {
+      const upstreamStatus = Number(report?.error?.httpStatus)
+      const responseStatus = report.status === 'FAILED' && upstreamStatus >= 400 && upstreamStatus <= 599
+        ? upstreamStatus
+        : report.status === 'FAILED'
+          ? 502
+          : 200
+      return buildJsonResponse(responseStatus, {
         route: route.name,
         status: report.status,
         listingId: resolvedConfig.listingId,
@@ -1309,8 +1301,13 @@ export async function createProperty24ApiResponse({
       const supabase = createSupabase(config)
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
       if (browserAuthFailure) return browserAuthFailure
-      const property24 = config.refresh ? createProperty24(config) : null
-      const status = await fetchListingStatus({ supabase, property24, config })
+      const statusRouteConfig = await resolveExistingProperty24ListingEnvironment({
+        supabase,
+        config,
+        env: env || getRuntimeEnv(),
+      })
+      const property24 = statusRouteConfig.refresh ? createProperty24(statusRouteConfig) : null
+      const status = await fetchListingStatus({ supabase, property24, config: statusRouteConfig })
       return buildJsonResponse(200, { route: route.name, status, lifecycle: status.lifecycle })
     }
 
@@ -1370,7 +1367,13 @@ export async function createProperty24ApiResponse({
         listingNumber: statusConfig.listingNumber,
         listingStatus: statusConfig.status,
       })
-      return buildJsonResponse(report.status === 'FAILED' ? 502 : 200, {
+      const upstreamStatus = Number(report?.error?.httpStatus)
+      const responseStatus = report.status === 'FAILED' && upstreamStatus >= 400 && upstreamStatus <= 599
+        ? upstreamStatus
+        : report.status === 'FAILED'
+          ? 502
+          : 200
+      return buildJsonResponse(responseStatus, {
         route: route.name,
         status: report.status,
         lifecycle: report.lifecycle || null,

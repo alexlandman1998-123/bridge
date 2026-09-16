@@ -8,6 +8,7 @@ import {
   fetchOrganisationProperty24Connection,
   upsertOrganisationProperty24Connection,
 } from '../../../server/property24/organisationConnectionService.js'
+import { saveOrganisationProperty24Credentials } from '../../../server/property24/organisationCredentialService.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
 const appRoot = fileURLToPath(new URL('../../..', import.meta.url))
@@ -117,7 +118,7 @@ export default async function handler(request, response) {
       return
     }
 
-    const connection = request.method === 'PUT'
+    let connection = request.method === 'PUT'
       ? await upsertOrganisationProperty24Connection({
           supabase,
           organisationId,
@@ -126,6 +127,21 @@ export default async function handler(request, response) {
           enabled: body.enabled,
         })
       : await fetchOrganisationProperty24Connection({ supabase, organisationId, environment })
+    if (request.method === 'PUT' && (body.username !== undefined || body.password !== undefined)) {
+      const credentials = await saveOrganisationProperty24Credentials({
+        supabase,
+        organisationId,
+        environment: connection.environment,
+        username: body.username,
+        password: body.password,
+        userGroupId: body.userGroupId,
+      })
+      connection = {
+        ...connection,
+        credentialsConfigured: credentials.configured,
+        credentialsUpdatedAt: credentials.updatedAt,
+      }
+    }
     writeNodeJsonResponse(response, buildResponse(200, { connection }))
   } catch (error) {
     writeNodeJsonResponse(response, buildResponse(Number(error.status || 500), {
@@ -134,4 +150,3 @@ export default async function handler(request, response) {
     }))
   }
 }
-

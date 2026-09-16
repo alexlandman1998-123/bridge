@@ -1,4 +1,4 @@
-import { Building2, CalendarDays, CircleHelp, CreditCard, FileText, Home, MessageCircle, ReceiptText, Wrench } from 'lucide-react'
+import { Building2, CalendarDays, CircleHelp, CreditCard, FileText, Home, MessageCircle, ReceiptText, Settings, Wrench } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import BuyerPortalDesktopSidebar from '../client-portal/BuyerPortalDesktopSidebar'
 import { BuyerMobileBottomNavigation, BuyerMobileHeader, BuyerMobilePropertyHero } from '../client-portal/BuyerMobileChrome'
@@ -16,15 +16,18 @@ const tenantItems = [
 ]
 
 const landlordItems = [
-  { key: 'overview', label: 'Overview', mobileLabel: 'Home', icon: Home },
-  { key: 'properties', label: 'Properties', mobileLabel: 'Homes', icon: Building2 },
-  { key: 'approvals', label: 'Approvals', mobileLabel: 'Actions', icon: Wrench },
-  { key: 'documents', label: 'Documents', mobileLabel: 'Docs', icon: FileText },
-  { key: 'support', label: 'Support', mobileLabel: 'Help', icon: MessageCircle },
+  { key: 'overview', label: 'Overview', mobileLabel: 'Home', icon: Home, description: 'Portfolio health: rent collected, occupancy, arrears, approvals and recent activity.' },
+  { key: 'properties', label: 'My properties', mobileLabel: 'Homes', icon: Building2, description: 'Every property and unit, including occupied, vacant, maintenance and action-required filters.' },
+  { key: 'rent', label: 'Rent & statements', mobileLabel: 'Rent', icon: CreditCard, description: 'Rent roll, payment status, owner statements, disbursements, invoices and financial documents.' },
+  { key: 'maintenance', label: 'Maintenance', mobileLabel: 'Repairs', icon: Wrench, description: 'Repairs across the portfolio, quotes awaiting approval, appointments and completed work.' },
+  { key: 'documents', label: 'Documents', mobileLabel: 'Docs', icon: FileText, description: 'Lease agreements, inspection reports, statements, property documents, quotes and approved invoices.' },
+  { key: 'messages', label: 'Messages', mobileLabel: 'Messages', icon: MessageCircle, description: 'Conversations with the rental team, linked to the relevant property.' },
+  { key: 'settings', label: 'Settings', mobileLabel: 'Settings', icon: Settings, description: 'Contact details, notifications, banking and disbursement details, and account access.' },
+  { key: 'support', label: 'Support', mobileLabel: 'Help', icon: CircleHelp, description: 'Help centre and escalation or contact options.' },
 ]
 
 const groupsFor = (role) => role === 'landlord'
-  ? [{ label: 'Home', items: landlordItems.slice(0, 1) }, { label: 'Portfolio', items: landlordItems.slice(1, 4) }, { label: 'Account', items: landlordItems.slice(4) }]
+  ? [{ label: 'Home', items: landlordItems.slice(0, 1) }, { label: 'Portfolio', items: landlordItems.slice(1, 5) }, { label: 'Account', items: landlordItems.slice(5) }]
   : [{ label: 'Home', items: tenantItems.slice(0, 1) }, { label: 'Your tenancy', items: tenantItems.slice(1, 6) }, { label: 'Account', items: tenantItems.slice(6) }]
 
 export function rentalPortalItems(role = 'tenant') { return role === 'landlord' ? landlordItems : tenantItems }
@@ -43,7 +46,7 @@ export default function RentalClientPortalShell({ role = 'tenant', activeKey = '
   const address = [property?.address_line_1, property?.suburb, property?.city].filter(Boolean).join(', ')
   const pathFor = (item) => `?section=${item.key}`
 
-  return <div className="min-h-screen bg-[#FAF5ED] text-[#071E1A]">
+  return <div className="min-h-screen bg-[#f7f7f8] text-[#101823]">
     <BuyerPortalDesktopSidebar
       brandName={brandName}
       brandLogoUrl={brandLogoUrl}
@@ -53,10 +56,10 @@ export default function RentalClientPortalShell({ role = 'tenant', activeKey = '
       activeItemKey={activeKey}
       getItemPath={pathFor}
       supportContact={{}}
-      supportCopy="Your rentals team is here to help with your property and tenancy."
+      supportCopy={role === 'landlord' ? 'Your rentals team is here to help with your portfolio.' : 'Your rentals team is here to help with your property and tenancy.'}
       footerDescriptor="Secure client workspace"
     />
-    <main className="mx-auto w-full max-w-[1640px] px-4 pb-24 pt-4 sm:px-6 sm:pt-6 lg:ml-[264px] lg:w-[calc(100%-264px)] lg:px-10 lg:pb-10 lg:pt-10">
+    <main className="mx-auto w-full max-w-[1640px] px-4 pb-20 pt-4 sm:px-5 sm:pt-5 lg:ml-[264px] lg:w-[calc(100%-264px)] lg:px-8 lg:pb-8 lg:pt-7">
       <div className="lg:hidden"><BuyerMobileHeader brand={theme} logoUrl={brandLogoUrl} brandName={brandName} homePath="?section=overview" /></div>
       {showPropertyHero ? <BuyerMobilePropertyHero theme={theme} imageAlt={propertyName} className="min-h-[210px] lg:min-h-[250px]">
         <div className="flex min-h-[210px] flex-col justify-end p-5 sm:p-7 lg:min-h-[250px] lg:p-8">

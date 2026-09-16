@@ -1,5 +1,5 @@
 import { additionalMockProperties } from '@/lib/mock-properties'
-import { visiblePublishedBlogPosts } from '@/lib/blog-publication'
+import { applyBlogMediaAssets, visiblePublishedBlogPosts } from '@/lib/blog-publication'
 import { legacyPropertySlug, matchesPropertySlug, propertySlug } from '@/lib/property-urls'
 import { getServerSupabase } from '@/lib/supabase-server'
 import type { PublicBlogPost, PublicPage, PublicProperty, ResolvedSite, WebsiteBlock, WebsiteTemplateKey } from '@/lib/types'
@@ -254,7 +254,7 @@ export async function getPublicBlogPosts(site: ResolvedSite): Promise<PublicBlog
     // Keep the public site readable until optional authoring migrations have
     // reached the remote database. The base blog schema is enough to render
     // published articles; structured blocks are added when available.
-    .select('id, organisation_id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, author_name, status, published_at, seo_title, seo_description')
+    .select('id, organisation_id, website_site_id, revision_id, title, slug, summary, cover_image_url, cover_image_alt, body, content_blocks, author_name, status, lifecycle_status, scheduled_for, published_at, seo_title, seo_description')
     .eq('website_site_id', site.id)
     .eq('organisation_id', site.organisationId)
     .eq('revision_id', site.publishedRevisionId)
@@ -271,11 +271,7 @@ export async function getPublicBlogPosts(site: ResolvedSite): Promise<PublicBlog
     .eq('organisation_id', site.organisationId)
     .in('id', assetIds)
   if (assetsError) throw assetsError
-  const byId = new Map((assets || []).map((asset) => [String(asset.id), { url: String(asset.public_url || ''), alt: String(asset.alt_text || '') }]))
-  return posts.map((post) => ({ ...post, contentBlocks: post.contentBlocks.map((block) => {
-    const asset = block.assetId ? byId.get(block.assetId) : null
-    return asset && /^https:\/\/[^\s]+$/i.test(asset.url) ? { ...block, imageUrl: asset.url, imageAlt: asset.alt || undefined } : block
-  }) }))
+  return applyBlogMediaAssets(posts, assets || [])
 }
 
 export async function getPublicBlogPost(site: ResolvedSite, slug: string): Promise<PublicBlogPost | null> {

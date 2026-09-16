@@ -30,9 +30,16 @@ export function resolveProperty24EnvironmentCredentials({ env = {}, environment 
   const apiVersion = normalizeProperty24Text(production
     ? env.PROPERTY24_PRODUCTION_API_VERSION
     : env.PROPERTY24_EXDEV_API_VERSION) || normalizeProperty24Text(env.PROPERTY24_API_VERSION) || (production ? 'v55' : 'v53')
-  const sendUserGroupHeader = production
-    ? String(env.PROPERTY24_PRODUCTION_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || '').trim().toLowerCase() === 'true'
-    : String(env.PROPERTY24_EXDEV_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || '').trim().toLowerCase() !== 'false'
+  // A Property24 user group selects the agency/country permission scope for
+  // the authenticated account.  Production must not silently discard a
+  // configured group merely because an extra opt-in flag was omitted.
+  // Sending it is therefore the default in both environments; an explicit
+  // "false" remains available for a provider-supported exception.
+  const sendUserGroupHeader = String(
+    production
+      ? (env.PROPERTY24_PRODUCTION_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || 'true')
+      : (env.PROPERTY24_EXDEV_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || 'true'),
+  ).trim().toLowerCase() !== 'false'
 
   return {
     environment: targetEnvironment,

@@ -47,6 +47,15 @@ export function mapPublishedBlogPost(row: BlogRow): PublicBlogPost | null {
   }
 }
 
+/** Resolves safe, tenant-scoped media records into the image blocks used by public article pages. */
+export function applyBlogMediaAssets(posts: PublicBlogPost[], assets: Array<{ id: unknown, public_url: unknown, alt_text: unknown }>): PublicBlogPost[] {
+  const byId = new Map(assets.map((asset) => [String(asset.id), { url: String(asset.public_url || ''), alt: String(asset.alt_text || '') }]))
+  return posts.map((post) => ({ ...post, contentBlocks: post.contentBlocks.map((block) => {
+    const asset = block.assetId ? byId.get(block.assetId) : null
+    return asset && /^https:\/\/[^\s]+$/i.test(asset.url) ? { ...block, imageUrl: asset.url, imageAlt: asset.alt || undefined } : block
+  }) }))
+}
+
 /** A defensive second check for server-side data before it reaches a public route. */
 export function visiblePublishedBlogPosts(rows: BlogRow[], siteId: string, organisationId: string, revisionId: string, now = new Date()): PublicBlogPost[] {
   return rows

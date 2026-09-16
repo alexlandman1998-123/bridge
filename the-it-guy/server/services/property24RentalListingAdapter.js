@@ -203,20 +203,19 @@ function getAdapterDataBlockers(values = {}) {
   if (!values.suburbId) blockers.push('missing_property24_suburb_id')
   if (!values.propertyTypeId) blockers.push('missing_property24_property_type_id')
   if (!values.monthlyRent) blockers.push('missing_rental_monthly_rent')
-  if (!values.occupationDate) blockers.push('missing_rental_occupation_date')
   if (!values.expiryDate) blockers.push('missing_expiry_date')
   if (!values.rentalRate) blockers.push('missing_rental_rate')
   return unique(blockers)
 }
 
-function getRentalApprovalBlockers(fieldComparison = {}) {
-  const blockers = []
+function getRentalApprovalWarnings(fieldComparison = {}) {
+  const warnings = []
   const rows = Array.isArray(fieldComparison.rows) ? fieldComparison.rows : []
   const marketing = rows.find((row) => row.key === 'marketingApprovalStatus')
   const mandate = rows.find((row) => row.key === 'mandateStatus')
-  if (marketing?.blocksPublish) blockers.push('rental_marketing_not_approved')
-  if (mandate?.blocksPublish) blockers.push('rental_mandate_not_signed')
-  return blockers
+  if (marketing?.blocksPublish) warnings.push('rental_marketing_not_approved')
+  if (mandate?.blocksPublish) warnings.push('rental_mandate_not_signed')
+  return warnings
 }
 
 function getRentalNextStep({ canPreview, canSubmit, technicalBlockers }) {
@@ -294,8 +293,12 @@ export function createProperty24RentalListingPlan({
   })
 
   const adapterDataBlockers = getAdapterDataBlockers(values)
-  const approvalBlockers = getRentalApprovalBlockers(fieldComparison)
-  const dataBlockers = unique([...(basePlan.dataBlockers || []), ...adapterDataBlockers, ...approvalBlockers])
+  const rentalQualityWarnings = []
+  // Availability and internal approvals inform an agent's decision, but are
+  // not required fields in the Property24 listing payload.
+  if (!values.occupationDate) rentalQualityWarnings.push('missing_rental_occupation_date')
+  rentalQualityWarnings.push(...getRentalApprovalWarnings(fieldComparison))
+  const dataBlockers = unique([...(basePlan.dataBlockers || []), ...adapterDataBlockers])
   const technicalBlockers = unique(basePlan.technicalBlockers || [])
   const canPreview = basePlan.canPreview && dataBlockers.length === 0
   const canSubmit = canPreview && basePlan.canSubmit && technicalBlockers.length === 0
@@ -316,6 +319,7 @@ export function createProperty24RentalListingPlan({
     canSubmit,
     dataBlockers,
     technicalBlockers,
+    qualityWarnings: unique([...(basePlan.qualityWarnings || []), ...rentalQualityWarnings]),
     ...(imageByteLoad ? { imageByteLoad } : {}),
     fieldComparison,
     summary: {

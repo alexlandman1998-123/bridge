@@ -150,6 +150,22 @@ export async function uploadWebsiteBlogMedia({ siteId, organisationId, file, alt
   return data
 }
 
+export async function updateWebsiteBlogMedia({ siteId, assetId, altText }) {
+  assertWebsiteControlReady(siteId)
+  const safeAssetId = text(assetId)
+  const safeAltText = text(altText).slice(0, 240)
+  if (!safeAssetId) throw new Error('Choose an image to update.')
+  if (!safeAltText) throw new Error('Add alt text describing the image.')
+  const { data, error } = await supabase.from('website_media_assets')
+    .update({ alt_text: safeAltText })
+    .eq('id', safeAssetId)
+    .eq('website_site_id', siteId)
+    .select('id, website_site_id, storage_path, public_url, alt_text, created_at')
+    .single()
+  if (error) throw error
+  return data
+}
+
 export async function manageWebsiteDomain({ action, siteId, hostname, domainId }) {
   assertWebsiteControlReady(siteId)
   const safeAction = text(action)

@@ -413,6 +413,9 @@ export default function SettingsProperty24Page() {
   const [users, setUsers] = useState([])
   const [settings, setSettings] = useState(() => normalizeProperty24Settings())
   const [savedSettings, setSavedSettings] = useState(() => normalizeProperty24Settings())
+  const [credentialsConfigured, setCredentialsConfigured] = useState(false)
+  const [property24Credentials, setProperty24Credentials] = useState({ username: '', password: '', userGroupId: '' })
+  const [savingCredentials, setSavingCredentials] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -447,6 +450,7 @@ export default function SettingsProperty24Page() {
                 environment: connectionPayload.connection.environment,
                 lastAgentSyncAt: connectionPayload.connection.lastAgentSyncAt || legacySettings.lastAgentSyncAt,
               })
+              setCredentialsConfigured(connectionPayload.connection.credentialsConfigured === true)
             }
           } catch {
             nextSettings = legacySettings
@@ -514,7 +518,7 @@ export default function SettingsProperty24Page() {
   const hiddenAgentCount = Math.max(agentCandidates.length - visibleAgentCandidates.length, 0)
   const dirty = JSON.stringify(settings) !== JSON.stringify(savedSettings)
   const workspaceName = currentWorkspace?.name || context?.organisation?.displayName || context?.organisation?.name || 'Organisation'
-  const serverCredentialsReady = true
+  const serverCredentialsReady = credentialsConfigured
   const healthSummary = property24Health?.summary || {}
   const healthChecks = property24Health?.checks || []
   const latestStatisticsRun = statisticsRuns[0] || null
@@ -548,7 +552,7 @@ export default function SettingsProperty24Page() {
     setSettings((current) => normalizeProperty24Settings({ ...current, ...patch }))
   }
 
-  async function persistCanonicalProperty24Connection(nextSettings) {
+  async function persistCanonicalProperty24Connection(nextSettings, credentials = null) {
     const sessionResult = await supabase.auth.getSession()
     const accessToken = sessionResult.data?.session?.access_token
     if (!accessToken) throw new Error('Sign in again before saving the Property24 connection.')
@@ -563,11 +567,35 @@ export default function SettingsProperty24Page() {
         agencyId: nextSettings.agencyId,
         environment: nextSettings.environment,
         enabled: nextSettings.enabled,
+        ...(credentials ? {
+          username: credentials.username,
+          password: credentials.password,
+          userGroupId: credentials.userGroupId,
+        } : {}),
       }),
     })
     const payload = await response.json().catch(() => ({}))
     if (!response.ok) throw new Error(payload.message || 'Unable to save the Property24 connection.')
     return payload.connection
+  }
+
+  async function saveOrganisationCredentials() {
+    if (!property24Credentials.username || !property24Credentials.password) {
+      setError('Enter the Property24 username and password.')
+      return
+    }
+    setSavingCredentials(true)
+    setError('')
+    try {
+      const connection = await persistCanonicalProperty24Connection(settings, property24Credentials)
+      setCredentialsConfigured(connection.credentialsConfigured === true)
+      setProperty24Credentials({ username: '', password: '', userGroupId: '' })
+      setSuccess('Property24 credentials saved securely for this organisation.')
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to save the Property24 credentials.')
+    } finally {
+      setSavingCredentials(false)
+    }
   }
 
   async function applySuggestedMappings(nextProperty24Agents = settings.property24Agents) {
@@ -1322,7 +1350,7 @@ export default function SettingsProperty24Page() {
           />
         </div>
 
-        <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
+        <div className="hidden mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1507,7 +1535,7 @@ export default function SettingsProperty24Page() {
           )}
         </div>
 
-        <div className="mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
+        <div className="hidden mt-5 rounded-[14px] border border-[#dfe8f1] bg-[#f9fbfe] p-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -1689,10 +1717,28 @@ export default function SettingsProperty24Page() {
                 </span>
                 <div>
                   <p className="text-sm font-semibold text-[#24364b]">Property24 login details stay server-side</p>
-                  <p className="mt-1 text-sm leading-5 text-[#6b7d93]">Principals manage the agency number and agent links here.</p>
+                  <p className="mt-1 text-sm leading-5 text-[#6b7d93]">Each agency uses its own credentials. They are encrypted and are never shown again after saving.</p>
                 </div>
               </div>
-              <StatusPill ready={serverCredentialsReady} label="Server credentials configured" />
+              <StatusPill ready={serverCredentialsReady} label={serverCredentialsReady ? 'Organisation credentials saved' : 'Credentials required'} />
+            </div>
+
+            <div className="grid gap-4 rounded-[14px] border border-[#dfe8f1] bg-white p-4 md:grid-cols-3">
+              <Field label="Property24 username">
+                <input className={INPUT_CLASS} autoComplete="off" value={property24Credentials.username} onChange={(event) => setProperty24Credentials((current) => ({ ...current, username: event.target.value }))} />
+              </Field>
+              <Field label="Property24 password">
+                <input className={INPUT_CLASS} type="password" autoComplete="new-password" value={property24Credentials.password} onChange={(event) => setProperty24Credentials((current) => ({ ...current, password: event.target.value }))} />
+              </Field>
+              <Field label="Property24 user group ID (if supplied)">
+                <input className={INPUT_CLASS} autoComplete="off" value={property24Credentials.userGroupId} onChange={(event) => setProperty24Credentials((current) => ({ ...current, userGroupId: event.target.value }))} />
+              </Field>
+              <div className="md:col-span-3 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-xs leading-5 text-[#6b7d93]">Saving replaces this organisation’s previous credentials for the selected environment.</p>
+                <button type="button" className={PRIMARY_BUTTON_CLASS} onClick={saveOrganisationCredentials} disabled={savingCredentials || !settings.agencyId || !property24Credentials.username || !property24Credentials.password}>
+                  <KeyRound className="h-4 w-4" /> {savingCredentials ? 'Saving securely...' : credentialsConfigured ? 'Replace credentials' : 'Save credentials'}
+                </button>
+              </div>
             </div>
 
             <SettingsSectionCard

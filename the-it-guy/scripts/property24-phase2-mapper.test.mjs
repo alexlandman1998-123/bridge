@@ -81,7 +81,6 @@ const missing = createProperty24ListingPlan({
 
 for (const blocker of [
   'missing_property24_agent_id',
-  'missing_agent_source_reference',
   'missing_description',
   'missing_expiry_date',
   'missing_property24_suburb_id',
@@ -137,7 +136,7 @@ assert.equal(sandboxPreviewWithoutAgentId.canPreview, true)
 assert.equal(sandboxPreviewWithoutAgentId.canSubmit, false)
 assert.deepEqual(sandboxPreviewWithoutAgentId.dataBlockers, [])
 assert.ok(sandboxPreviewWithoutAgentId.technicalBlockers.includes('sandbox_property24_agent_id_required_before_submit'))
-assert.ok(sandboxPreviewWithoutAgentId.technicalBlockers.includes('sandbox_agent_source_reference_required_before_submit'))
+assert.ok(sandboxPreviewWithoutAgentId.qualityWarnings.includes('missing_agent_source_reference'))
 assert.deepEqual(sandboxPreviewWithoutAgentId.previewPayload.contactAgentIds, [])
 assert.equal(sandboxPreviewWithoutAgentId.payload, null)
 assert.equal(sandboxPreviewWithoutAgentId.summary.sandboxPayloadTestMode, true)
@@ -158,7 +157,7 @@ const productionWithoutAgentId = createProperty24ListingPlan({
 
 assert.equal(productionWithoutAgentId.canPreview, false)
 assert.ok(productionWithoutAgentId.dataBlockers.includes('missing_property24_agent_id'))
-assert.ok(productionWithoutAgentId.dataBlockers.includes('missing_agent_source_reference'))
+assert.ok(productionWithoutAgentId.qualityWarnings.includes('missing_agent_source_reference'))
 
 const submitReady = createProperty24ListingPlan({
   listing: baseListing,
@@ -209,9 +208,10 @@ const missingResidentialQuality = createProperty24ListingPlan({
   options: { expiryDate: '2026-12-31' },
 })
 
-assert.equal(missingResidentialQuality.canPreview, false)
-for (const blocker of ['missing_marketing_title', 'missing_floor_size', 'missing_bedrooms', 'missing_bathrooms']) {
-  assert.ok(missingResidentialQuality.dataBlockers.includes(blocker), `Expected residential quality blocker ${blocker}`)
+assert.equal(missingResidentialQuality.canPreview, true)
+assert.equal(missingResidentialQuality.canSubmit, true)
+for (const warning of ['missing_marketing_title', 'missing_floor_size', 'missing_bedrooms', 'missing_bathrooms']) {
+  assert.ok(missingResidentialQuality.qualityWarnings.includes(warning), `Expected residential quality warning ${warning}`)
 }
 
 const poaViaPublicationFeature = createProperty24ListingPlan({
