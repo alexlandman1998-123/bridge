@@ -9,6 +9,7 @@ const styles = await readFile(new URL('../src/components/marketing/WebsiteWorksp
 const service = await readFile(new URL('../src/services/websiteWorkspaceService.js', import.meta.url), 'utf8')
 const migration = await readFile(new URL('../../supabase/migrations/20260913094220_website_workspace_sections.sql', import.meta.url), 'utf8')
 const leadOperationsMigration = await readFile(new URL('../../supabase/migrations/20260913115029_website_workspace_lead_operations.sql', import.meta.url), 'utf8')
+const leadWindowRepairMigration = await readFile(new URL('../../supabase/migrations/20260916183940_fix_website_workspace_leads_window.sql', import.meta.url), 'utf8')
 const recoveryMigration = await readFile(new URL('../../supabase/migrations/20260913113900_website_blog_revision_workflow.sql', import.meta.url), 'utf8')
 const blogDraftCloneMigration = await readFile(new URL('../../supabase/migrations/20260916113000_website_blog_draft_clone_integrity.sql', import.meta.url), 'utf8')
 
@@ -104,6 +105,8 @@ assert.match(leadOperationsMigration, /listing_id uuid/i, 'Website lead operatio
 assert.match(leadOperationsMigration, /delivery_detail text/i, 'Website lead operations should surface delivery failures without returning raw payloads.')
 assert.match(leadOperationsMigration, /bridge_has_organisation_membership/i, 'Website lead operations must remain organisation-scoped.')
 assert.match(leadOperationsMigration, /revoke all on function public\.website_workspace_leads/i, 'The replacement operational read model must not be callable publicly.')
+assert.match(leadWindowRepairMigration, /greatest\(1, least\(coalesce\(p_days, 30\), 90\)\)/i, 'The lead read model must calculate its bounded date window with valid PostgreSQL expressions.')
+assert.doesNotMatch(leadWindowRepairMigration, /pg_catalog\.least|pg_catalog\.greatest/i, 'The lead read model must not schema-qualify PostgreSQL least/greatest expressions.')
 assert.ok(!styles.includes('kingdom-hero-v1'), 'The global website overview cannot depend on Kingdom-specific assets.')
 
 console.log('website overview checks passed')
