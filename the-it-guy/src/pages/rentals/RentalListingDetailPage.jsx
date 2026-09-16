@@ -37,7 +37,6 @@ import {
   validateRentalListingEditForm,
 } from '../../services/rentals/rentalListingEditModel'
 import {
-  buildRentalListingDetailPath,
   buildRentalListingDetailView,
   resolveRentalListingDetailTab,
 } from '../../services/rentals/rentalListingDetailModel'
@@ -159,6 +158,42 @@ function DetailPanel({ title, eyebrow, children }) {
         <h2 className="text-lg font-semibold text-[#18324b]">{title}</h2>
       </div>
       <div className="mt-4">{children}</div>
+    </section>
+  )
+}
+
+function ListingDocumentsPanel({ documents = [] }) {
+  const documentRows = Array.isArray(documents) ? documents : []
+  const tenantDocuments = documentRows.filter((document) => /tenant|applicant|application|fica|screening|lease/i.test(String(document.party || document.owner || document.category || document.document_type || document.type || document.name || document.file_name || '')))
+  const landlordDocuments = documentRows.filter((document) => !tenantDocuments.includes(document))
+
+  const renderDocumentList = (rows, emptyMessage) => (
+    rows.length ? (
+      <div className="mt-4 divide-y divide-[#e7eef5] rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-4">
+        {rows.map((document, index) => (
+          <div key={document.id || document.path || `${document.name || document.file_name || 'document'}-${index}`} className="py-3">
+            <p className="text-sm font-semibold text-[#22374d]">{document.name || document.file_name || document.label || document.document_type || 'Listing document'}</p>
+            <p className="mt-1 text-xs text-[#607387]">{document.status || document.created_at || document.createdAt || 'On file'}</p>
+          </div>
+        ))}
+      </div>
+    ) : <p className="mt-4 rounded-[14px] border border-dashed border-[#cbd9e7] bg-[#fbfdff] px-4 py-8 text-center text-sm text-[#607387]">{emptyMessage}</p>
+  )
+
+  return (
+    <section className="grid gap-5 xl:grid-cols-2">
+      <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#607891]">Landlord documents</p>
+        <h2 className="mt-1 text-lg font-semibold text-[#18324b]">Ownership and mandate</h2>
+        <p className="mt-1 text-sm text-[#607387]">Mandates, proof of ownership, and landlord supporting documents.</p>
+        {renderDocumentList(landlordDocuments, 'No landlord documents have been added to this listing yet.')}
+      </article>
+      <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#607891]">Tenant documents</p>
+        <h2 className="mt-1 text-lg font-semibold text-[#18324b]">Application and tenancy</h2>
+        <p className="mt-1 text-sm text-[#607387]">Tenant applications, screening records, and tenancy documents.</p>
+        {renderDocumentList(tenantDocuments, 'No tenant documents have been linked to this listing yet.')}
+      </article>
     </section>
   )
 }
@@ -730,7 +765,6 @@ function RentalTabContent({
   checkingProperty24,
   property24PreviewError,
   onCheckProperty24,
-  onOpenSyndication,
   onOpenMarketing,
   onOpenEdit,
   onOpenApplications,
@@ -738,6 +772,11 @@ function RentalTabContent({
   onProperty24ExpiryChange,
   onSaveProperty24Expiry,
   savingProperty24Expiry,
+  landlordForm,
+  onLandlordChange,
+  onSaveLandlord,
+  savingLandlord,
+  landlordError,
 }) {
   const row = detail.row
   if (activeTab === 'property') {
@@ -754,12 +793,19 @@ function RentalTabContent({
   }
   if (activeTab === 'landlord') {
     return (
-      <DetailPanel eyebrow="Landlord" title="Landlord Relationship">
-        <DetailRow label="Name" value={row.landlordName} />
-        <DetailRow label="Email" value={row.landlordEmail} />
-        <DetailRow label="Phone" value={row.landlordPhone} />
-        <DetailRow label="Client record" value="Not linked" />
-      </DetailPanel>
+      <form onSubmit={onSaveLandlord} className="ui-panel ui-panel-body">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div><p className="text-xs font-semibold uppercase text-[#607891]">Landlord</p><h2 className="text-lg font-semibold text-[#18324b]">Landlord Relationship</h2><p className="mt-1 text-sm text-[#607387]">Update the landlord contact details for this rental listing.</p></div>
+          <button type="submit" className="ui-pill-button ui-pill-button-active" disabled={savingLandlord}>{savingLandlord ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}Save landlord details</button>
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <label className="form-field"><span>Landlord name</span><input value={landlordForm.landlordName || ''} onChange={(event) => onLandlordChange('landlordName', event.target.value)} /></label>
+          <label className="form-field"><span>Landlord email</span><input type="email" value={landlordForm.landlordEmail || ''} onChange={(event) => onLandlordChange('landlordEmail', event.target.value)} /></label>
+          <label className="form-field"><span>Landlord phone</span><input value={landlordForm.landlordPhone || ''} onChange={(event) => onLandlordChange('landlordPhone', event.target.value)} /></label>
+          <SelectField label="Landlord type" name="landlordType" value={landlordForm.landlordType || ''} onChange={(name, value) => onLandlordChange(name, value)} options={RENTAL_SELECT_OPTIONS.landlordType} />
+        </div>
+        {landlordError ? <p className="mt-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{landlordError}</p> : null}
+      </form>
     )
   }
   if (activeTab === 'terms') {
@@ -776,12 +822,7 @@ function RentalTabContent({
     )
   }
   if (activeTab === 'mandate') {
-    return (
-      <DetailPanel eyebrow="Mandate" title="Rental Mandate">
-        <DetailRow label="Status" value={detail.mandateStatusLabel} />
-        <DetailRow label="Next action" value={row.nextAction} />
-      </DetailPanel>
-    )
+    return <ListingDocumentsPanel documents={detail.listing?.documents} />
   }
   if (activeTab === 'inspection') {
     return (
@@ -856,7 +897,7 @@ function RentalTabContent({
 
         <section className="mt-5 grid gap-3 lg:grid-cols-3">
           <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">1. Check</p><button type="button" className="ui-pill-button mt-3 w-full justify-center" onClick={onCheckProperty24} disabled={checkingProperty24}>{checkingProperty24 ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}Preview readiness</button></div>
-          <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Publish</p><button type="button" className="ui-pill-button ui-pill-button-active mt-3 w-full justify-center" onClick={onOpenSyndication}><Send size={16} />Open publish controls</button></div>
+          <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Publish</p><button type="button" className="ui-pill-button ui-pill-button-active mt-3 w-full justify-center" onClick={onPublish} disabled={publishing || !getProperty24PreviewDetails(property24Preview).canSubmit}>{publishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}Publish to Property24</button></div>
           <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">3. Tenant pipeline</p><button type="button" className="ui-pill-button mt-3 w-full justify-center" onClick={onOpenApplications}><Users size={16} />View applications</button></div>
         </section>
         {property24PreviewError ? <p className="mt-4 rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p> : null}
@@ -900,7 +941,8 @@ export default function RentalListingDetailPage() {
   const navigate = useNavigate()
   const params = useParams()
   const listingId = params.listingId || ''
-  const activeTab = resolveRentalListingDetailTab(params.detailTab || 'overview')
+  const routeTab = resolveRentalListingDetailTab(params.detailTab || 'overview')
+  const [activeTab, setActiveTab] = useState(routeTab)
   const workspaceContext = useWorkspace()
   const rentalScope = useMemo(() => resolveRentalWorkspaceScope(workspaceContext), [workspaceContext])
   const organisationId = rentalScope.organisationId
@@ -923,7 +965,9 @@ export default function RentalListingDetailPage() {
   const [deletingListing, setDeletingListing] = useState(false)
 
   const detail = useMemo(() => (listing ? buildRentalListingDetailView(listing) : null), [listing])
-  const rentalWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('rentals'), [])
+  const rentalWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('rentals', {
+    hiddenTabs: ['property', 'features', 'media', 'syndication'],
+  }).map((tab) => tab.key === 'mandate' ? { ...tab, label: 'Documents', shortLabel: 'Documents' } : tab), [])
   const activeRentalWorkspaceTab = useMemo(
     () => resolveRentalListingWorkspaceTabFromDetailTab(activeTab),
     [activeTab],
@@ -970,6 +1014,10 @@ export default function RentalListingDetailPage() {
     void loadListing()
   }, [loadListing])
 
+  useEffect(() => {
+    setActiveTab(routeTab)
+  }, [routeTab])
+
   function openEditPanel() {
     if (listing) setEditForm(buildRentalListingEditForm(listing))
     setEditError('')
@@ -1006,6 +1054,27 @@ export default function RentalListingDetailPage() {
       setSuccessMessage('Rental listing details were saved.')
     } catch (saveError) {
       setEditError(saveError?.message || 'Unable to save rental listing details.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function handleLandlordSave(event) {
+    event.preventDefault()
+    try {
+      setSavingEdit(true)
+      setEditError('')
+      setSuccessMessage('')
+      const result = await updateRentalListingDraft(listingId, editForm, {
+        organisationId,
+        assignedAgentId,
+        performedBy: assignedAgentId,
+      })
+      setListing(result.listing)
+      setEditForm(buildRentalListingEditForm(result.listing))
+      setSuccessMessage('Landlord details were saved.')
+    } catch (saveError) {
+      setEditError(saveError?.message || 'Unable to save landlord details.')
     } finally {
       setSavingEdit(false)
     }
@@ -1138,7 +1207,7 @@ export default function RentalListingDetailPage() {
 
   function openRentalListingWorkspaceTab(tabKey) {
     const target = resolveRentalListingWorkspaceTarget(tabKey)
-    navigate(buildRentalListingDetailPath(row.id, target.detailTab || 'overview'))
+    setActiveTab(target.detailTab || 'overview')
   }
 
   return (
@@ -1245,14 +1314,18 @@ export default function RentalListingDetailPage() {
           checkingProperty24={checkingProperty24}
           property24PreviewError={property24PreviewError}
           onCheckProperty24={handleCheckProperty24Readiness}
-          onOpenSyndication={() => navigate(buildRentalListingDetailPath(row.id, 'syndication'))}
-          onOpenMarketing={() => navigate(buildRentalListingDetailPath(row.id, 'marketing'))}
+          onOpenMarketing={() => setActiveTab('marketing')}
           onOpenEdit={openEditPanel}
-          onOpenApplications={() => navigate(buildRentalListingDetailPath(row.id, 'applications'))}
+          onOpenApplications={() => setActiveTab('applications')}
           property24ExpiryDate={property24ExpiryDate}
           onProperty24ExpiryChange={setProperty24ExpiryDate}
           onSaveProperty24Expiry={handleSaveProperty24Expiry}
           savingProperty24Expiry={savingProperty24Expiry}
+          landlordForm={editForm}
+          onLandlordChange={updateEditForm}
+          onSaveLandlord={handleLandlordSave}
+          savingLandlord={savingEdit}
+          landlordError={editError}
         />
       </div>
     </section>
