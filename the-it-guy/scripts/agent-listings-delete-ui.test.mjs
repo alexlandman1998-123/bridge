@@ -134,7 +134,7 @@ assert(
 assert(
   deletePrivateListingSource.includes(".from('private_listings')") &&
     deletePrivateListingSource.includes(".select('id')") &&
-    deletePrivateListingSource.includes(".eq('id', normalizedId)") &&
+    deletePrivateListingSource.includes(".eq('id', canonical?.id || normalizedId)") &&
     deletePrivateListingSource.includes('The database still contains this listing after the delete request'),
   'permanent deletion must verify the canonical database row is gone before the UI removes local data or reports success.',
 )
@@ -168,9 +168,9 @@ assert(
 
 assert(
   !source.includes('window.confirm(') &&
-    source.includes('const [deleteListingCandidate, setDeleteListingCandidate] = useState(null)') &&
-    source.includes('function requestDeleteListing(card, event)') &&
-    source.includes('title="Delete listing?"'),
+    source.includes('const [listingPendingDeletion, setListingPendingDeletion] = useState(null)') &&
+    source.includes('function requestListingDeletion(card, event)') &&
+    source.includes('Delete permanently'),
   'listing-card deletion should use the in-app confirmation dialog instead of the browser confirmation prompt.',
 )
 

@@ -4,6 +4,7 @@ import {
   createSellerOnboardingCompletionRecord,
   normalizeSellerOnboardingCompletionMode,
 } from '../core/documents/sellerOnboardingCompletionMode'
+import { resolveListingDeletion } from './privateListingDeletion'
 import { MOCK_DATA_ENABLED } from '../lib/mockData'
 import { buildSellerClientPortalLink, buildSellerOnboardingLink, generateSellerOnboardingToken } from '../lib/agentListingStorage'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
@@ -5617,11 +5618,12 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   return updatedListing
 }
 
-export async function deletePrivateListing(listingId, { organisationId = null } = {}) {
+export async function deletePrivateListing(listingId, { organisationId = null, listingReference = null } = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
-  const result = await client.rpc('delete_private_listing', { p_listing_id: normalizedId })
+  const canonical = await resolveListingDeletion(client, normalizedId, { organisationId, listingReference })
+  const result = await client.rpc('delete_private_listing', { p_listing_id: canonical?.id || normalizedId })
   if (result.error) {
     if (isPermissionDeniedError(result.error)) {
       throw new Error('You do not have permission to permanently delete this listing. Ask its assigned agent or an organisation administrator.')
@@ -5636,7 +5638,7 @@ export async function deletePrivateListing(listingId, { organisationId = null } 
   const verification = await client
     .from('private_listings')
     .select('id')
-    .eq('id', normalizedId)
+    .eq('id', canonical?.id || normalizedId)
     .maybeSingle()
   if (verification.error) {
     throw new Error(`The listing delete could not be verified: ${verification.error.message || 'database verification failed.'}`)
