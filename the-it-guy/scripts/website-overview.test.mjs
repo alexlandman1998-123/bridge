@@ -76,6 +76,7 @@ assert.ok(component.includes('Changes remain private until the website revision 
 assert.ok(component.includes('wlo-blog-card-grid') && component.includes('All posts'), 'Blog management should open from a visual card library.')
 assert.ok(marketingPage.includes('blog-edit') && component.includes('onOpenEditor') && component.includes('Saved just now'), 'A selected post should open a focused editor route with an autosave state.')
 assert.ok(component.includes('blogValidationMessage') && component.includes('Complete required fields'), 'The editor should reject invalid local article content before attempting an autosave request.')
+assert.ok(component.includes("Add a featured image before saving this article."), 'The editor should require a featured image before a public article can be saved.')
 assert.ok(component.includes('Publication date and time') && component.includes('Schedule post') && !component.includes('Schedule date and time (for example'), 'Scheduling should use a validated date control rather than a browser prompt.')
 assert.ok(component.includes('BlogRenderedPreview') && component.includes('wlo-rendered-preview'), 'Preview mode should render the article blocks rather than only showing editor metadata.')
 assert.ok(component.includes('blogSlugFromTitle') && component.includes("field === 'title' && !current.slug"), 'A new article URL should be generated from its title without overwriting an edited slug.')

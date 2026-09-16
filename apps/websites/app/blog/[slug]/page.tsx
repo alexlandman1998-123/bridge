@@ -12,6 +12,9 @@ function readingMinutes(body: string) {
 function publishDate(value: string) {
   return new Date(value).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Africa/Johannesburg' })
 }
+function comparableCopy(value: string) {
+  return value.trim().toLocaleLowerCase().replace(/\s+/g, ' ')
+}
 async function load(params: Props['params']) {
   const [site, { slug }] = await Promise.all([resourceSite(), params])
   const article = await getPublicBlogPost(site, slug)
@@ -43,7 +46,9 @@ export default async function ArticlePage({ params }: Props) {
   const related = allPosts.filter(item => item.slug !== article.slug).slice(0, 2)
   const propertiesById = new Map(properties.map((property) => [property.id, property]))
   const blocks = article.contentBlocks.length ? article.contentBlocks : article.body.split(/\n{2,}/).map((text, index) => ({ id: `legacy-${index}`, type: 'paragraph' as const, text: text.trim() })).filter(block => block.text)
-  return <ResourceShell site={site} href="/blog"><article><header className={`${styles.intro} ${styles.articleIntro}`}><Link href="/blog" className={styles.back}>← Back to the journal</Link><p className={styles.eyebrow}>PROPERTY JOURNAL</p><div className={styles.articleMeta}><span>{article.authorName || site.name}</span><span>{readingMinutes(article.body)} min read</span><time dateTime={article.publishedAt}>{publishDate(article.publishedAt)}</time></div><h1>{article.title}</h1><p className={styles.articleDeck}>{article.summary}</p></header>{article.coverImageUrl ? <figure className={styles.articleHero}><Image src={article.coverImageUrl} alt={article.coverImageAlt || ''} fill priority sizes="(max-width: 1240px) 100vw, 1240px" /></figure> : null}<div className={styles.prose}>{blocks.length ? blocks.map((block) => {
+  const renderedBlocks = blocks.filter((block, index) => !(index === 0 && block.type === 'paragraph' && article.summary && comparableCopy(block.text || '') === comparableCopy(article.summary)))
+  const longTitle = article.title.length > 72
+  return <ResourceShell site={site} href="/blog"><article><header className={`${styles.intro} ${styles.articleIntro} ${!article.coverImageUrl ? styles.articleIntroNoHero : ''} ${longTitle ? styles.articleIntroLongTitle : ''}`}><Link href="/blog" className={styles.back}>← Back to the journal</Link><p className={styles.eyebrow}>PROPERTY JOURNAL</p><div className={styles.articleMeta}><span>{article.authorName || site.name}</span><span>{readingMinutes(article.body)} min read</span><time dateTime={article.publishedAt}>{publishDate(article.publishedAt)}</time></div><h1>{article.title}</h1><p className={styles.articleDeck}>{article.summary}</p></header>{article.coverImageUrl ? <figure className={styles.articleHero}><Image src={article.coverImageUrl} alt={article.coverImageAlt || ''} fill priority sizes="(max-width: 1240px) 100vw, 1240px" /></figure> : null}<div className={styles.prose}>{renderedBlocks.length ? renderedBlocks.map((block) => {
     if (block.type === 'heading_2') return <h2 key={block.id}>{block.text}</h2>
     if (block.type === 'heading_3') return <h3 key={block.id}>{block.text}</h3>
     if (block.type === 'quote') return <blockquote key={block.id}>{block.text}</blockquote>

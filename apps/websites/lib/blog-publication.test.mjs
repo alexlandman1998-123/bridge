@@ -61,6 +61,12 @@ test('the public repository selects structured blocks and publishing lifecycle f
   assert.match(repository, /applyBlogMediaAssets\(posts, assets \|\| \[\]\)/)
 })
 
+test('the public article template handles repeated introductions and long image-less articles deliberately', () => {
+  const articlePage = readFileSync(new URL('../app/blog/[slug]/page.tsx', import.meta.url), 'utf8')
+  assert.match(articlePage, /renderedBlocks.*comparableCopy/s)
+  assert.match(articlePage, /articleIntroNoHero.*articleIntroLongTitle/s)
+})
+
 test('archived and future scheduled articles remain out of the public route', () => {
   const visible = visiblePublishedBlogPosts([
     { ...post, id: 'archived', lifecycle_status: 'archived' },
