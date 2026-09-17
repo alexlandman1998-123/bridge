@@ -16,6 +16,7 @@ import {
 import {
   runPrivatePropertyPostSubmitMonitor,
 } from '../services/privatePropertyPostSubmitMonitorService.js'
+import { updatePrivatePropertyListingStatus } from '../services/privatePropertyListingStatusUpdateService.js'
 import {
   buildSyndicationChannelPreflight,
   fetchSyndicationChannelPreflightInput,
@@ -154,6 +155,9 @@ function matchPrivatePropertyRoute(requestUrl, routeParams = {}) {
   if (routeParts[0] === 'listings' && routeParts[2] === 'status') {
     return { name: 'listingStatus', listingId: normalizePrivatePropertyText(routeParams.listingId || routeParts[1]) }
   }
+  if (routeParts[0] === 'listings' && routeParts[2] === 'status-update') {
+    return { name: 'updateListingStatus', listingId: normalizePrivatePropertyText(routeParams.listingId || routeParts[1]) }
+  }
   if (routeParts[0] === 'listings' && routeParts[2] === 'syndication-review') {
     return { name: 'syndicationReview', listingId: normalizePrivatePropertyText(routeParams.listingId || routeParts[1]) }
   }
@@ -207,7 +211,7 @@ function getMissingConfiguration(config = {}, needs = {}) {
 }
 
 function canUseBrowserPrivatePropertyListingAuth({ headers = {}, config = {}, route = {} } = {}) {
-  return ['previewListing', 'publishListing', 'listingStatus', 'syndicationReview'].includes(route?.name) &&
+  return ['previewListing', 'publishListing', 'listingStatus', 'updateListingStatus', 'syndicationReview'].includes(route?.name) &&
     Boolean(getBearerToken(headers) && config.supabaseUrl && config.serviceRoleKey)
 }
 
@@ -396,6 +400,7 @@ export async function createPrivatePropertyApiResponse({
     const buildReadiness = dependencies.buildReadiness || buildPrivatePropertyGoLiveReadinessReport
     const runControlledPublish = dependencies.runControlledPublish || runPrivatePropertyControlledPublishRehearsal
     const runPostSubmitMonitor = dependencies.runPostSubmitMonitor || runPrivatePropertyPostSubmitMonitor
+    const updateListingStatus = dependencies.updateListingStatus || updatePrivatePropertyListingStatus
     const fetchSyndicationPreflightInput = dependencies.fetchSyndicationPreflightInput || fetchSyndicationChannelPreflightInput
     const buildSyndicationPreflight = dependencies.buildSyndicationPreflight || buildSyndicationChannelPreflight
     const supabase = createSupabase(config)
@@ -472,6 +477,17 @@ export async function createPrivatePropertyApiResponse({
         monitor,
         report: monitor,
       })
+    }
+
+    if (route.name === 'updateListingStatus') {
+      const update = await updateListingStatus({
+        client: supabase,
+        listingId: config.listingId,
+        environment: config.environment,
+        propertyStatus: normalizePrivatePropertyText(payload.propertyStatus || 'Inactive') || 'Inactive',
+        secrets: env || getRuntimeEnv(),
+      })
+      return buildJsonResponse(200, { route: route.name, listingId: config.listingId, update, report: update })
     }
 
     return buildJsonResponse(404, { error: 'not_found', message: 'Private Property API route was not found.' })

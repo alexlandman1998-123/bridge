@@ -32,15 +32,14 @@ const BUYER_STAGE_META = Object.freeze({
 })
 
 const SELLER_STAGES = Object.freeze([
-  ['lead', 'Lead', 'Lead', 'New seller leads needing qualification.'],
-  ['valuation_scheduled', 'Valuation Scheduled', 'Appointment Scheduled', 'Valuation booked or being arranged.'],
-  ['mandate_signed', 'Mandate Signed', 'Mandate Signed', 'Mandate signed and ready to list.'],
-  ['listing_active', 'Listing Active', 'Converted To Listing', 'Property listed and being marketed.'],
-  ['offer_received', 'Offer Received', 'Offer Submitted', 'Offer received from a buyer.'],
-  ['deal_otp', 'Deal / OTP', 'Deal Created', 'Deal created or OTP in motion.'],
-  ['transfer', 'Transfer', 'Transfer', 'Transfer process in progress.'],
-  ['registered', 'Registered', 'Registered / Closed', 'Transaction successfully registered.'],
-  ['lost', 'Lost', 'Lost', 'Lead closed or no longer active.'],
+  ['new_lead', 'New Lead', 'New Lead', 'New seller leads ready for first contact.'],
+  ['contacted', 'Contacted', 'Contacted', 'Seller contact has been made.'],
+  ['seller_onboarding_sent', 'Onboarding Sent', 'Onboarding Sent', 'Seller onboarding is ready for completion.'],
+  ['seller_onboarding_submitted', 'Onboarding Submitted', 'Onboarding Submitted', 'Seller details are submitted and under review.'],
+  ['mandate_signed', 'Mandate Signed', 'Mandate Signed', 'Signed mandate is on file.'],
+  ['listing_created', 'Listing Created', 'Listing Created', 'The listing is being prepared for market.'],
+  ['listing_live', 'Listing Live', 'Listing Live', 'The property is live and being marketed.'],
+  ['documents_submitted', 'All Documents Submitted', 'All Documents Submitted', 'The seller pack is complete.'],
 ])
 
 function normalizeText(value = '') {

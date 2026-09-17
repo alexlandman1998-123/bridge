@@ -44,6 +44,12 @@
 .ww-create-site h3 { color: #1e3b2c; font-size: 1.28rem; margin: 5px 0 8px; }
 .ww-create-site p { color: #5e7166; font-size: .87rem; line-height: 1.55; margin: 0 0 8px; }
 .ww-create-site small { color: #74847b; display: block; font-size: .74rem; line-height: 1.45; }
+.ww-template-select { align-items: center; background: #f7fafc; border: 1px solid #d8e3ea; display: flex; gap: 28px; justify-content: space-between; margin-bottom: 18px; padding: clamp(18px, 3vw, 26px); }
+.ww-template-select > div { max-width: 680px; }
+.ww-template-select h3 { color: #20394c; font-size: 1.08rem; margin: 5px 0 8px; }
+.ww-template-select p { color: #617687; font-size: .84rem; line-height: 1.55; margin: 0; }
+.ww-template-select label { color: #526b7d; display: grid; font-size: .72rem; font-weight: 750; gap: 6px; min-width: 190px; }
+.ww-template-select select { background: #fff; border: 1px solid #cbd9e3; border-radius: 6px; color: #29465b; font: inherit; min-height: 40px; padding: 8px; }
 .ww-publish-actions { align-items: center; background: #edf5ef; border: 1px solid #d9e9dd; display: flex; gap: 14px; justify-content: flex-end; margin-top: 18px; padding: 14px; }
 .ww-publish-actions > div { display: grid; gap: 4px; margin-right: auto; }
 .ww-publish-actions strong { color: #21492f; font-size: .84rem; }

@@ -42,7 +42,7 @@ test('builds an independent organisation-owned native draft with lineage', () =>
   const source = nativeSource()
   const clone = buildOrganisationTemplateCloneInput(source, {
     templateLabel: 'Our Seller Mandate',
-    variantLabel: 'Sole mandate',
+    variantLabel: 'Exclusive mandate',
     now: 1_800_000_000_000,
   })
 

@@ -1,197 +1,973 @@
-import assert from 'node:assert/strict'
-import fs from 'node:fs/promises'
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
 
-const canvassingPageSource = await fs.readFile(new URL('../src/pages/PipelineCanvassingPage.jsx', import.meta.url), 'utf8')
-const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
-const csvImportSource = await fs.readFile(new URL('../src/lib/csvImport.js', import.meta.url), 'utf8')
-const canvassingWorkspaceTabsSource = await fs.readFile(new URL('../src/components/canvassing/CanvassingWorkspaceTabs.jsx', import.meta.url), 'utf8')
-const propertySearchWorkspaceSource = await fs.readFile(new URL('../src/components/canvassing/PropertySearchWorkspace.jsx', import.meta.url), 'utf8')
-const moduleSegmentedNavSource = await fs.readFile(new URL('../src/components/ui/ModuleSegmentedNav.jsx', import.meta.url), 'utf8')
-const propertyReportsWorkspaceSource = await fs.readFile(new URL('../src/components/canvassing/PropertyReportsWorkspace.jsx', import.meta.url), 'utf8')
-const propertyReportCanvassingSource = await fs.readFile(new URL('../src/services/propertyIntelligence/propertyReportCanvassing.js', import.meta.url), 'utf8')
-const mockParcelMapSource = await fs.readFile(new URL('../src/components/canvassing/MockParcelMap.jsx', import.meta.url), 'utf8')
-const propertyReportBasketSource = await fs.readFile(new URL('../src/components/canvassing/PropertyReportBasket.jsx', import.meta.url), 'utf8')
-const propertyProviderStatusSource = await fs.readFile(new URL('../src/components/canvassing/PropertyDataProviderStatus.jsx', import.meta.url), 'utf8')
-const httpPropertyProviderSource = await fs.readFile(new URL('../src/services/propertyIntelligence/httpPropertyDataProvider.js', import.meta.url), 'utf8')
-const knowledgeFactoryPropertyPanelSource = await fs.readFile(new URL('../src/components/canvassing/KnowledgeFactoryPropertyPanel.jsx', import.meta.url), 'utf8')
-const knowledgeFactoryReportsWorkspaceSource = await fs.readFile(new URL('../src/components/canvassing/KnowledgeFactoryReportsWorkspace.jsx', import.meta.url), 'utf8')
-const knowledgeFactoryOperationsWorkspaceSource = await fs.readFile(new URL('../src/components/canvassing/KnowledgeFactoryOperationsWorkspace.jsx', import.meta.url), 'utf8')
-const knowledgeFactoryOperationsServiceSource = await fs.readFile(new URL('../src/services/propertyIntelligence/knowledgeFactoryOperationsService.js', import.meta.url), 'utf8')
-const knowledgeFactoryMapApiSource = await fs.readFile(new URL('../api/knowledge-factory/map.js', import.meta.url), 'utf8')
-const knowledgeFactoryReportsApiSource = await fs.readFile(new URL('../api/knowledge-factory/reports.js', import.meta.url), 'utf8')
+const canvassingPageSource = await fs.readFile(
+  new URL("../src/pages/PipelineCanvassingPage.jsx", import.meta.url),
+  "utf8",
+);
+const appSource = await fs.readFile(
+  new URL("../src/App.jsx", import.meta.url),
+  "utf8",
+);
+const csvImportSource = await fs.readFile(
+  new URL("../src/lib/csvImport.js", import.meta.url),
+  "utf8",
+);
+const canvassingWorkspaceTabsSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/CanvassingWorkspaceTabs.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const propertySearchWorkspaceSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/PropertySearchWorkspace.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const moduleSegmentedNavSource = await fs.readFile(
+  new URL("../src/components/ui/ModuleSegmentedNav.jsx", import.meta.url),
+  "utf8",
+);
+const propertyReportsWorkspaceSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/PropertyReportsWorkspace.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const propertyReportCanvassingSource = await fs.readFile(
+  new URL(
+    "../src/services/propertyIntelligence/propertyReportCanvassing.js",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const mockParcelMapSource = await fs.readFile(
+  new URL("../src/components/canvassing/MockParcelMap.jsx", import.meta.url),
+  "utf8",
+);
+const propertyReportBasketSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/PropertyReportBasket.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const propertyProviderStatusSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/PropertyDataProviderStatus.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const httpPropertyProviderSource = await fs.readFile(
+  new URL(
+    "../src/services/propertyIntelligence/httpPropertyDataProvider.js",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const knowledgeFactoryPropertyPanelSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/KnowledgeFactoryPropertyPanel.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const knowledgeFactoryReportsWorkspaceSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/KnowledgeFactoryReportsWorkspace.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const knowledgeFactoryOperationsWorkspaceSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/KnowledgeFactoryOperationsWorkspace.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const knowledgeFactoryOperationsServiceSource = await fs.readFile(
+  new URL(
+    "../src/services/propertyIntelligence/knowledgeFactoryOperationsService.js",
+    import.meta.url,
+  ),
+  "utf8",
+);
+const knowledgeFactoryMapApiSource = await fs.readFile(
+  new URL("../api/knowledge-factory/map.js", import.meta.url),
+  "utf8",
+);
+const knowledgeFactoryReportsApiSource = await fs.readFile(
+  new URL("../api/knowledge-factory/reports.js", import.meta.url),
+  "utf8",
+);
 
-assert.match(appSource, /path="\/pipeline\/canvassing\/prospects\/:prospectId"/, 'residential canvassing prospects should have a routed workspace page')
-assert.match(appSource, /path="\/pipeline\/canvassing\/property-search"/, 'residential canvassing should expose a routed property search workspace')
-assert.match(appSource, /path="\/pipeline\/canvassing\/property-reports"/, 'residential canvassing should expose a routed property reports workspace')
-assert.match(appSource, /path="\/pipeline\/canvassing\/fica-kyc"/, 'residential canvassing should expose the FICA/KYC workspace route')
-assert.match(appSource, /path="\/pipeline\/canvassing\/lookup-approvals"/, 'residential canvassing should expose the lookup approvals workspace route')
-assert.match(appSource, /path="\/pipeline\/canvassing\/operations"/, 'residential canvassing should expose the operations workspace route')
-assert.match(canvassingWorkspaceTabsSource, /label: 'Prospects'/, 'canvassing workspace navigation should expose the prospects mode')
-assert.match(canvassingWorkspaceTabsSource, /Property Search/, 'canvassing workspace navigation should expose property search')
-assert.match(canvassingWorkspaceTabsSource, /label: 'Reports'/, 'canvassing workspace navigation should expose reports')
-assert.match(canvassingWorkspaceTabsSource, /ModuleSegmentedNav/, 'canvassing workspace navigation should use the shared segmented module navigation')
-assert.match(canvassingWorkspaceTabsSource, /ariaLabel="Canvassing tools"/, 'canvassing workspace navigation should identify its purpose to assistive technology')
-assert.match(moduleSegmentedNavSource, /gridTemplateColumns: `repeat\(\$\{Math\.max\(items\.length, 1\)\}, minmax\(0, 1fr\)\)`/, 'segmented module navigation should keep all tools in one row')
-assert.match(moduleSegmentedNavSource, /NavLink/, 'segmented module navigation should preserve route-aware active states')
-assert.match(canvassingPageSource, /activeCanvassingWorkspace === 'property-search'/, 'canvassing should resolve and render the property search workspace from its URL')
-assert.match(canvassingPageSource, /activeCanvassingWorkspace === 'property-reports'/, 'canvassing should resolve and render the property reports workspace from its URL')
-assert.match(canvassingPageSource, /activeCanvassingWorkspace === 'operations'/, 'canvassing should resolve and render the operations workspace from its URL')
-assert.match(canvassingPageSource, /activeCanvassingWorkspace === 'prospects'[\s\S]*Buyer Prospects[\s\S]*Seller Prospects/, 'buyer and seller controls should remain scoped to current prospects')
-assert.match(propertySearchWorkspaceSource, /data-canvassing-workspace="property-search"/, 'property search should be isolated in its own workspace component')
-assert.match(propertySearchWorkspaceSource, /propertyDataProvider\.getPropertiesInBounds/, 'property search should load visible parcels through the Phase 2 provider contract')
-assert.match(propertySearchWorkspaceSource, /Search address, suburb, estate or erf number/, 'property search should expose the intended property query input')
-assert.match(propertySearchWorkspaceSource, /Filter by property type/, 'property search should expose property filters')
-assert.match(propertySearchWorkspaceSource, /selectedProperties/, 'property search should retain a multi-property selection')
-assert.match(propertySearchWorkspaceSource, /PropertyReportBasket/, 'property search should connect selected parcels to the report basket')
-assert.match(propertySearchWorkspaceSource, /KnowledgeFactoryPropertyPanel/, 'connected parcel search should keep a selected parcel in the canvassing workspace panel')
-assert.doesNotMatch(propertySearchWorkspaceSource, /onPrepareReport=\{\(property\) => navigate\('\/pipeline\/canvassing\/property-reports'/, 'connected parcel selection should not redirect an agent to reports')
-assert.match(knowledgeFactoryPropertyPanelSource, /data-testid="knowledge-factory-property-panel"/, 'connected parcel search should render a stable property overview panel')
-assert.match(knowledgeFactoryPropertyPanelSource, /Property snapshot[\s\S]*Municipal valuation/, 'the property panel should explain the two safe initial report sections')
-assert.match(knowledgeFactoryPropertyPanelSource, /No supplier request has been made|does not request supplier data or use credits/, 'property panel review should be non-chargeable')
-assert.match(knowledgeFactoryPropertyPanelSource, /Prepare report[\s\S]*remain in Canvassing/, 'the property panel should make report handoff deliberate and keep the agent in Canvassing')
-assert.match(propertySearchWorkspaceSource, /state: \{ propertyId: focusedParcel\.propertyId \|\| focusedParcel\.id, reportTypes: knowledgeFactoryReportTypes \}/, 'the report builder should receive the selected parcel and report sections')
-assert.match(knowledgeFactoryReportsWorkspaceSource, /selectedReportTypes\(location\.state\?\.reportTypes\)/, 'the report builder should prefill safe report sections from the map panel')
-assert.match(knowledgeFactoryReportsWorkspaceSource, /getKnowledgeFactoryReportStatus/, 'the report builder should check its own named-user access before enabling a quote')
-assert.match(knowledgeFactoryReportsWorkspaceSource, /Controlled UAT/, 'the report builder should identify the current controlled testing stage')
-assert.match(knowledgeFactoryOperationsWorkspaceSource, /UAT guardrails/, 'operations should explain the controlled UAT safeguards to administrators')
-assert.match(knowledgeFactoryOperationsWorkspaceSource, /Recent audited activity/, 'operations should surface audit evidence for UAT review')
-assert.match(knowledgeFactoryOperationsServiceSource, /mode: 'controlled_uat'/, 'operations should model the Knowledge Factory rollout as controlled UAT')
-assert.match(knowledgeFactoryMapApiSource, /mode: 'controlled_uat'/, 'map status should identify the controlled UAT mode without calling the supplier')
-assert.match(knowledgeFactoryReportsApiSource, /action === 'status'/, 'reports should expose a non-chargeable access status check')
-assert.match(propertySearchWorkspaceSource, /propertyDataProvider\.priceReports/, 'Phase 4 should price report selections through the provider contract')
-assert.match(propertySearchWorkspaceSource, /propertyDataProvider\.requestReports/, 'Phase 4 should submit simulated report orders through the provider contract')
-assert.match(propertySearchWorkspaceSource, /propertyDataProvider\.getReportOrders/, 'Phase 4 should poll simulated report order status through the provider contract')
-assert.match(propertySearchWorkspaceSource, /status: 'submitting'/, 'Phase 4 should expose an immediate report-order submission state')
-assert.match(mockParcelMapSource, /data-testid="mock-parcel-map"/, 'Phase 3 should render a dedicated interactive mock parcel map')
-assert.match(mockParcelMapSource, /parcelBoundary/, 'the mock map should draw provider parcel boundaries')
-assert.match(mockParcelMapSource, /role="button"[\s\S]*tabIndex="0"/, 'map parcels should be keyboard focusable')
-assert.match(mockParcelMapSource, /Add to selection/, 'property previews should support adding a parcel to the selection')
-assert.match(mockParcelMapSource, /Indicative value/, 'property previews should expose public indicative property context')
-assert.doesNotMatch(mockParcelMapSource, /registeredOwner|reportData/, 'map previews should not expose report-only ownership data')
-assert.match(propertyReportBasketSource, /Report basket/, 'the Phase 3 property search workspace should expose a report basket')
-assert.match(propertyReportBasketSource, /onRemoveProperty/, 'selected parcels should be removable from the report basket')
-assert.match(propertyReportBasketSource, /Select reports/, 'Phase 4 should expose report product selection')
-assert.match(propertyReportBasketSource, /Indicative demo pricing/, 'Phase 4 should show a provider-calculated indicative quote')
-assert.match(propertyReportBasketSource, /Pull \$\{properties\.length \|\| 0\}/, 'Phase 4 should expose the simulated property report action')
-assert.match(propertyReportBasketSource, /Simulation only — nothing will be charged/, 'Phase 4 should clearly state that no real charge occurs')
-assert.match(propertyReportBasketSource, /Property reports are ready/, 'Phase 4 should confirm completed simulated reports')
-assert.match(propertyReportsWorkspaceSource, /data-canvassing-workspace="property-reports"/, 'property reports should be isolated in its own workspace component')
-assert.match(propertyReportsWorkspaceSource, /propertyDataProvider\.getReportOrders/, 'Phase 5 should load organisation-scoped report history through the provider contract')
-assert.match(propertyReportsWorkspaceSource, /propertyDataProvider\.getReportOrder/, 'Phase 5 should retrieve report-only detail through the provider contract')
-assert.match(propertyReportsWorkspaceSource, /Deeds summary/, 'Phase 5 should render a deeds summary in the report viewer')
-assert.match(propertyReportsWorkspaceSource, /Transfer history/, 'Phase 5 should render transfer history in the report viewer')
-assert.match(propertyReportsWorkspaceSource, /Indicative property valuation/, 'Phase 5 should render indicative valuation details')
-assert.match(propertyReportsWorkspaceSource, /Fictional owner identity/, 'Phase 5 should label demonstration ownership information explicitly')
-assert.match(propertyReportsWorkspaceSource, /Add to Canvassing/, 'Phase 6 should expose property-report conversion into canvassing')
-assert.match(propertyReportsWorkspaceSource, /createCanvassingProspect/, 'Phase 6 should persist report-derived prospects through the existing canvassing repository')
-assert.match(propertyReportsWorkspaceSource, /createCanvassingActivity/, 'Phase 6 should record a report-derived prospect creation activity')
-assert.match(propertyReportsWorkspaceSource, /Create seller prospect/, 'Phase 6 should provide a review step before creating a report-derived seller prospect')
-assert.match(propertyReportsWorkspaceSource, /isPropertyReportAlreadyCanvassed/, 'Phase 6 should guard against converting the same property report twice')
-assert.match(propertyReportsWorkspaceSource, /View Current Prospects/, 'Phase 6 should provide a direct route to the newly updated prospect list')
-assert.match(propertyReportCanvassingSource, /source: 'Property Intelligence'/, 'report-derived prospects should retain their property-intelligence source')
-assert.match(propertyReportCanvassingSource, /canvassingMethod: 'Area Farming'/, 'report-derived prospects should enter the area-farming canvassing workflow')
-assert.match(propertyReportCanvassingSource, /fictional demonstration data/, 'report-derived prospects should retain an explicit demo-data notice')
-assert.match(canvassingPageSource, /onProspectCreated=\{handlePropertyReportProspectCreated\}/, 'the parent canvassing workspace should receive report-created prospects immediately')
-assert.match(canvassingPageSource, /propertyIntelligence: \{ tone: 'blue', label: 'Property Intelligence' \}/, 'report-derived prospects should retain a visible Property Intelligence source pill')
-assert.match(propertySearchWorkspaceSource, /data-property-provider-mode/, 'Phase 7 should expose provider mode beside the property search results')
-assert.match(propertySearchWorkspaceSource, /DEMO DATA/, 'mock property intelligence should use a compact demonstration indicator')
-assert.match(propertySearchWorkspaceSource, /Records are fictional and no live provider charges apply/, 'the compact demo tooltip should remain commercially safe')
-assert.match(propertyProviderStatusSource, /data-property-provider-mode/, 'Phase 7 provider status should expose a stable mode marker')
-assert.match(propertyProviderStatusSource, /Fictional records • No live provider charges/, 'mock mode should remain explicit and commercially safe')
-assert.match(propertyReportBasketSource, /provider’s report charges may apply/, 'Phase 7 connected mode should require charge acknowledgement')
-assert.match(propertyReportBasketSource, /isDemoData \|\| liveOrderConfirmed/, 'connected report ordering should fail closed until the charge acknowledgement is selected')
-assert.match(httpPropertyProviderSource, /credentials: 'include'/, 'Phase 7 API requests should use the authenticated Arch9 server session')
-assert.match(httpPropertyProviderSource, /X-Arch9-Property-Client/, 'Phase 7 API requests should carry a stable client marker')
-assert.doesNotMatch(httpPropertyProviderSource, /Bearer|api[_-]?key/i, 'the browser adapter must not contain vendor authentication credentials')
-assert.match(propertyReportsWorkspaceSource, /No property reports yet/, 'Phase 5 should provide a useful empty report-history state')
-assert.match(canvassingPageSource, /createAgencyCrmLeadRecord/, 'residential canvassing should create CRM lead records when converting prospects')
-assert.match(canvassingPageSource, /createLeadRequirement/, 'converted buyer canvassing prospects should create lead qualification requirements')
-assert.match(canvassingPageSource, /listLeadRequirements/, 'converted buyer canvassing prospects should avoid duplicate qualification snapshots when repairing existing converted leads')
-assert.match(canvassingPageSource, /existingPrimaryRequirement \|\| existingRequirements\[0\]/, 'canvassing lead repair should reuse an existing qualification requirement before creating a new one')
-assert.doesNotMatch(canvassingPageSource, /existingConvertedLeadId \? null : await createLeadRequirementFromConvertedProspect/, 'converted lead repair should no longer skip buyer qualification snapshot backfill')
-assert.match(canvassingPageSource, /buildLeadRequirementFromCanvassingProspect/, 'canvassing conversion should map prospect qualification fields into the lead requirement snapshot')
-assert.match(canvassingPageSource, /writeCanvassingQualificationNoteValue\(prospect\.notes, 'Needs to sell', needsToSellLabel\)/, 'converted buyer requirements should preserve needs-to-sell in qualification notes')
-assert.match(canvassingPageSource, /readCanvassingQualificationNoteValue\(prospect\.notes, 'Bathrooms'\)/, 'converted buyer requirements should preserve bathroom minimums from canvassing qualification notes')
-assert.match(canvassingPageSource, /writeCanvassingQualificationNoteValue\([\s\S]*'Current property'/, 'buyer canvassing imports should preserve current-property qualification context')
-assert.match(canvassingPageSource, /leadCategory: normalizedCategory/, 'converted canvassing prospects should preserve normalized buyer or seller lead category')
-assert.match(canvassingPageSource, /leadSource: 'Canvassing'/, 'converted canvassing prospects should retain Canvassing as the lead source')
-assert.match(canvassingPageSource, /sellerPropertyAddress: normalizedCategory === 'seller'/, 'seller prospects should carry the seller property address into the lead payload')
-assert.match(canvassingPageSource, /navigate\(`\/pipeline\/leads\/\$\{targetLeadId\}`/, 'converted canvassing prospects should navigate to the created lead workspace')
-assert.match(canvassingPageSource, /useParams/, 'canvassing prospect workspace should read the prospect id from the route')
-assert.match(canvassingPageSource, /navigate\(`\/pipeline\/canvassing\/prospects\/\$\{next\.id\}`\)/, 'opening a canvassing prospect should navigate to its routed workspace')
-assert.doesNotMatch(canvassingPageSource, /open=\{detailOpen\}/, 'canvassing prospect details should no longer open in a modal popup')
-assert.match(canvassingPageSource, /PROSPECT_DETAIL_TABS[\s\S]*Overview[\s\S]*Qualification[\s\S]*Activity[\s\S]*Conversion/, 'canvassing prospect workspace should be organised into Overview, Qualification, Activity, and Conversion tabs')
-assert.match(canvassingPageSource, /activeProspectTab === 'activity'/, 'canvassing prospect workspace should show activity as a dedicated tab panel')
-assert.match(canvassingPageSource, /activeProspectTab === 'conversion'/, 'canvassing prospect workspace should show conversion as a dedicated tab panel')
-assert.doesNotMatch(canvassingPageSource, /<p className="text-xs font-semibold uppercase tracking-\[0\.12em\] text-slate-400">Canvassing Prospect<\/p>/, 'routed canvassing prospect workspace should not render the redundant top header card')
-assert.match(canvassingPageSource, /Prospect saved successfully\./, 'saving prospect details should show an in-workspace success confirmation')
-assert.match(canvassingPageSource, /isProspectSaving \? 'Saving\.\.\.' : prospectSaveNotice \? 'Saved' : 'Save Prospect'/, 'save prospect button should reflect saving and saved states')
-assert.match(canvassingPageSource, /selectedProspectAreas/, 'buyer qualification should support multiple area chips')
-assert.match(canvassingPageSource, /AreaAutocomplete/, 'buyer qualification area chips should use the saved area autocomplete for cleaner listing matching')
-assert.match(canvassingPageSource, /handleAreaSuggestionChange/, 'buyer qualification should add selected saved areas directly into the prospect area chips')
-assert.match(canvassingPageSource, /handleAddSelectedProspectArea/, 'buyer qualification should allow agents to add areas one at a time')
-assert.match(canvassingPageSource, /handleRemoveSelectedProspectArea/, 'buyer qualification should allow agents to remove area chips')
-assert.match(canvassingPageSource, /Quick log, convert, archive or delete\./, 'canvassing prospect workspace should keep a lightweight side action menu')
-assert.match(canvassingPageSource, /Quick log, convert, archive or delete\.[\s\S]*handleConvertProspectToLead\(\)/, 'prospect side action menu should expose conversion without leaving the workspace')
-assert.match(canvassingPageSource, /handleQuickLogActivity\(selectedProspect, 'Call'\)/, 'prospect side action menu should support one-click call logging')
-assert.match(canvassingPageSource, /openArchiveProspectModal\(selectedProspect\.id\)/, 'prospect side action menu should expose archive without leaving the workspace')
-assert.match(canvassingPageSource, /openDeleteProspectModal\(selectedProspect\.id\)/, 'prospect side action menu should expose delete without leaving the workspace')
-assert.match(canvassingPageSource, /function getCanvassingActionMenuPosition/, 'canvassing table action menu should calculate viewport-aware positioning')
-assert.match(canvassingPageSource, /spaceBelow < menuHeight && triggerRect\.top > spaceBelow/, 'canvassing table action menu should open above the trigger when there is not enough space below')
-assert.match(canvassingPageSource, /maxHeight: Math\.max\(/, 'canvassing table action menu should expose a viewport-constrained max height')
-assert.match(canvassingPageSource, /overflow-x-hidden overflow-y-auto rounded-xl/, 'canvassing table action menu should scroll internally when actions exceed available space')
-assert.match(canvassingPageSource, /canAccessPrincipalExperience/, 'residential canvassing should allow principal users to see workspace-wide prospects')
-assert.match(canvassingPageSource, /if \(isPrincipalAgentView\) return Array\.isArray\(prospects\) \? prospects : \[\]/, 'principal canvassing view should not hide prospects behind agent-only scoping')
-assert.match(canvassingPageSource, /assignedAgentId: currentAgentIdentity/, 'new residential canvassing prospects should default to the current agent assignment')
-assert.match(canvassingPageSource, /ProspectAssignmentAgentDropdown/, 'canvassing toolbar should expose an agent dropdown for reassignment')
-assert.match(canvassingPageSource, /selectedProspectIds/, 'canvassing prospects should support selecting one or more rows for reassignment')
-assert.match(canvassingPageSource, /async function handleAssignSelectedProspects\(agent\)[\s\S]*updateCanvassingProspect\(organisationId, prospect\.id, payload\)/, 'selected canvassing prospects should persist reassignment through the repository')
-assert.match(canvassingPageSource, /activityType: 'Reassigned'/, 'canvassing prospect reassignment should leave an activity trail')
-assert.match(canvassingPageSource, /aria-label="Select all visible prospects"/, 'canvassing table should support selecting all visible prospects')
-assert.doesNotMatch(canvassingPageSource, /BRIDGE9_PRINCIPAL_DEMO_AGENT_EMAIL/, 'residential canvassing should not silently default prospect assignment to the demo principal agent')
-assert.match(canvassingPageSource, /CanvassingImportModal/, 'residential canvassing should expose a standalone bulk upload module')
-assert.match(canvassingPageSource, /audience=\{prospectView\}/, 'canvassing import should lock to the selected buyer or seller prospect view')
-assert.match(canvassingPageSource, /buildCanvassingImportPayload/, 'canvassing import should map CSV rows into canvassing prospect payloads')
-assert.match(canvassingPageSource, /from '..\/lib\/csvImport'/, 'canvassing import should use the shared CSV parser and field lookup')
-assert.match(canvassingPageSource, /const CANVASSING_IMPORT_TEMPLATE_COLUMNS = \[\s*'First Name',\s*'Last Name',/, 'canvassing import template should collect first and last name without a duplicate full-name column')
-assert.match(canvassingPageSource, /'Assigned Agent Email'/, 'canvassing import template should support row-level agent assignment by email')
-assert.match(canvassingPageSource, /function resolveImportedAssignedAgent\(row = \{\}, agents = \[\], fallbackAgent = \{\}\)/, 'canvassing imports should resolve row-level assigned agents')
-assert.match(canvassingPageSource, /resolveImportedAssignedAgent\(row, agentOptions, fallbackAssignedAgent\)/, 'canvassing bulk upload should assign each imported prospect from its row when possible')
-assert.match(canvassingPageSource, /function hasCanvassingImportData\(row = \{\}\)/, 'canvassing bulk upload should distinguish assignment metadata from prospect data')
-assert.match(canvassingPageSource, /if \(!hasCanvassingImportData\(row\)\) continue/, 'canvassing bulk upload should skip rows without prospect data')
-assert.doesNotMatch(canvassingPageSource, /Name is required\./, 'canvassing bulk upload should no longer require a name')
-assert.doesNotMatch(canvassingPageSource, /Phone or email is required\./, 'canvassing bulk upload should no longer require a phone or email')
-assert.match(canvassingPageSource, /function getImportPreviewName\(row = \{\}\)/, 'canvassing import preview should use the same first and last name display as the prospects table')
-assert.match(canvassingPageSource, /pickImportValue\(row, \['Name', 'name', 'Full Name', 'fullName'\]\)/, 'canvassing import should still accept legacy CSVs with a single full-name column')
-assert.match(canvassingPageSource, /pickImportValue\(row, \['Street Address', 'streetAddress', 'Address', 'address', 'Property Address', 'propertyAddress'\]\)/, 'canvassing import preview should identify address-only prospects')
-assert.match(csvImportSource, /function detectCsvDelimiter\(text = ''\)/, 'shared CSV import should detect Excel CSV delimiters before parsing rows')
-assert.match(csvImportSource, /const delimiterCandidates = \[',', ';', '\\t'\]/, 'shared CSV import should accept comma, semicolon and tab-delimited CSV files')
-assert.match(csvImportSource, /function normalizeImportHeaderKey\(value\)/, 'shared CSV import should normalize CSV headers before field lookup')
-assert.match(csvImportSource, /aliases = new Set\(keys\.map\(normalizeImportHeaderKey\)/, 'shared CSV import field lookup should tolerate template header variants')
-assert.match(canvassingPageSource, /createCanvassingProspect\(organisationId, payload\)/, 'canvassing import should create canvassing prospects directly')
-assert.match(canvassingPageSource, /budgetRange,\s*bedrooms,\s*financeStatus,\s*timeframe,\s*subjectToSale,/, 'canvassing import should preserve shared qualification fields for any prospect audience')
-assert.match(canvassingPageSource, /normalizedAudience === 'buyer' \? 'Buyer' : 'Seller'/, 'canvassing bulk upload should support buyer and seller-specific import copy')
-assert.match(canvassingPageSource, /Import \$\{audienceLabel\} Prospects/, 'canvassing bulk upload should label the selected import mode')
-assert.match(canvassingPageSource, />\s*Add Prospect\s*</, 'canvassing toolbar should label the create action as Add Prospect')
-assert.match(canvassingPageSource, />\s*Bulk Import\s*</, 'canvassing toolbar should label the import action as Bulk Import')
-assert.match(canvassingPageSource, /async function handleCreateProspect\(event\)[\s\S]*createCanvassingProspect\(organisationId, createdPayload\)[\s\S]*createCanvassingActivity\(organisationId, \{[\s\S]*activityType: 'Prospect Created'/, 'creating a prospect should persist the prospect and log a creation activity')
-assert.match(canvassingPageSource, /async function handleSaveProspectDetail\(event\)[\s\S]*nextFollowUpDate: normalizeText\(selectedProspect\.nextFollowUpDate\)[\s\S]*updateCanvassingProspect\(organisationId, selectedProspect\.id, payload\)/, 'saving prospect details should persist follow-up fields through the repository')
-assert.match(canvassingPageSource, /async function handleLogActivity\(event\)[\s\S]*createCanvassingActivity\(organisationId, nextActivityPayload\)[\s\S]*setMessage\('Activity logged\.'\)/, 'logging an activity should persist through the repository and confirm success')
-assert.match(canvassingPageSource, /async function handleConvertProspectToLead\(prospectOverride = null\)[\s\S]*const existingConvertedLeadId = normalizeText\(targetProspect\?\.convertedLeadId\)[\s\S]*buildLeadPayloadFromProspect\(targetProspect, leadCategory, currentAgent, existingConvertedLeadId\)[\s\S]*createAgencyCrmLeadRecord\(/, 'conversion should create or relink a residential CRM lead from the selected canvassing prospect')
-assert.match(canvassingPageSource, /async function handleConvertProspectToLead\(prospectOverride = null\)[\s\S]*createLeadRequirementFromConvertedProspect\(targetProspect,[\s\S]*activityType: 'Lead Created'[\s\S]*activityNote: existingConvertedLeadId \? 'canvassing_lead_relinked' : 'canvassing_prospect_converted'/, 'conversion should backfill buyer qualification snapshots and write CRM lead conversion activity')
-assert.match(canvassingPageSource, /async function handleConvertProspectToLead\(prospectOverride = null\)[\s\S]*status: 'Converted to Lead'[\s\S]*convertedLeadId: targetLeadId[\s\S]*convertedAt: new Date\(\)\.toISOString\(\)[\s\S]*updateCanvassingProspect\(organisationId, targetProspectId, convertedProspect\)/, 'conversion should mark the source prospect converted and link the created lead id')
-assert.match(canvassingPageSource, /async function handleConvertProspectToLead\(prospectOverride = null\)[\s\S]*createCanvassingActivity\(organisationId, \{[\s\S]*Prospect converted to \$\{leadCategoryLabel\(leadCategory\)\} lead[\s\S]*outcome: targetLeadId/, 'conversion should leave a canvassing activity that points back to the created lead')
-assert.match(canvassingPageSource, /navigate\(`\/pipeline\/leads\/\$\{targetLeadId\}`,[\s\S]*fromCanvassingConversion: true[\s\S]*requirements: optimisticRequirements/, 'conversion should navigate into the lead workspace with an optimistic residential lead payload')
-assert.match(canvassingPageSource, /async function handleArchiveProspect\(\)[\s\S]*status: 'Lost'[\s\S]*archivedAt: new Date\(\)\.toISOString\(\)[\s\S]*updateCanvassingProspect\(organisationId, prospectId, updatedProspect\)[\s\S]*createCanvassingActivity\(organisationId, archiveActivity\)/, 'archiving should mark the prospect Lost and preserve history with an activity')
-assert.match(canvassingPageSource, /async function handleDeleteProspect\(\)[\s\S]*confirmText\)\.toUpperCase\(\) !== 'DELETE'[\s\S]*deleteCanvassingProspect\(organisationId, prospectId\)[\s\S]*filter\(\(row\) => normalizeText\(row\?\.prospectId\) !== prospectId\)/, 'deleting should require DELETE confirmation and remove local prospect activity')
-assert.match(canvassingPageSource, /grid-cols-\[repeat\(auto-fit,minmax\(170px,1fr\)\)\]/, 'canvassing filters should stretch evenly across the available width')
-assert.match(canvassingPageSource, /function getCanvassingDataStatusMeta/, 'canvassing should resolve visible data-source status metadata')
-assert.match(canvassingPageSource, /setCanvassingDataStatus\(normalizeCanvassingDataStatus\(store\)\)/, 'canvassing should preserve repository persistence and schema status')
-assert.match(canvassingPageSource, /Not configured/, 'canvassing should show a not-configured status when storage or schema is unavailable')
-assert.match(canvassingPageSource, /Local only/, 'canvassing should show a local-only status when using fallback data')
-assert.match(canvassingPageSource, /Synced/, 'canvassing should show a synced status when workspace data is persisted remotely')
-assert.match(canvassingPageSource, /canvassingDataStatusMeta\.detail/, 'canvassing empty states should include data-source status detail')
+assert.match(
+  appSource,
+  /path="\/pipeline\/canvassing\/prospects\/:prospectId"/,
+  "residential canvassing prospects should have a routed workspace page",
+);
+assert.match(
+  appSource,
+  /path="\/pipeline\/canvassing\/property-search"/,
+  "residential canvassing should expose a routed property search workspace",
+);
+assert.match(
+  appSource,
+  /path="\/pipeline\/canvassing\/property-reports"/,
+  "residential canvassing should expose a routed property reports workspace",
+);
+assert.match(
+  appSource,
+  /path="\/pipeline\/canvassing\/fica-kyc"/,
+  "residential canvassing should expose the FICA/KYC workspace route",
+);
+assert.match(
+  appSource,
+  /path="\/pipeline\/canvassing\/lookup-approvals"/,
+  "residential canvassing should expose the lookup approvals workspace route",
+);
+assert.match(
+  appSource,
+  /path="\/pipeline\/canvassing\/operations"/,
+  "residential canvassing should expose the operations workspace route",
+);
+assert.match(
+  canvassingWorkspaceTabsSource,
+  /label: 'Prospects'/,
+  "canvassing workspace navigation should expose the prospects mode",
+);
+assert.match(
+  canvassingWorkspaceTabsSource,
+  /Property Search/,
+  "canvassing workspace navigation should expose property search",
+);
+assert.match(
+  canvassingWorkspaceTabsSource,
+  /label: 'Reports'/,
+  "canvassing workspace navigation should expose reports",
+);
+assert.match(
+  canvassingWorkspaceTabsSource,
+  /ModuleSegmentedNav/,
+  "canvassing workspace navigation should use the shared segmented module navigation",
+);
+assert.match(
+  canvassingWorkspaceTabsSource,
+  /ariaLabel="Canvassing tools"/,
+  "canvassing workspace navigation should identify its purpose to assistive technology",
+);
+assert.match(
+  moduleSegmentedNavSource,
+  /gridTemplateColumns: `repeat\(\$\{Math\.max\(items\.length, 1\)\}, minmax\(0, 1fr\)\)`/,
+  "segmented module navigation should keep all tools in one row",
+);
+assert.match(
+  moduleSegmentedNavSource,
+  /NavLink/,
+  "segmented module navigation should preserve route-aware active states",
+);
+assert.match(
+  canvassingPageSource,
+  /activeCanvassingWorkspace === 'property-search'/,
+  "canvassing should resolve and render the property search workspace from its URL",
+);
+assert.match(
+  canvassingPageSource,
+  /activeCanvassingWorkspace === 'property-reports'/,
+  "canvassing should resolve and render the property reports workspace from its URL",
+);
+assert.match(
+  canvassingPageSource,
+  /activeCanvassingWorkspace === 'operations'/,
+  "canvassing should resolve and render the operations workspace from its URL",
+);
+assert.match(
+  canvassingPageSource,
+  /activeCanvassingWorkspace === 'prospects'[\s\S]*Buyer Prospects[\s\S]*Seller Prospects/,
+  "buyer and seller controls should remain scoped to current prospects",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /data-canvassing-workspace="property-search"/,
+  "property search should be isolated in its own workspace component",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /searchKnowledgeFactoryMap/,
+  "property search should use the live map provider when enabled",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /propertyDataProvider\s*\.\s*getPropertiesInBounds/,
+  "property search should retain the fallback parcel provider",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /Search address, suburb, estate or erf number/,
+  "property search should expose the intended property query input",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /Filter by property type/,
+  "property search should expose property filters",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /selectedProperties/,
+  "property search should retain a multi-property selection",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /PropertyReportBasket/,
+  "property search should connect selected parcels to the report basket",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /KnowledgeFactoryPropertyPanel/,
+  "connected parcel search should keep a selected parcel in the canvassing workspace panel",
+);
+assert.doesNotMatch(
+  propertySearchWorkspaceSource,
+  /onPrepareReport=\{\(property\) => navigate\('\/pipeline\/canvassing\/property-reports'/,
+  "connected parcel selection should not redirect an agent to reports",
+);
+assert.match(
+  knowledgeFactoryPropertyPanelSource,
+  /data-testid="knowledge-factory-property-panel"/,
+  "connected parcel search should render a stable property overview panel",
+);
+assert.match(
+  knowledgeFactoryPropertyPanelSource,
+  /Basic Property Lookup[\s\S]*Full Canvassing Report/,
+  "the property panel should explain the two controlled report packages",
+);
+assert.match(
+  knowledgeFactoryPropertyPanelSource,
+  /No supplier request has been made|does not request supplier data or use credits/,
+  "property panel review should be non-chargeable",
+);
+assert.match(
+  knowledgeFactoryPropertyPanelSource,
+  /Prepare report[\s\S]*remain in Canvassing/,
+  "the property panel should make report handoff deliberate and keep the agent in Canvassing",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /KnowledgeFactoryReportPurchaseModal[\s\S]*purchaseProperty/,
+  "the selected parcel should open an in-Canvassing report confirmation panel",
+);
+assert.match(
+  knowledgeFactoryReportsWorkspaceSource,
+  /selectedReportTypes\(location\.state\?\.reportTypes\)/,
+  "the report builder should prefill safe report sections from the map panel",
+);
+assert.match(
+  knowledgeFactoryReportsWorkspaceSource,
+  /getKnowledgeFactoryReportStatus/,
+  "the report builder should check its own named-user access before enabling a quote",
+);
+assert.match(
+  knowledgeFactoryReportsWorkspaceSource,
+  /Controlled UAT/,
+  "the report builder should identify the current controlled testing stage",
+);
+assert.match(
+  knowledgeFactoryOperationsWorkspaceSource,
+  /UAT guardrails/,
+  "operations should explain the controlled UAT safeguards to administrators",
+);
+assert.match(
+  knowledgeFactoryOperationsWorkspaceSource,
+  /Recent audited activity/,
+  "operations should surface audit evidence for UAT review",
+);
+assert.match(
+  knowledgeFactoryOperationsServiceSource,
+  /mode: 'controlled_uat'/,
+  "operations should model the Knowledge Factory rollout as controlled UAT",
+);
+assert.match(
+  knowledgeFactoryMapApiSource,
+  /mode: 'controlled_uat'/,
+  "map status should identify the controlled UAT mode without calling the supplier",
+);
+assert.match(
+  knowledgeFactoryReportsApiSource,
+  /action === 'status'/,
+  "reports should expose a non-chargeable access status check",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /propertyDataProvider\s*\.\s*priceReports/,
+  "Phase 4 should price report selections through the provider contract",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /propertyDataProvider\s*\.\s*requestReports/,
+  "Phase 4 should submit simulated report orders through the provider contract",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /propertyDataProvider\s*\.\s*getReportOrders/,
+  "Phase 4 should poll simulated report order status through the provider contract",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /status: "submitting"/,
+  "Phase 4 should expose an immediate report-order submission state",
+);
+assert.match(
+  mockParcelMapSource,
+  /data-testid="mock-parcel-map"/,
+  "Phase 3 should render a dedicated interactive mock parcel map",
+);
+assert.match(
+  mockParcelMapSource,
+  /parcelBoundary/,
+  "the mock map should draw provider parcel boundaries",
+);
+assert.match(
+  mockParcelMapSource,
+  /role="button"[\s\S]*tabIndex="0"/,
+  "map parcels should be keyboard focusable",
+);
+assert.match(
+  mockParcelMapSource,
+  /Add to selection/,
+  "property previews should support adding a parcel to the selection",
+);
+assert.match(
+  mockParcelMapSource,
+  /Indicative value/,
+  "property previews should expose public indicative property context",
+);
+assert.doesNotMatch(
+  mockParcelMapSource,
+  /registeredOwner|reportData/,
+  "map previews should not expose report-only ownership data",
+);
+assert.match(
+  propertyReportBasketSource,
+  /Report basket/,
+  "the Phase 3 property search workspace should expose a report basket",
+);
+assert.match(
+  propertyReportBasketSource,
+  /onRemoveProperty/,
+  "selected parcels should be removable from the report basket",
+);
+assert.match(
+  propertyReportBasketSource,
+  /Select reports/,
+  "Phase 4 should expose report product selection",
+);
+assert.match(
+  propertyReportBasketSource,
+  /Indicative demo pricing/,
+  "Phase 4 should show a provider-calculated indicative quote",
+);
+assert.match(
+  propertyReportBasketSource,
+  /Pull \$\{properties\.length \|\| 0\}/,
+  "Phase 4 should expose the simulated property report action",
+);
+assert.match(
+  propertyReportBasketSource,
+  /Simulation only — nothing will be charged/,
+  "Phase 4 should clearly state that no real charge occurs",
+);
+assert.match(
+  propertyReportBasketSource,
+  /Property reports are ready/,
+  "Phase 4 should confirm completed simulated reports",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /data-canvassing-workspace="property-reports"/,
+  "property reports should be isolated in its own workspace component",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /propertyDataProvider\.getReportOrders/,
+  "Phase 5 should load organisation-scoped report history through the provider contract",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /propertyDataProvider\.getReportOrder/,
+  "Phase 5 should retrieve report-only detail through the provider contract",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /Deeds summary/,
+  "Phase 5 should render a deeds summary in the report viewer",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /Transfer history/,
+  "Phase 5 should render transfer history in the report viewer",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /Indicative property valuation/,
+  "Phase 5 should render indicative valuation details",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /Fictional owner identity/,
+  "Phase 5 should label demonstration ownership information explicitly",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /Add to Canvassing/,
+  "Phase 6 should expose property-report conversion into canvassing",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /createCanvassingProspect/,
+  "Phase 6 should persist report-derived prospects through the existing canvassing repository",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /createCanvassingActivity/,
+  "Phase 6 should record a report-derived prospect creation activity",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /Create seller prospect/,
+  "Phase 6 should provide a review step before creating a report-derived seller prospect",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /isPropertyReportAlreadyCanvassed/,
+  "Phase 6 should guard against converting the same property report twice",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /View Current Prospects/,
+  "Phase 6 should provide a direct route to the newly updated prospect list",
+);
+assert.match(
+  propertyReportCanvassingSource,
+  /source: 'Property Intelligence'/,
+  "report-derived prospects should retain their property-intelligence source",
+);
+assert.match(
+  propertyReportCanvassingSource,
+  /canvassingMethod: 'Area Farming'/,
+  "report-derived prospects should enter the area-farming canvassing workflow",
+);
+assert.match(
+  propertyReportCanvassingSource,
+  /fictional demonstration data/,
+  "report-derived prospects should retain an explicit demo-data notice",
+);
+assert.match(
+  canvassingPageSource,
+  /onProspectCreated=\{handlePropertyReportProspectCreated\}/,
+  "the parent canvassing workspace should receive report-created prospects immediately",
+);
+assert.match(
+  canvassingPageSource,
+  /propertyIntelligence: \{ tone: 'blue', label: 'Property Intelligence' \}/,
+  "report-derived prospects should retain a visible Property Intelligence source pill",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /data-property-provider-mode/,
+  "Phase 7 should expose provider mode beside the property search results",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /DEMO DATA/,
+  "mock property intelligence should use a compact demonstration indicator",
+);
+assert.match(
+  propertySearchWorkspaceSource,
+  /Records are fictional\s+and no live provider charges apply/,
+  "the compact demo tooltip should remain commercially safe",
+);
+assert.match(
+  propertyProviderStatusSource,
+  /data-property-provider-mode/,
+  "Phase 7 provider status should expose a stable mode marker",
+);
+assert.match(
+  propertyProviderStatusSource,
+  /Fictional records • No live provider charges/,
+  "mock mode should remain explicit and commercially safe",
+);
+assert.match(
+  propertyReportBasketSource,
+  /provider’s report charges may apply/,
+  "Phase 7 connected mode should require charge acknowledgement",
+);
+assert.match(
+  propertyReportBasketSource,
+  /isDemoData \|\| liveOrderConfirmed/,
+  "connected report ordering should fail closed until the charge acknowledgement is selected",
+);
+assert.match(
+  httpPropertyProviderSource,
+  /credentials: 'include'/,
+  "Phase 7 API requests should use the authenticated Arch9 server session",
+);
+assert.match(
+  httpPropertyProviderSource,
+  /X-Arch9-Property-Client/,
+  "Phase 7 API requests should carry a stable client marker",
+);
+assert.doesNotMatch(
+  httpPropertyProviderSource,
+  /Bearer|api[_-]?key/i,
+  "the browser adapter must not contain vendor authentication credentials",
+);
+assert.match(
+  propertyReportsWorkspaceSource,
+  /No property reports yet/,
+  "Phase 5 should provide a useful empty report-history state",
+);
+assert.match(
+  canvassingPageSource,
+  /createAgencyCrmLeadRecord/,
+  "residential canvassing should create CRM lead records when converting prospects",
+);
+assert.match(
+  canvassingPageSource,
+  /createLeadRequirement/,
+  "converted buyer canvassing prospects should create lead qualification requirements",
+);
+assert.match(
+  canvassingPageSource,
+  /listLeadRequirements/,
+  "converted buyer canvassing prospects should avoid duplicate qualification snapshots when repairing existing converted leads",
+);
+assert.match(
+  canvassingPageSource,
+  /existingPrimaryRequirement \|\| existingRequirements\[0\]/,
+  "canvassing lead repair should reuse an existing qualification requirement before creating a new one",
+);
+assert.doesNotMatch(
+  canvassingPageSource,
+  /existingConvertedLeadId \? null : await createLeadRequirementFromConvertedProspect/,
+  "converted lead repair should no longer skip buyer qualification snapshot backfill",
+);
+assert.match(
+  canvassingPageSource,
+  /buildLeadRequirementFromCanvassingProspect/,
+  "canvassing conversion should map prospect qualification fields into the lead requirement snapshot",
+);
+assert.match(
+  canvassingPageSource,
+  /writeCanvassingQualificationNoteValue\(prospect\.notes, 'Needs to sell', needsToSellLabel\)/,
+  "converted buyer requirements should preserve needs-to-sell in qualification notes",
+);
+assert.match(
+  canvassingPageSource,
+  /readCanvassingQualificationNoteValue\(prospect\.notes, 'Bathrooms'\)/,
+  "converted buyer requirements should preserve bathroom minimums from canvassing qualification notes",
+);
+assert.match(
+  canvassingPageSource,
+  /writeCanvassingQualificationNoteValue\([\s\S]*'Current property'/,
+  "buyer canvassing imports should preserve current-property qualification context",
+);
+assert.match(
+  canvassingPageSource,
+  /leadCategory: normalizedCategory/,
+  "converted canvassing prospects should preserve normalized buyer or seller lead category",
+);
+assert.match(
+  canvassingPageSource,
+  /leadSource: 'Canvassing'/,
+  "converted canvassing prospects should retain Canvassing as the lead source",
+);
+assert.match(
+  canvassingPageSource,
+  /sellerPropertyAddress: normalizedCategory === 'seller'/,
+  "seller prospects should carry the seller property address into the lead payload",
+);
+assert.match(
+  canvassingPageSource,
+  /navigate\(`\/pipeline\/leads\/\$\{targetLeadId\}`/,
+  "converted canvassing prospects should navigate to the created lead workspace",
+);
+assert.match(
+  canvassingPageSource,
+  /useParams/,
+  "canvassing prospect workspace should read the prospect id from the route",
+);
+assert.match(
+  canvassingPageSource,
+  /navigate\(`\/pipeline\/canvassing\/prospects\/\$\{next\.id\}`\)/,
+  "opening a canvassing prospect should navigate to its routed workspace",
+);
+assert.doesNotMatch(
+  canvassingPageSource,
+  /open=\{detailOpen\}/,
+  "canvassing prospect details should no longer open in a modal popup",
+);
+assert.match(
+  canvassingPageSource,
+  /PROSPECT_DETAIL_TABS[\s\S]*Overview[\s\S]*Qualification[\s\S]*Activity[\s\S]*Conversion/,
+  "canvassing prospect workspace should be organised into Overview, Qualification, Activity, and Conversion tabs",
+);
+assert.match(
+  canvassingPageSource,
+  /activeProspectTab === 'activity'/,
+  "canvassing prospect workspace should show activity as a dedicated tab panel",
+);
+assert.match(
+  canvassingPageSource,
+  /activeProspectTab === 'conversion'/,
+  "canvassing prospect workspace should show conversion as a dedicated tab panel",
+);
+assert.doesNotMatch(
+  canvassingPageSource,
+  /<p className="text-xs font-semibold uppercase tracking-\[0\.12em\] text-slate-400">Canvassing Prospect<\/p>/,
+  "routed canvassing prospect workspace should not render the redundant top header card",
+);
+assert.match(
+  canvassingPageSource,
+  /Prospect saved successfully\./,
+  "saving prospect details should show an in-workspace success confirmation",
+);
+assert.match(
+  canvassingPageSource,
+  /isProspectSaving \? 'Saving\.\.\.' : prospectSaveNotice \? 'Saved' : 'Save Prospect'/,
+  "save prospect button should reflect saving and saved states",
+);
+assert.match(
+  canvassingPageSource,
+  /selectedProspectAreas/,
+  "buyer qualification should support multiple area chips",
+);
+assert.match(
+  canvassingPageSource,
+  /AreaAutocomplete/,
+  "buyer qualification area chips should use the saved area autocomplete for cleaner listing matching",
+);
+assert.match(
+  canvassingPageSource,
+  /handleAreaSuggestionChange/,
+  "buyer qualification should add selected saved areas directly into the prospect area chips",
+);
+assert.match(
+  canvassingPageSource,
+  /handleAddSelectedProspectArea/,
+  "buyer qualification should allow agents to add areas one at a time",
+);
+assert.match(
+  canvassingPageSource,
+  /handleRemoveSelectedProspectArea/,
+  "buyer qualification should allow agents to remove area chips",
+);
+assert.match(
+  canvassingPageSource,
+  /Quick log, convert, archive or delete\./,
+  "canvassing prospect workspace should keep a lightweight side action menu",
+);
+assert.match(
+  canvassingPageSource,
+  /Quick log, convert, archive or delete\.[\s\S]*handleConvertProspectToLead\(\)/,
+  "prospect side action menu should expose conversion without leaving the workspace",
+);
+assert.match(
+  canvassingPageSource,
+  /handleQuickLogActivity\(selectedProspect, 'Call'\)/,
+  "prospect side action menu should support one-click call logging",
+);
+assert.match(
+  canvassingPageSource,
+  /openArchiveProspectModal\(selectedProspect\.id\)/,
+  "prospect side action menu should expose archive without leaving the workspace",
+);
+assert.match(
+  canvassingPageSource,
+  /openDeleteProspectModal\(selectedProspect\.id\)/,
+  "prospect side action menu should expose delete without leaving the workspace",
+);
+assert.match(
+  canvassingPageSource,
+  /function getCanvassingActionMenuPosition/,
+  "canvassing table action menu should calculate viewport-aware positioning",
+);
+assert.match(
+  canvassingPageSource,
+  /spaceBelow < menuHeight && triggerRect\.top > spaceBelow/,
+  "canvassing table action menu should open above the trigger when there is not enough space below",
+);
+assert.match(
+  canvassingPageSource,
+  /maxHeight: Math\.max\(/,
+  "canvassing table action menu should expose a viewport-constrained max height",
+);
+assert.match(
+  canvassingPageSource,
+  /overflow-x-hidden overflow-y-auto rounded-xl/,
+  "canvassing table action menu should scroll internally when actions exceed available space",
+);
+assert.match(
+  canvassingPageSource,
+  /canAccessPrincipalExperience/,
+  "residential canvassing should allow principal users to see workspace-wide prospects",
+);
+assert.match(
+  canvassingPageSource,
+  /if \(isPrincipalAgentView\) return Array\.isArray\(prospects\) \? prospects : \[\]/,
+  "principal canvassing view should not hide prospects behind agent-only scoping",
+);
+assert.match(
+  canvassingPageSource,
+  /assignedAgentId: currentAgentIdentity/,
+  "new residential canvassing prospects should default to the current agent assignment",
+);
+assert.match(
+  canvassingPageSource,
+  /ProspectAssignmentAgentDropdown/,
+  "canvassing toolbar should expose an agent dropdown for reassignment",
+);
+assert.match(
+  canvassingPageSource,
+  /selectedProspectIds/,
+  "canvassing prospects should support selecting one or more rows for reassignment",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleAssignSelectedProspects\(agent\)[\s\S]*updateCanvassingProspect\(organisationId, prospect\.id, payload\)/,
+  "selected canvassing prospects should persist reassignment through the repository",
+);
+assert.match(
+  canvassingPageSource,
+  /activityType: 'Reassigned'/,
+  "canvassing prospect reassignment should leave an activity trail",
+);
+assert.match(
+  canvassingPageSource,
+  /aria-label="Select all visible prospects"/,
+  "canvassing table should support selecting all visible prospects",
+);
+assert.doesNotMatch(
+  canvassingPageSource,
+  /BRIDGE9_PRINCIPAL_DEMO_AGENT_EMAIL/,
+  "residential canvassing should not silently default prospect assignment to the demo principal agent",
+);
+assert.match(
+  canvassingPageSource,
+  /CanvassingImportModal/,
+  "residential canvassing should expose a standalone bulk upload module",
+);
+assert.match(
+  canvassingPageSource,
+  /audience=\{prospectView\}/,
+  "canvassing import should lock to the selected buyer or seller prospect view",
+);
+assert.match(
+  canvassingPageSource,
+  /buildCanvassingImportPayload/,
+  "canvassing import should map CSV rows into canvassing prospect payloads",
+);
+assert.match(
+  canvassingPageSource,
+  /from '..\/lib\/csvImport'/,
+  "canvassing import should use the shared CSV parser and field lookup",
+);
+assert.match(
+  canvassingPageSource,
+  /const CANVASSING_IMPORT_TEMPLATE_COLUMNS = \[\s*'First Name',\s*'Last Name',/,
+  "canvassing import template should collect first and last name without a duplicate full-name column",
+);
+assert.match(
+  canvassingPageSource,
+  /'Assigned Agent Email'/,
+  "canvassing import template should support row-level agent assignment by email",
+);
+assert.match(
+  canvassingPageSource,
+  /function resolveImportedAssignedAgent\(row = \{\}, agents = \[\], fallbackAgent = \{\}\)/,
+  "canvassing imports should resolve row-level assigned agents",
+);
+assert.match(
+  canvassingPageSource,
+  /resolveImportedAssignedAgent\(row, agentOptions, fallbackAssignedAgent\)/,
+  "canvassing bulk upload should assign each imported prospect from its row when possible",
+);
+assert.match(
+  canvassingPageSource,
+  /function hasCanvassingImportData\(row = \{\}\)/,
+  "canvassing bulk upload should distinguish assignment metadata from prospect data",
+);
+assert.match(
+  canvassingPageSource,
+  /if \(!hasCanvassingImportData\(row\)\) continue/,
+  "canvassing bulk upload should skip rows without prospect data",
+);
+assert.doesNotMatch(
+  canvassingPageSource,
+  /Name is required\./,
+  "canvassing bulk upload should no longer require a name",
+);
+assert.doesNotMatch(
+  canvassingPageSource,
+  /Phone or email is required\./,
+  "canvassing bulk upload should no longer require a phone or email",
+);
+assert.match(
+  canvassingPageSource,
+  /function getImportPreviewName\(row = \{\}\)/,
+  "canvassing import preview should use the same first and last name display as the prospects table",
+);
+assert.match(
+  canvassingPageSource,
+  /pickImportValue\(row, \['Name', 'name', 'Full Name', 'fullName'\]\)/,
+  "canvassing import should still accept legacy CSVs with a single full-name column",
+);
+assert.match(
+  canvassingPageSource,
+  /pickImportValue\(row, \['Street Address', 'streetAddress', 'Address', 'address', 'Property Address', 'propertyAddress'\]\)/,
+  "canvassing import preview should identify address-only prospects",
+);
+assert.match(
+  csvImportSource,
+  /function detectCsvDelimiter\(text = ''\)/,
+  "shared CSV import should detect Excel CSV delimiters before parsing rows",
+);
+assert.match(
+  csvImportSource,
+  /const delimiterCandidates = \[',', ';', '\\t'\]/,
+  "shared CSV import should accept comma, semicolon and tab-delimited CSV files",
+);
+assert.match(
+  csvImportSource,
+  /function normalizeImportHeaderKey\(value\)/,
+  "shared CSV import should normalize CSV headers before field lookup",
+);
+assert.match(
+  csvImportSource,
+  /aliases = new Set\(keys\.map\(normalizeImportHeaderKey\)/,
+  "shared CSV import field lookup should tolerate template header variants",
+);
+assert.match(
+  canvassingPageSource,
+  /createCanvassingProspect\(organisationId, payload\)/,
+  "canvassing import should create canvassing prospects directly",
+);
+assert.match(
+  canvassingPageSource,
+  /budgetRange,\s*bedrooms,\s*financeStatus,\s*timeframe,\s*subjectToSale,/,
+  "canvassing import should preserve shared qualification fields for any prospect audience",
+);
+assert.match(
+  canvassingPageSource,
+  /normalizedAudience === 'buyer' \? 'Buyer' : 'Seller'/,
+  "canvassing bulk upload should support buyer and seller-specific import copy",
+);
+assert.match(
+  canvassingPageSource,
+  /Import \$\{audienceLabel\} Prospects/,
+  "canvassing bulk upload should label the selected import mode",
+);
+assert.match(
+  canvassingPageSource,
+  />\s*Add Prospect\s*</,
+  "canvassing toolbar should label the create action as Add Prospect",
+);
+assert.match(
+  canvassingPageSource,
+  />\s*Bulk Import\s*</,
+  "canvassing toolbar should label the import action as Bulk Import",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleCreateProspect\(event\)[\s\S]*createCanvassingProspect\(organisationId, createdPayload\)[\s\S]*createCanvassingActivity\(organisationId, \{[\s\S]*activityType: 'Prospect Created'/,
+  "creating a prospect should persist the prospect and log a creation activity",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleSaveProspectDetail\(event\)[\s\S]*nextFollowUpDate: normalizeText\(selectedProspect\.nextFollowUpDate\)[\s\S]*updateCanvassingProspect\(organisationId, selectedProspect\.id, payload\)/,
+  "saving prospect details should persist follow-up fields through the repository",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleLogActivity\(event\)[\s\S]*createCanvassingActivity\(organisationId, nextActivityPayload\)[\s\S]*setMessage\('Activity logged\.'\)/,
+  "logging an activity should persist through the repository and confirm success",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleConvertProspectToLead\(prospectOverride = null\)[\s\S]*const existingConvertedLeadId = normalizeText\(targetProspect\?\.convertedLeadId\)[\s\S]*buildLeadPayloadFromProspect\(targetProspect, leadCategory, currentAgent, existingConvertedLeadId\)[\s\S]*createAgencyCrmLeadRecord\(/,
+  "conversion should create or relink a residential CRM lead from the selected canvassing prospect",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleConvertProspectToLead\(prospectOverride = null\)[\s\S]*createLeadRequirementFromConvertedProspect\(targetProspect,[\s\S]*activityType: 'Lead Created'[\s\S]*activityNote: existingConvertedLeadId \? 'canvassing_lead_relinked' : 'canvassing_prospect_converted'/,
+  "conversion should backfill buyer qualification snapshots and write CRM lead conversion activity",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleConvertProspectToLead\(prospectOverride = null\)[\s\S]*status: 'Converted to Lead'[\s\S]*convertedLeadId: targetLeadId[\s\S]*convertedAt: new Date\(\)\.toISOString\(\)[\s\S]*updateCanvassingProspect\(organisationId, targetProspectId, convertedProspect\)/,
+  "conversion should mark the source prospect converted and link the created lead id",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleConvertProspectToLead\(prospectOverride = null\)[\s\S]*createCanvassingActivity\(organisationId, \{[\s\S]*Prospect converted to \$\{leadCategoryLabel\(leadCategory\)\} lead[\s\S]*outcome: targetLeadId/,
+  "conversion should leave a canvassing activity that points back to the created lead",
+);
+assert.match(
+  canvassingPageSource,
+  /navigate\(`\/pipeline\/leads\/\$\{targetLeadId\}`,[\s\S]*fromCanvassingConversion: true[\s\S]*requirements: optimisticRequirements/,
+  "conversion should navigate into the lead workspace with an optimistic residential lead payload",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleArchiveProspect\(\)[\s\S]*status: 'Lost'[\s\S]*archivedAt: new Date\(\)\.toISOString\(\)[\s\S]*updateCanvassingProspect\(organisationId, prospectId, updatedProspect\)[\s\S]*createCanvassingActivity\(organisationId, archiveActivity\)/,
+  "archiving should mark the prospect Lost and preserve history with an activity",
+);
+assert.match(
+  canvassingPageSource,
+  /async function handleDeleteProspect\(\)[\s\S]*confirmText\)\.toUpperCase\(\) !== 'DELETE'[\s\S]*deleteCanvassingProspect\(organisationId, prospectId\)[\s\S]*filter\(\(row\) => normalizeText\(row\?\.prospectId\) !== prospectId\)/,
+  "deleting should require DELETE confirmation and remove local prospect activity",
+);
+assert.match(
+  canvassingPageSource,
+  /grid-cols-\[repeat\(auto-fit,minmax\(170px,1fr\)\)\]/,
+  "canvassing filters should stretch evenly across the available width",
+);
+assert.match(
+  canvassingPageSource,
+  /function getCanvassingDataStatusMeta/,
+  "canvassing should resolve visible data-source status metadata",
+);
+assert.match(
+  canvassingPageSource,
+  /setCanvassingDataStatus\(normalizeCanvassingDataStatus\(store\)\)/,
+  "canvassing should preserve repository persistence and schema status",
+);
+assert.match(
+  canvassingPageSource,
+  /Not configured/,
+  "canvassing should show a not-configured status when storage or schema is unavailable",
+);
+assert.match(
+  canvassingPageSource,
+  /Local only/,
+  "canvassing should show a local-only status when using fallback data",
+);
+assert.match(
+  canvassingPageSource,
+  /Synced/,
+  "canvassing should show a synced status when workspace data is persisted remotely",
+);
+assert.match(
+  canvassingPageSource,
+  /canvassingDataStatusMeta\.detail/,
+  "canvassing empty states should include data-source status detail",
+);
 
-await import('./residential-property-data-provider.test.mjs')
+await import("./residential-property-data-provider.test.mjs");
 
-console.log('residential canvassing checks passed')
+console.log("residential canvassing checks passed");

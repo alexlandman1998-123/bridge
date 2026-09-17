@@ -38,7 +38,7 @@ const SELLER_LABELS = Object.freeze({
 })
 const SELLER_ALIASES = Object.freeze({
   lead: 'new_lead', new: 'new_lead', new_lead: 'new_lead', seller_lead: 'new_lead', lead_created: 'new_lead',
-  contacted: 'contacted', active: 'contacted',
+  contacted: 'contacted', active: 'contacted', valuation: 'contacted', appointment_scheduled: 'contacted', viewing_scheduled: 'contacted',
   onboarding_sent: 'seller_onboarding_sent', seller_onboarding_sent: 'seller_onboarding_sent',
   onboarding_submitted: 'seller_onboarding_submitted', onboarding_completed: 'seller_onboarding_submitted', seller_onboarding_submitted: 'seller_onboarding_submitted', seller_onboarding_completed: 'seller_onboarding_submitted', mandate_generated: 'seller_onboarding_submitted', mandate_ready: 'seller_onboarding_submitted', mandate_sent: 'seller_onboarding_submitted',
   mandate_signed: 'mandate_signed', listing_created: 'listing_created', converted_to_listing: 'listing_created', listing_live: 'listing_live', listing_active: 'listing_live',
@@ -60,25 +60,17 @@ export function getBuyerLeadListStage(value = '') {
 
 function resolveSellerColumn(rawToken, sellerKey) {
   const combined = `${rawToken} ${sellerKey}`
-  if (combined.includes('lost') || combined.includes('archive')) return 'lost'
-  if (combined.includes('registered') || combined.includes('closed')) return 'registered'
-  if (combined.includes('transfer')) return 'transfer'
-  if (combined.includes('deal') || combined.includes('transaction') || combined.includes('otp')) return 'deal_otp'
-  if (combined.includes('offer') || combined.includes('negotiating')) return 'offer_received'
-  if (['listing_created', 'listing_live', 'documents_submitted'].includes(sellerKey) || combined.includes('listing_active')) return 'listing_active'
-  if (sellerKey === 'mandate_signed') return 'mandate_signed'
-  if (combined.includes('valuation') || combined.includes('appointment') || combined.includes('viewing')) return 'valuation_scheduled'
-  return 'lead'
+  if (sellerKey && SELLER_LABELS[sellerKey]) return sellerKey
+  // Offers and transactions belong to the downstream transaction workflow.
+  // Keep legacy seller-lead records visible in their last seller-facing state
+  // instead of recreating transaction columns in the seller journey board.
+  if (combined.includes('offer') || combined.includes('deal') || combined.includes('transaction') || combined.includes('otp') || combined.includes('transfer') || combined.includes('registered') || combined.includes('closed')) return 'listing_live'
+  return 'new_lead'
 }
 
 function sellerFallbackLabel(token, rawStage) {
-  if (token.includes('valuation')) return 'Valuation Scheduled'
-  if (token.includes('appointment') || token.includes('viewing')) return 'Viewing Scheduled'
-  if (token.includes('offer')) return 'Offer Received'
-  if (token.includes('deal') || token.includes('transaction') || token.includes('otp')) return 'Deal / OTP'
-  if (token.includes('transfer')) return 'Transfer'
-  if (token.includes('registered') || token.includes('closed')) return 'Registered / Closed'
-  if (token.includes('lost') || token.includes('archive')) return 'Lost'
+  if (token.includes('valuation') || token.includes('appointment') || token.includes('viewing')) return 'Contacted'
+  if (token.includes('offer') || token.includes('deal') || token.includes('transaction') || token.includes('otp') || token.includes('transfer') || token.includes('registered') || token.includes('closed')) return 'Listing Live'
   return normalizeText(rawStage) || 'New Lead'
 }
 

@@ -26,6 +26,7 @@ for (const path of [
   'api/private-property/listings/[listingId]/preview.js',
   'api/private-property/listings/[listingId]/publish.js',
   'api/private-property/listings/[listingId]/status.js',
+  'api/private-property/listings/[listingId]/status-update.js',
   'api/private-property/listings/[listingId]/syndication-review.js',
 ]) {
   assert.ok(fs.existsSync(new URL(`../${path}`, import.meta.url)), `${path} should exist`)
@@ -34,6 +35,7 @@ for (const path of [
 assert.equal(PRIVATE_PROPERTY_API_ROUTES.previewListing, '/api/private-property/listings/:listingId/preview')
 assert.equal(PRIVATE_PROPERTY_API_ROUTES.publishListing, '/api/private-property/listings/:listingId/publish')
 assert.equal(PRIVATE_PROPERTY_API_ROUTES.listingStatus, '/api/private-property/listings/:listingId/status')
+assert.equal(PRIVATE_PROPERTY_API_ROUTES.updateListingStatus, '/api/private-property/listings/:listingId/status-update')
 assert.equal(PRIVATE_PROPERTY_API_ROUTES.syndicationReview, '/api/private-property/listings/:listingId/syndication-review')
 
 const viteConfig = read('vite.config.js')
@@ -46,6 +48,7 @@ assert.match(listingDetail, /callPrivatePropertyListingAction/)
 assert.match(listingDetail, /previewPrivatePropertyListing/)
 assert.match(listingDetail, /publishPrivatePropertyListing/)
 assert.match(listingDetail, /refreshPrivatePropertyListingStatus/)
+assert.match(listingDetail, /expirePrivatePropertyListing/)
 assert.match(listingDetail, /Submitting to Private Property/)
 assert.match(listingDetail, /Add manual link/)
 assert.doesNotMatch(
@@ -173,5 +176,24 @@ assert.equal(statusResponse.status, 200)
 assert.equal(statusResponse.body.status, 'ACTIVATED')
 assert.equal(statusResponse.body.monitor.statusProbe.privatePropertyRef, 'T2870999')
 assert.equal(monitorArgs.recordSync, true)
+
+let statusUpdateArgs = null
+const statusUpdateResponse = await createPrivatePropertyApiResponse({
+  method: 'POST',
+  url: '/api/private-property/listings/listing-123/status-update',
+  headers: authHeaders,
+  body: JSON.stringify({ propertyStatus: 'Inactive' }),
+  env: baseEnv,
+  dependencies: {
+    createSupabase: () => ({ type: 'supabase' }),
+    updateListingStatus: async (args) => {
+      statusUpdateArgs = args
+      return { status: 'UPDATED', propertyStatus: args.propertyStatus }
+    },
+  },
+})
+assert.equal(statusUpdateResponse.status, 200)
+assert.equal(statusUpdateResponse.body.update.status, 'UPDATED')
+assert.equal(statusUpdateArgs.propertyStatus, 'Inactive')
 
 console.log('Private Property browser API contract passed')

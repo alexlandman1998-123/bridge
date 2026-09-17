@@ -58,7 +58,7 @@ assert.match(agencyCrmRepositorySource, /LEAD_SELECT_FIELDS_EXTENDED[\s\S]+LEAD_
 assert.ok(workspaceSource.includes('updatePrivateListing(listingId'), 'mandate save should sync listing mandate_type')
 assert.ok(workspaceSource.includes('updatePrivateListingOnboardingFormData'), 'mandate save should persist to onboarding form data')
 assert.ok(workspaceSource.includes('Save Mandate'), 'mandate tab should keep a manual Save Mandate action')
-assert.ok(!workspaceSource.includes('placeholder="Sole mandate, payable on registration"'), 'mandate terms should not be captured as a free-form legal text field')
+assert.doesNotMatch(workspaceSource, /placeholder="[^"\n]*mandate, payable on registration"/i, 'mandate terms should not be captured as a free-form legal text field')
 assert.ok(!workspaceSource.includes('title="Mandate Status"'), 'mandate tab should not render the old mandate status container')
 assert.ok(!workspaceSource.includes('title="Mandate History"'), 'mandate tab should not render the old mandate history container')
 

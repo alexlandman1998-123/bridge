@@ -319,7 +319,7 @@ const SELLER_OWNERSHIP_TYPE_LABELS = {
 
 const SELLER_MANDATE_TYPE_LABELS = {
   open: 'Open Mandate',
-  sole: 'Sole Mandate',
+  sole: 'Exclusive Mandate',
   exclusive: 'Exclusive Mandate',
 }
 

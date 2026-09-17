@@ -30,6 +30,24 @@ assert.match(
 
 assert.match(
   serviceSource,
+  /client\.rpc\('bridge_promote_private_listing_document_row', \{\s*p_private_listing_document_id: documentRow\.id,\s*\}\)/s,
+  'agent-side listing uploads must project the private listing document into the shared transaction document record',
+)
+
+assert.match(
+  serviceSource,
+  /pendingTransactionPromotion: Boolean\(promotion\?\.pending_transaction_promotion\)/,
+  'uploads made before a transaction exists must explicitly report pending shared-document promotion',
+)
+
+assert.match(
+  serviceSource,
+  /sharedDocumentId: normalizeText\(promotion\?\.shared_document\?\.id \|\| promotion\?\.shared_document_id/,
+  'a promoted upload must return the shared documents record identifier to its caller',
+)
+
+assert.match(
+  serviceSource,
   /await updatePrivateListingRequirementStatus\(linkedRequirementId, uploadedStatus === 'completed' \? 'completed' : 'uploaded'\)/,
   'uploading a physical pack document must move the checklist item to uploaded',
 )

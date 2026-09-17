@@ -1,5 +1,6 @@
 import {
   ArrowLeft,
+  Archive,
   BarChart3,
   Building2,
   CalendarDays,
@@ -2464,7 +2465,7 @@ function humanizeProfileToken(value = '') {
     company: 'Company',
     trust: 'Trust',
     deceased_estate: 'Deceased Estate',
-    sole: 'Sole Mandate',
+    sole: 'Exclusive Mandate',
     open: 'Open Mandate',
     exclusive: 'Exclusive Mandate',
     not_married: 'Not married',
@@ -4770,6 +4771,55 @@ function AgentListingDetail() {
     }
   }
 
+  async function archiveListingFromMarketing() {
+    const privatePropertyIsLive = ['published', 'live', 'active'].includes(privatePropertyStatusKey)
+    const liveChannels = [
+      property24Published ? 'Property24' : '',
+      privatePropertyIsLive ? 'Private Property' : '',
+      arch9IsPublished ? 'Arch9 public catalogue' : '',
+    ].filter(Boolean)
+    const summary = liveChannels.length ? `This listing is live on: ${liveChannels.join(', ')}.` : 'No live channels were detected.'
+    if (!window.confirm(`${summary}\n\nExpire all live listings and archive this listing? Property24 and Private Property will be set inactive, and the Arch9 public catalogue listing will be paused.`)) return
+
+    setPublicationSaving(true)
+    setDetailError('')
+    setDetailMessage('Expiring live listings and archiving...')
+    try {
+      if (property24Published && property24Reference) {
+        await callProperty24ListingAction('status-update', { status: 'Expired', listingNumber: property24Reference }, { fallbackMessage: 'Property24 expiry failed. The listing was not archived.' })
+      }
+      if (privatePropertyIsLive) {
+        await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property expiry failed. The listing was not archived.' })
+      }
+      const nextDraft = {
+        ...marketingDraft,
+        listingStatus: 'withdrawn',
+        publicationStatus: 'Draft',
+        bridgeListingStatus: 'paused',
+        ...(property24Published ? { property24Status: 'expired' } : {}),
+        ...(privatePropertyIsLive ? { privatePropertyStatus: 'inactive' } : {}),
+      }
+      const result = await saveMarketingDraft(nextDraft, { listingVisibility: 'archived', successMessage: '' })
+      if (result?.ok === false) throw result.error || new Error('Unable to archive the listing.')
+      await createPrivateListingActivity({
+        privateListingId: listingRecord.id,
+        activityType: 'listing_archived',
+        activityTitle: 'Listing archived',
+        activityDescription: 'Listing archived after supported public placements were expired.',
+        visibility: 'internal',
+        metadata: { liveChannels },
+      }).catch(() => {})
+      setDetailMessage('Listing expired on its live channels and archived.')
+      window.dispatchEvent(new Event('itg:listings-updated'))
+      navigate('/listings', { replace: true, state: { message: 'Listing archived.' } })
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Unable to archive the listing.')
+    } finally {
+      setPublicationSaving(false)
+    }
+  }
+
   async function prepareAgencyWebsiteListing() {
     const blockers = getArch9PublicationBlockers(marketingDraft, coverImage)
     if (blockers.length) throw new Error(`Before publishing to the agency website: ${blockers.join(' ')}`)
@@ -5108,6 +5158,26 @@ function AgentListingDetail() {
     } catch (error) {
       setDetailMessage('')
       setDetailError(error?.message || 'Private Property status check failed.')
+      return null
+    } finally {
+      setPrivatePropertyAction('')
+    }
+  }
+
+  async function expirePrivatePropertyListing({ skipConfirmation = false } = {}) {
+    if (!skipConfirmation && !window.confirm('Set this listing to inactive on Private Property? It will no longer be advertised there.')) return null
+    setPrivatePropertyAction('expire')
+    setDetailError('')
+    setDetailMessage('Expiring on Private Property...')
+    try {
+      const payload = await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property expiry failed.' })
+      setMarketingDraft((previous) => ({ ...previous, privatePropertyStatus: 'inactive' }))
+      await loadListingData()
+      setDetailMessage('Expired on Private Property.')
+      return payload
+    } catch (error) {
+      setDetailMessage('')
+      setDetailError(error?.message || 'Private Property expiry failed.')
       return null
     } finally {
       setPrivatePropertyAction('')
@@ -10555,6 +10625,10 @@ function AgentListingDetail() {
             {privatePropertyAction === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             Refresh status
           </button>,
+          privatePropertyLive ? <button key="expire" type="button" onClick={() => expirePrivatePropertyListing()} disabled={Boolean(privatePropertyAction)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#a43d35] transition hover:bg-[#fff5f5] disabled:cursor-not-allowed disabled:opacity-50">
+            {privatePropertyAction === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}
+            Expire listing
+          </button> : null,
           <button key="manual" type="button" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]">
             <Link2 size={15} />
             Add manual link
@@ -10846,6 +10920,17 @@ function AgentListingDetail() {
             onPrepare={prepareAgencyWebsiteListing}
           />
         </article>
+
+        <div className="flex flex-col gap-3 rounded-[18px] border border-[#ead8b8] bg-[#fffaf0] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-[#624417]">Finished marketing this listing?</p>
+            <p className="mt-1 text-sm text-[#80632f]">Check every live channel, expire the supported placements, then archive the listing from active operations.</p>
+          </div>
+          <Button type="button" variant="secondary" onClick={archiveListingFromMarketing} disabled={publicationSaving} className="border-[#d8b87f] text-[#7a4e12] hover:bg-[#fff3dc]">
+            {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
+            Archive listing
+          </Button>
+        </div>
 
         <Modal
           open={readinessChecklistOpen}
@@ -14862,7 +14947,7 @@ function AgentListingDetail() {
                   <Field
                     value={commissionDraft.mandateTerms}
                     onChange={(event) => updateCommissionDraft('mandateTerms', event.target.value)}
-                    placeholder="Sole mandate, payable on registration"
+                    placeholder="Exclusive mandate, payable on registration"
                   />
                 </label>
                 <label className="grid gap-2">

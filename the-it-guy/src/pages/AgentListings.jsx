@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
+import { Archive, ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -20,7 +20,7 @@ import {
 } from '../lib/api'
 import { fetchOrganisationSettings, listOrganisationUsers } from '../lib/settingsApi'
 import { startRouteTransitionTrace } from '../lib/performanceTrace'
-import { invokeEdgeFunction } from '../lib/supabaseClient'
+import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'
 import { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { buildLeadListingLinkPatch } from '../lib/agencyLeadSelection'
 import { assessListingSellerLink, assessSellerLeadPersistence } from '../lib/listingDataIntegrity'
@@ -633,6 +633,16 @@ function normalizeText(value) {
 
 function normalizeKey(value) {
   return normalizeText(value).toLowerCase()
+}
+
+function getLiveListingChannels(listing = {}) {
+  const source = listing?.listingRecord || listing || {}
+  const isLive = (value) => ['active', 'live', 'published'].includes(normalizeKey(value))
+  const channels = []
+  if (isLive(source.property24Status || source.property24_status)) channels.push({ key: 'property24', label: 'Property24', canExpire: Boolean(source.property24Reference || source.property24_reference) })
+  if (isLive(source.privatePropertyStatus || source.private_property_status)) channels.push({ key: 'private_property', label: 'Private Property', canExpire: true })
+  if (isLive(source.bridgeListingStatus || source.bridge_listing_status || source.publicationStatus)) channels.push({ key: 'arch9', label: 'Arch9 public catalogue', canExpire: true })
+  return channels
 }
 
 function describeQuickAddDocumentUploadFailure(error) {
@@ -2158,7 +2168,7 @@ function resolveListingTypeLabel(listing = {}) {
 
   if (listingType.includes('development')) return 'Development Unit'
   if (hasRentalSignal) return 'Rental'
-  if (mandateType === 'sole') return 'Sole Mandate'
+  if (mandateType === 'sole') return 'Exclusive Mandate'
   if (mandateType === 'open') return 'Open Mandate'
   if (mandateType === 'exclusive') return 'Exclusive Mandate'
   return 'Private Sale'
@@ -3618,6 +3628,8 @@ function AgentListings({ initialTab = null } = {}) {
   const [syndicationAvailabilityLoading, setSyndicationAvailabilityLoading] = useState(true)
   const [deletingListingId, setDeletingListingId] = useState('')
   const [listingPendingDeletion, setListingPendingDeletion] = useState(null)
+  const [listingPendingArchive, setListingPendingArchive] = useState(null)
+  const [archivingListingId, setArchivingListingId] = useState('')
   const [openListingMenuId, setOpenListingMenuId] = useState('')
   const [shareModalListing, setShareModalListing] = useState(null)
   const [shareOptions, setShareOptions] = useState([])
@@ -6617,6 +6629,85 @@ function AgentListings({ initialTab = null } = {}) {
     setListingPendingDeletion(null)
   }
 
+  function requestListingArchive(card, event) {
+    event.stopPropagation()
+    setOpenListingMenuId('')
+    setError('')
+    setListingPendingArchive(card)
+  }
+
+  function cancelListingArchive() {
+    if (archivingListingId) return
+    setListingPendingArchive(null)
+  }
+
+  async function handleArchiveListing(card) {
+    const listingRecord = card?.listingRecord || card || {}
+    const remoteListingId = getRemoteListingIdForCard(card)
+    if (!remoteListingId) {
+      setError('This listing must be saved before it can be archived.')
+      return
+    }
+    const liveChannels = getLiveListingChannels(listingRecord)
+    setArchivingListingId(card.id)
+    setError('')
+    setWorkflowMessage('')
+    try {
+      const property24 = liveChannels.find((channel) => channel.key === 'property24')
+      if (property24?.canExpire) {
+        const sessionResult = await supabase?.auth.getSession()
+        const accessToken = sessionResult?.data?.session?.access_token
+        if (!accessToken) throw new Error('Sign in again before expiring the Property24 listing.')
+        const response = await fetch(`/api/property24/listings/${encodeURIComponent(remoteListingId)}/status-update`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'Expired', listingNumber: listingRecord.property24Reference || listingRecord.property24_reference }),
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(payload?.message || 'Property24 expiry failed. The listing was not archived.')
+      }
+      const privateProperty = liveChannels.find((channel) => channel.key === 'private_property')
+      if (privateProperty?.canExpire) {
+        const sessionResult = await supabase?.auth.getSession()
+        const accessToken = sessionResult?.data?.session?.access_token
+        if (!accessToken) throw new Error('Sign in again before expiring the Private Property listing.')
+        const response = await fetch(`/api/private-property/listings/${encodeURIComponent(remoteListingId)}/status-update`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ propertyStatus: 'Inactive' }),
+        })
+        const payload = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(payload?.message || 'Private Property expiry failed. The listing was not archived.')
+      }
+
+      await updatePrivateListing(remoteListingId, {
+        listingStatus: 'withdrawn',
+        listingVisibility: 'archived',
+        isActive: false,
+        bridgeListingStatus: 'paused',
+        ...(property24 ? { property24Status: 'expired' } : {}),
+        ...(privateProperty ? { privatePropertyStatus: 'inactive' } : {}),
+      })
+      await createPrivateListingActivity({
+        privateListingId: remoteListingId,
+        activityType: 'listing_archived',
+        activityTitle: 'Listing archived',
+        activityDescription: 'Listing archived from active operations after its supported live channels were expired.',
+        visibility: 'internal',
+        metadata: { liveChannels: liveChannels.map((channel) => channel.key) },
+      }).catch(() => {})
+      setPrivateListings((rows) => rows.filter((row) => String(row.id) !== String(remoteListingId)))
+      await loadData({ showLoading: false })
+      setWorkflowMessage(`“${String(card?.title || 'Listing').trim()}” was expired on its live channels and archived.`)
+      setListingPendingArchive(null)
+      window.dispatchEvent(new Event('itg:listings-updated'))
+    } catch (archiveError) {
+      setError(archiveError?.message || 'Unable to archive this listing.')
+    } finally {
+      setArchivingListingId('')
+    }
+  }
+
   async function handleDeleteListing(card) {
     const listingIdentityKeys = Array.from(new Set([
       ...(Array.isArray(card?.identityKeys) ? card.identityKeys : []),
@@ -8320,6 +8411,15 @@ function AgentListings({ initialTab = null } = {}) {
                           ) : null}
                           <button
                             type="button"
+                            onClick={(event) => requestListingArchive(card, event)}
+                            disabled={archivingListingId === card.id}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-[0.8rem] font-semibold text-[#7a4e12] transition hover:bg-[#fff9ed] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {archivingListingId === card.id ? <Loader2 size={14} className="animate-spin" /> : <Archive size={14} />}
+                            Archive Listing
+                          </button>
+                          <button
+                            type="button"
                             onClick={(event) => {
                               requestListingDeletion(card, event)
                             }}
@@ -8652,6 +8752,41 @@ function AgentListings({ initialTab = null } = {}) {
                 </Button>
               </div>
             </form>
+          </div>
+        </div>
+      ) : null}
+
+      {listingPendingArchive ? (
+        <div
+          className="fixed inset-0 z-[80] grid place-items-center bg-[#091322]/45 p-5 backdrop-blur-[1.5px]"
+          role="presentation"
+          onMouseDown={cancelListingArchive}
+        >
+          <div className="w-full max-w-lg rounded-[22px] border border-[#ead8b8] bg-white p-6 shadow-[0_22px_56px_rgba(15,23,42,0.28)]" role="dialog" aria-modal="true" aria-labelledby="archive-listing-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#8a5a12]">Archive listing</p>
+                <h3 id="archive-listing-title" className="mt-2 text-xl font-semibold text-[#142132]">Expire live listings and archive?</h3>
+              </div>
+              <button type="button" onClick={cancelListingArchive} disabled={Boolean(archivingListingId)} className="inline-flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#dce6f2] text-[#607387] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60" aria-label="Close archive listing confirmation"><X size={16} /></button>
+            </div>
+            <div className="mt-5 rounded-[16px] border border-[#ead8b8] bg-[#fffaf0] p-4 text-sm leading-6 text-[#624417]">
+              <p>Archive <span className="font-semibold">“{String(listingPendingArchive.title || 'this listing').trim()}”</span> from active operations?</p>
+              {getLiveListingChannels(listingPendingArchive).length ? (
+                <ul className="mt-3 list-disc space-y-1 pl-5">
+                  {getLiveListingChannels(listingPendingArchive).map((channel) => <li key={channel.key}>{channel.label}: will be expired</li>)}
+                </ul>
+              ) : <p className="mt-2">No live channels were detected. The listing will be archived in Arch9.</p>}
+              <p className="mt-3">This keeps the record for history, removes it from the active listings workspace, and pauses the Arch9 public catalogue listing.</p>
+            </div>
+            {error ? <div className="mt-4 rounded-[14px] border border-[#efd0ce] bg-[#fff7f6] px-4 py-3 text-sm font-semibold text-[#a13b35]">{error}</div> : null}
+            <div className="mt-6 flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="secondary" onClick={cancelListingArchive} disabled={Boolean(archivingListingId)}>Cancel</Button>
+              <Button type="button" onClick={() => handleArchiveListing(listingPendingArchive)} disabled={Boolean(archivingListingId)} className="!border-[#8a5a12] !bg-[#8a5a12] hover:!bg-[#70470d]">
+                {archivingListingId ? <Loader2 size={16} className="animate-spin" /> : <Archive size={16} />}
+                {archivingListingId ? 'Expiring and archiving...' : 'Expire and archive'}
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}

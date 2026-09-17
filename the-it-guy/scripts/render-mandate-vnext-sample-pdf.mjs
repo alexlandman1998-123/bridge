@@ -29,7 +29,7 @@ const sampleData = Object.freeze({
   mandate_commission_percent: '5% plus VAT',
   mandate_end_date: '30 November 2026',
   mandate_start_date: '1 August 2026',
-  mandate_type: 'Sole mandate',
+  mandate_type: 'Exclusive mandate',
   organisation_ffc_number: 'FFC-FIRM-2026-0001',
   organisation_fsp_number: 'FSP 000000',
   organisation_legal_name: 'Arch9 Realty Proprietary Limited',

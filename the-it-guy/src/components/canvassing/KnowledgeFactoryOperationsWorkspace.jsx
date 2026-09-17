@@ -14,6 +14,9 @@ import { getKnowledgeFactoryOperationsSnapshot } from "../../services/propertyIn
 import KnowledgeFactoryUatCasesPanel from "./KnowledgeFactoryUatCasesPanel";
 import KnowledgeFactoryCommercialPolicyPanel from "./KnowledgeFactoryCommercialPolicyPanel";
 import KnowledgeFactoryCostMatrixPanel from "./KnowledgeFactoryCostMatrixPanel";
+import KnowledgeFactoryReportProductsPanel from "./KnowledgeFactoryReportProductsPanel";
+import KnowledgeFactoryPackageCommercialPolicyPanel from "./KnowledgeFactoryPackageCommercialPolicyPanel";
+import KnowledgeFactoryPackagePilotPanel from "./KnowledgeFactoryPackagePilotPanel";
 
 function formatDate(value) {
   const date = new Date(value);
@@ -233,6 +236,13 @@ export default function KnowledgeFactoryOperationsWorkspace() {
             </section>
           </div>
           <KnowledgeFactoryCostMatrixPanel organisationId={organisationId} />
+          <KnowledgeFactoryReportProductsPanel
+            organisationId={organisationId}
+          />
+          <KnowledgeFactoryPackageCommercialPolicyPanel
+            organisationId={organisationId}
+          />
+          <KnowledgeFactoryPackagePilotPanel organisationId={organisationId} />
           <KnowledgeFactoryCommercialPolicyPanel
             organisationId={organisationId}
           />

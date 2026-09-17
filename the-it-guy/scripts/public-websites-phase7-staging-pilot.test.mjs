@@ -44,7 +44,7 @@ assert.match(publicRepository, /from\('website_pilot_enrolments'\)[\s\S]*\.eq\('
 assert.match(publicRepository, /if \(!revisionResult\.data \|\| !gateOpen\) return null/, 'public serving fails closed')
 assert.match(workspaceService, /mode: 'pilot_unavailable'/, 'CRM distinguishes agencies outside the pilot')
 assert.match(workspaceService, /mode: 'pilot_paused'/, 'CRM distinguishes paused pilots')
-assert.match(workspace, /Website Studio is opening with one agency first/, 'CRM explains the controlled rollout')
+assert.match(workspace, /Website editing is available for enrolled agencies/, 'CRM explains the enrolment requirement')
 assert.match(workspace, /Public serving and new enquiries are paused/, 'CRM explains the fail-closed pause state')
 
 assert.match(pilotRunner, /Refusing to target the production Supabase project/, 'operator refuses production')

@@ -1,2 +1,202 @@
 /* The guarantee is a dense comparison, so its dividers stop with the content. */
-.hs-brief-guarantee{position:relative;grid-template-columns:minmax(300px,.66fr) minmax(620px,1.34fr)!important;gap:clamp(38px,5vw,88px)!important;padding:clamp(66px,6vw,108px) clamp(24px,4vw,84px)!important;overflow:hidden}.hs-brief-guarantee:after{position:absolute;right:-.06em;bottom:-.18em;z-index:0;content:"45";color:rgba(255,255,255,.025);font:800 clamp(250px,31vw,570px)/.7 Montserrat,sans-serif;letter-spacing:-.12em}.hs-brief-guarantee>div{position:relative;z-index:1}.hs-brief-guarantee>div:first-child{max-width:550px}.hs-brief-guarantee h2{max-width:510px}.hs-brief-guarantee>div>p:not(.hs-brief-eyebrow){margin-bottom:26px}.hs-guarantee-marker{display:flex;align-items:center;gap:14px;margin-top:clamp(28px,3.5vw,55px);padding-top:17px;border-top:1px solid rgba(255,255,255,.33)}.hs-guarantee-marker strong{color:var(--hs-fast);font:800 clamp(68px,7vw,106px)/.72 Montserrat,sans-serif;letter-spacing:-.105em}.hs-guarantee-marker span{color:#fff;font:700 11px/1.18 Montserrat,sans-serif;letter-spacing:.08em}.hs-brief-commitments{align-self:start;margin-top:0;background:linear-gradient(90deg,rgba(255,255,255,.035),transparent)}.hs-brief-commitments article{position:relative;padding:27px clamp(22px,2.6vw,46px) 8px!important}.hs-brief-commitments article:before{display:block;margin-bottom:10px;color:var(--hs-fast);font:700 9px Montserrat,sans-serif;letter-spacing:.1em}.hs-brief-commitments article:first-child:before{content:"01 / OUR PROMISE"}.hs-brief-commitments article:last-child:before{content:"02 / YOUR PART"}.hs-brief-commitments h3{margin-bottom:26px;font-size:clamp(19px,1.25vw,22px)!important}.hs-brief-commitments p{gap:12px;margin-bottom:19px;font-size:clamp(15px,1vw,17px)!important;line-height:1.55!important}.hs-brief-commitments svg{width:18px;height:18px;margin-top:3px}@media(max-width:850px){.hs-brief-guarantee{grid-template-columns:1fr!important;padding:72px 28px!important}.hs-brief-commitments{margin-top:0}}@media(max-width:600px){.hs-brief-guarantee{padding:64px 22px!important}.hs-brief-guarantee:after{font-size:250px}.hs-guarantee-marker{margin-top:32px}.hs-brief-commitments article{padding:25px 0!important}.hs-brief-commitments article:first-child{padding-top:0!important}.hs-brief-commitments h3{font-size:19px!important}.hs-brief-commitments p{font-size:15px!important}}
+.hs-brief-guarantee {
+  position: relative;
+  grid-template-columns: minmax(300px, 0.66fr) minmax(620px, 1.34fr) !important;
+  gap: clamp(38px, 5vw, 88px) !important;
+  padding: clamp(66px, 6vw, 108px) clamp(24px, 4vw, 84px) !important;
+  overflow: hidden;
+}
+.hs-brief-guarantee:after {
+  position: absolute;
+  right: -0.06em;
+  bottom: -0.18em;
+  z-index: 0;
+  content: "45";
+  color: rgba(255, 255, 255, 0.025);
+  font:
+    800 clamp(250px, 31vw, 570px)/0.7 Montserrat,
+    sans-serif;
+  letter-spacing: -0.12em;
+}
+.hs-brief-guarantee > div {
+  position: relative;
+  z-index: 1;
+}
+.hs-brief-guarantee > div:first-child {
+  max-width: 550px;
+}
+.hs-brief-guarantee h2 {
+  max-width: 510px;
+}
+.hs-brief-guarantee > div > p:not(.hs-brief-eyebrow) {
+  margin-bottom: 26px;
+}
+.hs-guarantee-marker {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: clamp(28px, 3.5vw, 55px);
+  padding-top: 17px;
+  border-top: 1px solid rgba(255, 255, 255, 0.33);
+}
+.hs-guarantee-marker strong {
+  color: var(--hs-fast);
+  font:
+    800 clamp(68px, 7vw, 106px)/0.72 Montserrat,
+    sans-serif;
+  letter-spacing: -0.105em;
+}
+.hs-guarantee-marker span {
+  color: #fff;
+  font:
+    700 11px/1.18 Montserrat,
+    sans-serif;
+  letter-spacing: 0.08em;
+}
+.hs-brief-commitments {
+  align-self: start;
+  margin-top: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent);
+}
+.hs-brief-commitments article {
+  position: relative;
+  padding: 27px clamp(22px, 2.6vw, 46px) 8px !important;
+}
+.hs-brief-commitments article:before {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--hs-fast);
+  font:
+    700 9px Montserrat,
+    sans-serif;
+  letter-spacing: 0.1em;
+}
+.hs-brief-commitments article:first-child:before {
+  content: "01 / OUR PROMISE";
+}
+.hs-brief-commitments article:last-child:before {
+  content: "02 / YOUR PART";
+}
+.hs-brief-commitments h3 {
+  margin-bottom: 26px;
+  font-size: clamp(19px, 1.25vw, 22px) !important;
+}
+.hs-brief-commitments p {
+  gap: 12px;
+  margin-bottom: 19px;
+  font-size: clamp(15px, 1vw, 17px) !important;
+  line-height: 1.55 !important;
+}
+.hs-brief-commitments svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+@media (max-width: 850px) {
+  .hs-brief-guarantee {
+    grid-template-columns: 1fr !important;
+    padding: 72px 28px !important;
+  }
+  .hs-brief-commitments {
+    margin-top: 0;
+  }
+}
+@media (max-width: 600px) {
+  .hs-brief-guarantee {
+    padding: 64px 22px !important;
+  }
+  .hs-brief-guarantee:after {
+    font-size: 250px;
+  }
+  .hs-guarantee-marker {
+    margin-top: 32px;
+  }
+  .hs-brief-commitments article {
+    padding: 25px 0 !important;
+  }
+  .hs-brief-commitments article:first-child {
+    padding-top: 0 !important;
+  }
+  .hs-brief-commitments h3 {
+    font-size: 19px !important;
+  }
+  .hs-brief-commitments p {
+    font-size: 15px !important;
+  }
+}
+
+/* Give the guarantee a clearer deal structure and a touch of Home Seekers' voice. */
+.hs-brief-guarantee {
+  align-items: stretch;
+}
+
+.hs-brief-guarantee h2 em {
+  color: var(--hs-fast);
+  font-style: normal;
+}
+
+.hs-brief-guarantee > div:first-child {
+  display: flex;
+  flex-direction: column;
+}
+
+.hs-guarantee-marker {
+  margin-top: auto;
+  padding-bottom: 5px;
+}
+
+.hs-brief-commitments {
+  align-self: stretch;
+  min-height: 100%;
+  border-top: 1px solid #686868;
+  border-bottom: 1px solid #686868;
+  background: transparent;
+}
+
+.hs-brief-commitments article {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding-top: 31px !important;
+  padding-bottom: 27px !important;
+}
+
+.hs-brief-commitments article:first-child {
+  background: rgba(255, 99, 25, 0.07);
+}
+
+.hs-brief-commitments small {
+  display: block;
+  margin-top: auto;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.2);
+  color: #bdbdbb;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.45;
+}
+
+@media (max-width: 850px) {
+  .hs-guarantee-marker {
+    margin-top: 34px;
+  }
+
+  .hs-brief-commitments article {
+    min-height: 285px;
+  }
+}
+
+@media (max-width: 600px) {
+  .hs-brief-commitments {
+    border-bottom: 0;
+  }
+
+  .hs-brief-commitments article {
+    min-height: 0;
+    padding-bottom: 25px !important;
+  }
+
+  .hs-brief-commitments small {
+    margin-top: 10px;
+  }
+}

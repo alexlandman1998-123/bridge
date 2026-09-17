@@ -13,7 +13,7 @@ assert.doesNotMatch(modelSource, /buyerProcessDefinitionService/)
 assert.doesNotMatch(modelSource, /leadLifecyclePresentationService/)
 assert.match(lifecycleSource, /export function resolveAgencyLeadListLifecycle/)
 assert.match(lifecycleSource, /export function getBuyerLeadListStage/)
-assert.match(lifecycleSource, /\['listing_created', 'listing_live', 'documents_submitted'\]\.includes\(sellerKey\)/)
+assert.match(lifecycleSource, /if \(sellerKey && SELLER_LABELS\[sellerKey\]\) return sellerKey/)
 
 const bundle = await build({
   entryPoints: [resolve(root, 'src/pages/agency/agencyLeadListLifecycle.js')],
@@ -36,9 +36,16 @@ assert.deepEqual(
 assert.equal(lifecycle.getBuyerLeadListStage('Signed OTP Received').key, 'offer')
 assert.equal(lifecycle.getBuyerLeadListStage('Deal Created').key, 'transaction')
 
-for (const stage of ['Listing Created', 'Listing Live', 'All Documents Submitted']) {
+for (const [stage, expectedColumn] of [
+  ['Contacted', 'contacted'],
+  ['Onboarding Sent', 'seller_onboarding_sent'],
+  ['Onboarding Submitted', 'seller_onboarding_submitted'],
+  ['Listing Created', 'listing_created'],
+  ['Listing Live', 'listing_live'],
+  ['All Documents Submitted', 'documents_submitted'],
+]) {
   const presentation = lifecycle.resolveAgencyLeadListLifecycle({ leadCategory: 'seller', stage })
-  assert.equal(presentation.columnId, 'listing_active', `${stage} should remain in the seller listing column`)
+  assert.equal(presentation.columnId, expectedColumn, `${stage} should keep its matching seller journey column`)
 }
 assert.equal(
   lifecycle.resolveAgencyLeadListLifecycle({ leadCategory: 'seller', stage: 'Mandate Signed' }).columnId,
@@ -46,7 +53,12 @@ assert.equal(
 )
 assert.equal(
   lifecycle.resolveAgencyLeadListLifecycle({ leadCategory: 'seller', stage: 'Appointment Scheduled' }).columnId,
-  'valuation_scheduled',
+  'contacted',
+)
+assert.equal(
+  lifecycle.resolveAgencyLeadListLifecycle({ leadCategory: 'seller', stage: 'Deal Created' }).columnId,
+  'listing_live',
+  'legacy downstream deal records should stay visible without adding transaction columns to the seller board',
 )
 
 assert.match(

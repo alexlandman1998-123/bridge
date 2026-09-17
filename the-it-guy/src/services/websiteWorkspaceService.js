@@ -213,6 +213,18 @@ export async function createWebsiteSite(organisationId) {
   return result.data
 }
 
+export async function setWebsiteDraftTemplate(siteId, templateKey) {
+  assertWebsiteControlReady(siteId)
+  const safeTemplateKey = text(templateKey).toLowerCase()
+  if (!['property-standard-v1', 'home-seekers-v1'].includes(safeTemplateKey)) throw new Error('Choose a supported website template.')
+  const { data, error } = await supabase.rpc('website_set_draft_template', {
+    p_website_site_id: siteId,
+    p_template_key: safeTemplateKey,
+  })
+  if (error) throw error
+  return data
+}
+
 function assertWebsiteControlReady(siteId) {
   if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is not configured for website publishing.')
   if (!text(siteId)) throw new Error('A website site is required.')

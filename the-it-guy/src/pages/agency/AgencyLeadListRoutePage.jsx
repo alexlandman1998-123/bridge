@@ -6,6 +6,7 @@ import LeadsRouteShell from '../../components/leads/LeadsRouteShell'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
 import { useWorkspace } from '../../context/WorkspaceContextBase'
 import { canAccessPrincipalExperience } from '../../lib/organisationAccess'
+import { getAgencyLeadViewPreference, saveAgencyLeadViewPreference } from '../../lib/agencyLeadViewPreference'
 import { createSellerLeadsPerformanceBaseline } from '../../services/observability/sellerLeadsPerformanceBaseline'
 import LeadListPage from './LeadListPage'
 import {
@@ -247,6 +248,15 @@ export default function AgencyLeadListRoutePage() {
     if (workspaceId) setOrganisationId(workspaceId)
     setMembershipRole(resolveMembershipRole(currentMembership, organisationMembershipRole))
   }, [currentMembership, currentWorkspace, organisationMembershipRole, workspace])
+
+  useEffect(() => {
+    setViewMode(getAgencyLeadViewPreference({ userId: profile?.id, workspaceId: organisationId }))
+  }, [organisationId, profile?.id])
+
+  const handleViewModeChange = useCallback((nextViewMode) => {
+    const preference = saveAgencyLeadViewPreference({ userId: profile?.id, workspaceId: organisationId }, nextViewMode)
+    setViewMode(preference)
+  }, [organisationId, profile?.id])
 
   const loadLeads = useCallback(async ({ forceRefresh = false, requestedPage = page } = {}) => {
     const requestId = ++loadRequestRef.current
@@ -512,7 +522,7 @@ export default function AgencyLeadListRoutePage() {
         onFiltersChange={(patch) => { setPage(1); setFilters((previous) => ({ ...previous, ...patch })) }}
         onResetFilters={() => { setPage(1); setFilters({ ...DEFAULT_AGENCY_LEAD_FILTERS }) }}
         onCategoryChange={(nextCategory) => { setPage(1); setCategory(nextCategory) }}
-        onViewModeChange={setViewMode}
+        onViewModeChange={handleViewModeChange}
         onPageChange={(nextPage) => setPage(Math.max(1, Math.min(Number(nextPage) || 1, totalPages)))}
         onAddLead={(nextCategory) => {
           void loadLeadMutationActions().catch(() => null)

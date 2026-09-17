@@ -381,6 +381,15 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
         .eq('preview_hostname', hostname)
         .eq('status', 'active')
         .maybeSingle(),
+      // Production is now tenant-enrolled rather than limited to a single
+      // manually approved release. Keep this scoped to the resolved
+      // organisation: an active enrolment never grants another tenant access.
+      supabase
+        .from('website_pilot_enrolments')
+        .select('status')
+        .eq('organisation_id', site.organisation_id)
+        .eq('status', 'active')
+        .maybeSingle(),
     ]
     : [
       supabase
@@ -406,7 +415,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
   const releaseGateError = releaseGateResults.find((result) => result.error)?.error
   if (releaseGateError) throw releaseGateError
   const gateOpen = runtimeEnvironment === 'production'
-    ? (domain.domain_kind === 'custom' ? Boolean(releaseGateResults[0]?.data) : Boolean(releaseGateResults[1]?.data))
+    ? Boolean(releaseGateResults[2]?.data) || (domain.domain_kind === 'custom' ? Boolean(releaseGateResults[0]?.data) : Boolean(releaseGateResults[1]?.data))
     : Boolean(releaseGateResults[0]?.data)
   if (!revisionResult.data || !gateOpen) return null
 

@@ -276,7 +276,7 @@ const MARITAL_REGIMES = [
 ]
 
 const MANDATE_TYPE_OPTIONS = [
-  { value: 'sole', label: 'Sole Mandate', description: 'One agency is appointed to sell the property.' },
+  { value: 'sole', label: 'Exclusive Mandate', description: 'One agency is appointed to sell the property.' },
   { value: 'open', label: 'Open Mandate', description: 'More than one agency may market the property.' },
   { value: 'dual', label: 'Dual Mandate', description: 'Two parties share the selling mandate.' },
   { value: 'tri_mandate', label: 'Tri-Mandate', description: 'Three parties share the selling mandate.' },

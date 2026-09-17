@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowDown, ArrowLeft, ArrowUp, ArrowUpRight, CalendarDays, ChevronRight, FileText, Globe2, GripVertical, ImagePlus, Lightbulb, LockKeyhole, MessageCircle, Pencil, Plus, UserPlus, Users } from 'lucide-react'
 import { useAuthSession } from '../../context/AuthSessionContext'
-import { createWebsiteBlogPost, createWebsiteDraft, createWebsiteSite, discardWebsiteDraft, getWebsiteWorkspaceOverview, manageWebsiteBlogPost, manageWebsiteDomain, publishWebsiteDraft, resetWebsiteDraftBrand, saveWebsiteDraftBrand, saveWebsiteDraftPage, updateWebsiteBlogMedia, updateWebsiteBlogPost, uploadWebsiteBlogMedia } from '../../services/websiteWorkspaceService'
+import { createWebsiteBlogPost, createWebsiteDraft, createWebsiteSite, discardWebsiteDraft, getWebsiteWorkspaceOverview, manageWebsiteBlogPost, manageWebsiteDomain, publishWebsiteDraft, resetWebsiteDraftBrand, saveWebsiteDraftBrand, saveWebsiteDraftPage, setWebsiteDraftTemplate, updateWebsiteBlogMedia, updateWebsiteBlogPost, uploadWebsiteBlogMedia } from '../../services/websiteWorkspaceService'
 import WebsiteBrandEditor from './WebsiteBrandEditor'
 import WebsitePageEditor from './WebsitePageEditor'
 import './WebsiteWorkspace.css'
@@ -378,6 +378,21 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
       setAction('')
     }
   }
+  const selectTemplate = async (templateKey) => {
+    if (!overview.site?.id || action || overview.site.status !== 'draft' || overview.site.publishedRevisionId) return
+    setAction('template')
+    setError('')
+    setNotice('')
+    try {
+      await setWebsiteDraftTemplate(overview.site.id, templateKey)
+      await refresh()
+      setNotice(templateKey === 'home-seekers-v1' ? 'Home Seekers website template selected. Your edits remain private until publication.' : 'Property Standard website template selected. Your edits remain private until publication.')
+    } catch (templateError) {
+      setError(templateError?.message || 'Website template could not be updated.')
+    } finally {
+      setAction('')
+    }
+  }
   const saveBrand = async (brand) => {
     if (!overview.site?.id || !overview.draftRevision?.id || action) return
     setAction('brand')
@@ -513,7 +528,7 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
       <section className="ww-operations" aria-label="Website publishing status">
         {error && <p className="ww-error" role="status">{error}</p>}
         {notice && <p className="ww-notice" role="status">{notice}</p>}
-        {overview.mode === 'pilot_unavailable' && <div className="ww-pilot-gate"><LockKeyhole size={20} /><div><span className="md-eyebrow">CONTROLLED PILOT</span><h3>Website editing is opening with one agency first.</h3><p>This workspace is not enrolled in the staging pilot yet. Existing CRM, listing and branding data is unchanged.</p></div></div>}
+        {overview.mode === 'pilot_unavailable' && <div className="ww-pilot-gate"><LockKeyhole size={20} /><div><span className="md-eyebrow">WEBSITE ENROLMENT</span><h3>Website editing is available for enrolled agencies.</h3><p>Ask an Arch9 administrator to enrol this workspace. Existing CRM, listing and branding data is unchanged until its website is created.</p></div></div>}
         {overview.mode === 'pilot_paused' && <div className="ww-pilot-gate paused"><LockKeyhole size={20} /><div><span className="md-eyebrow">PILOT PAUSED</span><h3>Public serving and new enquiries are paused.</h3><p>The website history remains intact while the staging team reviews the pilot evidence.</p></div></div>}
         {overview.productionDarkLaunch?.status === 'prepared' && <div className="ww-pilot-gate"><LockKeyhole size={20} /><div><span className="md-eyebrow">PRODUCTION DARK LAUNCH</span><h3>The production preview is being prepared.</h3><p>No Kingstons domain or email DNS record is connected. Access remains limited to the reviewed Vercel preview.</p></div></div>}
         {overview.productionDarkLaunch?.status === 'active' && <div className="ww-pilot-gate"><LockKeyhole size={20} /><div><span className="md-eyebrow">PRODUCTION DARK LAUNCH ACTIVE</span><h3>The private production preview is available.</h3><p>Listings and internal enquiries use production data, but no client domain or public traffic has been enabled.</p></div></div>}
@@ -521,6 +536,7 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
         {overview.productionRelease?.status === 'approved' && <div className="ww-pilot-gate"><LockKeyhole size={20} /><div><span className="md-eyebrow">PRODUCTION PREPARATION</span><h3>The custom domain is not live yet.</h3><p>Website editing remains available while release approval, website-only DNS verification and safety checks are completed.</p></div></div>}
         {overview.productionRelease?.status === 'paused' && <div className="ww-pilot-gate paused"><LockKeyhole size={20} /><div><span className="md-eyebrow">PRODUCTION PAUSED</span><h3>The live website and new enquiries are paused.</h3><p>The preview, content and CRM history remain available when service resumes.</p></div></div>}
         {overview.mode === 'ready_to_create' && <div className="ww-create-site"><div><span className="md-eyebrow">PROPERTY STANDARD V1</span><h3>Create your agency website.</h3><p>We will prepare a private draft using your organisation name, logos, colours and contact details. About, Contact and Valuation pages are included, together with a managed preview address.</p><small>Your organisation branding is copied as a starting point. Future website edits will not change email or document branding.</small></div><button className="ww-publish" type="button" disabled={Boolean(action) || !organisationId} onClick={() => void createSite()}>{action === 'create' ? 'Creating website…' : 'Create website'}</button></div>}
+        {overview.mode === 'connected' && overview.site?.status === 'draft' && !overview.site?.publishedRevisionId && <section className="ww-template-select" aria-label="Website template"><div><span className="md-eyebrow">WEBSITE TEMPLATE</span><h3>Choose the starting design</h3><p>Choose Home Seekers for the dedicated Home Seekers public website. This can be changed only before the first publication.</p></div><label>Template<select value={overview.site.templateKey || 'property-standard-v1'} disabled={Boolean(action)} onChange={(event) => void selectTemplate(event.target.value)}><option value="property-standard-v1">Property Standard</option><option value="home-seekers-v1">Home Seekers</option></select></label></section>}
         {overview.mode === 'connected' && <div className={overview.draftRevision ? `ww-publishing-summary ${publicationReady ? 'ready' : 'blocked'}` : 'ww-editing-entry'}>
           {overview.draftRevision ? <><div className="ww-publishing-copy"><span>{publicationReady ? 'READY TO PUBLISH' : 'ACTION NEEDED'}</span><h3>{publicationReady ? `${changesReadyCount} change${changesReadyCount === 1 ? '' : 's'} ready to publish` : 'Finish these items before publishing'}</h3><p>{publicationReady ? 'Your changes are private now. Publishing makes them visible on your public website.' : 'Your changes are safely saved as private while you complete the items below.'}</p>{!publicationReady && <ul>{publicationBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>}{publicationReady && publicationBlockers.length > 0 ? <p className="ww-publishing-note">Your logo assets will be prepared automatically when you publish.</p> : null}</div><div className="ww-editing-entry-actions">{previewUrl ? <a className="ww-rollback" href={previewUrl} target="_blank" rel="noreferrer">View current live site <ArrowUpRight size={14} /></a> : null}<button className="ww-rollback" type="button" disabled={Boolean(action)} onClick={() => void runAction('discard')}>{action === 'discard' ? 'Discarding…' : 'Discard changes'}</button><button className="ww-publish" type="button" disabled={Boolean(action) || !publicationReady} onClick={() => void runAction('publish')}>{action === 'publish' ? 'Publishing…' : 'Publish changes'}</button></div></> : <><div><h3>Ready to make changes</h3><p>Start a private set of changes before updating your website identity or core content.</p></div><button className="ww-publish" type="button" disabled={Boolean(action) || !hasPublishedSite} onClick={() => void runAction('draft')}>{action === 'draft' ? 'Preparing…' : 'Start editing'}</button></>}
         </div>}

@@ -71,7 +71,7 @@ export const LANDLORD_MANDATE_TYPE_OPTIONS = [
 export const LANDLORD_RELATIONSHIP_TYPE_OPTIONS = [
   { value: 'preferred_broker', label: 'Preferred Broker' },
   { value: 'open_market_broker', label: 'Open Market Broker' },
-  { value: 'sole_mandate_broker', label: 'Sole Mandate Broker' },
+  { value: 'sole_mandate_broker', label: 'Exclusive Mandate Broker' },
   { value: 'historical_broker', label: 'Historical Broker' },
   { value: 'internal_contact', label: 'Internal Contact' },
 ]

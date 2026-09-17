@@ -8803,6 +8803,26 @@ export async function uploadPrivateListingDocument(listingId, file, {
     throw inserted.error
   }
   const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
+  // A listing document is only useful across the transaction workspaces when
+  // it is also projected into the shared `documents` record.  Seller-portal
+  // uploads already use this promoter; agent uploads must use the same path.
+  // The promoter records a pending state when the listing does not have a
+  // transaction yet and the transaction trigger promotes it once one exists.
+  let promotion = null
+  if (documentRow?.id) {
+    const promotionResult = await client.rpc('bridge_promote_private_listing_document_row', {
+      p_private_listing_document_id: documentRow.id,
+    })
+    if (promotionResult.error) {
+      const promotionError = new Error('Document uploaded, but it could not be linked to the shared transaction record.')
+      promotionError.code = 'private_listing_document_promotion_failed'
+      promotionError.cause = promotionResult.error
+      throw promotionError
+    }
+    promotion = promotionResult.data && typeof promotionResult.data === 'object'
+      ? promotionResult.data
+      : null
+  }
   const linkedRequirementId = documentRow?.requirement_id || matchedRequirement?.id || normalizedRequirementId || null
 
   if (linkedRequirementId) {
@@ -8877,6 +8897,11 @@ export async function uploadPrivateListingDocument(listingId, file, {
       uploadedBucket,
     ),
     privateListingId: normalizedListingId,
+    sharedDocumentId: normalizeText(promotion?.shared_document?.id || promotion?.shared_document_id || promotion?.document_id || ''),
+    promotedDocumentId: normalizeText(promotion?.shared_document?.id || promotion?.shared_document_id || promotion?.document_id || ''),
+    pendingTransactionPromotion: Boolean(promotion?.pending_transaction_promotion),
+    promotionStatus: normalizeText(promotion?.promotion_status || promotion?.reason || ''),
+    promotionError: normalizeText(promotion?.error || ''),
   }
 }
 

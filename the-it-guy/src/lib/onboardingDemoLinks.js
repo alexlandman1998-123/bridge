@@ -570,7 +570,7 @@ function getDemoSellerPortalSeed(token = SELLER_PORTAL_DEMO_TOKEN) {
     }),
     demoUploadedDocument({
       id: 'demo-seller-signed-mandate',
-      name: 'Signed Sole Mandate.pdf',
+      name: 'Signed Exclusive Mandate.pdf',
       category: 'Mandate',
       documentType: 'mandate_signature',
       uploadedByRole: 'agent',
@@ -647,7 +647,7 @@ function getDemoSellerPortalSeed(token = SELLER_PORTAL_DEMO_TOKEN) {
     mandatePacket: {
       id: 'demo-mandate-packet',
       state: 'fully_signed',
-      finalSignedFileName: 'Signed Sole Mandate.pdf',
+      finalSignedFileName: 'Signed Exclusive Mandate.pdf',
     },
     offers: [
       {

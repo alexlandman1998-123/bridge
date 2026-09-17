@@ -299,8 +299,8 @@ function sellerDealFields() {
       type: FORM_FIELD_TYPE.select,
       options: [
         { value: 'open', label: 'Open Mandate' },
-        { value: 'sole', label: 'Sole Mandate' },
-        { value: 'joint_sole', label: 'Joint Sole Mandate' },
+        { value: 'sole', label: 'Exclusive Mandate' },
+        { value: 'joint_sole', label: 'Joint Exclusive Mandate' },
         { value: 'exclusive', label: 'Exclusive Mandate' },
       ],
     }),
