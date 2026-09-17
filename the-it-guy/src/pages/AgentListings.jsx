@@ -3658,6 +3658,15 @@ function AgentListings({ initialTab = null } = {}) {
   const [developerLeadSubmitting, setDeveloperLeadSubmitting] = useState(false)
   const [listingUnitOptions, setListingUnitOptions] = useState([])
   const [listingUnitsLoading, setListingUnitsLoading] = useState(false)
+
+  useEffect(() => {
+    if (!openListingMenuId) return undefined
+
+    const closeListingMenu = () => setOpenListingMenuId('')
+    window.addEventListener('click', closeListingMenu)
+    return () => window.removeEventListener('click', closeListingMenu)
+  }, [openListingMenuId])
+
   const performanceBaselineRef = useRef(null)
   if (!performanceBaselineRef.current) {
     performanceBaselineRef.current = createAgentRoutePerformanceBaseline({ surface: 'listings', route: '/listings' })
@@ -8366,13 +8375,15 @@ function AgentListings({ initialTab = null } = {}) {
                   onClick={() => navigate(`/agent/listings/${encodeURIComponent(card.id)}`)}
                   className="group flex h-full cursor-pointer flex-col overflow-hidden rounded-[8px] border border-[#dce6f2] bg-white shadow-[0_6px_16px_rgba(15,23,42,0.05)] transition hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(15,23,42,0.09)]"
                 >
-                  <div className="relative h-[132px] w-full overflow-hidden border-b border-[#e5edf6]">
-                    <ListingCardImage src={card.imageUrl} alt={card.title} />
+                  <div className="relative h-[132px] w-full overflow-visible border-b border-[#e5edf6]">
+                    <div className="absolute inset-0 overflow-hidden">
+                      <ListingCardImage src={card.imageUrl} alt={card.title} />
+                    </div>
                     <div className="absolute left-3 right-14 top-3 inline-flex max-w-[calc(100%-4.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
                       <span className={`h-2 w-2 rounded-full ${inventoryDotClass(card.inventoryStatusKey)}`} />
                       <span className="truncate">{card.inventoryStatusLabel}</span>
                     </div>
-                    <div className="absolute right-3 top-3">
+                    <div className="absolute right-3 top-3 z-10">
                       <button
                         type="button"
                         onClick={(event) => {

@@ -189,9 +189,14 @@ assert(
 assert(
   source.includes('className="group flex h-full cursor-pointer flex-col') &&
     source.includes('h-[132px]') &&
+    source.includes('relative h-[132px] w-full overflow-visible') &&
+    source.includes('absolute inset-0 overflow-hidden') &&
+    source.includes('absolute right-3 top-3 z-10') &&
+    source.includes("window.addEventListener('click', closeListingMenu)") &&
+    source.includes("window.removeEventListener('click', closeListingMenu)") &&
     source.includes('ListingAgentAvatar') &&
     source.includes('propertyFacts'),
-  'listing cards should use the compact property-focused card treatment.',
+  'listing cards should retain their compact treatment while allowing the actions menu to extend below the image and dismiss on an outside click.',
 )
 
 console.log('agent-listings-delete-ui tests passed')
