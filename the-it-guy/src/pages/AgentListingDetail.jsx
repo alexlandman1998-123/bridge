@@ -9388,6 +9388,15 @@ function AgentListingDetail() {
     }
   }
 
+  function handleSellerProfileBuilderSubmit(event) {
+    if (sellerProfileBuilderStep < 3) {
+      event.preventDefault()
+      advanceSellerProfileBuilder()
+      return
+    }
+    void handleSaveSellerProfileBuilder(event)
+  }
+
   async function handleSaveSellerContact(event) {
     event.preventDefault()
     if (!listingRecord?.id) return
@@ -11745,7 +11754,7 @@ function AgentListingDetail() {
           </div>
         }
       >
-        <form id="listing-seller-profile-builder-form" className="space-y-5" onSubmit={handleSaveSellerProfileBuilder}>
+        <form id="listing-seller-profile-builder-form" className="space-y-5" onSubmit={handleSellerProfileBuilderSubmit}>
           <div className="grid grid-cols-3 gap-2 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-2 text-center text-xs font-semibold">
             {['Owner', 'Details', 'Property & bond'].map((label, index) => {
               const step = index + 1
@@ -11770,15 +11779,6 @@ function AgentListingDetail() {
 
           {sellerProfileBuilderStep === 2 ? <>
           <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Who owns this property?
-              <Field as="select" value={sellerProfileBuilderDraft.branch || ''} onChange={(event) => updateSellerProfileBuilderDraft('branch', event.target.value)}>
-                <option value="">Choose the property owner</option>
-                {LISTING_SELLER_PROFILE_BRANCHES.map((branch) => (
-                  <option key={branch.value} value={branch.value}>{branch.label}</option>
-                ))}
-              </Field>
-            </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Mandate type
               <Field as="select" value={sellerProfileBuilderDraft.mandateType || 'sole'} onChange={(event) => updateSellerProfileBuilderDraft('mandateType', event.target.value)}>
