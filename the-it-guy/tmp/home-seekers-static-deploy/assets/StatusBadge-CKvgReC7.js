@@ -1,1 +1,0 @@
-import{j as u}from"./vendor-react-nZI-YelQ.js";function i({tone:a="default",className:t="",children:e,...s}){const n=a==="accent"?"ui-badge ui-badge-accent":"ui-badge";return u.jsx("span",{className:`${n} ${t}`.trim(),...s,children:e})}export{i as S};

@@ -1709,6 +1709,37 @@ button.queue-item:hover,
   margin: 0;
 }
 
+.private-property-mapping-check {
+  align-items: center;
+  display: flex !important;
+  grid-template-columns: none !important;
+}
+
+.private-property-mapping-check input {
+  min-height: auto !important;
+  width: auto;
+}
+
+.private-property-mapping-list {
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+}
+
+.private-property-mapping-list > div {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.private-property-mapping-list ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
 .public-intake-shell {
   background:
     radial-gradient(circle at 96% 30%, rgba(71, 120, 100, 0.035), transparent 17rem),

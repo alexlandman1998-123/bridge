@@ -158,6 +158,7 @@ function resolveAgentMapping(agentMapping = {}, listing = {}, options = {}) {
 }
 
 function resolveSuburbId(catalogMapping = {}, listing = {}, publication = {}, options = {}) {
+  const canonicalFacts = listing.seller_canonical_facts_json || listing.sellerCanonicalFacts || {}
   return toProperty24Integer(
     catalogMapping.suburbId ||
       catalogMapping.suburb_id ||
@@ -166,6 +167,8 @@ function resolveSuburbId(catalogMapping = {}, listing = {}, publication = {}, op
       options.suburbId ||
       listing.property24_suburb_id ||
       listing.property24SuburbId ||
+      canonicalFacts.property24SuburbId ||
+      canonicalFacts.property24_suburb_id ||
       publication.property24_suburb_id ||
       publication.property24SuburbId,
   )

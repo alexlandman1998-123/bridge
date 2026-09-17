@@ -1,1 +1,0 @@
-import{j as t,O as o}from"./vendor-react-nZI-YelQ.js";import{M as r}from"./ExecutiveMobileUi-BIrHe2kJ.js";import"./vendor-runtime-CsAVBJvT.js";import"./utils-BQHNewu7.js";import"./stages-C8AZJ3uI.js";import"./financeType-CUnNfZDz.js";import"./vendor-icons-BqoWcGWz.js";function x(){return t.jsx(r,{className:"pb-16",children:t.jsx(o,{})})}export{x as default};

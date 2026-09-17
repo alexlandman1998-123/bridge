@@ -3,8 +3,11 @@ import fs from 'node:fs'
 import {
   createPrivatePropertyClient,
   createPrivatePropertyToken,
+  createPrivatePropertyTimestamp,
   extractPrivatePropertyXmlBlocks,
 } from '../server/services/privatePropertyClient.js'
+
+assert.equal(createPrivatePropertyTimestamp(new Date('2026-09-17T09:40:00.123Z')), '2026-09-17T09:40:00Z')
 import {
   parsePrivatePropertyActiveListings,
   parsePrivatePropertyListingEvents,

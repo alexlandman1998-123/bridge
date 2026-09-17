@@ -4,6 +4,7 @@ import HomeSeekersValuationModal from './HomeSeekersValuationModal'
 import HomeSeekersMobileNav from './HomeSeekersMobileNav'
 import HomeSeekersFooter from './HomeSeekersFooter'
 import './HomeSeekersJoin.css'
+import './HomeSeekersBrand.css'
 
 const paths = [
   { id: 'start', number: '01', title: 'Start in property', eyebrow: 'FOR PEOPLE AT THE BEGINNING', copy: 'Build the habits, local knowledge and confidence that turn a first opportunity into a career with momentum.', points: ['Structured introduction to the work', 'Real-world feedback from the start', 'A clear next step, not guesswork'] },

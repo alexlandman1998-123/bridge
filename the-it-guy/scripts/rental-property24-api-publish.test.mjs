@@ -109,7 +109,18 @@ const lifecycle = await createProperty24ApiResponse({
   headers: { authorization: 'Bearer test-token' },
   env,
   dependencies: {
-    createSupabase: () => ({ name: 'supabase' }),
+    // The status route checks for an existing production sync before using
+    // the injected read operation. Keep this tiny query mock aligned with
+    // that read-only lookup.
+    createSupabase: () => ({
+      from: () => {
+        const query = {
+          select: () => query,
+          eq: () => Promise.resolve({ data: [], error: null }),
+        }
+        return query
+      },
+    }),
     fetchListingStatus: async () => ({ lifecycle: { state: 'published', listingNumber: '1001001' } }),
   },
 })

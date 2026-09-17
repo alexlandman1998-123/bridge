@@ -45,7 +45,12 @@ export default async function handler(request, responseWriter) {
     if (!organisationId) return reply(400, { error: 'organisation_id_required' })
     if (request.method === 'GET') {
       const result = await resolvePrivatePropertyAgencyConfig({ client: supabase, organisationId, environment: 'production', allowDisabled: true })
-      return reply(200, { ...result, credentialsConfigured: Boolean(result.config?.id && result.config.metadata?.credentialsConfigured) })
+      const credentialState = result.config?.id
+        ? await supabase.from('private_property_agency_configs').select('username_secret_id,password_secret_id').eq('id', result.config.id).maybeSingle()
+        : { data: null, error: null }
+      if (credentialState.error) throw credentialState.error
+      const vaultCredentialsConfigured = Boolean(credentialState.data?.username_secret_id && credentialState.data?.password_secret_id)
+      return reply(200, { ...result, credentialsConfigured: vaultCredentialsConfigured || Boolean(result.config?.id && result.config.metadata?.credentialsConfigured) })
     }
     const input = await body(request)
     const existing = await resolvePrivatePropertyAgencyConfig({ client: supabase, organisationId, environment: 'production', allowDisabled: true })

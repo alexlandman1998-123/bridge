@@ -8,6 +8,7 @@ import "./HomeSeekersSellingResults.css";
 import "./HomeSeekersSellingRefinement.css";
 import "./HomeSeekersValuationModal.css";
 import "./HomeSeekersSellingMobile.css";
+import "./HomeSeekersBrand.css";
 
 const nav = [
   ["Selling", "selling"],

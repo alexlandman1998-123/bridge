@@ -10,6 +10,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import "./HomeSeekersBrand.css";
 import HomeSeekersValuationModal from "./HomeSeekersValuationModal";
 import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
 import HomeSeekersFooter from "./HomeSeekersFooter";

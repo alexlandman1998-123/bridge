@@ -5,6 +5,7 @@ import HomeSeekersValuationModal from './HomeSeekersValuationModal'
 import HomeSeekersFooter from './HomeSeekersFooter'
 import './HomeSeekersBuying.css'
 import './HomeSeekersRenting.css'
+import './HomeSeekersBrand.css'
 
 const rentals = [
   { id: 'brooklyn-apartment', place: 'Brooklyn', address: 'Brooklyn, Pretoria', price: 'R24,500', beds: 2, baths: 2, parking: 2, type: 'Apartment', feature: 'A lock-up-and-go home with calm interiors and a walkable address.', description: 'Sun-filled living, a private balcony and the kind of practical ease that makes city living feel effortless.', image: 'https://images.unsplash.com/photo-1600607687920-4e2a09cf159d?auto=format&fit=crop&w=1200&q=88' },

@@ -43,6 +43,7 @@ import { getSupabaseConfigStatus, isSupabaseConfigured, supabase } from './lib/s
 import EmailOperationsView from './EmailOperationsView'
 import Property24CredentialsView from './Property24CredentialsView'
 import PrivatePropertyConfigurationView from './PrivatePropertyConfigurationView'
+import PrivatePropertyAgentMappingsView from './PrivatePropertyAgentMappingsView'
 
 const APP_ENV = import.meta.env || {}
 const ARCH9_EXPLORE_URL = APP_ENV.VITE_ARCH9_EXPLORE_URL || '/'
@@ -6200,6 +6201,7 @@ function SettingsView({ access, profile }) {
       </section>
       <Property24CredentialsView access={access} />
       <PrivatePropertyConfigurationView access={access} />
+      <PrivatePropertyAgentMappingsView access={access} />
     </div>
   )
 }

@@ -398,3 +398,38 @@ export async function publishRentalProperty24Listing(listingId, options = {}) {
   }
   return payload
 }
+
+async function callPrivatePropertyRentalAction(listingId, action, body = {}, { method = 'POST' } = {}) {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId) throw new Error('Rental listing id is required.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before using Private Property publishing.')
+
+  const sessionResult = await supabase.auth.getSession()
+  const accessToken = sessionResult.data?.session?.access_token
+  if (!accessToken) throw new Error('Sign in again before using Private Property publishing.')
+
+  const response = await fetch(`/api/private-property/listings/${encodeURIComponent(normalizedListingId)}/${action}?environment=production`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(method === 'GET' ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(method === 'GET' ? {} : { body: JSON.stringify({ environment: 'production', photosChanged: true, ...body }) }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(String(payload?.message || 'Private Property rental request failed.'))
+  return payload
+}
+
+export function previewPrivatePropertyRentalListing(listingId) {
+  return callPrivatePropertyRentalAction(listingId, 'preview')
+}
+
+export function publishPrivatePropertyRentalListing(listingId) {
+  const normalizedListingId = normalizeText(listingId)
+  return callPrivatePropertyRentalAction(
+    normalizedListingId,
+    'publish',
+    { confirm: `PRIVATE_PROPERTY_PUBLISH:${normalizedListingId}:production` },
+  )
+}

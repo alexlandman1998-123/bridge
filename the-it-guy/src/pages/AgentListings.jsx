@@ -1995,20 +1995,20 @@ function isProperty24MigrationImportRecord(row = {}) {
   return source === 'property24_migration_import' || Boolean(facts?.property24Import)
 }
 
-function isArchivedProperty24MigrationImport(row = {}) {
-  if (!isProperty24MigrationImportRecord(row)) return false
+function isArchivedListingRecord(row = {}) {
   const status = String(row?.listingStatus || row?.listing_status || row?.status || '').trim().toLowerCase()
   const visibility = String(row?.listingVisibility || row?.listing_visibility || '').trim().toLowerCase()
-  return ['sold', 'withdrawn', 'archived'].includes(status) || ['archived', 'deleted'].includes(visibility)
+  if (visibility === 'archived' || status === 'archived') return true
+  return isProperty24MigrationImportRecord(row) && ['sold', 'withdrawn'].includes(status)
 }
 
 function shouldHideListingRecord(row = {}) {
-  return isDeletedListingRecord(row) && !isArchivedProperty24MigrationImport(row)
+  return isDeletedListingRecord(row) && !isArchivedListingRecord(row)
 }
 
 function getListingCollectionView(card = {}) {
   const listing = card?.listingRecord || card
-  if (isArchivedProperty24MigrationImport(listing)) return 'archived_imports'
+  if (isArchivedListingRecord(listing)) return 'archived'
   if (
     card?.listingStatusKey === 'listing_review' ||
     (isProperty24MigrationImportRecord(listing) && (!card?.assignedAgent?.isAssigned || isListingSellerOwnershipUnidentified(listing)))
@@ -3771,6 +3771,7 @@ function AgentListings({ initialTab = null } = {}) {
           dbPrivateListings = await getAgentPrivateListingSummaries(profile.id, {
             ...listingScope,
             includeArchivedImports: true,
+            includeArchivedListings: true,
           })
         }
 
@@ -3816,6 +3817,7 @@ function AgentListings({ initialTab = null } = {}) {
               assignedAgentEmail: profile?.email || '',
               includeMedia: true,
               includeArchivedImports: true,
+              includeArchivedListings: true,
             }).catch((listingError) => {
               console.warn('[LISTINGS] Detailed listing hydration failed; keeping summary rows.', listingError)
               return dbPrivateListings
@@ -6707,6 +6709,7 @@ function AgentListings({ initialTab = null } = {}) {
       }).catch(() => {})
       setPrivateListings((rows) => rows.filter((row) => String(row.id) !== String(remoteListingId)))
       await loadData({ showLoading: false })
+      setListingCollectionView('archived')
       setWorkflowMessage(`“${String(card?.title || 'Listing').trim()}” was expired on its live channels and archived.`)
       setListingPendingArchive(null)
       window.dispatchEvent(new Event('itg:listings-updated'))
@@ -7182,7 +7185,7 @@ function AgentListings({ initialTab = null } = {}) {
   const listingTabCounts = useMemo(
     () => ({
       residential: privateListingCards.filter((card) => ['residential', 'mixed_use', 'vacant_land'].includes(card.propertyCategory) && card.collectionView === 'current').length,
-      archivedImports: privateListingCards.filter((card) => card.collectionView === 'archived_imports').length,
+      archived: privateListingCards.filter((card) => card.collectionView === 'archived').length,
       review: privateListingCards.filter((card) => card.collectionView === 'review').length,
       developments: developmentCards.length,
     }),
@@ -8242,8 +8245,8 @@ function AgentListings({ initialTab = null } = {}) {
                 ? 'Listings'
                 : listingsTab === 'developments'
                 ? 'Development Listings'
-                : listingCollectionView === 'archived_imports'
-                  ? 'Archived Property24 Imports'
+                : listingCollectionView === 'archived'
+                  ? 'Archived Listings'
                   : listingCollectionView === 'review'
                     ? 'Listings for Review'
                     : 'Current Listings'}
@@ -8255,8 +8258,8 @@ function AgentListings({ initialTab = null } = {}) {
                 ? isDeveloperWorkspace
                   ? 'Development listings, portal syndication readiness, and buyer activity linked back to source developments.'
                   : 'Assigned developments, live buyer activity, and structured workspace access.'
-                : listingCollectionView === 'archived_imports'
-                  ? 'Historical records imported from Property24. They are retained for reference and are not part of current stock.'
+                : listingCollectionView === 'archived'
+                  ? 'Archived listings and historical Property24 imports. These records are retained for reference and are not part of current stock.'
                   : listingCollectionView === 'review'
                     ? 'Imported or internal listings that need an owner model, an assigned agent, or a listing review before they become current stock.'
                     : 'Agent-owned listings, seller onboarding, offers, and deal preparation.'}
@@ -8335,7 +8338,7 @@ function AgentListings({ initialTab = null } = {}) {
           <div className="mb-5 grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:grid-cols-3">
             {[
               { key: 'current', label: 'Current', count: listingTabCounts.residential || 0, description: 'Working stock and live listings' },
-              { key: 'archived_imports', label: 'Archived imports', count: listingTabCounts.archivedImports || 0, description: 'Historical Property24 records' },
+              { key: 'archived', label: 'Archive', count: listingTabCounts.archived || 0, description: 'Archived listings and historical imports' },
               { key: 'review', label: 'Review', count: listingTabCounts.review || 0, description: 'Owner or assignment needs attention' },
             ].map((view) => {
               const active = listingCollectionView === view.key

@@ -11,6 +11,7 @@ import "./HomeSeekersGuarantee.css";
 import "./HomeSeekersResults.css";
 import "./HomeSeekersAcademy.css";
 import "./HomeSeekersFooter.css";
+import "./HomeSeekersBrand.css";
 
 const asset = "https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/";
 const images = {
@@ -156,7 +157,7 @@ export default function HomeSeekersDemo() {
   }
   return (
     <main className="hs-site hs-brief" id="top">
-      <header className="hs-brief-header">
+      <header className="hs-brief-header hs-campaign-header">
         <a href="#top" className="hs-brief-logo" aria-label="Home Seekers home">
           <img
             src="/brand/homeseekers/home-seekers-horizontal-black.svg"
@@ -170,6 +171,14 @@ export default function HomeSeekersDemo() {
             </a>
           ))}
         </nav>
+        <a
+          className="hs-campaign-header__guarantee"
+          href="#guarantee"
+          aria-label="Read about the 45-day guarantee"
+        >
+          <strong>45</strong>
+          <span>DAY<br />GUARANTEE</span>
+        </a>
         <button
           type="button"
           className="hs-brief-button hs-brief-header__cta"
@@ -184,15 +193,18 @@ export default function HomeSeekersDemo() {
         />
       </header>
 
-      <section className="hs-brief-hero">
+      <section className="hs-brief-hero hs-campaign-hero">
+        <div className="hs-campaign-hero__visual" aria-hidden="true">
+          <img src={listings[0].image} alt="" />
+        </div>
         <div className="hs-brief-hero__copy">
           <Eyebrow>
             THE <strong>45-DAY GUARANTEE</strong>
           </Eyebrow>
-          <h1>Sold in 45 days, or we cut our commission.</h1>
+          <h1>Sold faster than<em> your hubby can fix the porch light.</em></h1>
           <p>
-            The performance-accountable property partner for people who expect
-            more than a promise and a listing.
+            45 days, or we cut the commission. No crossed fingers. Just a
+            published promise.
           </p>
           <div className="hs-brief-actions">
             <button
@@ -200,7 +212,7 @@ export default function HomeSeekersDemo() {
               className="hs-brief-button"
               onClick={() => setValuationOpen(true)}
             >
-              Book a free valuation
+              Get your 45-day game plan
             </button>
             <a className="hs-brief-text-link" href="#guarantee">
               How the guarantee works <ArrowRight size={16} />
@@ -211,13 +223,12 @@ export default function HomeSeekersDemo() {
             <a href="#guarantee">Full terms published - no small print.</a>
           </small>
         </div>
-        <img src={images.hero} alt="A Home Seekers property in Pretoria East" />
+        <div className="hs-campaign-hero__track" aria-label="The 45-day sales process">
+          <span><b>DAY 01</b> Price it right. Launch it hard.</span>
+          <span><b>DAY 14</b> Viewings, feedback, momentum.</span>
+          <span><b>DAY 45</b> Sold — or the commission drops.</span>
+        </div>
       </section>
-
-      <HomeSeekersFastTrack
-        compact
-        onValuation={() => setValuationOpen(true)}
-      />
 
       <section className="hs-brief-problem hs-editorial-problem">
         <div className="hs-editorial-problem__story">
@@ -277,39 +288,29 @@ export default function HomeSeekersDemo() {
         </aside>
       </section>
 
-      <section className="hs-brief-section hs-brief-process">
-        <Eyebrow>
-          HOW IT <strong>WORKS</strong>
-        </Eyebrow>
-        <div className="hs-brief-process__grid">
-          {[
-            [
-              "01",
-              "An honest price.",
-              "We show you the comparable sales, then tell you what your home will actually sell for. Not what wins us the mandate.",
-            ],
-            [
-              "02",
-              "A plan you can see.",
-              "Photography, video, portal placement, targeted advertising and an agreed contact plan - mapped to dates before we start.",
-            ],
-            [
-              "03",
-              "Written feedback every week.",
-              "Every viewing, every enquiry, every piece of buyer feedback, in writing. You never have to chase us.",
-            ],
-            [
-              "04",
-              "Day 45.",
-              "Sold, or our commission comes down. Either way the decision to continue is yours.",
-            ],
-          ].map(([number, title, copy]) => (
-            <article key={number}>
-              <span>{number}</span>
-              <h3>{title}</h3>
-              <p>{copy}</p>
-            </article>
-          ))}
+      <HomeSeekersFastTrack
+        compact
+        onValuation={() => setValuationOpen(true)}
+      />
+
+      <section className="hs-presentation-proof" aria-labelledby="proof-title">
+        <div>
+          <Eyebrow>
+            THE <strong>RECEIPTS</strong>
+          </Eyebrow>
+          <h2 id="proof-title">
+            Promises are cheap.<br />
+            <em>Proof is not.</em>
+          </h2>
+        </div>
+        <p>
+          The 45-day guarantee is a written commitment with a price tag, not a
+          slogan with a footnote.
+        </p>
+        <div className="hs-presentation-proof__stats" aria-label="Home Seekers performance">
+          <div><strong>28</strong><span>AVERAGE DAYS<br />TO OFFER</span></div>
+          <div><strong>86%</strong><span>SOLD WITHIN<br />45 DAYS</span></div>
+          <div><strong>97.4%</strong><span>OF ASKING<br />ACHIEVED</span></div>
         </div>
       </section>
 
@@ -345,8 +346,7 @@ export default function HomeSeekersDemo() {
           <article>
             <h3 style={{ color: "#fff" }}>What we put on the line.</h3>
             <p>
-              <Check size={16} /> Live on the market within{" "}
-              <em>[working days to confirm]</em> of signature
+              <Check size={16} /> Live on the market within <em>3 working days</em> of signature
             </p>
             <p>
               <Check size={16} /> The full marketing plan, executed as agreed
@@ -355,8 +355,7 @@ export default function HomeSeekersDemo() {
               <Check size={16} /> Written feedback every single week
             </p>
             <p>
-              <Check size={16} /> Commission reduced to{" "}
-              <em>[percentage to confirm]</em> if not sold by day 45
+              <Check size={16} /> Commission reduced from <em>7.5% to 3.75% (excl. VAT)</em> if not sold by day 45
             </p>
             <small>
               Our promise has a consequence. Not just a nice headline.
@@ -388,28 +387,27 @@ export default function HomeSeekersDemo() {
           </Eyebrow>
           <h2>Sold quicker than the estate WhatsApp can start speculating.</h2>
           <p>
-            We will connect this ledger to approved sales data. Until then, it
-            stays honest: no invented results, just the homes currently on the
-            market.
+            The deck records sales in 12 hours, one day, two days and beyond.
+            The point is not the boast - it is a system that leaves a paper trail.
           </p>
         </div>
         <article className="hs-results-ledger">
           <header>
             <span>HOME SEEKERS / RESULTS</span>
-            <span>LIVE FEED PENDING</span>
+            <span>45-DAY PERFORMANCE</span>
           </header>
           <div className="hs-results-ledger__statement">
             <strong>SOLD</strong>
             <h3>
-              Built for proof.
+              Built for a deadline.
               <br />
-              <em>Connected to live results.</em>
+              <em>Backed by the numbers.</em>
             </h3>
           </div>
           <div className="hs-results-ledger__rows">
             <div>
-              <span>RECENTLY SOLD</span>
-              <b>Live data pending</b>
+              <span>AVERAGE DAYS TO OFFER</span>
+              <b>28 days</b>
             </div>
             <div>
               <span>ON THE MARKET</span>

@@ -24,6 +24,8 @@ import WebsiteListingPublicationPanel from '../../components/listings/WebsiteLis
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   getRentalListingForAgent,
+  previewPrivatePropertyRentalListing,
+  publishPrivatePropertyRentalListing,
   previewRentalProperty24Listing,
   publishRentalProperty24Listing,
   updateRentalListingDraft,
@@ -316,6 +318,12 @@ function Property24SyndicationPanel({
   checkingProperty24,
   property24PreviewError,
   onCheckProperty24,
+  privatePropertyPreview,
+  checkingPrivateProperty,
+  publishingPrivateProperty,
+  privatePropertyError,
+  onCheckPrivateProperty,
+  onPublishPrivateProperty,
 }) {
   const readiness = detail.property24Readiness
   const previewDetails = getProperty24PreviewDetails(property24Preview)
@@ -370,6 +378,27 @@ function Property24SyndicationPanel({
             </button>
           </div>
         </div>
+
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
+          <div>
+            <p className="text-sm font-semibold text-[#18324b]">Private Property rental check</p>
+            <p className="mt-1 text-xs font-semibold text-[#607891]">
+              {privatePropertyPreview?.ready ? 'Ready to submit.' : 'Check the live rental payload and connection before submitting.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="ui-pill-button ui-pill-button-active" onClick={onCheckPrivateProperty} disabled={checkingPrivateProperty}>
+              {checkingPrivateProperty ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Eye size={16} aria-hidden="true" />}
+              Check Readiness
+            </button>
+            <button type="button" className="ui-pill-button" onClick={onPublishPrivateProperty} disabled={!privatePropertyPreview?.ready || publishingPrivateProperty}>
+              {publishingPrivateProperty ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Send size={16} aria-hidden="true" />}
+              Publish to Private Property
+            </button>
+          </div>
+        </div>
+
+        {privatePropertyError ? <p className="mb-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{privatePropertyError}</p> : null}
 
         {property24PreviewError ? (
           <p className="mb-4 rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p>
@@ -516,6 +545,10 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
         <label className="form-field">
           <span>Suburb</span>
           <input {...formField('suburb', form.suburb, onChange)} />
+        </label>
+        <label className="form-field">
+          <span>Property24 suburb ID</span>
+          <input inputMode="numeric" {...formField('property24SuburbId', form.property24SuburbId, onChange)} placeholder="Property24 suburb lookup ID" />
         </label>
         <label className="form-field">
           <span>City</span>
@@ -760,6 +793,12 @@ function RentalTabContent({
   checkingProperty24,
   property24PreviewError,
   onCheckProperty24,
+  privatePropertyPreview,
+  checkingPrivateProperty,
+  publishingPrivateProperty,
+  privatePropertyError,
+  onCheckPrivateProperty,
+  onPublishPrivateProperty,
   onOpenMarketing,
   onOpenEdit,
   property24ExpiryDate,
@@ -854,6 +893,12 @@ function RentalTabContent({
         checkingProperty24={checkingProperty24}
         property24PreviewError={property24PreviewError}
         onCheckProperty24={onCheckProperty24}
+        privatePropertyPreview={privatePropertyPreview}
+        checkingPrivateProperty={checkingPrivateProperty}
+        publishingPrivateProperty={publishingPrivateProperty}
+        privatePropertyError={privatePropertyError}
+        onCheckPrivateProperty={onCheckPrivateProperty}
+        onPublishPrivateProperty={onPublishPrivateProperty}
       />
     )
   }
@@ -897,6 +942,10 @@ export default function RentalListingDetailPage() {
   const [publishError, setPublishError] = useState('')
   const [property24Preview, setProperty24Preview] = useState(null)
   const [checkingProperty24, setCheckingProperty24] = useState(false)
+  const [privatePropertyPreview, setPrivatePropertyPreview] = useState(null)
+  const [checkingPrivateProperty, setCheckingPrivateProperty] = useState(false)
+  const [publishingPrivateProperty, setPublishingPrivateProperty] = useState(false)
+  const [privatePropertyError, setPrivatePropertyError] = useState('')
   const [property24PreviewError, setProperty24PreviewError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [property24ExpiryDate, setProperty24ExpiryDate] = useState('')
@@ -1104,6 +1153,41 @@ export default function RentalListingDetailPage() {
     }
   }
 
+  async function handleCheckPrivatePropertyReadiness() {
+    try {
+      setCheckingPrivateProperty(true)
+      setPrivatePropertyError('')
+      const payload = await previewPrivatePropertyRentalListing(listingId)
+      setPrivatePropertyPreview(payload)
+      setSuccessMessage(payload?.ready ? 'Private Property rental readiness check passed.' : 'Private Property has blockers to resolve before publishing.')
+    } catch (previewError) {
+      setPrivatePropertyPreview(null)
+      setPrivatePropertyError(previewError?.message || 'Unable to check Private Property rental readiness.')
+    } finally {
+      setCheckingPrivateProperty(false)
+    }
+  }
+
+  async function handlePrivatePropertyPublish() {
+    if (!privatePropertyPreview?.ready) {
+      setPrivatePropertyError('Run a clean Private Property readiness check before publishing this rental.')
+      return
+    }
+    if (!window.confirm('Submit this rental listing to Private Property production?')) return
+    try {
+      setPublishingPrivateProperty(true)
+      setPrivatePropertyError('')
+      const result = await publishPrivatePropertyRentalListing(listingId)
+      const reference = result?.report?.privatePropertyReference || result?.report?.syncResult?.privatePropertyRef || ''
+      setSuccessMessage(reference ? `Rental submitted to Private Property. Reference ${reference}.` : 'Rental submitted to Private Property.')
+      await loadListing()
+    } catch (publishError) {
+      setPrivatePropertyError(publishError?.message || 'Unable to publish this rental to Private Property.')
+    } finally {
+      setPublishingPrivateProperty(false)
+    }
+  }
+
   async function handleSaveProperty24Expiry() {
     if (!property24ExpiryDate) {
       setProperty24PreviewError('Choose a Property24 expiry date before saving.')
@@ -1282,6 +1366,12 @@ export default function RentalListingDetailPage() {
           checkingProperty24={checkingProperty24}
           property24PreviewError={property24PreviewError}
           onCheckProperty24={handleCheckProperty24Readiness}
+          privatePropertyPreview={privatePropertyPreview}
+          checkingPrivateProperty={checkingPrivateProperty}
+          publishingPrivateProperty={publishingPrivateProperty}
+          privatePropertyError={privatePropertyError}
+          onCheckPrivateProperty={handleCheckPrivatePropertyReadiness}
+          onPublishPrivateProperty={handlePrivatePropertyPublish}
           onOpenMarketing={() => setActiveTab('marketing')}
           onOpenEdit={openEditPanel}
           property24ExpiryDate={property24ExpiryDate}

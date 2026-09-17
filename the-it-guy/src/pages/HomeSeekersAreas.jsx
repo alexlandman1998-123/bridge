@@ -4,6 +4,7 @@ import HomeSeekersValuationModal from './HomeSeekersValuationModal'
 import HomeSeekersMobileNav from './HomeSeekersMobileNav'
 import HomeSeekersFooter from './HomeSeekersFooter'
 import './HomeSeekersAreas.css'
+import './HomeSeekersBrand.css'
 
 const areas = [
   { id: 'waterkloof', name: 'Waterkloof', number: '01', image: 'https://d21tw07c6rnmp0.cloudfront.net/media/uploads/869/residential/2026/2/869_42e792e711594d22ad9df15a573182f4_t_w_1540_h_635.avif', note: 'Leafy streets, established homes and a quiet sense of permanence.', tags: ['Established homes', 'Garden living', 'Close to the city'] },

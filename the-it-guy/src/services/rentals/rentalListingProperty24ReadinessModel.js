@@ -183,7 +183,7 @@ export function buildRentalProperty24PayloadPreview(listing = {}, options = {}) 
     ])),
     agentSourceReference: firstText(resolution.agentSourceReference, resolution.agent_source_reference, listing.property24AgentSourceReference, listing.property24_agent_source_reference),
     property: {
-      suburbId: firstText(resolution.suburbId, resolution.suburb_id, listing.property24SuburbId, listing.property24_suburb_id, listing.suburbId, listing.suburb_id),
+      suburbId: firstText(resolution.suburbId, resolution.suburb_id, listing.property24SuburbId, listing.property24_suburb_id, listing.suburbId, listing.suburb_id, facts.property24SuburbId, facts.property24_suburb_id, rentalInfo.property24SuburbId, rentalInfo.property24_suburb_id),
       propertyTypeId: firstText(resolution.propertyTypeId, resolution.property_type_id, listing.property24PropertyTypeId, listing.property24_property_type_id, listing.propertyTypeId, listing.property_type_id),
       address: row.address,
       suburb: row.suburb,

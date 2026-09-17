@@ -80,6 +80,7 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   mandateStartDate: '',
   mandateEndDate: '',
   property24ExpiryDate: '',
+  property24SuburbId: '',
   marketingApprovalStatus: 'draft',
   description: '',
   selectedFeatures: [],
@@ -269,6 +270,7 @@ export function buildRentalCanonicalFacts(form = {}) {
       exactAddressVisibility: normalizeText(form.exactAddressVisibility) || 'hide_street_number',
     },
     suburb: normalizeText(form.suburb),
+    property24SuburbId: normalizeText(form.property24SuburbId),
     city: normalizeText(form.city),
     province: normalizeText(form.province),
     propertyProfile: {
@@ -423,6 +425,7 @@ export function buildRentalPublicationDraft(form = {}) {
       rentalExcludes: normalizeText(form.rentalExcludes),
     },
     property24ExpiryDate: normalizeText(form.property24ExpiryDate),
+    property24SuburbId: normalizeText(form.property24SuburbId),
     portalFeatures: buildRentalCanonicalFacts(form).propertyProfile.portalFeatures,
     status: normalizeText(form.marketingApprovalStatus) === 'approved' ? 'Ready' : 'Draft',
   }

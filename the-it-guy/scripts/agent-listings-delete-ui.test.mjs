@@ -199,4 +199,19 @@ assert(
   'listing cards should retain their compact treatment while allowing the actions menu to extend below the image and dismiss on an outside click.',
 )
 
+assert(
+  source.includes("function isArchivedListingRecord(row = {})") &&
+    source.includes("return 'archived'") &&
+    source.includes("{ key: 'archived', label: 'Archive'") &&
+    source.includes("setListingCollectionView('archived')"),
+  'archived listings should be placed in the Archive collection immediately after archival.',
+)
+
+assert(
+  source.includes('includeArchivedListings: true') &&
+    serviceSource.includes('includeArchivedListings = false') &&
+    serviceSource.includes('if (includeArchivedListings && isArchivedPrivateListingRow(row)) return true'),
+  'the listing loaders must fetch archived listings for the Archive collection while keeping permanent deletions hidden.',
+)
+
 console.log('agent-listings-delete-ui tests passed')

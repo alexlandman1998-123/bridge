@@ -137,7 +137,7 @@ const blocked = createPrivatePropertyRentalListingPlan({
 })
 assert.equal(blocked.status, 'BLOCKED')
 assert.equal(blocked.canPreview, false)
-assert.ok(blocked.dataBlockers.includes('missing_private_property_suburb_id'))
+assert.ok(!blocked.dataBlockers.includes('missing_private_property_suburb_id'))
 assert.ok(blocked.dataBlockers.includes('rental_mandate_not_signed'))
 assert.ok(blocked.dataBlockers.includes('rental_marketing_not_approved'))
 assert.equal(blocked.listingXml, '')

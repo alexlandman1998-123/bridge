@@ -4,6 +4,7 @@ import HomeSeekersMobileNav from "./HomeSeekersMobileNav";
 import HomeSeekersValuationModal from "./HomeSeekersValuationModal";
 import HomeSeekersFooter from "./HomeSeekersFooter";
 import "./HomeSeekersAboutNext.css";
+import "./HomeSeekersBrand.css";
 
 const nav = [
   ["Selling", "selling"],

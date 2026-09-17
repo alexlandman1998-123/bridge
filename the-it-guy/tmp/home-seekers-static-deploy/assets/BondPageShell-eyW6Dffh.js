@@ -1,0 +1,1 @@
+import{j as e}from"./vendor-react-CxWbXxZ0.js";import{c as o}from"./utils-BQHNewu7.js";function t({children:m,className:a=""}){return e.jsx("section",{className:o("mx-auto w-full max-w-[1600px] space-y-[clamp(1.25rem,1.8vw,2rem)]",a),children:m})}export{t as B};

@@ -132,7 +132,10 @@ function getAdapterDataBlockers({ values = {}, options = {} } = {}) {
   const blockers = []
   if (!values.monthlyRent) blockers.push('missing_rental_monthly_rent')
   if (!values.availableFrom) blockers.push('missing_rental_available_from')
-  if (!values.suburbId) blockers.push('missing_private_property_suburb_id')
+  // Private Property accepts either its suburb ID or a complete textual address.
+  // Do not make an optional lookup ID a hard rental-publish requirement: the
+  // base listing mapper already validates suburb, town, and province when no
+  // ID is supplied.
   if (!MANDATE_READY_STATUSES.has(normalizeKey(values.mandateStatus))) blockers.push('rental_mandate_not_signed')
   if (!MARKETING_READY_STATUSES.has(normalizeKey(values.marketingApprovalStatus))) blockers.push('rental_marketing_not_approved')
   if (normalizeKey(options.soleMandateExclusiveDays)) blockers.push('rental_exclusive_days_not_supported')

@@ -946,6 +946,7 @@ function buildListingSnapshotFormData(draft = {}) {
     listingDate: draft.listingDate || '',
     expiryDate: draft.expiryDate || '',
     property24ExpiryDate: formatDateInputValue(draft.property24ExpiryDate),
+    property24SuburbId: String(draft.property24SuburbId || '').trim(),
     property24ListingUrl: String(draft.property24ListingUrl || '').trim(),
     property24Reference: String(draft.property24Reference || '').trim(),
     property24Status: String(draft.property24Status || 'not_published').trim(),
@@ -3334,6 +3335,7 @@ function buildPropertyDraft(listingRecord) {
     listingDate: String(firstDraftValue(propertyDetails?.listingDate, onboardingFormData.listingDate)).trim(),
     expiryDate: String(firstDraftValue(propertyDetails?.expiryDate, onboardingFormData.expiryDate)).trim(),
     property24ExpiryDate: formatDateInputValue(firstDraftValue(propertyDetails?.property24ExpiryDate, onboardingFormData.property24ExpiryDate, onboardingFormData.property24_expiry_date)),
+    property24SuburbId: String(firstDraftValue(propertyDetails?.property24SuburbId, onboardingFormData.property24SuburbId, onboardingFormData.property24_suburb_id)).trim(),
     property24ListingUrl: String(firstDraftValue(propertyDetails?.property24ListingUrl, listingRecord?.property24ListingUrl, onboardingFormData.property24ListingUrl)).trim(),
     property24Reference: String(firstDraftValue(propertyDetails?.property24Reference, listingRecord?.property24Reference, onboardingFormData.property24Reference)).trim(),
     property24Status: String(firstDraftValue(propertyDetails?.property24Status, listingRecord?.property24Status, onboardingFormData.property24Status, 'not_published')).trim(),
@@ -3373,6 +3375,7 @@ function buildLightweightMarketingDraft(draft = {}) {
     property24Reference: String(safeDraft.property24Reference || '').trim(),
     property24Status: String(safeDraft.property24Status || '').trim(),
     property24ExpiryDate: formatDateInputValue(safeDraft.property24ExpiryDate),
+    property24SuburbId: String(safeDraft.property24SuburbId || '').trim(),
     privatePropertyListingUrl: String(safeDraft.privatePropertyListingUrl || '').trim(),
     privatePropertyReference: String(safeDraft.privatePropertyReference || '').trim(),
     privatePropertyStatus: String(safeDraft.privatePropertyStatus || '').trim(),
@@ -4423,6 +4426,7 @@ function AgentListingDetail() {
         listingDate: nextDraft.listingDate,
         expiryDate: nextDraft.expiryDate,
         property24ExpiryDate: formatDateInputValue(nextDraft.property24ExpiryDate),
+        property24SuburbId: nextDraft.property24SuburbId.trim(),
         property24ListingUrl: nextDraft.property24ListingUrl.trim(),
         property24Reference: nextDraft.property24Reference.trim(),
         property24Status: nextDraft.property24Status,
@@ -4452,6 +4456,7 @@ function AgentListingDetail() {
         offersFrom: Number(nextDraft.offersFrom || 0),
         rentalPricePeriod: nextDraft.rentalPricePeriod,
         availableFrom: formatDateInputValue(nextDraft.availableFrom),
+        property24SuburbId: nextDraft.property24SuburbId.trim(),
         bedrooms: nextDraft.bedrooms,
         bathrooms: nextDraft.bathrooms,
         garages: nextDraft.garages,
@@ -10527,6 +10532,10 @@ function AgentListingDetail() {
               {canUseMandateExpiry && mandateExpiryDate !== property24ExpiryDate ? <button type="button" onClick={() => setMarketingDraft((previous) => ({ ...previous, property24ExpiryDate: mandateExpiryDate }))} disabled={Boolean(property24Action)} className="text-xs font-semibold text-[#1f4f78] underline underline-offset-2 disabled:opacity-50">Use future mandate end date ({formatDate(mandateExpiryDate)})</button> : null}
             </div>
             {property24ExpiryError ? <p className="mt-3 text-xs font-semibold text-[#b54708]">{property24ExpiryError}</p> : null}
+            <label className="mt-4 grid max-w-sm gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718198]">Property24 suburb ID</span>
+              <Field inputMode="numeric" value={marketingDraft.property24SuburbId || ''} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24SuburbId: event.target.value }))} disabled={Boolean(property24Action)} placeholder="Property24 suburb lookup ID" />
+            </label>
           </section>
 
           <section className="grid gap-3 lg:grid-cols-4">

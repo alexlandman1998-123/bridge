@@ -1,1 +1,0 @@
-import{j as e}from"./vendor-react-nZI-YelQ.js";function o({lines:n=4,className:s=""}){return e.jsx("section",{className:`skeleton-block ${s}`.trim(),"aria-hidden":"true",children:Array.from({length:n}).map((t,r)=>e.jsx("span",{className:"skeleton-line"},r))})}export{o as L};

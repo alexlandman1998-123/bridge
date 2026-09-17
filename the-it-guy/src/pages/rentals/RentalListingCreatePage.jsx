@@ -447,6 +447,10 @@ export default function RentalListingCreatePage() {
                 <input {...formField('suburb', form.suburb, updateForm)} placeholder="Suburb" />
               </label>
               <label className="form-field">
+                <span>Property24 suburb ID</span>
+                <input inputMode="numeric" {...formField('property24SuburbId', form.property24SuburbId, updateForm)} placeholder="Property24 suburb lookup ID" />
+              </label>
+              <label className="form-field">
                 <span>City</span>
                 <input {...formField('city', form.city, updateForm)} placeholder="City" />
               </label>

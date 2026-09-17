@@ -144,6 +144,7 @@ export function buildRentalListingEditForm(listing = {}) {
     mandateStartDate: normalizeText(row.mandateStartDate),
     mandateEndDate: normalizeText(row.mandateEndDate),
     property24ExpiryDate: normalizeText(raw.property24ExpiryDate || raw.property24_expiry_date || publication.property24ExpiryDate || publication.property24_expiry_date || raw.expiryDate),
+    property24SuburbId: normalizeText(raw.property24SuburbId || raw.property24_suburb_id || publication.property24SuburbId || publication.property24_suburb_id || rentalInfo.property24SuburbId || rentalInfo.property24_suburb_id),
     marketingApprovalStatus: normalizeText(row.marketingApprovalStatus) || RENTAL_LISTING_INITIAL_FORM.marketingApprovalStatus,
     description: normalizeText(raw.description || raw.listingPreviewDescription || raw.listing_preview_description),
     selectedFeatures: Array.isArray(propertyProfile.selectedFeatures)

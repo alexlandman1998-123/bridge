@@ -35,22 +35,7 @@ export function escapePrivatePropertyXml(value = '') {
 }
 
 export function createPrivatePropertyTimestamp(date = new Date()) {
-  const localDate = new Date(date.getTime() + 2 * 60 * 60 * 1000)
-  const pad = (value) => String(value).padStart(2, '0')
-  return [
-    localDate.getUTCFullYear(),
-    '-',
-    pad(localDate.getUTCMonth() + 1),
-    '-',
-    pad(localDate.getUTCDate()),
-    'T',
-    pad(localDate.getUTCHours()),
-    ':',
-    pad(localDate.getUTCMinutes()),
-    ':',
-    pad(localDate.getUTCSeconds()),
-    '+02:00',
-  ].join('')
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z')
 }
 
 export function createPrivatePropertyToken({
@@ -390,6 +375,14 @@ export function createPrivatePropertyClient({
       const guid = normalizePrivatePropertyText(branchGuid)
       if (!guid) throw new Error('Private Property branch GUID is required.')
       return callSoap('GetActiveListings', [
+        `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
+        tokenXml(),
+      ].join(''))
+    },
+    getAllAgentsForBranch: ({ branchGuid } = {}) => {
+      const guid = normalizePrivatePropertyText(branchGuid)
+      if (!guid) throw new Error('Private Property branch GUID is required.')
+      return callSoap('GetAllAgentsForBranch', [
         `<BranchId>${escapePrivatePropertyXml(guid)}</BranchId>`,
         tokenXml(),
       ].join(''))

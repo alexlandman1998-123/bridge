@@ -1,0 +1,1 @@
+import{j as a}from"./vendor-react-CxWbXxZ0.js";import{C as e}from"./CommercialPlaceholderPage-C0Kclx-g.js";import"./vendor-runtime-CsAVBJvT.js";import"./vendor-icons-DVwaqAC6.js";function t(){return a.jsx(e,{title:"Calendar",description:"Plan broker follow-ups, viewings, canvassing activity, and commercial pipeline appointments.",badge:"Coming soon"})}export{t as default};
