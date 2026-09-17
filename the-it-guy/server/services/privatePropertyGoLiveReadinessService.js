@@ -1,7 +1,7 @@
 import { normalizePrivatePropertyText } from './privatePropertyClient.js'
 import {
   resolvePrivatePropertyAgencyConfig,
-  resolvePrivatePropertyRuntimeCredentials,
+  resolvePrivatePropertyCredentials,
 } from './privatePropertyAgencyConfigService.js'
 import {
   resolvePrivatePropertyAgentMapping,
@@ -211,10 +211,11 @@ export async function buildPrivatePropertyGoLiveReadinessReport({
       environment: normalizedEnvironment,
     }),
   ])
-  const credentialResolution = resolvePrivatePropertyRuntimeCredentials(
-    agentMappingResolution.agencyConfig || agencyConfigResolution.config,
+  const credentialResolution = await resolvePrivatePropertyCredentials({
+    client,
+    config: agentMappingResolution.agencyConfig || agencyConfigResolution.config,
     secrets,
-  )
+  })
 
   return createPrivatePropertyGoLiveReadinessReport({
     listingId: normalizedListingId,

@@ -1,5 +1,5 @@
 import { createPrivatePropertyClient, normalizePrivatePropertyText, extractPrivatePropertyXmlTag } from './privatePropertyClient.js'
-import { resolvePrivatePropertyRuntimeCredentials } from './privatePropertyAgencyConfigService.js'
+import { resolvePrivatePropertyCredentials } from './privatePropertyAgencyConfigService.js'
 import { parsePrivatePropertyActiveListings } from './privatePropertyPostSubmitMonitorService.js'
 import { resolvePrivatePropertyExternalStatus } from './privatePropertyListingSyncService.js'
 
@@ -34,7 +34,7 @@ export async function createPrivatePropertyReconciliationReport({ client, organi
   const configurations = (configsResult.data || []).filter(activeConfig)
   const checks = []; const discrepancies = []
   for (const config of configurations) {
-    const credentials = resolvePrivatePropertyRuntimeCredentials(config, secrets)
+    const credentials = await resolvePrivatePropertyCredentials({ client, config, secrets })
     if (credentials.missingSecrets.length) { checks.push({ configId: config.id, status: 'BLOCKED', blockers: credentials.missingSecrets.map((name) => `missing_runtime_secret:${name}`) }); continue }
     const portal = createPrivateProperty({ baseUrl: config.base_url, username: credentials.username, password: credentials.password })
     const scoped = syncs.filter((sync) => sync.branch_guid === config.branch_guid)

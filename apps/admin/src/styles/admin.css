@@ -1703,6 +1703,12 @@ button.queue-item:hover,
   font-weight: 650;
 }
 
+.private-property-admin-status {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
 .public-intake-shell {
   background:
     radial-gradient(circle at 96% 30%, rgba(71, 120, 100, 0.035), transparent 17rem),

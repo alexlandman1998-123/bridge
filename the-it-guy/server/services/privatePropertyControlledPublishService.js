@@ -5,7 +5,7 @@ import {
   summarizePrivatePropertySoapResponse,
 } from './privatePropertyClient.js'
 import {
-  resolvePrivatePropertyRuntimeCredentials,
+  resolvePrivatePropertyCredentials,
 } from './privatePropertyAgencyConfigService.js'
 import {
   buildPrivatePropertyGoLiveReadinessReport,
@@ -166,7 +166,7 @@ export async function runPrivatePropertyControlledPublishRehearsal({
     return report
   }
 
-  const credentials = resolvePrivatePropertyRuntimeCredentials(readiness.agencyConfig, secrets)
+  const credentials = await resolvePrivatePropertyCredentials({ client, config: readiness.agencyConfig, secrets })
   report.credentialCheck = credentials.redacted
   if (credentials.missingSecrets.length) {
     report.status = 'BLOCKED'

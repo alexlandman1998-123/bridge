@@ -11,13 +11,6 @@ const INTEGRATION_CARDS = [
     logoAlt: 'Property24 logo',
   },
   {
-    to: '/settings/syndication/private-property',
-    label: 'Private Property',
-    description: 'Configure your Private Property syndication profile and routing details.',
-    logoSrc: '/lead-sources/private-property.jpeg',
-    logoAlt: 'Private Property logo',
-  },
-  {
     to: '/settings/lead-capture',
     label: 'Meta Lead Ads',
     description: 'Authorise Facebook and Instagram lead forms, then route enquiries into your CRM.',

@@ -488,6 +488,7 @@ const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
+const ListingMandateSigning = lazy(() => import('./pages/ListingMandateSigning'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
 const SettingsActivityPage = lazy(() => import('./pages/settings/SettingsActivityPage'))
 const SettingsBillingPage = lazy(() => import('./pages/settings/SettingsBillingPage'))
@@ -502,7 +503,6 @@ const SettingsPreferredPartnersPage = lazy(() => import('./pages/settings/Settin
 const SettingsPartnerProspectsPage = lazy(() => import('./pages/settings/SettingsPartnerProspectsPage'))
 const SettingsPartnerRoutingRulesPage = lazy(() => import('./pages/settings/SettingsPartnerRoutingRulesPage'))
 const SettingsProperty24Page = lazy(() => import('./pages/settings/SettingsProperty24Page'))
-const SettingsPrivatePropertyPage = lazy(() => import('./pages/settings/SettingsPrivatePropertyPage'))
 const SettingsSyndicationPage = lazy(() => import('./pages/settings/SettingsSyndicationPage'))
 const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'))
 const SettingsWorkflowsPage = lazy(() => import('./pages/settings/SettingsWorkflowsPage'))
@@ -3951,13 +3951,7 @@ function AppRoutes() {
                 />
                 <Route
                   path="syndication/private-property"
-                  element={
-                    <OrganisationSettingsManageRoute>
-                      <RoleRoute allowedRoles={['agent']}>
-                        <SettingsPrivatePropertyPage />
-                      </RoleRoute>
-                    </OrganisationSettingsManageRoute>
-                  }
+                  element={<Navigate replace to="/settings/syndication" />}
                 />
                 <Route path="property24" element={<Navigate to="/settings/syndication/property24" replace />} />
                 <Route
@@ -4123,6 +4117,7 @@ function AppRoutes() {
           <Route path="/bond-application/:accessToken" element={<TokenRouteGate paramKey="accessToken" title="Invalid bond application access link"><AppErrorBoundary scope="bond-application-access-route" title="Bond application failed to load"><BondApplicationPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
           <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/mandate-sign/:token" element={<AppErrorBoundary scope="listing-mandate-signing" title="Mandate signing failed to load"><ListingMandateSigning /></AppErrorBoundary>} />
           <Route path="/mobile/buyer-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-buyer-onboarding" title="Mobile buyer onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="buyer" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/mobile/seller-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-seller-onboarding" title="Mobile seller onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="seller" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/:token" element={<SellerLegacyRedirect />} />

@@ -318,3 +318,8 @@ enabled = true
 verify_jwt = true
 import_map = "./functions/whatsapp-campaigns/deno.json"
 entrypoint = "./functions/whatsapp-campaigns/index.ts"
+
+[functions.listing-mandate-signing]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/listing-mandate-signing/index.ts"

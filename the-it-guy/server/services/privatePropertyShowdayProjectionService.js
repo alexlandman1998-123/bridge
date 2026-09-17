@@ -1,5 +1,5 @@
 import { createPrivatePropertyClient, normalizePrivatePropertyText } from './privatePropertyClient.js'
-import { resolvePrivatePropertyRuntimeCredentials } from './privatePropertyAgencyConfigService.js'
+import { resolvePrivatePropertyCredentials } from './privatePropertyAgencyConfigService.js'
 
 export const PRIVATE_PROPERTY_SHOWDAY_PROJECTION_SERVICE_VERSION = 'arch9_private_property_showday_projection_v1'
 
@@ -34,7 +34,7 @@ export async function runPrivatePropertyShowdayProjection({ client, secrets = pr
     const shouldBeActive = activeEvent(event)
     if (previous && previous.active === shouldBeActive && previous.source_updated_at === event.updated_at && !previous.last_error) { reports.push({ eventId: event.id, status: 'UNCHANGED' }); continue }
     try {
-      const credentials = resolvePrivatePropertyRuntimeCredentials(config, secrets)
+      const credentials = await resolvePrivatePropertyCredentials({ client, config, secrets })
       if (credentials.missingSecrets.length) throw new Error(`Missing runtime secret: ${credentials.missingSecrets.join(', ')}`)
       const portal = createPrivateProperty({ baseUrl: config.base_url, username: credentials.username, password: credentials.password })
       await portal.listingShowdayUpdate({ branchGuid: listingSync.branch_guid, propertyId: listingSync.property_id, startDate: event.starts_at, endDate: event.ends_at || event.starts_at, description: event.description || '', active: shouldBeActive })

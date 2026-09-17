@@ -2,7 +2,7 @@ import {
   createPrivatePropertyClient,
   normalizePrivatePropertyText,
 } from './privatePropertyClient.js'
-import { resolvePrivatePropertyRuntimeCredentials } from './privatePropertyAgencyConfigService.js'
+import { resolvePrivatePropertyCredentials } from './privatePropertyAgencyConfigService.js'
 import { parsePrivatePropertyPostSubmitEvents } from './privatePropertyPostSubmitMonitorService.js'
 import { recordPrivatePropertyListingSync, resolvePrivatePropertyExternalStatus } from './privatePropertyListingSyncService.js'
 
@@ -51,7 +51,7 @@ async function updateCheckpoint({ client, config, continuationKey } = {}) {
 }
 
 async function reconcileConfig({ client, config, secrets, createPrivateProperty = createPrivatePropertyClient } = {}) {
-  const credentials = resolvePrivatePropertyRuntimeCredentials(config, secrets)
+  const credentials = await resolvePrivatePropertyCredentials({ client, config, secrets })
   const guid = branchGuid(config)
   if (!guid || credentials.missingSecrets.length) {
     return { configId: config.id, branchGuid: guid || null, status: 'BLOCKED', blockers: [!guid && 'missing_private_property_branch_guid', ...credentials.missingSecrets.map((name) => `missing_runtime_secret:${name}`)].filter(Boolean), processed: 0 }

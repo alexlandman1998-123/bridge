@@ -26,6 +26,11 @@ function env() {
 
 export default async function handler(request, response) {
   if (request.method === 'OPTIONS') return writeNodeJsonResponse(response, { status: 204, headers: { 'Cache-Control': 'no-store' }, body: null })
+  return writeNodeJsonResponse(response, privatePropertySettingsResponse(403, {
+    error: 'private_property_admin_managed',
+    message: 'Private Property agent mappings are managed by Arch9 in the Admin Console.',
+  }))
+  /* c8 ignore start -- retained temporarily for a safe rollback of the legacy agency workflow. */
   if (!['GET', 'PUT'].includes(request.method)) return writeNodeJsonResponse(response, privatePropertySettingsResponse(405, { error: 'method_not_allowed', message: 'Private Property agent mappings support GET and PUT.' }))
   try {
     const runtime = env()
@@ -71,4 +76,5 @@ export default async function handler(request, response) {
   } catch (error) {
     return writeNodeJsonResponse(response, privatePropertySettingsResponse(Number(error.status || 500), { error: error.code || 'private_property_agent_mapping_failed', message: error.message || 'Private Property agent mapping request failed.', missing: error.missing || undefined }))
   }
+  /* c8 ignore stop */
 }

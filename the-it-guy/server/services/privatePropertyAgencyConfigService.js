@@ -3,6 +3,7 @@ import {
   normalizePrivatePropertyBaseUrl,
   normalizePrivatePropertyText,
 } from './privatePropertyClient.js'
+import { fetchPrivatePropertyAgencyCredentials } from './privatePropertyCredentialService.js'
 
 export const PRIVATE_PROPERTY_AGENCY_CONFIG_SERVICE_VERSION = 'arch9_private_property_agency_config_service_v1'
 
@@ -322,4 +323,22 @@ export function resolvePrivatePropertyRuntimeCredentials(config = null, secrets 
       passwordSecretName: row.passwordSecretName,
     },
   }
+}
+
+// Admin-stored Vault credentials take precedence. Runtime variables remain a
+// migration fallback for existing configurations until their credentials have
+// been entered in the Admin Console.
+export async function resolvePrivatePropertyCredentials({ client, config, secrets = process.env } = {}) {
+  const row = normalizeConfigRow(config)
+  if (client && row?.id) {
+    const stored = await fetchPrivatePropertyAgencyCredentials({ supabase: client, configId: row.id })
+    if (stored) return {
+      username: stored.username,
+      password: stored.password,
+      missingSecrets: [],
+      source: stored.source,
+      redacted: { usernamePresent: true, passwordPresent: true, usernameSecretName: 'admin_vault', passwordSecretName: 'admin_vault' },
+    }
+  }
+  return { ...resolvePrivatePropertyRuntimeCredentials(row, secrets), source: 'runtime_fallback' }
 }

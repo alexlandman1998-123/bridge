@@ -1618,7 +1618,8 @@ function isListingDocumentComplete(document = {}) {
       document?.hasUpload ||
       document?.url ||
       document?.filePath ||
-      ['complete', 'completed', 'approved', 'verified', 'signed', 'uploaded'].includes(normalizeKey(document?.status)),
+      document?.generatedHtml ||
+      document?.generated_html,
   )
 }
 
@@ -3667,6 +3668,7 @@ function AgentListingDetail() {
   const [preferredTransferAttorneyChoiceTouched, setPreferredTransferAttorneyChoiceTouched] = useState(false)
   const [preferredTransferAttorneyLoading, setPreferredTransferAttorneyLoading] = useState(false)
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
+  const [mandateSetupOpen, setMandateSetupOpen] = useState(false)
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
@@ -6370,6 +6372,66 @@ function AgentListingDetail() {
       }
     } catch (error) {
       setDetailError(error?.message || 'Unable to prepare the mandate.')
+    } finally {
+      setFollowUpActionId('')
+    }
+  }
+
+  function openMandateSetup() {
+    setCommissionDraft((previous) => ({ ...previous, digitalMandateRequested: true }))
+    setDetailError('')
+    setDetailMessage('')
+    setMandateSetupOpen(true)
+  }
+
+  async function saveMandateSetup() {
+    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    if (!isValidEmail(sellerEmail)) {
+      setDetailError('Add a valid seller email before preparing the mandate.')
+      return
+    }
+    if (!(Number(commissionDraft.percentage) > 0)) {
+      setDetailError('Enter the commission percentage before preparing the mandate.')
+      return
+    }
+    if (!String(commissionDraft.vatHandling || '').trim()) {
+      setDetailError('Choose the VAT treatment before preparing the mandate.')
+      return
+    }
+
+    const saved = await saveCommissionDraft()
+    if (!saved) return
+    setMandateSetupOpen(false)
+    setDetailMessage('Mandate details saved. You can now send the secure signing link to the seller.')
+  }
+
+  async function sendListingMandateSigningLink() {
+    if (!isSupabaseConfigured || !isUuidLike(listingRecord?.id)) {
+      setDetailError('A live listing is required before a signing link can be sent.')
+      return
+    }
+
+    const sellerName = resolveSellerNameFromListing(listingRecord) || 'Seller'
+    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    const agentName = String(listingActor?.name || profile?.fullName || profile?.email || 'Agent').trim()
+    if (!isValidEmail(sellerEmail)) {
+      setDetailError('A valid seller email is required before sending the mandate for signature.')
+      return
+    }
+
+    try {
+      setFollowUpActionId('send_mandate_signing_link')
+      setDetailError('')
+      setDetailMessage('')
+      const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
+        action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, agentName,
+        mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionPercentage: commissionDraft.percentage, vatHandling: commissionDraft.vatHandling },
+      } })
+      if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Mandate signing email could not be sent.')
+      setDetailMessage('A secure one-time signing link has been emailed to the seller.')
+      window.dispatchEvent(new Event('itg:listings-updated'))
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to send the mandate for signature.')
     } finally {
       setFollowUpActionId('')
     }
@@ -9617,7 +9679,7 @@ function AgentListingDetail() {
   }
 
   async function saveCommissionDraft() {
-    if (!listingRecord?.id) return
+    if (!listingRecord?.id) return false
     setSavingCommission(true)
     setDetailMessage('')
     setDetailError('')
@@ -9727,8 +9789,10 @@ function AgentListingDetail() {
           ? 'Commercial terms saved. The signed mandate is unchanged; prepare an amendment for seller signature.'
           : 'Commercial terms saved. Refresh the mandate draft before it is signed.'
         : 'Commission details saved and synced across the seller profile.')
+      return true
     } catch (error) {
       setDetailError(error?.message || 'Commission details saved locally, but Supabase could not be updated.')
+      return false
     } finally {
       setSavingCommission(false)
     }
@@ -11079,6 +11143,67 @@ function AgentListingDetail() {
             <Button type="button" disabled={Boolean(followUpActionId)} onClick={() => void handleSendSellerOnboardingFollowUp({ confirmed: true })}>
               {followUpActionId === 'send_onboarding' ? 'Sending…' : 'Send seller onboarding'}
             </Button>
+          </div>
+        </div>
+      </Modal>
+      <Modal
+        open={mandateSetupOpen}
+        onClose={savingCommission ? undefined : () => setMandateSetupOpen(false)}
+        title="Generate mandate"
+        subtitle="Confirm the saved details, then prepare the mandate as the secure HTML signing draft. No email is sent yet."
+        className="max-w-2xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setMandateSetupOpen(false)} disabled={savingCommission}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void saveMandateSetup()} disabled={savingCommission}>
+              {savingCommission ? <Loader2 size={16} className="animate-spin" /> : <FileText size={16} />}
+              {savingCommission ? 'Saving...' : 'Generate HTML mandate'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-5">
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
+            Property, agency, and assigned-agent details are already taken from this listing. Only seller contact and commission details need confirmation.
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+              Seller
+              <Field value={resolveSellerNameFromListing(listingRecord) || 'Not captured'} readOnly />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+              Seller email
+              <Field value={resolveSellerEmailFromListing(listingRecord) || 'Not captured'} readOnly />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e] md:col-span-2">
+              Property
+              <Field value={listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || listingRecord?.title || 'Not captured'} readOnly />
+            </label>
+          </div>
+          {!isValidEmail(resolveSellerEmailFromListing(listingRecord)) ? (
+            <div className="flex flex-col gap-3 rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17] sm:flex-row sm:items-center sm:justify-between">
+              <span>A valid seller email is required before the signing link can be sent.</span>
+              <Button type="button" size="sm" variant="secondary" onClick={() => { setMandateSetupOpen(false); handleEditSellerProfile() }} disabled={savingCommission}>
+                Update seller contact
+              </Button>
+            </div>
+          ) : null}
+          <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+              Commission percentage
+              <Field type="number" min="0" step="0.01" value={commissionDraft.percentage} onChange={(event) => updateCommissionDraft('percentage', event.target.value)} placeholder="5" />
+            </label>
+            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+              VAT treatment
+              <Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}>
+                <option value="">Select VAT treatment</option>
+                <option value="no">No VAT</option>
+                <option value="exclusive">VAT exclusive</option>
+                <option value="inclusive">VAT inclusive</option>
+              </Field>
+            </label>
           </div>
         </div>
       </Modal>
@@ -14843,6 +14968,19 @@ function AgentListingDetail() {
                               ) : null
                             })() : null}
                             <div className="mt-4 flex flex-wrap justify-end gap-2">
+                              {documentMatchesSellerPackTransactionKey(doc, SELLER_BASE_PACK_KEYS.SIGNED_MANDATE) && !isListingDocumentComplete(doc) ? (
+                                Number(commissionDraft.percentage) > 0 && String(commissionDraft.vatHandling || '').trim() ? (
+                                  <Button type="button" size="sm" onClick={() => void sendListingMandateSigningLink()} disabled={followUpActionId === 'send_mandate_signing_link'}>
+                                    {followUpActionId === 'send_mandate_signing_link' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                                    Send signing link
+                                  </Button>
+                                ) : (
+                                  <Button type="button" size="sm" onClick={openMandateSetup}>
+                                    <FileText size={14} />
+                                    Generate Mandate
+                                  </Button>
+                                )
+                              ) : null}
                               <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                                 {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                                 {doc.uploaded ? 'Replace' : 'Upload'}

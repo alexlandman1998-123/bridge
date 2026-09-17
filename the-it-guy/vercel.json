@@ -19,7 +19,7 @@
     },
     {
       "path": "/api/property24/leads/sync",
-      "schedule": "0 * * * *"
+      "schedule": "*/2 * * * *"
     },
     {
       "path": "/api/property24/statistics/sync",

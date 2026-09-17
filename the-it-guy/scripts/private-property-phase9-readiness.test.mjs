@@ -298,7 +298,7 @@ assert.equal(branchlessListingReport.preview.payloadPreview.address.streetName, 
 const serviceSource = read('server/services/privatePropertyGoLiveReadinessService.js')
 assert.match(serviceSource, /resolvePrivatePropertyAgencyConfig/)
 assert.match(serviceSource, /resolvePrivatePropertyAgentMapping/)
-assert.match(serviceSource, /resolvePrivatePropertyRuntimeCredentials/)
+assert.match(serviceSource, /resolvePrivatePropertyCredentials/)
 assert.match(serviceSource, /createPrivatePropertyArch9ListingPreview/)
 assert.match(serviceSource, /privatePropertyApiCalled: false/)
 assert.match(serviceSource, /databaseWritten: false/)

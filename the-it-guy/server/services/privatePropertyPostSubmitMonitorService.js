@@ -6,7 +6,7 @@ import {
   summarizePrivatePropertySoapResponse,
 } from './privatePropertyClient.js'
 import {
-  resolvePrivatePropertyRuntimeCredentials,
+  resolvePrivatePropertyCredentials,
 } from './privatePropertyAgencyConfigService.js'
 import {
   buildPrivatePropertyGoLiveReadinessReport,
@@ -130,7 +130,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
   const listingType = normalizePrivatePropertyText(readiness.preview?.summary?.listingType) || 'Sale'
   const agentIds = Array.isArray(readiness.preview?.summary?.agentIds) ? readiness.preview.summary.agentIds : []
   const suburbId = readiness.preview?.summary?.suburbId ?? null
-  const credentialResolution = resolvePrivatePropertyRuntimeCredentials(readiness.agencyConfig, secrets)
+  const credentialResolution = await resolvePrivatePropertyCredentials({ client, config: readiness.agencyConfig, secrets })
   const blockers = unique([
     ...(readiness.ready ? [] : readiness.blockers || []),
     ...(!propertyId ? ['missing_private_property_property_id'] : []),

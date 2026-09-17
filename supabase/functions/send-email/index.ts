@@ -5,6 +5,7 @@ import { handleReservationDepositEmail } from "./handlers/reservationDeposit.ts"
 import { handleReservationDepositReceivedEmail } from "./handlers/reservationDepositReceived.ts";
 import { handleSellerOnboardingEmail } from "./handlers/sellerOnboarding.ts";
 import { handleSellerOnboardingSubmittedEmail } from "./handlers/sellerOnboardingSubmitted.ts";
+import { handleSellerMandateSentEmail } from "./handlers/sellerMandateSent.ts";
 import { handleAppointmentEmail } from "./handlers/appointment.ts";
 import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleDevelopmentMarketingInviteEmail } from "./handlers/developmentMarketingInvite.ts";
@@ -86,6 +87,7 @@ import type {
   SendSellerOfferReviewPayload,
   SendSellerOnboardingPayload,
   SendSellerOnboardingSubmittedPayload,
+  SendSellerMandateSentPayload,
   SendSellerViewingAvailabilityRequestPayload,
   SendTransactionOperationsNotificationPayload,
   SendTransactionPartnerInvitationPayload,
@@ -393,20 +395,13 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["seller_mandate_sent", "seller_mandate"].includes(type)) {
-      console.warn(
-        "[client-access-policy] retired seller mandate signing request blocked",
-        {
-          functionName: "send-email",
-          type,
-        },
-      );
-      return jsonResponse(410, {
-        success: false,
-        error:
-          "Seller mandate signing links are retired. Upload the signed mandate manually before activating the Seller Portal.",
-        errorCode: "SELLER_MANDATE_SIGNING_LINKS_RETIRED",
-        code: "seller_mandate_signing_links_retired",
+      console.log("[send-email] routing template", {
+        route: "seller_mandate_sent",
+        recipient: recipient || null,
       });
+      return await handleSellerMandateSentEmail(
+        payload as SendSellerMandateSentPayload,
+      );
     }
 
     if (type === "otp_signing") {

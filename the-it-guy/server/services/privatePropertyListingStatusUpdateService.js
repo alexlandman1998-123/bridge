@@ -1,5 +1,5 @@
 import { createPrivatePropertyClient, normalizePrivatePropertyText, summarizePrivatePropertySoapResponse } from './privatePropertyClient.js'
-import { resolvePrivatePropertyAgencyConfig, resolvePrivatePropertyRuntimeCredentials } from './privatePropertyAgencyConfigService.js'
+import { resolvePrivatePropertyAgencyConfig, resolvePrivatePropertyCredentials } from './privatePropertyAgencyConfigService.js'
 import { recordPrivatePropertyListingSync } from './privatePropertyListingSyncService.js'
 
 function key(value = '') {
@@ -34,7 +34,7 @@ export async function updatePrivatePropertyListingStatus({
 
   const agency = await resolvePrivatePropertyAgencyConfig({ client, listingId: normalizedListingId, environment: syncEnvironment })
   if (!agency.ready) throw new Error(`Private Property is not ready for a status update: ${(agency.blockers || []).join(', ')}.`)
-  const credentials = resolvePrivatePropertyRuntimeCredentials(agency.config, secrets)
+  const credentials = await resolvePrivatePropertyCredentials({ client, config: agency.config, secrets })
   if (credentials.missingSecrets.length) throw new Error(`Private Property credentials are unavailable: ${credentials.missingSecrets.join(', ')}.`)
 
   const portal = privateProperty || createPrivatePropertyClient({ baseUrl: agency.config.baseUrl, username: credentials.username, password: credentials.password })

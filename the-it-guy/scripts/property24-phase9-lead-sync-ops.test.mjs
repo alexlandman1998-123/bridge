@@ -1,9 +1,23 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { createProperty24LeadSyncResponse } from '../server/property24/index.js'
+import { createProperty24LeadSyncResponse, resolveScheduledProperty24After } from '../server/property24/index.js'
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+}
+
+function createStateClient({ acquired = true, cursorAfter = null } = {}) {
+  const calls = []
+  return {
+    calls,
+    rpc: async (name, args) => {
+      calls.push({ name, args })
+      if (name === 'property24_acquire_lead_sync_lock') {
+        return { data: [{ acquired, cursor_after: cursorAfter, lock_token: acquired ? '9f0e3b24-3fa7-4ef6-af76-895e6a0c38e4' : null }], error: null }
+      }
+      return { data: true, error: null }
+    },
+  }
 }
 
 const routeSource = read('api/property24/leads/sync.js')
@@ -24,14 +38,16 @@ assert.match(serverSource, /createProperty24ApiResponse/)
 assert.match(serverSource, /\/api\/property24\/leads\/pull/)
 
 assert.ok(
-  vercelConfig.crons.some((cron) => cron.path === '/api/property24/leads/sync' && cron.schedule === '0 * * * *'),
-  'Vercel cron must call the Property24 lead sync endpoint hourly.',
+  vercelConfig.crons.some((cron) => cron.path === '/api/property24/leads/sync' && cron.schedule === '*/2 * * * *'),
+  'Vercel cron must call the Property24 lead sync endpoint every two minutes.',
 )
 
 assert.equal(packageJson.scripts['property24:lead-sync'], 'node scripts/property24-pull-leads.mjs --apply')
 assert.equal(packageJson.scripts['test:property24-phase9-lead-sync-ops'], 'node scripts/property24-phase9-lead-sync-ops.test.mjs')
 assert.equal(rootPackageJson.scripts['property24:lead-sync'], 'npm --prefix the-it-guy run property24:lead-sync --')
 assert.equal(rootPackageJson.scripts['test:property24-phase9-lead-sync-ops'], 'npm --prefix the-it-guy run test:property24-phase9-lead-sync-ops --')
+assert.equal(resolveScheduledProperty24After({ cursorAfter: '2026-08-20T10:00:00.000Z' }), '2026-08-20T09:50:00.000Z')
+assert.equal(resolveScheduledProperty24After({ now: new Date('2026-08-20T10:00:00.000Z') }), '2026-08-19T10:00:00.000Z')
 
 const unauthorized = await createProperty24LeadSyncResponse({
   method: 'GET',
@@ -55,6 +71,7 @@ const dryRun = await createProperty24LeadSyncResponse({
     PROPERTY24_SYNDICATION_ENABLED: 'true',
   },
   dependencies: {
+    createLeadSyncStateClient: () => createStateClient(),
     createProperty24ApiResponse: async ({ method, url, headers, body }) => {
       delegatedPayload = { method, url, headers, body: JSON.parse(body) }
       return {
@@ -86,6 +103,7 @@ const scheduledApply = await createProperty24LeadSyncResponse({
     PROPERTY24_LEAD_SYNC_CRON_SECRET: 'cron-secret',
   },
   dependencies: {
+    createLeadSyncStateClient: () => createStateClient(),
     createProperty24ApiResponse: async ({ body }) => {
       delegatedPayload = JSON.parse(body)
       return {
@@ -101,5 +119,17 @@ const scheduledApply = await createProperty24LeadSyncResponse({
 assert.equal(scheduledApply.status, 200)
 assert.equal(scheduledApply.body.mode, 'APPLY')
 assert.equal(delegatedPayload.applyLeads, true)
+
+const overlapping = await createProperty24LeadSyncResponse({
+  method: 'GET',
+  url: '/api/property24/leads/sync',
+  headers: { authorization: 'Bearer cron-secret' },
+  env: { PROPERTY24_API_INTERNAL_TOKEN: 'internal-token', PROPERTY24_LEAD_SYNC_CRON_SECRET: 'cron-secret' },
+  dependencies: {
+    createLeadSyncStateClient: () => createStateClient({ acquired: false, cursorAfter: '2026-08-20T10:00:00.000Z' }),
+  },
+})
+assert.equal(overlapping.status, 202)
+assert.equal(overlapping.body.mode, 'SKIPPED_OVERLAP')
 
 console.log('Property24 phase 9 lead sync ops contract passed')

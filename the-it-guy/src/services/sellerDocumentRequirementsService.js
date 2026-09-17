@@ -2443,7 +2443,24 @@ function getStatusBucket(status = '') {
 function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
   const requirement = row?.original?.requirement || null
   const document = row?.original?.document || null
-  const status = normalizeSellerDocumentRequirementStatus(row?.status)
+  const sourceStatus = normalizeSellerDocumentRequirementStatus(row?.status)
+  const documentArtifactPresent = Boolean(document && (
+    row?.documentUrl || row?.url || resolveDocumentUrl(document || {}) ||
+    normalizeText(document?.storagePath || document?.storage_path || document?.filePath || document?.file_path) ||
+    normalizeText(document?.generatedHtml || document?.generated_html) ||
+    documentHasFile(document) ||
+    // Final signed packet artifacts use their packet/version pair to mint a
+    // short-lived URL on demand, so they remain a valid document source even
+    // before that URL is hydrated into this projection.
+    document?.source === SELLER_DOCUMENT_SOURCE_OF_TRUTH.signedMandateSource
+  ))
+  // A requirement's review status is not a document. Historical rows can say
+  // “approved” after a migration or a failed upload while containing no file
+  // or generated HTML at all; presenting those rows as complete leads to a
+  // blank document action in the listing workspace.
+  const status = !documentArtifactPresent && ['uploaded', 'under_review', 'approved', 'completed'].includes(sourceStatus)
+    ? 'required'
+    : sourceStatus
   const statusBucket = getStatusBucket(status)
   const required = row?.required !== false
   const applicable = row?.applicable !== false && !['not_applicable', 'cancelled'].includes(status)
@@ -2475,7 +2492,7 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
     applicable,
     complete,
     blocking: required && applicable && ['outstanding', 'rejected'].includes(statusBucket),
-    hasUpload: Boolean(document && (uploadUrl || uploadPath || generatedHtml || documentHasFile(document) || complete)),
+    hasUpload: documentArtifactPresent,
     packetId: normalizeText(document?.packetId || document?.packet_id),
     packetVersionId: normalizeText(document?.packetVersionId || document?.packet_version_id || document?.versionId || document?.version_id),
     requestedBy: row?.requestedBy || normalizeRequestedBy(requirement || {}, document || {}),

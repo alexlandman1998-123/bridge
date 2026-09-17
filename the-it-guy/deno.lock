@@ -2683,6 +2683,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@electric-sql/pglite@0.3.14",
         "npm:@eslint/js@^9.39.1",
         "npm:@radix-ui/react-accordion@^1.2.12",
         "npm:@radix-ui/react-dialog@^1.1.15",
@@ -2702,9 +2703,11 @@
         "npm:eslint-plugin-react-hooks@^7.0.1",
         "npm:eslint-plugin-react-refresh@~0.4.24",
         "npm:eslint@^9.39.1",
+        "npm:fflate@0.8.3",
         "npm:globals@^16.5.0",
         "npm:html2pdf.js@0.14",
         "npm:jsdom@^26.1.0",
+        "npm:jspdf@4.2.1",
         "npm:lenis@^1.3.21",
         "npm:lucide-react@0.577",
         "npm:motion@^12.38.0",
