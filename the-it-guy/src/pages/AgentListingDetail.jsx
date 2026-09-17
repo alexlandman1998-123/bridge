@@ -15000,6 +15000,32 @@ function AgentListingDetail() {
               if (complete) return 'bg-[#1f9d61]'
               return required ? 'bg-[#f29f33]' : 'bg-[#aebdca]'
             }
+            if (sellerOwnershipUnidentified) {
+              return (
+                <section className="grid min-h-[520px] place-items-center rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <div className="max-w-xl text-center">
+                    <span className="mx-auto grid h-14 w-14 place-items-center rounded-[18px] bg-[#ecfaf1] text-[#1f7d44]">
+                      <UserRound size={24} />
+                    </span>
+                    <h2 className="mt-5 text-xl font-semibold tracking-[-0.02em] text-[#142132]">Set up the seller first</h2>
+                    <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#607387]">
+                      We only have a contact person for this listing. Choose how you want to capture the owner so Arch9 can request the right documents and generate the right mandate.
+                    </p>
+                    <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
+                      <Button type="button" onClick={() => openSellerProfileBuilder('Capture the ownership and bond basics before documents or mandate generation.') }>
+                        <UserRound size={15} />
+                        Capture owner details
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => handleSendSellerOnboardingFollowUp()}>
+                        <Send size={15} />
+                        Send seller onboarding
+                      </Button>
+                    </div>
+                    <p className="mt-5 text-xs leading-5 text-[#8292a5]">No seller documents or mandate will be created until one of these paths provides the required owner context.</p>
+                  </div>
+                </section>
+              )
+            }
             return (
               <section className="space-y-5">
                 <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
