@@ -82,6 +82,7 @@ import {
 import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import { fetchDevelopmentsData } from '../lib/api'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
+import { isPropertyDisclosureDigitallyComplete } from '../lib/propertyDisclosure'
 import { getSellerAuthorityGate } from '../lib/sellerAuthorityGate'
 import { buildSellerSigningPlan } from '../lib/sellerSigningPlanModel'
 import {
@@ -6450,6 +6451,27 @@ function AgentListingDetail() {
     return buildSellerSigningPlan({ sellerType: listingRecord?.sellerType || form.sellerType, form })
   }
 
+  function getCombinedSellerSigningPackReadiness() {
+    const form = getListingSellerFormData(listingRecord)
+    const missing = []
+    if (!isPropertyDisclosureDigitallyComplete(form.propertyDisclosure || form.property_disclosure || {})) missing.push('complete the property disclosure in seller onboarding')
+    if (!String(form.idNumber || form.sellerIdNumber || form.passportNumber || '').trim()) missing.push('capture the seller ID or passport number')
+    if (!String(form.residentialAddress || form.residential_address || form.physicalAddress || '').trim()) missing.push('capture the seller residential address')
+    return { ready: missing.length === 0, missing }
+  }
+
+  function getSellerSigningDocumentOptions() {
+    const readiness = getCombinedSellerSigningPackReadiness()
+    const options = [{ key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the saved commission and VAT details.' }]
+    if (readiness.ready) {
+      options.unshift(
+        { key: 'disclosure', title: 'Property disclosure form', copy: 'Uses the completed Annexure A disclosure answers.' },
+        { key: 'fica', title: 'Seller FICA declaration', copy: 'Uses the captured seller, entity and property details.' },
+      )
+    }
+    return { options, readiness }
+  }
+
   function buildSellerSigningPackSnapshot(selectedDocuments = ['mandate']) {
     const form = getListingSellerFormData(listingRecord)
     const signingPlan = getSellerSigningPlan()
@@ -6503,11 +6525,10 @@ function AgentListingDetail() {
   }
 
   function openSellerDocumentSend(selectionOverride = null) {
+    const { readiness } = getSellerSigningDocumentOptions()
     setSellerDocumentSendSelection({
-      // Phase 0: disclosure and FICA move to the replacement single-pack
-      // signing experience. The legacy link is mandate-only in the meantime.
-      disclosure: false,
-      fica: false,
+      disclosure: readiness.ready,
+      fica: readiness.ready,
       mandate: true,
     })
     setDetailError('')
@@ -6517,8 +6538,13 @@ function AgentListingDetail() {
   }
 
   function continueSellerDocumentSend() {
-    if (!sellerDocumentSendSelection.mandate) {
-      setDetailError('The current signing link is temporarily limited to the mandate while the combined seller pack is being introduced.')
+    const { options, readiness } = getSellerSigningDocumentOptions()
+    if (!options.some((document) => sellerDocumentSendSelection[document.key])) {
+      setDetailError('Choose at least one document for this secure signing pack.')
+      return
+    }
+    if ((sellerDocumentSendSelection.disclosure || sellerDocumentSendSelection.fica) && !readiness.ready) {
+      setDetailError(`The combined seller pack is not ready: ${readiness.missing[0]}.`)
       return
     }
     setDetailError('')
@@ -6576,7 +6602,16 @@ function AgentListingDetail() {
       setDetailError(signingPlan.missing[0] || 'Complete the required signer details before preparing a document link.')
       return
     }
-    const selected = ['mandate']
+    const { options, readiness } = getSellerSigningDocumentOptions()
+    const selected = options.filter((document) => sellerDocumentSendSelection[document.key]).map((document) => document.key)
+    if (!selected.length) {
+      setDetailError('Choose at least one document for this secure signing pack.')
+      return
+    }
+    if ((selected.includes('disclosure') || selected.includes('fica')) && !readiness.ready) {
+      setDetailError(`The combined seller pack is not ready: ${readiness.missing[0]}.`)
+      return
+    }
     if (!isValidEmail(resolveSellerEmailFromListing(listingRecord))) {
       setDetailError('Add a valid seller email before preparing a document link.')
       return
@@ -11632,10 +11667,8 @@ function AgentListingDetail() {
           </div>
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4">
             <legend className="px-1 text-sm font-semibold text-[#2d445e]">Include in the secure signing link</legend>
-            <p className="text-sm leading-5 text-[#607387]">The temporary signing link is mandate-only. Disclosure and FICA will be sent through the combined seller pack, where they can be completed and signed together.</p>
-            {[
-              { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the commission and VAT details above.' },
-            ].map((document) => (
+            <p className="text-sm leading-5 text-[#607387]">A completed seller profile unlocks the combined disclosure, FICA and mandate pack. Until then, you can send a mandate-only link.</p>
+            {getSellerSigningDocumentOptions().options.map((document) => (
               <label key={document.key} className="flex items-start gap-3 rounded-xl border border-[#dce6f2] bg-white px-3 py-3 text-sm text-[#2d445e]">
                 <input type="checkbox" className="mt-0.5 h-4 w-4" checked={sellerDocumentSendSelection[document.key]} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
                 <span><span className="block font-semibold">{document.title}</span><span className="mt-0.5 block text-xs leading-5 text-[#607387]">{document.copy}</span></span>
@@ -11662,15 +11695,13 @@ function AgentListingDetail() {
         )}
       >
         <div className="space-y-4">
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Review the temporary mandate-only link.' : 'Confirm the seller and mandate details before sending.'}</div>
-          {sellerDocumentSendStep === 1 ? [
-            { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the saved commission percentage and VAT treatment.' },
-          ].map((document) => (
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Choose the documents for this secure signing pack.' : 'Confirm the seller and mandate details before sending.'}</div>
+          {sellerDocumentSendStep === 1 ? <><div className="space-y-3">{getSellerSigningDocumentOptions().options.map((document) => (
             <label key={document.key} className="flex cursor-pointer items-start gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 transition hover:border-[#b7c8db]">
               <input type="checkbox" className="mt-1 h-4 w-4" checked={sellerDocumentSendSelection[document.key]} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
               <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className="mt-1 block text-sm leading-5 text-[#607387]">{document.copy}</span></span>
             </label>
-          )) : <div className="space-y-4">
+          ))}</div>{!getSellerSigningDocumentOptions().readiness.ready ? <p className="rounded-xl border border-[#f2dfbd] bg-[#fff9ec] p-3 text-sm leading-5 text-[#7a5a17]">To unlock the combined pack, {getSellerSigningDocumentOptions().readiness.missing.join(' and ')}.</p> : null}</> : <div className="space-y-4">
           <div className="grid gap-3 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-sm sm:grid-cols-2">
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Seller</span><span className="font-semibold text-[#243d56]">{resolveSellerNameFromListing(listingRecord) || 'Not captured'}</span></div>
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Email</span><span className="break-all font-semibold text-[#243d56]">{resolveSellerEmailFromListing(listingRecord) || 'Not captured'}</span></div>
