@@ -11,6 +11,7 @@ const migration = await readFile(new URL('../../supabase/migrations/202609130942
 const leadOperationsMigration = await readFile(new URL('../../supabase/migrations/20260913115029_website_workspace_lead_operations.sql', import.meta.url), 'utf8')
 const leadWindowRepairMigration = await readFile(new URL('../../supabase/migrations/20260916183940_fix_website_workspace_leads_window.sql', import.meta.url), 'utf8')
 const mediaUploadPathRepairMigration = await readFile(new URL('../../supabase/migrations/20260916190000_fix_website_media_upload_path_validation.sql', import.meta.url), 'utf8')
+const mediaFilenameRegexRepairMigration = await readFile(new URL('../../supabase/migrations/20260917090000_fix_website_media_filename_regex.sql', import.meta.url), 'utf8')
 const recoveryMigration = await readFile(new URL('../../supabase/migrations/20260913113900_website_blog_revision_workflow.sql', import.meta.url), 'utf8')
 const blogDraftCloneMigration = await readFile(new URL('../../supabase/migrations/20260916113000_website_blog_draft_clone_integrity.sql', import.meta.url), 'utf8')
 
@@ -116,6 +117,7 @@ assert.match(leadWindowRepairMigration, /greatest\(1, least\(coalesce\(p_days, 3
 assert.doesNotMatch(leadWindowRepairMigration, /pg_catalog\.least|pg_catalog\.greatest/i, 'The lead read model must not schema-qualify PostgreSQL least/greatest expressions.')
 assert.match(mediaUploadPathRepairMigration, /storage\.filename\(object_name\)/i, 'Website media validation must inspect the filename instead of treating it as a folder.')
 assert.doesNotMatch(mediaUploadPathRepairMigration, /foldername\(object_name\)\)\[4\]/i, 'Website media validation must not expect a nonexistent fourth folder.')
+assert.match(mediaFilenameRegexRepairMigration, /\*\\\.\(jpe\?g\|png\|webp\|avif\)/i, 'Website media validation must use one regex escape before the filename extension.')
 assert.ok(!styles.includes('kingdom-hero-v1'), 'The global website overview cannot depend on Kingdom-specific assets.')
 
 console.log('website overview checks passed')
