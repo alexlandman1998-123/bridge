@@ -2309,6 +2309,10 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing
     signing: complianceSigning,
     generatedAt: completedAt || new Date().toISOString(),
   })
+  // Completing onboarding prepares the declaration, but it does not sign it.
+  // Do not let an unsigned generated preview satisfy the FICA requirement or
+  // present it as an approved/downloadable final document.
+  if (!sellerCompliancePack.complete) return null
   const declarationModel = buildFicaDeclarationDocumentModel({
     partyType: 'seller',
     transaction: {

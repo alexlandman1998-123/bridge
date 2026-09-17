@@ -2417,6 +2417,10 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(portalData = {}, works
     signing: complianceSigning,
     generatedAt: completedAt || new Date().toISOString(),
   })
+  // Onboarding completion is not a signature event. The declaration is only
+  // exposed as a completed downloadable artifact after all required signers
+  // have completed the seller compliance pack.
+  if (!sellerCompliancePack.complete) return null
   const declarationModel = buildFicaDeclarationDocumentModel({
     partyType: 'seller',
     transaction: {

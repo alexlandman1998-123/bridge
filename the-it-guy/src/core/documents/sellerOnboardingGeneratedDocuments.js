@@ -12,7 +12,9 @@ export function createSellerOnboardingGeneratedDocuments({ generatedAt = new Dat
     documents: SELLER_ONBOARDING_GENERATED_DOCUMENTS.map((document) => ({
       ...document,
       generatedAt,
-      status: 'completed',
+      // These are prepared at onboarding completion. They are not signed or
+      // approved until the seller compliance signing flow is complete.
+      status: 'ready_for_signature',
       source: 'seller_onboarding.generated_document',
     })),
     mandate: {
