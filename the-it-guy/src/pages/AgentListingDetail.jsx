@@ -3659,6 +3659,7 @@ function AgentListingDetail() {
   const [sellerProfileBuilderOpen, setSellerProfileBuilderOpen] = useState(false)
   const [sellerProfileBuilderSaving, setSellerProfileBuilderSaving] = useState(false)
   const [sellerProfileBuilderDraft, setSellerProfileBuilderDraft] = useState(() => createListingSellerProfileBuilderDraft())
+  const [sellerProfileBuilderStep, setSellerProfileBuilderStep] = useState(1)
   const sellerSetupPromptedListingIdRef = useRef('')
   const [sellerSectionEditorKey, setSellerSectionEditorKey] = useState('')
   const [sellerSectionDraft, setSellerSectionDraft] = useState({})
@@ -9166,10 +9167,20 @@ function AgentListingDetail() {
 
   function openSellerProfileBuilder(message = '') {
     setSellerProfileBuilderDraft(createListingSellerProfileBuilderDraft(listingRecord || {}))
+    setSellerProfileBuilderStep(1)
     setSellerProfileBuilderOpen(true)
     setSellerContactEditorOpen(false)
     setDetailError('')
     setDetailMessage(message)
+  }
+
+  function advanceSellerProfileBuilder() {
+    if (sellerProfileBuilderStep === 1 && !sellerProfileBuilderDraft.branch) {
+      setDetailError('Choose who owns this property before continuing.')
+      return
+    }
+    setDetailError('')
+    setSellerProfileBuilderStep((step) => Math.min(3, step + 1))
   }
 
   useEffect(() => {
@@ -11723,13 +11734,41 @@ function AgentListingDetail() {
             <Button type="button" variant="secondary" onClick={() => setSellerProfileBuilderOpen(false)} disabled={sellerProfileBuilderSaving}>
               Cancel
             </Button>
-            <Button type="submit" form="listing-seller-profile-builder-form" disabled={sellerProfileBuilderSaving}>
-              {sellerProfileBuilderSaving ? 'Saving...' : sellerOwnershipUnidentified ? 'Save Owner Details' : 'Save Seller Profile'}
-            </Button>
+            {sellerProfileBuilderStep > 1 ? <Button type="button" variant="secondary" onClick={() => setSellerProfileBuilderStep((step) => step - 1)} disabled={sellerProfileBuilderSaving}>Back</Button> : null}
+            {sellerProfileBuilderStep < 3 ? (
+              <Button type="button" onClick={advanceSellerProfileBuilder} disabled={sellerProfileBuilderSaving}>Continue</Button>
+            ) : (
+              <Button type="submit" form="listing-seller-profile-builder-form" disabled={sellerProfileBuilderSaving}>
+                {sellerProfileBuilderSaving ? 'Saving...' : sellerOwnershipUnidentified ? 'Save Owner Details' : 'Save Seller Profile'}
+              </Button>
+            )}
           </div>
         }
       >
         <form id="listing-seller-profile-builder-form" className="space-y-5" onSubmit={handleSaveSellerProfileBuilder}>
+          <div className="grid grid-cols-3 gap-2 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-2 text-center text-xs font-semibold">
+            {['Owner', 'Details', 'Property & bond'].map((label, index) => {
+              const step = index + 1
+              return <span key={label} className={`rounded-[10px] px-2 py-2 ${sellerProfileBuilderStep === step ? 'bg-[#073f30] text-white' : sellerProfileBuilderStep > step ? 'bg-[#dff4e8] text-[#176842]' : 'text-[#8292a5]'}`}>{step}. {label}</span>
+            })}
+          </div>
+
+          {sellerProfileBuilderStep === 1 ? (
+            <section className="rounded-[18px] border border-[#dce6f2] bg-white p-5">
+              <div className="text-center"><h3 className="text-lg font-semibold text-[#142132]">Who owns this property?</h3><p className="mt-1 text-sm text-[#607387]">Choose the legal owner. The next steps adapt to the people and authority needed.</p></div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {LISTING_SELLER_PROFILE_BRANCHES.filter((branch) => branch.value).map((branch) => {
+                  const selected = sellerProfileBuilderDraft.branch === branch.value
+                  return <button key={branch.value} type="button" onClick={() => updateSellerProfileBuilderDraft('branch', branch.value)} className={`min-h-[88px] rounded-[16px] border p-4 text-left transition ${selected ? 'border-[#168452] bg-[#ecfaf1] text-[#0f6840] shadow-[0_8px_18px_rgba(22,132,82,0.12)]' : 'border-[#dce6f2] bg-white text-[#243d56] hover:border-[#a9c9b8] hover:bg-[#f7fcf9]'}`}>
+                    <span className="block text-sm font-semibold">{branch.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[#607387]">{selected ? 'Selected' : 'Choose this owner type'}</span>
+                  </button>
+                })}
+              </div>
+            </section>
+          ) : null}
+
+          {sellerProfileBuilderStep === 2 ? <>
           <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Who owns this property?
@@ -11943,6 +11982,9 @@ function AgentListingDetail() {
             </section>
           ) : null}
 
+          </> : null}
+
+          {sellerProfileBuilderStep === 3 ? <>
           <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
               Property address
@@ -12120,6 +12162,7 @@ function AgentListingDetail() {
               ) : null}
             </section>
           ) : null}
+          </> : null}
         </form>
       </Modal>
       <Modal
