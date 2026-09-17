@@ -100,8 +100,9 @@ assert.match(notes, /Monthly rent: R18500/)
 assert.match(notes, /Utilities: Prepaid electricity/)
 assert.match(notes, /Rental excludes: Prepaid electricity/)
 
-assert.ok(
-  validateRentalListingDraftForm({ ...form, monthlyRent: '' }, { organisationId: 'org-1' }).includes('Monthly rent is required.'),
+assert.deepEqual(
+  validateRentalListingDraftForm({ ...form, propertyAddress: '', monthlyRent: '', availableFrom: '' }, { organisationId: 'org-1' }),
+  [],
 )
 
 console.log('rental listing draft model tests passed')

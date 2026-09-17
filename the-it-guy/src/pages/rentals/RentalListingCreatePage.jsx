@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, CheckCircle2, ChevronLeft, ChevronRight, FileText, Globe2, ImagePlus, Landmark, Loader2, Minus, Plus, Save, Trash2, UserRound, Users, X } from 'lucide-react'
+import { Building2, CheckCircle2, ChevronLeft, ChevronRight, Globe2, ImagePlus, Landmark, Loader2, Minus, Plus, Save, Trash2, UserRound, Users, X } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
@@ -47,7 +47,6 @@ const LANDLORD_TYPE_CARDS = Object.freeze([
   { value: 'company', label: 'Company', description: 'A company owns the property.', icon: Building2 },
   { value: 'trust', label: 'Trust', description: 'A trust owns the property.', icon: Landmark },
   { value: 'close_corporation', label: 'Close corporation', description: 'A CC owns the property.', icon: Building2 },
-  { value: 'deceased_estate', label: 'Deceased estate', description: 'The property belongs to an estate.', icon: FileText },
   { value: 'other_entity', label: 'Other entity', description: 'Another legal entity owns the property.', icon: Building2 },
   { value: 'foreign_owner', label: 'Foreign owner', description: 'The owner is based outside South Africa.', icon: Globe2 },
 ])
@@ -445,16 +444,6 @@ export default function RentalListingCreatePage() {
   }
 
   function goToNextStep() {
-    if (activeStep === 'landlord') {
-      if (!String(form.landlordName || '').trim()) {
-        setError('Add the landlord name before continuing.')
-        return
-      }
-      if (!String(form.landlordEmail || '').trim() && !String(form.landlordPhone || '').trim()) {
-        setError('Add a landlord email address or mobile number before continuing.')
-        return
-      }
-    }
     const next = CREATE_STEPS[activeStepIndex + 1]
     if (next) goToStep(next.key)
   }
@@ -570,7 +559,6 @@ export default function RentalListingCreatePage() {
                   predictionTypes={['address']}
                   placeholder="Search for the property address..."
                   hideUnavailableMessage
-                  required
                 />
               </div>
               <details className="mt-4 rounded-xl border border-[#dbe6f2] bg-[#fbfdff] p-4">
@@ -628,7 +616,7 @@ export default function RentalListingCreatePage() {
           {activeStep === 'landlord' ? <FormSection eyebrow="Step 1 of 5" title="Landlord & Mandate" description="Add the property owner and confirm the rental mandate.">
             <section>
               <h3 className="text-sm font-semibold text-[#18324b]">Landlord type</h3>
-              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {LANDLORD_TYPE_CARDS.map((option) => (
                   <LandlordTypeCard
                     key={option.value}
@@ -644,7 +632,7 @@ export default function RentalListingCreatePage() {
               <h3 className="text-sm font-semibold text-[#18324b]">Landlord details</h3>
               <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <label className="form-field">
-                  <span>{form.landlordType === 'company' ? 'Company name *' : form.landlordType === 'trust' ? 'Trust name *' : form.landlordType === 'multiple_owners' ? 'Primary owner full name *' : form.landlordType === 'deceased_estate' ? 'Estate representative name *' : form.landlordType === 'foreign_owner' ? 'Owner or entity name *' : form.landlordType === 'individual' ? 'Full name *' : 'Entity name *'}</span>
+                  <span>{form.landlordType === 'company' ? 'Company name *' : form.landlordType === 'trust' ? 'Trust name *' : form.landlordType === 'multiple_owners' ? 'Primary owner full name *' : form.landlordType === 'foreign_owner' ? 'Owner or entity name *' : form.landlordType === 'individual' ? 'Full name *' : 'Entity name *'}</span>
                   <input {...formField('landlordName', form.landlordName, updateForm)} placeholder={form.landlordType === 'individual' ? 'Landlord full name' : 'Registered entity name'} />
                 </label>
                 <label className="form-field">
@@ -680,8 +668,8 @@ export default function RentalListingCreatePage() {
             <section>
               <h3 className="text-sm font-semibold text-[#18324b]">Price & availability</h3>
               <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="form-field"><span>Monthly rent *</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="18500" /></label>
-                <label className="form-field"><span>Available from *</span><input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} /></label>
+                <label className="form-field"><span>Monthly rent</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="18500" /></label>
+                <label className="form-field"><span>Available from</span><input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} /></label>
                 <label className="form-field"><span>Occupation date</span><input type="date" {...formField('occupationDate', form.occupationDate, updateForm)} /></label>
                 <SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.furnishedStatus} />
               </div>

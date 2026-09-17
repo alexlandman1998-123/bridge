@@ -121,7 +121,6 @@ export const RENTAL_SELECT_OPTIONS = Object.freeze({
     { value: 'company', label: 'Company landlord' },
     { value: 'trust', label: 'Trust landlord' },
     { value: 'close_corporation', label: 'Close corporation landlord' },
-    { value: 'deceased_estate', label: 'Deceased estate' },
     { value: 'other_entity', label: 'Other entity' },
     { value: 'foreign_owner', label: 'Foreign landlord' },
   ],
@@ -216,13 +215,9 @@ export function buildRentalListingTitle(form = {}) {
 }
 
 export function validateRentalListingDraftForm(form = {}, context = {}) {
+  void form
   const errors = []
   if (!normalizeText(context.organisationId)) errors.push('Organisation context is required.')
-  if (!normalizeText(form.landlordName)) errors.push('Landlord name is required.')
-  if (!normalizeText(form.landlordEmail) && !normalizeText(form.landlordPhone)) errors.push('Landlord email or phone is required.')
-  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
-  if (!normalizeNumber(form.monthlyRent)) errors.push('Monthly rent is required.')
-  if (!normalizeText(form.availableFrom)) errors.push('Availability date is required.')
   return errors
 }
 
