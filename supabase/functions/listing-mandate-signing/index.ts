@@ -8,10 +8,29 @@ const escapeHtml = (value: unknown) => text(value).replace(/[&<>"']/g, (characte
 const email = (value: unknown) => text(value).toLowerCase();
 const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const documentKeys = new Set(["disclosure", "fica", "mandate"]);
+const signingPackVersion = "seller_signing_pack_v1";
 const response = (status: number, body: RecordValue) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const token = () => crypto.getRandomValues(new Uint8Array(32)).reduce((value, byte) => value + byte.toString(16).padStart(2, "0"), "");
 async function hash(value: string) { return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))).map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 function snapshot(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {}; }
+function signingPack(value: unknown, selectedDocuments: string[], mandate: RecordValue, frozenAt: string) {
+  const provided = snapshot(value);
+  const providedMandate = snapshot(provided.mandate);
+  const selected = selectedDocuments.slice();
+  return {
+    ...provided,
+    version: signingPackVersion,
+    frozenAt,
+    selectedDocuments: selected,
+    mandate: Object.keys(providedMandate).length
+      ? providedMandate
+      : mandate,
+    seller: snapshot(provided.seller),
+    property: snapshot(provided.property),
+    signers: Array.isArray(provided.signers) ? provided.signers : [],
+    templateVersions: snapshot(provided.templateVersions),
+  };
+}
 async function authorizeListingRequest(req: Request, url: string, anonKey: string, listingId: string) {
   const authorization = req.headers.get("Authorization") || "";
   const caller = createClient(url, anonKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } });
@@ -45,11 +64,17 @@ Deno.serve(async (req) => {
     if (!selectedDocuments.length) return response(400, { success: false, error: "Choose at least one seller document." });
     const rawToken = token();
     const now = new Date();
+    const issuedAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+    const mandateSnapshot = snapshot(body.mandateSnapshot);
+    const packSnapshot = signingPack(body.signingPack, selectedDocuments, mandateSnapshot, issuedAt);
+    const packDigest = await hash(JSON.stringify(packSnapshot));
     await admin.from("private_listing_mandate_signing_sessions").update({ status: "revoked", updated_at: now.toISOString() }).eq("private_listing_id", listing.id).eq("status", "active");
     const { data: session, error: sessionError } = await admin.from("private_listing_mandate_signing_sessions").insert({
       organisation_id: listing.organisation_id, private_listing_id: listing.id, signer_email: signerEmail, signer_name: signerName,
-      token_hash: await hash(rawToken), expires_at: expiresAt, selected_documents: selectedDocuments, mandate_snapshot: snapshot(body.mandateSnapshot), created_by: user.id,
+      token_hash: await hash(rawToken), expires_at: expiresAt, selected_documents: selectedDocuments, mandate_snapshot: mandateSnapshot,
+      signing_pack_snapshot: packSnapshot, signing_pack_version: text(packSnapshot.version) || signingPackVersion,
+      signing_pack_digest: packDigest, signing_pack_frozen_at: issuedAt, created_by: user.id,
     }).select("id, expires_at").single();
     if (sessionError || !session) return response(500, { success: false, error: "Unable to create the signing link." });
     const appUrl = (Deno.env.get("APP_URL") || "https://app.arch9.co.za").replace(/\/$/, "");
@@ -71,7 +96,7 @@ Deno.serve(async (req) => {
     const { listing } = authorizationResult;
     if (action === "status") {
       const { data: sessions, error } = await admin.from("private_listing_mandate_signing_sessions")
-        .select("id, status, signer_email, signer_name, selected_documents, document_progress, expires_at, viewed_at, signed_at, created_at")
+      .select("id, status, signer_email, signer_name, selected_documents, document_progress, signing_pack_version, signing_pack_digest, signing_pack_frozen_at, expires_at, viewed_at, signed_at, created_at")
         .eq("private_listing_id", listing.id).order("created_at", { ascending: false }).limit(10);
       if (error) return response(500, { success: false, error: "Unable to load seller document link status." });
       const now = Date.now();
@@ -103,7 +128,17 @@ Deno.serve(async (req) => {
   }
   if (action === "resolve") {
     await admin.from("private_listing_mandate_signing_sessions").update({ viewed_at: session.viewed_at || new Date().toISOString(), updated_at: new Date().toISOString() }).eq("id", session.id);
-    return response(200, { success: true, session: { signerName: session.signer_name, expiresAt: session.expires_at, selectedDocuments: session.selected_documents, progress: session.document_progress || {}, mandate: session.mandate_snapshot } });
+    return response(200, { success: true, session: {
+      signerName: session.signer_name,
+      expiresAt: session.expires_at,
+      selectedDocuments: session.selected_documents,
+      progress: session.document_progress || {},
+      mandate: session.mandate_snapshot,
+      signingPack: snapshot(session.signing_pack_snapshot),
+      signingPackVersion: text(session.signing_pack_version) || signingPackVersion,
+      signingPackDigest: text(session.signing_pack_digest),
+      signingPackFrozenAt: session.signing_pack_frozen_at || null,
+    } });
   }
   if (action !== "sign") return response(400, { success: false, error: "Unknown signing action." });
   const documentKey = text(body.documentKey).toLowerCase();

@@ -6450,6 +6450,55 @@ function AgentListingDetail() {
     return buildSellerSigningPlan({ sellerType: listingRecord?.sellerType || form.sellerType, form })
   }
 
+  function buildSellerSigningPackSnapshot(selectedDocuments = ['mandate']) {
+    const form = getListingSellerFormData(listingRecord)
+    const signingPlan = getSellerSigningPlan()
+    const propertyAddress = listingRecord?.propertyAddress || form.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || ''
+    const sellerName = resolveSellerNameFromListing(listingRecord) || form.sellerName || ''
+    return {
+      version: 'seller_signing_pack_v1',
+      selectedDocuments,
+      seller: {
+        legalType: form.sellerLegalType || form.seller_legal_type || form.sellerType || listingRecord?.sellerType || '',
+        ownershipType: form.ownerStructureType || form.owner_structure_type || form.ownershipType || '',
+        name: sellerName,
+        email: resolveSellerEmailFromListing(listingRecord) || form.email || '',
+        phone: resolveSellerPhoneFromListing(listingRecord) || form.phone || '',
+        idNumber: form.idNumber || form.sellerIdNumber || '',
+        maritalStatus: form.maritalStatus || form.maritalRegime || '',
+        companyName: form.companyName || '',
+        companyRegistrationNumber: form.companyRegistrationNumber || '',
+        trustName: form.trustName || '',
+        trustRegistrationNumber: form.trustRegistrationNumber || '',
+      },
+      property: {
+        address: propertyAddress,
+        titleDeedNumber: form.titleDeedNumber || form.deedNumber || '',
+        bondStatus: form.bondStatus || form.propertyBondStatus || '',
+      },
+      signers: signingPlan.recipients.map((recipient) => ({
+        name: recipient.name || '',
+        email: recipient.email || '',
+        role: recipient.role || '',
+      })),
+      mandate: {
+        propertyAddress,
+        mandateType: marketingDraft.mandateType || listingRecord?.mandateType || form.mandateType || 'sole',
+        askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
+        commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage',
+        commissionPercentage: commissionDraft.basis === 'fixed' ? '' : String(commissionDraft.percentage || ''),
+        commissionAmount: commissionDraft.basis === 'fixed' ? String(commissionDraft.amount || '') : '',
+        vatHandling: String(commissionDraft.vatHandling || ''),
+        branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace),
+      },
+      templateVersions: {
+        mandate: form.mandateTemplateVersion || form.mandate_template_version || 'agency_sales_mandate_vnext',
+        disclosure: 'property_disclosure_annexure_a_v1',
+        fica: 'arch9_fica_declaration_v1',
+      },
+    }
+  }
+
   function openSellerDocumentSend(selectionOverride = null) {
     setSellerDocumentSendSelection({
       // Phase 0: disclosure and FICA move to the replacement single-pack
@@ -6573,6 +6622,7 @@ function AgentListingDetail() {
           vatHandling: commissionDraft.vatHandling,
           branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace),
         },
+        signingPack: buildSellerSigningPackSnapshot(selected),
       } })
       if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Unable to email the secure document link.')
       setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
@@ -6706,6 +6756,7 @@ function AgentListingDetail() {
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
         action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, agentName, selectedDocuments,
         mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage', commissionPercentage: commissionDraft.basis === 'fixed' ? '' : commissionDraft.percentage, commissionAmount: commissionDraft.basis === 'fixed' ? commissionDraft.amount : '', vatHandling: commissionDraft.vatHandling, branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace) },
+        signingPack: buildSellerSigningPackSnapshot(selectedDocuments),
       } })
       if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Mandate signing email could not be sent.')
       setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
