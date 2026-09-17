@@ -45,7 +45,10 @@ import {
   resolveSellerPostMandateStructureRequirementPack,
 } from './sellerPostMandateDocumentOrchestrationService.js'
 import { isSellerPostMandateMandateSigned } from './sellerPostMandateDocumentContract.js'
-import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
+import {
+  buildPropertyDisclosureDocumentMarkup,
+  isPropertyDisclosureDigitallyComplete,
+} from '../lib/propertyDisclosure.js'
 import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
@@ -2273,7 +2276,8 @@ function buildPropertyDisclosureDocumentFromFormData(portalData = {}, workspaceM
   if (workspaceMode !== 'selling') return null
   const formData = resolveSellerPortalFormData(portalData)
   const disclosure = resolveSellerPortalPropertyDisclosure(portalData)
-  if (!disclosure) return null
+  // Do not expose an in-progress disclosure as an approved portal document.
+  if (!disclosure || !isPropertyDisclosureDigitallyComplete(disclosure)) return null
   const generatedDocument = isPlainObject(disclosure.generatedDocument)
     ? disclosure.generatedDocument
     : isPlainObject(disclosure.generated_document)

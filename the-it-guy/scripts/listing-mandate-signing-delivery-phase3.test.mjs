@@ -10,7 +10,8 @@ const signingPageSource = fs.readFileSync(path.join(process.cwd(), 'src/pages/Li
 const deliveryHandler = listingSource.match(/async function sendListingMandateSigningLink\(\)[\s\S]*?\n  }\n\n  async function handleStartListingMandateDocument/)?.[0] || ''
 
 assert.match(deliveryHandler, /invokeEdgeFunction\('listing-mandate-signing'/)
-assert.match(deliveryHandler, /selectedDocuments: selectedDocuments\.length \? selectedDocuments : \['mandate'\]/)
+assert.match(deliveryHandler, /const selectedDocuments = \['mandate'\]/)
+assert.match(deliveryHandler, /selectedDocuments,/)
 assert.doesNotMatch(deliveryHandler, /generateSigningLinks\(/)
 assert.match(signingSource, /action === "issue"/)
 assert.match(signingSource, /type: "seller_mandate_sent"/)

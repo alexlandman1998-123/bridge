@@ -6421,12 +6421,11 @@ function AgentListingDetail() {
       sellerEmail: resolveSellerEmailFromListing(listingRecord),
       propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || listingRecord?.title || '',
     })
-    const savedSelection = getListingSellerFormData(listingRecord)?.sellerDocumentSendSelection || {}
-    setSellerDocumentSendSelection((previous) => ({
-      disclosure: savedSelection.disclosure === true || previous.disclosure === true,
-      fica: savedSelection.fica === true || previous.fica === true,
+    setSellerDocumentSendSelection({
+      disclosure: false,
+      fica: false,
       mandate: true,
-    }))
+    })
     setDetailError('')
     setDetailMessage('')
     setMandateSetupOpen(true)
@@ -6452,12 +6451,12 @@ function AgentListingDetail() {
   }
 
   function openSellerDocumentSend(selectionOverride = null) {
-    const form = getListingSellerFormData(listingRecord)
-    const selected = Array.isArray(selectionOverride) ? selectionOverride : null
     setSellerDocumentSendSelection({
-      disclosure: selected ? selected.includes('disclosure') : form?.sellerDocumentSendSelection?.disclosure === true,
-      fica: selected ? selected.includes('fica') : form?.sellerDocumentSendSelection?.fica === true,
-      mandate: selected ? selected.includes('mandate') : form?.sellerDocumentSendSelection?.mandate === true,
+      // Phase 0: disclosure and FICA move to the replacement single-pack
+      // signing experience. The legacy link is mandate-only in the meantime.
+      disclosure: false,
+      fica: false,
+      mandate: true,
     })
     setDetailError('')
     setDetailMessage('')
@@ -6466,8 +6465,8 @@ function AgentListingDetail() {
   }
 
   function continueSellerDocumentSend() {
-    if (!Object.values(sellerDocumentSendSelection).some(Boolean)) {
-      setDetailError('Choose at least one seller document to include.')
+    if (!sellerDocumentSendSelection.mandate) {
+      setDetailError('The current signing link is temporarily limited to the mandate while the combined seller pack is being introduced.')
       return
     }
     setDetailError('')
@@ -6525,11 +6524,7 @@ function AgentListingDetail() {
       setDetailError(signingPlan.missing[0] || 'Complete the required signer details before preparing a document link.')
       return
     }
-    const selected = Object.entries(sellerDocumentSendSelection).filter(([, included]) => included).map(([key]) => key)
-    if (!selected.length) {
-      setDetailError('Choose at least one seller document to include.')
-      return
-    }
+    const selected = ['mandate']
     if (!isValidEmail(resolveSellerEmailFromListing(listingRecord))) {
       setDetailError('Add a valid seller email before preparing a document link.')
       return
@@ -6707,9 +6702,9 @@ function AgentListingDetail() {
       setFollowUpActionId('send_mandate_signing_link')
       setDetailError('')
       setDetailMessage('')
-      const selectedDocuments = Object.entries(sellerDocumentSendSelection).filter(([, included]) => included).map(([key]) => key)
+      const selectedDocuments = ['mandate']
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
-        action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, agentName, selectedDocuments: selectedDocuments.length ? selectedDocuments : ['mandate'],
+        action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, agentName, selectedDocuments,
         mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage', commissionPercentage: commissionDraft.basis === 'fixed' ? '' : commissionDraft.percentage, commissionAmount: commissionDraft.basis === 'fixed' ? commissionDraft.amount : '', vatHandling: commissionDraft.vatHandling, branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace) },
       } })
       if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Mandate signing email could not be sent.')
@@ -11583,11 +11578,9 @@ function AgentListingDetail() {
           </div>
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4">
             <legend className="px-1 text-sm font-semibold text-[#2d445e]">Include in the secure signing link</legend>
-            <p className="text-sm leading-5 text-[#607387]">The seller receives one link and signs only the documents selected here.</p>
+            <p className="text-sm leading-5 text-[#607387]">The temporary signing link is mandate-only. Disclosure and FICA will be sent through the combined seller pack, where they can be completed and signed together.</p>
             {[
               { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the commission and VAT details above.' },
-              { key: 'disclosure', title: 'Disclosure / defects form', copy: 'Property condition declaration.' },
-              { key: 'fica', title: 'FICA declaration', copy: 'Seller identity and compliance declaration.' },
             ].map((document) => (
               <label key={document.key} className="flex items-start gap-3 rounded-xl border border-[#dce6f2] bg-white px-3 py-3 text-sm text-[#2d445e]">
                 <input type="checkbox" className="mt-0.5 h-4 w-4" checked={sellerDocumentSendSelection[document.key]} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
@@ -11615,10 +11608,8 @@ function AgentListingDetail() {
         )}
       >
         <div className="space-y-4">
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Choose the documents to send.' : 'Confirm the seller, FICA and mandate details before sending.'}</div>
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Review the temporary mandate-only link.' : 'Confirm the seller and mandate details before sending.'}</div>
           {sellerDocumentSendStep === 1 ? [
-            { key: 'disclosure', title: 'Disclosure form', copy: 'Property condition / defects declaration.' },
-            { key: 'fica', title: 'FICA declaration', copy: 'Seller identity and compliance declaration.' },
             { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the saved commission percentage and VAT treatment.' },
           ].map((document) => (
             <label key={document.key} className="flex cursor-pointer items-start gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 transition hover:border-[#b7c8db]">

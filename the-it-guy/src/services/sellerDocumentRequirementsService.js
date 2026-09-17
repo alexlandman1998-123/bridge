@@ -1,5 +1,8 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
-import { buildPropertyDisclosureDocumentMarkup } from '../lib/propertyDisclosure.js'
+import {
+  buildPropertyDisclosureDocumentMarkup,
+  isPropertyDisclosureDigitallyComplete,
+} from '../lib/propertyDisclosure.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
 import { buildFicaDeclarationDocumentMarkup } from '../core/documents/ficaDeclarationDocumentMarkup.js'
 import { buildFicaDeclarationDocumentModel } from '../core/documents/ficaDeclarationDocumentModel.js'
@@ -2186,7 +2189,8 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
     : isPlainObject(formData?.property_disclosure)
       ? formData.property_disclosure
       : null
-  if (!disclosure) return null
+  // A captured draft must never be treated as a signed disclosure artifact.
+  if (!disclosure || !isPropertyDisclosureDigitallyComplete(disclosure)) return null
 
   const generatedDocument = isPlainObject(disclosure.generatedDocument)
     ? disclosure.generatedDocument
