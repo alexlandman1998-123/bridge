@@ -31,6 +31,19 @@ function signingPack(value: unknown, selectedDocuments: string[], mandate: Recor
     templateVersions: snapshot(provided.templateVersions),
   };
 }
+function signedPackDocumentHtml(documentKey: string, session: RecordValue, signedName: string, signature: string) {
+  const pack = snapshot(session.signing_pack_snapshot);
+  const mandate = snapshot(pack.mandate);
+  const seller = snapshot(pack.seller);
+  const title = documentKey === "disclosure" ? "Property condition disclosure" : documentKey === "fica" ? "Seller FICA declaration" : "Exclusive mandate";
+  const property = text(mandate.propertyAddress) || text(snapshot(pack.property).address);
+  const detail = documentKey === "mandate"
+    ? `Asking price: ${escapeHtml(mandate.askingPrice)}<br>Commission: ${escapeHtml(mandate.commissionBasis === "fixed" ? mandate.commissionAmount : `${text(mandate.commissionPercentage)}%`)} ${escapeHtml(mandate.vatHandling)}`
+    : documentKey === "fica"
+      ? `Seller/entity: ${escapeHtml(seller.name)}<br>Legal type: ${escapeHtml(seller.legalType)}<br>ID / passport: ${escapeHtml(seller.idNumber)}`
+      : "The seller reviewed the frozen property-condition disclosure included in this signing pack.";
+  return `<article><h1>${escapeHtml(title)}</h1><p>Property: ${escapeHtml(property)}</p><p>${detail}</p><p>Frozen signing pack: ${escapeHtml(session.signing_pack_digest)}</p><p>Accepted and signed by ${escapeHtml(signedName)}.</p><p>Signature: ${escapeHtml(signature)}</p></article>`;
+}
 async function authorizeListingRequest(req: Request, url: string, anonKey: string, listingId: string) {
   const authorization = req.headers.get("Authorization") || "";
   const caller = createClient(url, anonKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } });
@@ -139,6 +152,20 @@ Deno.serve(async (req) => {
       signingPackDigest: text(session.signing_pack_digest),
       signingPackFrozenAt: session.signing_pack_frozen_at || null,
     } });
+  }
+  if (action === "sign-pack") {
+    const signedName = text(body.signedName);
+    const signature = text(body.signature);
+    if (body.accepted !== true || !signedName || !signature) return response(400, { success: false, error: "Review the signing pack, accept it and provide your signature before submitting." });
+    const selectedDocuments = Array.isArray(session.selected_documents) ? session.selected_documents : ["mandate"];
+    const generatedDocuments = Object.fromEntries(selectedDocuments.map((documentKey: string) => [documentKey, signedPackDocumentHtml(documentKey, session, signedName, signature)]));
+    const { data: completion, error: completionError } = await admin.rpc("complete_private_listing_seller_signing_pack", {
+      p_session_id: session.id, p_signed_name: signedName, p_signature: signature,
+      p_acceptance_ip: text(req.headers.get("x-forwarded-for")).split(",")[0] || "",
+      p_acceptance_user_agent: text(req.headers.get("user-agent")), p_generated_documents: generatedDocuments,
+    });
+    if (completionError || !completion) return response(409, { success: false, error: completionError?.message || "This signing link has expired or has already been used." });
+    return response(200, { success: true, signedAt: completion.signedAt, complete: true, progress: completion.progress });
   }
   if (action !== "sign") return response(400, { success: false, error: "Unknown signing action." });
   const documentKey = text(body.documentKey).toLowerCase();
