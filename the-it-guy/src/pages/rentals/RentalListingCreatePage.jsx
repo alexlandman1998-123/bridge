@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, Home, ImagePlus, Loader2, Save, Trash2 } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, ChevronLeft, ChevronRight, Home, ImagePlus, Loader2, Save, Trash2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { createRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
@@ -46,6 +46,14 @@ const PORTAL_FEATURE_FIELDS = Object.freeze([
   ['laundry', 'Laundry'],
   ['scenicView', 'Scenic view'],
   ['satellite', 'Satellite'],
+])
+
+const CREATE_STEPS = Object.freeze([
+  { key: 'property', label: 'Property', description: 'Address & layout' },
+  { key: 'landlord', label: 'Landlord', description: 'Owner & mandate' },
+  { key: 'terms', label: 'Rental terms', description: 'Price & lease' },
+  { key: 'marketing', label: 'Marketing', description: 'Photos & features' },
+  { key: 'review', label: 'Review', description: 'Confirm & create' },
 ])
 
 function formField(name, value, onChange) {
@@ -176,6 +184,31 @@ function ToggleChipGroup({ label, hint = '', options, values, onToggle }) {
   )
 }
 
+function RentalCreateProgressNav({ activeStep, onStepClick }) {
+  const activeIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
+  return (
+    <nav className="overflow-x-auto rounded-[16px] border border-[#dde6ef] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.035)]" aria-label="Create rental listing progress">
+      <div className="flex min-w-[780px] items-center gap-3">
+        {CREATE_STEPS.map((step, index) => {
+          const complete = index < activeIndex
+          const active = index === activeIndex
+          return (
+            <div key={step.key} className="flex flex-1 items-center gap-3">
+              <button type="button" onClick={() => onStepClick(step.key)} className={`flex min-w-0 items-center gap-3 rounded-[10px] px-2 py-2 text-left ${active ? 'text-[#142132]' : 'text-[#607387]'}`}>
+                <span className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${active || complete ? 'bg-[#1f7d44] text-white' : 'bg-[#eef2f6] text-[#6b7d93]'}`}>
+                  {complete ? <CheckCircle2 size={16} aria-hidden="true" /> : index + 1}
+                </span>
+                <span className="min-w-0"><span className="block truncate text-sm font-bold">{step.label}</span><span className="block truncate text-xs text-[#60758c]">{step.description}</span>{active ? <span className="mt-2 block h-0.5 w-12 rounded-full bg-[#1f7d44]" /> : null}</span>
+              </button>
+              {index < CREATE_STEPS.length - 1 ? <span className={`h-px flex-1 ${complete ? 'bg-[#1f7d44]' : 'bg-[#d6e0eb]'}`} /> : null}
+            </div>
+          )
+        })}
+      </div>
+    </nav>
+  )
+}
+
 export default function RentalListingCreatePage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -185,6 +218,7 @@ export default function RentalListingCreatePage() {
   const branchId = rentalScope.branchId
   const assignedAgentId = rentalScope.assignedAgentId
   const [form, setForm] = useState(createInitialFormState)
+  const [activeStep, setActiveStep] = useState('property')
   const galleryImagesRef = useRef(form.galleryImages)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -195,6 +229,8 @@ export default function RentalListingCreatePage() {
     [form, organisationId],
   )
   const canSubmit = validationErrors.length === 0 && !saving
+  const activeStepIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
+  const activeStepMeta = CREATE_STEPS[Math.max(0, activeStepIndex)]
 
   useEffect(() => {
     galleryImagesRef.current = form.galleryImages
@@ -281,6 +317,24 @@ export default function RentalListingCreatePage() {
     updateForm('coverImageId', imageId)
   }
 
+  function goToStep(stepKey) {
+    if (CREATE_STEPS.some((step) => step.key === stepKey)) {
+      setActiveStep(stepKey)
+      setError('')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  function goToNextStep() {
+    const next = CREATE_STEPS[activeStepIndex + 1]
+    if (next) goToStep(next.key)
+  }
+
+  function goToPreviousStep() {
+    const previous = CREATE_STEPS[activeStepIndex - 1]
+    if (previous) goToStep(previous.key)
+  }
+
   async function handleSubmit(event) {
     event.preventDefault()
     if (!canSubmit) {
@@ -342,9 +396,9 @@ export default function RentalListingCreatePage() {
               <ArrowLeft size={16} aria-hidden="true" />
               Back to Listings
             </button>
-            <button type="submit" className="ui-pill-button ui-pill-button-active" disabled={!canSubmit}>
-              {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
-              Create Listing
+            <button type={activeStep === 'review' ? 'submit' : 'button'} onClick={activeStep === 'review' ? undefined : goToNextStep} className="ui-pill-button ui-pill-button-active" disabled={activeStep === 'review' ? !canSubmit : false}>
+              {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
+              {activeStep === 'review' ? 'Create Listing' : 'Continue'}
             </button>
           </div>
         </header>
@@ -353,9 +407,11 @@ export default function RentalListingCreatePage() {
           <p className="rounded-[8px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{error}</p>
         ) : null}
 
+        <RentalCreateProgressNav activeStep={activeStep} onStepClick={goToStep} />
+
         <div className="grid gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
-          <FormSection
+          {activeStep === 'property' ? <FormSection
             eyebrow="Step 1"
             title="Property"
             description="Use the full width of the page to capture the core listing specs agents need before publishing."
@@ -468,9 +524,9 @@ export default function RentalListingCreatePage() {
                 <input type="number" min="0" step="0.1" {...formField('erfSize', form.erfSize, updateForm)} placeholder="350" />
               </label>
             </div>
-          </FormSection>
+          </FormSection> : null}
 
-          <FormSection eyebrow="Step 2" title="Landlord">
+          {activeStep === 'landlord' ? <FormSection eyebrow="Step 2" title="Landlord" description="Record the landlord relationship and the mandate that authorises this rental listing.">
             <div className="grid gap-4 md:grid-cols-3">
               <label className="form-field">
                 <span>Landlord name</span>
@@ -496,9 +552,9 @@ export default function RentalListingCreatePage() {
                 <input type="date" {...formField('mandateEndDate', form.mandateEndDate, updateForm)} />
               </label>
             </div>
-          </FormSection>
+          </FormSection> : null}
 
-          <FormSection eyebrow="Step 3" title="Rental Terms">
+          {activeStep === 'terms' ? <FormSection eyebrow="Step 3" title="Rental Terms" description="Set the rental amount, lease conditions, deposits, fees, and availability.">
             <div className="grid gap-4 md:grid-cols-4">
               <label className="form-field">
                 <span>Monthly rent</span>
@@ -566,8 +622,9 @@ export default function RentalListingCreatePage() {
                 <textarea rows={4} {...formField('inspectionNotes', form.inspectionNotes, updateForm)} placeholder="Inspection checklist status, repairs, access notes" />
               </label>
             </div>
-          </FormSection>
+          </FormSection> : null}
 
+          {activeStep === 'marketing' ? <>
           <FormSection
             eyebrow="Step 4"
             title="Marketing Content"
@@ -706,8 +763,16 @@ export default function RentalListingCreatePage() {
               </div>
             </div>
           </FormSection>
+          </> : null}
 
-          <section className="ui-panel ui-panel-body flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">
+            <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 md:flex-row md:items-start md:justify-between">
+              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step 5 of 5</p><h2 className="text-2xl font-semibold text-[#18324b]">Review rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the capture is complete, then create the rental draft.</p></div>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationErrors.length ? `${validationErrors.length} items still needed` : 'Ready to create'}</span>
+            </div>
+            <div className="grid gap-4 md:grid-cols-3"><div className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-4"><p className="text-xs font-bold uppercase tracking-wide text-[#607891]">Property</p><p className="mt-2 font-semibold text-[#18324b]">{buildRentalListingTitle(form) || 'Untitled rental listing'}</p><p className="mt-1 text-sm text-[#607891]">{form.propertyAddress || 'Address not added'}</p></div><div className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-4"><p className="text-xs font-bold uppercase tracking-wide text-[#607891]">Landlord & terms</p><p className="mt-2 font-semibold text-[#18324b]">{form.landlordName || 'Landlord not added'}</p><p className="mt-1 text-sm text-[#607891]">{form.monthlyRent ? `R ${Number(form.monthlyRent).toLocaleString()} per month` : 'Rent not added'}</p></div><div className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-4"><p className="text-xs font-bold uppercase tracking-wide text-[#607891]">Marketing</p><p className="mt-2 font-semibold text-[#18324b]">{form.galleryImages.length} photo{form.galleryImages.length === 1 ? '' : 's'} selected</p><p className="mt-1 text-sm text-[#607891]">{form.description ? 'Public description added' : 'Description can be added later'}</p></div></div>
+            {validationErrors.length ? <div className="rounded-[12px] border border-[#f1d4a6] bg-[#fffaf0] p-4"><p className="font-semibold text-[#8a5a12]">Complete these required items before creating</p><ul className="mt-2 list-disc pl-5 text-sm text-[#8a5a12]">{validationErrors.map((item) => <li key={item}>{item}</li>)}</ul></div> : null}
+          <section className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase text-[#607891]">Ready to create</p>
               <h2 className="text-lg font-semibold text-[#18324b]">Save the rental draft with the full listing capture</h2>
@@ -727,7 +792,7 @@ export default function RentalListingCreatePage() {
                 Create Listing
               </button>
             </div>
-          </section>
+          </section></section> : <section className="ui-panel ui-panel-body flex items-center justify-between gap-3"><div><p className="text-xs font-semibold uppercase text-[#607891]">Step {activeStepIndex + 1} of {CREATE_STEPS.length}</p><h2 className="text-lg font-semibold text-[#18324b]">{activeStepMeta.label}</h2></div><div className="flex gap-2">{activeStepIndex > 0 ? <button type="button" className="ui-pill-button" onClick={goToPreviousStep}><ChevronLeft size={16} />Back</button> : null}<button type="button" className="ui-pill-button ui-pill-button-active" onClick={goToNextStep}>Continue <ChevronRight size={16} /></button></div></section>}
         </div>
       </form>
     </section>

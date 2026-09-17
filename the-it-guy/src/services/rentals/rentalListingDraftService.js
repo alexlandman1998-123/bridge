@@ -267,8 +267,12 @@ export async function updateRentalListingDraft(listingId, form = {}, context = {
   })
 
   const uploadedGalleryImages = await uploadRentalGalleryImages(form.galleryImages, listingId)
+  const publicationData = {
+    ...buildRentalListingEditPublicationDraft(form),
+    ...(normalizeText(context.publicationStatus) ? { status: normalizeText(context.publicationStatus) } : {}),
+  }
   const publicationResult = await syncPrivateListingDistributionData(listingId, {
-    publicationData: buildRentalListingEditPublicationDraft(form),
+    publicationData,
     media: buildRentalListingMediaPayload(form, uploadedGalleryImages),
     externalLinks: [],
   })

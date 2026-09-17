@@ -20,6 +20,7 @@ import {
 import { useNavigate, useParams } from 'react-router-dom'
 import { ListingWorkspaceTabs } from '../../components/listings/ListingWorkspaceShell'
 import ListingAgentReassignmentPanel from '../../components/listings/ListingAgentReassignmentPanel'
+import WebsiteListingPublicationPanel from '../../components/listings/WebsiteListingPublicationPanel'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import {
   getRentalListingForAgent,
@@ -463,8 +464,9 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
     <form onSubmit={onSubmit} className="ui-panel ui-panel-body grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-semibold uppercase text-[#607891]">Edit listing facts</p>
-          <h2 className="text-lg font-semibold text-[#18324b]">Rental Listing Details</h2>
+          <p className="text-xs font-semibold uppercase text-[#607891]">Listing publication</p>
+          <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#18324b]">Property, marketing &amp; syndication</h2>
+          <p className="mt-1 text-sm text-[#607387]">Update rental property data, public marketing content, and distribution details.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button type="button" className="ui-pill-button" onClick={onCancel}>
@@ -477,6 +479,10 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
           </button>
         </div>
       </div>
+
+      <nav className="grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#fbfdff] p-2 sm:grid-cols-4" aria-label="Rental listing edit steps">
+        {['Property', 'Marketing', 'Syndication', 'Review'].map((step, index) => <div key={step} className={`flex min-h-12 items-center gap-3 rounded-[12px] px-3 ${index === 0 ? 'bg-white text-[#18324b] shadow-sm' : 'text-[#607387]'}`}><span className={`grid h-7 w-7 place-items-center rounded-full text-xs font-semibold ${index === 0 ? 'bg-[#1f7d44] text-white' : 'bg-[#edf2f7] text-[#607387]'}`}>{index + 1}</span><span><strong className="block text-sm">{step}</strong><small className="block text-xs">{index === 0 ? 'Rental details' : index === 1 ? 'Photos & description' : index === 2 ? 'Publish to portals' : 'Confirm changes'}</small></span></div>)}
+      </nav>
 
       <div className="grid gap-4 md:grid-cols-3">
         <label className="form-field md:col-span-2">
@@ -705,7 +711,7 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
   )
 }
 
-function RentalOverview({ detail, onOpenApplications, onOpenMarketing }) {
+function RentalOverview({ detail, onOpenMarketing }) {
   const row = detail.row
   const readiness = detail.readinessItems || []
   const completed = readiness.filter((item) => item.complete).length
@@ -721,17 +727,6 @@ function RentalOverview({ detail, onOpenApplications, onOpenMarketing }) {
         <FactCard label="Available" value={formatDate(row.availableFrom)} detail={row.leasePeriodMonths ? `${row.leasePeriodMonths} month lease` : 'Lease period pending'} icon={<CalendarDays size={18} aria-hidden="true" />} />
         <FactCard label="Landlord" value={row.landlordName || 'Not captured'} detail={row.landlordContact || 'Contact pending'} icon={<Users size={18} aria-hidden="true" />} />
         <FactCard label="Readiness" value={`${detail.readinessPercent}%`} detail={`${detail.completedReadinessCount}/${detail.totalReadinessCount} checks complete`} icon={<BadgeCheck size={18} aria-hidden="true" />} />
-      </section>
-
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-          <div className="min-w-0"><p className="text-[1.08rem] font-semibold text-[#142132]">{row.title}</p><p className="mt-1 text-sm text-[#607387]">{[row.address, row.location].filter(Boolean).join(', ') || 'Location pending'}</p></div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">{row.propertyType || 'Rental property'}</span>
-            <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">{detail.statusLabel}</span>
-            <button type="button" className="ui-pill-button ui-pill-button-active" onClick={onOpenApplications}><Users size={15} />View tenant applications</button>
-          </div>
-        </div>
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
@@ -767,11 +762,11 @@ function RentalTabContent({
   onCheckProperty24,
   onOpenMarketing,
   onOpenEdit,
-  onOpenApplications,
   property24ExpiryDate,
   onProperty24ExpiryChange,
   onSaveProperty24Expiry,
   savingProperty24Expiry,
+  onPrepareWebsitePublication,
   landlordForm,
   onLandlordChange,
   onSaveLandlord,
@@ -834,73 +829,17 @@ function RentalTabContent({
   }
   if (activeTab === 'marketing') {
     const previewStatus = getProperty24ReadinessStatus(property24Preview)
-    const statusToneClasses = previewStatus.tone === 'success'
-      ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
-      : previewStatus.tone === 'warning'
-        ? 'border-[#f0d5b5] bg-[#fffaf2] text-[#9f5f15]'
-        : 'border-[#dbe6f2] bg-white text-[#42617f]'
+    const readyItems = (detail.readinessItems || []).filter((item) => item.complete).length
+    const readinessPercent = detail.readinessPercent || 0
+    const channelLive = ['published', 'live', 'active', 'on_portal'].includes(String(row.property24Status || '').toLowerCase()) ? 1 : 0
+    const remainingReadinessCount = Math.max(0, (detail.totalReadinessCount || 0) - readyItems)
     return (
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)] sm:p-6">
-        <div className="flex flex-col gap-4 border-b border-[#e5edf6] pb-5 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.12em] text-[#7b8ca2]">Marketing workspace</p>
-            <h2 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#142132]">Rental marketing and syndication</h2>
-            <p className="mt-1 text-sm leading-6 text-[#607387]">Prepare the listing, control its Property24 expiry, and publish or update it from one place.</p>
-          </div>
-          <span className={`inline-flex self-start items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold ${statusToneClasses}`}>
-            {previewStatus.tone === 'success' ? <CheckCircle2 size={14} aria-hidden="true" /> : previewStatus.tone === 'warning' ? <CircleAlert size={14} aria-hidden="true" /> : <ShieldCheck size={14} aria-hidden="true" />}
-            {previewStatus.label}
-          </span>
-        </div>
-
-        <div className="mt-5 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listing status</p>
-            <p className="mt-2 text-lg font-semibold text-[#142132]">{detail.marketingApprovalStatusLabel}</p>
-            <p className="mt-1 text-sm text-[#607387]">Landlord marketing approval</p>
-          </div>
-          <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Property24</p>
-            <p className="mt-2 text-lg font-semibold text-[#142132]">{detail.property24StatusLabel}</p>
-            <p className="mt-1 text-sm text-[#607387]">{previewStatus.detail}</p>
-          </div>
-          <div className="rounded-[16px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Rental enquiries</p>
-            <p className="mt-2 text-lg font-semibold text-[#142132]">{row.applicationCount || 0}</p>
-            <p className="mt-1 text-sm text-[#607387]">Tenant applications received</p>
-          </div>
-        </div>
-
-        <section className="mt-5 grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)]">
-          <article className="flex h-full flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-            <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Listing Content</h3><p className="mt-1 text-sm text-[#607387]">Marketing-facing copy tenants will see.</p></div><button type="button" className="ui-pill-button" onClick={onOpenEdit}>Edit listing details</button></div>
-            <div className="mt-5 grid gap-4"><div><p className="text-sm font-semibold text-[#2d445e]">Headline</p><p className="mt-2 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5 text-sm font-medium text-[#22374d]">{row.title}</p></div><div><p className="text-sm font-semibold text-[#2d445e]">Description</p><p className="mt-2 min-h-24 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5 text-sm leading-6 text-[#607387]">{detail.listing?.description || 'Add a public rental description for prospective tenants.'}</p></div></div>
-          </article>
-          <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-            <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Media</h3><p className="mt-1 text-sm text-[#607387]">Control what tenants see across rental marketing channels.</p></div><button type="button" className="ui-pill-button" onClick={onOpenEdit}>Edit media</button></div>
-            <div className="mt-5 grid min-h-[168px] place-items-center rounded-[14px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] p-5 text-center"><div><Home size={20} className="mx-auto text-[#607387]" /><p className="mt-2 text-sm font-semibold text-[#22374d]">Media is managed with rental listing details</p><p className="mt-1 text-sm text-[#607387]">Add photos and select the cover image before publishing.</p></div></div>
-          </article>
-        </section>
-
-        <section className="mt-5 rounded-[18px] border border-[#cfe0ef] bg-[#f8fbff] p-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[#1f4f78]"><CalendarDays size={18} /><p className="text-sm font-semibold">Property24 expiry date</p></div>
-              <p className="mt-1 max-w-2xl text-sm leading-6 text-[#607387]">Choose when this rental should be removed from Property24. This is separate from the landlord mandate expiry.</p>
-            </div>
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-end">
-              <label className="grid min-w-[210px] gap-1.5"><span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718198]">Expires on</span><input type="date" value={property24ExpiryDate} onChange={(event) => onProperty24ExpiryChange(event.target.value)} className="min-h-10 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm font-medium text-[#18324b]" disabled={savingProperty24Expiry} /></label>
-              <button type="button" className="ui-pill-button ui-pill-button-active" onClick={onSaveProperty24Expiry} disabled={savingProperty24Expiry}>{savingProperty24Expiry ? <Loader2 size={16} className="animate-spin" /> : <CalendarDays size={16} />}Save expiry</button>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-5 grid gap-3 lg:grid-cols-3">
-          <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">1. Check</p><button type="button" className="ui-pill-button mt-3 w-full justify-center" onClick={onCheckProperty24} disabled={checkingProperty24}>{checkingProperty24 ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}Preview readiness</button></div>
-          <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">2. Publish</p><button type="button" className="ui-pill-button ui-pill-button-active mt-3 w-full justify-center" onClick={onPublish} disabled={publishing || !getProperty24PreviewDetails(property24Preview).canSubmit}>{publishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}Publish to Property24</button></div>
-          <div className="rounded-[16px] border border-[#e1e9f2] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">3. Tenant pipeline</p><button type="button" className="ui-pill-button mt-3 w-full justify-center" onClick={onOpenApplications}><Users size={16} />View applications</button></div>
-        </section>
-        {property24PreviewError ? <p className="mt-4 rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p> : null}
+      <section className="space-y-5">
+        <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="grid sm:grid-cols-3"><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{readinessPercent}%</p><p className="text-sm font-semibold text-[#607387]">Listing readiness</p><button type="button" onClick={onOpenEdit} className="mt-1 text-xs font-semibold text-[#1f4f78]">View checklist</button></div><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{channelLive} / 1</p><p className="text-sm font-semibold text-[#607387]">Channels live</p><button type="button" onClick={onCheckProperty24} className="mt-1 text-xs font-semibold text-[#1f4f78]">View channels</button></div><div className="p-5"><p className="text-2xl font-semibold text-[#142132]">{row.property24ExpiryDate ? formatDate(row.property24ExpiryDate) : '—'}</p><p className="text-sm font-semibold text-[#607387]">Last synced</p></div></div>{remainingReadinessCount ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2f7] bg-[#fffaf0] px-5 py-3 text-sm font-semibold text-[#8a5b13]"><span>Complete {remainingReadinessCount} remaining item{remainingReadinessCount === 1 ? '' : 's'} before publishing.</span><button type="button" onClick={onOpenEdit} className="rounded-lg border border-[#f1dfb8] bg-white px-3 py-2 text-xs font-semibold">View readiness items</button></div> : null}</section>
+        <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)]"><article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Listing Content</h3><p className="mt-1 text-sm text-[#607387]">Marketing-facing copy tenants will see.</p></div><button type="button" className="ui-pill-button" onClick={onOpenEdit}>Edit property details</button></div><div className="mt-5 grid gap-4"><div><p className="text-sm font-semibold text-[#2d445e]">Headline</p><p className="mt-2 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm text-[#22374d]">{row.title}</p></div><div><p className="text-sm font-semibold text-[#2d445e]">Description</p><p className="mt-2 min-h-36 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#607387]">{detail.listing?.description || 'Add a public rental description for prospective tenants.'}</p></div></div></article><article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Media</h3><p className="mt-1 text-sm text-[#607387]">Control what tenants see across your marketing channels.</p></div><button type="button" className="ui-pill-button" onClick={onOpenEdit}>Edit Media</button></div><div className="mt-5 flex gap-3 overflow-x-auto pb-2"><div className="w-[440px] max-w-[68vw] shrink-0 overflow-hidden rounded-[14px] border border-[#1f4f78] bg-white"><div className="relative h-[184px]"><RentalListingImage src={row.imageUrl} title={row.title} /><span className="absolute left-2 top-2 rounded-full bg-[#123955] px-2 py-1 text-[0.62rem] font-semibold text-white">Cover</span></div><div className="h-11 border-t border-[#edf2f7] px-3 py-3 text-xs font-semibold text-[#607387]">Cover selected</div></div><button type="button" onClick={onOpenEdit} className="grid h-[229px] w-[150px] shrink-0 place-items-center rounded-[14px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] text-xs font-semibold text-[#5f7894]"><span><Home className="mx-auto mb-1" size={18} />Add Photos</span></button></div><div className="mt-4 flex flex-wrap gap-2"><span className="rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-3 py-1 text-xs font-semibold text-[#1f7d44]">{row.imageUrl ? '1 photo' : 'No photos'}</span><span className="rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-3 py-1 text-xs font-semibold text-[#1f7d44]">Cover selected</span><span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#607387]">Floor plan missing</span></div></article></section>
+        <article className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf2f7] p-5"><div><h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3><p className="mt-1 text-sm text-[#607387]">Manage where this rental is advertised.</p></div><button type="button" className="ui-pill-button" onClick={onCheckProperty24} disabled={checkingProperty24}>{checkingProperty24 ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}Manage</button></div><div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#edf2f7] p-5"><div><p className="font-semibold text-[#142132]">Property24</p><p className="mt-1 text-sm text-[#607387]">South Africa's property portal</p></div><span className="text-sm font-semibold text-[#607387]">{previewStatus.label}</span><div className="flex gap-2"><button type="button" className="ui-pill-button" onClick={onCheckProperty24} disabled={checkingProperty24}>Preview readiness</button><button type="button" className="ui-pill-button ui-pill-button-active" onClick={onPublish} disabled={publishing || !getProperty24PreviewDetails(property24Preview).canSubmit}>{publishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}Publish</button></div></div><WebsiteListingPublicationPanel variant="channel" listingId={detail.listing?.id || row.id} listingTitle={row.title} onPrepare={onPrepareWebsitePublication} /></article>
+        <section className="rounded-[18px] border border-[#cfe0ef] bg-[#f8fbff] p-4"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-sm font-semibold text-[#1f4f78]">Property24 expiry date</p><p className="mt-1 text-sm text-[#607387]">Set when this rental should be removed from Property24.</p></div><div className="flex flex-wrap gap-2"><input type="date" value={property24ExpiryDate} onChange={(event) => onProperty24ExpiryChange(event.target.value)} className="min-h-10 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm" disabled={savingProperty24Expiry} /><button type="button" className="ui-pill-button ui-pill-button-active" onClick={onSaveProperty24Expiry} disabled={savingProperty24Expiry}>Save expiry</button></div></div></section>
+        {property24PreviewError ? <p className="rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p> : null}
       </section>
     )
   }
@@ -934,7 +873,7 @@ function RentalTabContent({
       </DetailPanel>
     )
   }
-  return <RentalOverview detail={detail} onOpenApplications={onOpenApplications} onOpenMarketing={onOpenMarketing} />
+  return <RentalOverview detail={detail} onOpenMarketing={onOpenMarketing} />
 }
 
 export default function RentalListingDetailPage() {
@@ -1075,6 +1014,35 @@ export default function RentalListingDetailPage() {
       setSuccessMessage('Landlord details were saved.')
     } catch (saveError) {
       setEditError(saveError?.message || 'Unable to save landlord details.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  async function prepareRentalWebsitePublication() {
+    if (!canSaveEdit) {
+      const preparationError = new Error(editValidationErrors[0] || 'Complete the required rental listing fields before publishing to the website.')
+      setEditError(preparationError.message)
+      throw preparationError
+    }
+    try {
+      setSavingEdit(true)
+      setEditError('')
+      const result = await updateRentalListingDraft(listingId, {
+        ...editForm,
+        marketingApprovalStatus: 'approved',
+      }, {
+        organisationId,
+        assignedAgentId,
+        performedBy: assignedAgentId,
+        publicationStatus: 'Published',
+      })
+      setListing(result.listing)
+      setEditForm(buildRentalListingEditForm(result.listing))
+      return { ok: true, distributionSync: result.publicationResult }
+    } catch (saveError) {
+      setEditError(saveError?.message || 'Unable to prepare this rental for website publication.')
+      throw saveError
     } finally {
       setSavingEdit(false)
     }
@@ -1296,7 +1264,7 @@ export default function RentalListingDetailPage() {
 
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" data-testid="rental-listing-shared-workspace-tabs">
           <ListingWorkspaceTabs
-            className="rounded-[18px] border border-[#e1e8ef] bg-[#fbfdff] p-1.5 [&_button]:rounded-[13px] [&_button]:border-b-0 [&_button]:px-5 [&_button]:text-[#64788f] [&_button[aria-selected=true]]:bg-[#153f60] [&_button[aria-selected=true]]:text-white [&_button[aria-selected=true]]:shadow-[0_5px_14px_rgba(15,54,82,0.18)]"
+            className="rounded-[18px] border border-[#e1e8ef] bg-[#fbfdff] p-1.5 [&_button]:rounded-[13px] [&_button]:border-b-0 [&_button]:px-5 [&_button]:text-center [&_button]:text-[#64788f] sm:[&_button]:flex-1 [&_button[aria-selected=true]]:bg-[#153f60] [&_button[aria-selected=true]]:text-white [&_button[aria-selected=true]]:shadow-[0_5px_14px_rgba(15,54,82,0.18)]"
             tabs={rentalWorkspaceTabs}
             activeTab={activeRentalWorkspaceTab}
             onTabChange={openRentalListingWorkspaceTab}
@@ -1316,11 +1284,11 @@ export default function RentalListingDetailPage() {
           onCheckProperty24={handleCheckProperty24Readiness}
           onOpenMarketing={() => setActiveTab('marketing')}
           onOpenEdit={openEditPanel}
-          onOpenApplications={() => setActiveTab('applications')}
           property24ExpiryDate={property24ExpiryDate}
           onProperty24ExpiryChange={setProperty24ExpiryDate}
           onSaveProperty24Expiry={handleSaveProperty24Expiry}
           savingProperty24Expiry={savingProperty24Expiry}
+          onPrepareWebsitePublication={prepareRentalWebsitePublication}
           landlordForm={editForm}
           onLandlordChange={updateEditForm}
           onSaveLandlord={handleLandlordSave}

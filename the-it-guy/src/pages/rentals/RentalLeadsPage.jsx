@@ -140,9 +140,10 @@ function RentalLeadAction({
     <button
       type="button"
       disabled={advancing}
-      onClick={() =>
+      onClick={(event) => {
+        event.stopPropagation();
         nextStage ? onAdvance(lead, nextStage) : onTerminalAction(lead)
-      }
+      }}
       className={`inline-flex items-center justify-center gap-1.5 rounded-[12px] border border-[#c6d8ea] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition hover:border-[#9fb7d1] hover:bg-[#f6faff] disabled:opacity-60 ${compact ? "h-9" : "min-h-10"}`}
     >
       {advancing ? (
@@ -724,6 +725,10 @@ export default function RentalLeadsPage() {
         ? "/agent/rentals/listings/new"
         : `/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`,
     );
+  const openTenantWorkspace = (lead) => {
+    if (lead.role !== "tenant") return;
+    navigate(`/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`);
+  };
   return (
     <section className="page-content">
       <div className="ui-section-stack">
@@ -846,12 +851,28 @@ export default function RentalLeadsPage() {
                   roleLeads.map((lead) => (
                     <tr
                       key={lead.id}
-                      className="border-t border-[#edf2f7] hover:bg-[#fbfdff]"
-                    >
+                      tabIndex={lead.role === "tenant" ? 0 : undefined}
+                      className={`border-t border-[#edf2f7] hover:bg-[#fbfdff] ${lead.role === "tenant" ? "cursor-pointer" : ""}`}
+                      onClick={() => openTenantWorkspace(lead)}
+                      onKeyDown={(event) => {
+                        if (lead.role === "tenant" && (event.key === "Enter" || event.key === " ")) {
+                          event.preventDefault();
+                          openTenantWorkspace(lead);
+                        }
+                      }}
+                      >
                       <td className="px-5 py-4">
-                        <div className="font-semibold text-[#142132]">
-                          {lead.name}
-                        </div>
+                        {lead.role === "tenant" ? (
+                          <button
+                            type="button"
+                            onClick={() => openTenantWorkspace(lead)}
+                            className="font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline"
+                          >
+                            {lead.name}
+                          </button>
+                        ) : (
+                          <div className="font-semibold text-[#142132]">{lead.name}</div>
+                        )}
                         <div className="mt-1 truncate text-xs text-[#60758b]">
                           {lead.phone || lead.email || "No contact details"}
                         </div>
@@ -925,13 +946,29 @@ export default function RentalLeadsPage() {
               roleLeads.map((lead) => (
                 <article
                   key={lead.id}
-                  className="rounded-[16px] border border-[#e1e8f0] bg-white p-4 shadow-sm"
+                  tabIndex={lead.role === "tenant" ? 0 : undefined}
+                  className={`rounded-[16px] border border-[#e1e8f0] bg-white p-4 shadow-sm ${lead.role === "tenant" ? "cursor-pointer transition hover:border-[#b9cade]" : ""}`}
+                  onClick={() => openTenantWorkspace(lead)}
+                  onKeyDown={(event) => {
+                    if (lead.role === "tenant" && (event.key === "Enter" || event.key === " ")) {
+                      event.preventDefault();
+                      openTenantWorkspace(lead);
+                    }
+                  }}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <h3 className="truncate font-semibold text-[#142132]">
-                        {lead.name}
-                      </h3>
+                      {lead.role === "tenant" ? (
+                        <button
+                          type="button"
+                          onClick={() => openTenantWorkspace(lead)}
+                          className="block max-w-full truncate text-left font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline"
+                        >
+                          {lead.name}
+                        </button>
+                      ) : (
+                        <h3 className="truncate font-semibold text-[#142132]">{lead.name}</h3>
+                      )}
                       <p className="mt-1 truncate text-sm text-[#60758b]">
                         {lead.phone || lead.email || "No contact details"}
                       </p>
