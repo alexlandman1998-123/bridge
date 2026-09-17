@@ -7638,6 +7638,10 @@ function AgentListingDetail() {
 
   const dynamicSellerRequirements = useMemo(() => {
     if (!listingRecord) return []
+    // Historical direct listings may still carry requirements that were
+    // generated from the old implicit "individual" fallback. Hide them until
+    // Seller Setup confirms the actual ownership model.
+    if (isListingSellerOwnershipUnidentified(listingRecord)) return []
     const existingDynamic = Array.isArray(listingRecord?.documentRequirements) ? listingRecord.documentRequirements : []
     if (existingDynamic.length) return existingDynamic
 

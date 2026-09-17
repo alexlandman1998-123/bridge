@@ -170,6 +170,14 @@ export function isListingSellerOwnershipUnidentified(listing = {}) {
   const isDirectListing = directListingSource === 'direct_listing_intake'
   if (!isProperty24Migration && !isDirectListing) return false
 
+  // Early direct listings stored a default "individual" merely because a
+  // contact was supplied. Only a saved Seller Profile Builder capture proves
+  // that ownership was deliberately identified.
+  const sellerProfileCaptured = normalizeKey(pickFirst(
+    form.sellerProfileCaptureSource,
+    form.seller_profile_capture_source,
+    seller.seller_profile_capture_source,
+  )) === LISTING_SELLER_PROFILE_CAPTURE_SOURCE
   const ownerModel = pickFirst(
     form.ownerStructureType,
     form.owner_structure_type,
@@ -181,7 +189,9 @@ export function isListingSellerOwnershipUnidentified(listing = {}) {
     seller.legal_type,
     listing?.sellerType,
   )
-  return !normalizeBranch(ownerModel, '')
+  const normalizedOwnerModel = normalizeBranch(ownerModel, '')
+  if (isDirectListing && !sellerProfileCaptured && (!normalizedOwnerModel || normalizedOwnerModel === 'individual')) return true
+  return !normalizedOwnerModel
 }
 
 export function resolveListingSellerProfileBranch(form = {}, listing = {}) {

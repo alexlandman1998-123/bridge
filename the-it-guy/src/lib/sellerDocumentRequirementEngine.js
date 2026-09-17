@@ -678,7 +678,15 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
       canonicalFacts?.seller?.owner_structure_type ||
       canonicalFacts?.seller?.legal_type,
   )
-  const sellerOwnershipUnidentified = ['unknown', 'unidentified', 'not_captured', 'not_identified'].includes(rawSellerOwnership)
+  const directListingSource = normalizeKey(canonicalFacts?.source || canonicalFacts?.metadata?.source)
+  const sellerProfileCaptured = normalizeKey(
+    onboarding?.sellerProfileCaptureSource ||
+      onboarding?.seller_profile_capture_source ||
+      canonicalFacts?.seller?.seller_profile_capture_source,
+  ) === 'listing_seller_profile_capture'
+  const sellerOwnershipUnidentified =
+    ['unknown', 'unidentified', 'not_captured', 'not_identified'].includes(rawSellerOwnership) ||
+    (directListingSource === 'direct_listing_intake' && !sellerProfileCaptured && ['', 'individual', 'natural_person'].includes(rawSellerOwnership))
   const sellerBranch = sellerOwnershipUnidentified ? 'unknown' : (explicitSellerBranch || flow.seller_branch || 'individual')
   const propertyBranch = flow.property_branch || 'residential'
   const sellerType = sellerOwnershipUnidentified

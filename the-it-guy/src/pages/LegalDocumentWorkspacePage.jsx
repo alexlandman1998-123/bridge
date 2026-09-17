@@ -156,10 +156,14 @@ function directListingSellerSetupIsPending(...records) {
     const form = asRecord(source.sellerOnboarding?.formData || source.seller_onboarding?.form_data || source.sellerOnboardingFormData)
     const intakeSource = normalizeKey(facts.source || facts.metadata?.source || source.directListingIntake?.source || source.direct_listing_intake?.source)
     if (intakeSource !== 'direct_listing_intake') continue
+    const sellerProfileCaptured = normalizeKey(
+      form.sellerProfileCaptureSource || form.seller_profile_capture_source || seller.seller_profile_capture_source,
+    ) === 'listing_seller_profile_capture'
     const ownership = normalizeKey(
       form.ownerStructureType || form.owner_structure_type || form.sellerLegalType || form.seller_legal_type || form.ownershipType || form.sellerType ||
       seller.owner_structure_type || seller.legal_type || source.sellerType,
     )
+    if (!sellerProfileCaptured && (!ownership || ['individual', 'natural_person'].includes(ownership))) return true
     if (!ownership || ['unknown', 'unidentified', 'not_captured', 'not_identified'].includes(ownership)) return true
   }
   return false
