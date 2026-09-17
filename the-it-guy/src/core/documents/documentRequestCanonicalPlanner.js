@@ -35,6 +35,10 @@ function isPendingPolicyLevel(level = '') {
   return normalizeKey(level).startsWith('pending_policy_')
 }
 
+function isBlockingLevel(level = '') {
+  return ['required', 'conditional'].includes(normalizeKey(level))
+}
+
 function isAttorneyAudience(audience = '') {
   return ATTORNEY_AUDIENCES.has(normalizeAudience(audience))
 }
@@ -95,7 +99,7 @@ function toRequestPlanItem(requirement = {}, options = {}) {
     requiredLevel: requirement.level,
     visibility: requirement.visibility,
     blocker: requirement.blocker,
-    blocksStage: requestable ? requirement.blocker : null,
+    blocksStage: requestable && isBlockingLevel(requirement.level) ? requirement.blocker : null,
     sortOrder: requirement.sortOrder,
     clientVisible: isClientVisible(requirement),
     attorneyVisible: isAttorneyVisible(requirement),

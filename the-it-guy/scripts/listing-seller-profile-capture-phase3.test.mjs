@@ -23,8 +23,12 @@ await test('AgentListingDetail surfaces seller document impact in the builder an
   assert.ok(source.includes('listing-seller-profile-requirement-preview'), 'Builder modal should render the document impact preview.')
   assert.ok(source.includes('sellerDocumentRequirementModel'), 'Documents tab should compute the saved seller requirement model.')
   assert.ok(source.includes('listing-seller-document-model-summary'), 'Documents tab should render seller model summary.')
-  assert.ok(source.includes('const projectedDocumentRequirements = requirementProjection.allRequirementRows.map'), 'Saving should refresh local document requirements immediately.')
+  assert.ok(source.includes('const projectedDocumentRequirements = requirementProjection.allRequirementRows.map'), 'Local-only listings should retain their generated requirement rows.')
   assert.ok(source.includes("requirementSyncReason: 'listing_seller_profile_capture'"), 'Remote save should still trigger requirement sync.')
+  assert.ok(source.includes('requireRequirementSync: true'), 'A saved seller profile must not silently continue with stale document requirements.')
+  assert.ok(source.includes('Seller document requirements could not be refreshed'), 'The seller profile save should surface requirement-sync failures instead of showing a projected-only document list.')
+  assert.ok(source.includes("{ title: 'Sales Documents', icon: HandCoins, rows: salesDocuments }"), 'The top-level Documents tab should include the Sales Documents group.')
+  assert.ok(source.includes("{ title: 'FICA Documents', icon: ShieldCheck, rows: sellerDocuments }"), 'The top-level Documents tab should label seller compliance rows as FICA Documents.')
 })
 
 await test('projects company document requirements and preserves uploaded statuses', () => {
@@ -46,10 +50,12 @@ await test('projects company document requirements and preserves uploaded status
   })
   const keys = projection.upsertRows.map((row) => row.requirement_key)
   const signedMandate = projection.upsertRows.find((row) => row.requirement_key === 'signed_mandate')
+  const titleDeed = projection.upsertRows.find((row) => row.requirement_key === 'title_deed_copy')
 
   assert.equal(projection.projectionVersion, LISTING_SELLER_REQUIREMENT_PROJECTION_VERSION)
   assert.equal(projection.summary.sellerBranch, 'company')
   assert.equal(signedMandate.status, 'uploaded')
+  assert.equal(titleDeed?.is_required, false, 'Title deed copies should be optional when they are unavailable.')
   assert.ok(keys.includes('company_registration'))
   assert.ok(keys.includes('company_resolution_to_sell'))
   assert.ok(keys.includes('director_member_ids'))

@@ -27,6 +27,7 @@ export const CANONICAL_DOCUMENT_REQUEST_ALLOWED_VISIBILITIES = Object.freeze([
 
 export const CANONICAL_DOCUMENT_REQUEST_ALLOWED_LEVELS = Object.freeze([
   'required',
+  'optional',
   'conditional',
   'pending_policy_required',
   'pending_policy_required_unless_waived',

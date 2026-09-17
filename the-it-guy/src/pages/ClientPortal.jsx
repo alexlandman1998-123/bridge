@@ -18,6 +18,7 @@ import {
   Home,
   KeyRound,
   LayoutDashboard,
+  Loader2,
   MapPin,
   Megaphone,
   MessageCircle,
@@ -9968,7 +9969,13 @@ function ClientPortal() {
       return { ok: false, error: 'Choose a file to upload.' }
     }
 
-    const normalizedDocumentKey = normalizeDocumentKey(documentKey)
+    // An ad-hoc document request is not a canonical requirement.  Keep its
+    // UI state key separate from the requirement key so the buyer upload API
+    // takes the request-only, atomic persistence path.
+    const requiredDocumentKey = options.requiredDocumentKey === undefined
+      ? documentKey
+      : options.requiredDocumentKey
+    const normalizedDocumentKey = normalizeDocumentKey(requiredDocumentKey)
     const isReservationProofUpload =
       normalizedDocumentKey.includes('reservation') &&
       (normalizedDocumentKey.includes('proof') || normalizedDocumentKey.includes('payment'))
@@ -10010,7 +10017,7 @@ function ClientPortal() {
             token,
             accessToken: sellerPortalAccessToken,
             file,
-            requirementKey: documentKey,
+            requirementKey: requiredDocumentKey,
             requirementInstanceId: options.requirementInstanceId || null,
             documentRequestId: options.documentRequestId || null,
             category: options.category || 'Seller Document',
@@ -10018,7 +10025,7 @@ function ClientPortal() {
           })
         : await uploadClientPortalDocument({
             token,
-            requiredDocumentKey: documentKey,
+            requiredDocumentKey,
             canonicalRequirementInstanceId: options.requirementInstanceId || null,
             category: options.category || (isReservationProofUpload ? 'Reservation Deposit / Proof of Payment' : 'Required Document'),
             documentType: isReservationProofUpload ? 'reservation_deposit_pop' : undefined,
@@ -10067,6 +10074,7 @@ function ClientPortal() {
       if (!requestId) return undefined
       return handleUploadRequiredDocument(`additional_request_${requestId}`, file, {
         documentRequestId: requestId,
+        requiredDocumentKey: null,
         category: 'Additional Requests',
       })
     }
@@ -10103,6 +10111,7 @@ function ClientPortal() {
       if (!requestId) return { ok: false, error: 'This additional request is missing its upload reference.' }
       return handleUploadRequiredDocument(`additional_request_${requestId}`, file, {
         documentRequestId: requestId,
+        requiredDocumentKey: null,
         category: 'Additional Requests',
       })
     }
@@ -16411,9 +16420,9 @@ function ClientPortal() {
                       </div>
                       <div className="mt-4 flex flex-wrap gap-2">
                         {uploadDocument?.key ? (
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
-                            <FileSignature size={14} />
-                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
+                          <label className={`inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition ${uploadingDocumentKey === uploadDocument.key ? 'cursor-wait opacity-60' : 'cursor-pointer hover:border-[#c6d7e7] hover:bg-white'}`}>
+                            {uploadingDocumentKey === uploadDocument.key ? <Loader2 size={14} className="animate-spin" /> : <FileSignature size={14} />}
+                            {uploadingDocumentKey === uploadDocument.key ? 'Uploading…' : hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
                               type="file"
                               className="hidden"
@@ -16512,9 +16521,9 @@ function ClientPortal() {
                           </span>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition hover:border-[#c6d7e7]">
-                            <FileSignature size={13} />
-                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
+                          <label className={`inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-white px-3 py-1.5 text-xs font-semibold text-[#35546c] transition ${uploadingDocumentKey === document.key ? 'cursor-wait opacity-60' : 'cursor-pointer hover:border-[#c6d7e7]'}`}>
+                            {uploadingDocumentKey === document.key ? <Loader2 size={13} className="animate-spin" /> : <FileSignature size={13} />}
+                            {uploadingDocumentKey === document.key ? 'Uploading…' : hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
                               type="file"
                               className="hidden"
@@ -16831,9 +16840,9 @@ function ClientPortal() {
                           </span>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
-                            <FileSignature size={14} />
-                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
+                          <label className={`inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition ${uploadingDocumentKey === uploadStateKey ? 'cursor-wait opacity-60' : 'cursor-pointer hover:border-[#c6d7e7] hover:bg-white'}`}>
+                            {uploadingDocumentKey === uploadStateKey ? <Loader2 size={14} className="animate-spin" /> : <FileSignature size={14} />}
+                            {uploadingDocumentKey === uploadStateKey ? 'Uploading…' : hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
                               type="file"
                               className="hidden"
@@ -16847,6 +16856,7 @@ function ClientPortal() {
                                     file,
                                     {
                                       documentRequestId,
+                                      requiredDocumentKey: null,
                                       category: 'Additional Requests',
                                     },
                                   )
@@ -16893,9 +16903,9 @@ function ClientPortal() {
                           </span>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#c6d7e7] hover:bg-white">
-                            <FileSignature size={14} />
-                            {hasUploadedDocument ? 'Replace upload' : 'Upload'}
+                          <label className={`inline-flex items-center gap-2 rounded-full border border-[#dbe5ef] bg-[#f8fbff] px-4 py-2 text-sm font-semibold text-[#35546c] transition ${uploadingDocumentKey === document.key ? 'cursor-wait opacity-60' : 'cursor-pointer hover:border-[#c6d7e7] hover:bg-white'}`}>
+                            {uploadingDocumentKey === document.key ? <Loader2 size={14} className="animate-spin" /> : <FileSignature size={14} />}
+                            {uploadingDocumentKey === document.key ? 'Uploading…' : hasUploadedDocument ? 'Replace upload' : 'Upload'}
                             <input
                               type="file"
                               className="hidden"

@@ -78,6 +78,11 @@ assert.match(clientPortalSource, /documentRequestId:\s*options\.documentRequestI
 assert.match(clientPortalSource, /request\.uploadSpec\?\.requestId/, 'Container cards should source request id from uploadSpec.')
 assert.match(clientPortalSource, /const documentRequestId = String\(request\.uploadSpec\?\.requestId \|\| requestId \|\| ''\)\.trim\(\)/, 'Container upload should derive a request id from uploadSpec.')
 assert.match(clientPortalSource, /handleUploadRequiredDocument\(/, 'Container upload should call the shared upload handler.')
+assert.match(clientPortalSource, /const requiredDocumentKey = options\.requiredDocumentKey === undefined/, 'Request-only uploads should keep their UI state key separate from a canonical requirement key.')
+assert.match(clientPortalSource, /requiredDocumentKey: null,\s*category: 'Additional Requests'/s, 'Additional-request uploads should use the request-only persistence path.')
+assert.match(clientPortalSource, /Loader2/, 'Document upload controls should render a loading indicator.')
+assert.match(clientPortalSource, /animate-spin/, 'Document upload controls should animate while an upload is in progress.')
+assert.match(clientPortalSource, /Uploading…/, 'Document upload controls should state that the upload is in progress.')
 
 const transition = buildProfessionalDocumentRequestUploadTransition({
   id: 'phase9-test-request',

@@ -1045,9 +1045,10 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
     buildRequirement({
       key: 'title_deed_copy',
       name: 'Title Deed Copy',
-      description: 'Title deed copy for ownership verification.',
+      description: 'Title deed copy for ownership verification, if it is available.',
       group: 'property',
       visibility: 'seller_visible',
+      required: false,
       generatedFrom,
     }),
     buildRequirement({

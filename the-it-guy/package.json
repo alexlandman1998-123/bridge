@@ -1251,6 +1251,7 @@
     "verify:seller-leads-bundle-budget": "node scripts/seller-leads-performance-budget.mjs",
     "verify:seller-leads-performance": "npm run test:seller-leads-performance-phase1 && npm run test:seller-leads-list-extraction-phase2 && npm run test:seller-leads-route-split-phase3 && npm run test:seller-leads-workspace-entry-phase4 && npm run test:seller-leads-intent-loading-phase5 && npm run test:seller-leads-tab-loading-phase6 && npm run test:seller-leads-category-hydration-phase7 && npm run test:seller-leads-release-gate-phase8 && npm run test:seller-leads-read-boundary-phase9 && npm run test:seller-leads-lifecycle-boundary-phase10",
     "test:seller-listing-publication-mapper": "node scripts/seller-listing-publication-mapper.test.mjs",
+    "test:seller-signing-phase8-rollout": "node scripts/seller-signing-phase8-rollout.test.mjs",
     "test:seller-listing-relationship-integrity": "node scripts/seller-listing-relationship-integrity.test.mjs",
     "test:seller-listing-relationship-graph-integrity": "node scripts/seller-listing-relationship-graph-integrity.test.mjs",
     "test:seller-document-source-of-truth": "node scripts/seller-document-source-of-truth.test.mjs",

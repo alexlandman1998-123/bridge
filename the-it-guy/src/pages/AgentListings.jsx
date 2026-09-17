@@ -73,6 +73,7 @@ import {
   syncSellerDocumentRequirements as syncLocalSellerDocumentRequirements,
 } from '../lib/sellerDocumentRequirementEngine'
 import { isListingSellerOwnershipUnidentified } from '../lib/listingSellerProfileBuilderModel'
+import { SELLER_ENTITY_TYPES, normalizeSellerEntityType } from '../lib/sellerEntityModel'
 import {
   getPropertyCategoryLabel,
   getPropertyStructureTypeLabel,
@@ -130,16 +131,7 @@ const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'signed_external_pending_upload', label: 'Signed manually, upload later' },
   { value: 'expired', label: 'Expired' },
 ]
-const DIRECT_LISTING_SELLER_TYPE_OPTIONS = [
-  { value: 'individual', label: 'Individual' },
-  { value: 'multiple_owners', label: 'Multiple individuals' },
-  { value: 'company', label: 'Company' },
-  { value: 'close_corporation', label: 'Close corporation' },
-  { value: 'trust', label: 'Trust' },
-  { value: 'deceased_estate', label: 'Deceased estate' },
-  { value: 'other', label: 'Other entity' },
-  { value: 'foreign_individual', label: 'Foreign individual' },
-]
+const DIRECT_LISTING_SELLER_TYPE_OPTIONS = SELLER_ENTITY_TYPES
 const DIRECT_LISTING_MARITAL_STATUS_OPTIONS = [
   { value: '', label: 'Not captured' },
   { value: 'single', label: 'Single' },
@@ -234,16 +226,10 @@ const QUICK_ADD_LIFECYCLE_OPTIONS = [
   },
 ]
 
-const QUICK_ADD_SELLER_TYPE_CARDS = [
-  { value: 'individual', label: 'Individual', description: 'One individual owner', icon: UserRound },
-  { value: 'multiple_owners', label: 'Multiple owners', description: 'Two or more individual owners', icon: UsersRound },
-  { value: 'company', label: 'Company', description: 'Pty Ltd / Ltd company', icon: Building2 },
-  { value: 'close_corporation', label: 'Close Corporation', description: 'Registered close corp', icon: Building2 },
-  { value: 'trust', label: 'Trust', description: 'Registered trust', icon: UsersRound },
-  { value: 'deceased_estate', label: 'Deceased Estate', description: 'Estate administered by an executor', icon: FileText },
-  { value: 'other', label: 'Other Entity', description: 'Other legal entity', icon: Building2 },
-  { value: 'foreign_individual', label: 'Foreign Owner', description: 'Non-resident individual owner', icon: UserRound },
-]
+const QUICK_ADD_SELLER_TYPE_CARDS = SELLER_ENTITY_TYPES.map((option) => ({
+  ...option,
+  icon: option.value === 'multiple_owners' || option.value === 'trust' ? UsersRound : option.value === 'deceased_estate' ? FileText : option.value === 'individual' || option.value === 'foreign_individual' ? UserRound : option.value === 'unknown' ? HelpCircle : Building2,
+}))
 
 const CREATE_LISTING_WORKFLOW_STEPS = [
   { key: 'seller', label: 'Seller & Mandate', description: 'Owner & mandate details' },
@@ -1268,7 +1254,7 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     sellerSurname: '',
     sellerEmail: normalizeText(listing.sellerEmail || canonicalFacts.email || canonicalFacts.sellerEmail || canonicalSeller.email || seller.email),
     sellerPhone: normalizeText(listing.sellerPhone || canonicalFacts.phone || canonicalFacts.sellerPhone || canonicalFacts.mobile || canonicalSeller.phone || seller.phone),
-    sellerType: DIRECT_LISTING_SELLER_TYPE_OPTIONS.some((option) => option.value === sellerType) ? sellerType : 'individual',
+    sellerType: DIRECT_LISTING_SELLER_TYPE_OPTIONS.some((option) => option.value === sellerType) ? sellerType : 'unknown',
     sellerRegistrationNumber: normalizeText(canonicalFacts.idNumber || canonicalFacts.identityNumber || canonicalSeller.idNumber || seller.registrationNumber),
     companyName: normalizeText(canonicalSeller.companyName || onboardingFormData.companyName || (['company', 'close_corporation', 'other'].includes(sellerType) ? sellerName : '')),
     companyRegistrationNumber: normalizeText(canonicalSeller.registrationNumber || onboardingFormData.companyRegistrationNumber),
@@ -2987,7 +2973,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     sellerSurname: '',
     sellerEmail: '',
     sellerPhone: '',
-    sellerType: 'individual',
+    sellerType: 'unknown',
     sellerRegistrationNumber: '',
     companyName: '',
     companyRegistrationNumber: '',
@@ -4072,7 +4058,7 @@ function AgentListings({ initialTab = null } = {}) {
 
   function updateForm(key, value) {
     setForm((previous) => {
-      const next = { ...previous, [key]: value }
+      const next = { ...previous, [key]: key === 'sellerType' ? normalizeSellerEntityType(value) : value }
       if (key === 'propertyType' && normalizePropertyStructureType(value, { fallback: '' }) === 'sectional_title') {
         next.propertyStructureType = 'sectional_title'
       }

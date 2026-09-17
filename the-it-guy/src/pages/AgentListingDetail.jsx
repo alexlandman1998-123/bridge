@@ -82,6 +82,8 @@ import {
 import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import { fetchDevelopmentsData } from '../lib/api'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
+import { getSellerAuthorityGate } from '../lib/sellerAuthorityGate'
+import { buildSellerSigningPlan } from '../lib/sellerSigningPlanModel'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
@@ -112,6 +114,7 @@ import {
   createListingSellerProfileBuilderDraft,
   isListingSellerOwnershipUnidentified,
   removeListingSellerProfileDraftPerson,
+  resolveListingSellerProfileBranch,
   updateListingSellerProfileDraftPerson,
   validateListingSellerProfileBuilderDraft,
 } from '../lib/listingSellerProfileBuilderModel'
@@ -3675,6 +3678,7 @@ function AgentListingDetail() {
   const [mandateSetupOpen, setMandateSetupOpen] = useState(false)
   const [mandateSetupDraft, setMandateSetupDraft] = useState({ sellerName: '', sellerEmail: '', propertyAddress: '' })
   const [sellerDocumentSendOpen, setSellerDocumentSendOpen] = useState(false)
+  const [sellerDocumentSendStep, setSellerDocumentSendStep] = useState(1)
   const [sellerDocumentSendSaving, setSellerDocumentSendSaving] = useState(false)
   const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
   const [sellerDocumentSigningSessions, setSellerDocumentSigningSessions] = useState([])
@@ -6425,6 +6429,25 @@ function AgentListingDetail() {
     setMandateSetupOpen(true)
   }
 
+  function hasIdentifiedSellerEntity() {
+    return Boolean(resolveListingSellerProfileBranch(getListingSellerFormData(listingRecord), listingRecord))
+  }
+
+  function hasApprovedSellerAuthority() {
+    const gate = getSellerAuthorityGate({
+      sellerType: listingRecord?.sellerType || getListingSellerFormData(listingRecord)?.sellerType,
+      requirements: listingRecord?.documentRequirements || [],
+      documents: listingRecord?.documents || listingRecord?.listingDocuments || [],
+    })
+    if (!gate.approved) setDetailError('Required seller authority documents must be uploaded and approved before a signing link can be issued.')
+    return gate.approved
+  }
+
+  function getSellerSigningPlan() {
+    const form = getListingSellerFormData(listingRecord)
+    return buildSellerSigningPlan({ sellerType: listingRecord?.sellerType || form.sellerType, form })
+  }
+
   function openSellerDocumentSend(selectionOverride = null) {
     const form = getListingSellerFormData(listingRecord)
     const selected = Array.isArray(selectionOverride) ? selectionOverride : null
@@ -6435,7 +6458,17 @@ function AgentListingDetail() {
     })
     setDetailError('')
     setDetailMessage('')
+    setSellerDocumentSendStep(1)
     setSellerDocumentSendOpen(true)
+  }
+
+  function continueSellerDocumentSend() {
+    if (!Object.values(sellerDocumentSendSelection).some(Boolean)) {
+      setDetailError('Choose at least one seller document to include.')
+      return
+    }
+    setDetailError('')
+    setSellerDocumentSendStep(2)
   }
 
   async function loadSellerDocumentSigningSessions({ silent = false } = {}) {
@@ -6479,6 +6512,16 @@ function AgentListingDetail() {
   }
 
   async function saveSellerDocumentSendSelection() {
+    if (!hasIdentifiedSellerEntity()) {
+      setDetailError('Identify the seller entity in the Seller Profile before preparing a document link.')
+      return
+    }
+    if (!hasApprovedSellerAuthority()) return
+    const signingPlan = getSellerSigningPlan()
+    if (!signingPlan.ready) {
+      setDetailError(signingPlan.missing[0] || 'Complete the required signer details before preparing a document link.')
+      return
+    }
     const selected = Object.entries(sellerDocumentSendSelection).filter(([, included]) => included).map(([key]) => key)
     if (!selected.length) {
       setDetailError('Choose at least one seller document to include.')
@@ -6500,6 +6543,7 @@ function AgentListingDetail() {
       await updatePrivateListingOnboardingFormData(listingRecord.id, {
         ...existingForm,
         sellerDocumentSendSelection: sellerDocumentSendSelection,
+        mandateType: marketingDraft.mandateType || listingRecord?.mandateType || 'sole',
         sellerDocumentSendSelectionUpdatedAt: new Date().toISOString(),
       }, { status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started', syncRequirements: false })
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
@@ -6511,6 +6555,7 @@ function AgentListingDetail() {
         selectedDocuments: selected,
         mandateSnapshot: {
           propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '',
+          mandateType: marketingDraft.mandateType || listingRecord?.mandateType || 'sole',
           askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
           commissionBasis,
           commissionPercentage: commissionBasis === 'percentage' ? commissionDraft.percentage : '',
@@ -6534,6 +6579,16 @@ function AgentListingDetail() {
   }
 
   async function saveMandateSetup() {
+    if (!hasIdentifiedSellerEntity()) {
+      setDetailError('Identify the seller entity in the Seller Profile before generating a mandate.')
+      return
+    }
+    if (!hasApprovedSellerAuthority()) return
+    const signingPlan = getSellerSigningPlan()
+    if (!signingPlan.ready) {
+      setDetailError(signingPlan.missing[0] || 'Complete the required signer details before generating a mandate.')
+      return
+    }
     const sellerName = String(mandateSetupDraft.sellerName || '').trim()
     const sellerEmail = String(mandateSetupDraft.sellerEmail || '').trim().toLowerCase()
     const propertyAddress = String(mandateSetupDraft.propertyAddress || '').trim()
@@ -6612,6 +6667,16 @@ function AgentListingDetail() {
   async function sendListingMandateSigningLink() {
     if (!isSupabaseConfigured || !isUuidLike(listingRecord?.id)) {
       setDetailError('A live listing is required before a signing link can be sent.')
+      return
+    }
+    if (!hasIdentifiedSellerEntity()) {
+      setDetailError('Identify the seller entity in the Seller Profile before sending a signing link.')
+      return
+    }
+    if (!hasApprovedSellerAuthority()) return
+    const signingPlan = getSellerSigningPlan()
+    if (!signingPlan.ready) {
+      setDetailError(signingPlan.missing[0] || 'Complete the required signer details before sending a signing link.')
       return
     }
 
@@ -8040,6 +8105,11 @@ function AgentListingDetail() {
     [sellerDocumentExperienceItems],
   )
 
+  const salesDocuments = useMemo(
+    () => sellerDocumentExperienceItems.filter((doc) => getListingDocumentGroupingKey(doc) === 'sales'),
+    [sellerDocumentExperienceItems],
+  )
+
   const listingDocumentGroups = useMemo(
     () => groupListingDocumentsForDisplay(sellerDocumentExperienceItems),
     [sellerDocumentExperienceItems],
@@ -9147,7 +9217,7 @@ function AgentListingDetail() {
       ...formPatch,
       sellerProfileCapturedAt: now,
     }
-    const fullName = toCleanText(formPatch.fullName || formPatch.sellerName || resolveSellerNameFromListing(listingRecord))
+    const fullName = toCleanText(formPatch.fullName || formPatch.sellerName || formPatch.deceasedEstateName || formPatch.otherEntityName || resolveSellerNameFromListing(listingRecord))
     const email = toCleanText(formPatch.email || formPatch.sellerEmail || resolveSellerEmailFromListing(listingRecord)).toLowerCase()
     const phone = toCleanText(formPatch.phone || formPatch.sellerPhone || resolveSellerPhoneFromListing(listingRecord))
     const currentFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
@@ -9167,7 +9237,7 @@ function AgentListingDetail() {
       ownerStructureType: Boolean(formPatch.ownerStructureType),
     }
     const listingPatch = {
-      sellerName: fullName || formPatch.companyName || formPatch.trustName || listingRecord?.sellerName,
+      sellerName: fullName || formPatch.companyName || formPatch.trustName || formPatch.deceasedEstateName || formPatch.otherEntityName || listingRecord?.sellerName,
       sellerEmail: email,
       sellerPhone: phone,
       sellerType: formPatch.sellerType || listingRecord?.sellerType || 'individual',
@@ -9238,7 +9308,6 @@ function AgentListingDetail() {
     setDetailError('')
     setDetailMessage('')
     try {
-      applySellerProfileSnapshot()
       let remoteListingMissing = false
       if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
         try {
@@ -9249,8 +9318,12 @@ function AgentListingDetail() {
             ownershipStructure: formPatch.ownershipType || formPatch.ownerStructureType,
             maritalRegime: formPatch.maritalStatus || formPatch.maritalRegime,
             syncRequirements: true,
+            requireRequirementSync: true,
             requirementSyncReason: 'listing_seller_profile_capture',
           })
+          if (!Array.isArray(onboardingResult?.syncedRequirements) || !onboardingResult.syncedRequirements.length) {
+            throw new Error('Seller document requirements could not be refreshed. Your profile was saved, but the document list was left unchanged.')
+          }
           applySellerProfileSnapshot({
             syncedListing: onboardingResult?.syncedListing || remoteListing,
             syncedRequirements: onboardingResult?.syncedRequirements,
@@ -9260,6 +9333,11 @@ function AgentListingDetail() {
           remoteListingMissing = true
           console.warn('[AgentListingDetail] seller profile saved locally because remote listing row is missing', remoteError)
         }
+      }
+      if (!isSupabaseConfigured || !isUuidLike(listingRecord.id) || remoteListingMissing) {
+        // Local-only and imported listings have no shared database row yet;
+        // retain the generated rows as their local persisted requirement set.
+        applySellerProfileSnapshot({ syncedRequirements: projectedDocumentRequirements })
       }
       setSellerProfileBuilderOpen(false)
       setDetailMessage(remoteListingMissing
@@ -10564,6 +10642,8 @@ function AgentListingDetail() {
   const sellerProfileBuilderBranch = sellerProfileBuilderDraft.branch || ''
   const sellerProfileBuilderShowsCompany = ['company', 'foreign_company'].includes(sellerProfileBuilderBranch)
   const sellerProfileBuilderShowsTrust = ['trust', 'foreign_trust'].includes(sellerProfileBuilderBranch)
+  const sellerProfileBuilderShowsEstate = sellerProfileBuilderBranch === 'deceased_estate'
+  const sellerProfileBuilderShowsOtherEntity = sellerProfileBuilderBranch === 'other'
   const sellerProfileBuilderShowsForeign = sellerProfileBuilderBranch.startsWith('foreign_')
   const sellerProfileBuilderShowsMultipleOwners = sellerProfileBuilderBranch === 'multiple_owners'
   const sellerProfileBuilderShowsSpouse = sellerProfileBuilderBranch === 'married'
@@ -11411,6 +11491,14 @@ function AgentListingDetail() {
               <span>Enter a valid seller email above before generating the mandate.</span>
             </div>
           ) : null}
+          {(() => {
+            const signingPlan = getSellerSigningPlan()
+            return <section className={`rounded-[16px] border p-4 ${signingPlan.ready ? 'border-[#cfe9dc] bg-[#f4fbf7]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
+              <p className="text-sm font-semibold text-[#243d56]">Required signers</p>
+              {signingPlan.recipients.length ? <div className="mt-2 space-y-1.5">{signingPlan.recipients.map((recipient) => <p key={`${recipient.role}-${recipient.email}`} className="text-sm text-[#47637d]">{recipient.name || 'Name missing'} · {recipient.role} · {recipient.email || 'email missing'}</p>)}</div> : null}
+              {!signingPlan.ready ? <p className="mt-2 text-sm leading-5 text-[#8a641d]">{signingPlan.missing[0] || 'Complete signer details in the Seller Profile before continuing.'}</p> : <p className="mt-2 text-sm text-[#28734b]">Each required signer will receive an individual secure link when the multi-signer packet is dispatched.</p>}
+            </section>
+          })()}
           <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 md:grid-cols-2">
             <fieldset className="grid gap-2 md:col-span-2">
               <legend className="text-sm font-semibold text-[#2d445e]">Commission type</legend>
@@ -11471,18 +11559,17 @@ function AgentListingDetail() {
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => setSellerDocumentSendOpen(false)}>Cancel</Button>
-            <Button type="button" disabled={sellerDocumentSendSaving} onClick={() => void saveSellerDocumentSendSelection()}>
+            {sellerDocumentSendStep === 2 ? <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => setSellerDocumentSendStep(1)}>Back</Button> : null}
+            <Button type="button" disabled={sellerDocumentSendSaving} onClick={() => sellerDocumentSendStep === 1 ? continueSellerDocumentSend() : void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {sellerDocumentSendSaving ? 'Sending...' : 'Send secure link'}
+              {sellerDocumentSendSaving ? 'Sending...' : sellerDocumentSendStep === 1 ? 'Continue' : 'Send secure link'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-4">
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
-            The seller will receive only the documents selected here. Their name, property and saved listing details will be prefilled.
-          </div>
-          {[
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Choose the documents to send.' : 'Confirm the seller, FICA and mandate details before sending.'}</div>
+          {sellerDocumentSendStep === 1 ? [
             { key: 'disclosure', title: 'Disclosure form', copy: 'Property condition / defects declaration.' },
             { key: 'fica', title: 'FICA declaration', copy: 'Seller identity and compliance declaration.' },
             { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the saved commission percentage and VAT treatment.' },
@@ -11491,11 +11578,14 @@ function AgentListingDetail() {
               <input type="checkbox" className="mt-1 h-4 w-4" checked={sellerDocumentSendSelection[document.key]} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
               <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className="mt-1 block text-sm leading-5 text-[#607387]">{document.copy}</span></span>
             </label>
-          ))}
+          )) : <div className="space-y-4">
           <div className="grid gap-3 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-sm sm:grid-cols-2">
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Seller</span><span className="font-semibold text-[#243d56]">{resolveSellerNameFromListing(listingRecord) || 'Not captured'}</span></div>
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Email</span><span className="break-all font-semibold text-[#243d56]">{resolveSellerEmailFromListing(listingRecord) || 'Not captured'}</span></div>
           </div>
+          {sellerDocumentSendSelection.fica ? <div className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><p className="font-semibold text-[#243d56]">FICA confirmation</p><p className="mt-1 text-[#607387]">{formatStatusLabel(listingRecord?.sellerType || getListingSellerFormData(listingRecord)?.sellerType || 'seller')} seller · confirm the listed seller/contact details are correct before sending.</p></div> : null}
+          {sellerDocumentSendSelection.mandate ? <div className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2"><div><p className="font-semibold text-[#243d56]">Mandate type</p><Field as="select" value={marketingDraft.mandateType || listingRecord?.mandateType || 'sole'} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, mandateType: event.target.value }))}><option value="sole">Sole</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option></Field></div><div><p className="font-semibold text-[#243d56]">Commission</p><p className="mt-2 text-[#607387]">{commissionDraft.basis === 'fixed' ? `R ${commissionDraft.amount || 'not captured'}` : `${commissionDraft.percentage || 'not captured'}%`} · {commissionDraft.vatHandling || 'VAT not captured'}</p></div></div> : null}
+          </div>}
         </div>
       </Modal>
       <Modal
@@ -11649,6 +11739,19 @@ function AgentListingDetail() {
               <Field type="tel" value={sellerProfileBuilderDraft.phone || ''} onChange={(event) => updateSellerProfileBuilderDraft('phone', event.target.value)} />
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Alternative contact
+              <Field value={sellerProfileBuilderDraft.alternativeContact || ''} onChange={(event) => updateSellerProfileBuilderDraft('alternativeContact', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Preferred contact method
+              <Field as="select" value={sellerProfileBuilderDraft.preferredContactMethod || ''} onChange={(event) => updateSellerProfileBuilderDraft('preferredContactMethod', event.target.value)}>
+                <option value="">Not captured</option>
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="whatsapp">WhatsApp</option>
+              </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               ID / Passport
               <Field value={sellerProfileBuilderDraft.idNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('idNumber', event.target.value)} />
             </label>
@@ -11774,6 +11877,24 @@ function AgentListingDetail() {
             </section>
           ) : null}
 
+          {sellerProfileBuilderShowsEstate ? (
+            <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+              <div className="sm:col-span-2"><p className="text-sm font-semibold text-[#243d56]">Deceased estate</p><p className="mt-1 text-sm text-[#607387]">Capture the estate and executor details. Authority evidence is handled in the next phase.</p></div>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Estate name<Field value={sellerProfileBuilderDraft.deceasedEstateName || ''} onChange={(event) => updateSellerProfileBuilderDraft('deceasedEstateName', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Estate reference number<Field value={sellerProfileBuilderDraft.estateReferenceNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('estateReferenceNumber', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Executor full name<Field value={sellerProfileBuilderDraft.executorName || ''} onChange={(event) => updateSellerProfileBuilderDraft('executorName', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Executor email<Field type="email" value={sellerProfileBuilderDraft.executorEmail || ''} onChange={(event) => updateSellerProfileBuilderDraft('executorEmail', event.target.value)} /></label>
+            </section>
+          ) : null}
+
+          {sellerProfileBuilderShowsOtherEntity ? (
+            <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
+              <div className="sm:col-span-2"><p className="text-sm font-semibold text-[#243d56]">Other legal entity</p><p className="mt-1 text-sm text-[#607387]">Capture the legal entity now; its authority path will be selected before documents can be issued.</p></div>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Legal entity name<Field value={sellerProfileBuilderDraft.otherEntityName || ''} onChange={(event) => updateSellerProfileBuilderDraft('otherEntityName', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Registration / reference number<Field value={sellerProfileBuilderDraft.otherEntityRegistrationNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('otherEntityRegistrationNumber', event.target.value)} /></label>
+            </section>
+          ) : null}
+
           {sellerProfileBuilderShowsForeign ? (
             <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
               <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
@@ -11808,6 +11929,22 @@ function AgentListingDetail() {
                 <option value="estate">Estate</option>
                 <option value="agricultural_holding">Agricultural holding</option>
               </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Title deed number
+              <Field value={sellerProfileBuilderDraft.titleDeedNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('titleDeedNumber', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Bond holder
+              <Field value={sellerProfileBuilderDraft.bondHolder || ''} onChange={(event) => updateSellerProfileBuilderDraft('bondHolder', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Outstanding bond
+              <Field type="number" min="0" step="0.01" value={sellerProfileBuilderDraft.outstandingBond || ''} onChange={(event) => updateSellerProfileBuilderDraft('outstandingBond', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
+              Co-owner details
+              <Field as="textarea" value={sellerProfileBuilderDraft.coOwnerDetails || ''} onChange={(event) => updateSellerProfileBuilderDraft('coOwnerDetails', event.target.value)} />
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Asking price
@@ -11845,6 +11982,22 @@ function AgentListingDetail() {
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Mandate expiry date
               <Field type="date" value={sellerProfileBuilderDraft.expiryDate || ''} onChange={(event) => updateSellerProfileBuilderDraft('expiryDate', event.target.value)} />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Commission preference
+              <Field value={sellerProfileBuilderDraft.commissionPreference || ''} onChange={(event) => updateSellerProfileBuilderDraft('commissionPreference', event.target.value)} placeholder="e.g. 5% plus VAT or R50,000" />
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              POPI consent
+              <Field as="select" value={sellerProfileBuilderDraft.popiConsent || ''} onChange={(event) => updateSellerProfileBuilderDraft('popiConsent', event.target.value)}>
+                <option value="">Not captured</option>
+                <option value="yes">Yes</option>
+                <option value="no">No</option>
+              </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
+              Mandate terms
+              <Field as="textarea" value={sellerProfileBuilderDraft.mandateTerms || ''} onChange={(event) => updateSellerProfileBuilderDraft('mandateTerms', event.target.value)} />
             </label>
           </section>
 
@@ -15179,73 +15332,6 @@ function AgentListingDetail() {
                     </Button>
                   </div>
                 </div>
-                <section className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#f8fbff] p-4" aria-label="Seller document link status">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-semibold text-[#243d56]">Seller document link status</h4>
-                      <p className="mt-1 text-xs leading-5 text-[#607387]">Track delivery progress and follow up without exposing a signing link after it has been issued.</p>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {lastSellerDocumentSigningLink ? (
-                        <Button type="button" size="sm" variant="secondary" onClick={() => void copyLastSellerDocumentSigningLink()}>
-                          <Copy size={14} /> Copy new link
-                        </Button>
-                      ) : null}
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void loadSellerDocumentSigningSessions()} disabled={sellerDocumentSigningSessionsLoading}>
-                        {sellerDocumentSigningSessionsLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-                        Refresh
-                      </Button>
-                    </div>
-                  </div>
-                  {sellerDocumentSigningSessionsLoading ? (
-                    <div className="mt-4 flex items-center gap-2 text-sm text-[#607387]"><Loader2 size={15} className="animate-spin" /> Loading link status…</div>
-                  ) : sellerDocumentSigningSessions.length ? (
-                    <div className="mt-4 space-y-3">
-                      {sellerDocumentSigningSessions.map((session) => {
-                        const selected = Array.isArray(session.selected_documents) ? session.selected_documents : []
-                        const progress = session.document_progress && typeof session.document_progress === 'object' ? session.document_progress : {}
-                        const labelFor = (key) => ({ disclosure: 'Disclosure', fica: 'FICA', mandate: 'Mandate' }[key] || key)
-                        const isActive = session.status === 'active'
-                        return (
-                          <div key={session.id} className="rounded-[14px] border border-[#e0e8f1] bg-white p-3">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="text-sm font-semibold text-[#243d56]">Sent to {session.signer_name || 'seller'}</p>
-                                  <StatusPill status={session.status} label={formatStatusLabel(session.status)} />
-                                </div>
-                                <p className="mt-1 break-all text-xs text-[#607387]">{session.signer_email || 'Seller email not recorded'} · Sent {formatDateTime(session.created_at)}</p>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                <Button type="button" size="sm" variant="secondary" onClick={() => openSellerDocumentSend(selected)}>
-                                  <Send size={14} /> Resend
-                                </Button>
-                                {isActive ? (
-                                  <Button type="button" size="sm" variant="secondary" onClick={() => void revokeSellerDocumentSigningSession(session.id)} disabled={sellerDocumentSigningSessionAction === `revoke:${session.id}`}>
-                                    {sellerDocumentSigningSessionAction === `revoke:${session.id}` ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
-                                    Revoke
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {selected.map((key) => (
-                                <span key={key} className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${progress[key] ? 'border-[#bfe5cf] bg-[#effbf4] text-[#197849]' : 'border-[#dbe6f2] bg-[#f8fbfd] text-[#607387]'}`}>
-                                  {labelFor(key)} · {progress[key] ? 'Signed' : 'Outstanding'}
-                                </span>
-                              ))}
-                            </div>
-                            <p className="mt-3 text-xs text-[#607387]">
-                              {session.signed_at ? `Completed ${formatDateTime(session.signed_at)}` : session.viewed_at ? `Viewed ${formatDateTime(session.viewed_at)}` : 'Not opened yet'} · Expires {formatDateTime(session.expires_at)}
-                            </p>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <p className="mt-4 text-sm leading-6 text-[#607387]">No seller document links have been sent for this listing.</p>
-                  )}
-                </section>
                 <div className="mt-5 overflow-x-auto">
                   <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2" aria-label="Listing document categories">
                     {listingDocumentGroups.map((group) => {
@@ -15679,10 +15765,11 @@ function AgentListingDetail() {
             </div>
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-3">
+          <section className="grid gap-5 xl:grid-cols-4">
           {[
             { title: 'Property Documents', icon: Building2, rows: propertyDocuments },
-            { title: 'Seller Documents', icon: ShieldCheck, rows: sellerDocuments },
+            { title: 'FICA Documents', icon: ShieldCheck, rows: sellerDocuments },
+            { title: 'Sales Documents', icon: HandCoins, rows: salesDocuments },
             { title: 'Buyer Documents', icon: FileText, rows: buyerDocuments },
           ].map((group) => (
             <section key={group.title} className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">

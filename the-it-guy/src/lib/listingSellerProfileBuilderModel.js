@@ -4,6 +4,7 @@ import {
   createBlankSellerProfilePersonRecord,
   normalizePersonCollectionForSellerProfile,
 } from './sellerProfileCaptureModel.js'
+import { normalizeSellerEntityType } from './sellerEntityModel.js'
 import {
   LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION as SELLER_REQUIREMENT_RETIREMENT_VERSION,
   getSellerRequirementProfile,
@@ -16,11 +17,14 @@ export const LISTING_SELLER_REQUIREMENT_PROJECTION_VERSION = 'listing_seller_req
 export const LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION = SELLER_REQUIREMENT_RETIREMENT_VERSION
 
 export const LISTING_SELLER_PROFILE_BRANCHES = [
+  { value: '', label: 'Not identified yet' },
   { value: 'individual', label: 'Individual' },
   { value: 'married', label: 'Married Individual' },
   { value: 'multiple_owners', label: 'Multiple Owners' },
   { value: 'company', label: 'Company / CC' },
   { value: 'trust', label: 'Trust' },
+  { value: 'deceased_estate', label: 'Deceased Estate' },
+  { value: 'other', label: 'Other Legal Entity' },
   { value: 'foreign_individual', label: 'Foreign Individual' },
   { value: 'foreign_company', label: 'Foreign Company' },
   { value: 'foreign_trust', label: 'Foreign Trust' },
@@ -98,15 +102,19 @@ function requirementPreviewGroupKey(requirement = {}) {
 
 function normalizeBranch(value, fallback = 'individual') {
   const key = normalizeKey(value)
+  const sharedEntityType = normalizeSellerEntityType(key, '')
+  if (sharedEntityType && sharedEntityType !== 'unknown') return sharedEntityType
   if (BRANCH_VALUES.has(key)) return key
   if (['company', 'close_corporation', 'cc', 'pty_ltd', 'corporate'].includes(key)) return 'company'
   if (['trust', 'family_trust'].includes(key)) return 'trust'
+  if (['deceased_estate', 'estate'].includes(key)) return 'deceased_estate'
+  if (['other', 'developer', 'other_entity'].includes(key)) return 'other'
   if (['multiple', 'multiple_individuals', 'joint', 'co_owners'].includes(key)) return 'multiple_owners'
   if (['foreign', 'foreign_owner', 'non_resident', 'foreign_individual'].includes(key)) return 'foreign_individual'
   if (['foreign_company'].includes(key)) return 'foreign_company'
   if (['foreign_trust'].includes(key)) return 'foreign_trust'
   if (['married', 'married_cop', 'married_anc', 'married_in_community', 'married_out_of_community'].includes(key)) return 'married'
-  return fallback
+  return key === 'unknown' ? '' : fallback
 }
 
 function getListingSellerFormData(listing = {}) {
@@ -189,7 +197,7 @@ export function resolveListingSellerProfileBranch(form = {}, listing = {}) {
   if (entity === 'foreign' && structure === 'trust') return 'foreign_trust'
   if (entity === 'foreign') return normalizeBranch(structure, 'foreign_individual')
   if (isListingSellerOwnershipUnidentified(listing)) return ''
-  return normalizeBranch(source, 'individual')
+  return normalizeBranch(source, '')
 }
 
 export function createListingSellerProfileBuilderDraft(listing = {}) {
@@ -228,6 +236,8 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     email: normalizeText(ownerFallback.email).toLowerCase(),
     phone: normalizeText(ownerFallback.phone),
     idNumber: normalizeText(ownerFallback.idNumber),
+    alternativeContact: normalizeText(pickFirst(form.alternativeContact, form.alternateContact, form.secondaryPhone, form.alternativePhone)),
+    preferredContactMethod: normalizeText(pickFirst(form.preferredContactMethod, form.contactPreference)),
     maritalStatus: normalizeText(pickFirst(form.maritalStatus, form.marital_status, sellerFacts.marital_status)),
     spouseName: normalizeText(pickFirst(form.spouseName, form.spouseFullName, form.spouse?.fullName, sellerFacts.spouse?.full_name)),
     spouseEmail: normalizeText(pickFirst(form.spouseEmail, form.spouse?.email, sellerFacts.spouse?.email)).toLowerCase(),
@@ -248,6 +258,12 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     authorisedTrusteeName: normalizeText(pickFirst(form.authorisedTrusteeName, canonicalTrust.authorised_trustee?.full_name, canonicalTrust.authorised_trustee?.name)),
     authorisedTrusteeCapacity: normalizeText(pickFirst(form.authorisedTrusteeCapacity, canonicalTrust.authorised_trustee?.capacity)),
     authorisedTrusteeEmail: normalizeText(pickFirst(form.authorisedTrusteeEmail, canonicalTrust.authorised_trustee?.email)).toLowerCase(),
+    deceasedEstateName: normalizeText(pickFirst(form.deceasedEstateName, form.estateName, sellerFacts.deceased_estate?.name)),
+    estateReferenceNumber: normalizeText(pickFirst(form.estateReferenceNumber, form.deceasedEstateReferenceNumber, sellerFacts.deceased_estate?.reference_number)),
+    executorName: normalizeText(pickFirst(form.executorName, sellerFacts.deceased_estate?.executor?.full_name, sellerFacts.deceased_estate?.executor?.name)),
+    executorEmail: normalizeText(pickFirst(form.executorEmail, sellerFacts.deceased_estate?.executor?.email)).toLowerCase(),
+    otherEntityName: normalizeText(pickFirst(form.otherEntityName, form.entityName, sellerFacts.other_entity?.name)),
+    otherEntityRegistrationNumber: normalizeText(pickFirst(form.otherEntityRegistrationNumber, form.entityRegistrationNumber, sellerFacts.other_entity?.registration_number)),
     foreignOwnerCountry: normalizeText(pickFirst(form.foreignOwnerCountry, sellerFacts.foreign?.country)),
     foreignPassportNumber: normalizeText(pickFirst(form.foreignPassportNumber, sellerFacts.foreign?.passport_number, sellerFacts.foreign?.passportNumber)),
     foreignRegistrationNumber: normalizeText(pickFirst(form.foreignRegistrationNumber, sellerFacts.foreign?.registration_number, sellerFacts.foreign?.registrationNumber)),
@@ -255,6 +271,10 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     propertyAddress: normalizeText(pickFirst(form.propertyAddress, form.addressLine1, canonicalProperty.address, listing?.propertyAddress, listing?.addressLine1, listing?.formattedAddress, listing?.listingTitle)),
     propertyStructureType: normalizeText(pickFirst(form.propertyStructureType, canonicalProperty.property_structure_type, listing?.propertyStructureType, 'full_title')),
     propertyCategory: normalizeText(pickFirst(form.propertyCategory, canonicalProperty.property_category, listing?.propertyCategory, 'residential')),
+    titleDeedNumber: normalizeText(pickFirst(form.titleDeedNumber, form.deedNumber, form.titleReference)),
+    bondHolder: normalizeText(pickFirst(form.bondHolder, form.bondBank, form.mortgageBank)),
+    outstandingBond: normalizeText(pickFirst(form.outstandingBond, form.bondSettlementAmount)),
+    coOwnerDetails: normalizeText(pickFirst(form.coOwnerDetails, form.coOwners)),
     ratesTaxes: normalizeText(pickFirst(form.ratesTaxes, listing?.ratesTaxes)),
     levies: normalizeText(pickFirst(form.levies, listing?.levies)),
     leviesNotApplicable: Boolean(form.leviesNotApplicable ?? form.levies_not_applicable ?? false),
@@ -263,6 +283,9 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     askingPrice: normalizeText(pickFirst(form.askingPrice, form.price, listing?.askingPrice)),
     mandateStartDate: normalizeText(pickFirst(form.mandateStartDate, listing?.mandateStartDate)),
     expiryDate: normalizeText(pickFirst(form.expiryDate, form.mandateEndDate, listing?.expiryDate)),
+    commissionPreference: normalizeText(pickFirst(form.commissionPreference, form.commissionType, form.commissionStructure)),
+    mandateTerms: normalizeText(pickFirst(form.mandateTerms, form.mandateCommissionTerms)),
+    popiConsent: normalizeText(pickFirst(form.popiConsent, form.privacyConsent)),
   }
 }
 
@@ -303,6 +326,8 @@ function resolveOwnerModel(branch) {
   if (branch === 'foreign_trust') return { ownerEntityType: 'foreign', ownerStructureType: 'foreign_trust', sellerLegalType: 'foreign_trust' }
   if (branch === 'foreign_individual') return { ownerEntityType: 'foreign', ownerStructureType: 'foreign_individual', sellerLegalType: 'foreign_individual' }
   if (branch === 'multiple_owners') return { ownerEntityType: 'natural_person', ownerStructureType: 'multiple_owners', sellerLegalType: 'multiple_owners' }
+  if (branch === 'deceased_estate') return { ownerEntityType: 'deceased_estate', ownerStructureType: 'deceased_estate', sellerLegalType: 'deceased_estate' }
+  if (branch === 'other') return { ownerEntityType: 'other', ownerStructureType: 'other', sellerLegalType: 'other' }
   if (branch === 'married') return { ownerEntityType: 'natural_person', ownerStructureType: 'married', sellerLegalType: 'individual' }
   return { ownerEntityType: 'natural_person', ownerStructureType: 'individual', sellerLegalType: 'individual' }
 }
@@ -311,6 +336,15 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
   const branch = normalizeBranch(draft.branch, '')
   const ownerModel = resolveOwnerModel(branch)
   const fullName = [draft.sellerFirstName, draft.sellerSurname].map(normalizeText).filter(Boolean).join(' ')
+  const entityName = branch === 'company' || branch === 'foreign_company'
+    ? normalizeText(draft.companyName)
+    : branch === 'trust' || branch === 'foreign_trust'
+      ? normalizeText(draft.trustName)
+      : branch === 'deceased_estate'
+        ? normalizeText(draft.deceasedEstateName)
+        : branch === 'other'
+          ? normalizeText(draft.otherEntityName)
+          : ''
   const base = {
     sellerProfileBuilderVersion: LISTING_SELLER_PROFILE_BUILDER_VERSION,
     sellerProfileCaptureSource: LISTING_SELLER_PROFILE_CAPTURE_SOURCE,
@@ -326,13 +360,18 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     sellerSurname: normalizeText(draft.sellerSurname),
     firstName: normalizeText(draft.sellerFirstName),
     lastName: normalizeText(draft.sellerSurname),
-    sellerName: fullName,
-    fullName,
+    sellerName: entityName || fullName,
+    fullName: entityName || fullName,
+    contactName: fullName,
     email: normalizeText(draft.email).toLowerCase(),
     sellerEmail: normalizeText(draft.email).toLowerCase(),
     phone: normalizeText(draft.phone),
     sellerPhone: normalizeText(draft.phone),
     mobile: normalizeText(draft.phone),
+    alternativeContact: normalizeText(draft.alternativeContact),
+    alternateContact: normalizeText(draft.alternativeContact),
+    preferredContactMethod: normalizeText(draft.preferredContactMethod),
+    contactPreference: normalizeText(draft.preferredContactMethod),
     idNumber: normalizeText(draft.idNumber),
     sellerIdNumber: normalizeText(draft.idNumber),
     maritalStatus: normalizeText(draft.maritalStatus),
@@ -343,6 +382,14 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     addressLine1: normalizeText(draft.propertyAddress),
     propertyStructureType: normalizeText(draft.propertyStructureType) || 'full_title',
     propertyCategory: normalizeText(draft.propertyCategory) || 'residential',
+    titleDeedNumber: normalizeText(draft.titleDeedNumber),
+    deedNumber: normalizeText(draft.titleDeedNumber),
+    bondHolder: normalizeText(draft.bondHolder),
+    bondBank: normalizeText(draft.bondHolder),
+    outstandingBond: normalizeText(draft.outstandingBond),
+    bondSettlementAmount: normalizeText(draft.outstandingBond),
+    coOwnerDetails: normalizeText(draft.coOwnerDetails),
+    coOwners: normalizeText(draft.coOwnerDetails),
     ratesTaxes: normalizeText(draft.ratesTaxes),
     levies: normalizeText(draft.levies),
     leviesNotApplicable: Boolean(draft.leviesNotApplicable),
@@ -354,6 +401,12 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     startDate: normalizeText(draft.mandateStartDate),
     expiryDate: normalizeText(draft.expiryDate),
     mandateEndDate: normalizeText(draft.expiryDate),
+    commissionPreference: normalizeText(draft.commissionPreference),
+    commissionType: normalizeText(draft.commissionPreference),
+    mandateTerms: normalizeText(draft.mandateTerms),
+    mandateCommissionTerms: normalizeText(draft.mandateTerms),
+    popiConsent: normalizeText(draft.popiConsent),
+    privacyConsent: normalizeText(draft.popiConsent),
   }
 
   if (branch === 'multiple_owners') {
@@ -380,6 +433,20 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.authorisedTrusteeName = normalizeText(draft.authorisedTrusteeName)
     base.authorisedTrusteeCapacity = normalizeText(draft.authorisedTrusteeCapacity)
     base.authorisedTrusteeEmail = normalizeText(draft.authorisedTrusteeEmail).toLowerCase()
+  }
+  if (branch === 'deceased_estate') {
+    base.deceasedEstateName = normalizeText(draft.deceasedEstateName)
+    base.estateName = base.deceasedEstateName
+    base.estateReferenceNumber = normalizeText(draft.estateReferenceNumber)
+    base.executorName = normalizeText(draft.executorName)
+    base.executorEmail = normalizeText(draft.executorEmail).toLowerCase()
+    base.executors = base.executorName ? [{ name: base.executorName, fullName: base.executorName, email: base.executorEmail, roleTitle: 'Executor', signingAuthority: true }] : []
+    base.deceased_estate = { name: base.deceasedEstateName, estate_reference: base.estateReferenceNumber, reference_number: base.estateReferenceNumber, executor: { full_name: base.executorName, email: base.executorEmail }, executors: base.executors }
+  }
+  if (branch === 'other') {
+    base.otherEntityName = normalizeText(draft.otherEntityName)
+    base.otherEntityRegistrationNumber = normalizeText(draft.otherEntityRegistrationNumber)
+    base.other_entity = { name: base.otherEntityName, registration_number: base.otherEntityRegistrationNumber }
   }
   if (branch.startsWith('foreign_')) {
     base.foreignOwner = true
@@ -409,6 +476,8 @@ export function validateListingSellerProfileBuilderDraft(draft = {}) {
   if (!normalizeText(draft.propertyAddress)) errors.push('Capture the property address.')
   if (['company', 'foreign_company'].includes(branch) && !normalizeText(draft.companyName)) errors.push('Capture the company name.')
   if (['trust', 'foreign_trust'].includes(branch) && !normalizeText(draft.trustName)) errors.push('Capture the trust name.')
+  if (branch === 'deceased_estate' && !normalizeText(draft.deceasedEstateName)) errors.push('Capture the estate name.')
+  if (branch === 'other' && !normalizeText(draft.otherEntityName)) errors.push('Capture the legal entity name.')
   if (branch === 'multiple_owners' && !normalizePersonCollectionForSellerProfile(draft.multipleOwners || [], null, 'Owner').length) {
     errors.push('Add at least one owner.')
   }

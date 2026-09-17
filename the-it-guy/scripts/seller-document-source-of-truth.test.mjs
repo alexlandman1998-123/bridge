@@ -65,7 +65,6 @@ assert.deepEqual(keys, [
   'signed_mandate',
   'signed_disclosure_form',
   'signed_fica_declaration',
-  'title_deed_copy',
   'rates_account',
   'id_document',
   'proof_of_address',
@@ -129,9 +128,7 @@ assert.equal(ficaDeclaration.upload.source, SELLER_DOCUMENT_SOURCE_OF_TRUTH.sell
 assert.equal(ficaDeclaration.upload.completionRoute, 'seller_onboarding_link_completed')
 assert.equal(ficaDeclaration.upload.supportingFicaDocumentsDynamic, true)
 
-const titleDeed = source.rows.find((row) => row.key === 'title_deed_copy')
-assert.equal(titleDeed.category, 'property')
-assert.equal(titleDeed.blocking, true)
+assert.equal(keys.includes('title_deed_copy'), false, 'Optional title deed copies should not enter the required-document source.')
 
 const gasCertificate = source.rows.find((row) => row.key === 'gas_compliance_certificate')
 assert.equal(gasCertificate.category, 'property')
@@ -143,19 +140,19 @@ assert.equal(solarDocuments.category, 'property')
 assert.equal(solarDocuments.blocking, true)
 
 assert.deepEqual(source.summary, {
-  total: 9,
-  totalRequired: 9,
+  total: 8,
+  totalRequired: 8,
   complete: 3,
   completeRequired: 3,
-  blocking: 6,
+  blocking: 5,
   uploaded: 3,
-  outstanding: 6,
+  outstanding: 5,
   underReview: 0,
   approved: 3,
   rejected: 0,
   byCategory: {
     sales: 3,
-    property: 4,
+    property: 3,
     fica: 2,
   },
 })

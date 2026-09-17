@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { buildCanonicalDocumentRequestPlan } from '../src/core/documents/documentRequestCanonicalPlanner.js'
+import { DOCUMENT_REQUEST_CANONICAL_MATRIX } from '../src/core/documents/documentRequestCanonicalMatrix.js'
 import {
   buildCanonicalDocumentRequestPolicyReport,
   CANONICAL_DOCUMENT_REQUEST_DEFERRED_KEYS,
@@ -54,7 +55,7 @@ const policy = buildCanonicalDocumentRequestPolicyReport()
 assert.equal(policy.version, DOCUMENT_REQUEST_CANONICAL_POLICY_VERSION)
 assert.equal(policy.source, DOCUMENT_REQUEST_CANONICAL_POLICY_SOURCE)
 assert.equal(policy.singleSourceOfTruth, true)
-assert.equal(policy.counts.requirements, 67)
+assert.equal(policy.counts.requirements, 66)
 assert.equal(policy.counts.pendingPolicy, 5)
 assert.equal(policy.counts.pendingSignoffDecisions, 5)
 assert.ok(policy.counts.requestableByDefault > 50)
@@ -63,6 +64,9 @@ assert.ok(policy.pendingPolicyKeys.includes('buyer_company_beneficial_ownership'
 assert.ok(policy.pendingPolicyKeys.includes('seller_trust_beneficial_ownership'))
 assert.equal(policy.requestableByDefaultKeys.includes('property_acquisition_record'), false)
 assert.equal(policy.requestableByDefaultKeys.includes('capital_improvement_records'), false)
+
+const titleDeed = DOCUMENT_REQUEST_CANONICAL_MATRIX.requirements.find((requirement) => requirement.key === 'title_deed_copy')
+assert.equal(titleDeed?.level, 'optional')
 
 const mixedPlan = buildCanonicalDocumentRequestPlan({
   buyerEntityType: 'trust',
@@ -73,11 +77,14 @@ const mixedPlan = buildCanonicalDocumentRequestPlan({
 })
 const buyerTrustBo = mixedPlan.requests.find((request) => request.key === 'buyer_trust_beneficial_ownership')
 const sellerCompanyBo = mixedPlan.requests.find((request) => request.key === 'seller_company_beneficial_ownership')
+const titleDeedRequest = mixedPlan.requests.find((request) => request.key === 'title_deed_copy')
 assert.equal(buyerTrustBo?.pendingPolicy, true)
 assert.equal(buyerTrustBo?.requestable, false)
 assert.equal(buyerTrustBo?.blocksStage, null)
 assert.equal(sellerCompanyBo?.pendingPolicy, true)
 assert.equal(sellerCompanyBo?.requestable, false)
+assert.equal(titleDeedRequest?.level, 'optional')
+assert.equal(titleDeedRequest?.blocksStage, null)
 
 const outputPath = 'output/document-request-phase1-single-canonical-policy.test.json'
 execFileSync('node', ['scripts/document-request-phase1-single-canonical-policy.mjs', `--output=${outputPath}`], {

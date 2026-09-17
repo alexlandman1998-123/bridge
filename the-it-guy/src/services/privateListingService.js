@@ -5733,6 +5733,7 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
         reason: options.requirementSyncReason || 'onboarding_form_saved',
       }).catch((requirementsError) => {
         console.warn('[Private Listings] seller requirement sync skipped after onboarding form insert', requirementsError)
+        if (options.requireRequirementSync === true) throw requirementsError
         return null
       })
     }
@@ -5781,6 +5782,7 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
       reason: options.requirementSyncReason || 'onboarding_form_saved',
     }).catch((requirementsError) => {
       console.warn('[Private Listings] seller requirement sync skipped after onboarding form update', requirementsError)
+      if (options.requireRequirementSync === true) throw requirementsError
       return null
     })
   }
