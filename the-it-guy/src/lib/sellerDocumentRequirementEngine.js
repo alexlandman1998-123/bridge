@@ -79,8 +79,15 @@ function normalizeSellerBranch(value) {
 }
 
 function normalizeMaritalRegime(value, ownershipType = '') {
-  const normalized = normalizeKey(value || ownershipType)
+  const rawValue = normalizeText(value || ownershipType).toLowerCase()
+  const normalized = normalizeKey(rawValue)
   if (!normalized) return 'single'
+  // Check the explicit negative forms before the broader `married` matches.
+  // Without this, "not married" is incorrectly treated as a married regime.
+  if (
+    ['single', 'not married', 'not-married', 'not_married', 'notmarried', 'unmarried', 'never married', 'never-married', 'never_married'].includes(rawValue) ||
+    ['single', 'not_married', 'notmarried', 'unmarried', 'never_married'].includes(normalized)
+  ) return 'single'
   if (normalized.includes('foreign_marriage') || normalized === 'foreign') return 'foreign_marriage'
   if (normalized === 'married_cop' || normalized.includes('in_community') || normalized.includes('cop')) return 'married_in_community'
   if (normalized === 'married_anc' || normalized.includes('antenuptial') || normalized.includes('anc')) return 'antenuptial_contract'
@@ -693,9 +700,13 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
     ? 'unknown'
     : resolvedSellerType !== 'individual' ? resolvedSellerType : flow.seller_legacy_type || resolvedSellerType
   const ownershipTypeRaw = normalizeKey(onboarding?.ownershipType || onboarding?.ownershipStructure || listing?.ownership_structure || sellerType)
+  const recordedMaritalStatus = onboarding?.maritalStatus || canonicalFacts?.seller?.marital_status
+  const explicitSingleStatus = normalizeMaritalRegime(recordedMaritalStatus) === 'single'
   const maritalRegime = normalizeMaritalRegime(
-    onboarding?.maritalRegime ||
-      onboarding?.maritalStatus ||
+    explicitSingleStatus
+      ? recordedMaritalStatus
+      : onboarding?.maritalRegime ||
+      recordedMaritalStatus ||
       canonicalFacts?.seller?.marital_regime ||
       canonicalFacts?.seller?.marital_status,
     ownershipTypeRaw || sellerType,

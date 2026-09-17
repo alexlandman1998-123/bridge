@@ -362,7 +362,12 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
         ? normalizeText(draft.deceasedEstateName)
         : branch === 'other'
           ? normalizeText(draft.otherEntityName)
-          : ''
+        : ''
+  const maritalStatus = normalizeText(draft.maritalStatus)
+  const normalizedMaritalStatus = maritalStatus.toLowerCase()
+  const maritalRegime = ['single', 'not married', 'not-married', 'not_married', 'notmarried', 'unmarried', 'never married', 'never-married', 'never_married'].includes(normalizedMaritalStatus)
+    ? 'single'
+    : maritalStatus
   const base = {
     sellerProfileBuilderVersion: LISTING_SELLER_PROFILE_BUILDER_VERSION,
     sellerProfileCaptureSource: LISTING_SELLER_PROFILE_CAPTURE_SOURCE,
@@ -392,7 +397,10 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     contactPreference: normalizeText(draft.preferredContactMethod),
     idNumber: normalizeText(draft.idNumber),
     sellerIdNumber: normalizeText(draft.idNumber),
-    maritalStatus: normalizeText(draft.maritalStatus),
+    maritalStatus,
+    maritalRegime,
+    marital_status: maritalStatus,
+    marital_regime: maritalRegime,
     spouseName: normalizeText(draft.spouseName),
     spouseEmail: normalizeText(draft.spouseEmail).toLowerCase(),
     spouseIdNumber: normalizeText(draft.spouseIdNumber),

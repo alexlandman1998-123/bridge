@@ -9354,7 +9354,7 @@ function AgentListingDetail() {
             status: normalizedOnboardingStatus,
             sellerType: formPatch.sellerType || 'individual',
             ownershipStructure: formPatch.ownershipType || formPatch.ownerStructureType,
-            maritalRegime: formPatch.maritalStatus || formPatch.maritalRegime,
+            maritalRegime: formPatch.maritalRegime || formPatch.maritalStatus,
             syncRequirements: true,
             requireRequirementSync: true,
             requirementSyncReason: 'listing_seller_profile_capture',
@@ -9679,7 +9679,7 @@ function AgentListingDetail() {
           status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started',
           sellerType: nextFormData.sellerType || listingRecord?.sellerType || 'individual',
           ownershipStructure: nextFormData.ownerStructureType || nextFormData.ownershipType,
-          maritalRegime: nextFormData.maritalStatus || nextFormData.maritalRegime,
+          maritalRegime: nextFormData.maritalRegime || nextFormData.maritalStatus,
           syncRequirements: true,
           requirementSyncReason: 'agent_seller_profile_edit',
         })
@@ -11825,7 +11825,7 @@ function AgentListingDetail() {
               Marital status
               <Field as="select" value={sellerProfileBuilderDraft.maritalStatus || ''} onChange={(event) => updateSellerProfileBuilderDraft('maritalStatus', event.target.value)}>
                 <option value="">Not captured</option>
-                <option value="single">Single</option>
+                <option value="not_married">Not married</option>
                 <option value="married_in_community">Married in community</option>
                 <option value="married_out_of_community">Married out of community</option>
                 <option value="divorced">Divorced</option>
