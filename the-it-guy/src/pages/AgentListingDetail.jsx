@@ -6465,6 +6465,8 @@ function AgentListingDetail() {
         email: resolveSellerEmailFromListing(listingRecord) || form.email || '',
         phone: resolveSellerPhoneFromListing(listingRecord) || form.phone || '',
         idNumber: form.idNumber || form.sellerIdNumber || '',
+        residentialAddress: form.residentialAddress || form.residential_address || form.physicalAddress || '',
+        incomeTaxNumber: form.sellerIncomeTaxNumber || form.incomeTaxNumber || form.taxNumber || '',
         maritalStatus: form.maritalStatus || form.maritalRegime || '',
         companyName: form.companyName || '',
         companyRegistrationNumber: form.companyRegistrationNumber || '',
@@ -6476,6 +6478,7 @@ function AgentListingDetail() {
         titleDeedNumber: form.titleDeedNumber || form.deedNumber || '',
         bondStatus: form.bondStatus || form.propertyBondStatus || '',
       },
+      disclosure: form.propertyDisclosure || form.property_disclosure || {},
       signers: signingPlan.recipients.map((recipient) => ({
         name: recipient.name || '',
         email: recipient.email || '',
