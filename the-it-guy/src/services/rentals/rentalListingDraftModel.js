@@ -117,8 +117,13 @@ export const RENTAL_AMENITY_OPTIONS = Object.freeze([
 export const RENTAL_SELECT_OPTIONS = Object.freeze({
   landlordType: [
     { value: 'individual', label: 'Individual landlord' },
+    { value: 'multiple_owners', label: 'Multiple landlords' },
     { value: 'company', label: 'Company landlord' },
     { value: 'trust', label: 'Trust landlord' },
+    { value: 'close_corporation', label: 'Close corporation landlord' },
+    { value: 'deceased_estate', label: 'Deceased estate' },
+    { value: 'other_entity', label: 'Other entity' },
+    { value: 'foreign_owner', label: 'Foreign landlord' },
   ],
   furnishedStatus: [
     { value: 'unfurnished', label: 'Unfurnished' },

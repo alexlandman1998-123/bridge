@@ -259,6 +259,19 @@ export default function AddressAutocomplete({
       return
     }
 
+    // A selected Google address is already complete.  The parent form can
+    // re-render while the Places request that produced it is settling; do not
+    // let that re-render open the same suggestion underneath the selected
+    // address again.
+    if (hasSelectedAddressRef.current) {
+      requestIdRef.current += 1
+      setPredictions([])
+      setIsFetching(false)
+      setIsOpen(false)
+      setActiveIndex(-1)
+      return
+    }
+
     if (!googleApi || !canSearchGoogle || inputValue.trim().length < 3) {
       setPredictions([])
       setIsFetching(false)

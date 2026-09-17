@@ -141,7 +141,7 @@ const DIRECT_LISTING_MARITAL_STATUS_OPTIONS = [
   { value: 'widowed', label: 'Widowed' },
 ]
 const DIRECT_LISTING_MANDATE_TYPE_OPTIONS = [
-  { value: 'sole', label: 'Sole' },
+  { value: 'sole', label: 'Exclusive' },
   { value: 'dual', label: 'Dual' },
   { value: 'tri', label: 'Tri' },
   { value: 'open', label: 'Open' },
@@ -5984,7 +5984,9 @@ function AgentListings({ initialTab = null } = {}) {
           documentUploadQueue.length
             ? uploadQuickAddDocumentsForListing(created.listing.id, documentUploadQueue)
             : Promise.resolve(null),
-          syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created'),
+          directListingPersistence.seller?.sellerLegalType && directListingPersistence.seller.sellerLegalType !== 'unknown'
+            ? syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created')
+            : Promise.resolve({ synced: false, awaitingSellerSetup: true, totalRequirements: 0, missingRequirements: 0 }),
           sendQuickAddSellerPortalInvite({
             listingId: created.listing.id,
             form,
@@ -6082,7 +6084,9 @@ function AgentListings({ initialTab = null } = {}) {
           complianceWarnings,
           documentsUploaded: 0,
           documentUploadFailures: [],
-          requirementSync: { synced: false, status: 'processing' },
+          requirementSync: directListingPersistence.seller?.sellerLegalType === 'unknown'
+            ? { synced: false, awaitingSellerSetup: true, totalRequirements: 0, missingRequirements: 0 }
+            : { synced: false, status: 'processing' },
           sellerPortalInvite: { requested: directListingPersistence.sellerPortalInvite?.requested === true, status: 'processing' },
           websitePublication: shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels) ? { attempted: true, status: 'processing' } : null,
           handoffPlan: null,
@@ -8151,6 +8155,9 @@ function AgentListings({ initialTab = null } = {}) {
                 {quickAddSuccess.handoffPlan?.summary ? (
                   <p className="mt-1 text-xs font-semibold text-[#4d6a59]">{quickAddSuccess.handoffPlan.summary}</p>
                 ) : null}
+                {quickAddSuccess.requirementSync?.awaitingSellerSetup ? (
+                  <p className="mt-1 text-xs font-semibold text-[#4d6a59]">Seller documents are blank until the ownership and bond basics are captured.</p>
+                ) : null}
                 {Number(quickAddSuccess.documentsUploaded || 0) > 0 ? (
                   <p className="mt-1 text-xs text-[#4d6a59]">{quickAddSuccess.documentsUploaded} document{quickAddSuccess.documentsUploaded === 1 ? '' : 's'} attached.</p>
                 ) : null}
@@ -8211,6 +8218,11 @@ function AgentListings({ initialTab = null } = {}) {
                     {action.label}
                   </Button>
                 ))}
+                {quickAddSuccess.requirementSync?.awaitingSellerSetup ? (
+                  <Button type="button" size="sm" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}?tab=seller`)}>
+                    Set up seller
+                  </Button>
+                ) : null}
                 {!isDeveloperWorkspace ? (
                 <Button type="button" size="sm" onClick={() => navigate(`/agent/listings/${encodeURIComponent(quickAddSuccess.id)}?tab=seller`)}>
                   Activate Seller Portal

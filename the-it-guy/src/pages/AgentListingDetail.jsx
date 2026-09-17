@@ -2540,6 +2540,7 @@ function formatSellerProfileValue(value, type = 'text') {
   const text = String(value || '').trim()
   if (!text) return '—'
   if (/^https?:\/\//i.test(text) || text.includes('supabase.co') || text.includes('/storage/v1/')) return '—'
+  if (text.toLowerCase() === 'sole') return 'Exclusive'
   if (type === 'currency') return formatMoneyValue(text)
   if (type === 'date') return formatLongDate(text)
   if (type === 'percentage') {
@@ -3658,6 +3659,7 @@ function AgentListingDetail() {
   const [sellerProfileBuilderOpen, setSellerProfileBuilderOpen] = useState(false)
   const [sellerProfileBuilderSaving, setSellerProfileBuilderSaving] = useState(false)
   const [sellerProfileBuilderDraft, setSellerProfileBuilderDraft] = useState(() => createListingSellerProfileBuilderDraft())
+  const sellerSetupPromptedListingIdRef = useRef('')
   const [sellerSectionEditorKey, setSellerSectionEditorKey] = useState('')
   const [sellerSectionDraft, setSellerSectionDraft] = useState({})
   const [sellerSectionSaving, setSellerSectionSaving] = useState(false)
@@ -6539,11 +6541,23 @@ function AgentListingDetail() {
     }
     try {
       setSellerDocumentSendSaving(true)
+      if (sellerDocumentSendSelection.mandate) {
+        const commissionSaved = await saveCommissionDraft()
+        if (!commissionSaved) return
+      }
       const existingForm = getListingSellerFormData(listingRecord)
       await updatePrivateListingOnboardingFormData(listingRecord.id, {
         ...existingForm,
         sellerDocumentSendSelection: sellerDocumentSendSelection,
         mandateType: marketingDraft.mandateType || listingRecord?.mandateType || 'sole',
+        commissionBasis,
+        commission_basis: commissionBasis,
+        commissionPercentage: commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
+        commission_percent: commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
+        mandateCommissionPercentage: commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
+        commissionAmount: commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
+        commission_amount: commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
+        vatHandling: String(commissionDraft.vatHandling || '').trim(),
         sellerDocumentSendSelectionUpdatedAt: new Date().toISOString(),
       }, { status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started', syncRequirements: false })
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
@@ -9154,6 +9168,15 @@ function AgentListingDetail() {
     setDetailMessage(message)
   }
 
+  useEffect(() => {
+    const facts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
+    const source = toCleanText(facts?.source || facts?.metadata?.source).toLowerCase()
+    if (!listingRecord?.id || source !== 'direct_listing_intake' || !sellerOwnershipUnidentified) return
+    if (sellerSetupPromptedListingIdRef.current === listingRecord.id) return
+    sellerSetupPromptedListingIdRef.current = listingRecord.id
+    openSellerProfileBuilder('Set up the seller when you are ready. No seller documents will be requested until these basics are saved.')
+  }, [listingRecord, sellerOwnershipUnidentified])
+
   function handleNextBestAction(action = {}) {
     const key = action?.key || ''
     if (key === 'complete_seller_facts') {
@@ -11584,7 +11607,7 @@ function AgentListingDetail() {
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Email</span><span className="break-all font-semibold text-[#243d56]">{resolveSellerEmailFromListing(listingRecord) || 'Not captured'}</span></div>
           </div>
           {sellerDocumentSendSelection.fica ? <div className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><p className="font-semibold text-[#243d56]">FICA confirmation</p><p className="mt-1 text-[#607387]">{formatStatusLabel(listingRecord?.sellerType || getListingSellerFormData(listingRecord)?.sellerType || 'seller')} seller · confirm the listed seller/contact details are correct before sending.</p></div> : null}
-          {sellerDocumentSendSelection.mandate ? <div className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2"><div><p className="font-semibold text-[#243d56]">Mandate type</p><Field as="select" value={marketingDraft.mandateType || listingRecord?.mandateType || 'sole'} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, mandateType: event.target.value }))}><option value="sole">Sole</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option></Field></div><div><p className="font-semibold text-[#243d56]">Commission</p><p className="mt-2 text-[#607387]">{commissionDraft.basis === 'fixed' ? `R ${commissionDraft.amount || 'not captured'}` : `${commissionDraft.percentage || 'not captured'}%`} · {commissionDraft.vatHandling || 'VAT not captured'}</p></div></div> : null}
+          {sellerDocumentSendSelection.mandate ? <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2"><div><p className="font-semibold text-[#243d56]">Mandate type</p><Field as="select" value={marketingDraft.mandateType || listingRecord?.mandateType || 'sole'} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, mandateType: event.target.value }))}><option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option></Field></div><fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission type</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis" checked={commissionDraft.basis !== 'fixed'} onChange={() => updateCommissionDraft('basis', 'percentage')} /> Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis" checked={commissionDraft.basis === 'fixed'} onChange={() => updateCommissionDraft('basis', 'fixed')} /> Fixed Rand amount</label></div></fieldset><label className="grid gap-1.5 font-semibold text-[#243d56]">{commissionDraft.basis === 'fixed' ? 'Fixed commission amount (R)' : 'Commission percentage'}<Field type="number" min="0" step="0.01" value={commissionDraft.basis === 'fixed' ? commissionDraft.amount : commissionDraft.percentage} onChange={(event) => updateCommissionDraft(commissionDraft.basis === 'fixed' ? 'amount' : 'percentage', event.target.value)} placeholder={commissionDraft.basis === 'fixed' ? '50000' : '5'} /></label><label className="grid gap-1.5 font-semibold text-[#243d56]">VAT treatment<Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}><option value="">Select VAT treatment</option><option value="no">No VAT</option><option value="exclusive">VAT exclusive</option><option value="inclusive">VAT inclusive</option></Field></label></div> : null}
           </div>}
         </div>
       </Modal>
@@ -11716,7 +11739,7 @@ function AgentListingDetail() {
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Mandate type
               <Field as="select" value={sellerProfileBuilderDraft.mandateType || 'sole'} onChange={(event) => updateSellerProfileBuilderDraft('mandateType', event.target.value)}>
-                <option value="sole">Sole</option>
+                <option value="sole">Exclusive</option>
                 <option value="dual">Dual</option>
                 <option value="tri">Tri</option>
                 <option value="open">Open</option>
@@ -11935,12 +11958,20 @@ function AgentListingDetail() {
               <Field value={sellerProfileBuilderDraft.titleDeedNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('titleDeedNumber', event.target.value)} />
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Is there an existing bond?
+              <Field as="select" value={sellerProfileBuilderDraft.bondStatus || 'unknown'} onChange={(event) => updateSellerProfileBuilderDraft('bondStatus', event.target.value)}>
+                <option value="unknown">Not known yet</option>
+                <option value="bonded">Yes, property is bonded</option>
+                <option value="no_bond">No bond</option>
+              </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Bond holder
-              <Field value={sellerProfileBuilderDraft.bondHolder || ''} onChange={(event) => updateSellerProfileBuilderDraft('bondHolder', event.target.value)} />
+              <Field value={sellerProfileBuilderDraft.bondHolder || ''} disabled={sellerProfileBuilderDraft.bondStatus !== 'bonded'} onChange={(event) => updateSellerProfileBuilderDraft('bondHolder', event.target.value)} />
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Outstanding bond
-              <Field type="number" min="0" step="0.01" value={sellerProfileBuilderDraft.outstandingBond || ''} onChange={(event) => updateSellerProfileBuilderDraft('outstandingBond', event.target.value)} />
+              <Field type="number" min="0" step="0.01" value={sellerProfileBuilderDraft.outstandingBond || ''} disabled={sellerProfileBuilderDraft.bondStatus !== 'bonded'} onChange={(event) => updateSellerProfileBuilderDraft('outstandingBond', event.target.value)} />
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
               Co-owner details

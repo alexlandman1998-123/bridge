@@ -121,12 +121,17 @@ function normalizeSellerLegalType(form = {}) {
   if (['foreign', 'foreign_owner', 'foreign_individual', 'non_resident_individual'].includes(key)) return 'foreign_individual'
   if (['multiple', 'multiple_owner', 'multiple_owners', 'joint', 'joint_owners', 'co_owners'].includes(key)) return 'multiple_owners'
   if (['individual', 'natural_person', 'single', 'married_cop', 'married_anc', 'married_in_community', 'married_out_of_community'].includes(key)) return 'individual'
-  return key || 'individual'
+  // A contact is not evidence of the legal owner. Direct listings begin with
+  // just that contact, so retain an explicit unknown state until the agent
+  // captures the ownership model.
+  return key || 'unknown'
 }
 
 function resolveOwnerModel(sellerLegalType, form = {}) {
   const explicitEntity = normalizeKey(form.ownerEntityType || form.owner_entity_type)
   const explicitStructure = normalizeKey(form.ownerStructureType || form.owner_structure_type)
+
+  if (sellerLegalType === 'unknown') return { ownerEntityType: '', ownerStructureType: '' }
 
   if (sellerLegalType === 'company') return { ownerEntityType: 'company', ownerStructureType: 'company' }
   if (sellerLegalType === 'trust') return { ownerEntityType: 'trust', ownerStructureType: 'trust' }
@@ -502,7 +507,7 @@ export function buildDirectListingCanonicalFacts(form = {}, context = {}) {
   const partyFacts = buildDirectListingPartyFacts(form)
   const propertyFacts = buildDirectListingPropertyFacts(form)
   const complianceDeclarations = buildDirectListingComplianceDeclarations(form)
-  const legalType = partyFacts.sellerLegalType || 'individual'
+  const legalType = partyFacts.sellerLegalType || 'unknown'
 
   return compactObject({
     version: DIRECT_LISTING_INTAKE_VERSION,

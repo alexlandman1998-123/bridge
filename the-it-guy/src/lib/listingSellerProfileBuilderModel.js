@@ -161,7 +161,14 @@ export function isListingSellerOwnershipUnidentified(listing = {}) {
     listing?.import_source,
   ))
   const isProperty24Migration = importSource === 'property24_migration_import' || Boolean(facts?.property24Import)
-  if (!isProperty24Migration) return false
+  const directListingSource = normalizeKey(pickFirst(
+    facts?.source,
+    facts?.metadata?.source,
+    listing?.directListingIntake?.source,
+    listing?.direct_listing_intake?.source,
+  ))
+  const isDirectListing = directListingSource === 'direct_listing_intake'
+  if (!isProperty24Migration && !isDirectListing) return false
 
   const ownerModel = pickFirst(
     form.ownerStructureType,
@@ -272,6 +279,7 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     propertyStructureType: normalizeText(pickFirst(form.propertyStructureType, canonicalProperty.property_structure_type, listing?.propertyStructureType, 'full_title')),
     propertyCategory: normalizeText(pickFirst(form.propertyCategory, canonicalProperty.property_category, listing?.propertyCategory, 'residential')),
     titleDeedNumber: normalizeText(pickFirst(form.titleDeedNumber, form.deedNumber, form.titleReference)),
+    bondStatus: normalizeText(pickFirst(form.bondStatus, form.propertyBondStatus, form.bond_status, 'unknown')),
     bondHolder: normalizeText(pickFirst(form.bondHolder, form.bondBank, form.mortgageBank)),
     outstandingBond: normalizeText(pickFirst(form.outstandingBond, form.bondSettlementAmount)),
     coOwnerDetails: normalizeText(pickFirst(form.coOwnerDetails, form.coOwners)),
@@ -384,6 +392,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     propertyCategory: normalizeText(draft.propertyCategory) || 'residential',
     titleDeedNumber: normalizeText(draft.titleDeedNumber),
     deedNumber: normalizeText(draft.titleDeedNumber),
+    bondStatus: normalizeText(draft.bondStatus) || 'unknown',
+    propertyBondStatus: normalizeText(draft.bondStatus) || 'unknown',
     bondHolder: normalizeText(draft.bondHolder),
     bondBank: normalizeText(draft.bondHolder),
     outstandingBond: normalizeText(draft.outstandingBond),

@@ -969,7 +969,7 @@ export function mapSellerOnboardingToMandateData(input = {}, legacyLead = {}, le
     erf_size: safePlaceholder(property.erfSize),
     floor_size: safePlaceholder(property.floorSize),
 
-    mandate_type: safePlaceholder(toTitleCase(mandate.type || 'sole')),
+    mandate_type: safePlaceholder(String(mandate.type || 'sole').trim().toLowerCase() === 'sole' ? 'Exclusive' : toTitleCase(mandate.type)),
     mandate_start_date: safePlaceholder(mandate.startDate),
     mandate_expiry_date: safePlaceholder(mandate.expiryDate),
     mandate_end_date: safePlaceholder(mandate.expiryDate),

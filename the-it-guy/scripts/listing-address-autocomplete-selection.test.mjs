@@ -8,6 +8,7 @@ assert.doesNotMatch(listingSource, /label="Property address \*"/, 'the shared ad
 assert.match(listingSource, /label="Property address"[\s\S]{0,450}required/, 'new-listing address fields must remain required')
 assert.match(addressSource, /hasSelectedAddressRef\.current = true/, 'selecting a Google address should mark it as selected')
 assert.match(addressSource, /hasSelectedAddressRef\.current = false/, 'typing or clearing should allow a new address search')
+assert.match(addressSource, /if \(hasSelectedAddressRef\.current\) \{[\s\S]{0,300}setIsOpen\(false\)/, 'a selected Google address must suppress stale suggestion dropdowns after the parent form re-renders')
 assert.match(addressSource, /!hasSelectedAddressRef\.current && \(predictions\.length \|\| inputValue\.trim\(\)\.length >= 3\)/, 'refocusing a selected address must not reopen Google suggestions')
 
 console.log('listing address autocomplete selection contract passed')

@@ -1413,6 +1413,7 @@ function resolveWorkspaceBranding({
 function formatMandateRouteLabel(value = '') {
   const text = normalizeText(value)
   if (!text) return ''
+  if (text.toLowerCase() === 'sole') return 'Exclusive'
   return text
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (character) => character.toUpperCase())

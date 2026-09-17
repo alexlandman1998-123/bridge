@@ -2699,7 +2699,9 @@ function buildValidationSummary(validation = {}) {
 }
 
 function formatMandateTemplateRouteLabel(value = '') {
-  return normalizeText(value)
+  const text = normalizeText(value)
+  if (text.toLowerCase() === 'sole') return 'Exclusive'
+  return text
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (character) => character.toUpperCase())
 }

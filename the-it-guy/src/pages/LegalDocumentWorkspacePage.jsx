@@ -148,6 +148,23 @@ function asRecord(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+function directListingSellerSetupIsPending(...records) {
+  for (const record of records.flatMap((item) => [item, item?.privateListing, item?.private_listing, item?.listing])) {
+    const source = asRecord(record)
+    const facts = asRecord(source.sellerCanonicalFacts || source.seller_canonical_facts_json)
+    const seller = asRecord(facts.seller)
+    const form = asRecord(source.sellerOnboarding?.formData || source.seller_onboarding?.form_data || source.sellerOnboardingFormData)
+    const intakeSource = normalizeKey(facts.source || facts.metadata?.source || source.directListingIntake?.source || source.direct_listing_intake?.source)
+    if (intakeSource !== 'direct_listing_intake') continue
+    const ownership = normalizeKey(
+      form.ownerStructureType || form.owner_structure_type || form.sellerLegalType || form.seller_legal_type || form.ownershipType || form.sellerType ||
+      seller.owner_structure_type || seller.legal_type || source.sellerType,
+    )
+    if (!ownership || ['unknown', 'unidentified', 'not_captured', 'not_identified'].includes(ownership)) return true
+  }
+  return false
+}
+
 function appendAnnexureLabel(current = '', label = '') {
   const nextLabel = normalizeText(label)
   if (!nextLabel) return normalizeText(current)
@@ -4397,6 +4414,10 @@ export default function LegalDocumentWorkspacePage() {
       recordGenerationMetric('legal_document.generation.seller_onboarding', onboardingStartedAt, {
         recoveredFromTimeout: effectiveLeadContext === leadContext,
       })
+    }
+
+    if (packetType === 'mandate' && directListingSellerSetupIsPending(effectiveLeadContext?.lead, transaction, transactionDetail)) {
+      throw new Error('Set up the seller first: choose the ownership type and bond status before generating a mandate. This ensures the right parties, authority wording, and document requirements are used.')
     }
 
     const generationContext = buildMandateGenerationContext({

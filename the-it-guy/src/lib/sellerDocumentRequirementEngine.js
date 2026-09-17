@@ -667,9 +667,23 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
       onboarding?.sellerLegalType ||
       onboarding?.seller_legal_type,
   )
-  const sellerBranch = explicitSellerBranch || flow.seller_branch || 'individual'
+  const rawSellerOwnership = normalizeKey(
+    onboarding?.ownerStructureType ||
+      onboarding?.owner_structure_type ||
+      onboarding?.ownershipType ||
+      onboarding?.ownershipStructure ||
+      onboarding?.sellerType ||
+      onboarding?.sellerLegalType ||
+      onboarding?.seller_legal_type ||
+      canonicalFacts?.seller?.owner_structure_type ||
+      canonicalFacts?.seller?.legal_type,
+  )
+  const sellerOwnershipUnidentified = ['unknown', 'unidentified', 'not_captured', 'not_identified'].includes(rawSellerOwnership)
+  const sellerBranch = sellerOwnershipUnidentified ? 'unknown' : (explicitSellerBranch || flow.seller_branch || 'individual')
   const propertyBranch = flow.property_branch || 'residential'
-  const sellerType = resolvedSellerType !== 'individual' ? resolvedSellerType : flow.seller_legacy_type || resolvedSellerType
+  const sellerType = sellerOwnershipUnidentified
+    ? 'unknown'
+    : resolvedSellerType !== 'individual' ? resolvedSellerType : flow.seller_legacy_type || resolvedSellerType
   const ownershipTypeRaw = normalizeKey(onboarding?.ownershipType || onboarding?.ownershipStructure || listing?.ownership_structure || sellerType)
   const maritalRegime = normalizeMaritalRegime(
     onboarding?.maritalRegime ||
@@ -989,6 +1003,13 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
     occupancyStatus: profile.occupancyStatus || 'unknown',
     ownerCount: profile.ownerCount || 1,
     documentTriggers: Array.from(documentTriggers),
+  }
+
+  // A directly-created listing can legitimately have only a contact person.
+  // Do not guess that contact is an individual owner, or issue a document pack
+  // until the agent has captured the ownership model.
+  if (['', 'unknown', 'unidentified', 'not_captured', 'not_identified'].includes(sellerBranch)) {
+    return []
   }
 
   if (lifecycleStatus === 'seller_lead') {
