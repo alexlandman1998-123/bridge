@@ -81,6 +81,7 @@ import {
 } from '../core/offers/offerWorkflowRetirement'
 import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import { fetchDevelopmentsData } from '../lib/api'
+import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import {
   getListingReadinessSummary,
   getRequiredSellerDocuments,
@@ -3669,6 +3670,13 @@ function AgentListingDetail() {
   const [preferredTransferAttorneyLoading, setPreferredTransferAttorneyLoading] = useState(false)
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
   const [mandateSetupOpen, setMandateSetupOpen] = useState(false)
+  const [sellerDocumentSendOpen, setSellerDocumentSendOpen] = useState(false)
+  const [sellerDocumentSendSaving, setSellerDocumentSendSaving] = useState(false)
+  const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
+  const [sellerDocumentSigningSessions, setSellerDocumentSigningSessions] = useState([])
+  const [sellerDocumentSigningSessionsLoading, setSellerDocumentSigningSessionsLoading] = useState(false)
+  const [sellerDocumentSigningSessionAction, setSellerDocumentSigningSessionAction] = useState('')
+  const [lastSellerDocumentSigningLink, setLastSellerDocumentSigningLink] = useState('')
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
@@ -3808,6 +3816,11 @@ function AgentListingDetail() {
   const listingRecord = useMemo(() => {
     return findPrivateListingById(privateListings, listingId)
   }, [listingId, privateListings])
+
+  useEffect(() => {
+    if (sellerWorkspaceTab !== 'documents' || !listingRecord?.id) return
+    void loadSellerDocumentSigningSessions()
+  }, [listingRecord?.id, sellerWorkspaceTab])
 
   const listingOrganisationId = useMemo(
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
@@ -6384,6 +6397,110 @@ function AgentListingDetail() {
     setMandateSetupOpen(true)
   }
 
+  function openSellerDocumentSend(selectionOverride = null) {
+    const form = getListingSellerFormData(listingRecord)
+    const selected = Array.isArray(selectionOverride) ? selectionOverride : null
+    setSellerDocumentSendSelection({
+      disclosure: selected ? selected.includes('disclosure') : form?.sellerDocumentSendSelection?.disclosure === true,
+      fica: selected ? selected.includes('fica') : form?.sellerDocumentSendSelection?.fica === true,
+      mandate: selected ? selected.includes('mandate') : form?.sellerDocumentSendSelection?.mandate === true,
+    })
+    setDetailError('')
+    setDetailMessage('')
+    setSellerDocumentSendOpen(true)
+  }
+
+  async function loadSellerDocumentSigningSessions({ silent = false } = {}) {
+    if (!isSupabaseConfigured || !isUuidLike(listingRecord?.id)) return
+    try {
+      if (!silent) setSellerDocumentSigningSessionsLoading(true)
+      const result = await invokeEdgeFunction('listing-mandate-signing', { body: { action: 'status', listingId: listingRecord.id } })
+      if (result?.error || result?.data?.success === false) throw new Error(result?.error?.message || result?.data?.error || 'Unable to load seller document link status.')
+      setSellerDocumentSigningSessions(Array.isArray(result?.data?.sessions) ? result.data.sessions : [])
+    } catch (error) {
+      if (!silent) setDetailError(error?.message || 'Unable to load seller document link status.')
+    } finally {
+      if (!silent) setSellerDocumentSigningSessionsLoading(false)
+    }
+  }
+
+  async function revokeSellerDocumentSigningSession(sessionId) {
+    if (!sessionId || !isUuidLike(listingRecord?.id)) return
+    try {
+      setSellerDocumentSigningSessionAction(`revoke:${sessionId}`)
+      setDetailError('')
+      const result = await invokeEdgeFunction('listing-mandate-signing', { body: { action: 'revoke', listingId: listingRecord.id, sessionId } })
+      if (result?.error || result?.data?.success === false) throw new Error(result?.error?.message || result?.data?.error || 'Unable to revoke the seller document link.')
+      setDetailMessage('Seller document link revoked. It can no longer be opened or signed.')
+      await loadSellerDocumentSigningSessions({ silent: true })
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to revoke the seller document link.')
+    } finally {
+      setSellerDocumentSigningSessionAction('')
+    }
+  }
+
+  async function copyLastSellerDocumentSigningLink() {
+    if (!lastSellerDocumentSigningLink) return
+    try {
+      await navigator.clipboard.writeText(lastSellerDocumentSigningLink)
+      setDetailMessage('Secure seller document link copied. Treat it as sensitive and share it only with the seller.')
+    } catch {
+      setDetailError('Unable to copy the signing link. Please use a browser that permits clipboard access.')
+    }
+  }
+
+  async function saveSellerDocumentSendSelection() {
+    const selected = Object.entries(sellerDocumentSendSelection).filter(([, included]) => included).map(([key]) => key)
+    if (!selected.length) {
+      setDetailError('Choose at least one seller document to include.')
+      return
+    }
+    if (!isValidEmail(resolveSellerEmailFromListing(listingRecord))) {
+      setDetailError('Add a valid seller email before preparing a document link.')
+      return
+    }
+    if (sellerDocumentSendSelection.mandate && (!(Number(commissionDraft.percentage) > 0) || !String(commissionDraft.vatHandling || '').trim())) {
+      setDetailError('Save the commission percentage and VAT treatment before including the mandate.')
+      return
+    }
+    try {
+      setSellerDocumentSendSaving(true)
+      const existingForm = getListingSellerFormData(listingRecord)
+      await updatePrivateListingOnboardingFormData(listingRecord.id, {
+        ...existingForm,
+        sellerDocumentSendSelection: sellerDocumentSendSelection,
+        sellerDocumentSendSelectionUpdatedAt: new Date().toISOString(),
+      }, { status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started', syncRequirements: false })
+      const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
+        action: 'issue',
+        listingId: listingRecord.id,
+        signerName: resolveSellerNameFromListing(listingRecord) || 'Seller',
+        signerEmail: resolveSellerEmailFromListing(listingRecord),
+        agentName: String(listingActor?.name || profile?.fullName || profile?.email || 'Agent').trim(),
+        selectedDocuments: selected,
+        mandateSnapshot: {
+          propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '',
+          askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
+          commissionPercentage: commissionDraft.percentage,
+          vatHandling: commissionDraft.vatHandling,
+          branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace),
+        },
+      } })
+      if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Unable to email the secure document link.')
+      setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
+      setSellerDocumentSendOpen(false)
+      setDetailMessage(response?.data?.delivery === 'failed'
+        ? 'The secure link was created but email delivery failed. Copy the new link below to share it safely with the seller.'
+        : `Secure seller document link emailed with ${selected.length} selected document${selected.length === 1 ? '' : 's'}.`)
+      await loadSellerDocumentSigningSessions({ silent: true })
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to save the selected seller documents.')
+    } finally {
+      setSellerDocumentSendSaving(false)
+    }
+  }
+
   async function saveMandateSetup() {
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
     if (!isValidEmail(sellerEmail)) {
@@ -6424,11 +6541,14 @@ function AgentListingDetail() {
       setDetailError('')
       setDetailMessage('')
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
-        action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, agentName,
-        mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionPercentage: commissionDraft.percentage, vatHandling: commissionDraft.vatHandling },
+        action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, agentName, selectedDocuments: ['mandate'],
+        mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionPercentage: commissionDraft.percentage, vatHandling: commissionDraft.vatHandling, branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace) },
       } })
       if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Mandate signing email could not be sent.')
-      setDetailMessage('A secure one-time signing link has been emailed to the seller.')
+      setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
+      setDetailMessage(response?.data?.delivery === 'failed'
+        ? 'The secure link was created but email delivery failed. Copy the new link from the document status area to share it safely.'
+        : 'A secure one-time signing link has been emailed to the seller.')
       window.dispatchEvent(new Event('itg:listings-updated'))
     } catch (error) {
       setDetailError(error?.message || 'Unable to send the mandate for signature.')
@@ -11208,6 +11328,42 @@ function AgentListingDetail() {
         </div>
       </Modal>
       <Modal
+        open={sellerDocumentSendOpen}
+        onClose={sellerDocumentSendSaving ? undefined : () => setSellerDocumentSendOpen(false)}
+        title="Send seller documents"
+        subtitle="Choose the forms the seller should receive in one secure link."
+        className="max-w-xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => setSellerDocumentSendOpen(false)}>Cancel</Button>
+            <Button type="button" disabled={sellerDocumentSendSaving} onClick={() => void saveSellerDocumentSendSelection()}>
+              {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              {sellerDocumentSendSaving ? 'Sending...' : 'Send secure link'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
+            The seller will receive only the documents selected here. Their name, property and saved listing details will be prefilled.
+          </div>
+          {[
+            { key: 'disclosure', title: 'Disclosure form', copy: 'Property condition / defects declaration.' },
+            { key: 'fica', title: 'FICA declaration', copy: 'Seller identity and compliance declaration.' },
+            { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the saved commission percentage and VAT treatment.' },
+          ].map((document) => (
+            <label key={document.key} className="flex cursor-pointer items-start gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 transition hover:border-[#b7c8db]">
+              <input type="checkbox" className="mt-1 h-4 w-4" checked={sellerDocumentSendSelection[document.key]} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
+              <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className="mt-1 block text-sm leading-5 text-[#607387]">{document.copy}</span></span>
+            </label>
+          ))}
+          <div className="grid gap-3 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-sm sm:grid-cols-2">
+            <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Seller</span><span className="font-semibold text-[#243d56]">{resolveSellerNameFromListing(listingRecord) || 'Not captured'}</span></div>
+            <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Email</span><span className="break-all font-semibold text-[#243d56]">{resolveSellerEmailFromListing(listingRecord) || 'Not captured'}</span></div>
+          </div>
+        </div>
+      </Modal>
+      <Modal
         open={developmentLinkOpen}
         onClose={() => !developmentLinkSaving && setDevelopmentLinkOpen(false)}
         title="Link listing to a development"
@@ -14878,10 +15034,83 @@ function AgentListingDetail() {
                       Documents are grouped the same way the seller sees them in the portal, so FICA, property records, sale documents, and requests are easy to review.
                     </p>
                   </div>
-                  <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#607387]">
-                    {sellerDocumentTrackerRows.length} total
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#607387]">
+                      {sellerDocumentTrackerRows.length} total
+                    </span>
+                    <Button type="button" size="sm" onClick={openSellerDocumentSend}>
+                      <Send size={14} />
+                      Send seller documents
+                    </Button>
+                  </div>
                 </div>
+                <section className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#f8fbff] p-4" aria-label="Seller document link status">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#243d56]">Seller document link status</h4>
+                      <p className="mt-1 text-xs leading-5 text-[#607387]">Track delivery progress and follow up without exposing a signing link after it has been issued.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {lastSellerDocumentSigningLink ? (
+                        <Button type="button" size="sm" variant="secondary" onClick={() => void copyLastSellerDocumentSigningLink()}>
+                          <Copy size={14} /> Copy new link
+                        </Button>
+                      ) : null}
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void loadSellerDocumentSigningSessions()} disabled={sellerDocumentSigningSessionsLoading}>
+                        {sellerDocumentSigningSessionsLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                        Refresh
+                      </Button>
+                    </div>
+                  </div>
+                  {sellerDocumentSigningSessionsLoading ? (
+                    <div className="mt-4 flex items-center gap-2 text-sm text-[#607387]"><Loader2 size={15} className="animate-spin" /> Loading link status…</div>
+                  ) : sellerDocumentSigningSessions.length ? (
+                    <div className="mt-4 space-y-3">
+                      {sellerDocumentSigningSessions.map((session) => {
+                        const selected = Array.isArray(session.selected_documents) ? session.selected_documents : []
+                        const progress = session.document_progress && typeof session.document_progress === 'object' ? session.document_progress : {}
+                        const labelFor = (key) => ({ disclosure: 'Disclosure', fica: 'FICA', mandate: 'Mandate' }[key] || key)
+                        const isActive = session.status === 'active'
+                        return (
+                          <div key={session.id} className="rounded-[14px] border border-[#e0e8f1] bg-white p-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-semibold text-[#243d56]">Sent to {session.signer_name || 'seller'}</p>
+                                  <StatusPill status={session.status} label={formatStatusLabel(session.status)} />
+                                </div>
+                                <p className="mt-1 break-all text-xs text-[#607387]">{session.signer_email || 'Seller email not recorded'} · Sent {formatDateTime(session.created_at)}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-2">
+                                <Button type="button" size="sm" variant="secondary" onClick={() => openSellerDocumentSend(selected)}>
+                                  <Send size={14} /> Resend
+                                </Button>
+                                {isActive ? (
+                                  <Button type="button" size="sm" variant="secondary" onClick={() => void revokeSellerDocumentSigningSession(session.id)} disabled={sellerDocumentSigningSessionAction === `revoke:${session.id}`}>
+                                    {sellerDocumentSigningSessionAction === `revoke:${session.id}` ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                                    Revoke
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {selected.map((key) => (
+                                <span key={key} className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${progress[key] ? 'border-[#bfe5cf] bg-[#effbf4] text-[#197849]' : 'border-[#dbe6f2] bg-[#f8fbfd] text-[#607387]'}`}>
+                                  {labelFor(key)} · {progress[key] ? 'Signed' : 'Outstanding'}
+                                </span>
+                              ))}
+                            </div>
+                            <p className="mt-3 text-xs text-[#607387]">
+                              {session.signed_at ? `Completed ${formatDateTime(session.signed_at)}` : session.viewed_at ? `Viewed ${formatDateTime(session.viewed_at)}` : 'Not opened yet'} · Expires {formatDateTime(session.expires_at)}
+                            </p>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-4 text-sm leading-6 text-[#607387]">No seller document links have been sent for this listing.</p>
+                  )}
+                </section>
                 <div className="mt-5 overflow-x-auto">
                   <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2" aria-label="Listing document categories">
                     {listingDocumentGroups.map((group) => {
