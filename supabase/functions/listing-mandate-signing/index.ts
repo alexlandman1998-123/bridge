@@ -117,7 +117,10 @@ Deno.serve(async (req) => {
   if (progress[documentKey]) return response(409, { success: false, error: "This document has already been signed." });
   const mandate = snapshot(session.mandate_snapshot);
   const title = documentKey === "disclosure" ? "Property condition disclosure" : documentKey === "fica" ? "FICA declaration" : "Exclusive mandate";
-  const signedHtml = `<article><h1>${escapeHtml(title)}</h1><p>Property: ${escapeHtml(mandate.propertyAddress)}</p><p>Seller: ${escapeHtml(session.signer_name)}</p>${documentKey === "mandate" ? `<p>Commission: ${escapeHtml(mandate.commissionPercentage)}% ${escapeHtml(mandate.vatHandling)}</p>` : ""}<p>Accepted and signed by ${escapeHtml(signedName)}.</p><p>Signature: ${escapeHtml(signature)}</p></article>`;
+  const commission = String(mandate.commissionBasis).toLowerCase() === "fixed"
+    ? `R ${text(mandate.commissionAmount)}`
+    : `${text(mandate.commissionPercentage)}%`;
+  const signedHtml = `<article><h1>${escapeHtml(title)}</h1><p>Property: ${escapeHtml(mandate.propertyAddress)}</p><p>Seller: ${escapeHtml(session.signer_name)}</p>${documentKey === "mandate" ? `<p>Commission: ${escapeHtml(commission)} ${escapeHtml(mandate.vatHandling)}</p>` : ""}<p>Accepted and signed by ${escapeHtml(signedName)}.</p><p>Signature: ${escapeHtml(signature)}</p></article>`;
   const { data: completion, error: completionError } = await admin.rpc("complete_private_listing_seller_document_signing", {
     p_session_id: session.id, p_document_key: documentKey, p_signed_name: signedName, p_signature: signature,
     p_acceptance_ip: text(req.headers.get("x-forwarded-for")).split(",")[0] || "",

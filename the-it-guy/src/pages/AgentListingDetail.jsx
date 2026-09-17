@@ -3673,6 +3673,7 @@ function AgentListingDetail() {
   const [preferredTransferAttorneyLoading, setPreferredTransferAttorneyLoading] = useState(false)
   const [mandateStartOpen, setMandateStartOpen] = useState(false)
   const [mandateSetupOpen, setMandateSetupOpen] = useState(false)
+  const [mandateSetupDraft, setMandateSetupDraft] = useState({ sellerName: '', sellerEmail: '', propertyAddress: '' })
   const [sellerDocumentSendOpen, setSellerDocumentSendOpen] = useState(false)
   const [sellerDocumentSendSaving, setSellerDocumentSendSaving] = useState(false)
   const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
@@ -3700,6 +3701,7 @@ function AgentListingDetail() {
     [activeTab, sellerWorkspaceTab],
   )
   const [commissionDraft, setCommissionDraft] = useState({
+    basis: 'percentage',
     percentage: '',
     amount: '',
     vatHandling: '',
@@ -6140,8 +6142,10 @@ function AgentListingDetail() {
         return
       }
     }
-    if (digitalMandateRequested && (!(Number(commissionDraft.percentage) > 0) || !String(commissionDraft.vatHandling || '').trim())) {
-      setDetailError('Enter the commission percentage and VAT treatment before sending a digital mandate.')
+    const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
+    const hasMandateCommission = commissionBasis === 'fixed' ? Number(commissionDraft.amount) > 0 : Number(commissionDraft.percentage) > 0
+    if (digitalMandateRequested && (!hasMandateCommission || !String(commissionDraft.vatHandling || '').trim())) {
+      setDetailError(`Enter the ${commissionBasis === 'fixed' ? 'fixed Rand commission' : 'commission percentage'} and VAT treatment before sending a digital mandate.`)
       return
     }
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
@@ -6196,8 +6200,12 @@ function AgentListingDetail() {
             mandateSetup: {
               digitalMandateRequested,
               digital_mandate_requested: digitalMandateRequested,
-              commissionPercentage: digitalMandateRequested ? String(commissionDraft.percentage || '').trim() : '',
-              commission_percent: digitalMandateRequested ? String(commissionDraft.percentage || '').trim() : '',
+              commissionBasis: digitalMandateRequested ? commissionBasis : '',
+              commission_basis: digitalMandateRequested ? commissionBasis : '',
+              commissionPercentage: digitalMandateRequested && commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
+              commission_percent: digitalMandateRequested && commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
+              commissionAmount: digitalMandateRequested && commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
+              commission_amount: digitalMandateRequested && commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
               vatHandling: digitalMandateRequested ? String(commissionDraft.vatHandling || '').trim() : '',
               mandateSetupCapturedAt: new Date().toISOString(),
               preferredTransferAttorneyRecommendation,
@@ -6230,8 +6238,12 @@ function AgentListingDetail() {
             sellerPhone: sellerPhone || row?.sellerOnboarding?.formData?.sellerPhone || '',
             digitalMandateRequested,
             digital_mandate_requested: digitalMandateRequested,
-            commissionPercentage: digitalMandateRequested ? String(commissionDraft.percentage || '').trim() : '',
-            commission_percent: digitalMandateRequested ? String(commissionDraft.percentage || '').trim() : '',
+            commissionBasis: digitalMandateRequested ? commissionBasis : '',
+            commission_basis: digitalMandateRequested ? commissionBasis : '',
+            commissionPercentage: digitalMandateRequested && commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
+            commission_percent: digitalMandateRequested && commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
+            commissionAmount: digitalMandateRequested && commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
+            commission_amount: digitalMandateRequested && commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
             vatHandling: digitalMandateRequested ? String(commissionDraft.vatHandling || '').trim() : '',
             mandateSetupCapturedAt: new Date().toISOString(),
             preferredTransferAttorneyRecommendation,
@@ -6396,7 +6408,18 @@ function AgentListingDetail() {
   }
 
   function openMandateSetup() {
-    setCommissionDraft((previous) => ({ ...previous, digitalMandateRequested: true }))
+    setCommissionDraft((previous) => ({ ...previous, basis: previous.basis === 'fixed' ? 'fixed' : 'percentage', digitalMandateRequested: true }))
+    setMandateSetupDraft({
+      sellerName: resolveSellerNameFromListing(listingRecord),
+      sellerEmail: resolveSellerEmailFromListing(listingRecord),
+      propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || listingRecord?.title || '',
+    })
+    const savedSelection = getListingSellerFormData(listingRecord)?.sellerDocumentSendSelection || {}
+    setSellerDocumentSendSelection((previous) => ({
+      disclosure: savedSelection.disclosure === true || previous.disclosure === true,
+      fica: savedSelection.fica === true || previous.fica === true,
+      mandate: true,
+    }))
     setDetailError('')
     setDetailMessage('')
     setMandateSetupOpen(true)
@@ -6465,8 +6488,10 @@ function AgentListingDetail() {
       setDetailError('Add a valid seller email before preparing a document link.')
       return
     }
-    if (sellerDocumentSendSelection.mandate && (!(Number(commissionDraft.percentage) > 0) || !String(commissionDraft.vatHandling || '').trim())) {
-      setDetailError('Save the commission percentage and VAT treatment before including the mandate.')
+    const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
+    const hasMandateCommission = commissionBasis === 'fixed' ? Number(commissionDraft.amount) > 0 : Number(commissionDraft.percentage) > 0
+    if (sellerDocumentSendSelection.mandate && (!hasMandateCommission || !String(commissionDraft.vatHandling || '').trim())) {
+      setDetailError(`Save the ${commissionBasis === 'fixed' ? 'fixed Rand commission' : 'commission percentage'} and VAT treatment before including the mandate.`)
       return
     }
     try {
@@ -6487,7 +6512,9 @@ function AgentListingDetail() {
         mandateSnapshot: {
           propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '',
           askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
-          commissionPercentage: commissionDraft.percentage,
+          commissionBasis,
+          commissionPercentage: commissionBasis === 'percentage' ? commissionDraft.percentage : '',
+          commissionAmount: commissionBasis === 'fixed' ? commissionDraft.amount : '',
           vatHandling: commissionDraft.vatHandling,
           branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace),
         },
@@ -6507,13 +6534,17 @@ function AgentListingDetail() {
   }
 
   async function saveMandateSetup() {
-    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    const sellerName = String(mandateSetupDraft.sellerName || '').trim()
+    const sellerEmail = String(mandateSetupDraft.sellerEmail || '').trim().toLowerCase()
+    const propertyAddress = String(mandateSetupDraft.propertyAddress || '').trim()
     if (!isValidEmail(sellerEmail)) {
       setDetailError('Add a valid seller email before preparing the mandate.')
       return
     }
-    if (!(Number(commissionDraft.percentage) > 0)) {
-      setDetailError('Enter the commission percentage before preparing the mandate.')
+    const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
+    const hasMandateCommission = commissionBasis === 'fixed' ? Number(commissionDraft.amount) > 0 : Number(commissionDraft.percentage) > 0
+    if (!hasMandateCommission) {
+      setDetailError(`Enter the ${commissionBasis === 'fixed' ? 'fixed Rand commission' : 'commission percentage'} before preparing the mandate.`)
       return
     }
     if (!String(commissionDraft.vatHandling || '').trim()) {
@@ -6523,8 +6554,59 @@ function AgentListingDetail() {
 
     const saved = await saveCommissionDraft()
     if (!saved) return
+    const now = new Date().toISOString()
+    const existingForm = getListingSellerFormData(listingRecord)
+    const sellerCanonicalFacts = {
+      ...(listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}),
+      sellerName,
+      name: sellerName,
+      fullName: sellerName,
+      sellerEmail,
+      email: sellerEmail,
+    }
+    const listingPatch = {
+      sellerName,
+      sellerEmail,
+      propertyAddress,
+      addressLine1: propertyAddress,
+      sellerCanonicalFacts,
+      sellerCanonicalFactReadiness: {
+        ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
+        sellerName: Boolean(sellerName),
+        sellerEmail: Boolean(sellerEmail),
+        propertyAddress: Boolean(propertyAddress),
+      },
+      sellerCanonicalFactsUpdatedAt: now,
+    }
+    try {
+      patchListing((row) => ({
+        ...row,
+        ...listingPatch,
+        seller: { ...(row?.seller || {}), name: sellerName, email: sellerEmail },
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          formData: { ...existingForm, sellerName, fullName: sellerName, sellerEmail, email: sellerEmail, propertyAddress, addressLine1: propertyAddress, sellerDocumentSendSelection },
+        },
+      }))
+      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+        await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
+        await updatePrivateListingOnboardingFormData(listingRecord.id, {
+          ...existingForm,
+          sellerName,
+          fullName: sellerName,
+          sellerEmail,
+          email: sellerEmail,
+          propertyAddress,
+          addressLine1: propertyAddress,
+          sellerDocumentSendSelection,
+        }, { status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started', syncRequirements: false })
+      }
+    } catch (error) {
+      setDetailError(error?.message || 'Mandate commission was saved, but the listing details could not be updated.')
+      return
+    }
     setMandateSetupOpen(false)
-    setDetailMessage('Mandate details saved. You can now send the secure signing link to the seller.')
+    setDetailMessage('Mandate details and selected documents saved. You can now send one secure signing link to the seller.')
   }
 
   async function sendListingMandateSigningLink() {
@@ -6545,9 +6627,10 @@ function AgentListingDetail() {
       setFollowUpActionId('send_mandate_signing_link')
       setDetailError('')
       setDetailMessage('')
+      const selectedDocuments = Object.entries(sellerDocumentSendSelection).filter(([, included]) => included).map(([key]) => key)
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
-        action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, agentName, selectedDocuments: ['mandate'],
-        mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionPercentage: commissionDraft.percentage, vatHandling: commissionDraft.vatHandling, branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace) },
+        action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, agentName, selectedDocuments: selectedDocuments.length ? selectedDocuments : ['mandate'],
+        mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage', commissionPercentage: commissionDraft.basis === 'fixed' ? '' : commissionDraft.percentage, commissionAmount: commissionDraft.basis === 'fixed' ? commissionDraft.amount : '', vatHandling: commissionDraft.vatHandling, branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace) },
       } })
       if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Mandate signing email could not be sent.')
       setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
@@ -8139,6 +8222,9 @@ function AgentListingDetail() {
 
   const commissionWorkspace = useMemo(() => {
     const commission = listingRecord?.commission || {}
+    const basis = String(firstDraftValue(commission?.commission_basis, commission?.basis, sellerFormData?.commissionBasis, sellerFormData?.commission_basis, '')).trim().toLowerCase() === 'fixed'
+      ? 'fixed'
+      : 'percentage'
     const percentage = Number(firstDraftValue(
       commission?.commission_percentage,
       commission?.percentage,
@@ -8175,6 +8261,7 @@ function AgentListingDetail() {
     const hasData = Boolean(percentage || amount || vatHandling || mandateTerms || paymentResponsibility || notes)
     return {
       type: listingRecord?.mandateType || listingRecord?.mandate?.type || 'sole',
+      basis,
       percentage,
       amount,
       estimatedInclVat,
@@ -8224,6 +8311,7 @@ function AgentListingDetail() {
     ]
   }, [
     commissionWorkspace.amount,
+    commissionWorkspace.basis,
     commissionWorkspace.mandateTerms,
     commissionWorkspace.percentage,
     listingRecord,
@@ -8290,6 +8378,7 @@ function AgentListingDetail() {
   }, [acceptedOfferOtpStartOffer, listingMandateLegalScenario])
   useEffect(() => {
     setCommissionDraft({
+      basis: commissionWorkspace.basis === 'fixed' ? 'fixed' : 'percentage',
       percentage: commissionWorkspace.percentage ? String(commissionWorkspace.percentage) : '',
       amount: commissionWorkspace.amount ? String(commissionWorkspace.amount) : '',
       vatHandling: commissionWorkspace.vatHandling === 'Not captured' ? '' : commissionWorkspace.vatHandling,
@@ -8309,8 +8398,9 @@ function AgentListingDetail() {
   ])
 
   const commissionDraftPreview = useMemo(() => {
-    const percentage = Number(commissionDraft.percentage || 0) || 0
-    const amount = Number(commissionDraft.amount || 0) || 0
+    const basis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
+    const percentage = basis === 'percentage' ? Number(commissionDraft.percentage || 0) || 0 : 0
+    const amount = basis === 'fixed' ? Number(commissionDraft.amount || 0) || 0 : 0
     const price = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
     const estimatedExVat = amount || (price && percentage ? (price * percentage) / 100 : 0)
     const vatHandling = String(commissionDraft.vatHandling || '').trim().toLowerCase()
@@ -8319,7 +8409,7 @@ function AgentListingDetail() {
       estimatedExVat,
       estimatedInclVat: vatIncluded ? estimatedExVat : estimatedExVat ? estimatedExVat * 1.15 : 0,
     }
-  }, [commissionDraft.amount, commissionDraft.percentage, commissionDraft.vatHandling, listingRecord?.askingPrice, marketingDraft.price])
+  }, [commissionDraft.amount, commissionDraft.basis, commissionDraft.percentage, commissionDraft.vatHandling, listingRecord?.askingPrice, marketingDraft.price])
 
   const mandateActivityItems = useMemo(() => {
     const items = []
@@ -9808,10 +9898,13 @@ function AgentListingDetail() {
     setSavingCommission(true)
     setDetailMessage('')
     setDetailError('')
-    const percentage = Number(commissionDraft.percentage || 0) || 0
-    const amount = Number(commissionDraft.amount || 0) || 0
+    const basis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
+    const percentage = basis === 'percentage' ? Number(commissionDraft.percentage || 0) || 0 : 0
+    const amount = basis === 'fixed' ? Number(commissionDraft.amount || 0) || 0 : 0
     const now = new Date().toISOString()
     const commissionPatch = {
+      basis,
+      commission_basis: basis,
       percentage,
       commission_percentage: percentage,
       amount,
@@ -9830,6 +9923,8 @@ function AgentListingDetail() {
       source: 'agent_workspace',
     }
     const formPatch = {
+      commissionBasis: basis,
+      commission_basis: basis,
       commissionPercentage: percentage ? String(percentage) : '',
       commission_percent: percentage ? String(percentage) : '',
       mandateCommissionPercentage: percentage ? String(percentage) : '',
@@ -11300,30 +11395,47 @@ function AgentListingDetail() {
           <div className="grid gap-4 md:grid-cols-2">
             <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
               Seller
-              <Field value={resolveSellerNameFromListing(listingRecord) || 'Not captured'} readOnly />
+              <Field value={mandateSetupDraft.sellerName} onChange={(event) => setMandateSetupDraft((previous) => ({ ...previous, sellerName: event.target.value }))} placeholder="Seller name" />
             </label>
             <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
               Seller email
-              <Field value={resolveSellerEmailFromListing(listingRecord) || 'Not captured'} readOnly />
+              <Field type="email" value={mandateSetupDraft.sellerEmail} onChange={(event) => setMandateSetupDraft((previous) => ({ ...previous, sellerEmail: event.target.value }))} placeholder="seller@example.com" />
             </label>
             <label className="grid gap-2 text-sm font-semibold text-[#2d445e] md:col-span-2">
               Property
-              <Field value={listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || listingRecord?.title || 'Not captured'} readOnly />
+              <Field value={mandateSetupDraft.propertyAddress} onChange={(event) => setMandateSetupDraft((previous) => ({ ...previous, propertyAddress: event.target.value }))} placeholder="Property address" />
             </label>
           </div>
-          {!isValidEmail(resolveSellerEmailFromListing(listingRecord)) ? (
+          {!isValidEmail(mandateSetupDraft.sellerEmail) ? (
             <div className="flex flex-col gap-3 rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17] sm:flex-row sm:items-center sm:justify-between">
-              <span>A valid seller email is required before the signing link can be sent.</span>
-              <Button type="button" size="sm" variant="secondary" onClick={() => { setMandateSetupOpen(false); handleEditSellerProfile() }} disabled={savingCommission}>
-                Update seller contact
-              </Button>
+              <span>Enter a valid seller email above before generating the mandate.</span>
             </div>
           ) : null}
           <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 md:grid-cols-2">
-            <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-              Commission percentage
-              <Field type="number" min="0" step="0.01" value={commissionDraft.percentage} onChange={(event) => updateCommissionDraft('percentage', event.target.value)} placeholder="5" />
-            </label>
+            <fieldset className="grid gap-2 md:col-span-2">
+              <legend className="text-sm font-semibold text-[#2d445e]">Commission type</legend>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <label className="flex items-center gap-2 rounded-xl border border-[#dce6f2] px-3 py-2 text-sm font-medium text-[#2d445e]">
+                  <input type="radio" name="mandate-commission-basis" value="percentage" checked={commissionDraft.basis !== 'fixed'} onChange={() => updateCommissionDraft('basis', 'percentage')} />
+                  Percentage of sale price
+                </label>
+                <label className="flex items-center gap-2 rounded-xl border border-[#dce6f2] px-3 py-2 text-sm font-medium text-[#2d445e]">
+                  <input type="radio" name="mandate-commission-basis" value="fixed" checked={commissionDraft.basis === 'fixed'} onChange={() => updateCommissionDraft('basis', 'fixed')} />
+                  Fixed Rand amount
+                </label>
+              </div>
+            </fieldset>
+            {commissionDraft.basis === 'fixed' ? (
+              <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                Fixed commission amount (R)
+                <Field type="number" min="0" step="0.01" value={commissionDraft.amount} onChange={(event) => updateCommissionDraft('amount', event.target.value)} placeholder="50000" />
+              </label>
+            ) : (
+              <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+                Commission percentage
+                <Field type="number" min="0" step="0.01" value={commissionDraft.percentage} onChange={(event) => updateCommissionDraft('percentage', event.target.value)} placeholder="5" />
+              </label>
+            )}
             <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
               VAT treatment
               <Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}>
@@ -11334,6 +11446,20 @@ function AgentListingDetail() {
               </Field>
             </label>
           </div>
+          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+            <legend className="px-1 text-sm font-semibold text-[#2d445e]">Include in the secure signing link</legend>
+            <p className="text-sm leading-5 text-[#607387]">The seller receives one link and signs only the documents selected here.</p>
+            {[
+              { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the commission and VAT details above.' },
+              { key: 'disclosure', title: 'Disclosure / defects form', copy: 'Property condition declaration.' },
+              { key: 'fica', title: 'FICA declaration', copy: 'Seller identity and compliance declaration.' },
+            ].map((document) => (
+              <label key={document.key} className="flex items-start gap-3 rounded-xl border border-[#dce6f2] bg-white px-3 py-3 text-sm text-[#2d445e]">
+                <input type="checkbox" className="mt-0.5 h-4 w-4" checked={sellerDocumentSendSelection[document.key]} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
+                <span><span className="block font-semibold">{document.title}</span><span className="mt-0.5 block text-xs leading-5 text-[#607387]">{document.copy}</span></span>
+              </label>
+            ))}
+          </fieldset>
         </div>
       </Modal>
       <Modal
@@ -15207,7 +15333,7 @@ function AgentListingDetail() {
                             })() : null}
                             <div className="mt-4 flex flex-wrap justify-end gap-2">
                               {documentMatchesSellerPackTransactionKey(doc, SELLER_BASE_PACK_KEYS.SIGNED_MANDATE) && !isListingDocumentComplete(doc) ? (
-                                Number(commissionDraft.percentage) > 0 && String(commissionDraft.vatHandling || '').trim() ? (
+                                (commissionDraft.basis === 'fixed' ? Number(commissionDraft.amount) > 0 : Number(commissionDraft.percentage) > 0) && String(commissionDraft.vatHandling || '').trim() ? (
                                   <Button type="button" size="sm" onClick={() => void sendListingMandateSigningLink()} disabled={followUpActionId === 'send_mandate_signing_link'}>
                                     {followUpActionId === 'send_mandate_signing_link' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                                     Send signing link

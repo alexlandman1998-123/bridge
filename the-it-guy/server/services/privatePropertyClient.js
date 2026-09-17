@@ -20,6 +20,13 @@ export function normalizePrivatePropertyText(value = '') {
   return String(value || '').trim()
 }
 
+// Supplier passwords are opaque values.  In particular, do not trim them: a
+// leading or trailing space is valid password material and must participate in
+// the digest exactly as Private Property issued it.
+export function normalizePrivatePropertySecret(value = '') {
+  return value === undefined || value === null ? '' : String(value)
+}
+
 export function normalizePrivatePropertyBaseUrl(value = PRIVATE_PROPERTY_SANDBOX_BASE_URL) {
   const baseUrl = normalizePrivatePropertyText(value) || PRIVATE_PROPERTY_SANDBOX_BASE_URL
   return baseUrl.replace(/\/+$/g, '')
@@ -46,7 +53,7 @@ export function createPrivatePropertyToken({
   expires = createPrivatePropertyTimestamp(new Date(Date.now() + 30 * 60 * 1000)),
 } = {}) {
   const user = normalizePrivatePropertyText(username)
-  const pass = normalizePrivatePropertyText(password)
+  const pass = normalizePrivatePropertySecret(password)
   const tokenUid = normalizePrivatePropertyText(uid)
   const tokenStampTime = normalizePrivatePropertyText(stampTime)
   const tokenExpires = normalizePrivatePropertyText(expires)
@@ -201,7 +208,7 @@ export function createPrivatePropertyClient({
   if (typeof fetchImpl !== 'function') throw new Error('A fetch implementation is required.')
   const normalizedBaseUrl = normalizePrivatePropertyBaseUrl(baseUrl)
   const user = normalizePrivatePropertyText(username)
-  const pass = normalizePrivatePropertyText(password)
+  const pass = normalizePrivatePropertySecret(password)
   if (!user) throw new Error('Private Property username is required.')
   if (!pass) throw new Error('Private Property password is required.')
 

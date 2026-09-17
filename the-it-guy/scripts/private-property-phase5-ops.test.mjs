@@ -52,6 +52,21 @@ const client = createPrivatePropertyClient({
   }),
 })
 
+const spacedPasswordToken = createPrivatePropertyToken({
+  username: 'Arch9User',
+  password: ' secret ',
+  uid: '1738906',
+  stampTime: '2016-04-26T00:04:33Z',
+  expires: '2016-04-27T00:04:33Z',
+})
+assert.notEqual(spacedPasswordToken.digest, createPrivatePropertyToken({
+  username: 'Arch9User',
+  password: 'secret',
+  uid: '1738906',
+  stampTime: '2016-04-26T00:04:33Z',
+  expires: '2016-04-27T00:04:33Z',
+}).digest)
+
 await client.getProvinces({ countryId: 1 })
 await client.getCities({ provinceId: 1 })
 await client.getSuburbs({ cityId: 1 })

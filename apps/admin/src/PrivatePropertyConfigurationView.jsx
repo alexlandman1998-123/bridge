@@ -7,7 +7,14 @@ const ARCH9_APP_URL = 'https://app.arch9.co.za'
 const PRODUCTION_URL = 'https://services.privateproperty.co.za/AgentImport/AgentImport.asmx'
 
 function parseBlock(value) {
-  const values = Object.fromEntries(String(value).split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#')).map((line) => { const index = line.indexOf('='); return index < 0 ? ['', ''] : [line.slice(0, index).trim(), line.slice(index + 1).trim().replace(/^[\"']|[\"']$/g, '')] }))
+  const values = Object.fromEntries(String(value).split(/\r?\n/).map((line) => line.trimStart()).filter((line) => line.trim() && !line.startsWith('#')).map((line) => {
+    const index = line.indexOf('=')
+    if (index < 0) return ['', '']
+    const key = line.slice(0, index).trim()
+    const rawValue = line.slice(index + 1)
+    const isQuoted = (rawValue.startsWith('"') && rawValue.endsWith('"')) || (rawValue.startsWith("'") && rawValue.endsWith("'"))
+    return [key, isQuoted ? rawValue.slice(1, -1) : rawValue.trim()]
+  }))
   return { username: values.PRIVATE_PROPERTY_USERNAME || '', password: values.PRIVATE_PROPERTY_PASSWORD || '' }
 }
 

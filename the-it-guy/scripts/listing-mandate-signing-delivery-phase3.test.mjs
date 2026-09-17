@@ -10,7 +10,7 @@ const signingPageSource = fs.readFileSync(path.join(process.cwd(), 'src/pages/Li
 const deliveryHandler = listingSource.match(/async function sendListingMandateSigningLink\(\)[\s\S]*?\n  }\n\n  async function handleStartListingMandateDocument/)?.[0] || ''
 
 assert.match(deliveryHandler, /invokeEdgeFunction\('listing-mandate-signing'/)
-assert.match(deliveryHandler, /selectedDocuments: \['mandate'\]/)
+assert.match(deliveryHandler, /selectedDocuments: selectedDocuments\.length \? selectedDocuments : \['mandate'\]/)
 assert.doesNotMatch(deliveryHandler, /generateSigningLinks\(/)
 assert.match(signingSource, /action === "issue"/)
 assert.match(signingSource, /type: "seller_mandate_sent"/)
@@ -24,12 +24,16 @@ assert.match(atomicCompletionMigration, /update public\.private_listing_mandate_
 assert.match(atomicCompletionMigration, /revoke all on function .* from public, anon, authenticated/i)
 assert.match(atomicCompletionMigration, /grant execute .* to service_role/i)
 assert.match(listingSource, /Send signing link/)
+assert.match(listingSource, /Fixed Rand amount/)
+assert.match(listingSource, /commissionBasis/)
 assert.match(listingSource, /Seller document link status/)
 assert.match(listingSource, /resolveOnboardingBranding\(listingRecord\?\.branding, currentWorkspace\?\.branding, currentWorkspace\)/)
 assert.match(signingPageSource, /resolveOnboardingBranding\(mandate\.branding\)/)
 assert.match(signingPageSource, /Seller document centre/)
 assert.match(signingPageSource, /Secure signing/)
 assert.match(signingPageSource, /Your signing progress/)
+assert.match(signingPageSource, /commissionLabel/)
+assert.match(signingSource, /mandate\.commissionBasis/)
 assert.match(emailSource, /handleSellerMandateSentEmail/)
 assert.doesNotMatch(emailSource, /SELLER_MANDATE_SIGNING_LINKS_RETIRED/)
 

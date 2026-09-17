@@ -1,4 +1,4 @@
-import { normalizePrivatePropertyText } from './privatePropertyClient.js'
+import { normalizePrivatePropertySecret, normalizePrivatePropertyText } from './privatePropertyClient.js'
 
 function firstRow(data) {
   return Array.isArray(data) ? data[0] || null : data || null
@@ -9,7 +9,7 @@ export async function savePrivatePropertyAgencyCredentials({ supabase, configId,
   const result = await supabase.rpc('set_private_property_agency_credentials', {
     p_config_id: normalizePrivatePropertyText(configId),
     p_username: normalizePrivatePropertyText(username),
-    p_password: normalizePrivatePropertyText(password),
+    p_password: normalizePrivatePropertySecret(password),
   })
   if (result.error) throw result.error
   const row = firstRow(result.data)
@@ -23,6 +23,6 @@ export async function fetchPrivatePropertyAgencyCredentials({ supabase, configId
   if (result.error) throw result.error
   const row = firstRow(result.data)
   const username = normalizePrivatePropertyText(row?.username)
-  const password = normalizePrivatePropertyText(row?.password)
-  return username && password ? { username, password, source: 'agency_vault' } : null
+  const password = normalizePrivatePropertySecret(row?.password)
+  return username && password.trim() ? { username, password, source: 'agency_vault' } : null
 }

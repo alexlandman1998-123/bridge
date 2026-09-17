@@ -75,6 +75,13 @@ export default async function handler(request, responseWriter) {
         ...credentialDiagnostics,
       })
       const privateProperty = createPrivatePropertyClient({ baseUrl: config.config.baseUrl, username: credentials.username, password: credentials.password })
+      const proofToken = privateProperty.createToken()
+      credentialDiagnostics.tokenFormat = {
+        digest: /^[A-Za-z0-9+/]{27}=$/.test(proofToken.digest) ? 'sha1-base64' : 'unexpected',
+        timestamps: /Z$/.test(proofToken.stampTime) && /Z$/.test(proofToken.expires) ? 'utc-z' : 'unexpected',
+        uid: proofToken.uid ? 'present' : 'missing',
+        passwordPreserved: credentials.password === String(credentials.password),
+      }
       await privateProperty.getCountries()
       credentialDiagnostics.serviceAuthentication = 'passed'
       const agentResponse = await privateProperty.getAllAgentsForBranch({ branchGuid: config.config.branchGuid })
