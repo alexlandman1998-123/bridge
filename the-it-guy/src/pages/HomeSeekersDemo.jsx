@@ -122,6 +122,38 @@ function ListingCard({ listing }) {
 
 export default function HomeSeekersDemo() {
   const [valuationOpen, setValuationOpen] = useState(false);
+  const [contactStatus, setContactStatus] = useState("");
+  const [contactSending, setContactSending] = useState(false);
+
+  async function submitContact(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setContactSending(true);
+    setContactStatus("");
+    try {
+      const response = await fetch("/api/home-seekers/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "general_enquiry",
+          name: form.get("name"),
+          email: form.get("email"),
+          message: form.get("message"),
+          privacyAccepted: true,
+          pageUrl: window.location.href,
+          idempotencyKey: crypto.randomUUID(),
+          companyWebsite: form.get("website"),
+        }),
+      });
+      if (!response.ok) throw new Error("Submission failed");
+      setContactStatus("Message received. We will be in touch shortly.");
+      event.currentTarget.reset();
+    } catch {
+      setContactStatus("We could not send that just now. Please call us on +27 12 880 3127.");
+    } finally {
+      setContactSending(false);
+    }
+  }
   return (
     <main className="hs-site hs-brief" id="top">
       <header className="hs-brief-header">
@@ -579,16 +611,19 @@ export default function HomeSeekersDemo() {
             +27 12 880 3127 · info@homeseeker.co.za
           </p>
         </div>
-        <form onSubmit={(event) => event.preventDefault()}>
-          <input aria-label="Your name" placeholder="Your name" />
-          <input aria-label="Email address" placeholder="Email address" />
+        <form onSubmit={submitContact}>
+          <input name="name" aria-label="Your name" placeholder="Your name" required />
+          <input name="email" type="email" aria-label="Email address" placeholder="Email address" required />
           <textarea
+            name="message"
             aria-label="Your message"
             placeholder="How can we help?"
             rows="3"
           />
-          <button className="hs-brief-button">
-            Send enquiry <ArrowRight size={16} />
+          <input className="hs-brief-contact__honeypot" name="website" tabIndex="-1" autoComplete="off" aria-hidden="true" />
+          <p className="hs-brief-contact__status" role="status">{contactStatus}</p>
+          <button className="hs-brief-button" disabled={contactSending}>
+            {contactSending ? "Sending…" : <>Send enquiry <ArrowRight size={16} /></>}
           </button>
         </form>
       </section>

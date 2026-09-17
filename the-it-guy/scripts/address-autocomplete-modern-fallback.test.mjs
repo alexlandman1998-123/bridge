@@ -14,6 +14,8 @@ for (const requiredToken of [
   'Address suggestions are unavailable. You can keep typing manually.',
   'fetchLegacyPlaceDetails',
   'Modern place details failed; retrying with legacy Places details.',
+  'hasSelectedAddressRef',
+  '!hasSelectedAddressRef.current',
 ]) {
   assert(component.includes(requiredToken), `AddressAutocomplete should include ${requiredToken}`)
 }

@@ -3012,6 +3012,9 @@
   justify-self: start;
   margin-top: 7px;
 }
+.hs-brief-contact__honeypot,
+.hs-valuation-modal__honeypot { position: absolute; left: -9999px; opacity: 0; pointer-events: none; }
+.hs-brief-contact__status { min-height: 1.3em; margin: 0; color: #385341; font-size: 13px; line-height: 1.4; }
 .hs-brief-footer {
   display: grid;
   grid-template-columns: 180px 1fr;

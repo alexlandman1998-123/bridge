@@ -3577,6 +3577,7 @@ function AgentListingDetail() {
   const [deletingListing, setDeletingListing] = useState(false)
   const [deleteListingDialogOpen, setDeleteListingDialogOpen] = useState(false)
   const [deleteListingDialogError, setDeleteListingDialogError] = useState('')
+  const [archiveListingDialogOpen, setArchiveListingDialogOpen] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
   const [publicationSaving, setPublicationSaving] = useState(false)
   const [arch9LiveChecking, setArch9LiveChecking] = useState(false)
@@ -4771,15 +4772,27 @@ function AgentListingDetail() {
     }
   }
 
-  async function archiveListingFromMarketing() {
+  function getArchiveListingLiveChannels() {
     const privatePropertyIsLive = ['published', 'live', 'active'].includes(privatePropertyStatusKey)
-    const liveChannels = [
+    return [
       property24Published ? 'Property24' : '',
       privatePropertyIsLive ? 'Private Property' : '',
       arch9IsPublished ? 'Arch9 public catalogue' : '',
     ].filter(Boolean)
-    const summary = liveChannels.length ? `This listing is live on: ${liveChannels.join(', ')}.` : 'No live channels were detected.'
-    if (!window.confirm(`${summary}\n\nExpire all live listings and archive this listing? Property24 and Private Property will be set inactive, and the Arch9 public catalogue listing will be paused.`)) return
+  }
+
+  function requestArchiveListing() {
+    setArchiveListingDialogOpen(true)
+  }
+
+  function closeArchiveListingDialog() {
+    if (publicationSaving) return
+    setArchiveListingDialogOpen(false)
+  }
+
+  async function archiveListingFromMarketing() {
+    const privatePropertyIsLive = ['published', 'live', 'active'].includes(privatePropertyStatusKey)
+    const liveChannels = getArchiveListingLiveChannels()
 
     setPublicationSaving(true)
     setDetailError('')
@@ -10926,7 +10939,7 @@ function AgentListingDetail() {
             <p className="text-sm font-semibold text-[#624417]">Finished marketing this listing?</p>
             <p className="mt-1 text-sm text-[#80632f]">Check every live channel, expire the supported placements, then archive the listing from active operations.</p>
           </div>
-          <Button type="button" variant="secondary" onClick={archiveListingFromMarketing} disabled={publicationSaving} className="border-[#d8b87f] text-[#7a4e12] hover:bg-[#fff3dc]">
+          <Button type="button" variant="secondary" onClick={requestArchiveListing} disabled={publicationSaving} className="border-[#d8b87f] text-[#7a4e12] hover:bg-[#fff3dc]">
             {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
             Archive listing
           </Button>
@@ -15314,6 +15327,32 @@ function AgentListingDetail() {
             {deleteListingDialogError}
           </p>
         ) : null}
+      </Modal>
+
+      <Modal
+        open={archiveListingDialogOpen}
+        onClose={publicationSaving ? undefined : closeArchiveListingDialog}
+        title="Expire and archive listing?"
+        subtitle={`Remove “${listingRecord?.listingTitle || 'this listing'}” from active marketing.`}
+        className="max-w-lg"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={closeArchiveListingDialog} disabled={publicationSaving} autoFocus>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void archiveListingFromMarketing()} disabled={publicationSaving} className="bg-[#7a4e12] hover:bg-[#624417]">
+              {publicationSaving ? <Loader2 size={16} className="animate-spin" /> : <Archive size={16} />}
+              {publicationSaving ? 'Expiring...' : 'Expire and archive'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="rounded-[16px] border border-[#ead8b8] bg-[#fffaf0] p-4 text-sm leading-6 text-[#624417]">
+          {getArchiveListingLiveChannels().length
+            ? `This listing is live on: ${getArchiveListingLiveChannels().join(', ')}.`
+            : 'No live channels were detected.'}
+          {' '}Property24 and Private Property will be set inactive, and the Arch9 public catalogue listing will be paused. The listing will then be archived from active operations.
+        </div>
       </Modal>
 
       <Modal

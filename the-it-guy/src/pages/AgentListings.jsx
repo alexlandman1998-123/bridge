@@ -7735,7 +7735,7 @@ function AgentListings({ initialTab = null } = {}) {
 
                 <ListingWizardSection title="1. Property address">
                   <AddressAutocomplete
-                    label="Property address *"
+                    label="Property address"
                     value={buildListingAddressValueFromForm(form)}
                     onChange={updatePropertyAddress}
                     onInputValueChange={updatePropertyAddressInput}
@@ -9322,7 +9322,7 @@ function AgentListings({ initialTab = null } = {}) {
                   <QuickAddSection number={isDeveloperDirectListingFlow ? '3' : '4'} title="Property Details" copy="Start with the essentials. You can add more later.">
                     <div className="grid gap-4 lg:grid-cols-[minmax(260px,1fr)_180px_170px_150px]">
                       <AddressAutocomplete
-                        label="Property address *"
+                        label="Property address"
                         value={buildListingAddressValueFromForm(form)}
                         onChange={updatePropertyAddress}
                         onInputValueChange={updatePropertyAddressInput}
@@ -9728,7 +9728,7 @@ function AgentListings({ initialTab = null } = {}) {
                 <div className={`grid gap-4 md:grid-cols-2 ${isManualListingFlow ? 'xl:grid-cols-4' : 'xl:grid-cols-4'}`}>
                   <div className="xl:col-span-2">
                     <AddressAutocomplete
-                      label="Property address *"
+                      label="Property address"
                       value={buildListingAddressValueFromForm(form)}
                       onChange={updatePropertyAddress}
                       onInputValueChange={updatePropertyAddressInput}

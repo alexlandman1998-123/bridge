@@ -182,6 +182,7 @@ export default function AddressAutocomplete({
   const requestIdRef = useRef(0)
   const lastTypedValueRef = useRef('')
   const suppressNextSearchRef = useRef(Boolean(value?.formattedAddress))
+  const hasSelectedAddressRef = useRef(Boolean(value?.googlePlaceId || value?.placeId))
 
   const isApiKeyAvailable = hasGoogleMapsApiKey()
   const canSearchGoogle = shouldLoadMaps && !disabled && isApiKeyAvailable && !loadError && !isAutocompleteUnavailable
@@ -189,6 +190,7 @@ export default function AddressAutocomplete({
 
   useEffect(() => {
     const nextValue = value?.formattedAddress || ''
+    hasSelectedAddressRef.current = Boolean(nextValue && (value?.googlePlaceId || value?.placeId))
     setInputValue(nextValue)
     if (nextValue !== lastTypedValueRef.current) {
       requestIdRef.current += 1
@@ -390,6 +392,7 @@ export default function AddressAutocomplete({
     setIsOpen(false)
     setIsFetching(false)
     sessionTokenRef.current = null
+    hasSelectedAddressRef.current = false
     onChange(null)
   }
 
@@ -435,6 +438,7 @@ export default function AddressAutocomplete({
         setIsOpen(false)
         setActiveIndex(-1)
         sessionTokenRef.current = null
+        hasSelectedAddressRef.current = true
         setLoadError('')
         onChange(mapped)
         onComplete?.()
@@ -470,6 +474,7 @@ export default function AddressAutocomplete({
           setIsOpen(false)
           setActiveIndex(-1)
           sessionTokenRef.current = null
+          hasSelectedAddressRef.current = true
           onChange(mapped)
         })
         .catch((detailError: any) => {
@@ -513,6 +518,7 @@ export default function AddressAutocomplete({
             const nextValue = event.target.value
             lastTypedValueRef.current = nextValue
             suppressNextSearchRef.current = false
+            hasSelectedAddressRef.current = false
             setInputValue(nextValue)
             setLoadError('')
             if (!isAutocompleteUnavailable) setNoticeText('')
@@ -530,7 +536,7 @@ export default function AddressAutocomplete({
           }}
           onFocus={() => {
             setShouldLoadMaps(true)
-            if (predictions.length || inputValue.trim().length >= 3) setIsOpen(true)
+            if (!hasSelectedAddressRef.current && (predictions.length || inputValue.trim().length >= 3)) setIsOpen(true)
           }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
