@@ -20,6 +20,11 @@ for (const selected of [['mandate'], ['fica'], ['mandate', 'fica'], ['mandate', 
   assert.equal(readiness.byKey.mandate.ready, true)
 }
 
+for (const [mandateType, expectedTitle] of [['sole', 'Sole mandate'], ['dual', 'Dual mandate'], ['tri', 'Tri mandate'], ['open', 'Open mandate']]) {
+  const readiness = buildListingSellerDocumentReadiness(listing({ ...base, mandateType }), commission)
+  assert.equal(readiness.byKey.mandate.title, expectedTitle, `${mandateType} must not be presented as an exclusive mandate`)
+}
+
 assert.equal(buildSellerSigningPlan({ sellerType: 'company', form: { authorisedSignatoryName: 'Casey Director', authorisedSignatoryEmail: 'casey@example.test' } }).ready, true)
 assert.equal(buildSellerSigningPlan({ sellerType: 'trust', form: { authorisedTrusteeName: 'Taylor Trustee', authorisedTrusteeEmail: 'taylor@example.test' } }).ready, true)
 assert.equal(buildSellerSigningPlan({ sellerType: 'deceased_estate', form: { executorName: 'Erin Executor', executorEmail: 'erin@example.test' } }).ready, true)

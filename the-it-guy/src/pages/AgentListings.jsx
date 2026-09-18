@@ -57,7 +57,6 @@ import {
   createAgencyIntroducedDeveloperLead,
 } from '../services/developerLeadService'
 import {
-  activateSellerPortalForListing,
   SELLER_PORTAL_ACTIVATION_SOURCES,
 } from '../services/sellerPortalActivationService'
 import { getListingPartnerShareOptions, shareListingWithPartner, unshareListingWithPartner } from '../services/partnerListingSharingService'
@@ -1730,83 +1729,34 @@ function summarizeQuickAddSellerPortalInvite(result = null, requested = false) {
   }
 }
 
-async function sendQuickAddSellerPortalInvite({
-  listingId = '',
+function buildDeferredQuickAddSellerPortalInvite({
   form = {},
   directListingPersistence = {},
-  profile = null,
-  organisationId = '',
-  agencyName = '',
-  propertyAddress = '',
 } = {}) {
   const requested = directListingPersistence.sellerPortalInvite?.requested === true
   if (!requested) return summarizeQuickAddSellerPortalInvite(null, false)
-
-  const sellerEmail = normalizeText(directListingPersistence.sellerPortalInvite?.destinationEmail || form.sellerEmail).toLowerCase()
-  if (!sellerEmail) {
-    return summarizeQuickAddSellerPortalInvite({
-      status: 'blocked',
-      error: 'seller_email_missing',
-      activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
-    }, true)
-  }
-
-  try {
-    const result = await activateSellerPortalForListing({
-      listingId,
-      activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
-      sellerContactEmail: sellerEmail,
-      sellerContactPhone: directListingPersistence.sellerPortalInvite?.destinationPhone || form.sellerPhone,
-      sellerFirstName: form.sellerName,
-      sellerSurname: form.sellerSurname,
-      performedBy: profile?.id || '',
-      agentName: profile?.fullName || profile?.name || profile?.email || '',
-      agentEmail: profile?.email || '',
-      organisationId,
-      agencyName,
-      propertyAddress,
-    })
-    return summarizeQuickAddSellerPortalInvite(result, true)
-  } catch (inviteError) {
-    console.warn('[Listings] direct listing seller portal invite skipped', inviteError)
-    return summarizeQuickAddSellerPortalInvite({
-      status: 'failed',
-      error: inviteError?.message || 'seller_portal_invite_failed',
-      activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
-      sellerEmail,
-      sellerPhonePresent: Boolean(directListingPersistence.sellerPortalInvite?.destinationPhone || form.sellerPhone),
-    }, true)
-  }
+  // A direct listing can ask for a portal, but it must not receive one until
+  // the seller document signing group is complete. The signing service then
+  // issues a listing-scoped invitation to every required owner/signer.
+  return summarizeQuickAddSellerPortalInvite({
+    status: 'pending_signing',
+    activationSource: 'signing_pack_completion',
+    sellerEmail: directListingPersistence.sellerPortalInvite?.destinationEmail || form.sellerEmail,
+    sellerPhonePresent: Boolean(directListingPersistence.sellerPortalInvite?.destinationPhone || form.sellerPhone),
+  }, true)
 }
 
 function buildLocalQuickAddSellerPortalInvite({
-  listingId = '',
   form = {},
   directListingPersistence = {},
-  existingOnboarding = {},
 } = {}) {
-  const requested = directListingPersistence.sellerPortalInvite?.requested === true
-  if (!requested) return summarizeQuickAddSellerPortalInvite(null, false)
-  const token = normalizeText(existingOnboarding?.token) || generateSellerOnboardingToken()
-  const link = buildSellerOnboardingLink(token)
-  return summarizeQuickAddSellerPortalInvite({
-    sent: false,
-    status: 'prepared_local',
-    activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
-    sellerEmail: directListingPersistence.sellerPortalInvite?.destinationEmail || form.sellerEmail,
-    sellerPhonePresent: Boolean(directListingPersistence.sellerPortalInvite?.destinationPhone || form.sellerPhone),
-    link,
-    localOnly: true,
-    preparedAt: new Date().toISOString(),
-    listingId,
-    token,
-  }, true)
+  return buildDeferredQuickAddSellerPortalInvite({ form, directListingPersistence })
 }
 
 function buildQuickAddSellerPortalInviteMessage(inviteSummary = null) {
   if (inviteSummary?.requested !== true) return ''
   if (inviteSummary.sent) return ' Seller portal link sent.'
-  if (inviteSummary.status === 'prepared_local') return ' Seller portal link prepared locally.'
+  if (inviteSummary.status === 'pending_signing') return ' Seller portal will be sent after every required signer completes the document pack.'
   if (inviteSummary.error) return ' Seller portal invite needs a retry.'
   return ' Seller portal invite recorded.'
 }
@@ -5314,14 +5264,9 @@ function AgentListings({ initialTab = null } = {}) {
           return null
         })
         directListingRequirementSync = await syncQuickAddDirectListingRequirements(listingMatch.id, 'direct_listing_intake_merged')
-        directListingSellerPortalInvite = await sendQuickAddSellerPortalInvite({
-          listingId: listingMatch.id,
+        directListingSellerPortalInvite = buildDeferredQuickAddSellerPortalInvite({
           form,
           directListingPersistence,
-          profile,
-          organisationId: selectedWorkspaceOrganisationId || organisationId,
-          agencyName: profile?.agencyName || profile?.company || workspace?.name || '',
-          propertyAddress: formattedAddress || propertyAddress,
         })
         await createPrivateListingActivity({
           privateListingId: listingMatch.id,
@@ -6025,15 +5970,10 @@ function AgentListings({ initialTab = null } = {}) {
           directListingPersistence.seller?.sellerLegalType && directListingPersistence.seller.sellerLegalType !== 'unknown'
             ? syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created')
             : Promise.resolve({ synced: false, awaitingSellerSetup: true, totalRequirements: 0, missingRequirements: 0 }),
-          sendQuickAddSellerPortalInvite({
-            listingId: created.listing.id,
+          Promise.resolve(buildDeferredQuickAddSellerPortalInvite({
             form,
             directListingPersistence,
-            profile,
-            organisationId: listingOrganisationId,
-            agencyName: profile?.agencyName || profile?.company || workspace?.name || '',
-            propertyAddress: formattedAddress || propertyAddress,
-          }),
+          })),
           websitePublicationPromise,
         ])
         listingDistributionSync = distributionResult
@@ -6133,7 +6073,6 @@ function AgentListings({ initialTab = null } = {}) {
         window.dispatchEvent(new Event('itg:listings-updated'))
         if (isCreateListingWorkspace && createdListingId) {
           if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
-          navigate(`/agent/listings/${encodeURIComponent(createdListingId)}`)
         }
         return
       } else {
@@ -6360,7 +6299,6 @@ function AgentListings({ initialTab = null } = {}) {
       window.dispatchEvent(new Event('itg:listings-updated'))
       if (isCreateListingWorkspace && createdListingId) {
         if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
-        navigate(`/agent/listings/${encodeURIComponent(createdListingId)}`)
       }
       return
     }

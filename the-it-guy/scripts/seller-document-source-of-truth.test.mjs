@@ -49,6 +49,30 @@ const listing = {
       },
     },
   },
+  documents: [
+    {
+      id: 'signed-disclosure-1',
+      document_type: 'signed_disclosure_form',
+      category: 'sales',
+      document_name: 'Signed Property Disclosure.html',
+      generated_html: '<article><h1>Property condition disclosure</h1><p>Declaration by Seller</p><p>Produktive Real Estate</p><img src="produktive-logo.png"></article>',
+      generated_file_name: 'signed-disclosure.html',
+      status: 'completed',
+      visibility: 'seller_visible',
+      uploaded_at: '2026-07-01T08:05:00Z',
+    },
+    {
+      id: 'signed-fica-1',
+      document_type: 'signed_fica_declaration',
+      category: 'sales',
+      document_name: 'Signed Seller FICA Declaration.html',
+      generated_html: '<article><h1>Seller FICA declaration</h1></article>',
+      generated_file_name: 'signed-fica.html',
+      status: 'completed',
+      visibility: 'seller_visible',
+      uploaded_at: '2026-07-01T08:06:00Z',
+    },
+  ],
 }
 
 const source = buildSellerDocumentSourceOfTruth({ listing, mandatePacket })
@@ -114,7 +138,7 @@ assert.match(propertyDisclosure.upload.generatedHtml, /Declaration by Seller/)
 assert.match(propertyDisclosure.upload.generatedHtml, /Produktive Real Estate/)
 assert.match(propertyDisclosure.upload.generatedHtml, /produktive-logo\.png/)
 assert.doesNotMatch(propertyDisclosure.upload.generatedHtml, />Agency Workspace</)
-assert.equal(propertyDisclosure.upload.generatedFileName, 'property-condition-disclosure.pdf')
+assert.equal(propertyDisclosure.upload.generatedFileName, 'signed-disclosure.html')
 
 const ficaDeclaration = source.rows.find((row) => row.key === 'signed_fica_declaration')
 assert.equal(ficaDeclaration.complete, true)
@@ -123,10 +147,8 @@ assert.equal(ficaDeclaration.status, 'completed')
 assert.equal(ficaDeclaration.statusBucket, 'approved')
 assert.equal(ficaDeclaration.hasUpload, true)
 assert.equal(ficaDeclaration.source.requirement, 'generated_seller_requirement')
-assert.equal(ficaDeclaration.source.document, SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingFicaDeclarationSource)
-assert.equal(ficaDeclaration.upload.source, SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingFicaDeclarationSource)
-assert.equal(ficaDeclaration.upload.completionRoute, 'seller_onboarding_link_completed')
-assert.equal(ficaDeclaration.upload.supportingFicaDocumentsDynamic, true)
+assert.equal(ficaDeclaration.source.document, 'private_listing_documents')
+assert.equal(ficaDeclaration.upload.generatedFileName, 'signed-fica.html')
 
 assert.equal(keys.includes('title_deed_copy'), false, 'Optional title deed copies should not enter the required-document source.')
 

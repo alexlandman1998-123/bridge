@@ -35,11 +35,11 @@ test('Quick Add direct listing records the seller portal request for post-upload
   assert.equal(payload.complianceDeclarations.evidenceRequired, false)
 })
 
-test('Phase 5 uses the existing manual listing seller portal activation flow', () => {
-  assert.match(agentListingsSource, /activateSellerPortalForListing/)
-  assert.match(agentListingsSource, /SELLER_PORTAL_ACTIVATION_SOURCES/)
-  assert.match(agentListingsSource, /SELLER_PORTAL_ACTIVATION_SOURCES\.manualListing/)
-  assert.match(agentListingsSource, /sendQuickAddSellerPortalInvite/)
+test('direct listing defers the Seller Portal until signing is complete', () => {
+  assert.match(agentListingsSource, /function buildDeferredQuickAddSellerPortalInvite/)
+  assert.match(agentListingsSource, /status: 'pending_signing'/)
+  assert.match(agentListingsSource, /signing_pack_completion/)
+  assert.doesNotMatch(agentListingsSource, /activateSellerPortalForListing/)
 })
 
 test('existing listing activation requires uploaded signed mandate evidence without full seller onboarding', () => {
@@ -53,30 +53,22 @@ test('existing listing activation requires uploaded signed mandate evidence with
   )
 })
 
-test('seller portal invite runs after direct intake persistence and requirement sync', () => {
-  const createRequirementSyncIndex = agentListingsSource.indexOf("direct_listing_intake_created")
-  const createInviteIndex = agentListingsSource.indexOf('directListingSellerPortalInvite = await sendQuickAddSellerPortalInvite', createRequirementSyncIndex)
-  const mergeRequirementSyncIndex = agentListingsSource.indexOf("direct_listing_intake_merged")
-  const mergeInviteIndex = agentListingsSource.indexOf('directListingSellerPortalInvite = await sendQuickAddSellerPortalInvite', mergeRequirementSyncIndex)
+test('direct intake records the deferred portal plan on both create and merge', () => {
+  const createIndex = agentListingsSource.indexOf("direct_listing_intake_created")
+  const mergeIndex = agentListingsSource.indexOf("direct_listing_intake_merged")
+  const deferredInviteCount = agentListingsSource.match(/buildDeferredQuickAddSellerPortalInvite\(/g)?.length || 0
 
-  assert.ok(createRequirementSyncIndex > -1)
-  assert.ok(createInviteIndex > createRequirementSyncIndex)
-  assert.ok(mergeRequirementSyncIndex > -1)
-  assert.ok(mergeInviteIndex > mergeRequirementSyncIndex)
+  assert.ok(createIndex > -1)
+  assert.ok(mergeIndex > -1)
+  assert.ok(deferredInviteCount >= 3)
 })
 
-test('seller portal invite failure is non-blocking and visible in success state', () => {
-  assert.match(agentListingsSource, /direct listing seller portal invite skipped/)
-  assert.match(agentListingsSource, /seller_portal_invite_failed/)
+test('deferred seller portal status is visible in the success state', () => {
+  assert.match(agentListingsSource, /Seller portal will be sent after every required signer completes the document pack\./)
   assert.match(agentListingsSource, /sellerPortalInvite: directListingSellerPortalInvite/)
-  assert.match(agentListingsSource, /Seller portal invite needs a retry/)
 })
 
-test('local fallback prepares a portal link without pretending delivery happened', () => {
+test('local fallback also waits for signing rather than fabricating a portal link', () => {
   assert.match(agentListingsSource, /buildLocalQuickAddSellerPortalInvite/)
-  assert.match(agentListingsSource, /generateSellerOnboardingToken/)
-  assert.match(agentListingsSource, /buildSellerOnboardingLink/)
-  assert.match(agentListingsSource, /status: 'prepared_local'/)
-  assert.match(agentListingsSource, /sent: false/)
-  assert.match(agentListingsSource, /sellerPortalStatus: directListingSellerPortalInvite\.status/)
+  assert.match(agentListingsSource, /return buildDeferredQuickAddSellerPortalInvite\(\{ form, directListingPersistence \}\)/)
 })

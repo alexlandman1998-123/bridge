@@ -596,9 +596,18 @@ export function buildListingMandateReadiness(listing = {}, commission = {}) {
 
 export function buildListingSellerDocumentReadiness(listing = {}, commission = {}) {
   const mandate = buildListingMandateReadiness(listing, commission)
+  const form = getListingSellerFormData(listing)
+  const mandateType = normalizeKey(form.mandateType || listing?.mandateType || 'sole')
+  const mandateTitle = mandateType === 'dual'
+    ? 'Dual mandate'
+    : mandateType === 'tri'
+      ? 'Tri mandate'
+      : mandateType === 'open'
+        ? 'Open mandate'
+        : 'Sole mandate'
 
   const documents = [
-    { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the saved mandate, commission and VAT details.', ready: mandate.ready, missing: mandate.missing },
+    { key: 'mandate', title: mandateTitle, copy: 'Uses the saved mandate, commission and VAT details.', ready: mandate.ready, missing: mandate.missing },
     // These are seller-completed questionnaires. They must be available in a
     // secure pack before their answers exist; otherwise the form can never do
     // the job it was sent to do.

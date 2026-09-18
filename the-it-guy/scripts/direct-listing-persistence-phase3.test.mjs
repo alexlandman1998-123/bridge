@@ -121,7 +121,7 @@ test('blank marketing drafts do not erase persisted listing content', () => {
   assert.match(agentListingsSource, /const effectiveListingDescription = normalizeText\(form\.listingDescription\) \|\| normalizeText\(/)
   assert.match(agentListingsSource, /const effectiveKeySellingPoints = keySellingPoints\.length \? keySellingPoints : existingKeySellingPoints/)
   assert.match(agentListingDetailSource, /const effectiveDescription = draftDescription \|\| existingDescription/)
-  assert.match(agentListingDetailSource, /const effectiveDraft = \{\s*\n\s*\.\.\.draft,\s*\n\s*description: effectiveDescription,/)
+  assert.match(agentListingDetailSource, /(?:const|let) effectiveDraft = \{\s*\n\s*\.\.\.draft,\s*\n\s*description: effectiveDescription,/)
   assert.match(privateListingServiceSource, /if \(nextDescription \|\| options\?\.allowBlankDescription === true\)/)
   assert.match(privateListingServiceSource, /if \(!publicationPayload\.description && existingPublicationData\.description\)/)
   assert.match(privateListingServiceSource, /if \(!publicationPayload\.features\.length && Array\.isArray\(existingPublicationData\.features\) && existingPublicationData\.features\.length\)/)

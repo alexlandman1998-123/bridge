@@ -8,6 +8,7 @@ const escapeHtml = (value: unknown) => text(value).replace(/[&<>"']/g, (characte
 const email = (value: unknown) => text(value).toLowerCase();
 const validEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 const documentKeys = new Set(["disclosure", "fica", "mandate"]);
+const disclosureQuestionKeys = ["electrical_faults", "illegal_electrical_extensions", "water_heater", "drainage_system", "leaking_taps_pipes", "keys_to_all_doors", "remote_controls", "security_systems", "pool_equipment", "pool_repairs_six_months", "rising_damp", "roof_leaks", "sanitary_fittings", "tiles_floors", "structural_defects", "carpet_damage", "cupboards", "door_window_locks", "improvements_on_plans", "approved_plans_possession"];
 const signingPackVersion = "seller_signing_pack_v1";
 const response = (status: number, body: RecordValue) => new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json", "Cache-Control": "no-store" } });
 const token = () => crypto.getRandomValues(new Uint8Array(32)).reduce((value, byte) => value + byte.toString(16).padStart(2, "0"), "");
@@ -32,13 +33,17 @@ function signingPack(value: unknown, selectedDocuments: string[], mandate: Recor
     templateVersions: snapshot(provided.templateVersions),
   };
 }
+function mandateLabel(value: unknown) {
+  const mandateType = text(value).toLowerCase();
+  return mandateType === "dual" ? "Dual mandate" : mandateType === "tri" ? "Tri mandate" : mandateType === "open" ? "Open mandate" : "Sole mandate";
+}
 function signedPackDocumentHtml(documentKey: string, session: RecordValue, signedName: string, signature: string) {
   const pack = snapshot(session.signing_pack_snapshot);
   const mandate = snapshot(pack.mandate);
   const seller = snapshot(pack.seller);
   const disclosureResponses = snapshot(snapshot(pack.disclosure).responses);
   const mandateType = text(mandate.mandateType).toLowerCase() || "sole";
-  const mandateTitle = mandateType === "dual" ? "Dual mandate" : mandateType === "tri" ? "Tri mandate" : mandateType === "open" ? "Open mandate" : "Sole mandate";
+  const mandateTitle = mandateLabel(mandateType);
   const title = documentKey === "disclosure" ? "Property condition disclosure" : documentKey === "fica" ? "Seller FICA declaration" : mandateTitle;
   const property = text(mandate.propertyAddress) || text(snapshot(pack.property).address);
   const detail = documentKey === "mandate"
@@ -115,7 +120,27 @@ Deno.serve(async (req) => {
     const packSnapshot = signingPack(body.signingPack, selectedDocuments, mandateSnapshot, issuedAt);
     const packDigest = await hash(JSON.stringify(packSnapshot));
     const signingGroupId = crypto.randomUUID();
-    await admin.from("private_listing_mandate_signing_sessions").update({ status: "revoked", updated_at: now.toISOString() }).eq("private_listing_id", listing.id).eq("status", "active").in("signer_email", signers.map((signer) => signer.email));
+    // A replacement link should supersede an active link for the same signer
+    // only when it covers at least one of the same documents. This keeps a
+    // deliberately separate FICA or disclosure pack usable alongside a
+    // mandate-only pack.
+    const { data: activeSessions, error: activeSessionsError } = await admin.from("private_listing_mandate_signing_sessions")
+      .select("id, signer_email, selected_documents")
+      .eq("private_listing_id", listing.id)
+      .eq("status", "active")
+      .in("signer_email", signers.map((signer) => signer.email));
+    if (activeSessionsError) return response(500, { success: false, error: "Unable to prepare the replacement signing link." });
+    const replacementSessionIds = (activeSessions || [])
+      .filter((existing: RecordValue) => Array.isArray(existing.selected_documents) && existing.selected_documents.some((documentKey) => selectedDocuments.includes(text(documentKey))))
+      .map((existing: RecordValue) => text(existing.id))
+      .filter(Boolean);
+    if (replacementSessionIds.length) {
+      const { error: revokeError } = await admin.from("private_listing_mandate_signing_sessions")
+        .update({ status: "revoked", updated_at: now.toISOString() })
+        .in("id", replacementSessionIds)
+        .eq("status", "active");
+      if (revokeError) return response(500, { success: false, error: "Unable to replace the existing signing link." });
+    }
     const appUrl = (Deno.env.get("APP_URL") || "https://app.arch9.co.za").replace(/\/$/, "");
     const agentName = text(body.agentName) || "Your agent";
     const issued = [] as Array<{ signerName: string; signerEmail: string; signingLink: string; expiresAt: string; delivery: string }>;
@@ -131,7 +156,7 @@ Deno.serve(async (req) => {
       const signingLink = `${appUrl}/mandate-sign/${rawToken}`;
       const mail = await fetch(`${url.replace(/\/$/, "")}/functions/v1/send-email`, {
         method: "POST", headers: { "Content-Type": "application/json", apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
-        body: JSON.stringify({ type: "seller_mandate_sent", to: signer.email, organisationId: listing.organisation_id, recipientRole: "seller", recipientName: signer.name, sellerName: signer.name, propertyTitle: text(snapshot(body.mandateSnapshot).propertyAddress) || "your property", mandateType: selectedDocuments.length > 1 ? "Seller documents" : selectedDocuments[0] === "fica" ? "FICA declaration" : selectedDocuments[0] === "disclosure" ? "Property disclosure" : "Exclusive mandate", askingPrice: text(snapshot(body.mandateSnapshot).askingPrice), portalLink: signingLink, agentName }),
+        body: JSON.stringify({ type: "seller_mandate_sent", to: signer.email, organisationId: listing.organisation_id, recipientRole: "seller", recipientName: signer.name, sellerName: signer.name, propertyTitle: text(snapshot(body.mandateSnapshot).propertyAddress) || "your property", mandateType: selectedDocuments.length > 1 ? "Seller documents" : selectedDocuments[0] === "fica" ? "FICA declaration" : selectedDocuments[0] === "disclosure" ? "Property disclosure" : mandateLabel(mandateSnapshot.mandateType), askingPrice: text(snapshot(body.mandateSnapshot).askingPrice), portalLink: signingLink, agentName }),
       });
       issued.push({ signerName: signer.name, signerEmail: signer.email, signingLink, expiresAt: session.expires_at, delivery: mail.ok ? "sent" : "failed" });
     }
@@ -208,8 +233,8 @@ Deno.serve(async (req) => {
     const disclosureResponses = snapshot(disclosure.responses);
     const fica = snapshot(sellerResponses.fica);
     if (selectedDocuments.includes("disclosure")) {
-      const answers = Object.values(disclosureResponses).map((value) => text(snapshot(value).answer));
-      if (answers.length < 20 || answers.some((answer) => !["yes", "no", "unsure"].includes(answer))) return response(400, { success: false, error: "Answer every property disclosure question before signing." });
+      const answers = disclosureQuestionKeys.map((key) => text(snapshot(disclosureResponses[key]).answer));
+      if (answers.some((answer) => !["yes", "no", "unsure"].includes(answer))) return response(400, { success: false, error: "Answer every property disclosure question before signing." });
     }
     if (selectedDocuments.includes("fica") && (!text(fica.idNumber) || !text(fica.residentialAddress))) return response(400, { success: false, error: "Add your ID or passport number and residential or registered address before signing the FICA declaration." });
 
@@ -226,18 +251,37 @@ Deno.serve(async (req) => {
     };
     const { data: onboarding } = await admin.from("private_listing_seller_onboarding").select("form_data").eq("private_listing_id", session.private_listing_id).maybeSingle();
     const formData = { ...snapshot(onboarding?.form_data) };
+    const responseRecordedAt = new Date().toISOString();
     if (selectedDocuments.includes("disclosure")) {
       formData.propertyDisclosure = disclosure;
       formData.property_disclosure = disclosure;
+      const declarations = snapshot(formData.propertyDisclosureDeclarations);
+      const declaration = { signerName: text(session.signer_name), signerEmail: email(session.signer_email), responses: disclosureResponses, completedAt: responseRecordedAt };
+      formData.propertyDisclosureDeclarations = { ...declarations, [text(session.id)]: declaration };
+      formData.property_disclosure_declarations = formData.propertyDisclosureDeclarations;
     }
     if (selectedDocuments.includes("fica")) {
-      formData.idNumber = text(fica.idNumber);
-      formData.sellerIdNumber = text(fica.idNumber);
-      formData.residentialAddress = text(fica.residentialAddress);
-      formData.residential_address = text(fica.residentialAddress);
-      formData.incomeTaxNumber = text(fica.incomeTaxNumber);
+      const declarations = snapshot(formData.ficaDeclarations);
+      const declaration = { signerName: text(session.signer_name), signerEmail: email(session.signer_email), idNumber: text(fica.idNumber), residentialAddress: text(fica.residentialAddress), incomeTaxNumber: text(fica.incomeTaxNumber), completedAt: responseRecordedAt };
+      formData.ficaDeclarations = { ...declarations, [text(session.id)]: declaration };
+      formData.fica_declarations = formData.ficaDeclarations;
+      // Preserve the existing single-seller aliases for all downstream users,
+      // but do not let a later co-owner overwrite the other owner's details.
+      const signingPackSigners = Array.isArray(existingPack.signers) ? existingPack.signers : [];
+      if (signingPackSigners.length <= 1) {
+        formData.idNumber = declaration.idNumber;
+        formData.sellerIdNumber = declaration.idNumber;
+        formData.residentialAddress = declaration.residentialAddress;
+        formData.residential_address = declaration.residentialAddress;
+        formData.incomeTaxNumber = declaration.incomeTaxNumber;
+      }
     }
-    await admin.from("private_listing_seller_onboarding").update({ form_data: formData, updated_at: new Date().toISOString() }).eq("private_listing_id", session.private_listing_id);
+    const { data: savedOnboarding, error: onboardingError } = await admin.from("private_listing_seller_onboarding")
+      .update({ form_data: formData, updated_at: new Date().toISOString() })
+      .eq("private_listing_id", session.private_listing_id)
+      .select("id")
+      .maybeSingle();
+    if (onboardingError || !savedOnboarding) return response(500, { success: false, error: onboardingError?.message || "Seller details could not be saved. Please try again." });
     const completedSession = { ...session, signing_pack_snapshot: completedPack };
     const generatedDocuments = Object.fromEntries(selectedDocuments.map((documentKey: string) => [documentKey, signedPackDocumentHtml(documentKey, completedSession, signedName, signature)]));
     const { data: completion, error: completionError } = await admin.rpc("complete_private_listing_seller_signing_pack", {

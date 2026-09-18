@@ -3668,10 +3668,12 @@ function AgentListingDetail() {
   const [sellerProfileBuilderSaving, setSellerProfileBuilderSaving] = useState(false)
   const [sellerProfileBuilderDraft, setSellerProfileBuilderDraft] = useState(() => createListingSellerProfileBuilderDraft())
   const [sellerProfileBuilderStep, setSellerProfileBuilderStep] = useState(1)
+  const [sellerProfileBuilderReturnToDocuments, setSellerProfileBuilderReturnToDocuments] = useState(false)
   const sellerSetupPromptedListingIdRef = useRef('')
   const [sellerSectionEditorKey, setSellerSectionEditorKey] = useState('')
   const [sellerSectionDraft, setSellerSectionDraft] = useState({})
   const [sellerSectionSaving, setSellerSectionSaving] = useState(false)
+  const [sellerSectionReturnToDocuments, setSellerSectionReturnToDocuments] = useState(false)
   const [sellerDocumentUploadKey, setSellerDocumentUploadKey] = useState('')
   const [buyerOtpUploadKey, setBuyerOtpUploadKey] = useState('')
   const [sellerPackHandoffAction, setSellerPackHandoffAction] = useState('')
@@ -6639,6 +6641,7 @@ function AgentListingDetail() {
       return
     }
     const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
+    const mandateType = marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType || 'sole'
     try {
       setSellerDocumentSendSaving(true)
       if (sellerDocumentSendSelection.mandate) {
@@ -6646,10 +6649,10 @@ function AgentListingDetail() {
         if (!commissionSaved) return
       }
       const existingForm = getListingSellerFormData(listingRecord)
-      await updatePrivateListingOnboardingFormData(listingRecord.id, {
+      const nextFormData = {
         ...existingForm,
         sellerDocumentSendSelection: sellerDocumentSendSelection,
-        mandateType: marketingDraft.mandateType || listingRecord?.mandateType || 'sole',
+        mandateType,
         commissionBasis,
         commission_basis: commissionBasis,
         commissionPercentage: commissionBasis === 'percentage' ? String(commissionDraft.percentage || '').trim() : '',
@@ -6659,7 +6662,20 @@ function AgentListingDetail() {
         commission_amount: commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
         vatHandling: String(commissionDraft.vatHandling || '').trim(),
         sellerDocumentSendSelectionUpdatedAt: new Date().toISOString(),
+      }
+      const listingPatch = { mandateType }
+      await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
+      await updatePrivateListingOnboardingFormData(listingRecord.id, {
+        ...nextFormData,
       }, { status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started', syncRequirements: false })
+      patchListing((row) => ({
+        ...row,
+        ...listingPatch,
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          formData: nextFormData,
+        },
+      }))
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
         action: 'issue',
         listingId: listingRecord.id,
@@ -6670,7 +6686,7 @@ function AgentListingDetail() {
         selectedDocuments: selected,
         mandateSnapshot: {
           propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '',
-          mandateType: marketingDraft.mandateType || listingRecord?.mandateType || 'sole',
+          mandateType,
           askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
           commissionBasis,
           commissionPercentage: commissionBasis === 'percentage' ? commissionDraft.percentage : '',
@@ -6808,7 +6824,7 @@ function AgentListingDetail() {
       const selectedDocuments = ['mandate']
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
         action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, signers: signingPlan.recipients, agentName, selectedDocuments,
-        mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage', commissionPercentage: commissionDraft.basis === 'fixed' ? '' : commissionDraft.percentage, commissionAmount: commissionDraft.basis === 'fixed' ? commissionDraft.amount : '', vatHandling: commissionDraft.vatHandling, branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace) },
+        mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', mandateType: marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType || 'sole', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage', commissionPercentage: commissionDraft.basis === 'fixed' ? '' : commissionDraft.percentage, commissionAmount: commissionDraft.basis === 'fixed' ? commissionDraft.amount : '', vatHandling: commissionDraft.vatHandling, branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace) },
         signingPack: buildSellerSigningPackSnapshot(selectedDocuments),
       } })
       if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Mandate signing email could not be sent.')
@@ -9273,6 +9289,17 @@ function AgentListingDetail() {
     setDetailMessage(message)
   }
 
+  function returnToSellerDocumentSend() {
+    setSellerProfileBuilderOpen(false)
+    setSellerProfileBuilderReturnToDocuments(false)
+    setSellerSectionEditorKey('')
+    setSellerSectionDraft({})
+    setSellerSectionReturnToDocuments(false)
+    setSellerDocumentSendStep(1)
+    setSellerDocumentSendOpen(true)
+    setDetailError('')
+  }
+
   function advanceSellerProfileBuilder() {
     if (sellerProfileBuilderStep === 1 && !sellerProfileBuilderDraft.branch) {
       setDetailError('Choose who owns this property before continuing.')
@@ -9476,10 +9503,16 @@ function AgentListingDetail() {
         // retain the generated rows as their local persisted requirement set.
         applySellerProfileSnapshot({ syncedRequirements: projectedDocumentRequirements })
       }
+      const returnToDocuments = sellerProfileBuilderReturnToDocuments
       setSellerProfileBuilderOpen(false)
+      setSellerProfileBuilderReturnToDocuments(false)
       setDetailMessage(remoteListingMissing
         ? 'Seller profile captured locally. Document requirements have been recalculated for this imported listing.'
         : 'Seller profile captured. Document requirements have been recalculated from the saved seller model.')
+      if (returnToDocuments) {
+        setSellerDocumentSendStep(1)
+        setSellerDocumentSendOpen(true)
+      }
     } catch (error) {
       setDetailError(error?.message || 'Unable to save the seller profile.')
     } finally {
@@ -9841,11 +9874,17 @@ function AgentListingDetail() {
         },
         updatedAt: now,
       }))
+      const returnToDocuments = sellerSectionReturnToDocuments
       setSellerSectionEditorKey('')
       setSellerSectionDraft({})
+      setSellerSectionReturnToDocuments(false)
       setDetailMessage(`${SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey)?.title || 'Seller details'} saved.`)
       if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
         await loadListingData()
+      }
+      if (returnToDocuments) {
+        setSellerDocumentSendStep(1)
+        setSellerDocumentSendOpen(true)
       }
     } catch (error) {
       setDetailError(error?.message || 'Unable to save seller details.')
@@ -11756,7 +11795,7 @@ function AgentListingDetail() {
             return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
               <p className="font-semibold">{mandateReadiness.ready ? 'Mandate ready to prepare' : 'Mandate details still needed'}</p>
               <p className="mt-1">{mandateReadiness.summary}</p>
-              {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerDocumentSendOpen(false); openSellerWorkspaceSection('seller', 'Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
+              {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerProfileBuilderReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerProfileBuilder('Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerSectionReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
             </div>
           })()}
           {sellerDocumentSendStep === 1 ? <><div className="space-y-3">{getSellerSigningDocumentOptions().documents.map((document) => (
@@ -11880,7 +11919,7 @@ function AgentListingDetail() {
       />
       <Modal
         open={sellerProfileBuilderOpen}
-        onClose={sellerProfileBuilderSaving ? undefined : () => setSellerProfileBuilderOpen(false)}
+        onClose={sellerProfileBuilderSaving ? undefined : () => { setSellerProfileBuilderOpen(false); setSellerProfileBuilderReturnToDocuments(false) }}
         title={sellerOwnershipUnidentified ? 'Capture Owner Details' : 'Complete Seller Profile'}
         subtitle={sellerOwnershipUnidentified
           ? 'Start by selecting who owns this property. Arch9 will then request only the documents that apply to that owner.'
@@ -11888,7 +11927,8 @@ function AgentListingDetail() {
         className="max-w-5xl"
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <Button type="button" variant="secondary" onClick={() => setSellerProfileBuilderOpen(false)} disabled={sellerProfileBuilderSaving}>
+            {sellerProfileBuilderReturnToDocuments ? <Button type="button" variant="secondary" onClick={returnToSellerDocumentSend} disabled={sellerProfileBuilderSaving}><ArrowLeft size={16} /> Back to documents</Button> : null}
+            <Button type="button" variant="secondary" onClick={() => { setSellerProfileBuilderOpen(false); setSellerProfileBuilderReturnToDocuments(false) }} disabled={sellerProfileBuilderSaving}>
               Cancel
             </Button>
             {sellerProfileBuilderStep > 1 ? <Button type="button" variant="secondary" onClick={() => setSellerProfileBuilderStep((step) => step - 1)} disabled={sellerProfileBuilderSaving}>Back</Button> : null}
@@ -12319,13 +12359,14 @@ function AgentListingDetail() {
       </Modal>
       <Modal
         open={Boolean(activeSellerSectionEditor)}
-        onClose={sellerSectionSaving ? undefined : () => setSellerSectionEditorKey('')}
+        onClose={sellerSectionSaving ? undefined : () => { setSellerSectionEditorKey(''); setSellerSectionReturnToDocuments(false) }}
         title={activeSellerSectionEditor ? `Edit ${activeSellerSectionEditor.title}` : 'Edit Seller Details'}
         subtitle="Update the seller onboarding details on behalf of the seller."
         className="max-w-2xl"
         footer={
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <Button type="button" variant="secondary" onClick={() => setSellerSectionEditorKey('')} disabled={sellerSectionSaving}>
+            {sellerSectionReturnToDocuments ? <Button type="button" variant="secondary" onClick={returnToSellerDocumentSend} disabled={sellerSectionSaving}><ArrowLeft size={16} /> Back to documents</Button> : null}
+            <Button type="button" variant="secondary" onClick={() => { setSellerSectionEditorKey(''); setSellerSectionReturnToDocuments(false) }} disabled={sellerSectionSaving}>
               Cancel
             </Button>
             <Button type="submit" form="seller-section-edit-form" disabled={sellerSectionSaving}>

@@ -12,7 +12,7 @@ const appRoot = resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(readFileSync(resolve(appRoot, 'package.json'), 'utf8'))
 const agencyPipelineSource = readFileSync(resolve(appRoot, 'src/pages/agency/AgencyPipelinePage.jsx'), 'utf8')
 const sellerPackStoragePolicyMigration = readFileSync(
-  resolve(appRoot, '../supabase/migrations/20260817204613_kingstons_seller_pack_storage_policy_fix.sql'),
+  resolve(appRoot, '../supabase/migrations/20260817204807_kingstons_seller_pack_storage_policy_fix.sql'),
   'utf8',
 )
 
