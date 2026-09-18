@@ -5283,12 +5283,36 @@ function renderActiveTransactionsBlock({
 
   if (isPrincipalAgentView) {
     return (
-      <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" />}>
-        <PrincipalDashboard
-          agencyId={currentOrganisationId}
-          canViewAllTransactions={isPrincipalAgentView}
+      <section className="flex flex-col">
+        <Suspense fallback={<LoadingSkeleton lines={8} className="rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]" />}>
+          <PrincipalDashboard
+            agencyId={currentOrganisationId}
+            canViewAllTransactions={isPrincipalAgentView}
+          />
+        </Suspense>
+
+        <AgentDigitalCardPanel
+          loading={agentDigitalCardState.loading}
+          error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
+          link={agentDigitalCardLink}
+          agent={agentDigitalCardAgent}
+          organisationName={agentDigitalCardOrganisationName}
+          shareUrl={agentDigitalCardShareUrl}
+          urls={agentDigitalCardUrls}
+          insights={{
+            ...(agentDigitalCardState.insights || {}),
+            missingSchema: agentDigitalCardState.insightsMissingSchema,
+          }}
+          feedback={agentDigitalCardFeedback}
+          busyAction={agentDigitalCardBusyAction}
+          onCopy={copyAgentDigitalCardText}
+          onOpenPreview={openAgentDigitalCardPreview}
+          onShareWhatsApp={shareAgentDigitalCardWhatsApp}
+          onDownloadVcard={downloadAgentDigitalCardVcard}
+          onDownloadQr={downloadAgentDigitalCardQr}
+          onManageCard={() => navigate('/settings/lead-capture')}
         />
-      </Suspense>
+      </section>
     )
   }
 
