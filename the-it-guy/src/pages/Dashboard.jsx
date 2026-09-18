@@ -5776,30 +5776,6 @@ function renderActiveTransactionsBlock({
               )}
 
               {!isPrincipalAgentView ? (
-                <AgentDigitalCardPanel
-                  loading={agentDigitalCardState.loading}
-                  error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
-                  link={agentDigitalCardLink}
-                  agent={agentDigitalCardAgent}
-                  organisationName={agentDigitalCardOrganisationName}
-                  shareUrl={agentDigitalCardShareUrl}
-                  urls={agentDigitalCardUrls}
-                  insights={{
-                    ...(agentDigitalCardState.insights || {}),
-                    missingSchema: agentDigitalCardState.insightsMissingSchema,
-                  }}
-                  feedback={agentDigitalCardFeedback}
-                  busyAction={agentDigitalCardBusyAction}
-                  onCopy={copyAgentDigitalCardText}
-                  onOpenPreview={openAgentDigitalCardPreview}
-                  onShareWhatsApp={shareAgentDigitalCardWhatsApp}
-                  onDownloadVcard={downloadAgentDigitalCardVcard}
-                  onDownloadQr={downloadAgentDigitalCardQr}
-                  onManageCard={() => navigate('/settings/lead-capture')}
-                />
-              ) : null}
-
-              {!isPrincipalAgentView ? (
               <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                 <div className="mb-6">
                   <h3 className="text-[1.15rem] font-semibold tracking-[-0.03em] text-[#142132]">Performance Analytics</h3>
@@ -6339,6 +6315,30 @@ function renderActiveTransactionsBlock({
                   </article>
                 </div>
               </section>
+              ) : null}
+
+              {!isPrincipalAgentView ? (
+                <AgentDigitalCardPanel
+                  loading={agentDigitalCardState.loading}
+                  error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
+                  link={agentDigitalCardLink}
+                  agent={agentDigitalCardAgent}
+                  organisationName={agentDigitalCardOrganisationName}
+                  shareUrl={agentDigitalCardShareUrl}
+                  urls={agentDigitalCardUrls}
+                  insights={{
+                    ...(agentDigitalCardState.insights || {}),
+                    missingSchema: agentDigitalCardState.insightsMissingSchema,
+                  }}
+                  feedback={agentDigitalCardFeedback}
+                  busyAction={agentDigitalCardBusyAction}
+                  onCopy={copyAgentDigitalCardText}
+                  onOpenPreview={openAgentDigitalCardPreview}
+                  onShareWhatsApp={shareAgentDigitalCardWhatsApp}
+                  onDownloadVcard={downloadAgentDigitalCardVcard}
+                  onDownloadQr={downloadAgentDigitalCardQr}
+                  onManageCard={() => navigate('/settings/lead-capture')}
+                />
               ) : null}
 
               {isPrincipalAgentView ? (
