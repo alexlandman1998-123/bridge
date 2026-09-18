@@ -12,29 +12,46 @@ import {
 
 const RECIPES = [
   [
+    "package_basic_v1",
+    "Basic package - exact query",
+    "The complete Basic report query. Validate this before making Basic available.",
+    true,
+  ],
+  [
+    "package_full_v1",
+    "Full package - exact query",
+    "The complete Full report query, including controlled transfer and finance indicators.",
+    true,
+  ],
+  [
     "snapshot_core",
     "1. Minimal property snapshot",
     "Core parcel, address and locality fields.",
+    false,
   ],
   [
     "snapshot_valuation",
     "2. Snapshot + municipal valuation",
     "Core snapshot plus valuation and zoning.",
+    false,
   ],
   [
     "owner_current_transfer",
     "3. Current-owner signal",
     "Current transfer marker and minimum ownership fields.",
+    false,
   ],
   [
     "transaction_history_recent",
     "4. Recent transaction history",
     "Three controlled transfer records.",
+    false,
   ],
   [
     "finance_current_bonds",
     "5. Current-bond indicators",
     "One transfer and up to five bond records.",
+    false,
   ],
 ];
 
@@ -121,7 +138,7 @@ export default function KnowledgeFactoryCostMatrixPanel({ organisationId }) {
             <Calculator className="mt-0.5 text-[#1769dc]" size={20} />
             <div>
               <h3 className="font-semibold text-slate-900">
-                Five-case canvassing cost matrix
+                Canvassing cost-validation matrix
               </h3>
               <p className="mt-1 text-sm leading-6 text-slate-500">
                 Each action sends a supplier cost-validation query only. It does
@@ -175,8 +192,8 @@ export default function KnowledgeFactoryCostMatrixPanel({ organisationId }) {
             {state.error}
           </p>
         ) : null}
-        <div className="mt-5 grid gap-3 lg:grid-cols-5">
-          {RECIPES.map(([id, title, description]) => {
+        <div className="mt-5 grid gap-3 lg:grid-cols-4">
+          {RECIPES.map(([id, title, description, isPackage]) => {
             const result = current.get(id);
             return (
               <article
@@ -184,6 +201,11 @@ export default function KnowledgeFactoryCostMatrixPanel({ organisationId }) {
                 className="flex min-h-64 flex-col rounded-xl border border-slate-200 p-4"
               >
                 <p className="text-sm font-semibold text-slate-900">{title}</p>
+                {isPackage ? (
+                  <span className="mt-2 w-fit rounded-full bg-blue-50 px-2 py-1 text-[11px] font-semibold text-blue-700">
+                    Required before release
+                  </span>
+                ) : null}
                 <p className="mt-2 text-xs leading-5 text-slate-500">
                   {description}
                 </p>

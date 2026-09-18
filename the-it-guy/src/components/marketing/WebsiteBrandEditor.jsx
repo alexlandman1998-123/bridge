@@ -6,6 +6,7 @@ const EMPTY_BRAND = {
   name: '',
   logoLightUrl: '',
   logoDarkUrl: '',
+  logoIconUrl: '',
   primaryColor: '#125b50',
   secondaryColor: '#e7bc71',
   accentColor: '#e7bc71',

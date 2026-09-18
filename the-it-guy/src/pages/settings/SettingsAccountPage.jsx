@@ -1,4 +1,4 @@
-import { BadgeCheck, Camera, CheckCircle2, Circle, KeyRound } from 'lucide-react'
+import { BadgeCheck, Camera, CheckCircle2, Circle, KeyRound, ShieldCheck } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import Field from '../../components/ui/Field'
 import { useWorkspace } from '../../context/WorkspaceContext'
@@ -195,6 +195,10 @@ export default function SettingsAccountPage({ section = 'profile' }) {
       setPasswordError('Enter a new password.')
       return
     }
+    if (passwordForm.password.length < 8) {
+      setPasswordError('Use at least 8 characters for your new password.')
+      return
+    }
     if (passwordForm.password !== passwordForm.confirmPassword) {
       setPasswordError('Passwords do not match.')
       return
@@ -230,25 +234,41 @@ export default function SettingsAccountPage({ section = 'profile' }) {
 
   return (
     <div className={settingsPageClass}>
-      <SettingsPageHeader
-        kicker="Personal"
-        title={showSecurity ? 'Security' : 'Profile'}
-        description={showSecurity ? 'Update your account password.' : 'Manage the personal details your team uses to identify and contact you.'}
-      />
+      {showSecurity ? (
+        <div>
+          <p className="text-sm font-medium text-[#718198]">Settings / Security</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-[#142132]">Security</h1>
+          <p className="mt-1 text-base text-[#6b7d93]">Keep your Arch9 account secure with a strong, unique password.</p>
+        </div>
+      ) : (
+        <SettingsPageHeader
+          kicker="Personal"
+          title="Profile"
+          description="Manage the personal details your team uses to identify and contact you."
+        />
+      )}
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {message ? <SettingsBanner tone="success">{message}</SettingsBanner> : null}
 
       {showSecurity ? (
-        <form onSubmit={handlePasswordSave} className="max-w-[920px]">
-          <ProfileCard title="Password" description="Choose a strong password for your workspace account.">
-            <div className="grid gap-4 md:grid-cols-2">
+        <form onSubmit={handlePasswordSave} className="max-w-2xl">
+          <ProfileCard title="Change password" description="Use a password you do not use on any other service.">
+            <div className="rounded-[16px] border border-[#dfe8f1] bg-[#f8fbfd] p-4 sm:p-5">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#e8f6ee] text-[#0f7f4f]"><ShieldCheck size={18} /></span>
+                <div><p className="text-sm font-semibold text-[#17233a]">Password requirements</p><p className="mt-1 text-sm leading-6 text-[#60758d]">Use at least 8 characters and combine letters, numbers, and symbols.</p></div>
+              </div>
+            </div>
+            <div className="mt-6 grid gap-5">
               <ProfileTextField label="New password" id="security-new-password">
                 <Field
                   id="security-new-password"
                   type="password"
+                  minLength={8}
                   className={PROFILE_INPUT_CLASS}
                   value={passwordForm.password}
+                  autoComplete="new-password"
                   onChange={(event) => setPasswordForm((previous) => ({ ...previous, password: event.target.value }))}
                 />
               </ProfileTextField>
@@ -256,8 +276,10 @@ export default function SettingsAccountPage({ section = 'profile' }) {
                 <Field
                   id="security-confirm-password"
                   type="password"
+                  minLength={8}
                   className={PROFILE_INPUT_CLASS}
                   value={passwordForm.confirmPassword}
+                  autoComplete="new-password"
                   onChange={(event) => setPasswordForm((previous) => ({ ...previous, confirmPassword: event.target.value }))}
                 />
               </ProfileTextField>

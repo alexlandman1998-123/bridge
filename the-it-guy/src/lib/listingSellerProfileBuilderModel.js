@@ -5,6 +5,7 @@ import {
   normalizePersonCollectionForSellerProfile,
 } from './sellerProfileCaptureModel.js'
 import { normalizeSellerEntityType } from './sellerEntityModel.js'
+import { isPropertyDisclosureDigitallyComplete } from './propertyDisclosure.js'
 import {
   LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION as SELLER_REQUIREMENT_RETIREMENT_VERSION,
   getSellerRequirementProfile,
@@ -253,6 +254,7 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     email: normalizeText(ownerFallback.email).toLowerCase(),
     phone: normalizeText(ownerFallback.phone),
     idNumber: normalizeText(ownerFallback.idNumber),
+    residentialAddress: normalizeText(pickFirst(form.residentialAddress, form.residential_address, form.physicalAddress, sellerFacts.residential_address)),
     alternativeContact: normalizeText(pickFirst(form.alternativeContact, form.alternateContact, form.secondaryPhone, form.alternativePhone)),
     preferredContactMethod: normalizeText(pickFirst(form.preferredContactMethod, form.contactPreference)),
     maritalStatus: normalizeText(pickFirst(form.maritalStatus, form.marital_status, sellerFacts.marital_status)),
@@ -397,6 +399,8 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     contactPreference: normalizeText(draft.preferredContactMethod),
     idNumber: normalizeText(draft.idNumber),
     sellerIdNumber: normalizeText(draft.idNumber),
+    residentialAddress: normalizeText(draft.residentialAddress),
+    residential_address: normalizeText(draft.residentialAddress),
     maritalStatus,
     maritalRegime,
     marital_status: maritalStatus,
@@ -513,6 +517,124 @@ export function validateListingSellerProfileBuilderDraft(draft = {}) {
     errors.push('Capture the foreign owner country or jurisdiction.')
   }
   return errors
+}
+
+function isEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeText(value))
+}
+
+function personName(person = {}) {
+  return normalizeText(person.fullName || person.name || [person.firstName, person.surname || person.lastName].filter(Boolean).join(' '))
+}
+
+/**
+ * The direct-listing minimum required to prepare a mandate.  This deliberately
+ * does not require FICA evidence or a completed disclosure: those are separate
+ * documents that can be requested later in the seller-document flow.
+ */
+export function buildListingMandateReadiness(listing = {}, commission = {}) {
+  const form = getListingSellerFormData(listing)
+  const branch = resolveListingSellerProfileBranch(form, listing)
+  const missing = []
+  const legalType = branch || 'not_identified'
+  const require = (condition, message) => { if (!condition) missing.push(message) }
+  const contactName = normalizeText(form.contactName || form.sellerName || form.fullName || [form.sellerFirstName || form.firstName, form.sellerSurname || form.lastName].filter(Boolean).join(' '))
+  const contactEmail = normalizeText(form.sellerEmail || form.email)
+  const owners = normalizePersonCollectionForSellerProfile(form.multipleOwners || form.owners || [], null, 'Owner')
+
+  require(Boolean(branch), 'Choose the ownership type.')
+  if (branch === 'multiple_owners') {
+    require(owners.length > 0, 'Add every property owner.')
+    owners.forEach((owner, index) => {
+      require(Boolean(personName(owner)), `Add owner ${index + 1}'s full name.`)
+      require(isEmail(owner.email), `Add a valid email for owner ${index + 1}.`)
+    })
+  } else if (branch === 'company' || branch === 'foreign_company') {
+    require(Boolean(normalizeText(form.companyName)), 'Add the company or CC name.')
+    require(Boolean(normalizeText(form.companyRegistrationNumber)), 'Add the company or CC registration number.')
+    require(Boolean(normalizeText(form.authorisedSignatoryName)), 'Add the authorised signatory.')
+    require(Boolean(normalizeText(form.authorisedSignatoryCapacity)), 'Add the signatory capacity.')
+    require(isEmail(form.authorisedSignatoryEmail), 'Add a valid authorised-signatory email.')
+  } else if (branch === 'trust' || branch === 'foreign_trust') {
+    require(Boolean(normalizeText(form.trustName)), 'Add the trust name.')
+    require(Boolean(normalizeText(form.trustRegistrationNumber)), 'Add the trust registration number.')
+    require(Boolean(normalizeText(form.authorisedTrusteeName)), 'Add the authorised trustee.')
+    require(Boolean(normalizeText(form.authorisedTrusteeCapacity)), 'Add the trustee capacity.')
+    require(isEmail(form.authorisedTrusteeEmail), 'Add a valid authorised-trustee email.')
+  } else if (branch === 'deceased_estate') {
+    require(Boolean(normalizeText(form.deceasedEstateName || form.estateName)), 'Add the estate name.')
+    require(Boolean(normalizeText(form.estateReferenceNumber)), 'Add the estate reference number.')
+    require(Boolean(normalizeText(form.executorName)), 'Add the executor.')
+    require(isEmail(form.executorEmail), 'Add a valid executor email.')
+  } else if (branch === 'other') {
+    require(Boolean(normalizeText(form.otherEntityName)), 'Add the legal entity name.')
+    require(Boolean(contactName), 'Add the authorised contact name.')
+    require(isEmail(contactEmail), 'Add a valid authorised-contact email.')
+  } else {
+    require(Boolean(contactName), 'Add the seller’s full name.')
+    require(isEmail(contactEmail), 'Add a valid seller email.')
+  }
+
+  require(Boolean(normalizeText(form.propertyAddress || form.addressLine1 || listing.propertyAddress || listing.addressLine1)), 'Add the property address.')
+  require(Boolean(normalizeText(form.mandateType || listing.mandateType)), 'Choose the mandate type.')
+  require(Number(form.askingPrice || form.price || listing.askingPrice) > 0, 'Add the asking price.')
+  require(Boolean(normalizeText(form.mandateStartDate || listing.mandateStartDate)), 'Add the mandate start date.')
+  require(Boolean(normalizeText(form.expiryDate || form.mandateEndDate || listing.expiryDate)), 'Add the mandate expiry date.')
+
+  const basis = normalizeText(commission.basis)
+  const hasCommission = basis === 'fixed' ? Number(commission.amount) > 0 : Number(commission.percentage) > 0
+  require(hasCommission, `Add the ${basis === 'fixed' ? 'fixed Rand commission' : 'commission percentage'}.`)
+  require(Boolean(normalizeText(commission.vatHandling)), 'Choose the VAT treatment.')
+
+  return {
+    version: 'listing_mandate_readiness_v1',
+    legalType,
+    ready: missing.length === 0,
+    missing,
+    summary: missing.length === 0 ? 'Ready to prepare the mandate.' : `${missing.length} item${missing.length === 1 ? '' : 's'} still needed before the mandate can be prepared.`,
+  }
+}
+
+export function buildListingSellerDocumentReadiness(listing = {}, commission = {}) {
+  const form = getListingSellerFormData(listing)
+  const branch = resolveListingSellerProfileBranch(form, listing)
+  const mandate = buildListingMandateReadiness(listing, commission)
+  const disclosureComplete = isPropertyDisclosureDigitallyComplete(form.propertyDisclosure || form.property_disclosure || {})
+  const ficaMissing = []
+  const require = (condition, message) => { if (!condition) ficaMissing.push(message) }
+  const residentialAddress = normalizeText(form.residentialAddress || form.residential_address || form.physicalAddress)
+  const owners = normalizePersonCollectionForSellerProfile(form.multipleOwners || form.owners || [], null, 'Owner')
+
+  require(Boolean(branch), 'Choose the ownership type.')
+  if (branch === 'multiple_owners') {
+    require(owners.length > 0, 'Add every property owner.')
+    owners.forEach((owner, index) => {
+      require(Boolean(normalizeText(owner.idNumber)), `Add owner ${index + 1}'s ID or passport number.`)
+      require(Boolean(normalizeText(owner.residentialAddress || owner.physicalAddress)), `Add owner ${index + 1}'s residential address.`)
+    })
+  } else if (branch === 'company' || branch === 'foreign_company') {
+    require(Boolean(normalizeText(form.companyName)), 'Add the company or CC name.')
+    require(Boolean(normalizeText(form.companyRegistrationNumber)), 'Add the company or CC registration number.')
+    require(Boolean(normalizeText(form.companyRegisteredAddress)), 'Add the company registered address.')
+  } else if (branch === 'trust' || branch === 'foreign_trust') {
+    require(Boolean(normalizeText(form.trustName)), 'Add the trust name.')
+    require(Boolean(normalizeText(form.trustRegistrationNumber)), 'Add the trust registration number.')
+    require(Boolean(normalizeText(form.trustRegisteredAddress)), 'Add the trust registered address.')
+  } else if (branch === 'deceased_estate') {
+    require(Boolean(normalizeText(form.deceasedEstateName || form.estateName)), 'Add the estate name.')
+    require(Boolean(normalizeText(form.estateReferenceNumber)), 'Add the estate reference number.')
+  } else {
+    require(Boolean(normalizeText(form.idNumber || form.sellerIdNumber || form.passportNumber)), 'Add the seller ID or passport number.')
+    require(Boolean(residentialAddress), 'Add the seller residential address.')
+  }
+  require(Boolean(normalizeText(form.propertyAddress || form.addressLine1 || listing.propertyAddress || listing.addressLine1)), 'Add the property address.')
+
+  const documents = [
+    { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the saved mandate, commission and VAT details.', ready: mandate.ready, missing: mandate.missing },
+    { key: 'disclosure', title: 'Property disclosure form', copy: 'Uses the completed property-condition disclosure answers.', ready: disclosureComplete, missing: disclosureComplete ? [] : ['Complete the property disclosure questionnaire.'] },
+    { key: 'fica', title: 'Seller FICA declaration', copy: 'Uses the captured seller, entity and property details.', ready: ficaMissing.length === 0, missing: ficaMissing },
+  ]
+  return { version: 'listing_seller_document_readiness_v1', documents, byKey: Object.fromEntries(documents.map((document) => [document.key, document])) }
 }
 
 export function buildListingSellerProfileCapturePayload(draft = {}, listing = {}, options = {}) {
@@ -666,6 +788,8 @@ export default {
   addListingSellerProfileDraftPerson,
   buildListingSellerProfileCapturePayload,
   buildListingSellerProfileFormPatch,
+  buildListingMandateReadiness,
+  buildListingSellerDocumentReadiness,
   buildListingSellerProfileRequirementProjection,
   createListingSellerProfileBuilderDraft,
   isListingSellerOwnershipUnidentified,

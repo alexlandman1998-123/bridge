@@ -94,6 +94,8 @@ function defaultPolicy() {
   return {
     allowed_product_ids: ["basic_owner_lookup", "full_canvassing_report"],
     per_report_credit_cap: 100_000,
+    basic_report_credit_cap: 100_000,
+    full_report_credit_cap: 100_000,
     monthly_credit_cap: 1_000_000,
     monthly_report_cap: 100,
     daily_report_cap_per_user: 10,
@@ -210,7 +212,7 @@ export default async function handler(request, response) {
       const { data, error } = await db
         .from("knowledge_factory_package_commercial_policies")
         .select(
-          "allowed_product_ids, per_report_credit_cap, monthly_credit_cap, monthly_report_cap, daily_report_cap_per_user, rollout_stage, supplier_credits_per_cent, created_at, updated_at",
+          "allowed_product_ids, per_report_credit_cap, basic_report_credit_cap, full_report_credit_cap, monthly_credit_cap, monthly_report_cap, daily_report_cap_per_user, rollout_stage, supplier_credits_per_cent, created_at, updated_at",
         )
         .eq("organisation_id", organisationId)
         .maybeSingle();
@@ -232,6 +234,14 @@ export default async function handler(request, response) {
       per_report_credit_cap: wholeNumber(
         input.perReportCreditCap,
         "Per-report credit cap",
+      ),
+      basic_report_credit_cap: wholeNumber(
+        input.basicReportCreditCap,
+        "Basic report credit cap",
+      ),
+      full_report_credit_cap: wholeNumber(
+        input.fullReportCreditCap,
+        "Full report credit cap",
       ),
       monthly_credit_cap: wholeNumber(
         input.monthlyCreditCap,

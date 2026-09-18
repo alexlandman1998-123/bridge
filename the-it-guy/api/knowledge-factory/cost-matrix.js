@@ -1,4 +1,8 @@
 import { createClient } from "@supabase/supabase-js";
+import {
+  PACKAGE_COST_RECIPE_IDS,
+  packageReportQuery,
+} from "./package-report-recipes.js";
 
 const ADMIN_ROLES = new Set([
   "principal",
@@ -33,6 +37,14 @@ const RECIPES = {
     label: "Current-bond indicators",
     query:
       "query CostMatrix($id: Int!) { propertyById(id: $id) { propertyId transfers(first: 1) { nodes { hasBond bonds(first: 5) { nodes { bondAmount bondDateRegister bondHolder bondInd bondNumber isCurrentBond purchaseAmount } } } } } }",
+  },
+  package_basic_v1: {
+    label: "Basic package - exact query",
+    query: packageReportQuery("basic_owner_lookup", "ValidateBasicPackage"),
+  },
+  package_full_v1: {
+    label: "Full package - exact query",
+    query: packageReportQuery("full_canvassing_report", "ValidateFullPackage"),
   },
 };
 let supplierSession = null;
@@ -296,6 +308,9 @@ export default async function handler(request, response) {
         recipes: Object.entries(RECIPES).map(([id, item]) => ({
           id,
           label: item.label,
+          packageProductId: Object.entries(PACKAGE_COST_RECIPE_IDS).find(
+            ([, recipeId]) => recipeId === id,
+          )?.[0] || null,
         })),
         items: data || [],
       });

@@ -899,7 +899,7 @@ function ProductionSetupSection({ domain, webhookUrl, dnsRows, onCopy }) {
   )
 }
 
-export default function SettingsLeadCapturePage() {
+export default function SettingsLeadCapturePage({ section = 'meta' }) {
   const { profile, role, currentWorkspace, workspaceType } = useWorkspace()
   const [context, setContext] = useState(null)
   const [users, setUsers] = useState([])
@@ -934,6 +934,8 @@ export default function SettingsLeadCapturePage() {
   const [metaImportFrom, setMetaImportFrom] = useState('')
   const [metaImportTo, setMetaImportTo] = useState('')
   const [metaImportPreview, setMetaImportPreview] = useState(null)
+  const showMeta = section === 'meta'
+  const showDigitalCards = section === 'digital-cards'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -1556,15 +1558,17 @@ export default function SettingsLeadCapturePage() {
   }
 
   if (loading) {
-    return <SettingsLoadingState label="Loading lead capture settings..." />
+    return <SettingsLoadingState label={showMeta ? 'Loading Meta Lead Ads...' : 'Loading digital cards...'} />
   }
 
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
-        kicker="Settings"
-        title="Lead Capture"
-        description="Direct property portal, Meta Lead Ads, and digital agent-card lead routing."
+        kicker="Integrations"
+        title={showMeta ? 'Meta Lead Ads' : 'Digital Cards'}
+        description={showMeta
+          ? 'Connect Facebook and Instagram forms, then route enquiries to the right team or agent.'
+          : 'Create shareable agent cards, QR codes, and enquiry links for your team.'}
         actions={
           <SecondaryButton icon={RefreshCw} onClick={load} disabled={saving}>Refresh</SecondaryButton>
         }
@@ -1573,17 +1577,30 @@ export default function SettingsLeadCapturePage() {
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {notice ? <SettingsBanner tone="success">{notice}</SettingsBanner> : null}
 
-      <section className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Active Agents" value={activeAgentCount} icon={UsersRound} />
-        <MetricCard label="Digital Cards" value={activeCardCount} icon={IdCard} />
-        <MetricCard label="Card Views" value={cardViewCount} icon={QrCode} />
-      </section>
+      {showDigitalCards ? (
+        <section className="grid gap-4 md:grid-cols-3">
+          <MetricCard label="Active Agents" value={activeAgentCount} icon={UsersRound} />
+          <MetricCard label="Digital Cards" value={activeCardCount} icon={IdCard} />
+          <MetricCard label="Card Views" value={cardViewCount} icon={QrCode} />
+        </section>
+      ) : null}
 
-      {canManage ? (
-        <SettingsSectionCard title="Facebook & Instagram Lead Ads" description="Authorise an agency Page, select forms, and route each form into this organisation's CRM.">
+      {showMeta && canManage ? (
+        <SettingsSectionCard title="Facebook & Instagram Lead Ads" description="Authorise a Meta Page, choose the forms you want to receive, and set their routing.">
           <div className="grid gap-3">
-            <div className="flex flex-wrap gap-2"><PrimaryButton onClick={authorizeMeta} disabled={saving || !organisationId}>Authorise Meta</PrimaryButton><a href="https://developers.facebook.com/tools/lead-ads-testing/" target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#d7e2ee] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#bfccdb] hover:bg-[#f7fafd]"><ExternalLink size={16} /> Test a Meta form</a></div>
-            <p className="text-sm text-[#5f7288]">Use Meta’s testing tool to create a test lead without running an ad. Then return to Arch9 and confirm its CRM routing.</p>
+            <div className="flex flex-col gap-4 rounded-[18px] border border-[#c9ddf3] bg-[linear-gradient(135deg,#f7fbff_0%,#edf7ff_100%)] p-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3">
+                <span className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] bg-white text-[#1877f2] shadow-sm"><Radio size={22} /></span>
+                <div>
+                  <p className="text-sm font-semibold text-[#162334]">{metaConnections.length ? 'Meta Page connected' : 'Connect a Meta Page'}</p>
+                  <p className="mt-1 text-sm text-[#5f7288]">{metaConnections.length ? 'Choose forms and routing below.' : 'Authorise Facebook and Instagram to receive lead forms.'}</p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <PrimaryButton onClick={authorizeMeta} disabled={saving || !organisationId}>{metaConnections.length ? 'Manage connection' : 'Connect Meta'}</PrimaryButton>
+                <a href="https://developers.facebook.com/tools/lead-ads-testing/" target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#d7e2ee] bg-white px-4 py-2 text-sm font-semibold text-[#35546c] transition hover:border-[#bfccdb] hover:bg-[#f7fafd]"><ExternalLink size={16} /> Test a form</a>
+              </div>
+            </div>
             {metaConnections.map((connection) => <div key={connection.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><strong>{connection.page_name}</strong><p className="text-sm text-[#6b7d93]">{connection.connection_status}{connection.last_error_message ? ` · ${connection.last_error_message}` : ''}</p></div>)}
             {metaPages.length ? <div className="grid gap-2">{metaPages.map((page) => <SecondaryButton key={page.id} onClick={() => chooseMetaPage(page.id)} disabled={saving}>Use {page.name}</SecondaryButton>)}</div> : null}
             {metaForms.length ? <div className="grid gap-2">{metaForms.map((form,index) => <div key={form.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4"><label><input type="checkbox" checked={Boolean(form.selected)} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,selected:event.target.checked}:item))} /> <span className="ml-2 font-semibold">{form.name}</span></label><div className="mt-3 flex flex-wrap gap-3"><label className="text-sm font-medium text-[#52677e]">Lead type <select className="ml-2 rounded border p-1" value={form.leadType||'buyer'} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,leadType:event.target.value}:item))}><option value="buyer">Buyer</option><option value="seller">Seller</option></select></label><label className="text-sm font-medium text-[#52677e]">Route to <select className="ml-2 rounded border p-1" value={form.assignedAgentId||''} onChange={(event)=>setMetaForms((current)=>current.map((item,i)=>i===index?{...item,assignedAgentId:event.target.value}:item))}><option value="">Agency queue</option>{users.filter(isActiveAgentUser).map((user)=><option key={getUserId(user)} value={getUserId(user)}>{getUserDisplayName(user)}</option>)}</select></label></div></div>)}<PrimaryButton onClick={enableMetaForms} disabled={saving || !metaForms.some((form)=>form.selected)}>Enable selected forms</PrimaryButton></div> : null}
@@ -1607,7 +1624,7 @@ export default function SettingsLeadCapturePage() {
         </SettingsSectionCard>
       ) : null}
 
-      {canManage ? (
+      {showDigitalCards && canManage ? (
         <SettingsSectionCard
           title="Agent Digital Cards"
           description="Create and manage public agent card links. Leads from these links route to the selected agent through the existing public intake flow."

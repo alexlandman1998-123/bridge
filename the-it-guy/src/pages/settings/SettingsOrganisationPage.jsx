@@ -2657,6 +2657,8 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
   const brandColours = branding.brandColours || {}
   const branchRows = getBranchRows(onboarding)
   const branchCount = branchRows.length
+  // Branches now live in their dedicated workspace, not Organisation Settings.
+  const showBranchSettings = false
   const managerCount = getManagerCount(branchRows)
   const userCount = getBranchUserCount(branchRows)
   const organisationName = getOrganisationDisplayName(form, onboarding)
@@ -2919,7 +2921,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
       <form className="space-y-6" onSubmit={handleSave}>
         {!showBrandingOnly ? (
           <section className="rounded-[24px] border border-[#dfe8f1] bg-white p-5 shadow-[0_18px_46px_rgba(15,23,42,0.06)] sm:p-6">
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px] xl:items-center">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)] xl:items-center">
               <div className="flex min-w-0 flex-col gap-5 sm:flex-row sm:items-center">
                 <LogoMark logoUrl={primaryLogo} name={organisationName} />
                 <div className="min-w-0 flex-1">
@@ -2966,7 +2968,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   </div>
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+              <div className="grid gap-3 sm:grid-cols-3">
                 <StatTile label="Users" value={userCount}>
                   <UsersRound className="h-4 w-4 text-[#0f7f4f]" strokeWidth={2} />
                 </StatTile>
@@ -2981,7 +2983,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
           </section>
         ) : null}
 
-        <div className="max-w-[920px] space-y-6">
+        <div className="w-full space-y-6">
           <div className="space-y-6">
             {!showBrandingOnly ? (
               <>
@@ -3074,25 +3076,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                     ) : null}
                   </div>
                 </OrganisationCard>
-
-                {!isBondOriginator ? (
-                  <OrganisationCard
-                    title="Business Lines"
-                    description="Select the operating lines this agency runs."
-                  >
-                    <div className="grid gap-3 md:grid-cols-2">
-                      {AGENCY_BUSINESS_LINE_OPTIONS.map((option) => (
-                        <BusinessLineOption
-                          key={option.value}
-                          option={option}
-                          checked={agencyBusinessLines.includes(option.value)}
-                          disabled={!canEdit}
-                          onChange={updateAgencyBusinessLine}
-                        />
-                      ))}
-                    </div>
-                  </OrganisationCard>
-                ) : null}
 
                 <OrganisationCard title="Contact Information" description="Primary contact details used across portals, reports and outbound communication.">
                   <div className="grid gap-4 md:grid-cols-2">
@@ -3219,95 +3202,6 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
 
             {!showBrandingOnly ? (
               <>
-                <OrganisationCard title="Permissions & Visibility" description="Grouped controls for workspace scope, lead visibility and collaboration defaults.">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <OrganisationField label="Principal Scope" id="organisation-principal-scope">
-                      <Field as="select" id="organisation-principal-scope" className={INPUT_CLASS} value={permissions.principalScope || 'all'} disabled={!canEdit} onChange={(event) => updatePermissionField('principalScope', event.target.value)}>
-                        {PERMISSION_SCOPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Field>
-                    </OrganisationField>
-                    <OrganisationField label="Branch Manager Scope" id="organisation-branch-manager-scope">
-                      <Field as="select" id="organisation-branch-manager-scope" className={INPUT_CLASS} value={permissions.branchManagerScope || 'branch'} disabled={!canEdit} onChange={(event) => updatePermissionField('branchManagerScope', event.target.value)}>
-                        {PERMISSION_SCOPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Field>
-                    </OrganisationField>
-                    <OrganisationField label={copy.agentScopeLabel} id="organisation-agent-scope">
-                      <Field as="select" id="organisation-agent-scope" className={INPUT_CLASS} value={permissions.agentScope || 'own'} disabled={!canEdit} onChange={(event) => updatePermissionField('agentScope', event.target.value)}>
-                        {PERMISSION_SCOPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Field>
-                    </OrganisationField>
-                    <OrganisationField label={copy.leadVisibilityLabel} id="organisation-lead-visibility">
-                      <Field as="select" id="organisation-lead-visibility" className={INPUT_CLASS} value={permissions.crmLeadVisibility || 'private'} disabled={!canEdit} onChange={(event) => updatePermissionField('crmLeadVisibility', event.target.value)}>
-                        {CRM_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Field>
-                    </OrganisationField>
-                    <OrganisationField label="Default Matter Visibility" id="organisation-matter-visibility" className="md:col-span-2">
-                      <Field as="select" id="organisation-matter-visibility" className={INPUT_CLASS} value={defaults.defaultMatterVisibility} disabled={!canEdit} onChange={(event) => updateOrganisationDefault('defaultMatterVisibility', event.target.value)}>
-                        {CRM_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                      </Field>
-                    </OrganisationField>
-                  </div>
-                  <div className="mt-5 rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4">
-                    <p className="mb-1 text-sm font-semibold text-[#17233a]">Collaboration</p>
-                    <PermissionRow
-                      title={copy.sharingLabel}
-                      description="Let managers coordinate work outside their home branch when needed."
-                      checked={Boolean(permissions.allowCrossBranchCollaboration)}
-                      disabled={!canEdit}
-                      onChange={(value) => updatePermissionField('allowCrossBranchCollaboration', value)}
-                    />
-                    <PermissionRow
-                      title={copy.queueLabel}
-                      description="Allow approved teams to work from shared operational queues."
-                      checked={Boolean(permissions.allowSharedLeadPools)}
-                      disabled={!canEdit}
-                      onChange={(value) => updatePermissionField('allowSharedLeadPools', value)}
-                    />
-                    <PermissionRow
-                      title={copy.listingsLabel}
-                      description="Permit shared property or development visibility for collaboration."
-                      checked={Boolean(permissions.allowSharedListings)}
-                      disabled={!canEdit}
-                      onChange={(value) => updatePermissionField('allowSharedListings', value)}
-                    />
-                  </div>
-                </OrganisationCard>
-
-                <OrganisationCard title="Operational Defaults" description="Default regional and workspace behaviour for new records.">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <OrganisationField label="Default Timezone" id="organisation-default-timezone">
-                      <Field as="select" id="organisation-default-timezone" className={INPUT_CLASS} value={defaults.timezone} disabled={!canEdit} onChange={(event) => updateOrganisationDefault('timezone', event.target.value)}>
-                        <option value="Africa/Johannesburg">Africa/Johannesburg</option>
-                        <option value="UTC">UTC</option>
-                        <option value="Europe/London">Europe/London</option>
-                      </Field>
-                    </OrganisationField>
-                    <OrganisationField label="Country" id="organisation-default-country">
-                      <Field id="organisation-default-country" className={INPUT_CLASS} value={defaults.country} disabled={!canEdit} onChange={(event) => updateOrganisationDefault('country', event.target.value)} />
-                    </OrganisationField>
-                    <OrganisationField label="Currency" id="organisation-default-currency">
-                      <Field as="select" id="organisation-default-currency" className={INPUT_CLASS} value={defaults.currency} disabled={!canEdit} onChange={(event) => updateOrganisationDefault('currency', event.target.value)}>
-                        <option value="ZAR">ZAR - South African Rand</option>
-                        <option value="USD">USD - US Dollar</option>
-                        <option value="GBP">GBP - British Pound</option>
-                      </Field>
-                    </OrganisationField>
-                    <OrganisationField label="Date Format" id="organisation-default-date-format">
-                      <Field as="select" id="organisation-default-date-format" className={INPUT_CLASS} value={defaults.dateFormat} disabled={!canEdit} onChange={(event) => updateOrganisationDefault('dateFormat', event.target.value)}>
-                        <option value="DD MMM YYYY">DD MMM YYYY</option>
-                        <option value="YYYY-MM-DD">YYYY-MM-DD</option>
-                        <option value="DD/MM/YYYY">DD/MM/YYYY</option>
-                      </Field>
-                    </OrganisationField>
-                    <OrganisationField label="Language" id="organisation-default-language" className="md:col-span-2">
-                      <Field as="select" id="organisation-default-language" className={INPUT_CLASS} value={defaults.language} disabled={!canEdit} onChange={(event) => updateOrganisationDefault('language', event.target.value)}>
-                        <option value="English (South Africa)">English (South Africa)</option>
-                        <option value="English (United Kingdom)">English (United Kingdom)</option>
-                      </Field>
-                    </OrganisationField>
-                  </div>
-                </OrganisationCard>
-
                 {isBondOriginator ? (
                   <section id="targets" className="scroll-mt-24">
                     <OrganisationCard title="Targets" description="Dashboard targets for the bond originator command centre.">
@@ -3353,15 +3247,9 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                   </section>
                 ) : null}
 
-                <OrganisationCard
+                {showBranchSettings ? <OrganisationCard
                   title={copy.branchLabel}
                   description={copy.branchCopy}
-                  actions={
-                    <Link to={copy.branchesHref} className="inline-flex h-10 items-center justify-center gap-2 rounded-[12px] border border-[#d9e3ef] bg-white px-3 text-sm font-semibold text-[#24364b] transition hover:bg-[#f7fafc]">
-                      <GitBranch className="h-4 w-4" strokeWidth={2} />
-                      Manage Branches
-                    </Link>
-                  }
                 >
                   <div className="flex flex-col gap-4 rounded-[18px] border border-[#e4ecf5] bg-[#fbfdff] p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -3377,7 +3265,7 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
                       </Link>
                     </div>
                   </div>
-                </OrganisationCard>
+                </OrganisationCard> : null}
               </>
             ) : null}
           </div>

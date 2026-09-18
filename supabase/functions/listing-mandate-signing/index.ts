@@ -44,6 +44,32 @@ function signedPackDocumentHtml(documentKey: string, session: RecordValue, signe
       : "The seller reviewed the frozen property-condition disclosure included in this signing pack.";
   return `<article><h1>${escapeHtml(title)}</h1><p>Property: ${escapeHtml(property)}</p><p>${detail}</p><p>Frozen signing pack: ${escapeHtml(session.signing_pack_digest)}</p><p>Accepted and signed by ${escapeHtml(signedName)}.</p><p>Signature: ${escapeHtml(signature)}</p></article>`;
 }
+async function issueSellerPortalRecipientInvites(admin: any, url: string, serviceKey: string, sessionId: string, organisationId: string, propertyTitle: string, agentName: string) {
+  const { data: recipientRows, error } = await admin.rpc("bridge_list_completed_listing_seller_portal_recipients", { p_signing_session_id: sessionId });
+  const recipients = Array.isArray(recipientRows) ? recipientRows as RecordValue[] : [];
+  if (error || !recipients.length) return { attempted: false, deliveries: [], error: error?.message || "Seller portal recipients could not be prepared." };
+  const appUrl = (Deno.env.get("APP_URL") || "https://app.arch9.co.za").replace(/\/$/, "");
+  const expiresAt = new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString();
+  const deliveries = [] as Array<RecordValue>;
+  for (const recipient of recipients) {
+    const rawToken = `seller-recipient-${token()}`;
+    const { data: inviteData, error: inviteError } = await admin.rpc("bridge_prepare_listing_seller_portal_recipient_invite", {
+      p_signing_session_id: recipient.signing_session_id, p_invite_token_hash: await hash(rawToken), p_expires_at: expiresAt,
+    });
+    const invite = snapshot(inviteData);
+    if (inviteError || !invite?.inviteId || invite?.alreadyPrepared) {
+      deliveries.push({ recipientEmail: recipient.signer_email, delivery: invite?.alreadyPrepared ? "already_sent" : "failed" });
+      continue;
+    }
+    const mail = await fetch(`${url.replace(/\/$/, "")}/functions/v1/send-email`, {
+      method: "POST", headers: { "Content-Type": "application/json", apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+      body: JSON.stringify({ type: "seller_portal_link", to: recipient.signer_email, organisationId, recipientRole: "seller", recipientName: recipient.signer_name, sellerName: recipient.signer_name, propertyTitle, portalLink: `${appUrl}/client/${rawToken}/selling`, onboardingLink: `${appUrl}/client/${rawToken}/selling`, agentName }),
+    });
+    await admin.rpc("bridge_record_listing_seller_portal_recipient_invite_delivery", { p_invite_id: invite.inviteId, p_sent: mail.ok, p_error: mail.ok ? null : "Seller portal email delivery failed." });
+    deliveries.push({ recipientEmail: recipient.signer_email, delivery: mail.ok ? "sent" : "failed", expiresAt });
+  }
+  return { attempted: true, deliveries };
+}
 async function authorizeListingRequest(req: Request, url: string, anonKey: string, listingId: string) {
   const authorization = req.headers.get("Authorization") || "";
   const caller = createClient(url, anonKey, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false } });
@@ -70,36 +96,44 @@ Deno.serve(async (req) => {
     const authorizationResult = await authorizeListingRequest(req, url, anonKey, listingId);
     if (authorizationResult.error) return authorizationResult.error;
     const { listing, user } = authorizationResult;
-    const signerEmail = email(body.signerEmail);
-    const signerName = text(body.signerName);
-    if (!validEmail(signerEmail) || !signerName) return response(400, { success: false, error: "A seller name and valid email are required." });
+    const requestedSigners = Array.isArray(body.signers) && body.signers.length
+      ? body.signers.map((item) => snapshot(item))
+      : [{ name: body.signerName, email: body.signerEmail, role: "Seller" }];
+    const signers = requestedSigners.map((signer) => ({ name: text(signer.name), email: email(signer.email), role: text(signer.role) || "Seller" }));
+    if (!signers.length || signers.some((signer) => !signer.name || !validEmail(signer.email))) return response(400, { success: false, error: "Every required signer needs a name and valid email." });
+    if (new Set(signers.map((signer) => signer.email)).size !== signers.length) return response(400, { success: false, error: "Each required signer must have a different email address." });
     const selectedDocuments = Array.from(new Set((Array.isArray(body.selectedDocuments) ? body.selectedDocuments : []).map((item) => text(item).toLowerCase()).filter((item) => documentKeys.has(item))));
     if (!selectedDocuments.length) return response(400, { success: false, error: "Choose at least one seller document." });
-    const rawToken = token();
     const now = new Date();
     const issuedAt = now.toISOString();
     const expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
     const mandateSnapshot = snapshot(body.mandateSnapshot);
     const packSnapshot = signingPack(body.signingPack, selectedDocuments, mandateSnapshot, issuedAt);
     const packDigest = await hash(JSON.stringify(packSnapshot));
-    await admin.from("private_listing_mandate_signing_sessions").update({ status: "revoked", updated_at: now.toISOString() }).eq("private_listing_id", listing.id).eq("status", "active");
-    const { data: session, error: sessionError } = await admin.from("private_listing_mandate_signing_sessions").insert({
-      organisation_id: listing.organisation_id, private_listing_id: listing.id, signer_email: signerEmail, signer_name: signerName,
-      token_hash: await hash(rawToken), expires_at: expiresAt, selected_documents: selectedDocuments, mandate_snapshot: mandateSnapshot,
-      signing_pack_snapshot: packSnapshot, signing_pack_version: text(packSnapshot.version) || signingPackVersion,
-      signing_pack_digest: packDigest, signing_pack_frozen_at: issuedAt, created_by: user.id,
-    }).select("id, expires_at").single();
-    if (sessionError || !session) return response(500, { success: false, error: "Unable to create the signing link." });
+    const signingGroupId = crypto.randomUUID();
+    await admin.from("private_listing_mandate_signing_sessions").update({ status: "revoked", updated_at: now.toISOString() }).eq("private_listing_id", listing.id).eq("status", "active").in("signer_email", signers.map((signer) => signer.email));
     const appUrl = (Deno.env.get("APP_URL") || "https://app.arch9.co.za").replace(/\/$/, "");
-    const signingLink = `${appUrl}/mandate-sign/${rawToken}`;
     const agentName = text(body.agentName) || "Your agent";
-    const mail = await fetch(`${url.replace(/\/$/, "")}/functions/v1/send-email`, {
-      method: "POST", headers: { "Content-Type": "application/json", apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
-      body: JSON.stringify({ type: "seller_mandate_sent", to: signerEmail, organisationId: listing.organisation_id, recipientRole: "seller", recipientName: signerName, sellerName: signerName, propertyTitle: text(snapshot(body.mandateSnapshot).propertyAddress) || "your property", mandateType: selectedDocuments.length > 1 ? "Seller documents" : selectedDocuments[0] === "fica" ? "FICA declaration" : selectedDocuments[0] === "disclosure" ? "Property disclosure" : "Exclusive mandate", askingPrice: text(snapshot(body.mandateSnapshot).askingPrice), portalLink: signingLink, agentName }),
-    });
-    const delivery = mail.ok ? "sent" : "failed";
-    if (delivery === "sent" && selectedDocuments.includes("mandate")) await admin.from("private_listings").update({ mandate_status: "sent_to_seller", listing_status: "mandate_sent" }).eq("id", listing.id);
-    return response(200, { success: true, delivery, signingLink, expiresAt: session.expires_at });
+    const issued = [] as Array<{ signerName: string; signerEmail: string; signingLink: string; expiresAt: string; delivery: string }>;
+    for (const signer of signers) {
+      const rawToken = token();
+      const { data: session, error: sessionError } = await admin.from("private_listing_mandate_signing_sessions").insert({
+        organisation_id: listing.organisation_id, private_listing_id: listing.id, signer_email: signer.email, signer_name: signer.name,
+        token_hash: await hash(rawToken), expires_at: expiresAt, selected_documents: selectedDocuments, mandate_snapshot: mandateSnapshot,
+        signing_pack_snapshot: packSnapshot, signing_pack_version: text(packSnapshot.version) || signingPackVersion,
+        signing_pack_digest: packDigest, signing_pack_frozen_at: issuedAt, signing_group_id: signingGroupId, created_by: user.id,
+      }).select("id, expires_at").single();
+      if (sessionError || !session) return response(500, { success: false, error: "Unable to create every required signing link." });
+      const signingLink = `${appUrl}/mandate-sign/${rawToken}`;
+      const mail = await fetch(`${url.replace(/\/$/, "")}/functions/v1/send-email`, {
+        method: "POST", headers: { "Content-Type": "application/json", apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+        body: JSON.stringify({ type: "seller_mandate_sent", to: signer.email, organisationId: listing.organisation_id, recipientRole: "seller", recipientName: signer.name, sellerName: signer.name, propertyTitle: text(snapshot(body.mandateSnapshot).propertyAddress) || "your property", mandateType: selectedDocuments.length > 1 ? "Seller documents" : selectedDocuments[0] === "fica" ? "FICA declaration" : selectedDocuments[0] === "disclosure" ? "Property disclosure" : "Exclusive mandate", askingPrice: text(snapshot(body.mandateSnapshot).askingPrice), portalLink: signingLink, agentName }),
+      });
+      issued.push({ signerName: signer.name, signerEmail: signer.email, signingLink, expiresAt: session.expires_at, delivery: mail.ok ? "sent" : "failed" });
+    }
+    const delivery = issued.every((item) => item.delivery === "sent") ? "sent" : issued.some((item) => item.delivery === "sent") ? "partial" : "failed";
+    if (delivery !== "failed" && selectedDocuments.includes("mandate")) await admin.from("private_listings").update({ mandate_status: "sent_to_seller", listing_status: "mandate_sent" }).eq("id", listing.id);
+    return response(200, { success: true, delivery, signingLink: issued[0]?.signingLink || "", signingLinks: issued, expiresAt });
   }
 
   if (action === "status" || action === "revoke") {
@@ -109,7 +143,7 @@ Deno.serve(async (req) => {
     const { listing } = authorizationResult;
     if (action === "status") {
       const { data: sessions, error } = await admin.from("private_listing_mandate_signing_sessions")
-      .select("id, status, signer_email, signer_name, selected_documents, document_progress, signing_pack_version, signing_pack_digest, signing_pack_frozen_at, expires_at, viewed_at, signed_at, created_at")
+      .select("id, status, signer_email, signer_name, selected_documents, document_progress, signing_group_id, signing_pack_version, signing_pack_digest, signing_pack_frozen_at, expires_at, viewed_at, signed_at, created_at")
         .eq("private_listing_id", listing.id).order("created_at", { ascending: false }).limit(10);
       if (error) return response(500, { success: false, error: "Unable to load seller document link status." });
       const now = Date.now();
@@ -117,7 +151,12 @@ Deno.serve(async (req) => {
         ...session,
         status: text(session.status) === "active" && new Date(text(session.expires_at)).getTime() <= now ? "expired" : session.status,
       }));
-      return response(200, { success: true, sessions: normalizedSessions });
+      const sessionIds = normalizedSessions.map((session: RecordValue) => text(session.id)).filter(Boolean);
+      const [{ data: invitations }, { data: taskPlan }] = await Promise.all([
+        sessionIds.length ? admin.from("private_listing_seller_portal_recipient_invites").select("signing_session_id, recipient_name, recipient_email, status, sent_at, expires_at, opened_at, consumed_at").in("signing_session_id", sessionIds) : Promise.resolve({ data: [] }),
+        admin.from("private_listing_seller_portal_task_plans").select("task_plan, updated_at").eq("private_listing_id", listing.id).maybeSingle(),
+      ]);
+      return response(200, { success: true, sessions: normalizedSessions, portalInvitations: invitations || [], portalTaskPlan: snapshot(taskPlan) });
     }
     const sessionId = text(body.sessionId);
     if (!sessionId) return response(400, { success: false, error: "Choose the document link to revoke." });
@@ -156,8 +195,10 @@ Deno.serve(async (req) => {
   if (action === "sign-pack") {
     const signedName = text(body.signedName);
     const signature = text(body.signature);
-    if (body.accepted !== true || !signedName || !signature) return response(400, { success: false, error: "Review the signing pack, accept it and provide your signature before submitting." });
     const selectedDocuments = Array.isArray(session.selected_documents) ? session.selected_documents : ["mandate"];
+    const acceptedDocuments = snapshot(body.acceptedDocuments);
+    const missingAcceptance = selectedDocuments.find((documentKey: string) => acceptedDocuments[documentKey] !== true);
+    if (missingAcceptance || !signedName || !signature) return response(400, { success: false, error: missingAcceptance ? `Review and accept the ${missingAcceptance} document before submitting.` : "Provide your full name and signature before submitting." });
     const generatedDocuments = Object.fromEntries(selectedDocuments.map((documentKey: string) => [documentKey, signedPackDocumentHtml(documentKey, session, signedName, signature)]));
     const { data: completion, error: completionError } = await admin.rpc("complete_private_listing_seller_signing_pack", {
       p_session_id: session.id, p_signed_name: signedName, p_signature: signature,
@@ -165,9 +206,26 @@ Deno.serve(async (req) => {
       p_acceptance_user_agent: text(req.headers.get("user-agent")), p_generated_documents: generatedDocuments,
     });
     if (completionError || !completion) return response(409, { success: false, error: completionError?.message || "This signing link has expired or has already been used." });
-    return response(200, { success: true, signedAt: completion.signedAt, complete: true, progress: completion.progress });
+    const portalInvitations = completion.groupComplete === true
+      ? await issueSellerPortalRecipientInvites(admin, url, serviceKey, session.id, text(session.organisation_id), text(snapshot(session.mandate_snapshot).propertyAddress) || "your property", "Your agent")
+      : { attempted: false, deliveries: [] };
+    return response(200, {
+      success: true,
+      signedAt: completion.signedAt,
+      complete: true,
+      groupComplete: completion.groupComplete === true,
+      sellerPortalWorkspace: snapshot(completion.sellerPortalWorkspace),
+      sellerPortalInvitations: portalInvitations,
+      progress: completion.progress,
+    });
   }
   if (action !== "sign") return response(400, { success: false, error: "Unknown signing action." });
+  if (session.signing_group_id) {
+    return response(409, {
+      success: false,
+      error: "This signing pack must be completed together. Use the secure signing-pack form.",
+    });
+  }
   const documentKey = text(body.documentKey).toLowerCase();
   const selectedDocuments = Array.isArray(session.selected_documents) ? session.selected_documents : ["mandate"];
   if (!documentKeys.has(documentKey) || !selectedDocuments.includes(documentKey)) return response(400, { success: false, error: "That document is not included in this link." });

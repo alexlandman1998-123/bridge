@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { packageReportQuery } from "./package-report-recipes.js";
 
 function text(value, max = 1000) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -194,13 +195,7 @@ async function supplierToken(config) {
   return token;
 }
 function reportQuery(productId) {
-  const core =
-    "propertyId erf portion extent propertyType propertyName propertyNumber streetAddress { address isMaster streetName streetNumber streetType } suburb { postCode suburbId suburbName town province { provinceName } }";
-  const owner =
-    "transfers(first: 5) { nodes { isCurrentOwner buyers { buyerName buyerNameFix buyerType share } } }";
-  const full =
-    "valuationDate valuationMunicipality valuationValue valuationZoning transfers(first: 5) { nodes { isCurrentOwner buyers { buyerName buyerNameFix buyerType share } hasBond bonds(first: 5) { nodes { bondAmount bondDateRegister bondHolder bondInd bondNumber isCurrentBond } } } }";
-  return `query CanvassingReport($id: Int!) { propertyById(id: $id) { ${core} ${productId === "full_canvassing_report" ? full : owner} } }`;
+  return packageReportQuery(productId, "CanvassingReport");
 }
 async function supplierReport(config, productId, propertyId) {
   const response = await fetch(config.endpoint, {
@@ -247,10 +242,21 @@ function reportData(property, productId) {
   const data = {
     property: {
       propertyId: property?.propertyId || null,
+      deedsOfficeId: property?.deedsOfficeId ?? null,
       erf: property?.erf ?? null,
       portion: property?.portion ?? null,
+      unit: property?.unit ?? null,
+      schemeId: property?.schemeId ?? null,
       extent: property?.extent ?? null,
       type: text(property?.propertyType, 120) || null,
+      name: text(property?.propertyName, 240) || null,
+      number: text(property?.propertyNumber, 120) || null,
+      year: property?.propertyYear ?? null,
+      hasCad: property?.hasCad === true,
+      hasDeeds: property?.hasDeeds === true,
+      hasNad: property?.hasNad === true,
+      hasTransfer: property?.hasTransfer === true,
+      parentFarm: text(property?.parentFarm, 160) || null,
       address:
         text(street?.address, 500) ||
         [street?.streetNumber, street?.streetName, street?.streetType]
@@ -270,18 +276,102 @@ function reportData(property, productId) {
       value: property?.valuationValue ?? null,
       date: text(property?.valuationDate, 80) || null,
       municipality: text(property?.valuationMunicipality, 200) || null,
+      reason: text(property?.valuationReason, 200) || null,
       zoning: text(property?.valuationZoning, 160) || null,
     };
-    data.bonds = (currentTransfer?.bonds?.nodes || [])
+    data.transactions = (property?.transfers?.nodes || []).slice(0, 5).map(
+      (transfer) => ({
+        purchasedAt: text(transfer?.datePurchase, 80) || null,
+        registeredAt: text(transfer?.dateRegister, 80) || null,
+        extent: transfer?.extent ?? null,
+        purchaseAmount: transfer?.purchaseAmount ?? null,
+        purchaseReference: text(transfer?.purchaseReference, 120) || null,
+        isCurrentOwner: transfer?.isCurrentOwner === true,
+      }),
+    );
+    const currentBonds = (currentTransfer?.bonds?.nodes || [])
       .filter((bond) => bond?.isCurrentBond !== false)
       .map((bond) => ({
-        holder: text(bond?.bondHolder, 250) || null,
-        amount: bond?.bondAmount ?? null,
         registeredAt: text(bond?.bondDateRegister, 80) || null,
         indicator: text(bond?.bondInd, 80) || null,
       }));
+    data.finance = {
+      hasCurrentBond: currentTransfer?.hasBond === true || currentBonds.length > 0,
+      currentBondCount: currentBonds.length,
+      currentBonds,
+    };
   }
   return data;
+}
+function reportDefinitionSnapshot(product) {
+  return {
+    productId: text(product?.product_id, 80) || null,
+    name: text(product?.name, 200) || null,
+    description: text(product?.description, 1_000) || null,
+    definitionVersion: text(product?.definition_version, 80) || null,
+    costValidationRecipeId: text(product?.cost_validation_recipe_id, 80) || null,
+    includedFields: Array.isArray(product?.field_manifest)
+      ? product.field_manifest
+      : [],
+    sections: Array.isArray(product?.report_sections)
+      ? product.report_sections
+      : [],
+    excludedFields: Array.isArray(product?.excluded_field_manifest)
+      ? product.excluded_field_manifest
+      : [],
+  };
+}
+function costValidationSnapshot(validation) {
+  return {
+    recipeId: text(validation?.recipe_id, 80) || null,
+    validatedAt: text(validation?.created_at, 80) || null,
+    fieldCost: metric(validation?.field_cost),
+    typeCost: metric(validation?.type_cost),
+    surcharge: metric(validation?.price_surcharge),
+    creditsConsumed: metric(validation?.credits_consumed),
+  };
+}
+function opportunitySignals(data) {
+  const transactions = Array.isArray(data?.transactions) ? data.transactions : [];
+  const datedTransactions = transactions
+    .map((transaction) => ({
+      ...transaction,
+      date: transaction?.registeredAt || transaction?.purchasedAt || null,
+    }))
+    .filter((transaction) => Number.isFinite(Date.parse(transaction.date)))
+    .sort((left, right) => Date.parse(right.date) - Date.parse(left.date));
+  const currentOwnership = datedTransactions.find(
+    (transaction) => transaction?.isCurrentOwner,
+  );
+  const latestTransaction = datedTransactions[0] || null;
+  const registeredAt = currentOwnership?.registeredAt || null;
+  const tenureYears = registeredAt
+    ? Math.max(
+        0,
+        Math.floor((Date.now() - Date.parse(registeredAt)) / 31_556_952_000),
+      )
+    : null;
+  const valuation = Number(data?.municipalValuation?.value);
+  const latestPurchase = Number(latestTransaction?.purchaseAmount);
+  const valuationComparison =
+    Number.isFinite(valuation) && valuation > 0 &&
+    Number.isFinite(latestPurchase) && latestPurchase > 0
+      ? {
+          difference: valuation - latestPurchase,
+          percentageDifference: Math.round(
+            ((valuation - latestPurchase) / latestPurchase) * 10_000,
+          ) / 100,
+        }
+      : null;
+  return {
+    ownershipRegisteredAt: registeredAt,
+    ownershipTenureYears: tenureYears,
+    transferRecordsReviewed: transactions.length,
+    latestTransferRegisteredAt: latestTransaction?.registeredAt || null,
+    municipalValuationVsLatestPurchase: valuationComparison,
+    currentFinanceRecorded: data?.finance?.hasCurrentBond === true,
+    currentBondCount: Number(data?.finance?.currentBondCount) || 0,
+  };
 }
 async function writeAudit(db, event) {
   const { error } = await db.from("knowledge_factory_audit_log").insert(event);
@@ -340,7 +430,7 @@ async function assertPackageCommercialPolicy(
   const { data: policy, error: policyError } = await db
     .from("knowledge_factory_package_commercial_policies")
     .select(
-      "allowed_product_ids, per_report_credit_cap, monthly_credit_cap, monthly_report_cap, daily_report_cap_per_user, rollout_stage",
+      "allowed_product_ids, per_report_credit_cap, basic_report_credit_cap, full_report_credit_cap, monthly_credit_cap, monthly_report_cap, daily_report_cap_per_user, rollout_stage",
     )
     .eq("organisation_id", organisationId)
     .maybeSingle();
@@ -361,35 +451,36 @@ async function assertPackageCommercialPolicy(
       403,
     );
 
-  const recipeIds = Array.isArray(product.included_recipe_ids)
-    ? product.included_recipe_ids
-    : [];
+  const recipeId = text(product.cost_validation_recipe_id, 80);
+  if (!recipeId)
+    throw commercialFailure(
+      "This package has no validated complete-query recipe yet.",
+    );
   const { data: validations, error: validationError } = await db
     .from("knowledge_factory_cost_validations")
-    .select("recipe_id, credits_consumed, outcome, created_at")
+    .select(
+      "recipe_id, field_cost, type_cost, price_surcharge, credits_consumed, outcome, created_at",
+    )
     .eq("organisation_id", organisationId)
     .eq("outcome", "validated")
-    .in("recipe_id", recipeIds)
+    .eq("recipe_id", recipeId)
     .order("created_at", { ascending: false })
-    .limit(100);
+    .limit(1);
   if (validationError)
     throw new Error("Package cost-validation evidence could not be checked.");
-  const latestByRecipe = new Map();
-  for (const validation of validations || []) {
-    if (!latestByRecipe.has(validation.recipe_id))
-      latestByRecipe.set(validation.recipe_id, validation);
-  }
-  if (latestByRecipe.size !== recipeIds.length)
+  const validation = validations?.[0];
+  if (!validation)
     throw commercialFailure(
-      "This package no longer has complete validated UAT cost evidence.",
+      "This package has not yet passed complete-query UAT cost validation.",
     );
-  const estimatedCredits = [...latestByRecipe.values()].reduce(
-    (sum, validation) => sum + (Number(validation.credits_consumed) || 0),
-    0,
-  );
-  if (estimatedCredits > Number(policy.per_report_credit_cap || 0))
+  const estimatedCredits = Number(validation.credits_consumed) || 0;
+  const packageCreditCap =
+    product.product_id === "basic_owner_lookup"
+      ? Number(policy.basic_report_credit_cap || policy.per_report_credit_cap || 0)
+      : Number(policy.full_report_credit_cap || policy.per_report_credit_cap || 0);
+  if (estimatedCredits > packageCreditCap)
     throw commercialFailure(
-      "This package's validated supplier estimate exceeds the per-report credit cap.",
+      "This package's validated supplier estimate exceeds its package credit cap.",
     );
 
   const month = startOfUtcMonth();
@@ -431,7 +522,12 @@ async function assertPackageCommercialPolicy(
       "Your daily package-report limit has been reached. Please ask an administrator if more capacity is needed.",
       429,
     );
-  return { estimatedCredits, monthCredits, rolloutStage: policy.rollout_stage };
+  return {
+    estimatedCredits,
+    monthCredits,
+    rolloutStage: policy.rollout_stage,
+    costValidation: costValidationSnapshot(validation),
+  };
 }
 
 async function assertPilotAccess(
@@ -440,6 +536,7 @@ async function assertPilotAccess(
   actorId,
   rolloutStage,
   supplierEndpoint,
+  estimatedCredits,
 ) {
   if (rolloutStage !== "pilot") return;
   if (process.env.KNOWLEDGE_FACTORY_PILOT_ENABLED !== "true")
@@ -452,7 +549,9 @@ async function assertPilotAccess(
     );
   const { data: pilot, error } = await db
     .from("knowledge_factory_package_pilot_enrolments")
-    .select("status, allowed_user_ids")
+    .select(
+      "status, allowed_user_ids, activated_at, pilot_report_cap, pilot_credit_cap, pilot_ends_at",
+    )
     .eq("organisation_id", organisationId)
     .eq("status", "active")
     .contains("allowed_user_ids", [actorId])
@@ -462,6 +561,33 @@ async function assertPilotAccess(
     throw commercialFailure(
       "You are not in this active named-user package pilot.",
       403,
+    );
+  if (!pilot.activated_at || Date.parse(pilot.pilot_ends_at) <= Date.now())
+    throw commercialFailure(
+      "This named package pilot has expired. A principal must pause it and complete a new controlled pilot review before extending access.",
+      403,
+    );
+  const { data: results, error: usageError } = await db
+    .from("knowledge_factory_report_results")
+    .select("credits_consumed")
+    .eq("organisation_id", organisationId)
+    .gte("executed_at", pilot.activated_at)
+    .limit(1_000);
+  if (usageError) throw new Error("Package pilot usage could not be checked.");
+  const reportCount = (results || []).length;
+  const creditsConsumed = (results || []).reduce(
+    (total, item) => total + (Number(item.credits_consumed) || 0),
+    0,
+  );
+  if (reportCount >= Number(pilot.pilot_report_cap || 0))
+    throw commercialFailure(
+      "The named package pilot has reached its report cap. Pause it and review the recorded results before any further rollout.",
+      429,
+    );
+  if (creditsConsumed + Number(estimatedCredits || 0) > Number(pilot.pilot_credit_cap || 0))
+    throw commercialFailure(
+      "The next report would exceed the named package pilot's supplier-credit cap. Pause it and review the recorded results before any further rollout.",
+      429,
     );
 }
 
@@ -524,7 +650,9 @@ export default async function handler(request, response) {
       try {
         const { data: product, error: productError } = await db
           .from("knowledge_factory_report_products")
-          .select("product_id, included_recipe_ids, status")
+          .select(
+            "product_id, name, description, field_manifest, report_sections, excluded_field_manifest, definition_version, customer_price_cents, cost_validation_recipe_id, status",
+          )
           .eq("organisation_id", organisationId)
           .eq("product_id", intent.product_id)
           .eq("status", "uat_validated")
@@ -549,16 +677,29 @@ export default async function handler(request, response) {
           actorId,
           commercialPreflight.rolloutStage,
           supplierConfig.endpoint,
+          commercialPreflight.estimatedCredits,
         );
         const result = await supplierReport(
           supplierConfig,
           intent.product_id,
           Number(intent.property_id),
         );
+        const savedReportData = reportData(result.property, intent.product_id);
+        const definitionSnapshot = reportDefinitionSnapshot(product);
+        const requestContextSnapshot = {
+          purchaseIntentId: intent.id,
+          productId: intent.product_id,
+          productName: text(intent.product_name, 200) || null,
+          requestPurpose: text(intent.request_purpose, 500) || null,
+          customerPriceCents: Number(intent.customer_price_cents) || 0,
+          executedAt: new Date().toISOString(),
+        };
         const summary = {
           productId: intent.product_id,
           fields: intent.included_fields,
-          completedAt: new Date().toISOString(),
+          completedAt: requestContextSnapshot.executedAt,
+          reportSnapshotVersion: "canvassing-report-v1",
+          definitionVersion: definitionSnapshot.definitionVersion,
         };
         const { data: request, error: requestError } = await db
           .from("knowledge_factory_report_requests")
@@ -591,14 +732,21 @@ export default async function handler(request, response) {
             actor_id: actorId,
             product_id: intent.product_id,
             property_id: intent.property_id,
-            report_data: reportData(result.property, intent.product_id),
+            report_data: savedReportData,
+            report_snapshot_version: "canvassing-report-v1",
+            report_definition_snapshot: definitionSnapshot,
+            cost_validation_snapshot: commercialPreflight.costValidation,
+            request_context_snapshot: requestContextSnapshot,
+            opportunity_signals: opportunitySignals(savedReportData),
             field_cost: result.costs.fieldCost,
             type_cost: result.costs.typeCost,
             price_surcharge: result.costs.surcharge,
             credits_consumed: result.costs.credits,
             vendor_request_id: result.vendorRequestId,
           })
-          .select("id, report_data, credits_consumed, executed_at")
+          .select(
+            "id, report_data, report_snapshot_version, opportunity_signals, credits_consumed, executed_at",
+          )
           .single();
         if (resultError || !savedResult)
           throw new Error("The report result could not be saved.");
@@ -638,6 +786,8 @@ export default async function handler(request, response) {
           report: {
             id: savedResult.id,
             data: savedResult.report_data,
+            snapshotVersion: savedResult.report_snapshot_version,
+            opportunitySignals: savedResult.opportunity_signals,
             creditsConsumed: savedResult.credits_consumed,
             executedAt: savedResult.executed_at,
           },

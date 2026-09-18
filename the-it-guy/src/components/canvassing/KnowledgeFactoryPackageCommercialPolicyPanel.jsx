@@ -24,6 +24,8 @@ function initialPolicy(policy = {}) {
     allowedProductIds:
       policy.allowed_product_ids || PRODUCTS.map((item) => item.id),
     perReportCreditCap: policy.per_report_credit_cap ?? 100000,
+    basicReportCreditCap: policy.basic_report_credit_cap ?? 100000,
+    fullReportCreditCap: policy.full_report_credit_cap ?? 100000,
     monthlyCreditCap: policy.monthly_credit_cap ?? 1000000,
     monthlyReportCap: policy.monthly_report_cap ?? 100,
     dailyReportCapPerUser: policy.daily_report_cap_per_user ?? 10,
@@ -125,7 +127,7 @@ export default function KnowledgeFactoryPackageCommercialPolicyPanel({
           <ShieldCheck className="mt-0.5 text-[#1769dc]" size={20} />
           <div>
             <h3 className="font-semibold text-slate-900">
-              Phase 5: commercial controls
+              Commercial release controls
             </h3>
             <p className="mt-1 text-sm leading-6 text-slate-500">
               Limits are checked on the server before a package can request
@@ -204,9 +206,10 @@ export default function KnowledgeFactoryPackageCommercialPolicyPanel({
               ))}
             </div>
           </fieldset>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {[
-              ["perReportCreditCap", "Maximum supplier credits per report"],
+              ["basicReportCreditCap", "Maximum supplier credits for Basic"],
+              ["fullReportCreditCap", "Maximum supplier credits for Full"],
               ["monthlyCreditCap", "Maximum supplier credits per month"],
               ["monthlyReportCap", "Maximum reports per month"],
               ["dailyReportCapPerUser", "Maximum reports per user each day"],
@@ -265,8 +268,9 @@ export default function KnowledgeFactoryPackageCommercialPolicyPanel({
             <span className="flex max-w-3xl gap-2 leading-5">
               <BarChart3 size={16} className="mt-0.5 shrink-0" />
               The supplier-cost figure is an operational estimate from recorded
-              credits. The preflight guard uses the latest approved UAT recipe
-              costs; it does not let the browser choose a query or a price.
+              credits. The preflight guard uses the latest approved complete
+              package query and its own Basic or Full credit cap; it does not
+              let the browser choose a query.
             </span>
             <button
               type="submit"

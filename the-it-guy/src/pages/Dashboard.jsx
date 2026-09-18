@@ -5307,7 +5307,7 @@ function renderActiveTransactionsBlock({
           onShareWhatsApp={shareAgentDigitalCardWhatsApp}
           onDownloadVcard={downloadAgentDigitalCardVcard}
           onDownloadQr={downloadAgentDigitalCardQr}
-          onManageCard={() => navigate('/settings/lead-capture')}
+          onManageCard={() => navigate('/settings/integrations/digital-cards')}
         />
       </section>
     )
@@ -6414,7 +6414,7 @@ function renderActiveTransactionsBlock({
                 onShareWhatsApp={shareAgentDigitalCardWhatsApp}
                 onDownloadVcard={downloadAgentDigitalCardVcard}
                 onDownloadQr={downloadAgentDigitalCardQr}
-                onManageCard={() => navigate('/settings/lead-capture')}
+                onManageCard={() => navigate('/settings/integrations/digital-cards')}
               />
             </>
           ) : isAttorneyRole ? (

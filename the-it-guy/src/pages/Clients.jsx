@@ -14,6 +14,7 @@ import {
   Search,
   SlidersHorizontal,
   Tag,
+  Trash2,
   User2,
   UserRoundSearch,
   Users,
@@ -25,8 +26,10 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import { ViewToggle } from '../components/ui/FilterBar'
 import Modal from '../components/ui/Modal'
+import ConfirmDialog from '../components/ui/ConfirmDialog'
 import SearchInput from '../components/ui/SearchInput'
 import DataTable, { DataTableInner } from '../components/ui/DataTable'
+import ClientAudiences from '../components/clients/ClientAudiences'
 import {
   loadAgentClientDirectory,
 } from '../core/clients/agentClientDirectory'
@@ -38,6 +41,7 @@ import { isSupabaseConfigured } from '../lib/supabaseClient'
 import { fetchTransactionsByParticipantSummary } from '../lib/transactionsListApi'
 import { createAgentRoutePerformanceBaseline } from '../services/observability/agentRoutePerformanceBaseline'
 import { getClientMarketingWorkspace, saveClientMarketingTags, saveEmailAudience } from '../services/emailCampaignService'
+import { createAgencyCrmLeadRecord, deleteAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 
 let legacyClientApiPromise = null
 
@@ -102,16 +106,24 @@ const ATTORNEY_STATUS_FILTERS = [
 
 const DEFAULT_CLIENT_DIRECTORY_COPY = {
   searchPlaceholder: 'Search clients by name, email, phone or property...',
-  addLabel: 'Add Client',
+  addLabel: 'Add New Contact',
   allAssigneesLabel: 'All Agents',
   assigneeLabel: 'Agent',
   linkedRecordHeader: 'Linked Transaction',
   linkedRecordFallback: 'No linked transaction',
   profileLabel: 'Client profile',
   activeStatusLabel: 'Active Transaction',
-  modalTitle: 'Add Client',
-  modalSubtitle: 'Create a client record that can later be linked into transactions.',
-  modalSaveLabel: 'Save Client',
+  modalTitle: 'Add New Contact',
+  modalSubtitle: 'Capture the contact and what they are looking to buy, sell, invest in, rent or let.',
+  modalSaveLabel: 'Save Contact',
+  roleOptions: [
+    { key: 'buyer', label: 'Buyer' },
+    { key: 'seller', label: 'Seller' },
+    { key: 'investor', label: 'Investor' },
+    { key: 'tenant', label: 'Tenant' },
+    { key: 'landlord', label: 'Landlord' },
+    { key: 'lead', label: 'General lead' },
+  ],
   roleLabels: {},
 }
 
@@ -196,6 +208,7 @@ const ATTORNEY_EMPTY_COPY = {
 }
 
 const ARCHIVED_CLIENTS_STORAGE_KEY = 'itg:agent-clients-archived:v1'
+const DELETED_CLIENTS_STORAGE_KEY = 'itg:agent-clients-deleted:v1'
 const NO_DEVELOPMENT_ID = 'no-development-assigned'
 const CLIENT_FILTER_ALIASES = {
   buyers: 'buyer',
@@ -628,6 +641,21 @@ function writeArchivedClientIds(ids = []) {
   window.localStorage.setItem(ARCHIVED_CLIENTS_STORAGE_KEY, JSON.stringify([...new Set(ids)]))
 }
 
+function readDeletedClientIds() {
+  if (typeof window === 'undefined') return []
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(DELETED_CLIENTS_STORAGE_KEY) || '[]')
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+function writeDeletedClientIds(ids = []) {
+  if (typeof window === 'undefined') return
+  window.localStorage.setItem(DELETED_CLIENTS_STORAGE_KEY, JSON.stringify([...new Set(ids)]))
+}
+
 function normalizePhoneForHref(value = '') {
   return String(value || '').replace(/\D/g, '')
 }
@@ -669,6 +697,10 @@ function getEmptyAddClientForm(copy = DEFAULT_CLIENT_DIRECTORY_COPY) {
     linkedTransactionId: '',
     matterReference: '',
     notes: '',
+    areaInterest: '',
+    propertyInterest: '',
+    budget: '',
+    sellerPropertyAddress: '',
   }
 }
 
@@ -685,6 +717,7 @@ function AddClientModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const isAttorneyMode = mode === 'attorney'
+  const isAgencyMode = mode === 'agent'
 
   useEffect(() => {
     if (!open) {
@@ -706,8 +739,26 @@ function AddClientModal({
         onClose()
         return
       }
-      const { createClientRecord } = await loadLegacyClientApi()
-      const created = await createClientRecord({ ...form, organisationId })
+      const created = isAgencyMode
+        ? await createAgencyCrmLeadRecord(organisationId, {
+          contact: {
+            firstName: String(form.name || '').trim().split(/\s+/).shift() || 'Lead',
+            lastName: String(form.name || '').trim().split(/\s+/).slice(1).join(' '),
+            email: form.email,
+            phone: form.phone,
+            contactType: form.role,
+            notes: form.notes,
+          },
+          leadCategory: form.role,
+          stage: 'New Lead',
+          status: 'New Lead',
+          areaInterest: form.areaInterest,
+          propertyInterest: form.propertyInterest,
+          budget: form.budget,
+          sellerPropertyAddress: form.sellerPropertyAddress,
+          notes: form.notes,
+        })
+        : await (await loadLegacyClientApi()).createClientRecord({ ...form, organisationId })
       onSaved?.(created)
       onClose()
     } catch (saveError) {
@@ -739,8 +790,8 @@ function AddClientModal({
           <span className="text-sm font-medium text-slate-600">{copy.nameLabel || 'Full Name / Entity Name'}</span>
           <Field value={form.name} onChange={(event) => setForm((previous) => ({ ...previous, name: event.target.value }))} />
         </label>
-        {isAttorneyMode ? (
-          <>
+        <>
+          {isAttorneyMode ? (<>
             <label className="grid gap-2">
               <span className="text-sm font-medium text-slate-600">{copy.roleLabel || 'Role'}</span>
               <Field as="select" value={form.role} onChange={(event) => setForm((previous) => ({ ...previous, role: event.target.value }))}>
@@ -761,8 +812,19 @@ function AddClientModal({
                 ))}
               </Field>
             </label>
-          </>
-        ) : null}
+          </>) : null}
+          {!isAttorneyMode ? (
+            <>
+              <label className="grid gap-2">
+                <span className="text-sm font-medium text-slate-600">Contact type</span>
+                <Field as="select" value={form.role} onChange={(event) => setForm((previous) => ({ ...previous, role: event.target.value }))}>
+                  {(copy.roleOptions || []).map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+                </Field>
+              </label>
+              <div className="hidden sm:block" />
+            </>
+          ) : null}
+        </>
         {isAttorneyMode && matterOptions.length ? (
           <label className="grid gap-2 sm:col-span-2">
             <span className="text-sm font-medium text-slate-600">{copy.linkedMatterLabel || 'Link Matter'}</span>
@@ -795,6 +857,24 @@ function AddClientModal({
             onChange={(event) => setForm((previous) => ({ ...previous, email: event.target.value }))}
           />
         </label>
+        {!isAttorneyMode ? (
+          <>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-slate-600">Looking in / area</span>
+              <Field value={form.areaInterest} placeholder="e.g. Cape Town" onChange={(event) => setForm((previous) => ({ ...previous, areaInterest: event.target.value }))} />
+            </label>
+            <label className="grid gap-2">
+              <span className="text-sm font-medium text-slate-600">Budget or estimated value</span>
+              <Field inputMode="numeric" value={form.budget} placeholder="e.g. 1500000" onChange={(event) => setForm((previous) => ({ ...previous, budget: event.target.value }))} />
+            </label>
+            <label className="grid gap-2 sm:col-span-2">
+              <span className="text-sm font-medium text-slate-600">Property interest</span>
+              <Field value={form.propertyInterest} placeholder="e.g. 3-bedroom home, apartment, investment property" onChange={(event) => setForm((previous) => ({ ...previous, propertyInterest: event.target.value }))} />
+            </label>
+            {form.role === 'seller' || form.role === 'landlord' ? <label className="grid gap-2 sm:col-span-2"><span className="text-sm font-medium text-slate-600">Property address</span><Field value={form.sellerPropertyAddress} placeholder="Address of the property to sell or let" onChange={(event) => setForm((previous) => ({ ...previous, sellerPropertyAddress: event.target.value }))} /></label> : null}
+            <label className="grid gap-2 sm:col-span-2"><span className="text-sm font-medium text-slate-600">Notes</span><Field as="textarea" rows={3} value={form.notes} placeholder="Anything the team should know" onChange={(event) => setForm((previous) => ({ ...previous, notes: event.target.value }))} /></label>
+          </>
+        ) : null}
         <label className="grid gap-2">
           <span className="text-sm font-medium text-slate-600">Phone</span>
           <Field value={form.phone} onChange={(event) => setForm((previous) => ({ ...previous, phone: event.target.value }))} />
@@ -918,8 +998,11 @@ function Clients() {
   const [complianceFilter, setComplianceFilter] = useState('all')
   const [viewMode, setViewMode] = useState('grid')
   const [archivedClientIds, setArchivedClientIds] = useState(() => readArchivedClientIds())
+  const [deletedClientIds, setDeletedClientIds] = useState(() => readDeletedClientIds())
   const [manualAttorneyParties, setManualAttorneyParties] = useState(() => readAttorneyManualParties())
   const [openActionMenuId, setOpenActionMenuId] = useState('')
+  const [deleteClientTarget, setDeleteClientTarget] = useState(null)
+  const [deletingClient, setDeletingClient] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
   const [directoryTab, setDirectoryTab] = useState('clients')
   const [selectedAgentClient, setSelectedAgentClient] = useState(null)
@@ -1100,7 +1183,9 @@ function Clients() {
     () => {
       const normalizedSearch = String(search || '').trim().toLowerCase()
       const archivedSet = new Set((archivedClientIds || []).map((id) => String(id || '').trim()))
+      const deletedSet = new Set((deletedClientIds || []).map((id) => String(id || '').trim()))
       return (clients || [])
+        .filter((client) => !deletedSet.has(String(client.id || '').trim()))
         .map((client) => {
           if (!archivedSet.has(String(client.id || '').trim())) return client
           return {
@@ -1140,7 +1225,7 @@ function Clients() {
           return searchHaystack.includes(normalizedSearch)
         })
     },
-    [activeFilter, archivedClientIds, assignedAgentFilter, clients, complianceFilter, directoryCopy.linkedRecordFallback, isAttorneyClientDirectory, matterTypeFilter, roleFilter, search, statusFilter],
+    [activeFilter, archivedClientIds, assignedAgentFilter, clients, complianceFilter, deletedClientIds, directoryCopy.linkedRecordFallback, isAttorneyClientDirectory, matterTypeFilter, roleFilter, search, statusFilter],
   )
   const summaryStats = useMemo(() => {
     const visibleClients = (clients || []).filter((client) => !archivedClientIds.includes(client.id))
@@ -1254,6 +1339,33 @@ function Clients() {
     setOpenActionMenuId('')
   }
 
+  async function handleDeleteClient() {
+    const client = deleteClientTarget
+    if (!client) return
+    try {
+      setDeletingClient(true)
+      setError('')
+      const leadIds = [...new Set([
+        ...(client.linkedLeadIds || []),
+        ...(client.sources || []).map((source) => source?.leadId),
+      ].map((id) => String(id || '').trim()).filter(Boolean))]
+      if (isAgentClientDirectory && activeOrganisationId && leadIds.length) {
+        await Promise.all(leadIds.map((leadId) => deleteAgencyCrmLeadRecord(activeOrganisationId, leadId)))
+      }
+      const nextDeleted = [...new Set([...deletedClientIds, client.id])]
+      setDeletedClientIds(nextDeleted)
+      writeDeletedClientIds(nextDeleted)
+      setOpenActionMenuId('')
+      setDeleteClientTarget(null)
+      if (selectedAgentClient?.id === client.id) setSelectedAgentClient(null)
+      await loadData()
+    } catch (deleteError) {
+      setError(deleteError.message || 'Unable to delete this client.')
+    } finally {
+      setDeletingClient(false)
+    }
+  }
+
   function handleQuickAction(event, client, action) {
     event.stopPropagation()
     const phoneDigits = normalizePhoneForHref(client.phone)
@@ -1265,6 +1377,9 @@ function Clients() {
       window.open(`https://wa.me/${phoneDigits}`, '_blank', 'noopener,noreferrer')
     } else if (action === 'archive') {
       handleArchiveClient(client)
+    } else if (action === 'delete') {
+      setOpenActionMenuId('')
+      setDeleteClientTarget(client)
     } else if (action === 'open') {
       handleOpenClient(client)
     }
@@ -1357,7 +1472,7 @@ function Clients() {
 
       <section className="overflow-hidden rounded-[28px] border border-[#dbe5ef] bg-white/92 shadow-[0_12px_28px_rgba(15,23,42,0.05)] backdrop-blur-xl">
         {isAgentClientDirectory ? <div className="flex gap-2 border-b border-[#e6edf5] bg-[#fbfdff] px-4 pt-3"><button type="button" className={`rounded-t-xl px-4 py-3 text-sm font-semibold ${directoryTab === 'clients' ? 'bg-white text-[#0f63c7] shadow-[0_-2px_10px_rgba(15,23,42,0.04)]' : 'text-[#62778e]'}`} onClick={() => setDirectoryTab('clients')}>Clients</button><button type="button" className={`rounded-t-xl px-4 py-3 text-sm font-semibold ${directoryTab === 'audiences' ? 'bg-white text-[#0f63c7] shadow-[0_-2px_10px_rgba(15,23,42,0.04)]' : 'text-[#62778e]'}`} onClick={() => setDirectoryTab('audiences')}>Audiences</button></div> : null}
-        {isAgentClientDirectory && directoryTab === 'audiences' ? <ClientAudiencesTab audiences={marketingState.savedAudiences} loading={marketingState.loading} error={marketingState.error} organisationId={activeOrganisationId} userId={profile?.id} onSaved={() => loadMarketingWorkspace()} /> : null}
+        {isAgentClientDirectory && directoryTab === 'audiences' ? <ClientAudiences organisationId={activeOrganisationId} userId={profile?.id} /> : null}
         <div className={isAgentClientDirectory && directoryTab !== 'clients' ? 'hidden' : ''}>
         <div className="flex items-stretch gap-3 border-b border-[#e6edf5] bg-[#fbfdff] px-3 py-3">
           <div className="grid min-w-0 flex-1 grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">
@@ -1387,9 +1502,10 @@ function Clients() {
           <button
             type="button"
             className="ml-auto hidden min-h-[54px] shrink-0 items-center justify-center gap-2 rounded-[18px] border border-[#dbe5ef] bg-white/80 px-4 text-sm font-semibold text-[#4f647d] shadow-[0_8px_18px_rgba(15,23,42,0.05)] transition hover:bg-white hover:text-[#10243a] lg:inline-flex"
+            onClick={() => setShowAddModal(true)}
           >
-            <SlidersHorizontal size={16} />
-            Custom View
+            <Plus size={16} />
+            Add new contact
           </button>
         </div>
 
@@ -1547,6 +1663,7 @@ function Clients() {
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>
                           <button type="button" className="rounded-[12px] px-3 py-2 text-left text-[#8a4b35] hover:bg-[#faf7f3]" onClick={(event) => handleQuickAction(event, client, 'archive')}>Archive</button>
+                          <button type="button" className="flex items-center gap-2 rounded-[12px] px-3 py-2 text-left text-[#b42318] hover:bg-[#fff5f5]" onClick={(event) => handleQuickAction(event, client, 'delete')}><Trash2 size={15} />Delete client</button>
                         </div>
                       ) : null}
                     </div>
@@ -1751,6 +1868,7 @@ function Clients() {
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.phone} onClick={(event) => handleQuickAction(event, client, 'call')}>Call</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left hover:bg-[#f6f9fc] disabled:text-[#a8b4c0]" disabled={!client.email} onClick={(event) => handleQuickAction(event, client, 'email')}>Email</button>
                               <button type="button" className="rounded-[12px] px-3 py-2 text-left text-[#8a4b35] hover:bg-[#faf7f3]" onClick={(event) => handleQuickAction(event, client, 'archive')}>Archive</button>
+                              <button type="button" className="flex items-center gap-2 rounded-[12px] px-3 py-2 text-left text-[#b42318] hover:bg-[#fff5f5]" onClick={(event) => handleQuickAction(event, client, 'delete')}><Trash2 size={15} />Delete client</button>
                             </div>
                           ) : null}
                         </div>
@@ -1769,7 +1887,7 @@ function Clients() {
         open={showAddModal}
         onClose={() => setShowAddModal(false)}
         copy={directoryCopy}
-        mode={isAttorneyClientDirectory ? 'attorney' : 'client'}
+        mode={isAttorneyClientDirectory ? 'attorney' : isAgentClientDirectory ? 'agent' : 'client'}
         matterOptions={matterOptions}
         organisationId={activeOrganisationId || null}
         onSaved={handleAddClientSaved}
@@ -1784,6 +1902,16 @@ function Clients() {
           const marketingContact = await saveClientMarketingTags({ organisationId: activeOrganisationId, client: selectedAgentClient, tags })
           setMarketingState((current) => ({ ...current, marketingContact, error: '' }))
         }}
+      />
+      <ConfirmDialog
+        open={Boolean(deleteClientTarget)}
+        title="Delete this client?"
+        description={`${deleteClientTarget?.name || 'This client'} will be removed from Clients. Any standalone CRM lead records for this client will also be deleted; linked listings and transactions will be kept.`}
+        confirmLabel="Delete client"
+        confirming={deletingClient}
+        variant="destructive"
+        onConfirm={handleDeleteClient}
+        onCancel={() => setDeleteClientTarget(null)}
       />
     </section>
   )

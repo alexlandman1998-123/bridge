@@ -173,7 +173,10 @@ export default async function handler(request, response) {
     const input = await body(request);
     const organisationId = text(input.organisationId, 100);
     const action = text(input.action, 40);
-    if (!validUuid(organisationId) || !["list", "convert"].includes(action))
+    if (
+      !validUuid(organisationId) ||
+      !["list", "convert", "download"].includes(action)
+    )
       return json(response, 400, {
         error: "A valid organisation and action are required.",
       });
@@ -186,7 +189,7 @@ export default async function handler(request, response) {
       const { data: results, error } = await db
         .from("knowledge_factory_report_results")
         .select(
-          "id, actor_id, property_id, product_id, report_data, credits_consumed, executed_at, created_at",
+          "id, actor_id, property_id, product_id, report_data, report_snapshot_version, report_definition_snapshot, request_context_snapshot, opportunity_signals, credits_consumed, executed_at, created_at",
         )
         .eq("organisation_id", organisationId)
         .order("executed_at", { ascending: false })
@@ -223,19 +226,27 @@ export default async function handler(request, response) {
     const nextFollowUpDate = text(input.nextFollowUpDate, 20);
     const followUpPriority = text(input.followUpPriority, 20) || "Medium";
     const followUpNote = text(input.followUpNote, 1_000);
-    if (!validUuid(reportResultId) || !firstName || !lastName)
+    if (
+      !validUuid(reportResultId) ||
+      (action === "convert" && (!firstName || !lastName))
+    )
       return json(response, 400, {
         error:
           "Select a completed report and enter the prospect’s first and last name.",
       });
-    if (!["Low", "Medium", "High", "Urgent"].includes(followUpPriority))
+    if (
+      action === "convert" &&
+      !["Low", "Medium", "High", "Urgent"].includes(followUpPriority)
+    )
       return json(response, 400, {
         error: "Select a valid follow-up priority.",
       });
 
     const { data: report, error: reportError } = await db
       .from("knowledge_factory_report_results")
-      .select("id, actor_id, property_id, product_id, report_data")
+      .select(
+        "id, actor_id, property_id, product_id, report_data, report_snapshot_version, report_definition_snapshot, request_context_snapshot, opportunity_signals, credits_consumed, executed_at, created_at",
+      )
       .eq("id", reportResultId)
       .eq("organisation_id", organisationId)
       .maybeSingle();
@@ -245,8 +256,36 @@ export default async function handler(request, response) {
       });
     if (!currentActor.isAdmin && report.actor_id !== currentActor.userId)
       return json(response, 403, {
-        error: "You may only convert your own completed reports.",
+        error: "You may only access your own completed reports.",
       });
+    if (action === "download") {
+      if (report.report_snapshot_version !== "canvassing-report-v1")
+        return json(response, 409, {
+          error:
+            "This older report does not have a complete saved snapshot for download.",
+        });
+      const { error: auditError } = await db
+        .from("knowledge_factory_audit_log")
+        .insert({
+          organisation_id: organisationId,
+          actor_id: currentActor.userId,
+          operation: "property_report",
+          request_purpose: text(
+            report.request_context_snapshot?.requestPurpose,
+            500,
+          ),
+          property_reference: String(report.property_id),
+          request_metadata: {
+            mode: "saved_report_pdf_download",
+            report_result_id: report.id,
+            report_snapshot_version: report.report_snapshot_version,
+          },
+          outcome: "completed",
+        });
+      if (auditError)
+        throw new Error("The report download could not be recorded.");
+      return json(response, 200, { report });
+    }
 
     const { data: existing, error: existingError } = await db
       .from("knowledge_factory_report_canvassing_conversions")

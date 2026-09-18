@@ -3,7 +3,7 @@ import { parseProjectStorageUrl, sha256Hex } from "./websiteListingMedia.ts";
 export const WEBSITE_BRAND_ASSET_BUCKET = "organisation-branding";
 export const WEBSITE_BRAND_ASSET_MAX_BYTES = 10 * 1024 * 1024;
 
-export type WebsiteBrandVariant = "light" | "dark";
+export type WebsiteBrandVariant = "light" | "dark" | "icon";
 
 const CONTENT_TYPE_EXTENSIONS: Record<string, string> = {
   "image/jpeg": "jpg",
@@ -57,8 +57,8 @@ export function websiteBrandAssetStoragePath(input: {
       );
     }
   }
-  if (!/^(light|dark)$/.test(input.variant)) {
-    throw new Error("Website brand paths require a light or dark variant.");
+  if (!/^(light|dark|icon)$/.test(input.variant)) {
+    throw new Error("Website brand paths require a light, dark, or icon variant.");
   }
   if (!/^[0-9a-f]{64}$/i.test(input.fingerprint)) {
     throw new Error("Website brand paths require a SHA-256 fingerprint.");

@@ -32,6 +32,17 @@ export function listKnowledgeFactoryCompletedReports({ organisationId } = {}) {
   return call({ action: "list", organisationId: text(organisationId) });
 }
 
+export function downloadKnowledgeFactoryCompletedReport({
+  organisationId,
+  reportResultId,
+} = {}) {
+  return call({
+    action: "download",
+    organisationId: text(organisationId),
+    reportResultId: text(reportResultId),
+  });
+}
+
 export function convertKnowledgeFactoryReportToProspect({
   organisationId,
   reportResultId,

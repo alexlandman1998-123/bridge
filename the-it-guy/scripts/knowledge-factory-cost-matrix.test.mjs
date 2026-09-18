@@ -172,8 +172,13 @@ assert.match(
 );
 assert.match(
   panel,
-  /Five-case canvassing cost matrix/,
-  "Operations must explain the five-case UAT matrix.",
+  /Canvassing cost-validation matrix/,
+  "Operations must identify the package cost-validation matrix.",
+);
+assert.match(
+  panel,
+  /Basic package - exact query[\s\S]*Full package - exact query/,
+  "Operations must expose the complete Basic and Full package validations.",
 );
 assert.match(
   panel,
@@ -352,7 +357,7 @@ assert.match(
 );
 assert.match(
   purchaseApi,
-  /latest approved UAT cost evidence|complete validated UAT cost evidence/,
+  /complete-query UAT cost validation/,
   "Execution must use validated UAT evidence for its commercial preflight.",
 );
 assert.match(
@@ -362,7 +367,7 @@ assert.match(
 );
 assert.match(
   commercialControlsPanel,
-  /Phase 5: commercial controls[\s\S]*Limits are checked on the server before a package can request\s+supplier data/,
+  /Commercial release controls[\s\S]*Limits are checked on the server before a package can request\s+supplier data/,
   "Operations must expose the commercial-control purpose clearly.",
 );
 assert.match(

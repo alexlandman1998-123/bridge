@@ -73,6 +73,7 @@ export default function KnowledgeFactoryOperationsWorkspace() {
   }, [organisationId]);
   const data = state.data;
   const rollout = data?.rollout;
+  const packagePilot = rollout?.packagePilot;
   return (
     <section
       className="space-y-5"
@@ -181,6 +182,9 @@ export default function KnowledgeFactoryOperationsWorkspace() {
                   Supplier activity is being retained in the immutable audit
                   log.
                 </UatCheck>
+                <UatCheck complete={packagePilot?.status === "active"}>
+                  Named package pilot is {packagePilot?.status || "not configured"}.
+                </UatCheck>
               </ul>
             </section>
             <section className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -235,6 +239,52 @@ export default function KnowledgeFactoryOperationsWorkspace() {
               </dl>
             </section>
           </div>
+          <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex items-start gap-3">
+              <Activity className="mt-0.5 text-[#1769dc]" size={19} />
+              <div>
+                <h3 className="font-semibold text-slate-900">
+                  Named package-pilot review
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-slate-500">
+                  This pilot has its own expiry and spend envelope. Reaching a
+                  limit stops the next paid request server-side.
+                </p>
+              </div>
+            </div>
+            {packagePilot ? (
+              <dl className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ["Status", packagePilot.status],
+                  [
+                    "Named users",
+                    `${packagePilot.namedUserCount} users`,
+                  ],
+                  [
+                    "Reports",
+                    `${packagePilot.reportCount}/${packagePilot.reportCap}`,
+                  ],
+                  [
+                    "Supplier credits",
+                    `${Number(packagePilot.creditsConsumed || 0).toLocaleString("en-ZA")}/${Number(packagePilot.creditCap || 0).toLocaleString("en-ZA")}`,
+                  ],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {label}
+                    </dt>
+                    <dd className="mt-1 text-sm font-semibold text-slate-800">
+                      {value || "Not set"}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            ) : (
+              <p className="mt-4 rounded-xl bg-slate-50 p-3 text-sm text-slate-500">
+                No named package pilot has been configured yet.
+              </p>
+            )}
+          </section>
           <KnowledgeFactoryCostMatrixPanel organisationId={organisationId} />
           <KnowledgeFactoryReportProductsPanel
             organisationId={organisationId}

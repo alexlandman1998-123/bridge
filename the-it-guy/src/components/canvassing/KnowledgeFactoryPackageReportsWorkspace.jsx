@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   CheckCircle2,
+  Download,
   FileText,
   LoaderCircle,
   RefreshCw,
@@ -11,6 +12,7 @@ import { useEffect, useState } from "react";
 import { useWorkspace } from "../../context/WorkspaceContext";
 import {
   convertKnowledgeFactoryReportToProspect,
+  downloadKnowledgeFactoryCompletedReport,
   listKnowledgeFactoryCompletedReports,
 } from "../../services/propertyIntelligence/knowledgeFactoryReportConversionService";
 import Field from "../ui/Field";
@@ -227,6 +229,7 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
     saving: false,
     error: "",
   });
+  const [downloadingReportId, setDownloadingReportId] = useState("");
 
   async function load() {
     if (!organisationId) return;
@@ -273,6 +276,28 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
         error:
           error?.message || "The canvassing prospect could not be created.",
       }));
+    }
+  }
+
+  async function download(report) {
+    if (!report?.id || downloadingReportId) return;
+    setDownloadingReportId(report.id);
+    try {
+      const result = await downloadKnowledgeFactoryCompletedReport({
+        organisationId,
+        reportResultId: report.id,
+      });
+      const { downloadKnowledgeFactoryReportPdf } = await import(
+        "../../services/propertyIntelligence/knowledgeFactoryReportPdf"
+      );
+      downloadKnowledgeFactoryReportPdf(result.report);
+    } catch (error) {
+      setState((previous) => ({
+        ...previous,
+        error: error?.message || "The saved report could not be downloaded.",
+      }));
+    } finally {
+      setDownloadingReportId("");
     }
   }
 
@@ -359,23 +384,48 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
                     </dd>
                   </div>
                 </dl>
-                <button
-                  type="button"
-                  disabled={Boolean(report.conversion) || converted}
-                  onClick={() =>
-                    setConversion({ report, saving: false, error: "" })
-                  }
-                  className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-default disabled:border-emerald-200 disabled:bg-emerald-50 disabled:text-emerald-700"
-                >
-                  {converted ? (
-                    <CheckCircle2 size={16} />
-                  ) : (
-                    <UserPlus size={16} />
-                  )}
-                  {converted
-                    ? "Added to Canvassing"
-                    : "Create canvassing prospect"}
-                </button>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    disabled={
+                      report.report_snapshot_version !== "canvassing-report-v1" ||
+                      Boolean(downloadingReportId)
+                    }
+                    onClick={() => void download(report)}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl bg-[#1769dc] px-3 text-sm font-semibold text-white hover:bg-[#1257b7] disabled:cursor-default disabled:bg-slate-300"
+                    title={
+                      report.report_snapshot_version === "canvassing-report-v1"
+                        ? "Download saved property intelligence report"
+                        : "This older report cannot be rendered from a complete saved snapshot"
+                    }
+                  >
+                    {downloadingReportId === report.id ? (
+                      <LoaderCircle className="animate-spin" size={16} />
+                    ) : (
+                      <Download size={16} />
+                    )}
+                    {downloadingReportId === report.id
+                      ? "Preparing PDF..."
+                      : "Download PDF"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={Boolean(report.conversion) || converted}
+                    onClick={() =>
+                      setConversion({ report, saving: false, error: "" })
+                    }
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-default disabled:border-emerald-200 disabled:bg-emerald-50 disabled:text-emerald-700"
+                  >
+                    {converted ? (
+                      <CheckCircle2 size={16} />
+                    ) : (
+                      <UserPlus size={16} />
+                    )}
+                    {converted
+                      ? "Added to Canvassing"
+                      : "Create canvassing prospect"}
+                  </button>
+                </div>
               </article>
             );
           })}

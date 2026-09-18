@@ -146,6 +146,18 @@ export default function KnowledgeFactoryReportProductsPanel({
                   ))}
                 </ul>
               </div>
+              {product.excludedFields?.length ? (
+                <div className="mt-3 rounded-lg border border-slate-200 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Deliberately not included
+                  </p>
+                  <ul className="mt-2 space-y-1 text-sm text-slate-600">
+                    {product.excludedFields.map((field) => (
+                      <li key={field}>• {field}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
               <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
                 <label className="text-sm font-medium text-slate-700">
                   Proposed selling price
@@ -175,6 +187,11 @@ export default function KnowledgeFactoryReportProductsPanel({
                     {Number(product.validationCount)
                       ? `${new Intl.NumberFormat("en-ZA").format(product.validatedSupplierCredits)} credits`
                       : "Awaiting validation"}
+                  </p>
+                  <p className="mt-1">
+                    {product.validatedSupplierCostCents === null
+                      ? "Save commercial controls to calculate supplier cost and margin."
+                      : `Validated supplier cost: ${rands(product.validatedSupplierCostCents)} · Proposed gross margin: ${rands(product.proposedGrossMarginCents)}`}
                   </p>
                 </div>
               </div>

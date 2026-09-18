@@ -36,11 +36,17 @@ export function saveKnowledgeFactoryPackagePilot({
   organisationId,
   status,
   allowedUserIds,
+  pilotReportCap,
+  pilotCreditCap,
+  pilotEndsAt,
 } = {}) {
   return call({
     action: "save",
     organisationId: text(organisationId),
     status: text(status),
     allowedUserIds,
+    pilotReportCap,
+    pilotCreditCap,
+    pilotEndsAt: text(pilotEndsAt),
   });
 }

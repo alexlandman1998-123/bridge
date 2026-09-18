@@ -11,34 +11,68 @@ const ADMIN_ROLES = new Set([
 
 const PRODUCTS = {
   basic_owner_lookup: {
-    name: "Basic property lookup",
+    definitionVersion: "canvassing-v1",
+    name: "Basic property & owner lookup",
     description:
-      "Property address and current-owner details for focused canvassing.",
+      "A focused property and current-owner lookup for a first canvassing contact.",
     recipeIds: ["snapshot_core", "owner_current_transfer"],
     fields: [
-      "Property address",
-      "Suburb and town",
-      "Current owner name",
-      "Owner type",
+      "Property and parcel reference",
+      "Mapped street address, suburb and town",
+      "Property type and extent",
+      "Current owner name, entity type and ownership share",
+      "Report reference, requested purpose and generated date",
     ],
+    excludedFields: [
+      "Municipal valuation, zoning and historic transaction data",
+      "Bond, lender and finance data",
+      "FICA/KYC, credit, identity and contact data",
+    ],
+    sections: [
+      { key: "property", title: "Property identity" },
+      { key: "ownership", title: "Current ownership" },
+      { key: "provenance", title: "Report reference and purpose" },
+    ],
+    costValidationRecipeId: "package_basic_v1",
     priceCents: 500,
   },
   full_canvassing_report: {
-    name: "Full canvassing report",
+    definitionVersion: "canvassing-v1",
+    name: "Full property intelligence report",
     description:
-      "Property, municipal, ownership and current bond information for a qualified opportunity.",
+      "A comprehensive property, valuation, ownership, transaction and finance-indicator report for a qualified canvassing opportunity.",
     recipeIds: [
       "snapshot_core",
       "snapshot_valuation",
       "owner_current_transfer",
+      "transaction_history_recent",
       "finance_current_bonds",
     ],
     fields: [
-      "Property address and parcel details",
-      "Municipal valuation and zoning",
-      "Current owner details",
-      "Current bond indicators",
+      "Everything in Basic property & owner lookup",
+      "Municipal valuation, date, municipality, zoning and reason",
+      "Property, scheme, unit and deeds context where available",
+      "Current ownership and ownership tenure",
+      "Selected recent transfer timeline with dates and values",
+      "Current finance indicator, current-bond count and registration dates",
+      "Arch9 opportunity signals derived from the saved report data",
     ],
+    excludedFields: [
+      "Historic buyer and seller names",
+      "Exact bond balance, bond holder, bond number and bond-owner identity",
+      "FICA/KYC, credit, identity and contact data",
+      "Comparable-sales data until it has been separately cost-validated",
+    ],
+    sections: [
+      { key: "property", title: "Property identity" },
+      { key: "valuation", title: "Municipal valuation and zoning" },
+      { key: "ownership", title: "Current ownership and tenure" },
+      { key: "transactions", title: "Selected transfer timeline" },
+      { key: "finance", title: "Current finance indicator" },
+      { key: "signals", title: "Canvassing opportunity signals" },
+      { key: "provenance", title: "Report reference and purpose" },
+    ],
+    costValidationRecipeId: "package_full_v1",
     priceCents: 2500,
   },
 };
@@ -175,7 +209,14 @@ async function administrator(request, db, organisationId) {
   }
   return user.id;
 }
-function mergeProducts(rows, validations) {
+function estimateSupplierCostCents(credits, creditsPerCent) {
+  const safeCredits = Number(credits);
+  const safeRate = Number(creditsPerCent);
+  if (!Number.isFinite(safeCredits) || !Number.isFinite(safeRate) || safeRate <= 0)
+    return null;
+  return Math.ceil(safeCredits / safeRate);
+}
+function mergeProducts(rows, validations, commercialPolicy = null) {
   const saved = new Map((rows || []).map((row) => [row.product_id, row]));
   const latestCost = new Map();
   for (const item of validations || []) {
@@ -184,25 +225,44 @@ function mergeProducts(rows, validations) {
   }
   return Object.entries(PRODUCTS).map(([productId, template]) => {
     const row = saved.get(productId);
-    const evidence = template.recipeIds
-      .map((recipeId) => latestCost.get(recipeId))
-      .filter(Boolean);
+    const validationRecipeId =
+      row?.cost_validation_recipe_id || template.costValidationRecipeId;
+    const evidence = [latestCost.get(validationRecipeId)].filter(Boolean);
+    const validatedSupplierCredits = evidence.reduce(
+      (sum, item) => sum + Number(item.credits_consumed || 0),
+      0,
+    );
+    const validatedSupplierCostCents = estimateSupplierCostCents(
+      validatedSupplierCredits,
+      commercialPolicy?.supplier_credits_per_cent,
+    );
+    const customerPriceCents = row?.customer_price_cents ?? template.priceCents;
     return {
       productId,
       name: row?.name || template.name,
       description: row?.description || template.description,
       fields: template.fields,
+      excludedFields: template.excludedFields,
+      sections: template.sections,
+      definitionVersion: row?.definition_version || template.definitionVersion,
       recipeIds: template.recipeIds,
-      customerPriceCents: row?.customer_price_cents ?? template.priceCents,
+      costValidationRecipeId: validationRecipeId,
+      customerPriceCents,
       status: row?.status || "draft",
       saved: Boolean(row),
       validationCount: evidence.length,
-      validationRequired: template.recipeIds.length,
-      validatedSupplierCredits: evidence.reduce(
-        (sum, item) => sum + Number(item.credits_consumed || 0),
-        0,
-      ),
-      canMarkUatValidated: evidence.length === template.recipeIds.length,
+      validationRequired: 1,
+      validatedSupplierCredits,
+      validatedSupplierCostCents,
+      proposedGrossMarginCents:
+        validatedSupplierCostCents === null
+          ? null
+          : customerPriceCents - validatedSupplierCostCents,
+      commercialPolicyConfigured: Boolean(commercialPolicy),
+      canMarkUatValidated:
+        evidence.length === 1 &&
+        validatedSupplierCostCents !== null &&
+        customerPriceCents > validatedSupplierCostCents,
       updatedAt: row?.updated_at || null,
     };
   });
@@ -227,11 +287,12 @@ export default async function handler(request, response) {
     const [
       { data: products, error: productError },
       { data: validations, error: validationError },
+      { data: commercialPolicy, error: commercialPolicyError },
     ] = await Promise.all([
       db
         .from("knowledge_factory_report_products")
         .select(
-          "product_id, name, description, customer_price_cents, status, updated_at",
+          "product_id, name, description, customer_price_cents, status, definition_version, cost_validation_recipe_id, updated_at",
         )
         .eq("organisation_id", organisationId),
       db
@@ -240,12 +301,17 @@ export default async function handler(request, response) {
         .eq("organisation_id", organisationId)
         .order("created_at", { ascending: false })
         .limit(100),
+      db
+        .from("knowledge_factory_package_commercial_policies")
+        .select("supplier_credits_per_cent")
+        .eq("organisation_id", organisationId)
+        .maybeSingle(),
     ]);
-    if (productError || validationError)
+    if (productError || validationError || commercialPolicyError)
       throw new Error("The Phase 1 report-package workspace is unavailable.");
     if (action === "list")
       return json(response, 200, {
-        products: mergeProducts(products, validations),
+        products: mergeProducts(products, validations, commercialPolicy),
       });
     const productId = text(input.productId, 80);
     const template = PRODUCTS[productId];
@@ -253,16 +319,36 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error: "Choose a supported report package.",
       });
-    const allProducts = mergeProducts(products, validations);
+    const allProducts = mergeProducts(products, validations, commercialPolicy);
     const current = allProducts.find((item) => item.productId === productId);
+    const selectedPriceCents = priceCents(input.customerPriceCents);
     const status =
-      input.markUatValidated === true && current?.canMarkUatValidated
+      input.markUatValidated === true &&
+      current?.validationCount === 1 &&
+      current?.validatedSupplierCostCents !== null &&
+      selectedPriceCents > current.validatedSupplierCostCents
         ? "uat_validated"
         : "draft";
-    if (input.markUatValidated === true && !current?.canMarkUatValidated)
+    if (input.markUatValidated === true && current?.validationCount !== 1)
       return json(response, 400, {
         error:
-          "Validate every included report component in UAT before marking this package ready.",
+          "Validate this package's complete query in UAT before marking it ready.",
+      });
+    if (
+      input.markUatValidated === true &&
+      current?.validatedSupplierCostCents === null
+    )
+      return json(response, 400, {
+        error:
+          "Save package commercial controls before setting a UAT-ready selling price.",
+      });
+    if (
+      input.markUatValidated === true &&
+      selectedPriceCents <= current?.validatedSupplierCostCents
+    )
+      return json(response, 400, {
+        error:
+          "Set a selling price above the validated supplier cost before marking this package ready.",
       });
     const { error: saveError } = await db
       .from("knowledge_factory_report_products")
@@ -274,7 +360,11 @@ export default async function handler(request, response) {
           description: template.description,
           included_recipe_ids: template.recipeIds,
           field_manifest: template.fields,
-          customer_price_cents: priceCents(input.customerPriceCents),
+          report_sections: template.sections,
+          excluded_field_manifest: template.excludedFields,
+          definition_version: template.definitionVersion,
+          cost_validation_recipe_id: template.costValidationRecipeId,
+          customer_price_cents: selectedPriceCents,
           status,
           created_by: actorId,
           updated_by: actorId,
@@ -286,13 +376,13 @@ export default async function handler(request, response) {
     const { data: nextProducts, error: reloadError } = await db
       .from("knowledge_factory_report_products")
       .select(
-        "product_id, name, description, customer_price_cents, status, updated_at",
+        "product_id, name, description, customer_price_cents, status, definition_version, cost_validation_recipe_id, updated_at",
       )
       .eq("organisation_id", organisationId);
     if (reloadError)
       throw new Error("The saved report package could not be reloaded.");
     return json(response, 200, {
-      products: mergeProducts(nextProducts, validations),
+      products: mergeProducts(nextProducts, validations, commercialPolicy),
     });
   } catch (error) {
     json(response, Number(error?.status || 502), {

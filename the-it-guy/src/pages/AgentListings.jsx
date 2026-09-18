@@ -912,11 +912,18 @@ function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel = 'Canc
             Save draft
           </Button>
         ) : null}
-        <Button type={isFinalStep ? 'submit' : 'button'} disabled={isSaving} onClick={isFinalStep ? undefined : onContinue}>
-          {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
-          {isFinalStep ? finalLabel : 'Continue'}
-          {!isFinalStep ? <ArrowRight size={16} /> : null}
-        </Button>
+        {isFinalStep ? (
+          <Button type="submit" disabled={isSaving}>
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+            {finalLabel}
+          </Button>
+        ) : (
+          <Button type="button" disabled={isSaving} onClick={onContinue}>
+            {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+            Continue
+            <ArrowRight size={16} />
+          </Button>
+        )}
       </div>
     </footer>
   )
@@ -924,8 +931,9 @@ function WizardFooter({ isFinalStep = false, isSaving = false, leftLabel = 'Canc
 
 function CreateListingStatusRow({ label, complete, detail = '', status = '' }) {
   const reportedPending = status === 'reported_held_pending_upload'
-  const indicatorClass = complete ? 'bg-[#1f7d44]' : reportedPending ? 'bg-[#c58a16]' : 'bg-[#dc3e35]'
-  const detailClass = complete ? 'text-[#1f7d44]' : reportedPending ? 'text-[#9a5b13]' : 'text-[#7b8ca2]'
+  const deferred = status === 'deferred'
+  const indicatorClass = deferred || reportedPending ? 'bg-[#c58a16]' : complete ? 'bg-[#1f7d44]' : 'bg-[#dc3e35]'
+  const detailClass = deferred || reportedPending ? 'text-[#9a5b13]' : complete ? 'text-[#1f7d44]' : 'text-[#7b8ca2]'
   return (
     <div className="flex items-start justify-between gap-3">
       <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#294563]">
@@ -933,7 +941,7 @@ function CreateListingStatusRow({ label, complete, detail = '', status = '' }) {
         <span className="truncate">{label}</span>
       </span>
       <span className={`shrink-0 text-xs font-semibold ${detailClass}`}>
-        {detail || (complete ? 'Complete' : reportedPending ? 'Upload pending' : 'Incomplete')}
+        {detail || (complete ? 'Complete' : reportedPending ? 'Upload pending' : deferred ? 'To be captured later' : 'Incomplete')}
       </span>
     </div>
   )
@@ -941,9 +949,16 @@ function CreateListingStatusRow({ label, complete, detail = '', status = '' }) {
 
 function buildCreateListingRequirementSummary(form = {}) {
   const sellerName = getQuickAddSellerDisplayName(form)
+  const sellerUnidentified = isQuickAddSellerUnidentified(form)
   const reportedDetail = (reported) => reported ? 'Reported received — upload pending' : 'Not recorded'
   return [
-    { key: 'seller', label: 'Seller details', complete: Boolean(sellerName && (form.sellerEmail || form.sellerPhone)) },
+    {
+      key: 'seller',
+      label: 'Seller details',
+      complete: sellerUnidentified || Boolean(sellerName && (form.sellerEmail || form.sellerPhone)),
+      status: sellerUnidentified ? 'deferred' : '',
+      detail: sellerUnidentified ? 'To be captured later' : '',
+    },
     { key: 'fica', label: 'FICA evidence', complete: false, status: form.hasSignedFicaForm ? 'reported_held_pending_upload' : '', detail: reportedDetail(form.hasSignedFicaForm) },
     { key: 'disclosure', label: 'Disclosure evidence', complete: false, status: form.hasSignedPropertyConditionDisclosure ? 'reported_held_pending_upload' : '', detail: reportedDetail(form.hasSignedPropertyConditionDisclosure) },
     { key: 'mandate', label: 'Signed mandate', complete: false, status: form.hasSignedMandate || normalizeText(form.manualMandateFileName) ? 'reported_held_pending_upload' : '', detail: reportedDetail(form.hasSignedMandate || normalizeText(form.manualMandateFileName)) },
@@ -1571,6 +1586,10 @@ function getQuickAddSellerDisplayName(form = {}) {
     return normalizeText(form.sellerName || parseDirectListingPeopleText(multipleOwnersText, 'Owner')[0]?.fullName)
   }
   return [normalizeText(form.sellerName), normalizeText(form.sellerSurname)].filter(Boolean).join(' ').trim()
+}
+
+function isQuickAddSellerUnidentified(form = {}) {
+  return normalizeDirectListingKey(form.sellerType || 'unknown') === 'unknown'
 }
 
 function getQuickAddSellerNameRequirementLabel(form = {}) {
@@ -3421,11 +3440,12 @@ function composeStructuredListingAddress(form = {}) {
 function validateQuickListingMinimumFields({ form, assignedAgentKey, requireAssignedAgent = true }) {
   const errors = []
   const sellerDisplayName = getQuickAddSellerDisplayName(form)
+  const sellerUnidentified = isQuickAddSellerUnidentified(form)
   if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
   if (!hasListingPriceOrPoa(form)) errors.push('Listing price or price on application is required.')
   if (!normalizeText(form.propertyType)) errors.push('Property type is required.')
-  if (!sellerDisplayName) errors.push(getQuickAddSellerNameRequirementLabel(form))
-  if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or mobile is required.')
+  if (!sellerUnidentified && !sellerDisplayName) errors.push(getQuickAddSellerNameRequirementLabel(form))
+  if (!sellerUnidentified && !normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) errors.push('Seller email or mobile is required.')
   if (requireAssignedAgent && !normalizeText(assignedAgentKey)) errors.push('Assigned agent is required.')
   if (!MANUAL_LISTING_STATUSES.includes(normalizeKey(form.listingStatus))) errors.push('Listing status must be Draft, Mandate Signed, Active, Under Offer, or Sold.')
   return errors
@@ -4257,8 +4277,8 @@ function AgentListings({ initialTab = null } = {}) {
   const selectedCreateListingPortalStatuses = createListingPortalStatuses.filter((portal) => portal.enabled)
   const createListingRequiredNow = useMemo(() => {
     const required = []
-    if (!getQuickAddSellerDisplayName(form)) required.push('seller / entity name')
-    if (!normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) required.push('seller contact')
+    if (!isQuickAddSellerUnidentified(form) && !getQuickAddSellerDisplayName(form)) required.push('seller / entity name')
+    if (!isQuickAddSellerUnidentified(form) && !normalizeText(form.sellerEmail) && !normalizeText(form.sellerPhone)) required.push('seller contact')
     if (!normalizeText(form.propertyAddress)) required.push('property address')
     if (!hasListingPriceOrPoa(form)) required.push('listing price or POA')
     return required
@@ -7507,6 +7527,7 @@ function AgentListings({ initialTab = null } = {}) {
       )
     }
     const sellerTypeKey = normalizeDirectListingKey(form.sellerType || 'individual')
+    const sellerDetailsRequired = sellerTypeKey !== 'unknown'
     const mandateSigned = Boolean(form.hasSignedMandate)
     const selectedAgentKey = normalizeText(form.assignedAgentId || form.assignedAgentEmail)
     const selectedAgent = assignableAgents.find((agent) => normalizeText(agent.userId || agent.id || agent.email) === selectedAgentKey) || assignableAgents[0] || null
@@ -7525,24 +7546,20 @@ function AgentListings({ initialTab = null } = {}) {
     return (
       <form className="space-y-5 pb-6" onSubmit={handleSaveListing} noValidate>
         <header className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-semibold text-[#607387]">
-              <button type="button" className="transition hover:text-[#142132]" onClick={() => navigate('/listings')}>Listings</button>
-              <span className="mx-2 text-[#9aa9ba]">→</span>
-              {isEditListingWorkspace ? (
-                <>
-                  <span>{editorCrumbTitle}</span>
-                  <span className="mx-2 text-[#9aa9ba]">→</span>
-                </>
-              ) : null}
-              <span className="text-[#142132]">{editorTitle}</span>
-              {isEditListingWorkspace ? (
+          {isEditListingWorkspace ? (
+            <div>
+              <div className="text-sm font-semibold text-[#607387]">
+                <button type="button" className="transition hover:text-[#142132]" onClick={() => navigate('/listings')}>Listings</button>
+                <span className="mx-2 text-[#9aa9ba]">→</span>
+                <span>{editorCrumbTitle}</span>
+                <span className="mx-2 text-[#9aa9ba]">→</span>
+                <span className="text-[#142132]">{editorTitle}</span>
                 <span className="ml-2 rounded-full border border-[#cfe9dc] bg-[#edf9f2] px-2 py-0.5 text-xs font-bold text-[#1f7d44]">Editing</span>
-              ) : null}
+              </div>
+              <h1 className="mt-3 text-2xl font-semibold text-[#142132]">{editorHeading}</h1>
+              <p className="mt-1 text-sm text-[#607387]">{editorDescription}</p>
             </div>
-            <h1 className="mt-3 text-2xl font-semibold text-[#142132]">{editorHeading}</h1>
-            <p className="mt-1 text-sm text-[#607387]">{editorDescription}</p>
-          </div>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2">
             {isEditListingWorkspace ? (
               <>
@@ -7599,7 +7616,7 @@ function AgentListings({ initialTab = null } = {}) {
                 />
 
                 <ListingWizardSection title="Ownership type">
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
                     {QUICK_ADD_SELLER_TYPE_CARDS.map((option) => (
                       <SelectionCard
                         key={option.value}
@@ -7634,13 +7651,13 @@ function AgentListings({ initialTab = null } = {}) {
                     </div>
                   ) : (
                     <div className="mt-3 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                      <FormField label="Full name *">
+                      <FormField label={sellerDetailsRequired ? 'Full name *' : 'Full name'}>
                         <Field value={form.sellerName} onChange={(event) => updateForm('sellerName', event.target.value)} />
                       </FormField>
-                      <FormField label="Mobile *">
+                      <FormField label={sellerDetailsRequired ? 'Mobile *' : 'Mobile'}>
                         <Field value={form.sellerPhone} onChange={(event) => updateForm('sellerPhone', event.target.value)} />
                       </FormField>
-                      <FormField label="Email *">
+                      <FormField label={sellerDetailsRequired ? 'Email *' : 'Email'}>
                         <Field type="email" value={form.sellerEmail} onChange={(event) => updateForm('sellerEmail', event.target.value)} />
                       </FormField>
                       <FormField label="ID number">
@@ -10260,9 +10277,6 @@ function AgentListings({ initialTab = null } = {}) {
                               ? 'Create now and renew the mandate from the listing workspace.'
                               : 'Create now and generate the mandate later from the listing workspace.'}
                         </p>
-                        <Button type="button" variant="secondary" className="mt-3" onClick={() => setWorkflowMessage('Mandate generation will be available from the listing workspace after save.')}>
-                          Generate Mandate
-                        </Button>
                       </div>
                     )}
                     <label className="grid gap-2">

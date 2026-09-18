@@ -1,4 +1,4 @@
-import { ChevronRight, MessageCircle, PlugZap, Radio } from 'lucide-react'
+import { ChevronRight, IdCard, MessageCircle, PlugZap, Radio } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { settingsPageClass } from './settingsUi'
 
@@ -11,12 +11,20 @@ const INTEGRATION_CARDS = [
     logoAlt: 'Property24 logo',
   },
   {
-    to: '/settings/lead-capture',
+    to: '/settings/integrations/meta',
     label: 'Meta Lead Ads',
-    description: 'Authorise Facebook and Instagram lead forms, then route enquiries into your CRM.',
+    description: 'Connect Facebook and Instagram forms, then choose how each form reaches your CRM.',
     icon: Radio,
     brandLabel: 'Meta',
     brandClassName: 'text-[#1877f2]',
+  },
+  {
+    to: '/settings/integrations/digital-cards',
+    label: 'Digital Cards',
+    description: 'Create shareable agent cards, QR codes, and enquiry links for your team.',
+    icon: IdCard,
+    brandLabel: 'Digital cards',
+    brandClassName: 'text-[#0f7f4f]',
   },
   {
     label: 'WhatsApp',
@@ -83,14 +91,6 @@ function IntegrationCard({ to, label, description, logoSrc, logoAlt, icon: Icon 
 export default function SettingsSyndicationPage() {
   return (
     <div className={`${settingsPageClass} settings-dashboard-page`}>
-      <header className="space-y-3">
-        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[#65748b]">Platform management</p>
-        <h1 className="text-2xl font-semibold tracking-[-0.03em] text-[#13202f]">Third-party integrations</h1>
-        <p className="max-w-3xl text-sm leading-6 text-[#60758d]">
-          Connect the channels your organisation uses for publishing, lead capture, and client communication. Each available card opens its existing setup page.
-        </p>
-      </header>
-
       <section className="grid gap-5 md:grid-cols-2">
         {INTEGRATION_CARDS.map((card) => (
           <IntegrationCard key={card.label} {...card} />

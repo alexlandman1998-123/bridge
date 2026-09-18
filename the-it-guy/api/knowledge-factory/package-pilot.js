@@ -10,6 +10,7 @@ const ADMIN_ROLES = new Set([
 ]);
 const STATUSES = new Set(["candidate", "active", "paused", "completed"]);
 const MAX_PILOT_USERS = 5;
+const MAX_PILOT_DAYS = 30;
 
 function text(value, max = 1000) {
   return typeof value === "string" ? value.trim().slice(0, max) : "";
@@ -114,6 +115,68 @@ async function administrator(request, db, organisationId) {
 function activeMembership(row) {
   return text(row?.membership_status || row?.status).toLowerCase() === "active";
 }
+function positiveInteger(value, label, max = 1_000_000) {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > max) {
+    const error = new Error(
+      `${label} must be a whole number between 1 and ${max}.`,
+    );
+    error.status = 400;
+    throw error;
+  }
+  return parsed;
+}
+function pilotEndsAt(value) {
+  const timestamp = Date.parse(text(value, 80));
+  if (!Number.isFinite(timestamp)) {
+    const error = new Error("Choose a valid pilot end date.");
+    error.status = 400;
+    throw error;
+  }
+  const now = Date.now();
+  if (timestamp <= now) {
+    const error = new Error("The pilot end date must be in the future.");
+    error.status = 400;
+    throw error;
+  }
+  if (timestamp > now + MAX_PILOT_DAYS * 24 * 60 * 60_000) {
+    const error = new Error(
+      `A named pilot may run for no more than ${MAX_PILOT_DAYS} days.`,
+    );
+    error.status = 400;
+    throw error;
+  }
+  return new Date(timestamp).toISOString();
+}
+function pilotTimestamp(value) {
+  const timestamp = Date.parse(text(value, 80));
+  if (!Number.isFinite(timestamp)) {
+    const error = new Error("Choose a valid pilot end date.");
+    error.status = 400;
+    throw error;
+  }
+  return new Date(timestamp).toISOString();
+}
+async function pilotUsage(db, organisationId, pilot) {
+  const activatedAt = text(pilot?.activated_at, 80);
+  if (!activatedAt)
+    return { reportCount: 0, creditsConsumed: 0, activatedAt: null };
+  const { data, error } = await db
+    .from("knowledge_factory_report_results")
+    .select("credits_consumed")
+    .eq("organisation_id", organisationId)
+    .gte("executed_at", activatedAt)
+    .limit(1_000);
+  if (error) throw new Error("Package pilot usage could not be calculated.");
+  return {
+    reportCount: (data || []).length,
+    creditsConsumed: (data || []).reduce(
+      (total, report) => total + (Number(report.credits_consumed) || 0),
+      0,
+    ),
+    activatedAt,
+  };
+}
 async function eligibleUsers(db, organisationId) {
   const [memberships, permissions] = await Promise.all([
     db
@@ -147,7 +210,7 @@ async function eligibleUsers(db, organisationId) {
     }))
     .sort((left, right) => left.email.localeCompare(right.email));
 }
-async function preflightForActivation(db, organisationId, userIds) {
+async function preflightForActivation(db, organisationId, userIds, pilot) {
   const [policy, products] = await Promise.all([
     db
       .from("knowledge_factory_package_commercial_policies")
@@ -189,6 +252,21 @@ async function preflightForActivation(db, organisationId, userIds) {
     error.status = 409;
     throw error;
   }
+  const usage = await pilotUsage(db, organisationId, pilot);
+  if (usage.reportCount >= Number(pilot.pilot_report_cap || 0)) {
+    const error = new Error(
+      "This pilot's report cap has already been reached. Pause it or start a new controlled pilot after review.",
+    );
+    error.status = 409;
+    throw error;
+  }
+  if (usage.creditsConsumed >= Number(pilot.pilot_credit_cap || 0)) {
+    const error = new Error(
+      "This pilot's supplier-credit cap has already been reached. Pause it or start a new controlled pilot after review.",
+    );
+    error.status = 409;
+    throw error;
+  }
 }
 
 export default async function handler(request, response) {
@@ -208,17 +286,26 @@ export default async function handler(request, response) {
     });
     const actorId = await administrator(request, db, organisationId);
     const candidates = await eligibleUsers(db, organisationId);
+    const { data: existingPilot, error: existingPilotError } = await db
+      .from("knowledge_factory_package_pilot_enrolments")
+      .select(
+        "status, allowed_user_ids, activated_at, pilot_report_cap, pilot_credit_cap, pilot_ends_at",
+      )
+      .eq("organisation_id", organisationId)
+      .maybeSingle();
+    if (existingPilotError)
+      throw new Error("Package pilot status is unavailable.");
     if (action === "get") {
-      const { data, error } = await db
-        .from("knowledge_factory_package_pilot_enrolments")
-        .select(
-          "status, allowed_user_ids, activated_at, paused_at, completed_at, created_at, updated_at",
-        )
-        .eq("organisation_id", organisationId)
-        .maybeSingle();
-      if (error) throw new Error("Package pilot status is unavailable.");
+      const usage = await pilotUsage(db, organisationId, existingPilot);
       return json(response, 200, {
-        pilot: data || { status: "candidate", allowed_user_ids: [] },
+        pilot: existingPilot || {
+          status: "candidate",
+          allowed_user_ids: [],
+          pilot_report_cap: 25,
+          pilot_credit_cap: 250000,
+          pilot_ends_at: null,
+        },
+        usage,
         candidates,
         maxPilotUsers: MAX_PILOT_USERS,
         privatePilotGateEnabled:
@@ -249,17 +336,39 @@ export default async function handler(request, response) {
         error:
           "Every pilot user must be an active named user with property-report permission.",
       });
-    if (status === "active")
-      await preflightForActivation(db, organisationId, allowedUserIds);
     const timestamp = new Date().toISOString();
+    const continuingActive =
+      status === "active" && existingPilot?.status === "active";
+    const activeAt = continuingActive ? existingPilot.activated_at : timestamp;
+    const pilot = {
+      activated_at: activeAt,
+      pilot_report_cap: positiveInteger(
+        input.pilotReportCap,
+        "Pilot report cap",
+        250,
+      ),
+      pilot_credit_cap: positiveInteger(
+        input.pilotCreditCap,
+        "Pilot supplier-credit cap",
+      ),
+      pilot_ends_at:
+        status === "active"
+          ? pilotEndsAt(input.pilotEndsAt)
+          : pilotTimestamp(input.pilotEndsAt),
+    };
+    if (status === "active")
+      await preflightForActivation(db, organisationId, allowedUserIds, pilot);
     const patch = {
       organisation_id: organisationId,
       status,
       allowed_user_ids: allowedUserIds,
       activated_by: status === "active" ? actorId : null,
-      activated_at: status === "active" ? timestamp : null,
+      activated_at: status === "active" ? activeAt : null,
       paused_at: status === "paused" ? timestamp : null,
       completed_at: status === "completed" ? timestamp : null,
+      pilot_report_cap: pilot.pilot_report_cap,
+      pilot_credit_cap: pilot.pilot_credit_cap,
+      pilot_ends_at: pilot.pilot_ends_at,
       updated_by: actorId,
       updated_at: timestamp,
     };
@@ -267,7 +376,7 @@ export default async function handler(request, response) {
       .from("knowledge_factory_package_pilot_enrolments")
       .upsert(patch, { onConflict: "organisation_id" })
       .select(
-        "status, allowed_user_ids, activated_at, paused_at, completed_at, created_at, updated_at",
+        "status, allowed_user_ids, activated_at, paused_at, completed_at, pilot_report_cap, pilot_credit_cap, pilot_ends_at, created_at, updated_at",
       )
       .single();
     if (error || !data) throw new Error("Package pilot could not be saved.");
@@ -280,11 +389,15 @@ export default async function handler(request, response) {
         mode: "package_pilot",
         pilot_status: status,
         named_user_count: allowedUserIds.length,
+        pilot_report_cap: pilot.pilot_report_cap,
+        pilot_credit_cap: pilot.pilot_credit_cap,
+        pilot_ends_at: pilot.pilot_ends_at,
       },
       outcome: "completed",
     });
     return json(response, 200, {
       pilot: data,
+      usage: await pilotUsage(db, organisationId, data),
       candidates,
       maxPilotUsers: MAX_PILOT_USERS,
       privatePilotGateEnabled:

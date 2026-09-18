@@ -12,7 +12,7 @@ function normalizeTags(tags = []) {
 function getClientRoleType(client = {}) {
   const candidates = [client.primaryRole, client.typeKeys?.[0], client.typeKey, client.role]
   const role = candidates.map((value) => clean(value).toLowerCase()).find(Boolean)
-  return ['buyer', 'seller', 'landlord', 'tenant', 'lead'].includes(role) ? role : 'lead'
+  return ['buyer', 'seller', 'investor', 'landlord', 'tenant', 'lead'].includes(role) ? role : 'lead'
 }
 
 export async function getClientMarketingWorkspace({ organisationId, email = '' }) {
@@ -22,11 +22,35 @@ export async function getClientMarketingWorkspace({ organisationId, email = '' }
     normalizedEmail
       ? supabase.from('email_marketing_contacts').select('*').eq('organisation_id', organisationId).eq('email', normalizedEmail).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).order('updated_at', { ascending: false }),
+    supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).is('archived_at', null).order('updated_at', { ascending: false }),
   ])
   if (contactResult.error) throw contactResult.error
   if (audiencesResult.error) throw audiencesResult.error
   return { marketingContact: contactResult.data || null, savedAudiences: audiencesResult.data || [] }
+}
+
+export async function getSavedAudiences(organisationId) {
+  if (!organisationId) return []
+  const { data, error } = await supabase
+    .from('email_saved_audiences')
+    .select('*')
+    .eq('organisation_id', organisationId)
+    .is('archived_at', null)
+    .order('updated_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+export async function previewSavedAudience({ organisationId, rules, limit = 8, offset = 0 }) {
+  if (!organisationId) return { count: 0, contacts: [] }
+  const { data, error } = await supabase.rpc('email_audience_preview', {
+    p_organisation_id: organisationId,
+    p_rules: rules || {},
+    p_limit: limit,
+    p_offset: offset,
+  })
+  if (error) throw error
+  return data || { count: 0, contacts: [] }
 }
 
 export async function saveClientMarketingTags({ organisationId, client, tags }) {
@@ -69,14 +93,21 @@ export async function getEmailCampaignWorkspace(organisationId) {
     supabase.from('email_subscription_types').select('*').eq('organisation_id', organisationId).eq('is_active', true).order('display_order'),
     supabase.from('email_deliverability_health').select('*').eq('organisation_id', organisationId),
     supabase.from('email_templates').select('*').eq('organisation_id', organisationId).order('updated_at', { ascending: false }),
-    supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).order('updated_at', { ascending: false }),
+    supabase.from('email_saved_audiences').select('*').eq('organisation_id', organisationId).is('archived_at', null).order('updated_at', { ascending: false }),
     supabase.from('email_usage_records').select('*').eq('organisation_id', organisationId).order('created_at', { ascending: false }).limit(100),
     supabase.from('email_billing_profiles').select('*').eq('organisation_id', organisationId).maybeSingle(),
     supabase.from('email_campaign_daily_performance').select('*').eq('organisation_id', organisationId).order('metric_date', { ascending: false }).limit(30),
     supabase.from('email_campaign_category_performance').select('*').eq('organisation_id', organisationId).order('recipients', { ascending: false }),
   ])
   for (const result of [campaigns, performance, identities, domains, contacts, subscriptionTypes, deliverability, templates, savedAudiences, usage, billingProfile, dailyPerformance, categoryPerformance]) if (result.error) throw result.error
-  return { campaigns: campaigns.data || [], performance: performance.data || [], identities: identities.data || [], domains: domains.data || [], contacts: contacts.data || [], subscriptionTypes: subscriptionTypes.data || [], deliverability: deliverability.data || [], templates: templates.data || [], savedAudiences: savedAudiences.data || [], usage: usage.data || [], billingProfile: billingProfile.data || null, dailyPerformance: dailyPerformance.data || [], categoryPerformance: categoryPerformance.data || [] }
+  // Structured audiences are referenced by ID, so campaign delivery resolves
+  // their latest membership at schedule time instead of flattening their rules.
+  const campaignAudiences = (savedAudiences.data || []).map((audience) => (
+    Array.isArray(audience?.filter_json?.rules)
+      ? { ...audience, filter_json: { saved_audience_id: audience.id } }
+      : audience
+  ))
+  return { campaigns: campaigns.data || [], performance: performance.data || [], identities: identities.data || [], domains: domains.data || [], contacts: contacts.data || [], subscriptionTypes: subscriptionTypes.data || [], deliverability: deliverability.data || [], templates: templates.data || [], savedAudiences: campaignAudiences, usage: usage.data || [], billingProfile: billingProfile.data || null, dailyPerformance: dailyPerformance.data || [], categoryPerformance: categoryPerformance.data || [] }
 }
 
 export async function saveEmailCampaign({ campaign, organisationId, userId }) {
@@ -178,6 +209,15 @@ export async function saveEmailAudience({ organisationId, userId, audience }) {
   const { data, error } = await query
   if (error) throw error
   return data
+}
+
+export async function archiveEmailAudience({ organisationId, audienceId }) {
+  const { error } = await supabase
+    .from('email_saved_audiences')
+    .update({ archived_at: new Date().toISOString() })
+    .eq('organisation_id', organisationId)
+    .eq('id', audienceId)
+  if (error) throw error
 }
 
 export async function getEmailCampaignAnalytics(campaignId) {

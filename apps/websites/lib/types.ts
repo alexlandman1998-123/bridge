@@ -35,6 +35,7 @@ export type ResolvedSite = {
   logoUrl?: string
   logoLightUrl?: string
   logoDarkUrl?: string
+  logoIconUrl?: string
   phone?: string
   email?: string
   website?: string

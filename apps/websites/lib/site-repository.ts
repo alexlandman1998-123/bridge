@@ -400,7 +400,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
         .maybeSingle(),
     ]
 
-  const [revisionResult, ...releaseGateResults] = await Promise.all([
+  const [revisionResult, organisationBrandingResult, ...releaseGateResults] = await Promise.all([
     supabase
       .from('website_site_revisions')
       .select('brand_json')
@@ -408,10 +408,16 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
       .eq('website_site_id', site.id)
       .eq('status', 'published')
       .maybeSingle(),
+    supabase
+      .from('organisation_branding')
+      .select('logo_icon_url')
+      .eq('organisation_id', site.organisation_id)
+      .maybeSingle(),
     ...releaseGates,
   ])
 
   if (revisionResult.error) throw revisionResult.error
+  if (organisationBrandingResult.error) throw organisationBrandingResult.error
   const releaseGateError = releaseGateResults.find((result) => result.error)?.error
   if (releaseGateError) throw releaseGateError
   const gateOpen = runtimeEnvironment === 'production'
@@ -420,6 +426,7 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
   if (!revisionResult.data || !gateOpen) return null
 
   const brand = (revisionResult.data?.brand_json || {}) as Record<string, unknown>
+  const organisationIconUrl = organisationBrandingResult.data?.logo_icon_url
   const properties = await getPublishedWebsiteListings(supabase, { id: site.id, organisationId: site.organisation_id }, 12)
   const publishedProperties = mapPublishedProperties(properties)
   return {
@@ -435,6 +442,9 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
     logoUrl: brand.logoUrl ? String(brand.logoUrl) : undefined,
     logoLightUrl: brand.logoLightUrl ? String(brand.logoLightUrl) : undefined,
     logoDarkUrl: brand.logoDarkUrl ? String(brand.logoDarkUrl) : undefined,
+    // The icon logo is shared organisation branding, so all sites belonging to
+    // the same business receive its current browser/app icon immediately.
+    logoIconUrl: brand.logoIconUrl ? String(brand.logoIconUrl) : organisationIconUrl ? String(organisationIconUrl) : undefined,
     phone: brand.phone ? String(brand.phone) : undefined,
     email: brand.email ? String(brand.email) : undefined,
     website: brand.website ? String(brand.website) : undefined,

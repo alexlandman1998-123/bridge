@@ -10,6 +10,11 @@ export function selectWebsiteLogo(site: Pick<ResolvedSite, 'logoUrl' | 'logoLigh
     : site.logoLightUrl || site.logoUrl || site.logoDarkUrl
 }
 
+/** The square organisation mark is used for the browser/app icon, never the wordmark. */
+export function selectWebsiteIcon(site: Pick<ResolvedSite, 'logoIconUrl' | 'logoLightUrl' | 'logoDarkUrl' | 'logoUrl'>): string | undefined {
+  return site.logoIconUrl || site.logoLightUrl || site.logoDarkUrl || site.logoUrl
+}
+
 /** Only render a normal public web link from the studio's optional URL field. */
 export function publicWebsiteHref(value: string | undefined): string | undefined {
   if (!value) return undefined

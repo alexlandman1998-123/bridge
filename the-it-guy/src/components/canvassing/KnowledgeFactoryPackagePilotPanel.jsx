@@ -14,11 +14,19 @@ import {
 } from "../../services/propertyIntelligence/knowledgeFactoryPackagePilotService";
 
 function initialPilot(pilot = {}) {
+  const defaultEnd = new Date(Date.now() + 14 * 24 * 60 * 60_000)
+    .toISOString()
+    .slice(0, 10);
   return {
     status: pilot.status || "candidate",
     allowedUserIds: Array.isArray(pilot.allowed_user_ids)
       ? pilot.allowed_user_ids
       : [],
+    pilotReportCap: pilot.pilot_report_cap ?? 25,
+    pilotCreditCap: pilot.pilot_credit_cap ?? 250000,
+    pilotEndsAt: pilot.pilot_ends_at
+      ? String(pilot.pilot_ends_at).slice(0, 10)
+      : defaultEnd,
   };
 }
 
@@ -31,6 +39,7 @@ export default function KnowledgeFactoryPackagePilotPanel({ organisationId }) {
     candidates: [],
     limit: 5,
     privateGateEnabled: false,
+    usage: null,
   });
   const load = useCallback(async () => {
     if (!organisationId) return;
@@ -45,6 +54,7 @@ export default function KnowledgeFactoryPackagePilotPanel({ organisationId }) {
         candidates: Array.isArray(result.candidates) ? result.candidates : [],
         limit: Number(result.maxPilotUsers || 5),
         privateGateEnabled: result.privatePilotGateEnabled === true,
+        usage: result.usage || null,
       });
     } catch (error) {
       setState((current) => ({
@@ -85,6 +95,9 @@ export default function KnowledgeFactoryPackagePilotPanel({ organisationId }) {
         organisationId,
         status,
         allowedUserIds: state.pilot.allowedUserIds,
+        pilotReportCap: state.pilot.pilotReportCap,
+        pilotCreditCap: state.pilot.pilotCreditCap,
+        pilotEndsAt: state.pilot.pilotEndsAt,
       });
       setState({
         loading: false,
@@ -94,6 +107,7 @@ export default function KnowledgeFactoryPackagePilotPanel({ organisationId }) {
         candidates: Array.isArray(result.candidates) ? result.candidates : [],
         limit: Number(result.maxPilotUsers || 5),
         privateGateEnabled: result.privatePilotGateEnabled === true,
+        usage: result.usage || null,
       });
     } catch (error) {
       setState((current) => ({
@@ -104,6 +118,7 @@ export default function KnowledgeFactoryPackagePilotPanel({ organisationId }) {
     }
   }
   const active = state.pilot.status === "active";
+  const usage = state.usage || {};
   return (
     <section
       className="rounded-2xl border border-slate-200 bg-white shadow-sm"
@@ -182,6 +197,89 @@ export default function KnowledgeFactoryPackagePilotPanel({ organisationId }) {
             {active ? "Pilot active" : state.pilot.status}
           </span>
         </div>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          {[
+            [
+              "Reports used",
+              `${Number(usage.reportCount || 0)}/${state.pilot.pilotReportCap}`,
+            ],
+            [
+              "Supplier credits used",
+              `${Number(usage.creditsConsumed || 0).toLocaleString("en-ZA")}/${Number(state.pilot.pilotCreditCap || 0).toLocaleString("en-ZA")}`,
+            ],
+            ["Pilot end date", state.pilot.pilotEndsAt || "Not set"],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-xl border border-slate-200 bg-white p-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                {label}
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-800">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <label className="text-sm font-medium text-slate-700">
+            Pilot report cap
+            <input
+              required
+              min="1"
+              max="250"
+              step="1"
+              inputMode="numeric"
+              value={state.pilot.pilotReportCap}
+              onChange={(event) =>
+                setState((current) => ({
+                  ...current,
+                  pilot: {
+                    ...current.pilot,
+                    pilotReportCap: event.target.value.replace(/\D/g, ""),
+                  },
+                }))
+              }
+              className="mt-1 block min-h-10 w-full rounded-lg border border-slate-200 px-3"
+            />
+          </label>
+          <label className="text-sm font-medium text-slate-700">
+            Pilot supplier-credit cap
+            <input
+              required
+              min="1"
+              step="1"
+              inputMode="numeric"
+              value={state.pilot.pilotCreditCap}
+              onChange={(event) =>
+                setState((current) => ({
+                  ...current,
+                  pilot: {
+                    ...current.pilot,
+                    pilotCreditCap: event.target.value.replace(/\D/g, ""),
+                  },
+                }))
+              }
+              className="mt-1 block min-h-10 w-full rounded-lg border border-slate-200 px-3"
+            />
+          </label>
+          <label className="text-sm font-medium text-slate-700">
+            Pilot end date
+            <input
+              required
+              type="date"
+              value={state.pilot.pilotEndsAt}
+              onChange={(event) =>
+                setState((current) => ({
+                  ...current,
+                  pilot: { ...current.pilot, pilotEndsAt: event.target.value },
+                }))
+              }
+              className="mt-1 block min-h-10 w-full rounded-lg border border-slate-200 px-3"
+            />
+          </label>
+        </div>
+        <p className="mt-2 text-xs leading-5 text-slate-500">
+          The server stops paid supplier requests when either pilot cap or the
+          end date is reached. Extending a pilot requires an explicit
+          administrator review.
+        </p>
         <fieldset className="mt-5">
           <legend className="text-sm font-semibold text-slate-800">
             Eligible named users

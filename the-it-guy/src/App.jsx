@@ -490,10 +490,8 @@ const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
 const ListingMandateSigning = lazy(() => import('./pages/ListingMandateSigning'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
-const SettingsActivityPage = lazy(() => import('./pages/settings/SettingsActivityPage'))
-const SettingsBillingPage = lazy(() => import('./pages/settings/SettingsBillingPage'))
 const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
-const SettingsCommunicationsTemplatesPage = lazy(() => import('./pages/settings/SettingsCommunicationsTemplatesPage'))
+const SettingsCommunicationsComingSoonPage = lazy(() => import('./pages/settings/SettingsCommunicationsComingSoonPage'))
 const SettingsDevelopmentsPage = lazy(() => import('./pages/settings/SettingsDevelopmentsPage'))
 const SettingsLanding = lazy(() => import('./pages/settings/SettingsLanding'))
 const SettingsLayout = lazy(() => import('./pages/settings/SettingsLayout'))
@@ -3697,14 +3695,6 @@ function AppRoutes() {
                 }
               />
               <Route
-                path="/agency/activity"
-                element={
-                  <RoleRoute allowedRoles={['agent']}>
-                    <Navigate to="/settings/activity" replace />
-                  </RoleRoute>
-                }
-              />
-              <Route
                 path="/agency/analytics"
                 element={
                   <AgentManagementRoute>
@@ -3921,19 +3911,31 @@ function AppRoutes() {
                   }
                 />
                 <Route
-                  path="lead-capture"
-                  element={
-                    <RoleRoute allowedRoles={['agent', 'developer']}>
-                      <SettingsLeadCapturePage />
-                    </RoleRoute>
-                  }
-                />
-                <Route
                   path="integrations"
                   element={
                     <OrganisationSettingsManageRoute>
-                      <RoleRoute allowedRoles={['agent']}>
+                      <RoleRoute allowedRoles={['agent', 'developer']}>
                         <SettingsSyndicationPage />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="integrations/meta"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent', 'developer']}>
+                        <SettingsLeadCapturePage section="meta" />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
+                  path="integrations/digital-cards"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent', 'developer']}>
+                        <SettingsLeadCapturePage section="digital-cards" />
                       </RoleRoute>
                     </OrganisationSettingsManageRoute>
                   }
@@ -4012,7 +4014,7 @@ function AppRoutes() {
                   path="communications/templates"
                   element={
                     <RoleRoute allowedRoles={['developer', 'agent']}>
-                      <SettingsCommunicationsTemplatesPage />
+                      <SettingsCommunicationsComingSoonPage />
                     </RoleRoute>
                   }
                 />
@@ -4032,26 +4034,6 @@ function AppRoutes() {
                     <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator', 'platform_admin', 'internal_admin', 'admin']}>
                       <PermissionGate capability="manage_users">
                         <SettingsUsersPage />
-                      </PermissionGate>
-                    </RoleRoute>
-                  }
-                />
-                <Route
-                  path="activity"
-                  element={
-                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                      <PermissionGate capability="manage_workspace_settings">
-                        <SettingsActivityPage />
-                      </PermissionGate>
-                    </RoleRoute>
-                  }
-                />
-                <Route
-                  path="billing"
-                  element={
-                    <RoleRoute allowedRoles={['developer', 'agent', 'attorney', 'bond_originator']}>
-                      <PermissionGate capability="manage_billing">
-                        <SettingsBillingPage />
                       </PermissionGate>
                     </RoleRoute>
                   }

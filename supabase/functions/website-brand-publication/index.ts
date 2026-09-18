@@ -27,6 +27,7 @@ const BRAND_KEYS = [
   "name",
   "logoLightUrl",
   "logoDarkUrl",
+  "logoIconUrl",
   "primaryColor",
   "secondaryColor",
   "accentColor",
@@ -159,6 +160,12 @@ function organisationBrand(
       branding.logo_dark_url,
       organisation.logo_dark_url,
       lightLogo,
+    ),
+    logoIconUrl: firstText(
+      branding.logo_icon_url,
+      branding.logoIconUrl,
+      organisation.logo_icon_url,
+      organisation.logoIconUrl,
     ),
     primaryColor: firstText(
       branding.primary_brand_color,
@@ -345,7 +352,7 @@ async function retireUnreferencedAssets(
   const referenced = new Set<string>();
   for (const revision of (revisionResult.data || []) as JsonRecord[]) {
     const brand = revision.brand_json as JsonRecord || {};
-    for (const key of ["logoLightUrl", "logoDarkUrl", "logoUrl"]) {
+    for (const key of ["logoLightUrl", "logoDarkUrl", "logoIconUrl", "logoUrl"]) {
       const url = text(brand[key]);
       if (url) referenced.add(url);
     }
@@ -389,7 +396,8 @@ async function synchronizeBrand(input: {
       const [key, variant] of [
         ["logoLightUrl", "light"],
         ["logoDarkUrl", "dark"],
-      ] as Array<["logoLightUrl" | "logoDarkUrl", WebsiteBrandVariant]>
+        ["logoIconUrl", "icon"],
+      ] as Array<["logoLightUrl" | "logoDarkUrl" | "logoIconUrl", WebsiteBrandVariant]>
     ) {
       const sourceUrl = text(brand[key]);
       if (!sourceUrl) continue;

@@ -1,10 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { publicWebsiteHref, selectWebsiteLogo } from './website-brand.ts'
+import { publicWebsiteHref, selectWebsiteIcon, selectWebsiteLogo } from './website-brand.ts'
 
 const site = {
   logoLightUrl: 'https://assets.example/light-logo.svg',
   logoDarkUrl: 'https://assets.example/dark-logo.svg',
+  logoIconUrl: 'https://assets.example/icon-logo.svg',
   logoUrl: 'https://assets.example/fallback-logo.svg',
 }
 
@@ -12,6 +13,11 @@ test('uses the studio standard logo on light surfaces and alternate logo on dark
   assert.equal(selectWebsiteLogo(site), site.logoLightUrl)
   assert.equal(selectWebsiteLogo(site, true), site.logoDarkUrl)
   assert.equal(selectWebsiteLogo({ logoLightUrl: site.logoLightUrl }, true), site.logoLightUrl)
+})
+
+test('uses the square icon logo for the browser and app icon', () => {
+  assert.equal(selectWebsiteIcon(site), site.logoIconUrl)
+  assert.equal(selectWebsiteIcon({ logoLightUrl: site.logoLightUrl }), site.logoLightUrl)
 })
 
 test('only exposes safe external website links', () => {

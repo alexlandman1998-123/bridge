@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
+import { ChevronRight, Search, ShieldCheck, UserPlus, Users, X } from 'lucide-react'
 import { hasOpenAgencyOperations } from '../../lib/agencyOperationsAccess'
 import Button from '../../components/ui/Button'
 import ConfirmDialog from '../../components/ui/ConfirmDialog'
@@ -59,7 +60,6 @@ import {
   SettingsBanner,
   SettingsEmptyState,
   SettingsLoadingState,
-  SettingsPageHeader,
   SettingsSectionCard,
   SettingsToggleRow,
   settingsActionRowClass,
@@ -231,6 +231,91 @@ function RolePermissionSummary({ role, workspaceType }) {
   )
 }
 
+function TeamAccessTable({
+  users,
+  loading,
+  search,
+  onSearchChange,
+  roleFilter,
+  onRoleFilterChange,
+  roleOptions,
+  selectedUser,
+  onSelectUser,
+  onCloseUser,
+  workspaceType,
+  canEdit,
+  canManageJobTitles,
+  savingRoleUserId,
+  savingJobTitleUserId,
+  onRoleChange,
+  onJobTitleChange,
+}) {
+  const visibleUsers = users.filter((user) => {
+    const query = search.trim().toLowerCase()
+    const matchesSearch = !query || [user.fullName, user.email].some((value) => String(value || '').toLowerCase().includes(query))
+    return matchesSearch && (!roleFilter || user.role === roleFilter)
+  })
+
+  return (
+    <section className="overflow-hidden rounded-[18px] border border-[#e1e8ef] bg-white shadow-[0_12px_34px_rgba(15,35,55,0.05)]">
+      <div className="border-b border-[#e7edf4] px-5 pt-5">
+        <div className="flex items-center gap-8">
+          <span className="inline-flex border-b-2 border-[#168451] pb-4 text-sm font-semibold text-[#162334]"><Users size={18} className="mr-2" />Users</span>
+          <span className="inline-flex pb-4 text-sm font-semibold text-[#718198]"><ShieldCheck size={18} className="mr-2" />Roles & permissions</span>
+        </div>
+      </div>
+      <div className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between">
+        <label className="flex w-full max-w-md items-center gap-3 rounded-xl border border-[#dfe7ef] px-3.5 py-2.5 text-[#718198]">
+          <Search size={19} />
+          <input value={search} onChange={(event) => onSearchChange(event.target.value)} className="w-full bg-transparent text-sm text-[#162334] outline-none placeholder:text-[#93a1b5]" placeholder="Search team members" />
+        </label>
+        <select value={roleFilter} onChange={(event) => onRoleFilterChange(event.target.value)} className="rounded-xl border border-[#dfe7ef] bg-white px-3.5 py-2.5 text-sm font-medium text-[#344054] outline-none">
+          <option value="">All roles</option>
+          {roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
+      </div>
+      {loading ? <SettingsLoadingState label="Loading team members…" compact /> : null}
+      {!loading && !visibleUsers.length ? <SettingsEmptyState title="No team members found" description="Try another search or role filter." /> : null}
+      {!loading && visibleUsers.length ? (
+        <div className="overflow-x-auto px-5 pb-5">
+          <div className="min-w-[760px] overflow-hidden rounded-xl border border-[#e3eaf1]">
+            <div className="grid grid-cols-[1.45fr_0.72fr_1fr_0.72fr_36px] gap-4 bg-[#f4f7fa] px-4 py-3 text-xs font-semibold text-[#718198]">
+              <span>User</span><span>Role</span><span>Access</span><span>Status</span><span className="sr-only">Open</span>
+            </div>
+            <div className="divide-y divide-[#e7edf4]">
+              {visibleUsers.map((user) => {
+                const summary = getOrganisationRolePermissionSummary(user.role, workspaceType)
+                return (
+                  <button key={user.id} type="button" onClick={() => onSelectUser(user)} className="grid w-full grid-cols-[1.45fr_0.72fr_1fr_0.72fr_36px] items-center gap-4 px-4 py-4 text-left transition hover:bg-[#f8fbfa] focus:bg-[#f8fbfa] focus:outline-none">
+                    <span className="min-w-0"><strong className="block truncate text-sm text-[#162334]">{user.fullName || user.email}</strong><span className="block truncate pt-0.5 text-sm text-[#718198]">{user.email}</span></span>
+                    <span><span className="inline-flex rounded-full border border-[#d9e4ef] bg-[#f7f9fb] px-2.5 py-1 text-xs font-semibold capitalize text-[#51657b]">{String(user.role || 'viewer').replaceAll('_', ' ')}</span></span>
+                    <span className="text-sm text-[#637793]">{summary.scopeLabels.join(' · ') || 'No access'}</span>
+                    <span><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold capitalize ${user.status === 'active' ? 'border-[#ccead8] bg-[#f2fbf5] text-[#1f7a45]' : 'border-[#f3d9a8] bg-[#fff8ec] text-[#a16207]'}`}>{formatUserStatusLabel(user)}</span></span>
+                    <ChevronRight size={19} className="text-[#7c8da4]" />
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {selectedUser ? (
+        <div className="fixed inset-0 z-50 flex justify-end bg-[#132338]/20" role="presentation" onMouseDown={onCloseUser}>
+          <aside className="h-full w-full max-w-[430px] overflow-y-auto bg-white p-6 shadow-[-20px_0_45px_rgba(15,35,55,0.16)]" role="dialog" aria-modal="true" aria-label={`${selectedUser.fullName || selectedUser.email} access`} onMouseDown={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#168451]">Team member</p><h2 className="mt-1 text-xl font-semibold text-[#162334]">{selectedUser.fullName || selectedUser.email}</h2><p className="mt-1 text-sm text-[#718198]">{selectedUser.email}</p></div><button type="button" onClick={onCloseUser} className="rounded-lg p-2 text-[#718198] hover:bg-[#f4f7fa]" aria-label="Close member details"><X size={20} /></button></div>
+            <div className="mt-7 space-y-5">
+              <label className="grid gap-2 text-sm font-semibold text-[#51657b]"><span>Role</span>{canEdit ? <Field as="select" value={selectedUser.role} disabled={savingRoleUserId === selectedUser.id} onChange={(event) => onRoleChange(selectedUser.id, event.target.value)}>{roleOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Field> : <span className="capitalize text-[#162334]">{String(selectedUser.role || '').replaceAll('_', ' ')}</span>}</label>
+              <div className="rounded-xl border border-[#dfe9e3] bg-[#f7fbf8] p-4"><p className="text-sm font-semibold text-[#162334]">Permissions</p><RolePermissionSummary role={selectedUser.role} workspaceType={workspaceType} /></div>
+              <label className="grid gap-2 text-sm font-semibold text-[#51657b]"><span>Job title</span>{canManageJobTitles ? <Field as="select" value={selectedUser.jobTitle || ''} disabled={savingJobTitleUserId === selectedUser.id} onChange={(event) => onJobTitleChange(selectedUser.id, event.target.value)}>{ORGANISATION_JOB_TITLE_OPTIONS.map((option) => <option key={option.value || 'unassigned'} value={option.value}>{option.label}</option>)}</Field> : <span className="text-[#162334]">{getOrganisationJobTitleLabel(selectedUser.jobTitle, 'Not assigned')}</span>}</label>
+              <div className="rounded-xl bg-[#f4f7fa] p-4"><p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#718198]">Status</p><p className="mt-1 text-sm font-semibold capitalize text-[#162334]">{formatUserStatusLabel(selectedUser)}</p></div>
+            </div>
+          </aside>
+        </div>
+      ) : null}
+    </section>
+  )
+}
+
 function formatInviteDate(value = '') {
   if (!value) return 'Not set'
   const date = new Date(value)
@@ -335,6 +420,10 @@ export default function SettingsUsersPage() {
   const [savingRoleUserId, setSavingRoleUserId] = useState('')
   const [savingJobTitleUserId, setSavingJobTitleUserId] = useState('')
   const [savingBusinessAccessUserId, setSavingBusinessAccessUserId] = useState('')
+  const [teamSearch, setTeamSearch] = useState('')
+  const [teamRoleFilter, setTeamRoleFilter] = useState('')
+  const [selectedTeamUser, setSelectedTeamUser] = useState(null)
+  const [showInvitePanel, setShowInvitePanel] = useState(false)
   const [deactivationTarget, setDeactivationTarget] = useState(null)
   const [deactivatingUser, setDeactivatingUser] = useState(false)
   const [ownershipTransferTarget, setOwnershipTransferTarget] = useState(null)
@@ -501,6 +590,7 @@ export default function SettingsUsersPage() {
 
   useEffect(() => {
     if (!inviteNavigationState.openInvite) return
+    setShowInvitePanel(true)
     if (isPrincipalClaimInviteMode) {
       setInviteForm((previous) => ({ ...previous, role: 'principal' }))
       window.setTimeout(() => {
@@ -863,18 +953,23 @@ export default function SettingsUsersPage() {
 
   return (
     <div className={settingsPageClass}>
-      <SettingsPageHeader
-        kicker="Users & Permissions"
-        title="Organisation users and access"
-        description="Invite users, assign roles, and control who can configure platform settings."
-      />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-[#718198]">Settings / Team & access</p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-[-0.035em] text-[#142132]">Team & access</h1>
+          <p className="mt-1 text-base text-[#6b7d93]">Invite your team and manage the access they need.</p>
+        </div>
+        {canEdit ? <Button type="button" onClick={() => setShowInvitePanel(true)}><UserPlus size={18} className="mr-2" />Invite user</Button> : null}
+      </div>
 
       {!canEdit ? (
         <SettingsBanner tone="warning">Read-only for your role. Only {administratorLabel} can manage users and permissions.</SettingsBanner>
       ) : null}
 
-      <div ref={inviteSectionRef}>
-      <SettingsSectionCard title="Invite User" description="Add a team member and assign their initial role.">
+      {showInvitePanel ? <div className="fixed inset-0 z-50 flex justify-end bg-[#132338]/20" role="presentation" onMouseDown={() => setShowInvitePanel(false)}>
+      <div ref={inviteSectionRef} className="h-full w-full max-w-[430px] overflow-y-auto bg-white p-6 shadow-[-20px_0_45px_rgba(15,35,55,0.16)]" role="dialog" aria-modal="true" aria-label="Invite user" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="text-xl font-semibold text-[#162334]">Invite user</h2><p className="mt-1 text-sm text-[#718198]">Add a team member and assign their initial role.</p></div><button type="button" onClick={() => setShowInvitePanel(false)} className="rounded-lg p-2 text-[#718198] hover:bg-[#f4f7fa]" aria-label="Close invite"><X size={20} /></button></div>
+      <SettingsSectionCard>
         {isPrincipalClaimInviteMode ? (
           <SettingsBanner tone="success">
             Principal claim selected from Residential. This sends a claim link for the principal to start organisation onboarding, without granting principal access automatically.
@@ -1005,7 +1100,7 @@ export default function SettingsUsersPage() {
           ) : null}
         </form>
       </SettingsSectionCard>
-      </div>
+      </div></div> : null}
 
       {canEdit && usesAgencyGovernance ? (
         <SettingsSectionCard
@@ -1354,7 +1449,27 @@ export default function SettingsUsersPage() {
         </SettingsSectionCard>
       ) : null}
 
-      <SettingsSectionCard title="Users" description="Manage role access for the current organisation workspace.">
+      <TeamAccessTable
+        users={users}
+        loading={loading}
+        search={teamSearch}
+        onSearchChange={setTeamSearch}
+        roleFilter={teamRoleFilter}
+        onRoleFilterChange={setTeamRoleFilter}
+        roleOptions={workspaceRoleOptions}
+        selectedUser={selectedTeamUser}
+        onSelectUser={setSelectedTeamUser}
+        onCloseUser={() => setSelectedTeamUser(null)}
+        workspaceType={resolvedWorkspaceType}
+        canEdit={canEdit}
+        canManageJobTitles={canManageJobTitles}
+        savingRoleUserId={savingRoleUserId}
+        savingJobTitleUserId={savingJobTitleUserId}
+        onRoleChange={handleRoleChange}
+        onJobTitleChange={handleJobTitleChange}
+      />
+
+      <SettingsSectionCard className="hidden" title="Users" description="Manage role access for the current organisation workspace.">
         {loading ? <SettingsLoadingState label="Loading users…" compact /> : null}
 
         {!loading && users.length && ownershipHealth.status === 'recovery_required' ? (

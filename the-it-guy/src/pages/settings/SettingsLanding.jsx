@@ -25,7 +25,7 @@ function getStatusForItem(item, { branding, profile }) {
       : { tone: 'warning', label: 'Logo not configured' }
   }
 
-  if (item.label === 'Third-party integrations') {
+  if (item.label === 'Integrations') {
     return { tone: 'neutral', label: 'Portals, Meta + WhatsApp' }
   }
 

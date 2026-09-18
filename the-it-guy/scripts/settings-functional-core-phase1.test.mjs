@@ -14,14 +14,14 @@ const [app, layout, landing, account, organisation, commercial, commercialNaviga
   read('../src/pages/ClientPortal.jsx'),
 ])
 
-const removedRoutes = ['notifications', 'preferences', 'danger-zone', 'integrations', 'api', 'audit-log', 'help']
+const removedRoutes = ['notifications', 'preferences', 'danger-zone', 'lead-capture', 'api', 'audit-log', 'help', 'billing', 'activity']
 for (const route of removedRoutes) {
   assert.doesNotMatch(app, new RegExp(`path=["']${route}["']`), `/${route} should not remain a registered settings route`)
   assert.doesNotMatch(layout, new RegExp(`/settings/${route}`), `/${route} should not remain in settings navigation`)
   assert.doesNotMatch(landing, new RegExp(`/settings/${route}`), `/${route} should not remain on the settings landing page`)
 }
 
-for (const route of ['profile', 'security', 'organisation', 'branding', 'commission', 'users', 'billing', 'lead-capture']) {
+for (const route of ['profile', 'security', 'organisation', 'branding', 'commission', 'users', 'integrations']) {
   assert.match(`${app}\n${layout}\n${landing}`, new RegExp(`/settings/${route}|path=["']${route}["']`), `/${route} should remain available`)
 }
 
