@@ -339,11 +339,14 @@ const SELLER_PROFILE_SECTION_FIELDS = [
     title: 'Mandate Details',
     icon: FileText,
     fields: [
-      { key: 'mandateType', label: 'Mandate type' },
+      { key: 'mandateType', label: 'Mandate type', as: 'select', options: ['sole', 'dual', 'tri', 'open'] },
       { key: 'askingPrice', label: 'Asking price', type: 'number' },
       { key: 'mandateStartDate', label: 'Mandate start date', type: 'date' },
       { key: 'expiryDate', label: 'Expiry date', type: 'date' },
-      { key: 'commissionPreference', label: 'Commission preference' },
+      { key: 'commissionBasis', label: 'Commission type', as: 'select', options: ['percentage', 'fixed'] },
+      { key: 'commissionPercentage', label: 'Commission percentage', type: 'number' },
+      { key: 'commissionAmount', label: 'Fixed commission amount (R)', type: 'number' },
+      { key: 'vatHandling', label: 'VAT treatment', as: 'select', options: ['no', 'exclusive', 'inclusive'] },
       { key: 'mandateTerms', label: 'Mandate terms', as: 'textarea' },
       { key: 'popiConsent', label: 'POPI consent', as: 'select', options: ['yes', 'no'] },
     ],
@@ -9626,6 +9629,17 @@ function AgentListingDetail() {
       accumulator[field.key] = row?.rawValue === undefined || row?.rawValue === null ? '' : String(row.rawValue)
       return accumulator
     }, {})
+    if (section.key === 'mandate_details') {
+      draft.mandateType = listingRecord?.mandateType || listingRecord?.mandate?.type || draft.mandateType || 'sole'
+      draft.askingPrice = String(listingRecord?.askingPrice || draft.askingPrice || '')
+      draft.mandateStartDate = listingRecord?.mandateStartDate || draft.mandateStartDate || ''
+      draft.expiryDate = listingRecord?.expiryDate || listingRecord?.mandateEndDate || draft.expiryDate || ''
+      draft.commissionBasis = commissionWorkspace.basis === 'fixed' ? 'fixed' : 'percentage'
+      draft.commissionPercentage = commissionWorkspace.percentage ? String(commissionWorkspace.percentage) : ''
+      draft.commissionAmount = commissionWorkspace.amount ? String(commissionWorkspace.amount) : ''
+      draft.vatHandling = commissionWorkspace.vatHandling === 'Not captured' ? '' : commissionWorkspace.vatHandling
+      draft.mandateTerms = commissionWorkspace.mandateTerms || draft.mandateTerms || ''
+    }
     setSellerSectionEditorKey(section.key)
     setSellerSectionDraft(draft)
     setDetailError('')
@@ -9726,29 +9740,19 @@ function AgentListingDetail() {
     const existingFormData = getListingSellerFormData(listingRecord)
     const nextFormData = { ...existingFormData, ...formPatch }
     // The Seller > Mandate editor and the Commission workspace are two views
-    // of the same commercial terms. Keep legacy free-text preference input
-    // compatible while projecting a usable numeric commission value.
+    // of the same structured commercial terms.
     if (sellerSectionEditorKey === 'mandate_details') {
-      const preference = toCleanText(formPatch.commissionPreference)
-      const numericPreference = Number(preference.replace(/[^0-9.]/g, ''))
-      if (Number.isFinite(numericPreference) && numericPreference > 0) {
-        const fixed = /(?:^|\s)(?:r|zar|rand)\b/i.test(preference)
-        Object.assign(nextFormData, fixed
-          ? {
-              commissionBasis: 'fixed', commission_basis: 'fixed',
-              commissionAmount: String(numericPreference), commission_amount: String(numericPreference),
-              mandateCommissionPercentage: '', commissionPercentage: '', commission_percent: '',
-            }
-          : {
-              commissionBasis: 'percentage', commission_basis: 'percentage',
-              commissionPercentage: String(numericPreference), commission_percent: String(numericPreference),
-              mandateCommissionPercentage: String(numericPreference), commissionAmount: '', commission_amount: '',
-            })
-      }
-      if (formPatch.mandateTerms !== undefined) {
-        nextFormData.mandateTerms = formPatch.mandateTerms
-        nextFormData.mandateCommissionTerms = formPatch.mandateTerms
-      }
+      const basis = formPatch.commissionBasis === 'fixed' ? 'fixed' : 'percentage'
+      const percentage = basis === 'percentage' ? String(Number(formPatch.commissionPercentage || 0) || '') : ''
+      const amount = basis === 'fixed' ? String(Number(formPatch.commissionAmount || 0) || '') : ''
+      Object.assign(nextFormData, {
+        commissionBasis: basis, commission_basis: basis,
+        commissionPercentage: percentage, commission_percent: percentage, mandateCommissionPercentage: percentage,
+        commissionAmount: amount, commission_amount: amount,
+        vatHandling: toCleanText(formPatch.vatHandling),
+        mandateTerms: toCleanText(formPatch.mandateTerms), mandateCommissionTerms: toCleanText(formPatch.mandateTerms),
+      })
+      setCommissionDraft((previous) => ({ ...previous, basis, percentage, amount, vatHandling: toCleanText(formPatch.vatHandling), mandateTerms: toCleanText(formPatch.mandateTerms) }))
     }
     const fullName = toCleanText(nextFormData.fullName || nextFormData.sellerName || resolveSellerNameFromListing(listingRecord))
     const email = toCleanText(nextFormData.email || nextFormData.sellerEmail || resolveSellerEmailFromListing(listingRecord)).toLowerCase()
@@ -9788,6 +9792,7 @@ function AgentListingDetail() {
       mandateType: nextFormData.mandateType || listingRecord?.mandateType,
       mandateStartDate: nextFormData.mandateStartDate || listingRecord?.mandateStartDate,
       expiryDate: nextFormData.expiryDate || listingRecord?.expiryDate,
+      mandateEndDate: nextFormData.expiryDate || listingRecord?.mandateEndDate,
     }
 
     setSellerSectionSaving(true)
@@ -9816,6 +9821,19 @@ function AgentListingDetail() {
           email,
           phone,
         },
+        commission: sellerSectionEditorKey === 'mandate_details' ? {
+          ...(row?.commission || {}),
+          basis: nextFormData.commissionBasis,
+          commission_basis: nextFormData.commissionBasis,
+          percentage: Number(nextFormData.commissionPercentage || 0) || 0,
+          commission_percentage: Number(nextFormData.commissionPercentage || 0) || 0,
+          amount: Number(nextFormData.commissionAmount || 0) || 0,
+          commission_amount: Number(nextFormData.commissionAmount || 0) || 0,
+          vat: nextFormData.vatHandling || '',
+          vat_handling: nextFormData.vatHandling || '',
+          mandateTerms: nextFormData.mandateTerms || '',
+          mandate_terms: nextFormData.mandateTerms || '',
+        } : row?.commission,
         sellerOnboarding: {
           ...(row?.sellerOnboarding || {}),
           formData: nextFormData,
@@ -12318,7 +12336,11 @@ function AgentListingDetail() {
       >
         {activeSellerSectionEditor ? (
           <form id="seller-section-edit-form" className="grid gap-4 sm:grid-cols-2" onSubmit={handleSaveSellerSection}>
-            {activeSellerSectionEditor.fields.map((field) => (
+            {activeSellerSectionEditor.fields.filter((field) => (
+              field.key !== 'commissionPercentage' || sellerSectionDraft.commissionBasis !== 'fixed'
+            ) && (
+              field.key !== 'commissionAmount' || sellerSectionDraft.commissionBasis === 'fixed'
+            )).map((field) => (
               <label key={field.key} className={`grid gap-1.5 ${field.as === 'textarea' ? 'sm:col-span-2' : ''}`}>
                 <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">{field.label}</span>
                 <Field

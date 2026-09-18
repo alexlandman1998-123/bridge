@@ -7,7 +7,7 @@ import { PROPERTY_DISCLOSURE_QUESTIONS, normalizePropertyDisclosure, shouldPromp
 import { invokeEdgeFunction } from '../lib/supabaseClient'
 
 const text = (value) => String(value || '').trim()
-const documentLabels = { disclosure: 'Disclosure form', fica: 'FICA declaration', mandate: 'Exclusive mandate' }
+const documentLabels = { disclosure: 'Disclosure form', fica: 'FICA declaration', mandate: 'Mandate' }
 const validHex = (value, fallback) => /^#[0-9a-f]{6}$/i.test(text(value)) ? text(value) : fallback
 
 function BrandMark({ branding }) {

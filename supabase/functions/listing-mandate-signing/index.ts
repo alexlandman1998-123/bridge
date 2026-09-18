@@ -37,7 +37,9 @@ function signedPackDocumentHtml(documentKey: string, session: RecordValue, signe
   const mandate = snapshot(pack.mandate);
   const seller = snapshot(pack.seller);
   const disclosureResponses = snapshot(snapshot(pack.disclosure).responses);
-  const title = documentKey === "disclosure" ? "Property condition disclosure" : documentKey === "fica" ? "Seller FICA declaration" : "Exclusive mandate";
+  const mandateType = text(mandate.mandateType).toLowerCase() || "sole";
+  const mandateTitle = mandateType === "dual" ? "Dual mandate" : mandateType === "tri" ? "Tri mandate" : mandateType === "open" ? "Open mandate" : "Sole mandate";
+  const title = documentKey === "disclosure" ? "Property condition disclosure" : documentKey === "fica" ? "Seller FICA declaration" : mandateTitle;
   const property = text(mandate.propertyAddress) || text(snapshot(pack.property).address);
   const detail = documentKey === "mandate"
     ? `Asking price: ${escapeHtml(mandate.askingPrice)}<br>Commission: ${escapeHtml(mandate.commissionBasis === "fixed" ? mandate.commissionAmount : `${text(mandate.commissionPercentage)}%`)} ${escapeHtml(mandate.vatHandling)}`

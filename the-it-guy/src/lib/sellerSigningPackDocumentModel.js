@@ -19,9 +19,18 @@ function mandateDocument(pack = {}) {
   const mandate = record(pack.mandate); const branding = record(mandate.branding); const seller = record(pack.seller)
   const agencyName = text(branding.organisationName) || 'the appointed estate agency'
   const property = text(mandate.propertyAddress) || text(record(pack.property).address) || 'the property described in this signing pack'
+  const mandateType = text(mandate.mandateType).toLowerCase() || 'sole'
+  const mandateTitle = mandateType === 'dual' ? 'Dual mandate' : mandateType === 'tri' ? 'Tri mandate' : mandateType === 'open' ? 'Open mandate' : 'Sole mandate'
+  const appointment = mandateType === 'open'
+    ? `authorise ${agencyName} to market and introduce purchasers for ${property} on a non-exclusive basis`
+    : mandateType === 'dual'
+      ? `appoint ${agencyName} to market and introduce purchasers for ${property} on a dual mandate`
+      : mandateType === 'tri'
+        ? `appoint ${agencyName} to market and introduce purchasers for ${property} on a tri mandate`
+        : `appoint ${agencyName} as the sole agency to market and introduce purchasers for ${property}`
   return {
-    key: 'mandate', title: 'Exclusive mandate',
-    introduction: `I/We, ${text(seller.name) || 'the seller'}, authorise ${agencyName} to market and introduce purchasers for ${property}, subject to the mandate terms and commercial details below.`,
+    key: 'mandate', title: mandateTitle,
+    introduction: `I/We, ${text(seller.name) || 'the seller'}, ${appointment}, subject to the mandate terms and commercial details below.`,
     sections: [{ title: 'Mandate details', rows: [row('Property', property), row('Mandate type', label(mandate.mandateType)), row('Asking price', mandate.askingPrice), row('Commission basis', label(mandate.commissionBasis)), row('Commission', mandate.commissionBasis === 'fixed' ? mandate.commissionAmount : mandate.commissionPercentage ? `${mandate.commissionPercentage}%` : ''), row('VAT treatment', mandate.vatHandling)].filter(Boolean) }],
     declaration: 'I/We confirm that the mandate information shown above is correct and that I/we have authority to appoint the agency for this property.',
   }
