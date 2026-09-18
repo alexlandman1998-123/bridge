@@ -7487,23 +7487,6 @@ function AgentListings({ initialTab = null } = {}) {
     navigate(path)
   }
 
-  function openMandateFirstWorkspace() {
-    try {
-      assertMvpPilotCreationAllowed({ operation: 'start a mandate and create its listing' })
-    } catch (freezeError) {
-      setError(freezeError.message)
-      return
-    }
-    const draftId = `mandate-draft-${Date.now().toString(36)}`
-    const params = new URLSearchParams()
-    params.set('mode', 'generate')
-    params.set('sourceMode', DOCUMENT_START_SOURCE_MODES.manual)
-    params.set('documentStart', DOCUMENT_START_ENTRY_POINTS.listingMandate)
-    params.set('autoCreateListing', '1')
-    params.set('returnTo', '/listings')
-    navigate(`/pipeline/leads/${encodeURIComponent(draftId)}/legal/mandate?${params.toString()}`)
-  }
-
   if (isListingEditorWorkspace) {
     if (isEditListingWorkspace && loading) {
       return (
@@ -8532,12 +8515,6 @@ function AgentListings({ initialTab = null } = {}) {
                   : 'Start a seller workflow or add a manual listing. Listings become live here once onboarding, mandate, and required documents are ready.'}
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-                {!isDeveloperWorkspace ? (
-                <Button type="button" onClick={openMandateFirstWorkspace} disabled={pilotCreationFreeze.paused}>
-                  <FileText size={16} />
-                  Generate Mandate
-                </Button>
-                ) : null}
                 <Button type="button" variant="secondary" onClick={openManualListingModal} disabled={pilotCreationFreeze.paused}>
                   <Plus size={16} />
                   Add Listing
