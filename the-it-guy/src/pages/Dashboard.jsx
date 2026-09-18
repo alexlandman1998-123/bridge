@@ -2174,7 +2174,7 @@ function Dashboard() {
   }, [])
 
   useEffect(() => {
-    if (role !== 'agent' || isPrincipalAgentView || organisationLoading || !currentOrganisationId) {
+    if (role !== 'agent' || organisationLoading || !currentOrganisationId) {
       setAgentDigitalCardState((current) => ({
         ...current,
         loading: false,
@@ -2263,7 +2263,6 @@ function Dashboard() {
   }, [
     currentMembership,
     currentOrganisationId,
-    isPrincipalAgentView,
     organisationLoading,
     profile,
     role,
@@ -6317,30 +6316,6 @@ function renderActiveTransactionsBlock({
               </section>
               ) : null}
 
-              {!isPrincipalAgentView ? (
-                <AgentDigitalCardPanel
-                  loading={agentDigitalCardState.loading}
-                  error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
-                  link={agentDigitalCardLink}
-                  agent={agentDigitalCardAgent}
-                  organisationName={agentDigitalCardOrganisationName}
-                  shareUrl={agentDigitalCardShareUrl}
-                  urls={agentDigitalCardUrls}
-                  insights={{
-                    ...(agentDigitalCardState.insights || {}),
-                    missingSchema: agentDigitalCardState.insightsMissingSchema,
-                  }}
-                  feedback={agentDigitalCardFeedback}
-                  busyAction={agentDigitalCardBusyAction}
-                  onCopy={copyAgentDigitalCardText}
-                  onOpenPreview={openAgentDigitalCardPreview}
-                  onShareWhatsApp={shareAgentDigitalCardWhatsApp}
-                  onDownloadVcard={downloadAgentDigitalCardVcard}
-                  onDownloadQr={downloadAgentDigitalCardQr}
-                  onManageCard={() => navigate('/settings/lead-capture')}
-                />
-              ) : null}
-
               {isPrincipalAgentView ? (
                 <section className={`mt-6 ${DASHBOARD_PANEL_CLASS}`}>
                   <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -6398,6 +6373,28 @@ function renderActiveTransactionsBlock({
                   </div>
                 </section>
               ) : null}
+
+              <AgentDigitalCardPanel
+                loading={agentDigitalCardState.loading}
+                error={agentDigitalCardState.missingSchema ? 'Digital card setup is waiting for the latest database migration.' : agentDigitalCardState.error}
+                link={agentDigitalCardLink}
+                agent={agentDigitalCardAgent}
+                organisationName={agentDigitalCardOrganisationName}
+                shareUrl={agentDigitalCardShareUrl}
+                urls={agentDigitalCardUrls}
+                insights={{
+                  ...(agentDigitalCardState.insights || {}),
+                  missingSchema: agentDigitalCardState.insightsMissingSchema,
+                }}
+                feedback={agentDigitalCardFeedback}
+                busyAction={agentDigitalCardBusyAction}
+                onCopy={copyAgentDigitalCardText}
+                onOpenPreview={openAgentDigitalCardPreview}
+                onShareWhatsApp={shareAgentDigitalCardWhatsApp}
+                onDownloadVcard={downloadAgentDigitalCardVcard}
+                onDownloadQr={downloadAgentDigitalCardQr}
+                onManageCard={() => navigate('/settings/lead-capture')}
+              />
             </>
           ) : isAttorneyRole ? (
             <Suspense fallback={<DashboardWidgetFallback lines={6} className="mt-6" />}>
