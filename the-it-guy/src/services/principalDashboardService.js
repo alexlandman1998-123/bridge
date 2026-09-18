@@ -133,6 +133,33 @@ function isBetween(value, start, end) {
   return date >= start && date < end
 }
 
+function getPrincipalListingStatus(row = {}) {
+  return normalizeKey(row.listing_status || row.listingStatus || row.status)
+}
+
+function isActivePrincipalListing(row = {}) {
+  return ['active', 'listing_active'].includes(getPrincipalListingStatus(row))
+}
+
+function getPrincipalListingPrice(row = {}) {
+  return Math.max(0, toNumber(row.asking_price || row.askingPrice || row.estimated_value || row.estimatedValue))
+}
+
+function getPrincipalListingCommission(row = {}, onboarding = {}) {
+  const formData = onboarding?.form_data && typeof onboarding.form_data === 'object' ? onboarding.form_data : {}
+  const explicitAmount = Math.max(0, toNumber(
+    formData.commissionAmount || formData.commission_amount || formData.mandateCommissionAmount,
+  ))
+  if (explicitAmount > 0) return explicitAmount
+
+  const commissionType = normalizeKey(formData.commissionType || formData.commissionStructure)
+  const commissionValue = toNumber(formData.commissionPercentage || formData.commissionPercent || formData.commission_percentage || formData.commission_percent || formData.mandateCommissionPercentage || formData.mandateCommissionPercent)
+  if (commissionValue > 0 && (commissionType.includes('percent') || commissionType.includes('percentage') || !commissionType)) {
+    return Number(((getPrincipalListingPrice(row) * commissionValue) / 100).toFixed(2))
+  }
+  return 0
+}
+
 export function getDateRangeFromPreset(preset = 'this_month', { now = new Date(), startDate = null, endDate = null } = {}) {
   const baseDate = toDate(now) || new Date()
   const customStart = toDate(startDate)
@@ -1747,6 +1774,7 @@ async function getPrincipalDashboardDataUncached({
   const [
     rawTransactions,
     allLeads,
+    rawPrivateListings,
     allDocumentPackets,
     allPacketEvents,
     allOrganisationUsers,
@@ -1759,6 +1787,10 @@ async function getPrincipalDashboardDataUncached({
       'lead_id, organisation_id, branch_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
       'lead_id, organisation_id, assigned_user_id, assigned_agent_id, created_by, assigned_agent_email, lead_source, status, stage, converted_transaction_id, converted_at, budget, estimated_value, created_at, updated_at, seller_onboarding_status, mandate_packet_id, listing_id',
     ], { agencyId: resolvedAgencyId, order: 'created_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelect('private_listings', [
+      'id, organisation_id, branch_id, assigned_agent_id, assigned_agent_email, listing_status, listing_visibility, is_active, asking_price, estimated_value, created_at, updated_at',
+      'id, organisation_id, assigned_agent_id, assigned_agent_email, listing_status, listing_visibility, is_active, asking_price, estimated_value, created_at, updated_at',
+    ], { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
     () => safeSelect('document_packets', 'id, organisation_id, transaction_id, lead_id, packet_type, title, status, sent_at, completed_at, created_at, updated_at', { agencyId: resolvedAgencyId, order: 'updated_at', limit: 1000, tolerateServerErrors: true, sourceHealth }),
     () => [],
     () => safeSelect('organisation_users', PRINCIPAL_DASHBOARD_ORGANISATION_USER_SELECT_VARIANTS, { agencyId: resolvedAgencyId, order: 'updated_at', limit: 500, tolerateServerErrors: true, sourceHealth }),
@@ -1791,6 +1823,9 @@ async function getPrincipalDashboardDataUncached({
   const transactions = scopedAllTransactions.filter((row) => isScopedToBranch(row, selectedBranchId, 'assigned_branch_id'))
   const scopedAllLeads = canViewAllTransactions ? allLeads : allLeads.filter(matchesActorScope)
   const leads = scopedAllLeads.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
+  const scopedAllPrivateListings = canViewAllTransactions ? rawPrivateListings : rawPrivateListings.filter(matchesActorScope)
+  const privateListings = scopedAllPrivateListings.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
+  const privateListingIds = new Set(privateListings.map((row) => normalizeText(row.id)).filter(Boolean))
   const transactionIds = new Set(transactions.map((row) => normalizeText(row.id)).filter(Boolean))
   const leadIds = new Set(leads.map((row) => normalizeText(row.lead_id)).filter(Boolean))
   const documentPackets = allDocumentPackets.filter((packet) => {
@@ -1809,6 +1844,7 @@ async function getPrincipalDashboardDataUncached({
     transactionRolePlayers,
     linkedDocumentPackets,
     linkedTransactionCommissions,
+    listingOnboardingRows,
   ] = await runPrincipalDashboardLoadBatch([
     () => enrichOrganisationUsersWithProfileAvatars(allOrganisationUsers),
     () => safeSelectByIds('document_requests', 'id, transaction_id, status, assigned_to_role, document_type, title, created_at, updated_at, completed_at', [...transactionIds], { order: 'updated_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
@@ -1825,6 +1861,7 @@ async function getPrincipalDashboardDataUncached({
     () => selectedScopeAlreadyCovered
       ? []
       : safeSelectByIds('transaction_commissions', 'id, organisation_id, transaction_id, assigned_agent_id, assigned_agent_email, gross_commission_amount, agency_commission_amount, agent_commission_amount, status, created_at, updated_at', [...transactionIds], { order: 'updated_at', limit: 1200, tolerateServerErrors: true, sourceHealth }),
+    () => safeSelectByIds('seller_onboarding', 'listing_id, form_data, updated_at', [...privateListingIds], { idColumn: 'listing_id', order: 'updated_at', limit: 1500, tolerateServerErrors: true, sourceHealth }),
   ])
   const organisationUsers = enrichedOrganisationUsers.filter((row) => isScopedToBranch(row, selectedBranchId, 'branch_id'))
   const effectiveDocumentPackets = dedupeRowsById([...documentPackets, ...linkedDocumentPackets])
@@ -1840,6 +1877,15 @@ async function getPrincipalDashboardDataUncached({
     .filter((event) => selectedBranchId === ALL_BRANCHES_ID || effectivePacketIds.has(normalizeText(event.packet_id)))
   const transactionCommissions = dedupeRowsById([...allTransactionCommissions, ...linkedTransactionCommissions])
     .filter((row) => selectedBranchId === ALL_BRANCHES_ID || transactionIds.has(normalizeText(row.transaction_id)))
+  const listingOnboardingByListingId = new Map(
+    listingOnboardingRows.map((row) => [normalizeText(row.listing_id), row]),
+  )
+  const activeListings = privateListings.filter(isActivePrincipalListing)
+  const pipelineValue = activeListings.reduce((sum, row) => sum + getPrincipalListingPrice(row), 0)
+  const commissionForecast = activeListings.reduce(
+    (sum, row) => sum + getPrincipalListingCommission(row, listingOnboardingByListingId.get(normalizeText(row.id))),
+    0,
+  )
   const activeCompanyTarget =
     (allCommissionTargets || []).find((row) => (
       normalizeKey(row.target_type) === 'company' &&
@@ -1873,17 +1919,12 @@ async function getPrincipalDashboardDataUncached({
     rolePlayers: transactionRolePlayers,
   })
 
-  const pipelineValue = getDashboardPipelineValue(activeTransactions)
   logDashboardPipelineDiagnostics({
     currentOrganisationId: resolvedAgencyId,
-    transactions: activeTransactions,
+    transactions: activeListings,
     pipelineValue,
-    source: 'supabase',
+    source: 'private_listings',
   })
-  const currentActiveTransactions = activeTransactions.filter((row) => isBetween(row.created_at, range.start, range.end)).length
-  const previousActiveTransactions = activeTransactions.filter((row) => isBetween(row.created_at, range.previousStart, range.previousEnd)).length
-  const currentPipelineValue = getDashboardPipelineValue(activeTransactions.filter((row) => isBetween(row.created_at, range.start, range.end)))
-  const previousPipelineValue = getDashboardPipelineValue(activeTransactions.filter((row) => isBetween(row.created_at, range.previousStart, range.previousEnd)))
 
   const commissionByTransaction = new Map()
   for (const row of transactionCommissions) {
@@ -1897,13 +1938,7 @@ async function getPrincipalDashboardDataUncached({
   const commissionValues = expectedCommissionTransactions
     .map((row) => getCommissionAmount(row, commissionByTransaction))
     .filter((value) => value > 0)
-  const expectedCommission = commissionValues.length ? commissionValues.reduce((sum, value) => sum + value, 0) : null
-  const currentCommission = activeTransactions
-    .filter((row) => isBetween(row.expected_transfer_date || row.registration_date || row.created_at, range.start, range.end))
-    .reduce((sum, row) => sum + getCommissionAmount(row, commissionByTransaction), 0)
-  const previousCommission = activeTransactions
-    .filter((row) => isBetween(row.expected_transfer_date || row.registration_date || row.created_at, range.previousStart, range.previousEnd))
-    .reduce((sum, row) => sum + getCommissionAmount(row, commissionByTransaction), 0)
+  const transactionExpectedCommission = commissionValues.length ? commissionValues.reduce((sum, value) => sum + value, 0) : null
 
   const closingThisMonth = activeTransactions.filter((row) => isBetween(row.expected_transfer_date || row.registration_date, range.start, range.end)).length
   const previousClosingThisMonth = activeTransactions.filter((row) => isBetween(row.expected_transfer_date || row.registration_date, range.previousStart, range.previousEnd)).length
@@ -2094,7 +2129,7 @@ async function getPrincipalDashboardDataUncached({
   const revenueOverview = {
     registeredValue,
     earnedCommission,
-    expectedCommission,
+    expectedCommission: transactionExpectedCommission,
     monthly: monthlyRevenue,
     byAgent: buildAgentRevenueRows(registeredTransactionsInRange, usersByKey, commissionByTransaction),
   }
@@ -2237,27 +2272,24 @@ async function getPrincipalDashboardDataUncached({
     },
     kpis: {
       pipelineValue,
-      activeTransactions: activeTransactions.length,
+      activeListings: activeListings.length,
       newLeads: selectedLeads.length,
-      expectedCommission,
-      forecastRevenue: residentialMetrics.kpis.forecastRevenue,
-      likelyRevenue: residentialMetrics.revenue.forecast.likelyRevenue,
+      commissionForecast,
       closingThisMonth,
       avgDealCycleDays,
       leadToDealConversion,
       trends: {
-        pipelineValue: trend(currentPipelineValue, previousPipelineValue),
-        activeTransactions: trend(currentActiveTransactions, previousActiveTransactions),
+        pipelineValue: null,
+        activeListings: null,
         newLeads: trend(selectedLeads.length, previousLeads.length),
-        expectedCommission: expectedCommission === null ? null : trend(currentCommission, previousCommission),
-        forecastRevenue: residentialMetrics.kpis.forecastRevenueTrend,
-        likelyRevenue: residentialMetrics.kpis.forecastRevenueTrend,
+        commissionForecast: null,
         closingThisMonth: trend(closingThisMonth, previousClosingThisMonth),
         avgDealCycleDays: null,
         leadToDealConversion: previousLeadConversion ? leadToDealConversion - previousLeadConversion : null,
       },
     },
     pipeline: {
+      ...residentialMetrics.pipeline,
       totalValue: pipelineValue,
       stages,
       financeTypes,
@@ -2265,7 +2297,6 @@ async function getPrincipalDashboardDataUncached({
       pendingRegistration,
       avgDealValue,
       winRate,
-      ...residentialMetrics.pipeline,
     },
     transactions: {
       ...transactionsOverview,
@@ -2281,6 +2312,7 @@ async function getPrincipalDashboardDataUncached({
     companyCommissionTracker,
     overview: {
       pipeline: {
+        ...residentialMetrics.pipeline,
         totalValue: pipelineValue,
         stages,
         financeTypes,
@@ -2288,7 +2320,6 @@ async function getPrincipalDashboardDataUncached({
         pendingRegistration,
         avgDealValue,
         winRate,
-        ...residentialMetrics.pipeline,
       },
       transactions: {
         ...transactionsOverview,

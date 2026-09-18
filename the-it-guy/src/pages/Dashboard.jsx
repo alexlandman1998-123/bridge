@@ -751,12 +751,9 @@ function isOpenPrivateListing(listing = {}) {
 function isActivePrivateListingStock(listing = {}) {
   if (!isOpenPrivateListing(listing)) return false
   const status = getPrivateListingStatusKey(listing)
-  return Boolean(
-    listing?.isActive ||
-      listing?.is_active ||
-      ['active', 'listing_active', 'mandate_signed', 'under_offer', 'transaction_created'].includes(status) ||
-      privateListingHasSignedMandate(listing),
-  )
+  // Mandate and transaction workflow states are not a publishing decision.
+  // Only listings deliberately marked Active belong in commercial KPIs.
+  return ['active', 'listing_active'].includes(status)
 }
 
 function resolvePrivateListingCommissionAmount(listing = {}) {
@@ -785,15 +782,14 @@ function resolvePrivateListingCommissionAmount(listing = {}) {
   )
   const price = resolvePrivateListingPrice(listing)
   if (price > 0 && percentage > 0) return Number(((price * percentage) / 100).toFixed(2))
-  if (price > 0) return Number((price * 0.03).toFixed(2))
   return 0
 }
 
 function deriveAgentPrivateListingDashboardMetrics(listingRows = []) {
   const openRows = (Array.isArray(listingRows) ? listingRows : []).filter(isOpenPrivateListing)
   const activeRows = openRows.filter(isActivePrivateListingStock)
-  const pipelineValue = openRows.reduce((sum, listing) => sum + resolvePrivateListingPrice(listing), 0)
-  const commissionForecast = openRows.reduce((sum, listing) => sum + resolvePrivateListingCommissionAmount(listing), 0)
+  const pipelineValue = activeRows.reduce((sum, listing) => sum + resolvePrivateListingPrice(listing), 0)
+  const commissionForecast = activeRows.reduce((sum, listing) => sum + resolvePrivateListingCommissionAmount(listing), 0)
   const forecastRows = [
     { key: 'private_listing_current', label: 'Current Mandates', rawValue: commissionForecast, value: commissionForecast, expectedCommission: commissionForecast },
     { key: 'private_listing_month_2', label: 'Month 2', rawValue: commissionForecast, value: commissionForecast, expectedCommission: commissionForecast },
@@ -1188,6 +1184,12 @@ function getAgentDashboardLeadRows(sharedData = {}, profileIdentitySet = new Set
   }
 
   return [...rowsById.values()]
+}
+
+function getAgentDashboardNewLeadRows(sharedData = {}, profileIdentitySet = new Set(), dateRange = 'last_30_days') {
+  const range = getPrincipalRange(dateRange)
+  return getAgentDashboardLeadRows(sharedData, profileIdentitySet)
+    .filter((lead) => isInRange(lead?.created_at || lead?.createdAt, range))
 }
 
 function resolveLeadCategory(value) {
@@ -4558,15 +4560,10 @@ function Dashboard() {
     if (!isAgentRole || isPrincipalAgentView || !agentPremiumModel) return null
     const sellerStages = Array.isArray(agentPerformanceMetrics.conversionFunnel?.seller) ? agentPerformanceMetrics.conversionFunnel.seller : []
     const privateListingMetrics = deriveAgentPrivateListingDashboardMetrics(agentPrivateListingRows)
-    const transactionPipelineValue = Number(agentSharedData?.dashboard?.pipelineValue ?? agentPerformanceMetrics.activeDealValue ?? 0)
-    const transactionCommissionForecast = Number(agentSharedData?.dashboard?.commissionEarned ?? agentSharedData?.dashboard?.estimatedCommission ?? agentPerformanceMetrics.commissionEarned ?? 0)
-    const activeListingCount = Math.max(
-      Number(agentSharedData?.dashboard?.listingCount ?? agentPerformanceMetrics.listingCount ?? 0),
-      privateListingMetrics.activeListings,
-    )
-    const pipelineValue = transactionPipelineValue + privateListingMetrics.pipelineValue
-    const expectedCommission = transactionCommissionForecast + privateListingMetrics.commissionForecast
-    const agentLeadRows = getAgentDashboardLeadRows(agentSharedData, profileIdentitySet)
+    const activeListingCount = privateListingMetrics.activeListings
+    const pipelineValue = privateListingMetrics.pipelineValue
+    const expectedCommission = privateListingMetrics.commissionForecast
+    const agentLeadRows = getAgentDashboardNewLeadRows(agentSharedData, profileIdentitySet, residentialDateRange)
     const forecastRows = privateListingMetrics.commissionForecast > 0
       ? privateListingMetrics.forecastRows
       : agentPremiumModel.forecastRows

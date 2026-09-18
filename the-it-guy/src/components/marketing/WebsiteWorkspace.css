@@ -39,6 +39,11 @@
 .ww-pilot-gate h3 { font-size: 1.08rem; margin: 3px 0 5px; }
 .ww-pilot-gate p { color: #607789; font-size: .8rem; line-height: 1.55; margin: 0; }
 .ww-pilot-gate.paused { background: #fffaf0; border-color: #f0d5a8; color: #805600; }
+.ww-website-access-gate { align-items: flex-start; background: #fff; border: 1px solid var(--wa-border, #d8e1e8); border-radius: 16px; box-shadow: 0 8px 20px rgba(31, 50, 67, .045); color: var(--wa-ink, #183b56); display: flex; gap: 16px; margin: 4rem auto; max-width: 680px; padding: 2rem; }
+.ww-website-access-gate > svg { color: #59738f; flex: 0 0 auto; margin-top: 3px; }
+.ww-website-access-gate h1 { font-size: clamp(1.5rem, 2.5vw, 2rem); letter-spacing: -.035em; margin: 4px 0 10px; }
+.ww-website-access-gate p { color: var(--wa-muted, #607789); line-height: 1.6; margin: 0; max-width: 560px; }
+.ww-website-access-gate .ww-website-access-note { color: #183b56; font-weight: 650; margin-top: 14px; }
 .ww-create-site { align-items: center; background: linear-gradient(135deg, #edf7f0, #f7fbf8); border: 1px solid #cee5d5; display: flex; gap: 28px; justify-content: space-between; margin-bottom: 18px; padding: clamp(18px, 3vw, 26px); }
 .ww-create-site > div { max-width: 720px; }
 .ww-create-site h3 { color: #1e3b2c; font-size: 1.28rem; margin: 5px 0 8px; }

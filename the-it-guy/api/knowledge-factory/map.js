@@ -120,7 +120,7 @@ function validateBounds(value) {
   if ([west, east, south, north].some((item) => item === null)) throw new Error('Map bounds must be finite numbers.')
   if (west >= east || south >= north) throw new Error('Map bounds are invalid.')
   if (west < SOUTH_AFRICA.west || east > SOUTH_AFRICA.east || south < SOUTH_AFRICA.south || north > SOUTH_AFRICA.north) throw new Error('Map searches must remain within South Africa.')
-  if (east - west > MAX_BOUNDS_WIDTH || north - south > MAX_BOUNDS_HEIGHT) throw new Error('Zoom in before searching this area.')
+  if (east - west > MAX_BOUNDS_WIDTH || north - south > MAX_BOUNDS_HEIGHT) throw new Error('Zoom in to load parcels for this area.')
   return { west, east, south, north }
 }
 

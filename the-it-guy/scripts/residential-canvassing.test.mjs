@@ -102,6 +102,13 @@ const knowledgeFactoryMapApiSource = await fs.readFile(
   new URL("../api/knowledge-factory/map.js", import.meta.url),
   "utf8",
 );
+const knowledgeFactoryParcelMapSource = await fs.readFile(
+  new URL(
+    "../src/components/canvassing/KnowledgeFactoryParcelMap.jsx",
+    import.meta.url,
+  ),
+  "utf8",
+);
 const knowledgeFactoryReportsApiSource = await fs.readFile(
   new URL("../api/knowledge-factory/reports.js", import.meta.url),
   "utf8",
@@ -201,6 +208,21 @@ assert.match(
   propertySearchWorkspaceSource,
   /searchKnowledgeFactoryMap/,
   "property search should use the live map provider when enabled",
+);
+assert.match(
+  knowledgeFactoryParcelMapSource,
+  /map\.addListener\(['"]idle['"], \(\) => scheduleSearch\(map\)\)/,
+  "the live parcel map should load parcels automatically after map movement settles",
+);
+assert.match(
+  knowledgeFactoryParcelMapSource,
+  /MIN_MAP_SEARCH_INTERVAL_MS = 5_000/,
+  "automatic map loading should remain bounded below the supplier rate limit",
+);
+assert.doesNotMatch(
+  knowledgeFactoryParcelMapSource,
+  />Search this area</,
+  "the live parcel map should not require a separate search-area action",
 );
 assert.match(
   propertySearchWorkspaceSource,

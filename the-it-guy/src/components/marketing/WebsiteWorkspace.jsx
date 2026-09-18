@@ -363,6 +363,28 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
   const publicationBlockers = Array.isArray(overview.publicationReadiness?.blockers) ? overview.publicationReadiness.blockers : []
   const publicationReady = overview.publicationReadiness?.ready === true || (publicationBlockers.length > 0 && publicationBlockers.every(isRepairableBrandBlocker))
   const changesReadyCount = Math.max(0, Number(overview.publicationReadiness?.changesReadyCount || 0))
+  const websiteIsConnected = overview.mode === 'connected'
+
+  // The website tools are a managed service. Do not expose mock previews,
+  // empty editors, or landing-page controls before a real site is connected.
+  if (!websiteIsConnected) {
+    const isChecking = overview.mode === 'loading'
+    return (
+      <div className="wa-page website-workspace website-overview">
+        <section className="ww-website-access-gate" aria-live="polite">
+          <LockKeyhole size={24} />
+          <div>
+            <span className="md-eyebrow">WEBSITE & LANDING PAGES</span>
+            <h1>{isChecking ? 'Checking your website connection…' : 'Connect your website'}</h1>
+            <p>{isChecking
+              ? 'We are checking whether this workspace has a connected Arch9 website.'
+              : 'Website previews, landing pages, analytics and editing are available once your agency website is connected.'}</p>
+            {!isChecking ? <p className="ww-website-access-note">Need a custom website? Contact your Arch9 administrator or your usual Arch9 contact person to get connected.</p> : null}
+          </div>
+        </section>
+      </div>
+    )
+  }
   const createSite = async () => {
     if (!organisationId || action) return
     setAction('create')

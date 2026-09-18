@@ -339,10 +339,10 @@ function PrincipalKpiRow({ data }) {
   const kpis = data.kpis
   return (
     <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <PrincipalKpiCard icon={Users} label="Active Transactions" value={formatCount(kpis.activeTransactions)} trend={kpis.trends.activeTransactions} tone="green" />
+      <PrincipalKpiCard icon={Users} label="Active Listings" value={formatCount(kpis.activeListings)} trend={kpis.trends.activeListings} tone="green" />
       <PrincipalKpiCard icon={UserRound} label="New Leads" value={formatCount(kpis.newLeads)} trend={kpis.trends.newLeads} tone="indigo" />
-      <PrincipalKpiCard icon={BriefcaseBusiness} label="Expected Commission" value={kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true })} trend={kpis.trends.expectedCommission} tone="orange" />
-      <PrincipalKpiCard icon={LineChart} label="Likely Revenue" value={formatCurrency(kpis.likelyRevenue ?? kpis.forecastRevenue, { compact: true })} trend={kpis.trends.likelyRevenue ?? kpis.trends.forecastRevenue} tone="purple" />
+      <PrincipalKpiCard icon={BriefcaseBusiness} label="Pipeline Value" value={formatCurrency(kpis.pipelineValue, { compact: true })} trend={kpis.trends.pipelineValue} tone="purple" />
+      <PrincipalKpiCard icon={LineChart} label="Commission Forecast" value={formatCurrency(kpis.commissionForecast, { compact: true })} trend={kpis.trends.commissionForecast} tone="orange" />
     </section>
   )
 }
@@ -2039,9 +2039,6 @@ function _buildPrincipalPremiumModel(data = {}) {
   const kpiTrends = kpis.trends || {}
   const forecastChart = Array.isArray(data.revenue?.forecastChart) ? data.revenue.forecastChart : []
   const forecastValues = forecastChart.map((row) => Number(row.expectedCommission || 0))
-  const transactionFlowCounts = (Array.isArray(data.transactions?.flow) ? data.transactions.flow : []).map((row) => Number(row.count || 0))
-  const registrationForecastValue = Number(data.revenue?.forecast?.committedRevenue || forecastValues.slice(0, 2).reduce((sum, value) => sum + value, 0) || 0)
-
   const healthSnapshot = data.overview?.transactionHealthSnapshot || {}
   const totalActive = Number(kpis.activeTransactions || data.transactions?.totalActive || 0)
   const criticalDelays = Number(healthSnapshot.delayedCount || getRowByKey(data.transactions?.commandCentre, 'delayed')?.count || 0)
@@ -2121,40 +2118,40 @@ function _buildPrincipalPremiumModel(data = {}) {
   return {
     kpiItems: [
       {
-        key: 'active_transactions',
-        label: 'Active Transactions',
-        value: formatCount(kpis.activeTransactions),
-        trend: kpiTrends.activeTransactions,
+        key: 'active_listings',
+        label: 'Active Listings',
+        value: formatCount(kpis.activeListings),
+        trend: kpiTrends.activeListings,
         icon: FileText,
         tone: 'blue',
-        sparkline: transactionFlowCounts,
+        sparkline: [kpis.activeListings],
       },
       {
-        key: 'expected_commission',
-        label: 'Expected Commission',
-        value: kpis.expectedCommission === null ? '—' : formatCurrency(kpis.expectedCommission, { compact: true }),
-        trend: kpiTrends.expectedCommission,
+        key: 'pipeline_value',
+        label: 'Pipeline Value',
+        value: formatCurrency(kpis.pipelineValue, { compact: true }),
+        trend: kpiTrends.pipelineValue,
         icon: CircleDollarSign,
         tone: 'green',
-        sparkline: forecastValues,
+        sparkline: [kpis.pipelineValue],
       },
       {
-        key: 'likely_revenue',
-        label: 'Likely Revenue',
-        value: formatCurrency(kpis.likelyRevenue ?? kpis.forecastRevenue, { compact: true }),
-        trend: kpiTrends.likelyRevenue ?? kpiTrends.forecastRevenue,
+        key: 'commission_forecast',
+        label: 'Commission Forecast',
+        value: formatCurrency(kpis.commissionForecast, { compact: true }),
+        trend: kpiTrends.commissionForecast,
         icon: LineChart,
         tone: 'orange',
-        sparkline: [data.revenue?.forecast?.expectedCommission, data.revenue?.forecast?.likelyRevenue, data.revenue?.forecast?.committedRevenue],
+        sparkline: [kpis.commissionForecast],
       },
       {
-        key: 'registration_forecast',
-        label: 'Registration Forecast',
-        value: formatCurrency(registrationForecastValue, { compact: true }),
-        trend: kpiTrends.closingThisMonth,
+        key: 'new_leads',
+        label: 'New Leads',
+        value: formatCount(kpis.newLeads),
+        trend: kpiTrends.newLeads,
         icon: CalendarDays,
         tone: 'purple',
-        sparkline: forecastValues,
+        sparkline: [kpis.newLeads],
       },
     ],
     health: {

@@ -38,6 +38,7 @@ export function resolveMarketingPeriod(range = '30d', now = new Date(), customSt
 
 export function normaliseMarketingLeadSource(value = '') {
   const key = text(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')
+  if (['agent_digital_card', 'digital_business_card', 'digital_card'].includes(key)) return { key: 'digital_business_card', label: 'Digital business cards' }
   if (['property24', 'p24'].includes(key)) return { key: 'property24', label: 'Property24' }
   if (['private_property', 'privateproperty', 'private_property_sa'].includes(key)) return { key: 'private_property', label: 'Private Property' }
   if (['website', 'web', 'contact_form', 'property_enquiry', 'valuation_request'].includes(key)) return { key: 'website', label: 'Website' }
@@ -93,6 +94,48 @@ function displayLead(lead = {}) {
   const first = text(lead?.contacts?.first_name || lead?.first_name)
   const last = text(lead?.contacts?.last_name || lead?.last_name)
   return [first, last].filter(Boolean).join(' ') || text(lead?.contacts?.email || lead?.email) || 'New lead'
+}
+
+function isMissingMarketingSource(error, tableName = '') {
+  const message = text(`${error?.message || ''} ${error?.details || ''}`).toLowerCase()
+  return error?.code === '42P01' || error?.code === 'PGRST205' || (tableName && message.includes(tableName) && (message.includes('does not exist') || message.includes('schema cache')))
+}
+
+function isAgentDigitalCardLink(link = {}) {
+  const metadata = link?.metadata_json && typeof link.metadata_json === 'object' ? link.metadata_json : {}
+  return metadata.surface === 'agent_digital_card'
+}
+
+async function fetchDigitalBusinessCardAnalytics({ organisationId, period }) {
+  const linksResult = await supabase
+    .from('agency_public_intake_links')
+    .select('id, status, metadata_json')
+    .eq('organisation_id', organisationId)
+
+  if (linksResult.error) {
+    if (isMissingMarketingSource(linksResult.error, 'agency_public_intake_links')) return { connected: false, views: 0, engagement: 0, leads: 0, note: 'Digital card analytics are not set up yet.' }
+    return { connected: false, views: 0, engagement: 0, leads: 0, note: linksResult.error.message || 'Digital card analytics are unavailable.' }
+  }
+
+  const cardLinkIds = (linksResult.data || []).filter(isAgentDigitalCardLink).map((link) => link.id).filter(Boolean)
+  if (!cardLinkIds.length) return { connected: true, views: 0, engagement: 0, leads: 0, note: 'No digital business cards have been created yet.' }
+
+  const since = period.start.toISOString()
+  const until = period.end.toISOString()
+  const [eventsResult, submissionsResult] = await Promise.all([
+    supabase.from('agency_agent_card_events').select('event_type').eq('organisation_id', organisationId).in('intake_link_id', cardLinkIds).gte('created_at', since).lte('created_at', until).limit(5000),
+    supabase.from('agency_public_intake_submissions').select('id').eq('organisation_id', organisationId).in('intake_link_id', cardLinkIds).gte('created_at', since).lte('created_at', until).limit(5000),
+  ])
+  if (eventsResult.error || submissionsResult.error) {
+    const error = eventsResult.error || submissionsResult.error
+    if (isMissingMarketingSource(error, eventsResult.error ? 'agency_agent_card_events' : 'agency_public_intake_submissions')) return { connected: false, views: 0, engagement: 0, leads: 0, note: 'Digital card analytics are not set up yet.' }
+    return { connected: false, views: 0, engagement: 0, leads: 0, note: error?.message || 'Digital card analytics are unavailable.' }
+  }
+
+  const events = eventsResult.data || []
+  const views = events.filter((event) => event.event_type === 'card_view').length
+  const engagement = events.filter((event) => ['call_click', 'whatsapp_click', 'email_click', 'buyer_cta_click', 'seller_cta_click', 'listing_click', 'website_click'].includes(event.event_type)).length
+  return { connected: true, views, engagement, leads: (submissionsResult.data || []).length, note: '' }
 }
 
 export function normalizeProperty24MarketingAnalytics(value = {}) {
@@ -199,13 +242,14 @@ export async function getMarketingOverviewDashboard({ organisationId = '', range
   }
   const since = period.comparisonStart.toISOString()
   const comparisonPeriod = { ...period, start: period.comparisonStart, end: period.comparisonEnd }
-  const [leadsResult, campaignsResult, performanceResult, siteResult, property24CurrentResult, property24PreviousResult] = await Promise.all([
+  const [leadsResult, campaignsResult, performanceResult, siteResult, property24CurrentResult, property24PreviousResult, digitalCardPerformance] = await Promise.all([
     supabase.from('leads').select('lead_id, lead_source, stage, status, property_interest, created_at, updated_at, contacts!leads_contact_id_fkey(first_name,last_name,email)').eq('organisation_id', orgId).gte('created_at', since).order('created_at', { ascending: false }).limit(2000),
     supabase.from('email_campaigns').select('id,name,subject,preview_text,status,scheduled_for,sent_at,created_at,updated_at,audience_filter').eq('organisation_id', orgId).order('updated_at', { ascending: false }).limit(100),
     supabase.from('email_campaign_performance').select('campaign_id,recipients,delivered,opened,clicked').eq('organisation_id', orgId),
     supabase.from('website_sites').select('id').eq('organisation_id', orgId).maybeSingle(),
     fetchProperty24MarketingAnalytics({ organisationId: orgId, period }),
     fetchProperty24MarketingAnalytics({ organisationId: orgId, period: comparisonPeriod }),
+    fetchDigitalBusinessCardAnalytics({ organisationId: orgId, period }),
   ])
   for (const result of [leadsResult, campaignsResult, performanceResult, siteResult]) {
     if (result.error) throw result.error
@@ -264,6 +308,7 @@ export async function getMarketingOverviewDashboard({ organisationId = '', range
     { key: 'whatsapp', label: 'WhatsApp', volume: null, volumeLabel: 'Reach', engagement: '—', leads: leadSources.find((row) => row.key === 'whatsapp_campaign')?.count || 0, costPerLead: null, connected: false, note: 'Campaign delivery reporting is not connected yet.' },
     { key: 'property24', label: 'Property24', volume: property24Performance.listingViews, volumeLabel: 'Listing views', engagement: property24Performance.contactRate === null ? '—' : `${property24Performance.contactRate}% contact rate`, leads: property24Performance.totalContactLeads, costPerLead: null, connected: property24Performance.connected && !property24Performance.error, note: property24Performance.error || (!property24Performance.connected ? 'Not connected' : !property24Performance.lastSyncedAt ? 'Statistics awaiting first sync' : '') },
     { key: 'private-property', label: 'Private Property', volume: leadSources.find((row) => row.key === 'private_property')?.count || 0, volumeLabel: 'Imported leads', engagement: '—', leads: leadSources.find((row) => row.key === 'private_property')?.count || 0, costPerLead: null, connected: leadSources.some((row) => row.key === 'private_property'), note: leadSources.some((row) => row.key === 'private_property') ? '' : 'Not connected' },
+    { key: 'digital-business-cards', label: 'Digital business cards', volume: digitalCardPerformance.views, volumeLabel: 'Card views', engagement: `${number(digitalCardPerformance.engagement)} actions`, leads: digitalCardPerformance.leads, costPerLead: null, connected: digitalCardPerformance.connected, note: digitalCardPerformance.note },
   ]
   return {
     period, configured: true,
