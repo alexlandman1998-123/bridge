@@ -5,7 +5,6 @@ import {
   normalizePersonCollectionForSellerProfile,
 } from './sellerProfileCaptureModel.js'
 import { normalizeSellerEntityType } from './sellerEntityModel.js'
-import { isPropertyDisclosureDigitallyComplete } from './propertyDisclosure.js'
 import {
   LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION as SELLER_REQUIREMENT_RETIREMENT_VERSION,
   getSellerRequirementProfile,
@@ -596,43 +595,15 @@ export function buildListingMandateReadiness(listing = {}, commission = {}) {
 }
 
 export function buildListingSellerDocumentReadiness(listing = {}, commission = {}) {
-  const form = getListingSellerFormData(listing)
-  const branch = resolveListingSellerProfileBranch(form, listing)
   const mandate = buildListingMandateReadiness(listing, commission)
-  const disclosureComplete = isPropertyDisclosureDigitallyComplete(form.propertyDisclosure || form.property_disclosure || {})
-  const ficaMissing = []
-  const require = (condition, message) => { if (!condition) ficaMissing.push(message) }
-  const residentialAddress = normalizeText(form.residentialAddress || form.residential_address || form.physicalAddress)
-  const owners = normalizePersonCollectionForSellerProfile(form.multipleOwners || form.owners || [], null, 'Owner')
-
-  require(Boolean(branch), 'Choose the ownership type.')
-  if (branch === 'multiple_owners') {
-    require(owners.length > 0, 'Add every property owner.')
-    owners.forEach((owner, index) => {
-      require(Boolean(normalizeText(owner.idNumber)), `Add owner ${index + 1}'s ID or passport number.`)
-      require(Boolean(normalizeText(owner.residentialAddress || owner.physicalAddress)), `Add owner ${index + 1}'s residential address.`)
-    })
-  } else if (branch === 'company' || branch === 'foreign_company') {
-    require(Boolean(normalizeText(form.companyName)), 'Add the company or CC name.')
-    require(Boolean(normalizeText(form.companyRegistrationNumber)), 'Add the company or CC registration number.')
-    require(Boolean(normalizeText(form.companyRegisteredAddress)), 'Add the company registered address.')
-  } else if (branch === 'trust' || branch === 'foreign_trust') {
-    require(Boolean(normalizeText(form.trustName)), 'Add the trust name.')
-    require(Boolean(normalizeText(form.trustRegistrationNumber)), 'Add the trust registration number.')
-    require(Boolean(normalizeText(form.trustRegisteredAddress)), 'Add the trust registered address.')
-  } else if (branch === 'deceased_estate') {
-    require(Boolean(normalizeText(form.deceasedEstateName || form.estateName)), 'Add the estate name.')
-    require(Boolean(normalizeText(form.estateReferenceNumber)), 'Add the estate reference number.')
-  } else {
-    require(Boolean(normalizeText(form.idNumber || form.sellerIdNumber || form.passportNumber)), 'Add the seller ID or passport number.')
-    require(Boolean(residentialAddress), 'Add the seller residential address.')
-  }
-  require(Boolean(normalizeText(form.propertyAddress || form.addressLine1 || listing.propertyAddress || listing.addressLine1)), 'Add the property address.')
 
   const documents = [
     { key: 'mandate', title: 'Exclusive mandate', copy: 'Uses the saved mandate, commission and VAT details.', ready: mandate.ready, missing: mandate.missing },
-    { key: 'disclosure', title: 'Property disclosure form', copy: 'Uses the completed property-condition disclosure answers.', ready: disclosureComplete, missing: disclosureComplete ? [] : ['Complete the property disclosure questionnaire.'] },
-    { key: 'fica', title: 'Seller FICA declaration', copy: 'Uses the captured seller, entity and property details.', ready: ficaMissing.length === 0, missing: ficaMissing },
+    // These are seller-completed questionnaires. They must be available in a
+    // secure pack before their answers exist; otherwise the form can never do
+    // the job it was sent to do.
+    { key: 'disclosure', title: 'Property disclosure form', copy: 'The seller completes the property-condition questionnaire in the secure link.', ready: true, missing: [] },
+    { key: 'fica', title: 'Seller FICA declaration', copy: 'The seller confirms and completes outstanding FICA information in the secure link.', ready: true, missing: [] },
   ]
   return { version: 'listing_seller_document_readiness_v1', documents, byKey: Object.fromEntries(documents.map((document) => [document.key, document])) }
 }

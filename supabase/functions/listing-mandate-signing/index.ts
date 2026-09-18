@@ -27,6 +27,7 @@ function signingPack(value: unknown, selectedDocuments: string[], mandate: Recor
       : mandate,
     seller: snapshot(provided.seller),
     property: snapshot(provided.property),
+    disclosure: snapshot(provided.disclosure),
     signers: Array.isArray(provided.signers) ? provided.signers : [],
     templateVersions: snapshot(provided.templateVersions),
   };
@@ -35,13 +36,14 @@ function signedPackDocumentHtml(documentKey: string, session: RecordValue, signe
   const pack = snapshot(session.signing_pack_snapshot);
   const mandate = snapshot(pack.mandate);
   const seller = snapshot(pack.seller);
+  const disclosureResponses = snapshot(snapshot(pack.disclosure).responses);
   const title = documentKey === "disclosure" ? "Property condition disclosure" : documentKey === "fica" ? "Seller FICA declaration" : "Exclusive mandate";
   const property = text(mandate.propertyAddress) || text(snapshot(pack.property).address);
   const detail = documentKey === "mandate"
     ? `Asking price: ${escapeHtml(mandate.askingPrice)}<br>Commission: ${escapeHtml(mandate.commissionBasis === "fixed" ? mandate.commissionAmount : `${text(mandate.commissionPercentage)}%`)} ${escapeHtml(mandate.vatHandling)}`
     : documentKey === "fica"
       ? `Seller/entity: ${escapeHtml(seller.name)}<br>Legal type: ${escapeHtml(seller.legalType)}<br>ID / passport: ${escapeHtml(seller.idNumber)}`
-      : "The seller reviewed the frozen property-condition disclosure included in this signing pack.";
+      : Object.entries(disclosureResponses).map(([key, value]) => `${escapeHtml(key.replaceAll("_", " "))}: ${escapeHtml(snapshot(value).answer)}`).join("<br>") || "The seller reviewed the property-condition disclosure included in this signing pack.";
   return `<article><h1>${escapeHtml(title)}</h1><p>Property: ${escapeHtml(property)}</p><p>${detail}</p><p>Frozen signing pack: ${escapeHtml(session.signing_pack_digest)}</p><p>Accepted and signed by ${escapeHtml(signedName)}.</p><p>Signature: ${escapeHtml(signature)}</p></article>`;
 }
 async function issueSellerPortalRecipientInvites(admin: any, url: string, serviceKey: string, sessionId: string, organisationId: string, propertyTitle: string, agentName: string) {
@@ -199,7 +201,43 @@ Deno.serve(async (req) => {
     const acceptedDocuments = snapshot(body.acceptedDocuments);
     const missingAcceptance = selectedDocuments.find((documentKey: string) => acceptedDocuments[documentKey] !== true);
     if (missingAcceptance || !signedName || !signature) return response(400, { success: false, error: missingAcceptance ? `Review and accept the ${missingAcceptance} document before submitting.` : "Provide your full name and signature before submitting." });
-    const generatedDocuments = Object.fromEntries(selectedDocuments.map((documentKey: string) => [documentKey, signedPackDocumentHtml(documentKey, session, signedName, signature)]));
+    const sellerResponses = snapshot(body.sellerResponses);
+    const disclosure = snapshot(sellerResponses.disclosure);
+    const disclosureResponses = snapshot(disclosure.responses);
+    const fica = snapshot(sellerResponses.fica);
+    if (selectedDocuments.includes("disclosure")) {
+      const answers = Object.values(disclosureResponses).map((value) => text(snapshot(value).answer));
+      if (answers.length < 20 || answers.some((answer) => !["yes", "no", "unsure"].includes(answer))) return response(400, { success: false, error: "Answer every property disclosure question before signing." });
+    }
+    if (selectedDocuments.includes("fica") && (!text(fica.idNumber) || !text(fica.residentialAddress))) return response(400, { success: false, error: "Add your ID or passport number and residential or registered address before signing the FICA declaration." });
+
+    const existingPack = snapshot(session.signing_pack_snapshot);
+    const completedPack = {
+      ...existingPack,
+      disclosure: selectedDocuments.includes("disclosure") ? disclosure : snapshot(existingPack.disclosure),
+      seller: {
+        ...snapshot(existingPack.seller),
+        ...(selectedDocuments.includes("fica") ? {
+          idNumber: text(fica.idNumber), residentialAddress: text(fica.residentialAddress), incomeTaxNumber: text(fica.incomeTaxNumber),
+        } : {}),
+      },
+    };
+    const { data: onboarding } = await admin.from("private_listing_seller_onboarding").select("form_data").eq("private_listing_id", session.private_listing_id).maybeSingle();
+    const formData = { ...snapshot(onboarding?.form_data) };
+    if (selectedDocuments.includes("disclosure")) {
+      formData.propertyDisclosure = disclosure;
+      formData.property_disclosure = disclosure;
+    }
+    if (selectedDocuments.includes("fica")) {
+      formData.idNumber = text(fica.idNumber);
+      formData.sellerIdNumber = text(fica.idNumber);
+      formData.residentialAddress = text(fica.residentialAddress);
+      formData.residential_address = text(fica.residentialAddress);
+      formData.incomeTaxNumber = text(fica.incomeTaxNumber);
+    }
+    await admin.from("private_listing_seller_onboarding").update({ form_data: formData, updated_at: new Date().toISOString() }).eq("private_listing_id", session.private_listing_id);
+    const completedSession = { ...session, signing_pack_snapshot: completedPack };
+    const generatedDocuments = Object.fromEntries(selectedDocuments.map((documentKey: string) => [documentKey, signedPackDocumentHtml(documentKey, completedSession, signedName, signature)]));
     const { data: completion, error: completionError } = await admin.rpc("complete_private_listing_seller_signing_pack", {
       p_session_id: session.id, p_signed_name: signedName, p_signature: signature,
       p_acceptance_ip: text(req.headers.get("x-forwarded-for")).split(",")[0] || "",

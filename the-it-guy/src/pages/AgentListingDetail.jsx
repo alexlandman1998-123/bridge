@@ -9725,6 +9725,31 @@ function AgentListingDetail() {
     const now = new Date().toISOString()
     const existingFormData = getListingSellerFormData(listingRecord)
     const nextFormData = { ...existingFormData, ...formPatch }
+    // The Seller > Mandate editor and the Commission workspace are two views
+    // of the same commercial terms. Keep legacy free-text preference input
+    // compatible while projecting a usable numeric commission value.
+    if (sellerSectionEditorKey === 'mandate_details') {
+      const preference = toCleanText(formPatch.commissionPreference)
+      const numericPreference = Number(preference.replace(/[^0-9.]/g, ''))
+      if (Number.isFinite(numericPreference) && numericPreference > 0) {
+        const fixed = /(?:^|\s)(?:r|zar|rand)\b/i.test(preference)
+        Object.assign(nextFormData, fixed
+          ? {
+              commissionBasis: 'fixed', commission_basis: 'fixed',
+              commissionAmount: String(numericPreference), commission_amount: String(numericPreference),
+              mandateCommissionPercentage: '', commissionPercentage: '', commission_percent: '',
+            }
+          : {
+              commissionBasis: 'percentage', commission_basis: 'percentage',
+              commissionPercentage: String(numericPreference), commission_percent: String(numericPreference),
+              mandateCommissionPercentage: String(numericPreference), commissionAmount: '', commission_amount: '',
+            })
+      }
+      if (formPatch.mandateTerms !== undefined) {
+        nextFormData.mandateTerms = formPatch.mandateTerms
+        nextFormData.mandateCommissionTerms = formPatch.mandateTerms
+      }
+    }
     const fullName = toCleanText(nextFormData.fullName || nextFormData.sellerName || resolveSellerNameFromListing(listingRecord))
     const email = toCleanText(nextFormData.email || nextFormData.sellerEmail || resolveSellerEmailFromListing(listingRecord)).toLowerCase()
     const phone = toCleanText(nextFormData.phone || nextFormData.sellerPhone || resolveSellerPhoneFromListing(listingRecord))
@@ -11713,7 +11738,7 @@ function AgentListingDetail() {
             return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
               <p className="font-semibold">{mandateReadiness.ready ? 'Mandate ready to prepare' : 'Mandate details still needed'}</p>
               <p className="mt-1">{mandateReadiness.summary}</p>
-              {!mandateReadiness.ready ? <ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul> : null}
+              {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerDocumentSendOpen(false); openSellerWorkspaceSection('seller', 'Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
             </div>
           })()}
           {sellerDocumentSendStep === 1 ? <><div className="space-y-3">{getSellerSigningDocumentOptions().documents.map((document) => (
@@ -15651,12 +15676,7 @@ function AgentListingDetail() {
                                     {followUpActionId === 'send_mandate_signing_link' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                                     Send signing link
                                   </Button>
-                                ) : (
-                                  <Button type="button" size="sm" onClick={openMandateSetup}>
-                                    <FileText size={14} />
-                                    Generate Mandate
-                                  </Button>
-                                )
+                                ) : null
                               ) : null}
                               <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                                 {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
