@@ -1981,6 +1981,29 @@ function isProperty24MigrationImportRecord(row = {}) {
   return source === 'property24_migration_import' || Boolean(facts?.property24Import)
 }
 
+function isPortalImportReviewRecord(row = {}) {
+  const facts = row?.sellerCanonicalFacts || row?.seller_canonical_facts_json || {}
+  const source = String(row?.stockSource || row?.stock_source || row?.listingSource || row?.listing_source || '').trim().toLowerCase()
+  return (
+    [
+      'property24_migration_import',
+      'imported_property24',
+      'property24_import',
+      'property24',
+      'private_property_import',
+      'imported_private_property',
+      'private_property',
+      'privateproperty',
+    ].includes(source) ||
+    Boolean(
+      facts?.property24Import ||
+      facts?.property24_import ||
+      facts?.privatePropertyImport ||
+      facts?.private_property_import,
+    )
+  )
+}
+
 function isArchivedListingRecord(row = {}) {
   const status = String(row?.listingStatus || row?.listing_status || row?.status || '').trim().toLowerCase()
   const visibility = String(row?.listingVisibility || row?.listing_visibility || '').trim().toLowerCase()
@@ -1995,12 +2018,7 @@ function shouldHideListingRecord(row = {}) {
 function getListingCollectionView(card = {}) {
   const listing = card?.listingRecord || card
   if (isArchivedListingRecord(listing)) return 'archived'
-  if (
-    card?.listingStatusKey === 'listing_review' ||
-    (isProperty24MigrationImportRecord(listing) && (!card?.assignedAgent?.isAssigned || isListingSellerOwnershipUnidentified(listing)))
-  ) {
-    return 'review'
-  }
+  if (isPortalImportReviewRecord(listing)) return 'review'
   return 'current'
 }
 
@@ -8259,8 +8277,8 @@ function AgentListings({ initialTab = null } = {}) {
                 : listingCollectionView === 'archived'
                   ? 'Archived listings and historical Property24 imports. These records are retained for reference and are not part of current stock.'
                   : listingCollectionView === 'review'
-                    ? 'Imported or internal listings that need an owner model, an assigned agent, or a listing review before they become current stock.'
-                    : 'Agent-owned listings, seller onboarding, offers, and deal preparation.'}
+                    ? 'Property24 and Private Property imports awaiting review before they become current stock.'
+                    : 'Agent-owned listings, including drafts, seller onboarding, offers, and deal preparation.'}
             </p>
             {!isDeveloperWorkspace && listingsTab === 'developments' ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -8335,9 +8353,9 @@ function AgentListings({ initialTab = null } = {}) {
         {!isDeveloperWorkspace && listingsTab !== 'developments' ? (
           <div className="mb-5 grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:grid-cols-3">
             {[
-              { key: 'current', label: 'Current', count: listingTabCounts.residential || 0, description: 'Working stock and live listings' },
+              { key: 'current', label: 'Current', count: listingTabCounts.residential || 0, description: 'Working stock, drafts, and live listings' },
               { key: 'archived', label: 'Archive', count: listingTabCounts.archived || 0, description: 'Archived listings and historical imports' },
-              { key: 'review', label: 'Review', count: listingTabCounts.review || 0, description: 'Owner or assignment needs attention' },
+              { key: 'review', label: 'Imported Review', count: listingTabCounts.review || 0, description: 'Property24 and Private Property imports' },
             ].map((view) => {
               const active = listingCollectionView === view.key
               return (
