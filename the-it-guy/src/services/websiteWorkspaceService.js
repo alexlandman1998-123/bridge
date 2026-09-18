@@ -2,6 +2,7 @@ import { assertEdgeFunctionSuccess, invokeEdgeFunction, isSupabaseConfigured, su
 
 const WEBSITE_BRAND_PUBLICATION_FUNCTION = 'website-brand-publication'
 const WEBSITE_DOMAIN_MANAGEMENT_FUNCTION = 'website-domain-management'
+const WEBSITE_CONNECTION_TIMEOUT_MS = 8_000
 
 function text(value) {
   return String(value || '').trim()
@@ -11,52 +12,51 @@ function latest(items = []) {
   return [...items].sort((left, right) => String(right.updated_at || right.created_at || '').localeCompare(String(left.updated_at || left.created_at || '')))[0] || null
 }
 
+async function getWebsiteConnectionStatus(organisationId) {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null
+  const timeoutId = controller ? setTimeout(() => controller.abort(), WEBSITE_CONNECTION_TIMEOUT_MS) : null
+  try {
+    const request = supabase.rpc('website_workspace_connection_status', { p_organisation_id: organisationId })
+    const { data, error } = controller ? await request.abortSignal(controller.signal) : await request
+    if (error) throw error
+    const status = Array.isArray(data) ? data[0] : data
+    if (!status || typeof status !== 'object') throw new Error('Website connection status is unavailable.')
+    return status
+  } catch (error) {
+    if (controller?.signal.aborted) throw new Error('Website connection check timed out. Please retry.')
+    throw error
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
 export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDays = 30 } = {}) {
   const safeOrganisationId = text(organisationId)
   if (!safeOrganisationId || !isSupabaseConfigured || !supabase) {
     return { mode: 'unconfigured', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '' }
   }
 
-  const [pilotResult, productionReleaseResult, productionDarkLaunchResult] = await Promise.all([
-    supabase
-      .from('website_pilot_enrolments')
-      .select('cohort, status, activated_at, paused_at, completed_at, updated_at')
-      .eq('organisation_id', safeOrganisationId)
-      .maybeSingle(),
-    supabase
-      .from('website_production_releases')
-      .select('status, target_hostname, source_commit, candidate_deployment_url, approval_reference, approved_at, domain_verified_at, activated_at, paused_at, updated_at')
-      .eq('organisation_id', safeOrganisationId)
-      .maybeSingle(),
-    supabase
-      .from('website_production_dark_launches')
-      .select('status, source_commit, candidate_deployment_url, rollback_deployment_url, preview_hostname, approval_reference, activated_at, paused_at, rolled_back_at, updated_at')
-      .eq('organisation_id', safeOrganisationId)
-      .maybeSingle(),
-  ])
-  if (pilotResult.error) throw pilotResult.error
-  if (productionReleaseResult.error) throw productionReleaseResult.error
-  if (productionDarkLaunchResult.error) throw productionDarkLaunchResult.error
-  const productionRelease = productionReleaseResult.data
-  const productionDarkLaunch = productionDarkLaunchResult.data
-  const productionAccess = (productionRelease && ['approved', 'active', 'paused'].includes(productionRelease.status))
-    || (productionDarkLaunch && ['prepared', 'active', 'paused'].includes(productionDarkLaunch.status))
-  if (!pilotResult.data && !productionAccess) {
-    return { mode: 'pilot_unavailable', pilot: null, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '' }
+  const connection = await getWebsiteConnectionStatus(safeOrganisationId)
+  const pilot = connection.pilot_status ? { status: text(connection.pilot_status) } : null
+  const productionRelease = connection.production_release_status ? { status: text(connection.production_release_status), candidate_deployment_url: text(connection.production_release_candidate_url) || null } : null
+  const productionDarkLaunch = connection.production_dark_launch_status ? { status: text(connection.production_dark_launch_status), candidate_deployment_url: text(connection.production_dark_launch_candidate_url) || null } : null
+  if (connection.access_state === 'unavailable') {
+    return { mode: 'pilot_unavailable', pilot, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '' }
   }
-  if (pilotResult.data && pilotResult.data.status !== 'active' && !productionAccess) {
-    return { mode: 'pilot_paused', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '' }
+  if (connection.access_state === 'pilot_paused') {
+    return { mode: 'pilot_paused', pilot, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '' }
   }
 
-  const siteResult = await supabase
-    .from('website_sites')
-    .select('id, preview_slug, status, template_key, published_revision_id, updated_at')
-    .eq('organisation_id', safeOrganisationId)
-    .maybeSingle()
-  if (siteResult.error) throw siteResult.error
-  if (!siteResult.data) return { mode: 'ready_to_create', pilot: pilotResult.data, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '' }
+  if (!connection.site_id) return { mode: 'ready_to_create', pilot, productionRelease, productionDarkLaunch, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '' }
 
-  const site = siteResult.data
+  const site = {
+    id: connection.site_id,
+    preview_slug: text(connection.preview_slug),
+    status: text(connection.site_status),
+    template_key: text(connection.template_key),
+    published_revision_id: connection.published_revision_id || null,
+    updated_at: connection.site_updated_at || null,
+  }
   const [domainsResult, revisionsResult, pagesResult, eventsResult, managementEventsResult, analyticsResult, leadsResult, blogPostsResult, mediaAssetsResult, websiteListingsResult] = await Promise.all([
     supabase.from('website_domains').select('id, hostname, domain_kind, status, is_primary, dns_instructions, verified_at, created_at, updated_at').eq('website_site_id', site.id).order('created_at'),
     supabase.from('website_site_revisions').select('id, revision_number, status, brand_json, source_revision_id, content_fingerprint, published_at, published_by, archived_at, updated_at').eq('website_site_id', site.id).order('revision_number', { ascending: false }),
@@ -90,7 +90,7 @@ export async function getWebsiteWorkspaceOverview(organisationId, { leadWindowDa
   }
   return {
     mode: 'connected',
-    pilot: pilotResult.data,
+    pilot,
     productionRelease,
     productionDarkLaunch,
     site: { id: site.id, previewSlug: text(site.preview_slug), status: text(site.status), templateKey: text(site.template_key), publishedRevisionId: site.published_revision_id || null, updatedAt: site.updated_at || null },

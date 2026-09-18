@@ -335,7 +335,7 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
   const refresh = async () => {
     setError('')
     setOverview((current) => ({ ...current, mode: 'loading' }))
-    try { setOverview(await getWebsiteWorkspaceOverview(organisationId, { leadWindowDays })) } catch (loadError) { setError('Website settings could not be loaded.'); setOverview({ mode: 'error', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '', mediaAssets: [], mediaAssetsError: '', websiteListings: [], websiteListingsError: '' }) }
+    try { setOverview(await getWebsiteWorkspaceOverview(organisationId, { leadWindowDays })) } catch (loadError) { setError(loadError?.message || 'Website settings could not be loaded.'); setOverview({ mode: 'error', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '', mediaAssets: [], mediaAssetsError: '', websiteListings: [], websiteListingsError: '' }) }
   }
 
   useEffect(() => { void refresh() }, [organisationId, leadWindowDays])
@@ -379,6 +379,8 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
             <p>{isChecking
               ? 'We are checking whether this workspace has a connected Arch9 website.'
               : 'Website previews, landing pages, analytics and editing are available once your agency website is connected.'}</p>
+            {error ? <p className="ww-error" role="alert">{error}</p> : null}
+            {error ? <button className="ww-publish" type="button" onClick={() => void refresh()}>Retry connection check</button> : null}
             {!isChecking ? <p className="ww-website-access-note">Need a custom website? Contact your Arch9 administrator or your usual Arch9 contact person to get connected.</p> : null}
           </div>
         </section>
