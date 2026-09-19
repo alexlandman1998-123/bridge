@@ -30,8 +30,13 @@ assert.match(
 )
 assert.match(
   source,
-  /sellerComplianceSignatureDrafts[\s\S]*?if \(hasRequestedComplianceSigner \|\| !isPropertyDisclosureDigitallyComplete\(next\)\) return nextForm/,
-  'Drawing on a signer link must remain a draft until the explicit confirmation action completes the declaration.',
+  /sellerComplianceSignatureDrafts[\s\S]*?A drawn signature is always draft input[\s\S]*?return nextForm/,
+  'Drawing a signature must remain a draft until the ordinary final Submit or explicit signer confirmation completes the declaration.',
+)
+assert.match(
+  source,
+  /if \(!form \|\| hasRequestedComplianceSigner\) return false[\s\S]*?hasRequestedComplianceSigner[\s\S]*?\(!embedded && showWelcome\)/,
+  'Private signer links must bypass normal onboarding autosave so a half-drawn signature cannot be persisted as complete.',
 )
 
 console.log('seller onboarding signer mobile-pane checks passed')

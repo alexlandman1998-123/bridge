@@ -7,6 +7,8 @@
     "node": "22.x"
   },
   "scripts": {
+    "test:seller-onboarding-submission-notification": "node scripts/seller-onboarding-submission-notification.test.mjs",
+    "test:seller-onboarding-review-handoff": "node scripts/seller-onboarding-review-handoff.test.mjs",
     "test:seller-mandate-terms-phase2": "node scripts/seller-mandate-terms-phase2.test.mjs",
     "test:seller-mandate-terms-phase1": "node scripts/seller-mandate-terms-phase1.test.mjs",
     "test:seller-mandate-terms-phase0": "node scripts/seller-mandate-terms-phase0.test.mjs",
@@ -1887,6 +1889,7 @@
     "test:seller-onboarding-signing-phase3": "node scripts/seller-onboarding-signing-phase3.test.mjs",
     "test:seller-onboarding-signing-phase4": "node scripts/seller-onboarding-signing-phase4.test.mjs",
     "test:seller-onboarding-signing-phase5": "node scripts/seller-onboarding-signing-phase5.test.mjs",
+    "test:seller-onboarding-signing-phase8": "node --test src/core/documents/__tests__/sellerOnboardingPhase8Operational.test.js src/core/documents/__tests__/sellerOnboardingCorrectionControl.test.js src/core/documents/__tests__/sellerOnboardingManualSigningPack.test.js src/services/__tests__/sellerPostOnboardingDocumentProjection.test.js && node scripts/seller-onboarding-signing-phase8.test.mjs && node scripts/seller-document-release-readiness-p1-10.test.mjs",
     "check:seller-onboarding-signing-phase6-rollout": "node scripts/seller-onboarding-signing-phase6-rollout-gate.mjs"
   },
   "dependencies": {

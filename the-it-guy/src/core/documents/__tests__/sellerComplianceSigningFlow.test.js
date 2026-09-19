@@ -125,6 +125,18 @@ test('buildSellerComplianceSigningForForm does not treat an unknown signer param
   assert.equal(flow.activeSigner.id, 'seller-1')
 })
 
+test('a private signer link never infers completion from a shared legacy disclosure signature', () => {
+  const flow = buildSellerComplianceSigningForForm({
+    formData: baseForm,
+    signerId: 'seller-1',
+  })
+
+  assert.equal(flow.requestedSignerMatched, true)
+  assert.equal(flow.activeSigner.id, 'seller-1')
+  assert.equal(flow.activeSigner.complete, false)
+  assert.equal(flow.activeSigner.status, 'pending')
+})
+
 test('applySellerComplianceSignatureToForm completes the pack when spouse signs later', () => {
   const afterSellerOne = applySellerComplianceSignatureToForm({
     formData: baseForm,

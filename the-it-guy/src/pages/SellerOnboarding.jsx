@@ -34,7 +34,6 @@ import {
   hasResolvedOnboardingBrandingValue,
   resolveOnboardingBranding,
 } from '../lib/onboardingBranding'
-import { getEdgeFunctionInvokeError, invokeEdgeFunction } from '../lib/supabaseClient'
 import { isSupabaseConfigured } from '../lib/supabaseClient'
 import {
   CANONICAL_SELLER_FACTS_FLAG,
@@ -119,10 +118,13 @@ import {
   sellerOnboardingAttorneyRecommendationRequiresDecision,
 } from '../core/documents/sellerOnboardingAttorneyRecommendation'
 import { createSellerOnboardingGeneratedDocuments } from '../core/documents/sellerOnboardingGeneratedDocuments'
+import { buildSellerPostOnboardingDrafts } from '../core/documents/sellerPostOnboardingDrafts'
 import {
   SELLER_ONBOARDING_SIGNING_STAGES,
   createSellerOnboardingSigningLifecycle,
 } from '../core/documents/sellerOnboardingSigningLifecycle'
+import { recordSellerOnboardingReview, SELLER_ONBOARDING_REVIEW_STATUS } from '../core/documents/sellerOnboardingReview'
+import { recordSellerOnboardingCorrectionResubmission } from '../core/documents/sellerOnboardingCorrectionControl'
 import {
   areRequiredSellerDisclosureAcknowledgementsAccepted,
   readSellerDisclosureAcknowledgements,
@@ -403,79 +405,21 @@ function getRuntimeTimestampMs() {
   return Date.now()
 }
 
-function resolveSellerSubmissionEmail(updated = {}, form = {}) {
-  return String(
-    form?.email ||
-      form?.sellerEmail ||
-      form?.contactEmail ||
-      updated?.seller?.email ||
-      updated?.sellerEmail ||
-      updated?.seller_email ||
-      updated?.sellerOnboarding?.formData?.email ||
-      updated?.sellerOnboarding?.formData?.sellerEmail ||
-      ''
-  ).trim()
-}
-
-async function notifySellerOnboardingSubmitted(updated = {}, form = {}) {
-  const assignedAgentId = String(
-    updated?.assignedAgentId ||
-      updated?.assigned_agent_id ||
-      updated?.agentId ||
-      updated?.agent_id ||
-      ''
-  ).trim()
-  const assignedAgentEmail = String(
-    updated?.assignedAgentEmail ||
-      updated?.assigned_agent_email ||
-      updated?.agentEmail ||
-      updated?.agent_email ||
-      updated?.assignedAgent?.email ||
-      updated?.assigned_agent?.email ||
-      ''
-  ).trim()
-  const hasValidAssignedAgentEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(assignedAgentEmail)
-
-  const assignedAgentName = String(updated?.assignedAgentName || updated?.assignedAgent || 'Agent').trim()
-  const sellerName = [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' ') || 'Seller'
-  const propertyTitle = String(updated?.listingTitle || getPropertyDisplayAddress(updated || {}, form || {}) || 'property').trim()
-  const leadId = String(updated?.sellerLeadId || updated?.seller_lead_id || updated?.leadId || updated?.lead_id || '').trim()
-  const listingId = String(updated?.id || updated?.listingId || updated?.listing_id || '').trim()
-  const transactionReference = String(updated?.transactionReference || updated?.transaction_reference || updated?.reference || '').trim()
-  const sellerEmail = resolveSellerSubmissionEmail(updated, form)
-  const hasValidSellerEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sellerEmail)
-  if (!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId && !hasValidSellerEmail) return
-  const actionLink = typeof window !== 'undefined' && leadId
-    ? `${window.location.origin}/pipeline/leads/${encodeURIComponent(leadId)}?tab=documents`
-    : ''
-
+async function notifySellerOnboardingSubmitted(token = '') {
+  const normalizedToken = String(token || '').trim()
+  if (!normalizedToken || typeof fetch !== 'function') return
   let timeoutId = null
   try {
     await Promise.race([
-      (async () => {
-        const notificationResult = await invokeEdgeFunction('send-email', {
-          body: {
-            type: 'seller_onboarding_submitted',
-            to: hasValidAssignedAgentEmail ? assignedAgentEmail : '',
-            agentName: assignedAgentName,
-            sellerName,
-            sellerEmail: hasValidSellerEmail ? sellerEmail : '',
-            sellerPortalInvitePolicy: 'after_mandate_signed',
-            deferSellerPortalLinkUntilMandateSigned: true,
-            propertyTitle,
-            transactionReference,
-            organisationId: String(updated?.organisationId || updated?.organisation_id || '').trim(),
-            organisationName: String(updated?.organisationName || updated?.agencyOrganisation || updated?.agencyName || '').trim(),
-            leadId,
-            listingId,
-            assignedAgentId,
-            actionLink,
-          },
-        })
-        const notificationError = getEdgeFunctionInvokeError(notificationResult)
-        if (notificationError) throw notificationError
-        return notificationResult
-      })(),
+      fetch('/api/public/seller-onboarding-submitted-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ token: normalizedToken }),
+      }).then(async (response) => {
+        if (response.ok) return response
+        const payload = await response.json().catch(() => ({}))
+        throw new Error(payload?.message || 'Seller onboarding notification was rejected.')
+      }),
       new Promise((_, reject) => {
         timeoutId = setTimeout(() => reject(new Error('Seller onboarding notification timed out.')), SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS)
       }),
@@ -3756,20 +3700,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         propertyDisclosure: next,
         propertyDisclosureStatus: getPropertyDisclosureStatus(next),
       }
-      // On a signer-specific link, drawing a signature is only draft input.
-      // Completion must happen through the explicit confirmation button after
-      // the required acknowledgements have been persisted.
-      if (hasRequestedComplianceSigner || !isPropertyDisclosureDigitallyComplete(next)) return nextForm
-      return applySellerComplianceSignatureToForm({
-        formData: nextForm,
-        listing: listing || {},
-        token,
-        signerId: requestedComplianceSignerId || activeComplianceSigner?.id || '',
-        disclosure: next,
-        audit: {
-          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
-        },
-      })
+      // A drawn signature is always draft input. It must never change the
+      // declaration's legal/signing status by itself: the ordinary onboarding
+      // route records it only on final Submit, while a private signer link
+      // records it only through "Confirm and sign declaration".
+      return nextForm
     })
   }
 
@@ -4040,7 +3975,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   async function saveDraft(nextStep = currentStep, options = {}) {
-    if (!form) return false
+    // Private signer links persist acknowledgement choices explicitly and
+    // persist the signature only through the confirmation action. The normal
+    // onboarding autosave must never write a half-drawn declaration back into
+    // the shared onboarding form.
+    if (!form || hasRequestedComplianceSigner) return false
     const silent = Boolean(options.silent)
     const formForDraft = normalizeSellerFormForProgression(form || {}, listing || {})
     const signature = buildSellerDraftSignature(formForDraft, nextStep)
@@ -4128,6 +4067,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       isCompleted ||
       submitting ||
       saving ||
+      hasRequestedComplianceSigner ||
       (!embedded && showWelcome)
     ) {
       return undefined
@@ -4159,7 +4099,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         draftAutosaveTimerRef.current = null
       }
     }
-  }, [currentStep, embedded, form, isCompleted, isOffline, listing, loading, saving, showWelcome, submitting, useDbFirstSellerOnboarding])
+  }, [currentStep, embedded, form, hasRequestedComplianceSigner, isCompleted, isOffline, listing, loading, saving, showWelcome, submitting, useDbFirstSellerOnboarding])
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined
@@ -4186,7 +4126,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   useEffect(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined') return undefined
-    if (!form || !listing || isCompleted || submitting || saving) return undefined
+    if (!form || !listing || hasRequestedComplianceSigner || isCompleted || submitting || saving) return undefined
 
     const flushPendingDraft = () => {
       if (document.visibilityState && document.visibilityState !== 'hidden') return
@@ -4212,7 +4152,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       document.removeEventListener('visibilitychange', flushPendingDraft)
       window.removeEventListener('pagehide', flushPendingDraft)
     }
-  }, [currentStep, form, isCompleted, isOffline, listing, saving, submitting, useDbFirstSellerOnboarding])
+  }, [currentStep, form, hasRequestedComplianceSigner, isCompleted, isOffline, listing, saving, submitting, useDbFirstSellerOnboarding])
 
   function validateCurrentStep() {
     if (!form) return 'Form state unavailable.'
@@ -4827,7 +4767,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         existing: submissionForm.sellerOnboardingCompletion || submissionForm.seller_onboarding_completion,
         mode: onboardingCompletionMode,
       })
-      const generatedDocuments = createSellerOnboardingGeneratedDocuments()
       const frozenDisclosureAt = new Date().toISOString()
       const frozenDisclosureSnapshot = buildPropertyDisclosureAnnexureSnapshot(submissionDisclosure || {}, {
         sellerName: getSellerDisplayName(listing, submissionForm),
@@ -4895,8 +4834,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         completion_mode: completionRecord.mode,
         sellerOnboardingCompletion: completionRecord,
         seller_onboarding_completion: completionRecord,
-        sellerOnboardingGeneratedDocuments: generatedDocuments,
-        seller_onboarding_generated_documents: generatedDocuments,
         sellerOnboardingDisclosureSnapshot: {
           version: 1,
           frozenAt: frozenDisclosureAt,
@@ -4921,7 +4858,50 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           stage: SELLER_ONBOARDING_SIGNING_STAGES.onboardingSubmitted,
           metadata: { documents: ['property_condition_disclosure'], reviewStatus: 'awaiting_agent_review' },
         }),
+        sellerOnboardingReview: recordSellerOnboardingReview({
+          existing: submissionForm.sellerOnboardingReview || submissionForm.seller_onboarding_review,
+          status: SELLER_ONBOARDING_REVIEW_STATUS.awaitingAgentReview,
+        }),
+        seller_onboarding_review: recordSellerOnboardingReview({
+          existing: submissionForm.sellerOnboardingReview || submissionForm.seller_onboarding_review,
+          status: SELLER_ONBOARDING_REVIEW_STATUS.awaitingAgentReview,
+        }),
+        sellerOnboardingCorrectionControl: recordSellerOnboardingCorrectionResubmission({
+          existing: submissionForm.sellerOnboardingCorrectionControl || submissionForm.seller_onboarding_correction_control,
+          at: frozenDisclosureAt,
+        }),
+        seller_onboarding_correction_control: recordSellerOnboardingCorrectionResubmission({
+          existing: submissionForm.sellerOnboardingCorrectionControl || submissionForm.seller_onboarding_correction_control,
+          at: frozenDisclosureAt,
+        }),
         currentStep: FINAL_STEP_INDEX,
+      }
+      // Retain review-only HTML drafts from the submitted facts. No signing or
+      // delivery state changes here; the agent still reviews commission and
+      // chooses the digital or manual mandate route later.
+      const generatedDocuments = createSellerOnboardingGeneratedDocuments({
+        formData: finalForm,
+        onboardingSubmitted: true,
+      })
+      const postOnboardingDrafts = buildSellerPostOnboardingDrafts({
+        formData: finalForm,
+        listing: listing || {},
+        branding: {
+          organisationName: agencyBrand.name,
+          agencyName: agencyBrand.name,
+          logoUrl: agencyBrand.logoUrl,
+          logoDarkUrl: agencyBrand.logoDarkUrl,
+          logoLightUrl: agencyBrand.logoLightUrl,
+          logoIconUrl: agencyBrand.logoIconUrl,
+        },
+        generatedAt: frozenDisclosureAt,
+      })
+      finalForm = {
+        ...finalForm,
+        sellerOnboardingGeneratedDocuments: generatedDocuments,
+        seller_onboarding_generated_documents: generatedDocuments,
+        sellerPostOnboardingDrafts: postOnboardingDrafts,
+        seller_post_onboarding_drafts: postOnboardingDrafts,
       }
       if (isPropertyDisclosureDigitallyComplete(finalForm.propertyDisclosure || {})) {
         finalForm = applySellerComplianceSignatureToForm({
@@ -5029,7 +5009,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           console.error('[Seller Onboarding] submitted callback failed', callbackError)
         }
       }
-      void notifySellerOnboardingSubmitted(updated, submissionForm)
+      void notifySellerOnboardingSubmitted(token)
       console.debug('[Seller Onboarding] submit completed', {
         durationMs: Math.round(getRuntimeTimestampMs() - startedAt),
         mode: useDbFirstSellerOnboarding ? 'supabase' : 'local',

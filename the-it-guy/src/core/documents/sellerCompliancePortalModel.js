@@ -260,6 +260,11 @@ export function buildSellerCompliancePortalModel({
   existingSigners = null,
   token = '',
   workspacePath = '',
+  // A private signer link must only regard an explicit signer record as
+  // completed. The legacy shared disclosure signature is useful when opening
+  // the ordinary onboarding flow, but it is not safe to infer completion from
+  // it while a signer is still drawing a private-link draft.
+  includeLegacyDisclosureSignature = true,
 } = {}) {
   const safeFormData = isPlainObject(formData) ? formData : {}
   const safeListing = isPlainObject(listing) ? listing : {}
@@ -267,9 +272,12 @@ export function buildSellerCompliancePortalModel({
   const baseSigners = Array.isArray(existingSigners)
     ? existingSigners
     : getSellerComplianceFormSigners(safeFormData, safeListing, safePortalData)
-  const seededSigners = mergeDerivedSignerState(clearDuplicatedSecondarySignatures(baseSigners), [
-    buildPrimarySignedSignerFromDisclosure(safeFormData, safeListing, safePortalData),
-  ])
+  const seededSigners = mergeDerivedSignerState(
+    clearDuplicatedSecondarySignatures(baseSigners),
+    includeLegacyDisclosureSignature
+      ? [buildPrimarySignedSignerFromDisclosure(safeFormData, safeListing, safePortalData)]
+      : [],
+  )
   const facts = transformSellerOnboardingToFacts(safeFormData, safeListing, {
     source: 'seller_compliance_portal',
   })

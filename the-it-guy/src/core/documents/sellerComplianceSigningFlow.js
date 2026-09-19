@@ -66,6 +66,10 @@ export function buildSellerComplianceSigningForForm({
     existingSigners,
     token,
     workspacePath,
+    // A signer-specific page is an explicit confirmation flow. Do not let a
+    // shared/legacy disclosure field promote that signer to "signed" while
+    // they are merely drawing a local draft.
+    includeLegacyDisclosureSignature: !text(signerId),
   })
   const requestedSigner = findSigner(model.signers, signerId)
   return {

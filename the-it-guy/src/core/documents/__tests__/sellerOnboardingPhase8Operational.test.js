@@ -50,3 +50,12 @@ test('rollout gate requires the distinct FICA and mandate pack', () => {
   assert.equal(validateSellerOnboardingFormalSigningSelection({ fica: true, mandate: true }).valid, true)
   assert.equal(validateSellerOnboardingFormalSigningSelection({ fica: true, mandate: false }).valid, false)
 })
+
+test('manual route agrees across the journey and document statuses', () => {
+  const status = buildSellerOnboardingJourneyStatus({
+    onboardingSubmitted: true,
+    formData: { sellerOnboardingReview: { status: 'approved' }, sellerOnboardingSigningLifecycle: { stage: 'manual_awaiting_upload' } },
+  })
+  assert.equal(status.currentLabel, 'Physical FICA and mandate copies ready for upload')
+  assert.deepEqual(status.documents.map((document) => document.status), ['signed_in_onboarding', 'awaiting_signed_hard_copy', 'awaiting_signed_hard_copy'])
+})

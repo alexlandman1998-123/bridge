@@ -1,6 +1,6 @@
 const SATISFIED_STATUSES = new Set(['approved', 'completed', 'verified', 'signed'])
-const RECEIVED_STATUSES = new Set(['uploaded', 'under_review', 'reviewed', 'received', 'submitted'])
-const ACTION_STATUSES = new Set(['required', 'requested', 'missing', 'rejected', 'expired'])
+const RECEIVED_STATUSES = new Set(['uploaded', 'under_review', 'reviewed', 'received', 'submitted', 'awaiting_agent_review', 'ready_to_send', 'sent_for_signature', 'awaiting_remaining_signatures'])
+const ACTION_STATUSES = new Set(['required', 'requested', 'missing', 'rejected', 'expired', 'awaiting_signed_hard_copy', 'correction_requested'])
 const EXCLUDED_STATUSES = new Set(['cancelled', 'not_applicable', 'not_required'])
 
 const STAGE_CONFIG = [
@@ -110,6 +110,12 @@ function statusLabel(status = '') {
     completed: 'Approved',
     verified: 'Verified',
     signed: 'Signed and accepted',
+    awaiting_agent_review: 'Awaiting agent review',
+    ready_to_send: 'Ready to send',
+    sent_for_signature: 'Sent for signature',
+    awaiting_remaining_signatures: 'Awaiting remaining signatures',
+    awaiting_signed_hard_copy: 'Awaiting signed hard copy',
+    correction_requested: 'Correction requested',
   }
   return labels[status] || 'Upload required'
 }
@@ -137,19 +143,19 @@ function handoffFor(requirement = {}, document = {}, bucket = '') {
 }
 
 function sellerMessage({ bucket, overdue, rejectionReason, dueDate }) {
+  if (bucket === 'received') return 'Your agent is reviewing the submitted onboarding information.'
   if (bucket === 'rejected') return rejectionReason ? `Please correct this: ${rejectionReason}` : 'Please upload a corrected or clearer document.'
   if (overdue) return `This was due ${dueDate.toLocaleDateString('en-ZA')}. Please upload it now.`
   if (bucket === 'outstanding') return dueDate ? `Please upload by ${dueDate.toLocaleDateString('en-ZA')}.` : 'Please upload this document.'
-  if (bucket === 'received') return 'We have your file. Your transaction team still needs to approve it.'
   if (bucket === 'approved') return 'Reviewed and accepted. No further action is needed.'
   return ''
 }
 
 function agentMessage({ bucket, overdue, rejectionReason, handoff }) {
+  if (bucket === 'received') return 'Review the submitted onboarding information and choose the signing route.'
   if (bucket === 'rejected') return rejectionReason ? `Seller correction required: ${rejectionReason}` : 'Seller re-upload required.'
   if (overdue) return 'Seller follow-up is overdue.'
   if (bucket === 'outstanding') return 'Awaiting seller upload.'
-  if (bucket === 'received') return 'Review and approve or reject the submitted file.'
   if (handoff.status === 'blocked') return handoff.error || 'Transaction handoff needs repair.'
   if (handoff.status === 'pending') return 'Approved source is waiting for transaction promotion.'
   return 'Assurance complete.'

@@ -11848,6 +11848,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerContactFeedbackModal, setSellerContactFeedbackModal] = useState(SELLER_CONTACT_FEEDBACK_DEFAULTS)
   const [sellerLeadEditModal, setSellerLeadEditModal] = useState({ open: false, mode: 'profile' })
   const [mandateExecutionModalOpen, setMandateExecutionModalOpen] = useState(false)
+  const [sellerOnboardingReviewModalOpen, setSellerOnboardingReviewModalOpen] = useState(false)
+  const [sellerOnboardingReviewRoute, setSellerOnboardingReviewRoute] = useState('digital_pack')
   const [sellerDocumentTaxonomyRolloutControl, setSellerDocumentTaxonomyRolloutControl] = useState(null)
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [sellerProfileEditForm, setSellerProfileEditForm] = useState(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
@@ -26545,6 +26547,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     })
   }
 
+  function openSellerOnboardingReview() {
+    if (!selectedLeadLinkedListingId) {
+      setError('Create or link a listing before preparing the seller FICA and mandate pack.')
+      return
+    }
+    setSellerOnboardingReviewRoute('digital_pack')
+    setSellerOnboardingReviewModalOpen(true)
+  }
+
+  function continueSellerOnboardingReview() {
+    if (!selectedLeadLinkedListingId) {
+      setError('Create or link a listing before preparing the seller FICA and mandate pack.')
+      return
+    }
+    const params = new URLSearchParams({
+      tab: 'documents',
+      sellerDocumentAction: sellerOnboardingReviewRoute === 'manual_upload' ? 'manual_upload' : 'digital_pack',
+    })
+    setSellerOnboardingReviewModalOpen(false)
+    navigate(`/agent/listings/${encodeURIComponent(selectedLeadLinkedListingId)}?${params.toString()}`)
+  }
+
   function handleSellerJourneyAction(actionId) {
     const id = normalizeText(actionId)
     if (id === 'setup_seller_ownership') {
@@ -26565,12 +26589,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'review_seller_onboarding') {
-      handleLeadWorkspaceTabSelection('overview')
-      if (typeof document !== 'undefined') {
-        window.setTimeout(() => {
-          document.querySelector('[data-testid="seller-journey-rail"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
-        }, 50)
-      }
+      openSellerOnboardingReview()
       return
     }
     if (id === 'follow_up_with_seller') {
@@ -39962,6 +39981,65 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   </section>
 </>
       )}
+
+      <Modal
+        open={sellerOnboardingReviewModalOpen}
+        onClose={() => setSellerOnboardingReviewModalOpen(false)}
+        title="Review submitted seller onboarding"
+        subtitle="Confirm the facts captured from the seller before approving the next FICA and mandate step. The seller will not be asked to complete onboarding again."
+        className="max-w-4xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setSellerOnboardingReviewModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={continueSellerOnboardingReview}>
+              {sellerOnboardingReviewRoute === 'manual_upload' ? 'Approve & prepare physical pack' : 'Approve & send mandate'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-5">
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
+            Commission terms are confirmed in the next step before a mandate can be sent or prepared. This keeps the approved commercial terms with the frozen signing pack.
+          </div>
+          <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-[#243d56]">Submitted onboarding facts</p>
+                <p className="mt-1 text-sm text-[#607387]">Only fields actually captured for this seller are shown.</p>
+              </div>
+              <span className="rounded-full bg-[#eaf7ee] px-3 py-1 text-xs font-semibold text-[#176842]">Onboarding submitted</span>
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {selectedSellerProfileCards.slice(0, 6).map((card) => (
+                <article key={`review-${card.key}`} className="rounded-xl border border-[#e4ecf4] bg-[#fbfdff] p-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839c]">{card.title}</p>
+                  <dl className="mt-2 grid gap-1.5 text-sm">
+                    {card.rows.slice(0, 6).map(([label, value]) => (
+                      <div key={`${card.key}:${label}`} className="grid grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] gap-2">
+                        <dt className="text-[#71859b]">{label}</dt>
+                        <dd className="min-w-0 break-words font-medium text-[#263e57]">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </article>
+              ))}
+            </div>
+          </section>
+          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
+            <legend className="px-1 text-sm font-semibold text-[#243d56]">How will the FICA declaration and mandate be signed?</legend>
+            <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${sellerOnboardingReviewRoute === 'digital_pack' ? 'border-[#78ba96] bg-[#f2fbf5]' : 'border-[#dce6f2]'}`}>
+              <input type="radio" name="seller-onboarding-signing-route" checked={sellerOnboardingReviewRoute === 'digital_pack'} onChange={() => setSellerOnboardingReviewRoute('digital_pack')} />
+              <span><span className="block text-sm font-semibold text-[#243d56]">Send the digital signing pack</span><span className="mt-1 block text-sm leading-5 text-[#607387]">Send one combined FICA declaration and mandate pack to the required seller signers after you confirm commission terms.</span></span>
+            </label>
+            <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${sellerOnboardingReviewRoute === 'manual_upload' ? 'border-[#78ba96] bg-[#f2fbf5]' : 'border-[#dce6f2]'}`}>
+              <input type="radio" name="seller-onboarding-signing-route" checked={sellerOnboardingReviewRoute === 'manual_upload'} onChange={() => setSellerOnboardingReviewRoute('manual_upload')} />
+              <span><span className="block text-sm font-semibold text-[#243d56]">Prepare a physical-signature pack</span><span className="mt-1 block text-sm leading-5 text-[#607387]">Open the document workspace to prepare the FICA declaration and mandate for physical signing, then upload the signed originals when returned.</span></span>
+            </label>
+          </fieldset>
+        </div>
+      </Modal>
 
       <Modal
         open={mandateExecutionModalOpen}
