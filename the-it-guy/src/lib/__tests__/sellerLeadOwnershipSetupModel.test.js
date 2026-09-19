@@ -22,6 +22,10 @@ test('selecting a seller lead route writes the canonical ownership fields', () =
     firstName: 'Jane',
     sellerOwnershipRoute: 'company',
     ownershipType: 'company',
+    ownershipRouteConfirmed: true,
+    ownership_route_confirmed: true,
+    ownershipDeclarationPending: false,
+    ownership_declaration_pending: false,
     ownerEntityType: 'company',
     ownerStructureType: 'company',
     sellerLegalType: 'company',
@@ -48,6 +52,15 @@ test('preparing onboarding preserves known facts and locks the agent-selected le
   assert.equal(prepared.canonicalSellerFacts.seller.company_name, 'Kingdom Holdings (Pty) Ltd')
 })
 
-test('preparing onboarding rejects an unresolved legal ownership route', () => {
-  assert.throws(() => prepareSellerOnboardingRoute({ subject: { kind: 'unknown' } }), /ownership route/i)
+test('preparing onboarding permits generic fact collection when legal ownership is not known yet', () => {
+  const prepared = prepareSellerOnboardingRoute({
+    formData: { sellerFirstName: 'Alex' },
+    subject: { kind: 'unknown' },
+  })
+
+  assert.equal(prepared.sellerFirstName, 'Alex')
+  assert.equal(prepared.ownershipDeclarationPending, true)
+  assert.equal(prepared.ownershipRouteLocked, false)
+  assert.equal(prepared.ownershipRouteConfirmed, false)
+  assert.equal(prepared.ownershipType, '')
 })

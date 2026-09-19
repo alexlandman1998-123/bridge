@@ -125,6 +125,20 @@ test('property disclosure stays a standalone document when no compliance pack is
   assert.match(html, /\.answer-col-unsure \{ width: 12%; \}/)
 })
 
+test('property disclosure uses the stored portal icon when no dedicated paper logo exists', () => {
+  const html = buildPropertyDisclosureDocumentMarkup(completedDisclosure, {
+    sellerName: 'John Smith',
+    assetBaseUrl: 'https://app.example.test',
+    branding: {
+      organisationName: 'Kingdom Real Estate',
+      logo_icon_url: 'organisation-assets/kingdom-paper-mark.png',
+    },
+  })
+
+  assert.match(html, /https:\/\/app\.example\.test\/organisation-assets\/kingdom-paper-mark\.png/)
+  assert.doesNotMatch(html, />Kingdom Real Estate<\/div>/)
+})
+
 test('property disclosure requests details for answers that indicate a defect', () => {
   const electricalFaults = PROPERTY_DISCLOSURE_QUESTIONS.find((question) => question.key === 'electrical_faults')
   const securitySystems = PROPERTY_DISCLOSURE_QUESTIONS.find((question) => question.key === 'security_systems')

@@ -95,6 +95,7 @@ import {
   shouldPromptPropertyDisclosureComment,
 } from '../lib/propertyDisclosure'
 import {
+  applySellerComplianceSignerAcknowledgementsToForm,
   applySellerComplianceSignatureToForm,
   buildDisclosureForComplianceSigner,
   buildSellerComplianceSigningForForm,
@@ -584,7 +585,12 @@ function resolveAgencyBrand(listing = {}) {
   const onboardingFormData = listing?.onboardingFormData?.formData && typeof listing.onboardingFormData.formData === 'object'
     ? listing.onboardingFormData.formData
     : {}
-  const onboardingBranding = sellerOnboardingFormData.portalBranding || sellerOnboardingSnakeFormData.portalBranding || onboardingFormData.portalBranding || {}
+  // A signing link can be created by an older server route which serialises
+  // the snapshot as snake_case. Keep the complete form-data records as brand
+  // sources below, rather than relying on this convenience value alone.
+  const onboardingBranding = sellerOnboardingFormData.portalBranding || sellerOnboardingFormData.portal_branding ||
+    sellerOnboardingSnakeFormData.portalBranding || sellerOnboardingSnakeFormData.portal_branding ||
+    onboardingFormData.portalBranding || onboardingFormData.portal_branding || {}
   const listingBranding = {
     agencyOrganisation: listing?.agencyOrganisation,
     agency_organisation: listing?.agency_organisation,
@@ -600,12 +606,16 @@ function resolveAgencyBrand(listing = {}) {
     agency_logo_dark_url: listing?.agency_logo_dark_url,
     agencyLogoLightUrl: listing?.agencyLogoLightUrl,
     agency_logo_light_url: listing?.agency_logo_light_url,
+    agencyLogoIconUrl: listing?.agencyLogoIconUrl,
+    agency_logo_icon_url: listing?.agency_logo_icon_url,
     organisationLogoUrl: listing?.organisationLogoUrl,
     organisation_logo_url: listing?.organisation_logo_url,
     organisationLogoDarkUrl: listing?.organisationLogoDarkUrl,
     organisation_logo_dark_url: listing?.organisation_logo_dark_url,
     organisationLogoLightUrl: listing?.organisationLogoLightUrl,
     organisation_logo_light_url: listing?.organisation_logo_light_url,
+    organisationLogoIconUrl: listing?.organisationLogoIconUrl,
+    organisation_logo_icon_url: listing?.organisation_logo_icon_url,
     primaryColour: listing?.primaryColour,
     primary_colour: listing?.primary_colour,
     primaryColor: listing?.primaryColor,
@@ -622,6 +632,11 @@ function resolveAgencyBrand(listing = {}) {
   const brandingSources = [
     listing?.branding,
     onboardingBranding,
+    // Include the parent records too: resolveOnboardingBranding deliberately
+    // traverses portalBranding/portal_branding and other legacy nesting.
+    sellerOnboardingFormData,
+    sellerOnboardingSnakeFormData,
+    onboardingFormData,
     sellerOnboardingFormData.branding,
     sellerOnboardingSnakeFormData.branding,
     onboardingFormData.branding,
@@ -642,12 +657,16 @@ function resolveAgencyBrand(listing = {}) {
   const brandName = branding.organisationName || 'Agency'
   const logoDarkUrl = branding.logoDarkUrl
   const logoLightUrl = branding.logoLightUrl
-  const logoUrl = logoDarkUrl || branding.logoIconUrl || logoLightUrl
+  const logoIconUrl = branding.logoIconUrl
+  // Portal headers are dark, so preserve the historical dark-first behaviour
+  // for the interactive journey. The white-paper PDF chooses logoLightUrl.
+  const logoUrl = logoDarkUrl || logoIconUrl || logoLightUrl
   return {
     name: brandName,
     logoUrl,
     logoDarkUrl,
     logoLightUrl,
+    logoIconUrl,
     initials: getOnboardingBrandInitials(brandName),
     isFallback: !hasAgencyName,
     primaryColour: branding.primaryColour,
@@ -1207,6 +1226,7 @@ function getCanonicalSellerFacts(listing = {}) {
 }
 
 function normalizeOwnershipType(existing = {}, canonicalFacts = {}, flow = null) {
+  if (existing.ownershipDeclarationPending || existing.ownership_declaration_pending) return ''
   const explicit = String(existing.ownershipType || existing.sellerLegalType || existing.legalType || existing.sellerType || '').toLowerCase()
   const explicitOwnerEntityType = String(existing.ownerEntityType || existing.owner_entity_type || canonicalFacts?.seller?.owner_entity_type || '').toLowerCase()
   const explicitOwnerStructureType = String(existing.ownerStructureType || existing.owner_structure_type || canonicalFacts?.seller?.owner_structure_type || '').toLowerCase()
@@ -1254,6 +1274,7 @@ function deriveOwnerEntityType(ownershipType = '', existing = {}, canonicalFacts
   if (structure.startsWith('foreign_') || existing.foreignOwner || canonicalFacts?.seller?.foreign_owner) return 'foreign'
 
   const normalized = String(ownershipType || '').trim().toLowerCase()
+  if (!normalized && (existing.ownershipDeclarationPending || existing.ownership_declaration_pending)) return ''
   if (normalized === 'company') return 'company'
   if (normalized === 'trust') return 'trust'
   if (normalized === 'other') return 'other'
@@ -1262,6 +1283,7 @@ function deriveOwnerEntityType(ownershipType = '', existing = {}, canonicalFacts
 
 function normalizeOwnerStructureType(value = '', ownerEntityType = 'natural_person') {
   const normalized = String(value || '').trim().toLowerCase()
+  if (!ownerEntityType) return ''
   const options = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
   if (options.some((item) => item.value === normalized)) return normalized
   if (['married_anc', 'other'].includes(normalized)) return normalized
@@ -1277,6 +1299,7 @@ function deriveOwnerStructureType(ownershipType = '', ownerEntityType = 'natural
   if (explicit) return normalizeOwnerStructureType(explicit, ownerEntityType)
 
   const normalized = String(ownershipType || '').trim().toLowerCase()
+  if (!normalized && (existing.ownershipDeclarationPending || existing.ownership_declaration_pending)) return ''
   if (ownerEntityType === 'company') return 'company'
   if (ownerEntityType === 'trust') return 'trust'
   if (ownerEntityType === 'foreign') {
@@ -1622,6 +1645,8 @@ function normalizeFormData(listing) {
     sellerLegalType: ownershipType,
     ownerEntityType,
     ownerStructureType,
+    ownershipDeclarationPending: Boolean((existing.ownershipDeclarationPending || existing.ownership_declaration_pending) && !ownershipType),
+    ownership_declaration_pending: Boolean((existing.ownershipDeclarationPending || existing.ownership_declaration_pending) && !ownershipType),
     // An agent-selected legal ownership route is part of the prepared
     // onboarding instruction. The seller can complete its facts, but may not
     // silently turn (for example) a company instruction into an individual.
@@ -3545,6 +3570,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     next.sellerLegalType = value
     next.ownerEntityType = ownerEntityType
     next.ownerStructureType = ownerStructureType
+    next.ownershipDeclarationPending = false
+    next.ownership_declaration_pending = false
+    next.ownershipRouteConfirmed = true
+    next.ownership_route_confirmed = true
     next.foreignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
     next.maritalStatus = branch === 'married' ? 'married' : 'not_married'
     next.maritalRegime = value === 'married_cop' ? 'in_community' : value === 'married_anc' ? 'anc' : branch === 'married' ? (next.maritalRegime || 'unknown') : 'not_applicable'
@@ -3679,7 +3708,37 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   function handleDisclosureAcknowledgementsChange(nextAcknowledgements, acknowledgementKey, accepted) {
     setTermsAcceptanceError('')
     if (hasRequestedComplianceSigner) {
-      setSignerAcknowledgements(nextAcknowledgements)
+      const acknowledgementDraft = readSellerDisclosureAcknowledgements(nextAcknowledgements)
+      setSignerAcknowledgements(acknowledgementDraft)
+      setForm((previous) => applySellerComplianceSignerAcknowledgementsToForm({
+        formData: previous || {},
+        listing: listing || {},
+        token,
+        signerId: activeComplianceSigner?.id || requestedComplianceSignerId,
+        acknowledgements: acknowledgementDraft,
+      }))
+      void persistListingUpdate((row) => {
+        const storedForm = row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object'
+          ? row.sellerOnboarding.formData
+          : form || {}
+        const persistedForm = applySellerComplianceSignerAcknowledgementsToForm({
+          formData: storedForm,
+          listing: row || listing || {},
+          token,
+          signerId: activeComplianceSigner?.id || requestedComplianceSignerId,
+          acknowledgements: acknowledgementDraft,
+        })
+        return {
+          ...row,
+          sellerOnboarding: {
+            ...(row?.sellerOnboarding || {}),
+            formData: persistedForm,
+          },
+        }
+      }, { refreshForm: true }).catch((persistError) => {
+        console.error('[Seller Onboarding] signer acknowledgement save failed', persistError)
+        setError('Your acknowledgement could not be saved. Please try again before signing.')
+      })
       return
     }
     const patch = {
@@ -3777,6 +3836,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           logoUrl: agencyBrand.logoUrl,
           logoDarkUrl: agencyBrand.logoDarkUrl,
           logoLightUrl: agencyBrand.logoLightUrl,
+          logoIconUrl: agencyBrand.logoIconUrl,
         },
       })
       const pdfDocument = new window.DOMParser().parseFromString(markup, 'text/html')
@@ -4514,7 +4574,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       scrollSellerOnboardingToTop({ focusAlert: true })
       return
     }
-    const missing = getPropertyDisclosureMissingItems(disclosure)
+    const signerDisclosure = {
+      ...disclosure,
+      sellerDisclosureAcknowledgements: acknowledgementValue,
+      seller_disclosure_acknowledgements: acknowledgementValue,
+    }
+    const missing = getPropertyDisclosureMissingItems(signerDisclosure)
     if (missing.length) {
       setError(`Please complete the declaration before signing: ${missing.join(', ')}.`)
       scrollSellerOnboardingToTop({ focusAlert: true })
@@ -4528,7 +4593,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         listing: listing || {},
         token,
         signerId: activeComplianceSigner.id,
-        disclosure,
+        disclosure: signerDisclosure,
         acknowledgements: acknowledgementValue,
         audit: {
           userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
@@ -4598,6 +4663,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     const submissionCompanyDirectors = Array.isArray(submissionForm.companyDirectors) ? submissionForm.companyDirectors : []
     const submissionTrustees = Array.isArray(submissionForm.trustees) ? submissionForm.trustees : []
     const submissionSellerMissing = [
+      !submissionForm.ownershipType && 'Legal ownership structure',
       !submissionForm.sellerFirstName && 'Seller name',
       !submissionForm.sellerSurname && 'Seller surname',
       !submissionForm.email && 'Email',
@@ -5026,6 +5092,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       (!Number.isFinite(mandateStartDateValue.getTime()) || !Number.isFinite(mandateEndDateValue.getTime()) || mandateEndDateValue <= mandateStartDateValue),
   )
   const sellerMissing = [
+    !form.ownershipType && 'Legal ownership structure',
     !form.sellerFirstName && 'Seller name',
     !form.sellerSurname && 'Seller surname',
     !form.email && 'Email',

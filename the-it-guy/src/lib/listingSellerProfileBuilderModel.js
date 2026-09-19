@@ -24,6 +24,7 @@ export const LISTING_SELLER_PROFILE_BRANCHES = [
   { value: 'company', label: 'Company / CC' },
   { value: 'trust', label: 'Trust' },
   { value: 'deceased_estate', label: 'Deceased Estate' },
+  { value: 'power_of_attorney', label: 'Power of Attorney' },
   { value: 'other', label: 'Other Legal Entity' },
   { value: 'foreign_individual', label: 'Foreign Individual' },
   { value: 'foreign_company', label: 'Foreign Company' },
@@ -102,12 +103,14 @@ function requirementPreviewGroupKey(requirement = {}) {
 
 function normalizeBranch(value, fallback = 'individual') {
   const key = normalizeKey(value)
+  if (!key) return fallback
   const sharedEntityType = normalizeSellerEntityType(key, '')
   if (sharedEntityType && sharedEntityType !== 'unknown') return sharedEntityType
   if (BRANCH_VALUES.has(key)) return key
   if (['company', 'close_corporation', 'cc', 'pty_ltd', 'corporate'].includes(key)) return 'company'
   if (['trust', 'family_trust'].includes(key)) return 'trust'
   if (['deceased_estate', 'estate'].includes(key)) return 'deceased_estate'
+  if (['power_of_attorney', 'poa'].includes(key)) return 'power_of_attorney'
   if (['other', 'developer', 'other_entity'].includes(key)) return 'other'
   if (['multiple', 'multiple_individuals', 'joint', 'co_owners'].includes(key)) return 'multiple_owners'
   if (['foreign', 'foreign_owner', 'non_resident', 'foreign_individual'].includes(key)) return 'foreign_individual'
@@ -214,6 +217,7 @@ export function resolveListingSellerProfileBranch(form = {}, listing = {}) {
   if (entity === 'foreign' && structure === 'trust') return 'foreign_trust'
   if (entity === 'foreign') return normalizeBranch(structure, 'foreign_individual')
   if (isListingSellerOwnershipUnidentified(listing)) return ''
+  if (!normalizeKey(source)) return 'individual'
   return normalizeBranch(source, '')
 }
 
@@ -280,6 +284,10 @@ export function createListingSellerProfileBuilderDraft(listing = {}) {
     estateReferenceNumber: normalizeText(pickFirst(form.estateReferenceNumber, form.deceasedEstateReferenceNumber, sellerFacts.deceased_estate?.reference_number)),
     executorName: normalizeText(pickFirst(form.executorName, sellerFacts.deceased_estate?.executor?.full_name, sellerFacts.deceased_estate?.executor?.name)),
     executorEmail: normalizeText(pickFirst(form.executorEmail, sellerFacts.deceased_estate?.executor?.email)).toLowerCase(),
+    powerOfAttorneyPrincipalName: normalizeText(pickFirst(form.powerOfAttorneyPrincipalName, form.power_of_attorney_principal_name, sellerFacts.power_of_attorney?.principal?.full_name, sellerFacts.power_of_attorney?.principal?.name)),
+    powerOfAttorneyPrincipalIdNumber: normalizeText(pickFirst(form.powerOfAttorneyPrincipalIdNumber, form.power_of_attorney_principal_id_number, sellerFacts.power_of_attorney?.principal?.id_number)),
+    powerOfAttorneyName: normalizeText(pickFirst(form.powerOfAttorneyName, form.power_of_attorney_name, sellerFacts.power_of_attorney?.representative?.full_name, sellerFacts.power_of_attorney?.representative?.name)),
+    powerOfAttorneyEmail: normalizeText(pickFirst(form.powerOfAttorneyEmail, form.power_of_attorney_email, sellerFacts.power_of_attorney?.representative?.email)).toLowerCase(),
     otherEntityName: normalizeText(pickFirst(form.otherEntityName, form.entityName, sellerFacts.other_entity?.name)),
     otherEntityRegistrationNumber: normalizeText(pickFirst(form.otherEntityRegistrationNumber, form.entityRegistrationNumber, sellerFacts.other_entity?.registration_number)),
     foreignOwnerCountry: normalizeText(pickFirst(form.foreignOwnerCountry, sellerFacts.foreign?.country)),
@@ -346,6 +354,7 @@ function resolveOwnerModel(branch) {
   if (branch === 'foreign_individual') return { ownerEntityType: 'foreign', ownerStructureType: 'foreign_individual', sellerLegalType: 'foreign_individual' }
   if (branch === 'multiple_owners') return { ownerEntityType: 'natural_person', ownerStructureType: 'multiple_owners', sellerLegalType: 'multiple_owners' }
   if (branch === 'deceased_estate') return { ownerEntityType: 'deceased_estate', ownerStructureType: 'deceased_estate', sellerLegalType: 'deceased_estate' }
+  if (branch === 'power_of_attorney') return { ownerEntityType: 'natural_person', ownerStructureType: 'power_of_attorney', sellerLegalType: 'power_of_attorney' }
   if (branch === 'other') return { ownerEntityType: 'other', ownerStructureType: 'other', sellerLegalType: 'other' }
   if (branch === 'married') return { ownerEntityType: 'natural_person', ownerStructureType: 'married', sellerLegalType: 'individual' }
   return { ownerEntityType: 'natural_person', ownerStructureType: 'individual', sellerLegalType: 'individual' }
@@ -474,6 +483,20 @@ export function buildListingSellerProfileFormPatch(draft = {}) {
     base.executors = base.executorName ? [{ name: base.executorName, fullName: base.executorName, email: base.executorEmail, roleTitle: 'Executor', signingAuthority: true }] : []
     base.deceased_estate = { name: base.deceasedEstateName, estate_reference: base.estateReferenceNumber, reference_number: base.estateReferenceNumber, executor: { full_name: base.executorName, email: base.executorEmail }, executors: base.executors }
   }
+  if (branch === 'power_of_attorney') {
+    base.powerOfAttorneyPrincipalName = normalizeText(draft.powerOfAttorneyPrincipalName)
+    base.power_of_attorney_principal_name = base.powerOfAttorneyPrincipalName
+    base.powerOfAttorneyPrincipalIdNumber = normalizeText(draft.powerOfAttorneyPrincipalIdNumber)
+    base.power_of_attorney_principal_id_number = base.powerOfAttorneyPrincipalIdNumber
+    base.powerOfAttorneyName = normalizeText(draft.powerOfAttorneyName)
+    base.power_of_attorney_name = base.powerOfAttorneyName
+    base.powerOfAttorneyEmail = normalizeText(draft.powerOfAttorneyEmail).toLowerCase()
+    base.power_of_attorney_email = base.powerOfAttorneyEmail
+    base.power_of_attorney = {
+      principal: { full_name: base.powerOfAttorneyPrincipalName, id_number: base.powerOfAttorneyPrincipalIdNumber },
+      representative: { full_name: base.powerOfAttorneyName, email: base.powerOfAttorneyEmail },
+    }
+  }
   if (branch === 'other') {
     base.otherEntityName = normalizeText(draft.otherEntityName)
     base.otherEntityRegistrationNumber = normalizeText(draft.otherEntityRegistrationNumber)
@@ -508,6 +531,7 @@ export function validateListingSellerProfileBuilderDraft(draft = {}) {
   if (['company', 'foreign_company'].includes(branch) && !normalizeText(draft.companyName)) errors.push('Capture the company name.')
   if (['trust', 'foreign_trust'].includes(branch) && !normalizeText(draft.trustName)) errors.push('Capture the trust name.')
   if (branch === 'deceased_estate' && !normalizeText(draft.deceasedEstateName)) errors.push('Capture the estate name.')
+  if (branch === 'power_of_attorney' && !normalizeText(draft.powerOfAttorneyPrincipalName)) errors.push('Capture the principal / legal owner name.')
   if (branch === 'other' && !normalizeText(draft.otherEntityName)) errors.push('Capture the legal entity name.')
   if (branch === 'multiple_owners' && !normalizePersonCollectionForSellerProfile(draft.multipleOwners || [], null, 'Owner').length) {
     errors.push('Add at least one owner.')
@@ -565,6 +589,11 @@ export function buildListingMandateReadiness(listing = {}, commission = {}) {
     require(Boolean(normalizeText(form.estateReferenceNumber)), 'Add the estate reference number.')
     require(Boolean(normalizeText(form.executorName)), 'Add the executor.')
     require(isEmail(form.executorEmail), 'Add a valid executor email.')
+  } else if (branch === 'power_of_attorney') {
+    require(Boolean(normalizeText(form.powerOfAttorneyPrincipalName)), 'Add the principal / legal owner name.')
+    require(Boolean(normalizeText(form.powerOfAttorneyPrincipalIdNumber)), 'Add the principal ID/passport number.')
+    require(Boolean(normalizeText(form.powerOfAttorneyName)), 'Add the authorised representative.')
+    require(isEmail(form.powerOfAttorneyEmail), 'Add a valid authorised-representative email.')
   } else if (branch === 'other') {
     require(Boolean(normalizeText(form.otherEntityName)), 'Add the legal entity name.')
     require(Boolean(contactName), 'Add the authorised contact name.')

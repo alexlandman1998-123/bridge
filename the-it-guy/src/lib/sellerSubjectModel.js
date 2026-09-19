@@ -31,6 +31,10 @@ function firstText(...values) {
   return values.map(text).find(Boolean) || ''
 }
 
+function isAffirmative(value) {
+  return value === true || ['true', 'yes', '1'].includes(text(value).toLowerCase())
+}
+
 function fullName(source = {}) {
   const value = record(source)
   return firstText(
@@ -120,7 +124,28 @@ export function buildSellerSubject({ formData = {}, listing = {}, lead = {}, can
   const entityType = firstText(sellerFacts.owner_entity_type, sellerFacts.ownerEntityType, form.ownerEntityType, form.owner_entity_type)
   const structureType = firstText(sellerFacts.owner_structure_type, sellerFacts.ownerStructureType, form.ownerStructureType, form.owner_structure_type)
   const ownershipType = firstText(sellerFacts.ownership_type, sellerFacts.ownershipType, sellerFacts.legal_type, sellerFacts.seller_legal_type, form.ownershipType, form.ownership_type, form.sellerLegalType, form.seller_legal_type)
-  const kind = subjectKind({ entityType, structureType, ownershipType })
+  const inferredKind = subjectKind({ entityType, structureType, ownershipType })
+  const ownershipDeclarationPending = [
+    sellerFacts.ownership_declaration_pending,
+    sellerFacts.ownershipDeclarationPending,
+    form.ownershipDeclarationPending,
+    form.ownership_declaration_pending,
+  ].some(isAffirmative)
+  const ownershipRouteConfirmed = [
+    sellerFacts.ownership_route_confirmed,
+    sellerFacts.ownershipRouteConfirmed,
+    form.ownershipRouteConfirmed,
+    form.ownership_route_confirmed,
+    form.ownershipRouteLocked,
+    form.ownership_route_locked,
+  ].some(isAffirmative)
+  const onboardingStatus = firstText(onboarding.status, onboarding.onboardingStatus, form.onboardingStatus, form.onboarding_status).toLowerCase()
+  const onboardingSubmitted = ['submitted', 'completed', 'signed'].includes(onboardingStatus)
+  // Legacy lead records frequently contain `individual` as a UI default. It
+  // is not a legal-ownership fact until an agent confirms it or onboarding
+  // has captured and submitted it.
+  const legacyIndividualAssumption = inferredKind === 'individual' && !ownershipRouteConfirmed && !onboardingSubmitted
+  const kind = ownershipDeclarationPending || legacyIndividualAssumption ? 'unknown' : inferredKind
   const company = record(form.company)
   const trust = record(form.trust)
   const deceasedEstate = record(form.deceased_estate || form.deceasedEstate)
@@ -156,7 +181,9 @@ export function buildSellerSubject({ formData = {}, listing = {}, lead = {}, can
           ? firstText(form.deceasedEstateName, form.estateName, form.estate_name, deceasedEstate.name)
           : kind === 'power_of_attorney'
             ? firstText(form.powerOfAttorneyPrincipalName, form.power_of_attorney_principal_name, powerOfAttorney.principal?.name)
-            : fullName(form),
+            : kind === 'unknown'
+              ? ''
+              : fullName(form),
     registrationNumber: kind === 'company' || kind === 'foreign_company'
       ? firstText(form.companyRegistrationNumber, form.company_registration_number, company.registrationNumber, company.registration_number)
       : kind === 'trust' || kind === 'foreign_trust'

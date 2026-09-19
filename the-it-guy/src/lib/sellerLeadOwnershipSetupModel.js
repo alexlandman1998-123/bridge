@@ -29,6 +29,12 @@ export function applySellerLeadOwnershipRoute(form = {}, route = '') {
     ...form,
     sellerOwnershipRoute: key,
     ownershipType: key,
+    // This marker distinguishes an agent's deliberate selection from the
+    // historical compatibility default of "individual".
+    ownershipRouteConfirmed: true,
+    ownership_route_confirmed: true,
+    ownershipDeclarationPending: false,
+    ownership_declaration_pending: false,
     ...model,
   }
 }
@@ -42,14 +48,35 @@ export function resolveSellerLeadOwnershipRoute(form = {}) {
 }
 
 /**
- * Produces the immutable ownership instruction carried into a seller's
- * onboarding link. Facts remain editable, but changing the legal route must
- * happen through the agent's ownership setup and a replacement link.
+ * Produces the ownership instruction carried into a seller's onboarding link.
+ * Agents can send a generic fact-collection link before the legal route is
+ * known. A known agent-selected route is locked; an unknown route is declared
+ * by the seller and must be reviewed before any formal signing pack is sent.
  */
 export function prepareSellerOnboardingRoute({ formData = {}, subject = {}, canonicalSellerFacts = {}, lockedAt = new Date().toISOString() } = {}) {
   const kind = String(subject?.kind || '').trim().toLowerCase()
   if (!ROUTE_MODELS[kind]) {
-    throw new Error('A recognised seller ownership route is required before onboarding can be prepared.')
+    return {
+      ...formData,
+      canonicalSellerFacts: canonicalSellerFacts && typeof canonicalSellerFacts === 'object' ? canonicalSellerFacts : {},
+      sellerOwnershipRoute: '',
+      seller_ownership_route: '',
+      ownershipType: '',
+      ownerEntityType: '',
+      owner_entity_type: '',
+      ownerStructureType: '',
+      owner_structure_type: '',
+      sellerLegalType: '',
+      seller_legal_type: '',
+      ownershipDeclarationPending: true,
+      ownership_declaration_pending: true,
+      ownershipRouteLocked: false,
+      ownership_route_locked: false,
+      ownershipRouteConfirmed: false,
+      ownership_route_confirmed: false,
+      ownershipRouteLockedAt: '',
+      ownership_route_locked_at: '',
+    }
   }
   const ownership = subject?.ownership && typeof subject.ownership === 'object' ? subject.ownership : {}
   return {
@@ -64,8 +91,12 @@ export function prepareSellerOnboardingRoute({ formData = {}, subject = {}, cano
     ownershipType: ownership.ownershipType || ROUTE_MODELS[kind].sellerLegalType || kind,
     sellerLegalType: kind,
     seller_legal_type: kind,
+    ownershipDeclarationPending: false,
+    ownership_declaration_pending: false,
     ownershipRouteLocked: true,
     ownership_route_locked: true,
+    ownershipRouteConfirmed: true,
+    ownership_route_confirmed: true,
     ownershipRouteLockedAt: lockedAt,
     ownership_route_locked_at: lockedAt,
   }

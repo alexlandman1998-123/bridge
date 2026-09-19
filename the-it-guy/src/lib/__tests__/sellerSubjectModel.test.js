@@ -12,6 +12,33 @@ test('never infers an unresolved seller subject as an individual', () => {
   assert.equal(subject.requiredSetupFields.includes('Ownership route'), true)
 })
 
+test('does not trust a legacy individual default until an agent or submitted onboarding confirms it', () => {
+  const legacy = buildSellerSubject({
+    formData: {
+      ownerEntityType: 'natural_person',
+      ownerStructureType: 'individual',
+      ownershipType: 'individual',
+      sellerFirstName: 'Alex',
+      sellerSurname: 'Landman',
+    },
+  })
+  const confirmed = buildSellerSubject({
+    formData: {
+      ownerEntityType: 'natural_person',
+      ownerStructureType: 'individual',
+      ownershipType: 'individual',
+      ownershipRouteConfirmed: true,
+      sellerFirstName: 'Alex',
+      sellerSurname: 'Landman',
+    },
+  })
+
+  assert.equal(legacy.kind, 'unknown')
+  assert.equal(legacy.legalOwner.name, '')
+  assert.equal(confirmed.kind, 'individual')
+  assert.equal(confirmed.legalOwner.name, 'Alex Landman')
+})
+
 test('separates a company legal owner from its primary contact and signatory', () => {
   const subject = buildSellerSubject({
     formData: {

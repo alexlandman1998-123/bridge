@@ -25,7 +25,7 @@ import {
   prepareSellerOnboardingRoute,
   resolveSellerLeadOwnershipRoute,
 } from '../../lib/sellerLeadOwnershipSetupModel'
-import { buildSellerProfileCanonicalPayload } from '../../lib/sellerProfileCaptureModel'
+import { buildSellerLeadManualCapturePayload } from '../../lib/sellerLeadManualCaptureModel'
 import { buildSellerSubject } from '../../lib/sellerSubjectModel'
 import { needsSellerOwnershipSetup, resolveSellerInformationEditMode } from '../../lib/sellerOwnershipSetupRouting'
 import { needsSellerOnboardingReplacement } from '../../lib/sellerOnboardingReplacement'
@@ -6342,6 +6342,18 @@ function formatSellerProfileDisplayValue(value, fallback = 'Not captured') {
   return text.includes('_') ? titleCaseWorkspaceValue(text) : text
 }
 
+function isMeaningfulSellerProfileValue(value) {
+  const text = normalizeText(value).toLowerCase()
+  return Boolean(text) && !['not captured', 'not applicable', 'n/a', 'na', '—', '-'].includes(text)
+}
+
+function compactSellerProfileRows(rows = [], { retainLabels = [] } = {}) {
+  const retained = new Set(retainLabels)
+  return (Array.isArray(rows) ? rows : []).filter(([label, value]) => (
+    retained.has(label) || isMeaningfulSellerProfileValue(value)
+  ))
+}
+
 function formatMetricValue(value, suffix = '') {
   const text = normalizeText(value)
   if (!text) return 'Not captured'
@@ -9002,7 +9014,7 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
   return {
     ...KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS,
     sellerOwnershipRoute: resolveSellerLeadOwnershipRoute(onboarding),
-    ownerEntityType: normalizeText(onboarding?.ownerEntityType || onboarding?.owner_entity_type) || (isCompanyKingstonsSellerProfileKind(profileKind) ? 'Company' : isTrustKingstonsSellerProfileKind(profileKind) ? 'Trust' : 'Individual'),
+    ownerEntityType: normalizeText(onboarding?.ownerEntityType || onboarding?.owner_entity_type) || (isCompanyKingstonsSellerProfileKind(profileKind) ? 'Company' : isTrustKingstonsSellerProfileKind(profileKind) ? 'Trust' : ''),
     ownerStructureType: normalizeText(onboarding?.ownerStructureType || onboarding?.owner_structure_type) || (isForeignKingstonsSellerProfileKind(profileKind) ? profileKind.replace(/_/g, ' ') : ''),
     sellerLegalType: normalizeText(onboarding?.sellerLegalType || onboarding?.seller_legal_type || onboarding?.sellerType || onboarding?.ownershipType || onboarding?.ownership_type),
     firstName: normalizeText(contact?.firstName || lead?.sellerName || onboarding?.firstName || onboarding?.sellerFirstName || nameParts.firstName),
@@ -9205,7 +9217,7 @@ function resolveKingstonsSellerProfileKind(source = {}) {
   if (ownershipType === 'deceased_estate') return 'deceased_estate'
   if (ownershipType === 'power_of_attorney') return 'power_of_attorney'
   if (ownershipType === 'multiple_owners') return 'multiple_owners'
-  return 'individual'
+  return 'unknown'
 }
 
 function isNaturalKingstonsSellerProfileKind(kind = '') {
@@ -9236,6 +9248,8 @@ function buildKingstonsSellerProfileFormData(form = {}) {
   const ownerStructureType = normalizeText(form.ownerStructureType)
   const sellerLegalType = normalizeText(form.sellerLegalType || form.ownershipType)
   const sellerOwnershipRoute = resolveSellerLeadOwnershipRoute(form)
+  const ownershipRouteConfirmed = Boolean(form.ownershipRouteConfirmed || form.ownership_route_confirmed || form.ownershipRouteLocked || form.ownership_route_locked)
+  const ownershipDeclarationPending = Boolean((form.ownershipDeclarationPending || form.ownership_declaration_pending) && !sellerOwnershipRoute)
   const ownershipScheme = normalizeText(form.ownershipScheme || form.propertyStructureType)
   const estateOrHoa = normalizeText(form.estateOrHoa)
   const companyDirectors = buildKingstonsSellerProfilePeople(form.companyDirectorsText)
@@ -9258,6 +9272,10 @@ function buildKingstonsSellerProfileFormData(form = {}) {
   return {
     sellerOwnershipRoute,
     seller_ownership_route: sellerOwnershipRoute,
+    ownershipRouteConfirmed,
+    ownership_route_confirmed: ownershipRouteConfirmed,
+    ownershipDeclarationPending,
+    ownership_declaration_pending: ownershipDeclarationPending,
     ownerEntityType,
     owner_entity_type: ownerEntityType,
     ownerStructureType,
@@ -17350,7 +17368,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedSellerNextBestActionModel = useMemo(() => {
     const fallbackAction = selectedSellerReadiness.nextAction || {}
     const complianceBlocker = selectedSellerComplianceAgentStatus.nextBlocker || null
-    const ownershipSetupBlocker = selectedSellerReadiness.blockers?.find((blocker) => blocker.id === 'seller_ownership_setup_required') || null
     const onboardingSubmittedOrLater = Boolean(
       selectedSellerJourney.onboardingSubmitted ||
         normalizeKey(selectedSellerJourney.stage?.key) === 'seller_onboarding_submitted' ||
@@ -17364,16 +17381,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         mandatePacketReadyForSignature &&
         (onboardingSubmittedOrLater || fallbackWantsHardCopyMandate || complianceBlocker?.key === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE),
     )
-
-    if (ownershipSetupBlocker) {
-      return {
-        title: 'Set up seller ownership',
-        copy: ownershipSetupBlocker.sellerMessage || 'Capture the legal owner, primary contact, and signing authority before sending onboarding.',
-        actionId: 'setup_seller_ownership',
-        label: 'Set Up Seller Ownership',
-        disabled: false,
-      }
-    }
 
     if (mandateStillRequired) {
       return {
@@ -17903,7 +17910,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             sellerSubject.people?.owners,
           )
     const roleplayerRole = isCompanySellerProfile ? 'Director' : isTrustSellerProfile ? 'Trustee' : 'Owner'
-    const ownershipRouteLabel = SELLER_LEAD_OWNERSHIP_ROUTES.find((route) => route.value === sellerSubject.kind)?.label || formatSellerProfileDisplayValue(sellerSubject.kind)
+    const ownershipRouteLabel = sellerSubject.kind === 'unknown'
+      ? 'Not captured'
+      : SELLER_LEAD_OWNERSHIP_ROUTES.find((route) => route.value === sellerSubject.kind)?.label || formatSellerProfileDisplayValue(sellerSubject.kind)
     const roleplayers = (Array.isArray(roleplayerSource) ? roleplayerSource : [])
       .map((person, index) => {
         const record = isPlainObject(person) ? person : { fullName: person }
@@ -18001,12 +18010,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       editMode: 'address',
       title: 'Residential Address',
       rows: [
-        ['Street', field(onboarding?.residentialStreet, onboarding?.residentialAddressDetails?.line1, onboarding?.residentialAddress, onboarding?.sellerResidentialAddress, onboarding?.streetAddress, lead?.streetAddress, propertyDetails?.streetAddress)],
-        ['Suburb', field(onboarding?.residentialSuburb, onboarding?.residentialAddressDetails?.suburb, onboarding?.suburb, lead?.suburb, propertyDetails?.suburb)],
-        ['City', field(onboarding?.residentialCity, onboarding?.residentialAddressDetails?.city, onboarding?.city, lead?.city, propertyDetails?.city)],
-        ['Province', field(onboarding?.residentialProvince, onboarding?.residentialAddressDetails?.province, onboarding?.province, lead?.province, propertyDetails?.province)],
-        ['Postal Code', field(onboarding?.residentialPostalCode, onboarding?.residentialAddressDetails?.postalCode, onboarding?.residentialAddressDetails?.postal_code, onboarding?.postalCode, lead?.postalCode, propertyDetails?.postalCode)],
-        ['Country', field(onboarding?.residentialCountry, onboarding?.residentialAddressDetails?.country, onboarding?.country, lead?.country, propertyDetails?.country, 'South Africa')],
+        ['Street', field(onboarding?.residentialStreet, onboarding?.residentialAddressDetails?.line1, onboarding?.residentialAddress, onboarding?.sellerResidentialAddress, onboarding?.streetAddress)],
+        ['Suburb', field(onboarding?.residentialSuburb, onboarding?.residentialAddressDetails?.suburb, onboarding?.suburb)],
+        ['City', field(onboarding?.residentialCity, onboarding?.residentialAddressDetails?.city, onboarding?.city)],
+        ['Province', field(onboarding?.residentialProvince, onboarding?.residentialAddressDetails?.province, onboarding?.province)],
+        ['Postal Code', field(onboarding?.residentialPostalCode, onboarding?.residentialAddressDetails?.postalCode, onboarding?.residentialAddressDetails?.postal_code, onboarding?.postalCode)],
+        ['Country', field(onboarding?.residentialCountry, onboarding?.residentialAddressDetails?.country, onboarding?.country)],
       ],
     } : null
     const taxTitle = isCompanySellerProfile ? 'Company Tax & Compliance' : isTrustSellerProfile ? 'Trust Tax & Compliance' : 'Tax & Compliance'
@@ -18020,6 +18029,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ['Rates', currencyField(onboarding?.ratesAndTaxes, onboarding?.ratesTaxes, onboarding?.monthlyRates)],
       ['Estimated Asking Price', currencyField(listing?.askingPrice, listing?.asking_price, lead?.estimatedValue, onboarding?.askingPrice)],
     ]
+    const bondExistsValue = firstWorkspaceValue(onboarding?.bondExists, onboarding?.bond_exists, onboarding?.hasBond)
+    const mortgageBankValue = firstWorkspaceValue(onboarding?.mortgageBank, onboarding?.mortgage_bank)
+    const bondExists = field(bondExistsValue)
+    const bondExistsAffirmed = bondExistsValue === true || ['yes', 'true', '1'].includes(normalizeText(bondExistsValue).toLowerCase())
     return {
       sellerSubject,
       roleplayers,
@@ -18086,8 +18099,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               listing?.estateOrHoa,
               listing?.estate_or_hoa,
             )],
-            ['Bond Exists', field(onboarding?.bondExists, onboarding?.bond_exists, onboarding?.hasBond)],
-            ['Mortgage Bank', field(onboarding?.mortgageBank, onboarding?.mortgage_bank)],
+            ['Bond Exists', bondExists],
+            ...(bondExistsAffirmed || isMeaningfulSellerProfileValue(mortgageBankValue)
+              ? [['Mortgage Bank', field(mortgageBankValue)]]
+              : []),
           ],
         },
         {
@@ -18096,7 +18111,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           title: 'Property Information',
           rows: propertyRows,
         },
-      ].filter(Boolean),
+      ]
+        .filter(Boolean)
+        .map((card) => ({
+          ...card,
+          rows: compactSellerProfileRows(card.rows, {
+            retainLabels: card.key === 'legal-owner' ? ['Ownership Route', 'Setup Status'] : [],
+          }),
+        }))
+        .filter((card) => card.rows.length > 0),
       verification: (() => {
         const subject = {
           fullName: sellerSubject.legalOwner?.name || sellerFullName,
@@ -18156,10 +18179,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ) || selectedSellerProfileWorkspace.roleplayers?.[0] || null
   const selectedSellerProfileCards = activeSellerProfileRoleplayer
     ? [
-        activeSellerProfileRoleplayer.card,
+        {
+          ...activeSellerProfileRoleplayer.card,
+          rows: compactSellerProfileRows(activeSellerProfileRoleplayer.card.rows),
+        },
         ...selectedSellerProfileWorkspace.cards.filter((card) => !['personal', 'address'].includes(card.key)),
-      ]
+      ].filter((card) => card.rows.length > 0)
     : selectedSellerProfileWorkspace.cards
+  const selectedSellerProfileDefectRows = selectedSellerProfileWorkspace.defects.filter(([, value]) => isMeaningfulSellerProfileValue(value))
+  const selectedSellerProfileAgentNotes = selectedSellerProfileWorkspace.agentNotes
 
   const resolveAppointmentListingLabel = useCallback(
     (listingId) => {
@@ -22643,15 +22671,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setIsLeadDetailSaving(true)
     try {
       const savedAt = new Date().toISOString()
-      const formData = buildKingstonsSellerProfileFormData(sellerProfileEditForm)
-      const sellerCanonicalPayload = buildSellerProfileCanonicalPayload(formData, selectedLeadLinkedListing || {}, {
-        contextType: 'seller_lead',
-        contextId: selectedLead.leadId,
-        source: 'seller_lead_ownership_setup',
-        draft: true,
+      const legacyFormData = buildKingstonsSellerProfileFormData(sellerProfileEditForm)
+      const manualCapture = buildSellerLeadManualCapturePayload({
+        form: sellerProfileEditForm,
+        legacyFormData,
+        listing: selectedLeadLinkedListing || {},
       })
-      const sellerCanonicalFacts = isPlainObject(sellerCanonicalPayload?.canonicalSellerFacts)
-        ? sellerCanonicalPayload.canonicalSellerFacts
+      const formData = {
+        ...legacyFormData,
+        ...manualCapture.formPatch,
+        // The lead route includes Power of Attorney in addition to the
+        // original listing route set. Preserve its deliberate confirmation.
+        sellerOwnershipRoute: resolveSellerLeadOwnershipRoute(sellerProfileEditForm),
+        seller_ownership_route: resolveSellerLeadOwnershipRoute(sellerProfileEditForm),
+        ownershipRouteConfirmed: Boolean(sellerProfileEditForm.ownershipRouteConfirmed || sellerProfileEditForm.ownership_route_confirmed),
+        ownership_route_confirmed: Boolean(sellerProfileEditForm.ownershipRouteConfirmed || sellerProfileEditForm.ownership_route_confirmed),
+      }
+      const sellerCanonicalFacts = isPlainObject(manualCapture?.canonicalSellerFacts)
+        ? manualCapture.canonicalSellerFacts
         : null
       const existingOnboardingCandidate = isPlainObject(selectedLead?.sellerOnboarding)
         ? selectedLead.sellerOnboarding
@@ -24180,11 +24217,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       lead: { ...selectedLead, ...selectedLeadContact },
       canonicalFacts: sellerCanonicalFacts,
     })
-    if (!sellerSubject.onboardingReady) {
-      setError(`Complete seller ownership setup before sending onboarding: ${sellerSubject.requiredSetupFields.join(', ')}.`)
-      openSellerLeadEditModal('profile')
-      return
-    }
     const onboardingSetupFormData = prepareSellerOnboardingRoute({
       formData: leadOnboardingFormData,
       subject: sellerSubject,
@@ -24283,8 +24315,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             token,
             formData: onboardingSetupFormData,
             status: 'not_started',
-            sellerType: sellerSubject.kind,
-            ownershipStructure: sellerSubject.ownership.structureType || sellerSubject.kind,
+            sellerType: sellerSubject.onboardingReady ? sellerSubject.kind : '',
+            ownershipStructure: sellerSubject.onboardingReady ? (sellerSubject.ownership.structureType || sellerSubject.kind) : '',
             maritalRegime: normalizeText(onboardingSetupFormData.maritalRegime || onboardingSetupFormData.marriageRegime),
             replaceToken: replacingOnboarding,
           })
@@ -24311,8 +24343,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             sellerContactPhone: sellerPhone,
             onboardingToken: token,
             listingSnapshot: reusableListing,
-            sellerType: sellerSubject.kind,
-            ownershipStructure: sellerSubject.ownership.structureType || sellerSubject.kind,
+            sellerType: sellerSubject.onboardingReady ? sellerSubject.kind : '',
+            ownershipStructure: sellerSubject.onboardingReady ? (sellerSubject.ownership.structureType || sellerSubject.kind) : '',
             maritalRegime: normalizeText(onboardingSetupFormData.maritalRegime || onboardingSetupFormData.marriageRegime),
             performedBy: currentAgent.id,
             portalBranding: {
@@ -24410,7 +24442,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         seller_onboarding_replacement_required: false,
         sellerOnboardingReplacementReason: '',
         seller_onboarding_replacement_reason: '',
-        sellerOwnershipRoute: sellerSubject.kind,
+        sellerOwnershipRoute: sellerSubject.onboardingReady ? sellerSubject.kind : '',
         sellerCanonicalFacts,
         sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
         listingId: canonicalListingId || normalizeText(selectedLead?.listingId),
@@ -24445,7 +24477,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 seller_onboarding_replacement_required: false,
                 sellerOnboardingReplacementReason: '',
                 seller_onboarding_replacement_reason: '',
-                sellerOwnershipRoute: sellerSubject.kind,
+                sellerOwnershipRoute: sellerSubject.onboardingReady ? sellerSubject.kind : '',
                 sellerCanonicalFacts,
                 sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
                 sellerWorkflowLeadId: normalizeText(sellerWorkflowLead?.sellerLeadId || sellerWorkflowLead?.id || selectedLead.leadId),
@@ -31672,7 +31704,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     },
     profile: {
       title: 'Set Up Seller Ownership',
-      subtitle: 'Capture the legal owner, primary contact, and authority needed before seller onboarding is sent.',
+      subtitle: 'Optional before onboarding. Confirm or correct the legal owner, primary contact, and authority after the seller submits their facts.',
     },
     address: {
       title: 'Edit Residential Address',
@@ -39093,46 +39125,49 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </section>
                         ))}
 
-                        <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
-                          <div className="flex items-center justify-between gap-3">
-                            <h4 className="text-sm font-semibold text-[#102033]">Property Features</h4>
-                            <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('features')}>Edit</button>
-                          </div>
-                          <div className="mt-4 flex flex-wrap gap-2">
-                            {selectedSellerProfileWorkspace.features.length ? selectedSellerProfileWorkspace.features.map((feature) => (
-                              <span key={feature} className="rounded-full bg-[#dff2e8] px-3 py-1 text-xs font-semibold text-[#17643a]">{feature}</span>
-                            )) : (
-                              <span className="rounded-full bg-[#eef3f7] px-3 py-1 text-xs font-semibold text-[#7890a8]">No property features captured</span>
-                            )}
-                          </div>
-                        </section>
+                        {selectedSellerProfileWorkspace.features.length ? (
+                          <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-semibold text-[#102033]">Property Features</h4>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('features')}>Edit</button>
+                            </div>
+                            <div className="mt-4 flex flex-wrap gap-2">
+                              {selectedSellerProfileWorkspace.features.map((feature) => (
+                                <span key={feature} className="rounded-full bg-[#dff2e8] px-3 py-1 text-xs font-semibold text-[#17643a]">{feature}</span>
+                              ))}
+                            </div>
+                          </section>
+                        ) : null}
 
-                        <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
-                          <div className="flex items-center justify-between gap-3">
-                            <h4 className="text-sm font-semibold text-[#102033]">Known Defects</h4>
-                            <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('defects')}>Edit</button>
-                          </div>
-                          <dl className="mt-4 grid gap-x-5 gap-y-2.5 sm:grid-cols-2">
-                            {selectedSellerProfileWorkspace.defects.map(([label, value]) => {
-                              const displayValue = value || 'Not captured'
-                              const isClear = ['No', 'None', 'False'].includes(displayValue)
-                              return (
-                                <div key={label} className="flex items-center justify-between gap-3 text-sm">
-                                  <dt className="text-[#60758b]">{label}</dt>
-                                  <dd className={`inline-flex min-w-0 items-center gap-1.5 truncate font-semibold ${isClear ? 'text-[#17643a]' : displayValue === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`}>
-                                    {isClear ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : null}
-                                    {displayValue}
-                                  </dd>
-                                </div>
-                              )
-                            })}
-                          </dl>
-                          <div className="mt-4 rounded-[12px] border border-[#d7eadf] bg-[#f4fbf6] px-3 py-2 text-sm font-semibold text-[#25764a]">
-                            {selectedSellerProfileWorkspace.agentNotes === 'Not captured'
-                              ? 'No agent notes captured for this seller profile.'
-                              : selectedSellerProfileWorkspace.agentNotes}
-                          </div>
-                        </section>
+                        {selectedSellerProfileDefectRows.length || isMeaningfulSellerProfileValue(selectedSellerProfileAgentNotes) ? (
+                          <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-semibold text-[#102033]">Known Defects</h4>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('defects')}>Edit</button>
+                            </div>
+                            {selectedSellerProfileDefectRows.length ? (
+                              <dl className="mt-4 grid gap-x-5 gap-y-2.5 sm:grid-cols-2">
+                                {selectedSellerProfileDefectRows.map(([label, value]) => {
+                                  const isClear = ['No', 'None', 'False'].includes(value)
+                                  return (
+                                    <div key={label} className="flex items-center justify-between gap-3 text-sm">
+                                      <dt className="text-[#60758b]">{label}</dt>
+                                      <dd className={`inline-flex min-w-0 items-center gap-1.5 truncate font-semibold ${isClear ? 'text-[#17643a]' : 'text-[#20364c]'}`}>
+                                        {isClear ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> : null}
+                                        {value}
+                                      </dd>
+                                    </div>
+                                  )
+                                })}
+                              </dl>
+                            ) : null}
+                            {isMeaningfulSellerProfileValue(selectedSellerProfileAgentNotes) ? (
+                              <div className="mt-4 rounded-[12px] border border-[#d7eadf] bg-[#f4fbf6] px-3 py-2 text-sm font-semibold text-[#25764a]">
+                                {selectedSellerProfileAgentNotes}
+                              </div>
+                            ) : null}
+                          </section>
+                        ) : null}
                       </div>
                     </section>
                   </div>

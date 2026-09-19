@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  applySellerComplianceSignerAcknowledgementsToForm,
   applySellerComplianceSignatureToForm,
   buildDisclosureForComplianceSigner,
   buildSellerComplianceSigningForForm,
@@ -62,6 +63,25 @@ test('records explicit acknowledgement evidence on the signer who accepted it', 
   assert.equal(signer.acknowledgements.wordingVersion, 'arch9-seller-disclosure-acknowledgements-v1')
   assert.equal(signer.acknowledgements.acknowledgements.find((item) => item.key === 'privacy_and_paia_notice').accepted, true)
   assert.equal(nextForm.sellerComplianceSigners.find((item) => item.id === 'spouse').acknowledgements, null)
+})
+
+test('persists a signer acknowledgement draft without signing the declaration', () => {
+  const acknowledgements = updateSellerDisclosureAcknowledgement(
+    {},
+    SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS.termsAndConditions,
+    true,
+  )
+  const nextForm = applySellerComplianceSignerAcknowledgementsToForm({
+    formData: baseForm,
+    signerId: 'spouse',
+    acknowledgements,
+  })
+  const signer = nextForm.sellerComplianceSigners.find((item) => item.id === 'spouse')
+
+  assert.equal(signer.status, 'pending')
+  assert.equal(signer.complete, false)
+  assert.equal(signer.signature.value, '')
+  assert.equal(signer.acknowledgements.acknowledgements.find((item) => item.key === 'terms_and_conditions').accepted, true)
 })
 
 test('the normal onboarding link remains bound to the primary seller after their signature becomes complete', () => {

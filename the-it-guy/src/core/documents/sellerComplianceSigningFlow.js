@@ -5,6 +5,7 @@ import {
 } from './sellerComplianceSignerModel.js'
 import {
   buildSellerDisclosureAcknowledgementEvidence,
+  readSellerDisclosureAcknowledgements,
   SELLER_DISCLOSURE_ACKNOWLEDGEMENTS,
 } from './sellerDisclosureAcknowledgements.js'
 
@@ -84,6 +85,54 @@ export function buildDisclosureForComplianceSigner(disclosure = {}, signer = nul
     ...(disclosure || {}),
     signature: signatureValue || '',
     signedAt: signedAt || '',
+  }
+}
+
+/**
+ * Saves acknowledgement choices against one signer without treating the
+ * declaration as signed. This lets a signer safely leave and reopen their
+ * private link before drawing a signature.
+ */
+export function applySellerComplianceSignerAcknowledgementsToForm({
+  formData = {},
+  listing = {},
+  portalData = {},
+  token = '',
+  signerId = '',
+  acknowledgements = {},
+} = {}) {
+  const flow = buildSellerComplianceSigningForForm({
+    formData,
+    listing,
+    portalData,
+    token,
+    signerId,
+  })
+  const signer = flow.activeSigner
+  if (!signer?.id) return formData || {}
+
+  const acknowledgementDraft = readSellerDisclosureAcknowledgements(acknowledgements)
+  const updatedSigners = flow.model.signers.map((item) => item.id === signer.id
+    ? { ...item, acknowledgements: acknowledgementDraft }
+    : item)
+  const updatedSigning = buildSellerCompliancePortalModel({
+    formData: {
+      ...(formData || {}),
+      sellerComplianceSigners: updatedSigners,
+      seller_compliance_signers: updatedSigners,
+    },
+    listing,
+    portalData,
+    existingSigners: updatedSigners,
+    token,
+  })
+
+  return {
+    ...(formData || {}),
+    sellerComplianceSigners: updatedSigners,
+    seller_compliance_signers: updatedSigners,
+    sellerComplianceSigning: updatedSigning,
+    seller_compliance_signing: updatedSigning,
   }
 }
 

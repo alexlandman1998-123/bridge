@@ -4,7 +4,7 @@ import test from 'node:test'
 import { buildSellerDocumentSourceOfTruth } from '../sellerDocumentRequirementsService.js'
 import { buildSellerReadinessSummary } from '../sellerReadinessService.js'
 
-test('seller readiness sends an agent to ownership setup before onboarding when the route is unresolved', () => {
+test('seller readiness lets an agent send onboarding before the legal route is known', () => {
   const readiness = buildSellerReadinessSummary({
     lead: {
       leadCategory: 'seller',
@@ -16,9 +16,9 @@ test('seller readiness sends an agent to ownership setup before onboarding when 
     listing: {},
   })
 
-  assert.equal(readiness.nextAction.id, 'setup_seller_ownership')
-  assert.equal(readiness.blockers.some((item) => item.id === 'seller_ownership_setup_required'), true)
-  assert.equal(readiness.actions.find((item) => item.id === 'send_seller_onboarding')?.disabled, true)
+  assert.equal(readiness.nextAction.id, 'send_seller_onboarding')
+  assert.equal(readiness.blockers.some((item) => item.id === 'seller_ownership_setup_required'), false)
+  assert.equal(readiness.actions.find((item) => item.id === 'send_seller_onboarding')?.disabled, false)
 })
 
 test('document source exposes the same company legal owner and signer context', () => {
