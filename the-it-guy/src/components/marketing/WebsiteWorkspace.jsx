@@ -363,7 +363,10 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
   const publicationBlockers = Array.isArray(overview.publicationReadiness?.blockers) ? overview.publicationReadiness.blockers : []
   const publicationReady = overview.publicationReadiness?.ready === true || (publicationBlockers.length > 0 && publicationBlockers.every(isRepairableBrandBlocker))
   const changesReadyCount = Math.max(0, Number(overview.publicationReadiness?.changesReadyCount || 0))
-  const websiteIsConnected = overview.mode === 'connected'
+  // An enrolled organisation without a site is intentionally allowed into the
+  // workspace so it can create its first private draft. Keep unavailable and
+  // paused organisations behind the managed-service gate.
+  const websiteIsConnected = overview.mode === 'connected' || overview.mode === 'ready_to_create'
 
   // The website tools are a managed service. Do not expose mock previews,
   // empty editors, or landing-page controls before a real site is connected.

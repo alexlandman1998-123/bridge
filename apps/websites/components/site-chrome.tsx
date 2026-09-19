@@ -1,11 +1,10 @@
-import { MobileNavigation } from './mobile-navigation'
 import Image from 'next/image'
 import Link from 'next/link'
-import resourceStyles from './resource-navigation.module.css'
 import { hasPublishedBlogPosts } from '@/lib/site-repository'
 import type { ResolvedSite } from '@/lib/types'
 import { isHomeSeekersTemplate, templateNavigation } from '@/lib/site-templates'
 import { selectWebsiteLogo } from '@/lib/website-brand'
+import { ResponsiveSiteHeader } from './responsive-site-header'
 
 function resourceLinks(hasBlogPosts: boolean) {
   return [
@@ -25,7 +24,7 @@ export async function SiteHeader({ site, enquiryHref = '/valuation', homepage = 
   const homeSeekers = isHomeSeekersTemplate(site.templateKey)
   const navigation = templateNavigation(site.templateKey).filter(item => !(homepage || homeSeekers) || item.label !== 'Our people')
   const resources = resourceLinks(await hasPublishedBlogPosts(site))
-  return <header className="site-header"><Link className="wordmark" href="/" aria-label={`${site.name} home`}><SiteLogo site={site} /></Link><nav aria-label="Primary">{navigation.map((item) => <Link href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} key={`${item.href}-${item.label}`}>{item.label}</Link>)}<details className={resourceStyles.menu}><summary className={resources.some(item => item.href === currentHref) ? resourceStyles.active : undefined}>Resources <span aria-hidden="true">⌄</span></summary><div className={resourceStyles.dropdown}>{resources.map(item => <Link key={item.href} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined}>{item.label}<span aria-hidden="true">↗</span></Link>)}</div></details></nav><Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link><MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={homeSeekers ? 'Book a valuation' : 'Enquire now'} /></header>
+  return <ResponsiveSiteHeader site={site} navigation={navigation} resources={resources} enquiryHref={enquiryHref} currentHref={currentHref} homeSeekers={homeSeekers} overlay={homepage && homeSeekers} />
 }
 
 export async function SiteFooter({ site }: { site: ResolvedSite }) {

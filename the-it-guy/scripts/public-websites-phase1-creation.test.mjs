@@ -37,6 +37,7 @@ assert.match(service, /export async function createWebsiteSite\(organisationId\)
 assert.match(service, /action: 'create'/, 'routes setup through the durable brand publisher')
 assert.match(brandPublisher, /userClient\.rpc\("website_create_site"/, 'the verified publisher calls the atomic database command')
 assert.match(workspace, /overview\.mode === 'ready_to_create'/, 'shows setup only when no website exists')
+assert.match(workspace, /overview\.mode === 'connected' \|\| overview\.mode === 'ready_to_create'/, 'allows an enrolled organisation to reach its first-site setup action')
 assert.match(workspace, /Create website/, 'provides the agency administrator setup action')
 assert.match(workspace, /Future website edits will not change email or document branding/, 'explains the copied-brand boundary')
 

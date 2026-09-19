@@ -345,6 +345,13 @@ export async function getPublicPages(site: ResolvedSite): Promise<PublicPage[]> 
 
 export async function resolveSite(host: string | null | undefined): Promise<ResolvedSite | null> {
   const hostname = normalizeHostname(host)
+  // This is intentionally development-only. It lets the website team review a
+  // site's current draft with its real branding before a preview hostname has
+  // been activated. It is ignored in all deployed environments.
+  const localPreviewSiteId = process.env.NODE_ENV === 'development'
+    ? String(process.env.WEBSITES_LOCAL_SITE_ID || '').trim()
+    : ''
+  if (localPreviewSiteId) return resolveLocalSitePreview(localPreviewSiteId)
   if (isDemoMode(hostname)) return demoSite
   if (!hostname) return null
 
@@ -458,5 +465,68 @@ export async function resolveSite(host: string | null | undefined): Promise<Reso
       : undefined,
     preview: domain.domain_kind === 'preview',
     properties: publishedProperties,
+  }
+}
+
+async function resolveLocalSitePreview(siteId: string): Promise<ResolvedSite | null> {
+  const supabase = getServerSupabase()
+  const { data: site, error: siteError } = await supabase
+    .from('website_sites')
+    .select('id, organisation_id, status, template_key')
+    .eq('id', siteId)
+    .maybeSingle()
+
+  if (siteError) throw siteError
+  if (!site) return null
+
+  const [revisionResult, organisationBrandingResult] = await Promise.all([
+    supabase
+      .from('website_site_revisions')
+      .select('id, brand_json')
+      .eq('website_site_id', site.id)
+      .eq('status', 'draft')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('organisation_branding')
+      .select('logo_icon_url')
+      .eq('organisation_id', site.organisation_id)
+      .maybeSingle(),
+  ])
+
+  if (revisionResult.error) throw revisionResult.error
+  if (organisationBrandingResult.error) throw organisationBrandingResult.error
+  if (!revisionResult.data) return null
+
+  const brand = (revisionResult.data.brand_json || {}) as Record<string, unknown>
+  const properties = await getPublishedWebsiteListings(supabase, { id: site.id, organisationId: site.organisation_id }, 12)
+  return {
+    id: String(site.id),
+    organisationId: String(site.organisation_id),
+    publishedRevisionId: String(revisionResult.data.id),
+    templateKey: site.template_key === 'home-seekers-v1' ? 'home-seekers-v1' : 'property-standard-v1',
+    name: String(brand.name || 'Property'),
+    status: site.status === 'published' ? 'published' : 'draft',
+    primaryColor: String(brand.primaryColor || '#161616'),
+    secondaryColor: String(brand.secondaryColor || '#5f5f5f'),
+    accentColor: String(brand.accentColor || '#e2232b'),
+    logoUrl: brand.logoUrl ? String(brand.logoUrl) : undefined,
+    logoLightUrl: brand.logoLightUrl ? String(brand.logoLightUrl) : undefined,
+    logoDarkUrl: brand.logoDarkUrl ? String(brand.logoDarkUrl) : undefined,
+    logoIconUrl: brand.logoIconUrl ? String(brand.logoIconUrl) : organisationBrandingResult.data?.logo_icon_url ? String(organisationBrandingResult.data.logo_icon_url) : undefined,
+    phone: brand.phone ? String(brand.phone) : undefined,
+    email: brand.email ? String(brand.email) : undefined,
+    website: brand.website ? String(brand.website) : undefined,
+    whatsappNumber: brand.whatsappNumber ? String(brand.whatsappNumber) : undefined,
+    tagline: brand.tagline ? String(brand.tagline) : undefined,
+    contactImageUrl: brand.contactImageUrl ? String(brand.contactImageUrl) : undefined,
+    privacyPolicyUrl: brand.privacyPolicyUrl ? String(brand.privacyPolicyUrl) : undefined,
+    termsUrl: brand.termsUrl ? String(brand.termsUrl) : undefined,
+    socialLinks: brand.socialLinks && typeof brand.socialLinks === 'object' && !Array.isArray(brand.socialLinks)
+      ? Object.fromEntries(Object.entries(brand.socialLinks as Record<string, unknown>).filter(([key, value]) => ['instagram', 'facebook', 'linkedin'].includes(key) && typeof value === 'string' && value.startsWith('https://'))) as ResolvedSite['socialLinks']
+      : undefined,
+    preview: true,
+    properties: mapPublishedProperties(properties),
   }
 }

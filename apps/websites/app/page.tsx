@@ -36,7 +36,6 @@ export default async function HomePage() {
 
   return (
     <main className={`${templateClassName(site.templateKey)} ${isHomeSeekersTemplate(site.templateKey) ? styles.homepage : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
-      {site.preview && <div className="preview-banner">Preview site — not yet connected to a client domain</div>}
       <SiteHeader site={site} enquiryHref="/valuation" homepage />
       <ContentBlocks page={page} properties={site.properties} site={site} templateKey={site.templateKey} blogPosts={blogPosts} />
       <SiteFooter site={site} />

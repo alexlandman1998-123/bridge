@@ -1,21 +1,50 @@
 /* The homepage owns its composition. Scope legacy block hooks here so changes
    do not alter campaign, listing or valuation pages. */
 .homepage.homepage {
-  --home-accent: var(--accent, var(--secondary, #9a1715));
+  --home-accent: #e2232b;
   --content: min(1240px, calc(100% - 96px));
-  --page: #faf9f6;
+  --page: #f5f5f4;
   --red: var(--home-accent);
   background: var(--page);
-  color: #262b25;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #161616;
+  font-family: Arial, Helvetica, sans-serif;
 }
+.homepage.homepage :global(.site-header) { align-items: center; background: #fff; border-bottom: 1px solid #e5e5e5; box-shadow: 0 1px 0 rgba(0,0,0,.03); min-height: 78px; padding: 0 max(32px, calc((100vw - 1320px) / 2)); transition: background .25s ease, border-color .25s ease, box-shadow .25s ease, color .25s ease; z-index: 20; }
+.homepage.homepage :global(.site-header.site-header--overlay) { background: transparent; border-color: transparent; box-shadow: none; left: 0; position: absolute; right: 0; top: 0; }
+.homepage.homepage :global(.site-header.site-header--overlay.is-scrolled) { background: rgba(255,255,255,.98); border-color: #e5e5e5; box-shadow: 0 8px 28px rgba(0,0,0,.09); position: fixed; }
+.homepage.homepage :global(.wordmark) { align-items: center; color: #111; display: inline-flex; font-weight: 800; gap: 16px; letter-spacing: -.05em; }
+.homepage.homepage :global(.wordmark .site-logo-image) { max-height: 48px; max-width: 168px; }
+.homepage.homepage :global(.header-brand-note) { border-left: 1px solid #d3d3d3; color: #777; font-size: 10px; font-style: italic; font-weight: 500; letter-spacing: 0; padding: 4px 0 4px 16px; white-space: nowrap; }
+.homepage.homepage :global(.site-header nav) { gap: clamp(16px, 2vw, 30px); }
+.homepage.homepage :global(.site-header nav > a), .homepage.homepage :global(.site-header summary) { color: #3e3e3e; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 30px 0 27px; position: relative; text-transform: uppercase; }
+.homepage.homepage :global(.site-header nav > a::after) { background: var(--home-accent); bottom: 18px; content: ''; height: 2px; left: 0; position: absolute; transform: scaleX(0); transform-origin: left; transition: transform .2s ease; width: 100%; }
+.homepage.homepage :global(.site-header nav > a:hover), .homepage.homepage :global(.site-header summary:hover) { color: var(--home-accent); }
+.homepage.homepage :global(.site-header nav > a:hover::after) { transform: scaleX(1); }
+.homepage.homepage :global(.site-header .header-cta) { background: #161616; border: 1px solid #161616; border-radius: 999px; color: #fff; font-size: 11px; font-weight: 700; letter-spacing: .08em; padding: 13px 20px; text-transform: uppercase; }
+.homepage.homepage :global(.site-header .header-cta:hover) { background: var(--home-accent); border-color: var(--home-accent); transform: translateY(-1px); }
 .homepage.homepage :global(.header-cta:hover) { background: var(--home-accent); border-color: var(--home-accent); }
-.homepage.homepage :global(.hero) { display: block; position: relative; min-height: 0; padding: 76px 0 32px; background-image: linear-gradient(90deg, #101c16c7 0%, #101c1670 47%, #101c1612 100%), url('/images/kingdom-hero-v1.png'); background-position: center; background-size: cover; }
-.homepage.homepage :global(.hero > .content-shell) { max-width: none; }
-.homepage.homepage :global(.hero .eyebrow) { color: #fff; font-size: 10px; letter-spacing: .2em; margin: 0 0 24px; }
+.homepage.homepage :global(.site-header.site-header--overlay .wordmark) { color: #fff; }
+.homepage.homepage :global(.site-header.site-header--overlay .site-logo-image) { filter: none; mix-blend-mode: screen; }
+.homepage.homepage :global(.site-header.site-header--overlay .header-brand-note) { border-color: rgba(255,255,255,.4); color: rgba(255,255,255,.84); }
+.homepage.homepage :global(.site-header.site-header--overlay nav > a), .homepage.homepage :global(.site-header.site-header--overlay summary) { color: #fff; }
+.homepage.homepage :global(.site-header.site-header--overlay nav > a:hover), .homepage.homepage :global(.site-header.site-header--overlay summary:hover) { color: #fff; }
+.homepage.homepage :global(.site-header.site-header--overlay .header-cta) { background: transparent; border-color: rgba(255,255,255,.8); color: #fff; }
+.homepage.homepage :global(.site-header.site-header--overlay .header-cta:hover) { background: #fff; border-color: #fff; color: #161616; }
+.homepage.homepage :global(.site-header.site-header--overlay.is-scrolled .wordmark) { color: #111; }
+.homepage.homepage :global(.site-header.site-header--overlay.is-scrolled .site-logo-image) { filter: grayscale(1) invert(1); mix-blend-mode: multiply; }
+.homepage.homepage :global(.site-header.site-header--overlay.is-scrolled .header-brand-note) { border-color: #d3d3d3; color: #777; }
+.homepage.homepage :global(.site-header.site-header--overlay.is-scrolled nav > a), .homepage.homepage :global(.site-header.site-header--overlay.is-scrolled summary) { color: #3e3e3e; }
+.homepage.homepage :global(.site-header.site-header--overlay.is-scrolled nav > a:hover), .homepage.homepage :global(.site-header.site-header--overlay.is-scrolled summary:hover) { color: var(--home-accent); }
+.homepage.homepage :global(.site-header.site-header--overlay.is-scrolled .header-cta) { background: #161616; border-color: #161616; color: #fff; }
+.homepage.homepage :global(.hero) { display: grid; min-height: 720px; overflow: hidden; padding: clamp(168px, 15vw, 224px) 0 56px; place-items: end stretch; position: relative; background-image: linear-gradient(90deg, rgba(10,10,10,.94) 0%, rgba(10,10,10,.73) 37%, rgba(10,10,10,.12) 72%), url('/images/lwp-luxury-home-hero-v1.png'); background-position: center; background-size: cover; }
+.homepage.homepage :global(.hero::before) { border: 1px solid rgba(255,255,255,.16); border-radius: 999px; content: ''; height: min(60vw, 860px); position: absolute; right: -17vw; top: -21vw; width: min(60vw, 860px); }
+.homepage.homepage :global(.hero::after) { background: var(--home-accent); bottom: 0; content: ''; height: 7px; left: 0; position: absolute; width: min(30vw, 420px); }
+.homepage.homepage :global(.hero > .content-shell) { max-width: none; position: relative; z-index: 1; }
+.homepage.homepage :global(.hero .eyebrow) { align-items: center; color: #fff; display: flex; font-size: 10px; font-weight: 700; gap: 12px; letter-spacing: .22em; margin: 0 0 26px; }
+.homepage.homepage :global(.hero .eyebrow::before) { background: var(--home-accent); content: ''; height: 2px; width: 30px; }
 .homepage.homepage :global(.hero .eyebrow::after) { display: none; }
-.homepage.homepage :global(.hero h1) { font-family: Georgia, 'Times New Roman', serif; font-size: clamp(44px, 5.5vw, 78px); font-weight: 400; line-height: 1.06; letter-spacing: -.045em; margin: 0; max-width: 750px; text-wrap: balance; }
-.homepage.homepage :global(.hero p:not(.eyebrow)) { font-family: inherit; font-size: 15px; line-height: 1.7; color: #ffffffd9; margin: 24px 0 44px; max-width: 430px; }
+.homepage.homepage :global(.hero h1) { font-family: Arial, Helvetica, sans-serif; font-size: clamp(58px, 8vw, 124px); font-weight: 800; line-height: .9; letter-spacing: -.085em; margin: 0; max-width: 890px; text-transform: uppercase; text-wrap: balance; }
+.homepage.homepage :global(.hero p:not(.eyebrow)) { font-family: inherit; font-size: 17px; line-height: 1.65; color: #ffffffd9; margin: 32px 0 48px; max-width: 470px; }
 .homepage.homepage :global(.featured-properties-section) { padding: 76px 0 80px; }
 .homepage.homepage :global(.featured-properties-header) { margin-bottom: 28px; }
 .homepage.homepage :global(.featured-properties-header h2),
@@ -29,6 +58,19 @@
 .homepage.homepage :global(.featured-property-region) { font-size: 12px; margin-top: 5px; color: #72796f; }
 .homepage.homepage :global(.featured-property-toggle button) { white-space: nowrap; }
 .homepage.homepage :global(.featured-view-all) { font-size: 12px; color: #454f42; }
+.homepage.homepage :global(.lwp-proof-row) { background: #fff; display: grid; gap: clamp(42px, 8vw, 128px); grid-template-columns: minmax(250px, .84fr) minmax(0, 1.16fr); padding: clamp(68px, 9vw, 132px) max(48px, calc((100vw - 1240px) / 2)); }
+.homepage.homepage :global(.lwp-proof-statement) { align-self: start; }
+.homepage.homepage :global(.lwp-proof-statement .eyebrow) { color: #6d6d69; font-size: 10px; font-weight: 700; letter-spacing: .17em; margin: 0 0 25px; }
+.homepage.homepage :global(.lwp-proof-statement h2) { color: #161616; font-size: clamp(42px, 4.5vw, 70px); font-weight: 700; letter-spacing: -.07em; line-height: .93; margin: 0; max-width: 450px; text-wrap: balance; }
+.homepage.homepage :global(.lwp-proof-statement > span) { background: var(--home-accent); display: block; height: 3px; margin-top: 38px; width: 48px; }
+.homepage.homepage :global(.lwp-proof-detail) { max-width: 650px; padding-top: 38px; }
+.homepage.homepage :global(.lwp-proof-detail > p) { color: #52524e; font-size: clamp(16px, 1.45vw, 20px); line-height: 1.55; margin: 0; max-width: 635px; }
+.homepage.homepage :global(.lwp-proof-metrics) { border-top: 1px solid #e2e1dd; display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); margin-top: 45px; padding-top: 25px; }
+.homepage.homepage :global(.lwp-proof-metrics > div) { display: grid; gap: 8px; }
+.homepage.homepage :global(.lwp-proof-metrics strong) { color: var(--home-accent); font-size: clamp(37px, 4vw, 58px); font-weight: 800; letter-spacing: -.075em; line-height: .8; }
+.homepage.homepage :global(.lwp-proof-metrics span) { color: #20201e; font-size: 11px; font-weight: 700; line-height: 1.45; text-transform: uppercase; }
+.homepage.homepage :global(.lwp-proof-detail > a) { color: var(--home-accent); display: inline-block; font-size: 13px; font-weight: 700; margin-top: 34px; padding-bottom: 5px; }
+.homepage.homepage :global(.lwp-proof-detail > a:hover) { border-bottom: 1px solid currentColor; }
 .homepage.homepage :global(.editorial-block) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; padding: 0; min-height: 480px; background: var(--primary); color: #fff; }
 .homepage.homepage :global(.editorial-block > div) { box-sizing: border-box; justify-self: stretch; align-self: center; width: 100%; max-width: none; padding: 64px clamp(32px, 5vw, 80px) 64px max(48px, calc((100vw - 1240px) / 2)); }
 .homepage.homepage :global(.editorial-block .eyebrow) { color: #cdd5c8; font-size: 10px; letter-spacing: .18em; margin-bottom: 28px; }
@@ -78,11 +120,19 @@
 }
 @media (max-width: 760px) {
 .homepage.homepage { --content: calc(100% - 40px); }
-.homepage.homepage :global(.hero) { padding: 48px 0 24px; background-position: 60% center; }
+.homepage.homepage :global(.header-brand-note) { display: none; }
+.homepage.homepage :global(.site-header.site-header--overlay .mobile-menu .mobile-menu-toggle span) { background: #fff; }
+.homepage.homepage :global(.site-header.site-header--overlay.is-scrolled .mobile-menu .mobile-menu-toggle span) { background: #111; }
+.homepage.homepage :global(.hero) { padding: 130px 0 24px; background-position: 60% center; }
 .homepage.homepage :global(.hero h1) { font-size: clamp(40px, 7.8vw, 58px); max-width: 570px; }
 .homepage.homepage :global(.hero p:not(.eyebrow)) { font-size: 14px; margin: 22px 0 32px; }
 .homepage.homepage :global(.featured-carousel) { grid-auto-columns: 82%; gap: 16px; }
 .homepage.homepage :global(.featured-properties-section), .homepage.homepage :global(.latest-blog-section) { padding: 52px 0; }
+.homepage.homepage :global(.lwp-proof-row) { gap: 32px; grid-template-columns: 1fr; padding: 62px 24px; }
+.homepage.homepage :global(.lwp-proof-detail) { padding-top: 0; }
+.homepage.homepage :global(.lwp-proof-statement h2) { font-size: clamp(40px, 10.5vw, 58px); }
+.homepage.homepage :global(.lwp-proof-metrics) { gap: 16px; margin-top: 34px; }
+.homepage.homepage :global(.lwp-proof-metrics strong) { font-size: clamp(33px, 9vw, 46px); }
 .homepage.homepage :global(.editorial-block) { grid-template-columns: 1fr; min-height: 0; }
 .homepage.homepage :global(.editorial-block > div) { padding: 48px 24px; }
 .homepage.homepage :global(.editorial-block h2) { max-width: 450px; font-size: 40px; }
