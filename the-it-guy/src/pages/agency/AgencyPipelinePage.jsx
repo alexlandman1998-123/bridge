@@ -26580,17 +26580,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       portalData: {},
     })
     const signers = Array.isArray(model?.signers) ? model.signers : []
+    const leadContactName = normalizeText(
+      [
+        selectedLeadContact?.firstName || selectedLead?.sellerFirstName || selectedLead?.firstName,
+        selectedLeadContact?.lastName || selectedLead?.sellerSurname || selectedLead?.lastName,
+      ].filter(Boolean).join(' ') ||
+      formData.sellerName || formData.fullName || formData.name || formData.primaryContact?.name || selectedLeadDisplayName || selectedLead?.sellerName,
+    )
+    const leadContactEmail = normalizeText(
+      selectedLeadContact?.email || formData.sellerEmail || formData.seller_email || formData.email || formData.primaryContact?.email || selectedLead?.sellerEmail || selectedLead?.email,
+    ).toLowerCase()
+    const isPlaceholderName = (value = '') => /^seller(?:\s|_|-)?1$/i.test(normalizeText(value))
     const recipients = signers
-      .map((signer) => ({
-        name: normalizeText(signer?.name),
-        email: normalizeText(signer?.email).toLowerCase(),
-        role: normalizeText(signer?.role) || 'Seller',
-      }))
+      .map((signer, index) => {
+        const isPrimarySeller = index === 0 || ['seller', 'seller_1', 'primary_seller', 'primary'].includes(normalizeText(signer?.role).toLowerCase())
+        const signerName = normalizeText(signer?.name)
+        const signerEmail = normalizeText(signer?.email).toLowerCase()
+        return {
+          name: isPrimarySeller && (!signerName || isPlaceholderName(signerName)) ? leadContactName : signerName,
+          email: isPrimarySeller && !signerEmail ? leadContactEmail : signerEmail,
+          role: normalizeText(signer?.role) || 'Seller',
+        }
+      })
       .filter((signer) => signer.name || signer.email)
     if (recipients.length) return recipients
     return [{
-      name: normalizeText(selectedLeadDisplayName || selectedLeadContact?.name || selectedLead?.sellerName || 'Seller'),
-      email: normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase(),
+      name: leadContactName || 'Seller',
+      email: leadContactEmail,
       role: 'Seller',
     }]
   }
@@ -26599,7 +26615,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const formData = getLeadSellerOnboardingFormData(selectedLead)
     setSellerSigningPackPrimaryEmail(getSellerLeadSigningRecipients()[0]?.email || '')
     setSellerSigningPackTerms({
-      mandateType: normalizeText(formData.mandateType || selectedLeadLinkedListing?.mandateType) || 'sole',
+      mandateType: normalizeText(formData.mandateType || selectedLeadLinkedListing?.mandateType),
       commissionBasis: normalizeText(formData.commissionBasis || formData.commission_basis) === 'fixed' ? 'fixed' : 'percentage',
       commissionPercentage: normalizeText(formData.commissionPercentage || formData.commission_percent || formData.mandateCommissionPercentage),
       commissionAmount: normalizeText(formData.commissionAmount || formData.commission_amount),
@@ -26621,12 +26637,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const listingId = normalizeText(selectedLeadLinkedListingId)
     if (!listingId || sellerSigningPackSaving) return
     const recipients = getSellerLeadSigningRecipients()
-    if (!recipients.length || recipients.some((signer) => !signer.name || !isValidEmail(signer.email))) {
-      setError('Every required seller signer needs a full name and valid email before the FICA and mandate pack can be sent.')
+    const incompleteRecipients = recipients.map((signer, index) => {
+      const missing = [!signer.name && 'full name', !isValidEmail(signer.email) && 'valid email'].filter(Boolean)
+      return missing.length ? `${signer.name || `Signer ${index + 1}`} — missing ${missing.join(' and ')}` : ''
+    }).filter(Boolean)
+    if (!recipients.length || incompleteRecipients.length) {
+      setError(`Complete required signer details before sending: ${incompleteRecipients.join('; ') || 'at least one signer is required'}.`)
       return
     }
     const percentage = Number(sellerSigningPackTerms.commissionPercentage)
     const amount = Number(sellerSigningPackTerms.commissionAmount)
+    if (!normalizeText(sellerSigningPackTerms.mandateType)) {
+      setError('Choose the mandate type before sending.')
+      return
+    }
     if (sellerSigningPackTerms.commissionBasis === 'fixed' ? !(amount > 0) : !(percentage > 0)) {
       setError(sellerSigningPackTerms.commissionBasis === 'fixed' ? 'Enter a fixed Rand commission amount before sending.' : 'Enter a commission percentage before sending.')
       return
@@ -40311,9 +40335,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </fieldset>
           <fieldset className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2">
             <legend className="px-1 text-sm font-semibold text-[#243d56]">Mandate commercial terms</legend>
-            <label className="grid gap-1.5 font-semibold text-[#243d56]">Mandate type
+            <label className="grid gap-1.5 font-semibold text-[#243d56]">Mandate type <span className="font-normal text-[#607387]">Pre-filled if it was captured earlier; otherwise choose it now.</span>
               <Field as="select" value={sellerSigningPackTerms.mandateType} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, mandateType: event.target.value }))}>
-                <option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option>
+                <option value="">Choose mandate type</option><option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option>
               </Field>
             </label>
             <fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission basis</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-lead-commission-basis" checked={sellerSigningPackTerms.commissionBasis === 'percentage'} onChange={() => setSellerSigningPackTerms((previous) => ({ ...previous, commissionBasis: 'percentage' }))} />Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-lead-commission-basis" checked={sellerSigningPackTerms.commissionBasis === 'fixed'} onChange={() => setSellerSigningPackTerms((previous) => ({ ...previous, commissionBasis: 'fixed' }))} />Fixed Rand amount</label></div></fieldset>
@@ -40326,7 +40350,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           </fieldset>
           <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
             <p className="font-semibold text-[#243d56]">Required signer{getSellerLeadSigningRecipients().length === 1 ? '' : 's'}</p>
-            <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer) => <div key={`${signer.email}:${signer.role}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'} <span className="font-normal text-[#607387]">· {signer.role}</span></span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>
+            <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer, index) => <div key={`${signer.email}:${signer.role}:${index}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'} <span className="font-normal text-[#607387]">· Required signer</span></span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>
             {getSellerLeadSigningRecipients().length > 1 ? <label className="mt-4 grid gap-1.5 font-semibold text-[#243d56]">Primary document contact<span className="font-normal text-[#607387]">This person receives the shared FICA details first; every required seller still receives and signs their own final link.</span><Field as="select" value={sellerSigningPackPrimaryEmail} onChange={(event) => setSellerSigningPackPrimaryEmail(event.target.value)}>{getSellerLeadSigningRecipients().map((signer) => <option key={signer.email} value={signer.email}>{signer.name || signer.email} · {signer.email}</option>)}</Field></label> : null}
           </section>
         </div>
