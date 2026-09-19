@@ -28,15 +28,34 @@ test('seller journey review opens the onboarding review modal instead of only sc
 test('review handoff preserves both digital and physical signing choices', () => {
   assert.match(pipelineSource, /sellerOnboardingReviewRoute === 'digital_pack'/)
   assert.match(pipelineSource, /sellerOnboardingReviewRoute === 'manual_upload'/)
-  assert.match(pipelineSource, /sellerDocumentAction: sellerOnboardingReviewRoute === 'manual_upload' \? 'manual_upload' : 'digital_pack'/)
-  assert.match(pipelineSource, /Approve & send mandate/)
+  assert.match(pipelineSource, /Open FICA \+ mandate signing pack/)
+  assert.match(pipelineSource, /Open physical-signing pack/)
+  assert.match(pipelineSource, /function openSellerLeadSigningPack\(\)/)
+  assert.match(pipelineSource, /openSellerLeadSigningPack\(\)/)
 })
 
-test('listing signing workflow receives the handoff and opens the established FICA plus mandate pack', () => {
-  assert.match(listingSource, /params\.get\('sellerDocumentAction'\)/)
-  assert.match(listingSource, /openSellerDocumentSend\(\{ fica: true, mandate: true \}\)/)
-  assert.match(listingSource, /setSellerMandateSignatureRoute\(requestedAction\)/)
-  assert.match(listingSource, /params\.delete\('sellerDocumentAction'\)/)
+test('opening the mandate pack does not create a market listing', () => {
+  const action = pipelineSource.match(/if \(id === 'generate_mandate'\) \{([\s\S]*?)\n    \}/)
+  assert.ok(action, 'generate mandate action must exist')
+  assert.doesNotMatch(action[1], /handleCreateListingFromSellerLead/)
+  assert.match(action[1], /market listing is not created by preparing a mandate/)
+
+  const handoff = pipelineSource.match(/function continueSellerOnboardingReview\(\) \{([\s\S]*?)\n  \}/)
+  assert.ok(handoff, 'seller onboarding review handoff must exist')
+  assert.doesNotMatch(handoff[1], /createPrivateListing|handleCreateListingFromSellerLead/)
+  assert.doesNotMatch(handoff[1], /navigate\(/)
+})
+
+test('seller lead owns the signing-pack send action', () => {
+  assert.match(pipelineSource, /async function sendSellerLeadSigningPack\(\)/)
+  assert.match(pipelineSource, /invokeEdgeFunction\('listing-mandate-signing'/)
+  assert.match(pipelineSource, /selectedDocuments: \['fica', 'mandate'\]/)
+  assert.match(pipelineSource, /The signing links were prepared but email delivery was not confirmed/)
+  assert.match(pipelineSource, /createSellerOnboardingFormalPackApproval/)
+  assert.match(pipelineSource, /createSellerOnboardingFormalPackDispatch/)
+  assert.match(pipelineSource, /createSellerOnboardingManualSigningPack/)
+  assert.match(pipelineSource, /Primary document contact/)
+  assert.doesNotMatch(pipelineSource.match(/function continueSellerOnboardingReview\(\) \{([\s\S]*?)\n  \}/)?.[1] || '', /sellerDocumentAction/)
 })
 
 test('review-handoff regression test is exposed as a package script', () => {

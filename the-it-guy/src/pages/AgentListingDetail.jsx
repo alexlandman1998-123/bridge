@@ -6573,7 +6573,7 @@ function AgentListingDetail() {
     setSellerDocumentReplacementGroupId(activeGroup)
     setSellerDocumentReplacementReason('')
     setSellerMandateSignatureRoute('digital_pack')
-    setSellerDocumentSendStep(1)
+    setSellerDocumentSendStep(2)
     setSellerDocumentSendOpen(true)
   }
 
@@ -6647,31 +6647,6 @@ function AgentListingDetail() {
     } finally {
       setSellerOnboardingReviewSaving(false)
     }
-  }
-
-  function continueSellerDocumentSend() {
-    const onboardingReview = readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review)
-    if (onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.approved) {
-      setDetailError('Review and approve the submitted seller onboarding before preparing the FICA and mandate signing pack.')
-      return
-    }
-    const { documents } = getSellerSigningDocumentOptions()
-    const formalSelection = validateSellerOnboardingFormalSigningSelection(sellerDocumentSendSelection)
-    if (!formalSelection.valid) {
-      setDetailError(`Include ${formalSelection.missing.join(' and ')} in the post-review signing pack.`)
-      return
-    }
-    if (!documents.some((document) => sellerDocumentSendSelection[document.key])) {
-      setDetailError('Choose at least one document for this secure signing pack.')
-      return
-    }
-    const incompleteSelection = documents.find((document) => sellerDocumentSendSelection[document.key] && !document.ready)
-    if (incompleteSelection) {
-      setDetailError(incompleteSelection.missing[0] || `${incompleteSelection.title} is not ready yet.`)
-      return
-    }
-    setDetailError('')
-    setSellerDocumentSendStep(2)
   }
 
   async function loadSellerDocumentSigningSessions({ silent = false } = {}) {
@@ -6768,9 +6743,19 @@ function AgentListingDetail() {
       }
       const existingForm = getListingSellerFormData(listingRecord)
       const onboardingReview = readSellerOnboardingReview(existingForm.sellerOnboardingReview || existingForm.seller_onboarding_review)
+      if (onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
+        throw new Error('The seller onboarding is awaiting correction. Review the resubmitted onboarding before preparing another signing pack.')
+      }
+      const packReview = onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved
+        ? onboardingReview
+        : recordSellerOnboardingReview({
+            existing: existingForm.sellerOnboardingReview || existingForm.seller_onboarding_review,
+            status: SELLER_ONBOARDING_REVIEW_STATUS.approved,
+            actor: String(listingActor?.id || profile?.id || ''),
+          })
       const formalPackApproval = createSellerOnboardingFormalPackApproval({
         existing: existingForm.sellerOnboardingFormalPackApproval || existingForm.seller_onboarding_formal_pack_approval,
-        reviewApproved: onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved,
+        reviewApproved: packReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved,
         selectedDocuments: selected,
         commission: {
           basis: commissionBasis,
@@ -6793,6 +6778,8 @@ function AgentListingDetail() {
         : null
       const nextFormData = {
         ...existingForm,
+        sellerOnboardingReview: packReview,
+        seller_onboarding_review: packReview,
         sellerOnboardingFormalPackApproval: formalPackApproval,
         seller_onboarding_formal_pack_approval: formalPackApproval,
         sellerDocumentSendSelection: sellerDocumentSendSelection,
@@ -11980,29 +11967,28 @@ function AgentListingDetail() {
       <Modal
         open={sellerDocumentSendOpen}
         onClose={sellerDocumentSendSaving ? undefined : () => setSellerDocumentSendOpen(false)}
-        title="Review onboarding and prepare signing pack"
-        subtitle="The seller's submitted onboarding facts are pre-filled into the pack. Signers review and confirm them; they do not re-enter them."
+        title="Review and send FICA + mandate"
+        subtitle="Check the submitted seller details, set the commercial terms, then send digitally or prepare physical copies."
         className="max-w-xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => setSellerDocumentSendOpen(false)}>Cancel</Button>
-            {sellerDocumentSendStep === 2 ? <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => setSellerDocumentSendStep(1)}>Back</Button> : null}
-            <Button type="button" disabled={sellerDocumentSendSaving} onClick={() => sellerDocumentSendStep === 1 ? continueSellerDocumentSend() : void saveSellerDocumentSendSelection()}>
+            <Button type="button" disabled={sellerDocumentSendSaving} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {sellerDocumentSendSaving ? 'Sending...' : sellerDocumentSendStep === 1 ? 'Continue' : 'Send secure link'}
+              {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and send signing pack'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-4">
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Choose the formal documents to sign. Mandate-only is the default.' : 'Confirm the seller, mandate and signing details before sending.'}</div>
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">This action records your approval of the submitted onboarding and freezes the FICA declaration and mandate using the terms below.</div>
           {(() => {
             const onboardingReview = readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review)
             const approved = onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved
             return <section className={`rounded-[16px] border p-4 text-sm ${approved ? 'border-[#c9e8d5] bg-[#f0faf3]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
-              <p className="font-semibold text-[#243d56]">Seller onboarding review</p>
-              <p className="mt-1 leading-5 text-[#607387]">{approved ? 'Reviewed and approved. The frozen onboarding facts are ready for the formal signing pack.' : onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? `Correction requested: ${onboardingReview.reason}` : 'Review the submitted ownership, FICA, property and disclosure facts before preparing the next signing step.'}</p>
-              {!approved ? <div className="mt-3 grid gap-3"><label className="grid gap-1.5 font-semibold text-[#243d56]">Correction reason <textarea value={sellerOnboardingCorrectionReason} onChange={(event) => setSellerOnboardingCorrectionReason(event.target.value)} rows={2} placeholder="Only complete this if returning the onboarding to the seller." className="rounded-xl border border-[#dce6f2] bg-white px-3 py-2 font-normal" /></label><div className="flex flex-wrap gap-2"><Button type="button" size="sm" disabled={sellerOnboardingReviewSaving} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.approved)}>Approve onboarding</Button><Button type="button" size="sm" variant="secondary" disabled={sellerOnboardingReviewSaving || !sellerOnboardingCorrectionReason.trim()} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button></div></div> : null}
+              <p className="font-semibold text-[#243d56]">Submitted onboarding</p>
+              <p className="mt-1 leading-5 text-[#607387]">{approved ? 'Already approved. The submitted facts will be used as-is.' : onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? `Correction requested: ${onboardingReview.reason}` : 'Review the submitted ownership, FICA, property and disclosure details here. The final action below approves them and prepares the signing documents.'}</p>
+              {!approved && onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? <div className="mt-3 grid gap-3"><label className="grid gap-1.5 font-semibold text-[#243d56]">Need a correction instead? <textarea value={sellerOnboardingCorrectionReason} onChange={(event) => setSellerOnboardingCorrectionReason(event.target.value)} rows={2} placeholder="Explain what the seller needs to correct." className="rounded-xl border border-[#dce6f2] bg-white px-3 py-2 font-normal" /></label><div><Button type="button" size="sm" variant="secondary" disabled={sellerOnboardingReviewSaving || !sellerOnboardingCorrectionReason.trim()} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button></div></div> : null}
             </section>
           })()}
           {(() => {
@@ -12019,6 +12005,9 @@ function AgentListingDetail() {
               <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className={`mt-1 block text-sm leading-5 ${document.ready ? 'text-[#607387]' : 'text-[#7a5a17]'}`}>{document.ready ? `${document.copy} The seller will review the onboarding information already captured.` : document.missing[0]}</span></span>
             </label>
           ))}</div> : <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]">No digital link will be sent. Once you confirm this step, Documents will contain printable FICA and mandate copies. Download them for wet-ink signing, then upload the signed FICA declaration and mandate separately.</div>}</> : <div className="space-y-4">
+          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">How should the sellers sign?</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route-summary" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send a digital signing pack</span><span className="mt-1 block text-[#607387]">The seller receives FICA and mandate documents by secure signing link.</span></span></label><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route-summary" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Prepare physical copies</span><span className="mt-1 block text-[#607387]">Download printable FICA and mandate copies, then upload the wet-ink signed documents.</span></span></label></fieldset>
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-5 text-[#47637d]"><p className="font-semibold text-[#243d56]">Documents included</p><p className="mt-1">Seller FICA Declaration and Seller Mandate are both required for this signing stage.</p></div>
+          <fieldset className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2"><legend className="px-1 font-semibold text-[#243d56]">Mandate commercial terms</legend><div><p className="font-semibold text-[#243d56]">Mandate type</p><Field as="select" value={marketingDraft.mandateType || listingRecord?.mandateType || 'sole'} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, mandateType: event.target.value }))}><option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option></Field></div><fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission basis</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis-summary" checked={commissionDraft.basis !== 'fixed'} onChange={() => updateCommissionDraft('basis', 'percentage')} /> Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis-summary" checked={commissionDraft.basis === 'fixed'} onChange={() => updateCommissionDraft('basis', 'fixed')} /> Fixed Rand amount</label></div></fieldset><label className="grid gap-1.5 font-semibold text-[#243d56]">{commissionDraft.basis === 'fixed' ? 'Fixed commission amount (R)' : 'Commission percentage'}<Field type="number" min="0" step="0.01" value={commissionDraft.basis === 'fixed' ? commissionDraft.amount : commissionDraft.percentage} onChange={(event) => updateCommissionDraft(commissionDraft.basis === 'fixed' ? 'amount' : 'percentage', event.target.value)} placeholder={commissionDraft.basis === 'fixed' ? '50000' : '5'} /></label><label className="grid gap-1.5 font-semibold text-[#243d56]">VAT treatment<Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}><option value="">Select VAT treatment</option><option value="no">No VAT</option><option value="exclusive">VAT exclusive</option><option value="inclusive">VAT inclusive</option></Field></label></fieldset>
           <div className="grid gap-3 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-sm sm:grid-cols-2">
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Seller</span><span className="font-semibold text-[#243d56]">{resolveSellerNameFromListing(listingRecord) || 'Not captured'}</span></div>
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Email</span><span className="break-all font-semibold text-[#243d56]">{resolveSellerEmailFromListing(listingRecord) || 'Not captured'}</span></div>
@@ -12039,7 +12028,6 @@ function AgentListingDetail() {
             return <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm text-[#7a5a17]"><p className="font-semibold">Replace an active signing pack</p><p className="mt-1 leading-5">A replacement revokes every open link in that pack and preserves the original as audit evidence. It cannot alter a fully signed pack.</p><label className="mt-3 grid gap-1.5 font-semibold">Pack to replace<Field as="select" value={sellerDocumentReplacementGroupId} onChange={(event) => setSellerDocumentReplacementGroupId(event.target.value)}><option value="">Send a separate new pack</option>{activeGroups.map((session) => <option key={session.signing_group_id} value={session.signing_group_id}>Sent {session.created_at ? new Date(session.created_at).toLocaleDateString('en-ZA') : 'previously'} · {session.signer_name || session.signer_email}</option>)}</Field></label>{sellerDocumentReplacementGroupId ? <label className="mt-3 grid gap-1.5 font-semibold">Reason for replacement<textarea value={sellerDocumentReplacementReason} onChange={(event) => setSellerDocumentReplacementReason(event.target.value)} rows={3} placeholder="For example: Seller corrected the asking price." className="rounded-xl border border-[#e4c77f] bg-white px-3 py-2 font-normal text-[#243d56]" /></label> : null}</div>
           })()}
           {sellerDocumentSendSelection.fica ? <div className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><p className="font-semibold text-[#243d56]">FICA confirmation</p><p className="mt-1 text-[#607387]">{formatStatusLabel(listingRecord?.sellerType || getListingSellerFormData(listingRecord)?.sellerType || 'seller')} seller · confirm the listed seller/contact details are correct before sending.</p></div> : null}
-          {sellerDocumentSendSelection.mandate ? <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2"><div><p className="font-semibold text-[#243d56]">Mandate type</p><Field as="select" value={marketingDraft.mandateType || listingRecord?.mandateType || 'sole'} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, mandateType: event.target.value }))}><option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option></Field></div><fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission type</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis" checked={commissionDraft.basis !== 'fixed'} onChange={() => updateCommissionDraft('basis', 'percentage')} /> Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis" checked={commissionDraft.basis === 'fixed'} onChange={() => updateCommissionDraft('basis', 'fixed')} /> Fixed Rand amount</label></div></fieldset><label className="grid gap-1.5 font-semibold text-[#243d56]">{commissionDraft.basis === 'fixed' ? 'Fixed commission amount (R)' : 'Commission percentage'}<Field type="number" min="0" step="0.01" value={commissionDraft.basis === 'fixed' ? commissionDraft.amount : commissionDraft.percentage} onChange={(event) => updateCommissionDraft(commissionDraft.basis === 'fixed' ? 'amount' : 'percentage', event.target.value)} placeholder={commissionDraft.basis === 'fixed' ? '50000' : '5'} /></label><label className="grid gap-1.5 font-semibold text-[#243d56]">VAT treatment<Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}><option value="">Select VAT treatment</option><option value="no">No VAT</option><option value="exclusive">VAT exclusive</option><option value="inclusive">VAT inclusive</option></Field></label></div> : null}
           {sellerDocumentSendSelection.mandate ? <label className="grid gap-2 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Proposed conveyancing attorney <span className="font-normal text-[#607387]">(optional — included in the mandate for seller approval)</span><Field as="select" value={preferredTransferAttorneyOptionId} disabled={preferredTransferAttorneyLoading} onChange={(event) => setPreferredTransferAttorneyOptionId(event.target.value)}><option value="">Do not include an attorney</option>{preferredTransferAttorneyOptions.map((partner) => <option key={partner.id} value={partner.id}>{partner.companyName || 'Connected transfer attorney'}</option>)}</Field>{preferredTransferAttorneyLoading ? <span className="text-xs font-normal text-[#607387]">Loading connected attorney partners…</span> : null}</label> : null}
           </div>}
         </div>
@@ -15876,7 +15864,7 @@ function AgentListingDetail() {
                     </span>
                     <Button type="button" size="sm" onClick={openSellerDocumentSend}>
                       <Send size={14} />
-                      Send seller documents
+                      Review and send FICA + mandate
                     </Button>
                   </div>
                 </div>

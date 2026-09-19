@@ -235,8 +235,13 @@ try {
     assert.match(privateListingServiceSource, /updatePrivateListingRequirementStatus\(matchedRequirement\.id, 'uploaded'\)/, 'seller portal uploads should mark matched requirements uploaded')
     assert.match(
       sharedWorkspaceSource,
-      /if \(id === 'generate_mandate'\)[\s\S]*handleLeadWorkspaceTabSelection\('documents'\)[\s\S]*handleCreateListingFromSellerLead/,
-      'Generating a mandate from a seller lead must create the linked listing draft first when one does not exist.',
+      /if \(id === 'generate_mandate'\)[\s\S]*market listing is not created by preparing a mandate/,
+      'Generating a mandate from a seller lead must not create a market listing as a side effect.',
+    )
+    assert.doesNotMatch(
+      sharedWorkspaceSource.match(/if \(id === 'generate_mandate'\) \{([\s\S]*?)\n    \}/)?.[1] || '',
+      /handleCreateListingFromSellerLead/,
+      'The mandate action must remain on the seller-lead path when there is no linked intake record.',
     )
   } else {
   assert.ok(workspaceSource.includes("function isArchivedLead"), 'lead list should detect archived leads as lifecycle state')

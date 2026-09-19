@@ -118,6 +118,12 @@ import { resolveCanonicalDocumentRequestPresentation } from '../../services/docu
 import { projectSellerDocumentRowsForTaxonomyRollout } from '../../services/documents/sellerDocumentTaxonomyRolloutService'
 import { getSellerDocumentReleaseReadiness } from '../../services/sellerDocumentReleaseReadinessService'
 import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
+import { buildSellerCompliancePortalModel } from '../../core/documents/sellerCompliancePortalModel'
+import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts'
+import { createSellerOnboardingFormalPackApproval } from '../../core/documents/sellerOnboardingFormalPackApproval'
+import { createSellerOnboardingFormalPackDispatch } from '../../core/documents/sellerOnboardingFormalPackDispatch'
+import { createSellerOnboardingManualSigningPack } from '../../core/documents/sellerOnboardingManualSigningPack'
+import { SELLER_ONBOARDING_SIGNING_STAGES, createSellerOnboardingSigningLifecycle } from '../../core/documents/sellerOnboardingSigningLifecycle'
 import { getSellerProcessDefinition } from '../../services/sellerProcessDefinitionService'
 import {
   KINGSTONS_SELLER_PROCESS_ORGANISATION_IDS,
@@ -11850,6 +11856,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [mandateExecutionModalOpen, setMandateExecutionModalOpen] = useState(false)
   const [sellerOnboardingReviewModalOpen, setSellerOnboardingReviewModalOpen] = useState(false)
   const [sellerOnboardingReviewRoute, setSellerOnboardingReviewRoute] = useState('digital_pack')
+  const [sellerSigningPackModalOpen, setSellerSigningPackModalOpen] = useState(false)
+  const [sellerSigningPackSaving, setSellerSigningPackSaving] = useState(false)
+  const [sellerSigningPackPrimaryEmail, setSellerSigningPackPrimaryEmail] = useState('')
+  const [sellerSigningPackTerms, setSellerSigningPackTerms] = useState({
+    mandateType: 'sole',
+    commissionBasis: 'percentage',
+    commissionPercentage: '',
+    commissionAmount: '',
+    vatHandling: '',
+  })
   const [sellerDocumentTaxonomyRolloutControl, setSellerDocumentTaxonomyRolloutControl] = useState(null)
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [sellerProfileEditForm, setSellerProfileEditForm] = useState(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
@@ -26549,24 +26565,255 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function openSellerOnboardingReview() {
     if (!selectedLeadLinkedListingId) {
-      setError('Create or link a listing before preparing the seller FICA and mandate pack.')
+      setError('This seller lead does not yet have its onboarding intake record. Reload the lead and try again; do not create a market listing to send the signing pack.')
       return
     }
     setSellerOnboardingReviewRoute('digital_pack')
     setSellerOnboardingReviewModalOpen(true)
   }
 
+  function getSellerLeadSigningRecipients() {
+    const formData = getLeadSellerOnboardingFormData(selectedLead)
+    const model = buildSellerCompliancePortalModel({
+      formData,
+      listing: selectedLeadLinkedListing || {},
+      portalData: {},
+    })
+    const signers = Array.isArray(model?.signers) ? model.signers : []
+    const recipients = signers
+      .map((signer) => ({
+        name: normalizeText(signer?.name),
+        email: normalizeText(signer?.email).toLowerCase(),
+        role: normalizeText(signer?.role) || 'Seller',
+      }))
+      .filter((signer) => signer.name || signer.email)
+    if (recipients.length) return recipients
+    return [{
+      name: normalizeText(selectedLeadDisplayName || selectedLeadContact?.name || selectedLead?.sellerName || 'Seller'),
+      email: normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email).toLowerCase(),
+      role: 'Seller',
+    }]
+  }
+
+  function openSellerLeadSigningPack() {
+    const formData = getLeadSellerOnboardingFormData(selectedLead)
+    setSellerSigningPackPrimaryEmail(getSellerLeadSigningRecipients()[0]?.email || '')
+    setSellerSigningPackTerms({
+      mandateType: normalizeText(formData.mandateType || selectedLeadLinkedListing?.mandateType) || 'sole',
+      commissionBasis: normalizeText(formData.commissionBasis || formData.commission_basis) === 'fixed' ? 'fixed' : 'percentage',
+      commissionPercentage: normalizeText(formData.commissionPercentage || formData.commission_percent || formData.mandateCommissionPercentage),
+      commissionAmount: normalizeText(formData.commissionAmount || formData.commission_amount),
+      vatHandling: normalizeText(formData.vatHandling || formData.vat_handling),
+    })
+    setSellerSigningPackModalOpen(true)
+  }
+
   function continueSellerOnboardingReview() {
     if (!selectedLeadLinkedListingId) {
-      setError('Create or link a listing before preparing the seller FICA and mandate pack.')
+      setError('This seller lead does not yet have its onboarding intake record. Reload the lead and try again; do not create a market listing to send the signing pack.')
       return
     }
-    const params = new URLSearchParams({
-      tab: 'documents',
-      sellerDocumentAction: sellerOnboardingReviewRoute === 'manual_upload' ? 'manual_upload' : 'digital_pack',
-    })
     setSellerOnboardingReviewModalOpen(false)
-    navigate(`/agent/listings/${encodeURIComponent(selectedLeadLinkedListingId)}?${params.toString()}`)
+    openSellerLeadSigningPack()
+  }
+
+  async function sendSellerLeadSigningPack() {
+    const listingId = normalizeText(selectedLeadLinkedListingId)
+    if (!listingId || sellerSigningPackSaving) return
+    const recipients = getSellerLeadSigningRecipients()
+    if (!recipients.length || recipients.some((signer) => !signer.name || !isValidEmail(signer.email))) {
+      setError('Every required seller signer needs a full name and valid email before the FICA and mandate pack can be sent.')
+      return
+    }
+    const percentage = Number(sellerSigningPackTerms.commissionPercentage)
+    const amount = Number(sellerSigningPackTerms.commissionAmount)
+    if (sellerSigningPackTerms.commissionBasis === 'fixed' ? !(amount > 0) : !(percentage > 0)) {
+      setError(sellerSigningPackTerms.commissionBasis === 'fixed' ? 'Enter a fixed Rand commission amount before sending.' : 'Enter a commission percentage before sending.')
+      return
+    }
+    if (!normalizeText(sellerSigningPackTerms.vatHandling)) {
+      setError('Select the VAT treatment before sending the mandate.')
+      return
+    }
+
+    const primaryDocumentContactEmail = recipients.some((signer) => signer.email === sellerSigningPackPrimaryEmail)
+      ? sellerSigningPackPrimaryEmail
+      : recipients[0].email
+    const formData = getLeadSellerOnboardingFormData(selectedLead)
+    const propertyAddress = normalizeText(
+      selectedLeadLinkedListing?.propertyAddress || selectedLeadLinkedListing?.formattedAddress || selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest,
+    )
+    const now = new Date().toISOString()
+    const commission = {
+      basis: sellerSigningPackTerms.commissionBasis,
+      percentage: sellerSigningPackTerms.commissionBasis === 'percentage' ? String(sellerSigningPackTerms.commissionPercentage) : '',
+      amount: sellerSigningPackTerms.commissionBasis === 'fixed' ? String(sellerSigningPackTerms.commissionAmount) : '',
+      vatHandling: sellerSigningPackTerms.vatHandling,
+    }
+    const postOnboardingDrafts = formData.sellerPostOnboardingDrafts || formData.seller_post_onboarding_drafts || buildSellerPostOnboardingDrafts({
+      formData,
+      listing: selectedLeadLinkedListing || {},
+      branding: selectedLeadLinkedListing?.branding || {},
+      generatedAt: now,
+    })
+    const formalPackApproval = createSellerOnboardingFormalPackApproval({
+      existing: formData.sellerOnboardingFormalPackApproval || formData.seller_onboarding_formal_pack_approval,
+      reviewApproved: true,
+      selectedDocuments: ['fica', 'mandate'],
+      commission,
+      signingRoute: sellerOnboardingReviewRoute,
+      actor: normalizeText(currentAgent?.id),
+      at: now,
+    })
+    const signingPack = {
+      seller: { name: recipients[0].name },
+      property: { address: propertyAddress },
+      signers: recipients,
+      mandate: { propertyAddress, mandateType: sellerSigningPackTerms.mandateType, commissionBasis: commission.basis, commissionPercentage: commission.percentage, commissionAmount: commission.amount, vatHandling: commission.vatHandling },
+      branding: selectedLeadLinkedListing?.branding || {},
+    }
+    const manualSigningPack = sellerOnboardingReviewRoute === 'manual_upload'
+      ? createSellerOnboardingManualSigningPack({
+          existing: formData.sellerOnboardingManualSigningPack || formData.seller_onboarding_manual_signing_pack,
+          formalPackApproval,
+          signingPack,
+          postOnboardingDrafts,
+          actor: normalizeText(currentAgent?.id),
+          generatedAt: now,
+        })
+      : null
+    const nextFormData = {
+      ...formData,
+      mandateType: sellerSigningPackTerms.mandateType,
+      commissionBasis: commission.basis,
+      commission_basis: commission.basis,
+      commissionPercentage: commission.percentage,
+      commission_percent: commission.percentage,
+      commissionAmount: commission.amount,
+      commission_amount: commission.amount,
+      vatHandling: commission.vatHandling,
+      mandateSignatureRoute: sellerOnboardingReviewRoute,
+      sellerOnboardingReview: { status: 'approved', approvedAt: now, approvedBy: normalizeText(currentAgent?.id) },
+      sellerOnboardingFormalPackApproval: formalPackApproval,
+      seller_onboarding_formal_pack_approval: formalPackApproval,
+      sellerPostOnboardingDrafts: postOnboardingDrafts,
+      seller_post_onboarding_drafts: postOnboardingDrafts,
+      sellerOnboardingManualSigningPack: manualSigningPack || formData.sellerOnboardingManualSigningPack || formData.seller_onboarding_manual_signing_pack || null,
+      seller_onboarding_manual_signing_pack: manualSigningPack || formData.sellerOnboardingManualSigningPack || formData.seller_onboarding_manual_signing_pack || null,
+      sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
+        existing: formData.sellerOnboardingSigningLifecycle || formData.seller_onboarding_signing_lifecycle,
+        stage: sellerOnboardingReviewRoute === 'manual_upload' ? SELLER_ONBOARDING_SIGNING_STAGES.manualAwaitingUpload : SELLER_ONBOARDING_SIGNING_STAGES.packPrepared,
+        actor: normalizeText(currentAgent?.id),
+        at: now,
+        metadata: { selectedDocuments: ['fica', 'mandate'], route: sellerOnboardingReviewRoute },
+      }),
+    }
+    nextFormData.seller_onboarding_signing_lifecycle = nextFormData.sellerOnboardingSigningLifecycle
+
+    setSellerSigningPackSaving(true)
+    setError('')
+    try {
+      await updatePrivateListing(listingId, { mandateType: sellerSigningPackTerms.mandateType }, { includeRequirementsAndDocuments: false })
+      await persistSellerProfileOnboardingFormData({
+        listingId,
+        formData: nextFormData,
+        status: 'completed',
+      })
+
+      if (sellerOnboardingReviewRoute === 'manual_upload') {
+        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+          stage: 'Mandate Sent',
+          status: 'Physical FICA and mandate pack prepared — awaiting signed upload',
+          mandateExecutionMode: 'manual',
+          mandatePreparedAt: now,
+        })
+        patchSelectedLeadRecord({
+          stage: 'Mandate Sent',
+          status: 'Physical FICA and mandate pack prepared — awaiting signed upload',
+          mandateExecutionMode: 'manual',
+          mandatePreparedAt: now,
+        }, selectedLead.leadId)
+        setSellerSigningPackModalOpen(false)
+        setMessage('Physical FICA and mandate copies are prepared. Download them from Documents and upload the wet-ink signed copies when returned.')
+        return
+      }
+
+      const response = await invokeEdgeFunction('listing-mandate-signing', {
+        body: {
+          action: 'issue',
+          listingId,
+          signerName: recipients[0].name,
+          signerEmail: recipients[0].email,
+          signers: recipients,
+          primaryDocumentContactEmail,
+          agentName: normalizeText(currentAgent?.fullName || currentAgent?.name || currentAgent?.email || 'Agent'),
+          selectedDocuments: ['fica', 'mandate'],
+          mandateSnapshot: {
+            propertyAddress,
+            mandateType: sellerSigningPackTerms.mandateType,
+            commissionBasis: commission.basis,
+            commissionPercentage: commission.percentage,
+            commissionAmount: commission.amount,
+            vatHandling: commission.vatHandling,
+          },
+          signingPack,
+        },
+      })
+      assertEdgeFunctionSuccess(response, 'Unable to issue the seller signing links.')
+      if (response?.data?.success === false) throw new Error(response.data.error || 'Unable to issue the seller signing links.')
+      const delivery = normalizeText(response?.data?.delivery).toLowerCase()
+      if (!['sent', 'partial'].includes(delivery)) {
+        throw new Error('The signing links were prepared but email delivery was not confirmed. No mandate has been marked as sent.')
+      }
+      const formalPackDispatch = createSellerOnboardingFormalPackDispatch({
+        existing: nextFormData.sellerOnboardingFormalPackDispatch || nextFormData.seller_onboarding_formal_pack_dispatch,
+        formalPackApproval,
+        response: response.data,
+        selectedDocuments: ['fica', 'mandate'],
+        signingRoute: sellerOnboardingReviewRoute,
+        actor: normalizeText(currentAgent?.id),
+        at: now,
+      })
+      const sentFormData = {
+        ...nextFormData,
+        sellerOnboardingFormalPackDispatch: formalPackDispatch,
+        seller_onboarding_formal_pack_dispatch: formalPackDispatch,
+        sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
+          existing: nextFormData.sellerOnboardingSigningLifecycle,
+          stage: SELLER_ONBOARDING_SIGNING_STAGES.packSent,
+          actor: normalizeText(currentAgent?.id),
+          at: now,
+          metadata: { selectedDocuments: ['fica', 'mandate'], route: sellerOnboardingReviewRoute, signingGroupId: formalPackDispatch.signingGroupId, delivery },
+        }),
+      }
+      sentFormData.seller_onboarding_signing_lifecycle = sentFormData.sellerOnboardingSigningLifecycle
+      await persistSellerProfileOnboardingFormData({ listingId, formData: sentFormData, status: 'completed' })
+      const deliveredCount = (Array.isArray(response?.data?.signingLinks) ? response.data.signingLinks : []).filter((item) => item?.delivery === 'sent').length
+      const leadPatch = {
+        stage: 'Mandate Sent',
+        status: delivery === 'sent' ? 'FICA and mandate sent for signature' : 'FICA and mandate partially delivered',
+        mandateStatus: 'sent_to_seller',
+        mandateSentAt: now,
+      }
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+        agent: currentAgent,
+        activityType: 'Seller signing pack sent',
+        activityNote: `FICA declaration and mandate sent to ${deliveredCount || recipients.length} of ${recipients.length} signer${recipients.length === 1 ? '' : 's'}.`,
+        outcome: delivery === 'sent' ? 'Sent for signature' : 'Partial delivery',
+        activityDate: now,
+      }, { actor: currentAgent })
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      setSellerSigningPackModalOpen(false)
+      setMessage(delivery === 'sent'
+        ? `FICA declaration and mandate sent to ${recipients.length} required signer${recipients.length === 1 ? '' : 's'}.`
+        : `The signing pack reached ${deliveredCount} of ${recipients.length} signers. Review delivery before resending.`)
+      scheduleRecordsReload(organisationId, 750)
+    } catch (signingError) {
+      setError(signingError?.message || 'Unable to prepare and send the seller signing pack.')
+    } finally {
+      setSellerSigningPackSaving(false)
+    }
   }
 
   function handleSellerJourneyAction(actionId) {
@@ -26724,14 +26971,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (id === 'generate_mandate') {
-      handleLeadWorkspaceTabSelection('documents')
       if (!normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId || selectedLead?.listing_id)) {
-        void handleCreateListingFromSellerLead({
-          successMessage: 'Listing draft created. Generate the mandate from the Documents tab.',
-        }).catch((draftError) => {
-          setError(draftError?.message || 'Unable to create a listing draft for mandate generation.')
-        })
+        setError('A market listing is not created by preparing a mandate. Send or reopen seller onboarding first so Arch9 can use its existing seller-lead intake record.')
+        return
       }
+      handleLeadWorkspaceTabSelection('documents')
       return
     }
     if (id === 'choose_mandate_execution') {
@@ -39986,7 +40230,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         open={sellerOnboardingReviewModalOpen}
         onClose={() => setSellerOnboardingReviewModalOpen(false)}
         title="Review submitted seller onboarding"
-        subtitle="Confirm the facts captured from the seller before approving the next FICA and mandate step. The seller will not be asked to complete onboarding again."
+        subtitle="Check the facts captured from the seller, then open the FICA and mandate signing pack. The seller will not be asked to complete onboarding again."
         className="max-w-4xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -39994,14 +40238,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               Cancel
             </Button>
             <Button type="button" onClick={continueSellerOnboardingReview}>
-              {sellerOnboardingReviewRoute === 'manual_upload' ? 'Approve & prepare physical pack' : 'Approve & send mandate'}
+              {sellerOnboardingReviewRoute === 'manual_upload' ? 'Open physical-signing pack' : 'Open FICA + mandate signing pack'}
             </Button>
           </div>
         )}
       >
         <div className="space-y-5">
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
-            Commission terms are confirmed in the next step before a mandate can be sent or prepared. This keeps the approved commercial terms with the frozen signing pack.
+            Commission terms are confirmed in the signing pack before anything is sent or prepared. Opening that screen does not create, publish, or activate a market listing.
           </div>
           <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -40038,6 +40282,53 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <span><span className="block text-sm font-semibold text-[#243d56]">Prepare a physical-signature pack</span><span className="mt-1 block text-sm leading-5 text-[#607387]">Open the document workspace to prepare the FICA declaration and mandate for physical signing, then upload the signed originals when returned.</span></span>
             </label>
           </fieldset>
+        </div>
+      </Modal>
+
+      <Modal
+        open={sellerSigningPackModalOpen}
+        onClose={sellerSigningPackSaving ? undefined : () => setSellerSigningPackModalOpen(false)}
+        title="Prepare FICA + mandate signing pack"
+        subtitle="This stays on the seller lead. It does not create, publish, or activate a market listing."
+        className="max-w-3xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" disabled={sellerSigningPackSaving} onClick={() => setSellerSigningPackModalOpen(false)}>Cancel</Button>
+            <Button type="button" disabled={sellerSigningPackSaving} onClick={() => void sendSellerLeadSigningPack()}>
+              {sellerSigningPackSaving ? 'Sending…' : sellerOnboardingReviewRoute === 'manual_upload' ? 'Prepare physical copies' : 'Send FICA + mandate'}
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-5">
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
+            The seller’s submitted onboarding facts remain frozen. This step adds the commercial terms and sends the separate Seller FICA Declaration and mandate for signature.
+          </div>
+          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
+            <legend className="px-1 text-sm font-semibold text-[#243d56]">Signing route</legend>
+            <label className="flex items-start gap-3 text-sm text-[#243d56]"><input type="radio" name="seller-lead-signing-route" checked={sellerOnboardingReviewRoute === 'digital_pack'} onChange={() => setSellerOnboardingReviewRoute('digital_pack')} /><span><span className="block font-semibold">Send secure digital links</span><span className="mt-1 block leading-5 text-[#607387]">Each required signer receives a secure FICA and mandate link by email.</span></span></label>
+            <label className="flex items-start gap-3 text-sm text-[#243d56]"><input type="radio" name="seller-lead-signing-route" checked={sellerOnboardingReviewRoute === 'manual_upload'} onChange={() => setSellerOnboardingReviewRoute('manual_upload')} /><span><span className="block font-semibold">Prepare physical copies</span><span className="mt-1 block leading-5 text-[#607387]">No email is sent. The agent downloads the copies and uploads wet-ink signed documents when returned.</span></span></label>
+          </fieldset>
+          <fieldset className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2">
+            <legend className="px-1 text-sm font-semibold text-[#243d56]">Mandate commercial terms</legend>
+            <label className="grid gap-1.5 font-semibold text-[#243d56]">Mandate type
+              <Field as="select" value={sellerSigningPackTerms.mandateType} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, mandateType: event.target.value }))}>
+                <option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option>
+              </Field>
+            </label>
+            <fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission basis</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-lead-commission-basis" checked={sellerSigningPackTerms.commissionBasis === 'percentage'} onChange={() => setSellerSigningPackTerms((previous) => ({ ...previous, commissionBasis: 'percentage' }))} />Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-lead-commission-basis" checked={sellerSigningPackTerms.commissionBasis === 'fixed'} onChange={() => setSellerSigningPackTerms((previous) => ({ ...previous, commissionBasis: 'fixed' }))} />Fixed Rand amount</label></div></fieldset>
+            <label className="grid gap-1.5 font-semibold text-[#243d56]">{sellerSigningPackTerms.commissionBasis === 'fixed' ? 'Fixed commission amount (R)' : 'Commission percentage'}
+              <Field type="number" min="0" step="0.01" value={sellerSigningPackTerms.commissionBasis === 'fixed' ? sellerSigningPackTerms.commissionAmount : sellerSigningPackTerms.commissionPercentage} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, [previous.commissionBasis === 'fixed' ? 'commissionAmount' : 'commissionPercentage']: event.target.value }))} />
+            </label>
+            <label className="grid gap-1.5 font-semibold text-[#243d56]">VAT treatment
+              <Field as="select" value={sellerSigningPackTerms.vatHandling} onChange={(event) => setSellerSigningPackTerms((previous) => ({ ...previous, vatHandling: event.target.value }))}><option value="">Select VAT treatment</option><option value="no">No VAT</option><option value="exclusive">VAT exclusive</option><option value="inclusive">VAT inclusive</option></Field>
+            </label>
+          </fieldset>
+          <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
+            <p className="font-semibold text-[#243d56]">Required signer{getSellerLeadSigningRecipients().length === 1 ? '' : 's'}</p>
+            <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer) => <div key={`${signer.email}:${signer.role}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'} <span className="font-normal text-[#607387]">· {signer.role}</span></span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>
+            {getSellerLeadSigningRecipients().length > 1 ? <label className="mt-4 grid gap-1.5 font-semibold text-[#243d56]">Primary document contact<span className="font-normal text-[#607387]">This person receives the shared FICA details first; every required seller still receives and signs their own final link.</span><Field as="select" value={sellerSigningPackPrimaryEmail} onChange={(event) => setSellerSigningPackPrimaryEmail(event.target.value)}>{getSellerLeadSigningRecipients().map((signer) => <option key={signer.email} value={signer.email}>{signer.name || signer.email} · {signer.email}</option>)}</Field></label> : null}
+          </section>
         </div>
       </Modal>
 
