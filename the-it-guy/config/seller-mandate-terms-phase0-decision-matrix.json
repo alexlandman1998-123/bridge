@@ -1,0 +1,120 @@
+{
+  "phase": "seller-mandate-terms-phase-0",
+  "contract": "arch9-seller-mandate-terms-phase0-v1",
+  "status": "pending_counsel_review",
+  "purpose": "Freeze the product and legal decisions required before introducing combined seller terms, privacy acknowledgements, primary-contact preparation, or signing-pack replacement behaviour.",
+  "runtimeChanges": false,
+  "recommendedOperatingModel": {
+    "preparationMode": "hybrid_agent_prefill_primary_seller_confirmation",
+    "primaryDocumentContact": {
+      "requiredForMultipleSigners": true,
+      "mayEditSharedFactsBeforePackIsSent": true,
+      "maySignForOtherParties": false,
+      "secondarySignerActions": ["review_and_sign", "flag_issue"]
+    },
+    "agentAssistance": {
+      "mayPrefill": true,
+      "mayEditDraft": true,
+      "mayEditSentOrSignedPackInPlace": false,
+      "mayPrepareReplacementAfterIssue": true
+    },
+    "changeControl": {
+      "sentPackIsImmutable": true,
+      "completedPackIsImmutable": true,
+      "materialChangeCreatesReplacementVersion": true,
+      "replacementRequiresAllRequiredSigners": true,
+      "supersededPackRetainedForAudit": true
+    }
+  },
+  "materialChanges": [
+    "seller_or_signatory_identity",
+    "signatory_authority_or_entity_capacity",
+    "property_identity_or_material_property_detail",
+    "mandate_type_price_commission_or_duration",
+    "proposed_transfer_attorney",
+    "approved_terms_or_notice_version"
+  ],
+  "combinedTermsDocument": {
+    "proposedTitle": "Seller Mandate Terms, Privacy & Electronic Signing Notice",
+    "mustBeVersioned": true,
+    "mustBeFrozenIntoSigningPack": true,
+    "requiredLinks": ["privacy_notice", "paia_manual"],
+    "requiredOrganisationFields": ["information_officer_name", "information_officer_email"],
+    "sections": [
+      "mandate_terms",
+      "privacy_notice_summary",
+      "paia_access_information",
+      "electronic_communications_and_signing",
+      "records_and_audit_trail",
+      "conditional_transfer_attorney_handoff",
+      "separate_optional_marketing_preferences"
+    ]
+  },
+  "acknowledgements": [
+    {
+      "key": "terms_acceptance",
+      "required": true,
+      "allRequiredSigners": true,
+      "draftWording": "I confirm that I have read and accept the Seller Mandate Terms, Privacy & Electronic Signing Notice applicable to this signing pack."
+    },
+    {
+      "key": "accuracy_and_authority",
+      "required": true,
+      "allRequiredSigners": true,
+      "draftWording": "I confirm that the information relating to me and the property is true, complete and current to the best of my knowledge, and that I have the authority required to sign or will provide the required authority evidence."
+    },
+    {
+      "key": "privacy_and_paia_notice",
+      "required": true,
+      "allRequiredSigners": true,
+      "draftWording": "I confirm that I can access the Privacy Notice and PAIA Manual, including the Information Officer contact details."
+    },
+    {
+      "key": "electronic_communications_and_signing",
+      "required": true,
+      "allRequiredSigners": true,
+      "draftWording": "I agree to receive this signing pack, notices and completed copies electronically, and intend my electronic signing action to record my approval of this document and these acknowledgements."
+    },
+    {
+      "key": "shared_information_review",
+      "requiredWhen": "secondary_signer",
+      "allRequiredSigners": false,
+      "draftWording": "I have reviewed the shared seller, property and mandate information completed by the primary document contact and confirm that it is correct as it relates to me and my authority to sign."
+    },
+    {
+      "key": "proposed_transfer_attorney",
+      "requiredWhen": "transfer_attorney_selected",
+      "allRequiredSigners": true,
+      "draftWording": "I acknowledge the proposed conveyancing attorney. Any formal attorney appointment, scope, fees and terms will be confirmed separately."
+    },
+    {
+      "key": "marketing_preferences",
+      "required": false,
+      "allRequiredSigners": false,
+      "mustBeSeparateFromMandatoryTerms": true,
+      "mustDefaultToUnticked": true
+    }
+  ],
+  "counselReviewGates": [
+    "Confirm the lawful processing basis and final privacy-notice wording for each processing purpose; do not treat every purpose as consent.",
+    "Confirm PAIA Manual availability, Information Officer details and agency-specific links.",
+    "Confirm the permitted electronic-signature method for the mandate route and any document requiring a prescribed formality.",
+    "Approve conditional entity, trust, estate and power-of-attorney authority-evidence requirements.",
+    "Approve the proposed-attorney wording so it does not purport to create an attorney-client mandate or fee agreement.",
+    "Approve direct-marketing wording and ensure it remains optional, separate and unticked."
+  ],
+  "implementationPrerequisites": [
+    "Each agency has an approved, effective terms version and a durable copy of its privacy notice and PAIA Manual.",
+    "Each agency has configured its Information Officer name and contact details.",
+    "The approved terms version and acknowledgement evidence can be frozen with each signing pack.",
+    "Replacement packs can preserve the prior version and invalidate active signing sessions without deleting evidence."
+  ],
+  "outOfScope": [
+    "Changing live mandate wording",
+    "Adding signing-screen checkboxes",
+    "Changing electronic-signature method",
+    "Capturing marketing consent",
+    "Changing existing completed documents",
+    "Deploying or applying a migration"
+  ]
+}

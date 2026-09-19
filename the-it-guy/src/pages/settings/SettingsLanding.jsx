@@ -51,7 +51,7 @@ export default function SettingsLanding() {
           {groups.map((group) => (
             <section key={group.label} aria-labelledby={`settings-group-${group.label.toLowerCase()}`}>
               <p id={`settings-group-${group.label.toLowerCase()}`} className="settings-dashboard-group-label">{group.label}</p>
-              <div className="settings-dashboard-card-grid">
+              <div className={`settings-dashboard-card-grid${group.label === 'ORGANISATION' ? ' settings-dashboard-organisation-grid' : ''}`}>
                 {group.items.map((item) => {
                   const Icon = item.icon
                   const status = getStatusForItem(item, { branding, profile })

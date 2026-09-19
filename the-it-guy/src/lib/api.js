@@ -4,6 +4,7 @@ import { DOCUMENTS_BUCKET_CANDIDATES, createScopedSupabaseClient, invokeEdgeFunc
 import { uploadToStorageCandidateBuckets } from './storageFallbacks'
 import { validateDocumentUploadFile } from './documentUploadPolicy'
 import { reportDocumentUploadTelemetry } from './documentUploadObservability'
+import { createDocumentUploadProgressReporter } from './documentUploadLifecycle'
 import { retryMutationWithoutReportedMissingColumns } from './targetedMissingColumnRetry.js'
 import {
   COMPATIBILITY_FALLBACK_IDS,
@@ -6213,7 +6214,9 @@ export async function uploadTransactionAttorneyCloseoutDocument({
   file,
   documentTypeKey,
   label,
+  onProgress = null,
 }) {
+  const reportProgress = createDocumentUploadProgressReporter(onProgress)
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
 
@@ -6221,6 +6224,7 @@ export async function uploadTransactionAttorneyCloseoutDocument({
     throw new Error('Transaction, file, and document type are required.')
   }
 
+  reportProgress('preparing')
   const closeout = closeoutId ? { id: closeoutId } : await fetchTransactionAttorneyCloseout(transactionId)
 
   const targetCloseoutId = closeout?.id || closeout?.closeoutId || null
@@ -6231,6 +6235,7 @@ export async function uploadTransactionAttorneyCloseoutDocument({
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `transaction-${transactionId}/closeout-${targetCloseoutId}/${Date.now()}-${safeName}`
 
+  reportProgress('uploading')
   const uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
 
   const definition = ATTORNEY_CLOSEOUT_DOCUMENT_DEFINITIONS.find((item) => item.key === documentTypeKey) || null
@@ -6247,11 +6252,13 @@ export async function uploadTransactionAttorneyCloseoutDocument({
     status: 'uploaded',
   }
 
+  reportProgress('saving')
   const { error } = await client.from('transaction_attorney_closeout_documents').upsert(payload, {
     onConflict: 'transaction_attorney_closeout_id,document_type_key',
   })
 
   if (error) {
+    reportProgress('failed', error.message || 'The close-out document could not be saved.', { error })
     await removeDocumentUploadObjectAfterFailedPersistence(client, {
       bucket: uploadedBucket,
       filePath,
@@ -6275,6 +6282,8 @@ export async function uploadTransactionAttorneyCloseoutDocument({
       documentName: file.name,
     },
   })
+
+  reportProgress('complete', 'Document saved successfully.')
 
   return fetchTransactionAttorneyCloseout(transactionId)
 }
@@ -7349,7 +7358,9 @@ export async function uploadTransactionBondCloseoutDocument({
   file,
   documentTypeKey,
   label,
+  onProgress = null,
 }) {
+  const reportProgress = createDocumentUploadProgressReporter(onProgress)
   const client = requireClient()
   const actorProfile = await resolveActiveProfileContext(client)
 
@@ -7357,6 +7368,7 @@ export async function uploadTransactionBondCloseoutDocument({
     throw new Error('Transaction, file, and document type are required.')
   }
 
+  reportProgress('preparing')
   const closeout = closeoutId ? { id: closeoutId } : await fetchTransactionBondCloseout(transactionId)
   const targetCloseoutId = closeout?.id || closeout?.closeoutId || null
   if (!targetCloseoutId) {
@@ -7366,6 +7378,7 @@ export async function uploadTransactionBondCloseoutDocument({
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, '-')
   const filePath = `transaction-${transactionId}/bond-closeout-${targetCloseoutId}/${Date.now()}-${safeName}`
 
+  reportProgress('uploading')
   await uploadToDocumentsBucket(client, filePath, file)
 
   const definition = BOND_CLOSEOUT_DOCUMENT_DEFINITIONS.find((item) => item.key === documentTypeKey) || null
@@ -7381,11 +7394,13 @@ export async function uploadTransactionBondCloseoutDocument({
     status: 'uploaded',
   }
 
+  reportProgress('saving')
   const { error } = await client.from('transaction_bond_closeout_documents').upsert(payload, {
     onConflict: 'transaction_bond_closeout_id,document_type_key',
   })
 
   if (error) {
+    reportProgress('failed', error.message || 'The bond close-out document could not be saved.', { error })
     if (isMissingSchemaError(error)) {
       throw new Error('Bond close-out document tables are not set up yet. Run sql/schema.sql first.')
     }
@@ -7403,6 +7418,8 @@ export async function uploadTransactionBondCloseoutDocument({
       documentName: file.name,
     },
   })
+
+  reportProgress('complete', 'Document saved successfully.')
 
   return fetchTransactionBondCloseout(transactionId)
 }
@@ -52132,9 +52149,7 @@ export async function uploadDocument({
   inferCanonicalRequirement = true,
   onProgress = null,
 }) {
-  const reportProgress = (stage, message) => {
-    if (typeof onProgress === 'function') onProgress({ stage, message })
-  }
+  const reportProgress = createDocumentUploadProgressReporter(onProgress)
 
   reportProgress('preparing', 'Checking the document and preparing a secure upload…')
   const client = requireClient()
@@ -52203,6 +52218,7 @@ export async function uploadDocument({
     reportProgress('uploading', `Uploading ${safeName} to secure storage…`)
     uploadedBucket = await uploadToDocumentsBucket(client, filePath, file)
   } catch (error) {
+    reportProgress('failed', error?.message || 'The file could not be uploaded to secure storage.', { error })
     reportDocumentUploadTelemetry({
       surface: 'internal_transaction',
       stage: 'storage',
@@ -52324,6 +52340,7 @@ export async function uploadDocument({
   }
 
   if (result.error) {
+    reportProgress('failed', result.error?.message || 'The document record could not be saved.', { error: result.error })
     reportDocumentUploadTelemetry({
       surface: 'internal_transaction',
       stage: 'persistence',
@@ -52346,8 +52363,6 @@ export async function uploadDocument({
     transactionId: activeTransactionId,
     documentId: result.data.id,
   })
-  reportProgress('saved', 'Document saved. Finalising the upload…')
-
   // Storage and the document row are the durable upload boundary. Do not wait
   // for projections after this point: a temporary automation/linking failure
   // must not tell a user to re-upload a file that has already been saved.
@@ -52365,6 +52380,11 @@ export async function uploadDocument({
     activeProfile,
     source,
     inferCanonicalRequirement,
+  })
+
+  reportProgress('complete', 'Document saved successfully.', {
+    documentId: result.data.id,
+    postUploadProcessing: 'queued',
   })
 
   return {
@@ -52398,6 +52418,41 @@ export async function listOrphanedTransactionDocumentObjects(transactionId) {
     filePath: item.file_path || '',
     createdAt: item.created_at || null,
   }))
+}
+
+export async function getTransactionDocumentRecoveryReview(transactionId) {
+  const client = requireClient()
+  const activeTransactionId = await assertActiveTransactionForDocumentUpload(client, transactionId)
+  const result = await client.rpc('bridge_get_transaction_document_recovery_review', {
+    p_transaction_id: activeTransactionId,
+  })
+  if (result.error) throw result.error
+  return result.data || {
+    version: 'transaction_document_recovery_review_v1',
+    transactionId: activeTransactionId,
+    documentsMissingStorage: [],
+    orphanStorageObjects: [],
+    summary: { documentsMissingStorageCount: 0, orphanStorageObjectCount: 0 },
+  }
+}
+
+export async function repairTransactionDocumentCanonicalLink({
+  transactionId,
+  documentId,
+  requirementInstanceId,
+} = {}) {
+  const client = requireClient()
+  const activeTransactionId = await assertActiveTransactionForDocumentUpload(client, transactionId)
+  if (!isUuidLike(documentId) || !isUuidLike(requirementInstanceId)) {
+    throw new Error('Choose the exact document and canonical requirement before repairing a link.')
+  }
+  const result = await client.rpc('bridge_repair_transaction_document_link', {
+    p_transaction_id: activeTransactionId,
+    p_document_id: documentId,
+    p_requirement_instance_id: requirementInstanceId,
+  })
+  if (result.error) throw result.error
+  return result.data || null
 }
 
 async function syncFinanceDocumentRelationIfPossible(

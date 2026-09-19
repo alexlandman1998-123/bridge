@@ -2521,8 +2521,11 @@ function buildSellerPortalSaleDocuments(portalData = {}, workspaceMode = 'buying
       : null,
     propertyDisclosureDocument
       ? buildSellerSaleDocumentCenterItem(propertyDisclosureDocument, {
-          id: 'property-condition-disclosure',
-          title: 'Property Condition Disclosure',
+          // Preserve the public document-centre identifier used by seller
+          // workspaces and historical links. The canonical requirement key
+          // remains property_condition_disclosure on the document itself.
+          id: 'seller-declaration-disclosure',
+          title: propertyDisclosureDocument.document_name || propertyDisclosureDocument.name || 'Property Condition Disclosure',
           description: 'Completed seller property disclosure available for download.',
         })
       : null,

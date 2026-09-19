@@ -117,11 +117,36 @@ try {
   assert.equal(mandate.status, 'completed')
   assert.equal(getRequirementUploadState(mandate), 'generated')
   assert.equal(mandate.generatedDocument.id, 'mandate-packet-version')
+  assert.equal(mandate.projectionStatus, 'legacy_mapped')
+
+  const ambiguousMandateModel = buildCanonicalDocumentWorkspaceModel({
+    requirements: [requirements[0]],
+    documentCenter: {
+      signedDocuments: [
+        ...documentCenter.signedDocuments,
+        {
+          id: 'another-mandate-packet-version',
+          name: 'Another signed mandate.pdf',
+          document_type: 'mandate_signature',
+          status: 'completed',
+          file_path: 'seller-portal/listing/another-mandate.pdf',
+        },
+      ],
+    },
+    role: 'seller',
+  })
+  assert.equal(
+    ambiguousMandateModel.requirements[0].status,
+    'pending',
+    'an ambiguous legacy type match must not satisfy a canonical requirement',
+  )
+  assert.equal(ambiguousMandateModel.requirements[0].projectionStatus, 'unlinked')
 
   const bond = model.requirements.find((item) => item.documentDefinitionKey === 'bond_statement')
   assert.equal(bond.status, 'uploaded')
   assert.equal(getRequirementUploadState(bond), 'uploaded')
   assert.equal(bond.uploadedDocument.id, 'bond-upload')
+  assert.equal(bond.projectionStatus, 'linked')
 
   const rejected = model.requirements.find((item) => item.documentDefinitionKey === 'lease_agreement')
   assert.equal(rejected.status, 'rejected')

@@ -1,0 +1,18 @@
+{
+  "contract": "arch9-seller-onboarding-signing-phase0-v1",
+  "runtimeChanges": false,
+  "sourceOfTruth": "private_listing_seller_onboarding.form_data",
+  "captureStages": [
+    { "key": "ownership_authority", "existingAreas": ["Seller Information"], "outcome": "seller identity, ownership and authority facts" },
+    { "key": "fica_compliance", "existingAreas": ["Seller Information"], "outcome": "FICA/KYC identity, tax, address and residency facts" },
+    { "key": "property", "existingAreas": ["Property Details"], "outcome": "property identity and sale-context facts" },
+    { "key": "disclosure", "existingAreas": ["Property Disclosure"], "outcome": "property-condition answers and onboarding declaration" }
+  ],
+  "statusSemantics": {
+    "seller_onboarding_completed": "Information collection is complete and available for agent review; it is not a signed mandate.",
+    "mandate_sent_to_seller": "A frozen signing pack has been issued.",
+    "mandate_signed": "A formal mandate was signed digitally or accepted through the manual signed-document route."
+  },
+  "preserve": ["draft_autosave", "onboarding_submit_rpc", "lead_listing_progression", "seller_portal_handoff", "existing_disclosure_capture"],
+  "laterChange": "A signing pack consumes and freezes these captured facts. It must not ask the seller to re-enter them."
+}

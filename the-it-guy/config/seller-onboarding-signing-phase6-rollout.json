@@ -1,0 +1,25 @@
+{
+  "contract": "arch9-seller-onboarding-signing-phase6-rollout-v1",
+  "status": "hold_pending_named_agency_pilot",
+  "globalEnablement": false,
+  "requiredScenarios": [
+    "individual_digital_mandate_only",
+    "co_owner_primary_contact",
+    "company_authorised_signatory",
+    "trust_authorised_trustee",
+    "onboarding_disclosure_to_signed_disclosure",
+    "manual_mandate_upload",
+    "correction_and_replacement",
+    "attorney_selected"
+  ],
+  "requiredEvidence": [
+    "named_agency_id",
+    "onboarding_submission_receipt",
+    "frozen_pack_snapshot",
+    "signing_or_manual_upload_evidence",
+    "lifecycle_audit_export",
+    "rollback_owner",
+    "human_pilot_approval"
+  ],
+  "pilotRule": "Onboarding completion and mandate signing must remain separate states throughout every scenario."
+}

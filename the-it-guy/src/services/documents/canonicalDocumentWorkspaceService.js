@@ -264,12 +264,52 @@ function isExactCanonicalDocumentLink(document = {}, requirement = {}) {
 }
 
 function getGeneratedDocumentForRequirement(requirement = {}, documentCenter = {}) {
+  return getGeneratedDocumentMatchForRequirement(requirement, documentCenter).document
+}
+
+function getGeneratedDocumentMatchForRequirement(requirement = {}, documentCenter = {}) {
   const allGenerated = [
     ...normalizeArray(documentCenter.signedDocuments),
     ...normalizeArray(documentCenter.generatedDocuments),
     ...normalizeArray(documentCenter.uploadedDocuments).filter((document) => /signed|signature|generated|packet|mandate|otp|addendum/i.test(`${document.document_type || ''} ${document.category || ''} ${document.name || ''}`)),
   ]
-  return allGenerated.find((document) => isExactCanonicalDocumentLink(document, requirement)) || null
+  const explicitlyLinked = allGenerated.find((document) => isExactCanonicalDocumentLink(document, requirement))
+  if (explicitlyLinked) return { document: explicitlyLinked, linkKind: 'exact' }
+
+  // Older generated/signed artifacts predate canonical_requirement_instance_id.
+  // They may still carry a stable, mapped document type (for example
+  // mandate_signature for signed_mandate).  Use that mapping only for generated
+  // artifacts, never for ordinary uploads, so a same-category upload cannot
+  // satisfy an unrelated requirement.
+  const requirementReference = resolveCrossModuleDocumentReference(
+    requirement.documentDefinitionKey || requirement.document_definition_key || requirement.document_type,
+    {
+      packKey: requirement.pack_key || requirement.packKey,
+      requestedFromRole: requirement.requested_from_role || requirement.requestedFromRole,
+      ownerRole: requirement.document_owner_role || requirement.documentOwnerRole,
+    },
+  )
+  if (!requirementReference.crossModuleDocumentKnown) return { document: null, linkKind: 'unlinked' }
+
+  const mappedMatches = allGenerated.filter((document) => {
+    const documentReference = resolveCrossModuleDocumentReference(
+      document.canonicalDocumentKey ||
+        document.canonical_document_key ||
+        document.requirementKey ||
+        document.requirement_key ||
+        document.document_type ||
+        document.documentType,
+      { packKey: document.pack_key || document.packKey || document.category },
+    )
+    return documentReference.crossModuleDocumentKnown &&
+      documentReference.canonicalDocumentKey === requirementReference.canonicalDocumentKey
+  })
+
+  // A mapped artifact is safe only when it identifies one unambiguous generated
+  // document for this requirement. New uploads always use the explicit link.
+  return mappedMatches.length === 1
+    ? { document: mappedMatches[0], linkKind: 'legacy_mapped' }
+    : { document: null, linkKind: 'unlinked' }
 }
 
 function getUploadedDocumentForRequirement(requirement = {}, documentCenter = {}) {
@@ -290,9 +330,20 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
   const status = normalizeText(instance.status || 'pending').toLowerCase()
   const requirementLevel = normalizeText(instance.requirement_level || definition.default_requirement_level || 'required').toLowerCase()
   const uploadedDocument = getUploadedDocumentForRequirement({ ...instance, documentDefinitionKey: definitionKey }, documentCenter)
-  const generatedDocument = getGeneratedDocumentForRequirement({ ...instance, documentDefinitionKey: definitionKey }, documentCenter)
+  const generatedMatch = getGeneratedDocumentMatchForRequirement({ ...instance, documentDefinitionKey: definitionKey }, documentCenter)
+  const generatedDocument = generatedMatch.document
   const linkedDocument = generatedDocument || uploadedDocument || null
   const hasLinkedDocument = Boolean(linkedDocument?.id || linkedDocument?.file_path || linkedDocument?.storage_path || linkedDocument?.url)
+  const projectionStatus = uploadedDocument || generatedMatch.linkKind === 'exact'
+    ? 'linked'
+    : generatedMatch.linkKind === 'legacy_mapped'
+      ? 'legacy_mapped'
+      : 'unlinked'
+  const projectionMessage = projectionStatus === 'linked'
+    ? 'Linked to the shared transaction document record.'
+    : projectionStatus === 'legacy_mapped'
+      ? 'Resolved from one unambiguous legacy signed/generated document. Historical linking can be reconciled without changing this document.'
+      : ''
   const derivedStatus = hasLinkedDocument && ['pending', 'requested'].includes(status)
     ? (generatedDocument ? 'completed' : 'uploaded')
     : status
@@ -348,6 +399,8 @@ export function normalizeCanonicalRequirement(instance = {}, { documentCenter = 
     generatedDocument,
     uploadedDocument,
     hasLinkedDocument,
+    projectionStatus,
+    projectionMessage,
     projection,
     canOpenDocument,
     canUpload: projection.uploadable && !['approved', 'completed', 'waived', 'not_applicable'].includes(derivedStatus),

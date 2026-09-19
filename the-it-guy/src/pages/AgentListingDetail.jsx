@@ -82,6 +82,7 @@ import {
 import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import { fetchDevelopmentsData } from '../lib/api'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
+import { SELLER_ONBOARDING_SIGNING_STAGES, createSellerOnboardingSigningLifecycle } from '../core/documents/sellerOnboardingSigningLifecycle'
 import { buildSellerSigningPlan } from '../lib/sellerSigningPlanModel'
 import {
   getListingReadinessSummary,
@@ -3694,6 +3695,10 @@ function AgentListingDetail() {
   const [sellerDocumentSendStep, setSellerDocumentSendStep] = useState(1)
   const [sellerDocumentSendSaving, setSellerDocumentSendSaving] = useState(false)
   const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
+  const [primaryDocumentContactEmail, setPrimaryDocumentContactEmail] = useState('')
+  const [sellerDocumentReplacementGroupId, setSellerDocumentReplacementGroupId] = useState('')
+  const [sellerDocumentReplacementReason, setSellerDocumentReplacementReason] = useState('')
+  const [sellerMandateSignatureRoute, setSellerMandateSignatureRoute] = useState('digital_pack')
   const [sellerDocumentSigningSessions, setSellerDocumentSigningSessions] = useState([])
   const [sellerPortalInvitationStatus, setSellerPortalInvitationStatus] = useState([])
   const [sellerPortalTaskPlan, setSellerPortalTaskPlan] = useState({})
@@ -3852,7 +3857,7 @@ function AgentListingDetail() {
   )
 
   useEffect(() => {
-    if (!sellerOnboardingSendOpen || !isSupabaseConfigured || !listingOrganisationId) return undefined
+    if ((!sellerOnboardingSendOpen && !sellerDocumentSendOpen) || !isSupabaseConfigured || !listingOrganisationId) return undefined
     let active = true
 
     async function loadPreferredTransferAttorneyOptions() {
@@ -3873,7 +3878,7 @@ function AgentListingDetail() {
 
     void loadPreferredTransferAttorneyOptions()
     return () => { active = false }
-  }, [listingOrganisationId, sellerOnboardingSendOpen])
+  }, [listingOrganisationId, sellerOnboardingSendOpen, sellerDocumentSendOpen])
 
   useEffect(() => {
     if (!developmentLinkOpen) return undefined
@@ -6491,9 +6496,30 @@ function AgentListingDetail() {
       }))
     const propertyAddress = listingRecord?.propertyAddress || form.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || ''
     const sellerName = resolveSellerNameFromListing(listingRecord) || form.sellerName || ''
+    const signingBranding = resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace)
+    const personName = (person = {}) => person.fullName || person.name || [person.firstName, person.surname || person.lastName].filter(Boolean).join(' ')
+    const personParty = (person = {}, role = 'Seller') => ({
+      name: personName(person), role, idNumber: person.idNumber || person.id_number || person.passportNumber || '',
+      incomeTaxNumber: person.incomeTaxNumber || person.taxNumber || person.tax_number || '',
+      residentialAddress: person.residentialAddress || person.residential_address || person.address || '', email: person.email || '', phone: person.phone || '',
+    })
+    const sellerType = String(form.sellerLegalType || form.seller_legal_type || form.sellerType || listingRecord?.sellerType || '').toLowerCase()
+    const ficaParties = sellerType === 'multiple_owners'
+      ? (Array.isArray(form.multipleOwners || form.owners) ? (form.multipleOwners || form.owners) : []).map((owner) => personParty(owner, 'Seller'))
+      : ['company', 'close_corporation', 'foreign_company'].includes(sellerType)
+        ? (Array.isArray(form.companyDirectors) ? form.companyDirectors : []).map((director) => personParty(director, 'Director'))
+        : ['trust', 'foreign_trust'].includes(sellerType)
+          ? (Array.isArray(form.trustees) ? form.trustees : []).map((trustee) => personParty(trustee, 'Trustee'))
+          : [personParty({ name: sellerName, idNumber: form.idNumber || form.sellerIdNumber, incomeTaxNumber: form.sellerIncomeTaxNumber || form.incomeTaxNumber || form.taxNumber, residentialAddress: form.residentialAddress || form.residential_address || form.physicalAddress, email: resolveSellerEmailFromListing(listingRecord) || form.email, phone: resolveSellerPhoneFromListing(listingRecord) || form.phone })]
     return {
       version: 'seller_signing_pack_v1',
       selectedDocuments,
+      onboardingSource: {
+        kind: 'seller_onboarding_submission',
+        submittedAt: form.submittedAt || form.submitted_at || listingRecord?.sellerOnboarding?.submittedAt || listingRecord?.sellerOnboarding?.submitted_at || null,
+        message: 'Seller facts were captured in onboarding and frozen into this signing pack for review and confirmation.',
+      },
+      branding: signingBranding,
       seller: {
         legalType: form.sellerLegalType || form.seller_legal_type || form.sellerType || listingRecord?.sellerType || '',
         ownershipType: form.ownerStructureType || form.owner_structure_type || form.ownershipType || '',
@@ -6508,7 +6534,9 @@ function AgentListingDetail() {
         companyRegistrationNumber: form.companyRegistrationNumber || '',
         trustName: form.trustName || '',
         trustRegistrationNumber: form.trustRegistrationNumber || '',
+        parties: ficaParties.filter((party) => party.name || party.idNumber || party.email),
       },
+      proposedTransferAttorney: form.proposedTransferAttorney || null,
       property: {
         address: propertyAddress,
         titleDeedNumber: form.titleDeedNumber || form.deedNumber || '',
@@ -6529,7 +6557,7 @@ function AgentListingDetail() {
         commissionPercentage: commissionDraft.basis === 'fixed' ? '' : String(commissionDraft.percentage || ''),
         commissionAmount: commissionDraft.basis === 'fixed' ? String(commissionDraft.amount || '') : '',
         vatHandling: String(commissionDraft.vatHandling || ''),
-        branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace),
+        branding: signingBranding,
       },
       templateVersions: {
         mandate: form.mandateTemplateVersion || form.mandate_template_version || 'agency_sales_mandate_vnext',
@@ -6542,12 +6570,17 @@ function AgentListingDetail() {
   function openSellerDocumentSend(selectionOverride = null) {
     const { byKey } = getSellerSigningDocumentOptions()
     setSellerDocumentSendSelection({
-      disclosure: byKey.disclosure.ready,
-      fica: byKey.fica.ready,
+      disclosure: false,
+      fica: false,
       mandate: byKey.mandate.ready,
     })
     setDetailError('')
     setDetailMessage('')
+    setPrimaryDocumentContactEmail(getSellerSigningPlan().recipients[0]?.email || '')
+    const activeGroup = sellerDocumentSigningSessions.find((session) => session?.status === 'active' && session?.signing_group_id)?.signing_group_id || ''
+    setSellerDocumentReplacementGroupId(activeGroup)
+    setSellerDocumentReplacementReason('')
+    setSellerMandateSignatureRoute('digital_pack')
     setSellerDocumentSendStep(1)
     setSellerDocumentSendOpen(true)
   }
@@ -6635,9 +6668,13 @@ function AgentListingDetail() {
       setDetailError(incompleteSelection.missing[0] || `${incompleteSelection.title} is not ready yet.`)
       return
     }
-    const primarySigner = signingPlan.recipients[0]
+    const primarySigner = signingPlan.recipients.find((recipient) => recipient.email === primaryDocumentContactEmail) || signingPlan.recipients[0]
     if (!primarySigner || !isValidEmail(primarySigner.email)) {
       setDetailError('Add a valid email for every required signer before preparing a document link.')
+      return
+    }
+    if (sellerDocumentReplacementGroupId && sellerDocumentReplacementReason.trim().length < 5) {
+      setDetailError('Give a short reason before replacing an active seller signing pack.')
       return
     }
     const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
@@ -6649,6 +6686,7 @@ function AgentListingDetail() {
         if (!commissionSaved) return
       }
       const existingForm = getListingSellerFormData(listingRecord)
+      const proposedTransferAttorney = preferredTransferAttorneyOptions.find((partner) => String(partner?.id || '') === preferredTransferAttorneyOptionId) || null
       const nextFormData = {
         ...existingForm,
         sellerDocumentSendSelection: sellerDocumentSendSelection,
@@ -6662,6 +6700,29 @@ function AgentListingDetail() {
         commission_amount: commissionBasis === 'fixed' ? String(commissionDraft.amount || '').trim() : '',
         vatHandling: String(commissionDraft.vatHandling || '').trim(),
         sellerDocumentSendSelectionUpdatedAt: new Date().toISOString(),
+        mandateSignatureRoute: sellerMandateSignatureRoute,
+        sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
+          existing: existingForm.sellerOnboardingSigningLifecycle || existingForm.seller_onboarding_signing_lifecycle,
+          stage: sellerMandateSignatureRoute === 'manual_upload' ? SELLER_ONBOARDING_SIGNING_STAGES.manualAwaitingUpload : SELLER_ONBOARDING_SIGNING_STAGES.packPrepared,
+          actor: String(listingActor?.id || profile?.id || ''),
+          metadata: { selectedDocuments: selected, route: sellerMandateSignatureRoute },
+        }),
+        manualMandateSignature: sellerMandateSignatureRoute === 'manual_upload' ? {
+          status: 'awaiting_upload',
+          requestedAt: new Date().toISOString(),
+          requestedBy: String(listingActor?.id || profile?.id || ''),
+        } : existingForm.manualMandateSignature || null,
+        proposedTransferAttorneyPartnerId: preferredTransferAttorneyOptionId || '',
+        proposedTransferAttorney: proposedTransferAttorney ? {
+          id: proposedTransferAttorney.id,
+          partnerRoleConfigurationId: proposedTransferAttorney.partnerRoleConfigurationId || '',
+          partnerOrganisationId: proposedTransferAttorney.partnerOrganisationId || proposedTransferAttorney.organisationId || '',
+          relationshipId: proposedTransferAttorney.relationshipId || '',
+          companyName: proposedTransferAttorney.companyName || '',
+          contactPerson: proposedTransferAttorney.contactPerson || '',
+          email: proposedTransferAttorney.email || '',
+          phone: proposedTransferAttorney.phone || '',
+        } : null,
       }
       const listingPatch = { mandateType }
       await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
@@ -6676,12 +6737,20 @@ function AgentListingDetail() {
           formData: nextFormData,
         },
       }))
+      if (sellerMandateSignatureRoute === 'manual_upload') {
+        setSellerDocumentSendOpen(false)
+        setDetailMessage('Manual mandate route recorded. Obtain the signed hard copy, then upload it in Documents; the mandate will remain unsigned until that evidence is recorded.')
+        return
+      }
       const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
         action: 'issue',
         listingId: listingRecord.id,
         signerName: primarySigner.name,
         signerEmail: primarySigner.email,
         signers: signingPlan.recipients,
+        primaryDocumentContactEmail: primarySigner.email,
+        supersededSigningGroupId: sellerDocumentReplacementGroupId || undefined,
+        replacementReason: sellerDocumentReplacementGroupId ? sellerDocumentReplacementReason.trim() : undefined,
         agentName: String(listingActor?.name || profile?.fullName || profile?.email || 'Agent').trim(),
         selectedDocuments: selected,
         mandateSnapshot: {
@@ -9442,7 +9511,7 @@ function AgentListingDetail() {
       return patchListing((row) => ({
         ...row,
         ...listingPatch,
-        seller: {
+      seller: {
           ...(row?.seller || {}),
           ...formPatch,
           name: listingPatch.sellerName,
@@ -11774,8 +11843,8 @@ function AgentListingDetail() {
       <Modal
         open={sellerDocumentSendOpen}
         onClose={sellerDocumentSendSaving ? undefined : () => setSellerDocumentSendOpen(false)}
-        title="Send seller documents"
-        subtitle="Choose the forms the seller should receive in one secure link."
+        title="Review onboarding and prepare signing pack"
+        subtitle="The seller's submitted onboarding facts are pre-filled into the pack. Signers review and confirm them; they do not re-enter them."
         className="max-w-xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -11789,7 +11858,7 @@ function AgentListingDetail() {
         )}
       >
         <div className="space-y-4">
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Choose the documents for this secure signing pack.' : 'Confirm the seller and mandate details before sending.'}</div>
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Choose the formal documents to sign. Mandate-only is the default.' : 'Confirm the seller, mandate and signing details before sending.'}</div>
           {(() => {
             const mandateReadiness = getListingMandateReadiness()
             return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
@@ -11798,12 +11867,12 @@ function AgentListingDetail() {
               {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerProfileBuilderReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerProfileBuilder('Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerSectionReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
             </div>
           })()}
-          {sellerDocumentSendStep === 1 ? <><div className="space-y-3">{getSellerSigningDocumentOptions().documents.map((document) => (
+          {sellerDocumentSendStep === 1 ? <><fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">Mandate signature route</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send digital signing pack</span><span className="mt-1 block text-[#607387]">Send the selected frozen documents for each required seller to review and sign.</span></span></label><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Arrange manual mandate signature</span><span className="mt-1 block text-[#607387]">Create an upload task only. The mandate is not signed until the signed hard copy is uploaded and recorded.</span></span></label></fieldset>{sellerMandateSignatureRoute === 'digital_pack' ? <div className="space-y-3">{getSellerSigningDocumentOptions().documents.map((document) => (
             <label key={document.key} className={`flex items-start gap-3 rounded-[16px] border p-4 ${document.ready ? 'cursor-pointer border-[#dce6f2] bg-white transition hover:border-[#b7c8db]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
               <input type="checkbox" className="mt-1 h-4 w-4" disabled={!document.ready} checked={Boolean(sellerDocumentSendSelection[document.key] && document.ready)} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
-              <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className={`mt-1 block text-sm leading-5 ${document.ready ? 'text-[#607387]' : 'text-[#7a5a17]'}`}>{document.ready ? document.copy : document.missing[0]}</span></span>
+              <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className={`mt-1 block text-sm leading-5 ${document.ready ? 'text-[#607387]' : 'text-[#7a5a17]'}`}>{document.ready ? `${document.copy} The seller will review the onboarding information already captured.` : document.missing[0]}</span></span>
             </label>
-          ))}</div></> : <div className="space-y-4">
+          ))}</div> : <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]">The onboarding and mandate details will be retained for the agent. No digital link will be sent. After collecting the hard-copy signature, upload the signed mandate from the listing Documents area.</div>}</> : <div className="space-y-4">
           <div className="grid gap-3 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-sm sm:grid-cols-2">
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Seller</span><span className="font-semibold text-[#243d56]">{resolveSellerNameFromListing(listingRecord) || 'Not captured'}</span></div>
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Email</span><span className="break-all font-semibold text-[#243d56]">{resolveSellerEmailFromListing(listingRecord) || 'Not captured'}</span></div>
@@ -11814,11 +11883,18 @@ function AgentListingDetail() {
               <p className="font-semibold text-[#243d56]">Required signer{signingPlan.recipients.length === 1 ? '' : 's'}</p>
               <p className="mt-1 text-[#607387]">{signingPlan.summary}</p>
               <div className="mt-3 space-y-2">{signingPlan.recipients.map((recipient) => <div key={`${recipient.email}:${recipient.role}`} className="flex items-center justify-between gap-3 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{recipient.name || 'Name required'} <span className="font-normal text-[#607387]">· {recipient.role}</span></span><span className="break-all text-xs text-[#607387]">{recipient.email || 'Email required'}</span></div>)}</div>
+              {signingPlan.recipients.length > 1 ? <label className="mt-4 grid gap-2 rounded-xl border border-[#dce6f2] bg-[#f8fbff] p-3 font-semibold text-[#243d56]">Primary document contact <span className="font-normal text-[#607387]">This seller completes the shared disclosure and FICA details before everyone reviews and signs the same final pack.</span><Field as="select" value={primaryDocumentContactEmail} onChange={(event) => setPrimaryDocumentContactEmail(event.target.value)}>{signingPlan.recipients.map((recipient) => <option key={recipient.email} value={recipient.email}>{recipient.name || recipient.email} · {recipient.email}</option>)}</Field></label> : null}
               {!signingPlan.ready ? <p className="mt-3 text-xs font-semibold text-[#a34b2e]">{signingPlan.missing[0]}</p> : null}
             </div>
           })()}
+          {(() => {
+            const activeGroups = [...new Map(sellerDocumentSigningSessions.filter((session) => session?.status === 'active' && session?.signing_group_id).map((session) => [session.signing_group_id, session])).values()]
+            if (!activeGroups.length) return null
+            return <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm text-[#7a5a17]"><p className="font-semibold">Replace an active signing pack</p><p className="mt-1 leading-5">A replacement revokes every open link in that pack and preserves the original as audit evidence. It cannot alter a fully signed pack.</p><label className="mt-3 grid gap-1.5 font-semibold">Pack to replace<Field as="select" value={sellerDocumentReplacementGroupId} onChange={(event) => setSellerDocumentReplacementGroupId(event.target.value)}><option value="">Send a separate new pack</option>{activeGroups.map((session) => <option key={session.signing_group_id} value={session.signing_group_id}>Sent {session.created_at ? new Date(session.created_at).toLocaleDateString('en-ZA') : 'previously'} · {session.signer_name || session.signer_email}</option>)}</Field></label>{sellerDocumentReplacementGroupId ? <label className="mt-3 grid gap-1.5 font-semibold">Reason for replacement<textarea value={sellerDocumentReplacementReason} onChange={(event) => setSellerDocumentReplacementReason(event.target.value)} rows={3} placeholder="For example: Seller corrected the asking price." className="rounded-xl border border-[#e4c77f] bg-white px-3 py-2 font-normal text-[#243d56]" /></label> : null}</div>
+          })()}
           {sellerDocumentSendSelection.fica ? <div className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><p className="font-semibold text-[#243d56]">FICA confirmation</p><p className="mt-1 text-[#607387]">{formatStatusLabel(listingRecord?.sellerType || getListingSellerFormData(listingRecord)?.sellerType || 'seller')} seller · confirm the listed seller/contact details are correct before sending.</p></div> : null}
           {sellerDocumentSendSelection.mandate ? <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2"><div><p className="font-semibold text-[#243d56]">Mandate type</p><Field as="select" value={marketingDraft.mandateType || listingRecord?.mandateType || 'sole'} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, mandateType: event.target.value }))}><option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option></Field></div><fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission type</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis" checked={commissionDraft.basis !== 'fixed'} onChange={() => updateCommissionDraft('basis', 'percentage')} /> Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis" checked={commissionDraft.basis === 'fixed'} onChange={() => updateCommissionDraft('basis', 'fixed')} /> Fixed Rand amount</label></div></fieldset><label className="grid gap-1.5 font-semibold text-[#243d56]">{commissionDraft.basis === 'fixed' ? 'Fixed commission amount (R)' : 'Commission percentage'}<Field type="number" min="0" step="0.01" value={commissionDraft.basis === 'fixed' ? commissionDraft.amount : commissionDraft.percentage} onChange={(event) => updateCommissionDraft(commissionDraft.basis === 'fixed' ? 'amount' : 'percentage', event.target.value)} placeholder={commissionDraft.basis === 'fixed' ? '50000' : '5'} /></label><label className="grid gap-1.5 font-semibold text-[#243d56]">VAT treatment<Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}><option value="">Select VAT treatment</option><option value="no">No VAT</option><option value="exclusive">VAT exclusive</option><option value="inclusive">VAT inclusive</option></Field></label></div> : null}
+          {sellerDocumentSendSelection.mandate ? <label className="grid gap-2 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Proposed conveyancing attorney <span className="font-normal text-[#607387]">(optional — included in the mandate for seller approval)</span><Field as="select" value={preferredTransferAttorneyOptionId} disabled={preferredTransferAttorneyLoading} onChange={(event) => setPreferredTransferAttorneyOptionId(event.target.value)}><option value="">Do not include an attorney</option>{preferredTransferAttorneyOptions.map((partner) => <option key={partner.id} value={partner.id}>{partner.companyName || 'Connected transfer attorney'}</option>)}</Field>{preferredTransferAttorneyLoading ? <span className="text-xs font-normal text-[#607387]">Loading connected attorney partners…</span> : null}</label> : null}
           </div>}
         </div>
       </Modal>
@@ -15239,7 +15315,7 @@ function AgentListingDetail() {
             const portalInvitationBySession = new Map(sellerPortalInvitationStatus.map((invite) => [String(invite.signing_session_id || ''), invite]))
             const portalSignerRows = sellerDocumentSigningSessions.map((session) => {
               const invitation = portalInvitationBySession.get(String(session.id || '')) || {}
-              return { id: session.id, name: invitation.recipient_name || session.signer_name || 'Seller', email: invitation.recipient_email || session.signer_email || '', signing: String(session.status || 'active') === 'signed' ? 'Signed' : 'Awaiting signature', portal: invitation.status ? String(invitation.status).replace(/_/g, ' ') : 'Not issued' }
+              return { id: session.id, name: invitation.recipient_name || session.signer_name || 'Seller', email: invitation.recipient_email || session.signer_email || '', role: session.is_primary_document_contact ? 'Primary contact' : 'Co-signer', signing: String(session.status || 'active') === 'signed' ? 'Signed' : String(session.status || 'active') === 'revoked' ? 'Replaced / paused' : 'Awaiting signature', portal: invitation.status ? String(invitation.status).replace(/_/g, ' ') : 'Not issued' }
             })
             const portalTasks = Array.isArray(sellerPortalTaskPlan.task_plan) ? sellerPortalTaskPlan.task_plan : []
             const statusDotClass = (complete, required = true) => {
@@ -15363,7 +15439,7 @@ function AgentListingDetail() {
                 {portalSignerRows.length ? (
                   <article className="rounded-[24px] border border-[#d8e6f2] bg-[#fbfdff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
                     <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Seller Portal status</h3><p className="mt-1 text-sm text-[#607387]">Signing, invitation delivery, and outstanding seller documents for this listing.</p></div><Button type="button" size="sm" variant="secondary" onClick={() => void loadSellerDocumentSigningSessions()} disabled={sellerDocumentSigningSessionsLoading}>{sellerDocumentSigningSessionsLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}Refresh</Button></div>
-                    <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#dce6f2] bg-white"><table className="min-w-full text-left text-sm"><thead className="bg-[#f5f9fc] text-xs text-[#607387]"><tr><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Signing</th><th className="px-3 py-2">Portal invitation</th></tr></thead><tbody>{portalSignerRows.map((owner) => <tr key={owner.id} className="border-t border-[#edf2f7]"><td className="px-3 py-3"><p className="font-semibold text-[#243d56]">{owner.name}</p><p className="text-xs text-[#607387]">{owner.email || 'Email pending'}</p></td><td className="px-3 py-3 text-[#425970]">{owner.signing}</td><td className="px-3 py-3 capitalize text-[#425970]">{owner.portal}</td></tr>)}</tbody></table></div>
+                    <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#dce6f2] bg-white"><table className="min-w-full text-left text-sm"><thead className="bg-[#f5f9fc] text-xs text-[#607387]"><tr><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Signing</th><th className="px-3 py-2">Portal invitation</th></tr></thead><tbody>{portalSignerRows.map((owner) => <tr key={owner.id} className="border-t border-[#edf2f7]"><td className="px-3 py-3"><p className="font-semibold text-[#243d56]">{owner.name}</p><p className="text-xs text-[#607387]">{owner.email || 'Email pending'}</p></td><td className="px-3 py-3 text-[#425970]">{owner.role}</td><td className="px-3 py-3 text-[#425970]">{owner.signing}</td><td className="px-3 py-3 capitalize text-[#425970]">{owner.portal}</td></tr>)}</tbody></table></div>
                     <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-3"><p className="text-sm font-semibold text-[#243d56]">Outstanding portal documents</p>{portalTasks.length ? <div className="mt-2 flex flex-wrap gap-2">{portalTasks.map((task) => <span key={task.key} className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-xs font-semibold text-[#35546c]">{task.title || task.key}</span>)}</div> : <p className="mt-1 text-sm text-[#607387]">No outstanding seller-visible document tasks.</p>}</div>
                   </article>
                 ) : null}

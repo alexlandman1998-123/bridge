@@ -13461,6 +13461,15 @@ body.sidebar-compact .legacy-shell .legacy-shell .sidebar-divider {
   gap: 16px;
 }
 
+.settings-dashboard-organisation-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-dashboard-organisation-grid .settings-dashboard-card {
+  min-height: 172px;
+  padding: 24px;
+}
+
 .settings-dashboard-card {
   display: grid;
   grid-template-columns: 64px minmax(0, 1fr) auto;

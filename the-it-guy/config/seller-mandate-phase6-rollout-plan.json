@@ -1,0 +1,33 @@
+{
+  "contract": "arch9-seller-mandate-phase6-rollout-v1",
+  "status": "hold_pending_counsel_terms_and_pilot_approval",
+  "rollout": {
+    "scope": "one_named_agency_only",
+    "globalEnablement": false,
+    "requiresNamedAgency": true,
+    "requiresHumanApproval": true,
+    "requiresAppliedMigrations": [
+      "20260918201300_seller_mandate_terms_acknowledgements_phase2",
+      "20260918201425_listing_signing_primary_document_contact_phase3",
+      "20260918202110_listing_seller_signing_pack_replacement_phase4"
+    ]
+  },
+  "scenarios": [
+    { "key": "individual_seller", "required": true, "expected": "One seller completes and signs the pack." },
+    { "key": "co_owner_primary_contact", "required": true, "expected": "Primary completes shared facts; each co-owner signs separately." },
+    { "key": "company_authority", "required": true, "expected": "Authorised signatory and company authority are preserved in the frozen pack." },
+    { "key": "trust_authority", "required": true, "expected": "Trustee and authority evidence are preserved in the frozen pack." },
+    { "key": "proposed_transfer_attorney", "required": true, "expected": "Attorney is acknowledged and handed off only after the completed signed mandate." },
+    { "key": "correction_after_one_signature", "required": true, "expected": "Signed evidence remains; open links are revoked; every signer signs the replacement." },
+    { "key": "marketing_separation", "required": true, "expected": "Marketing is optional, separate, and unticked by default." },
+    { "key": "audit_export", "required": true, "expected": "Terms version, acknowledgements, signatures, and replacement lineage are exportable." }
+  ],
+  "pilotEvidence": [
+    "named_agency_id",
+    "counsel_approved_terms_version",
+    "scenario_results",
+    "audit_export_sample",
+    "rollback_owner",
+    "pilot_approval"
+  ]
+}

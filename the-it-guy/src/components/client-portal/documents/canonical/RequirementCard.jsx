@@ -1,4 +1,4 @@
-import { CalendarClock, UserRound } from 'lucide-react'
+import { CalendarClock, Link2, UserRound } from 'lucide-react'
 import { WORKFLOW_GATE_LABELS, formatCanonicalLabel } from '../../../../services/documents/canonicalDocumentWorkspaceService'
 import RequirementBlockerBadge from './RequirementBlockerBadge'
 import RequirementExplanationPanel from './RequirementExplanationPanel'
@@ -62,6 +62,16 @@ function RequirementCard({
 
       <RequirementExplanationPanel requirement={requirement} />
       <RequirementReviewState requirement={requirement} />
+      {requirement.projectionMessage ? (
+        <p className={`mt-3 flex items-start gap-1.5 rounded-[12px] border px-3 py-2 text-xs leading-5 ${
+          requirement.projectionStatus === 'legacy_mapped'
+            ? 'border-[#f5d9a8] bg-[#fff9ed] text-[#8a5600]'
+            : 'border-[#dbe8f5] bg-[#f6faff] text-[#35546c]'
+        }`}>
+          <Link2 size={13} className="mt-0.5 shrink-0" aria-hidden="true" />
+          {requirement.projectionMessage}
+        </p>
+      ) : null}
       <RequirementUploadArea
         requirement={requirement}
         uploadingDocumentKey={uploadingDocumentKey}

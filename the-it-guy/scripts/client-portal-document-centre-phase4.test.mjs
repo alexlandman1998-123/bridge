@@ -155,6 +155,10 @@ test('seller generated mandate and property disclosure expose the correct downlo
           sellerName: 'Mia Seller',
           propertyDisclosure: {
             declarationAccepted: true,
+            signature: 'Mia Seller',
+            signedAt: '2026-07-27T08:00:00Z',
+            arch9TermsAccepted: true,
+            decision: 'none',
             generatedDocument: {
               id: 'disclosure-1',
               title: 'Property Condition Disclosure',
@@ -239,9 +243,13 @@ test('seller sale documents resolve from production packet status and snake case
       form_data: {
         sellerFirstName: 'Mia',
         sellerSurname: 'Seller',
-        property_disclosure: {
-          declaration_accepted: true,
-          generated_document: {
+          property_disclosure: {
+            declaration_accepted: true,
+            signature: 'Mia Seller',
+            signed_at: '2026-07-27T08:00:00Z',
+            arch9_terms_accepted: true,
+            decision: 'none',
+            generated_document: {
             id: 'disclosure-production',
             title: 'Seller Declaration / Disclosure',
             file_name: 'seller-declaration-disclosure.html',
@@ -291,6 +299,10 @@ test('seller sale documents resolve from compact core payload data', () => {
       form_data: {
         propertyDisclosure: {
           declarationAccepted: true,
+          signature: 'Mia Seller',
+          signedAt: '2026-07-27T08:00:00Z',
+          arch9TermsAccepted: true,
+          decision: 'none',
           generatedDocument: {
             id: 'disclosure-core',
             title: 'Seller Declaration / Disclosure',

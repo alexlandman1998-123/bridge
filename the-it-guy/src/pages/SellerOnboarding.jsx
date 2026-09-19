@@ -124,7 +124,7 @@ import {
   readArch9SellerTermsAcceptance,
 } from '../lib/arch9TermsAcceptance'
 
-const STEPS = ['Seller Information', 'Property Details', 'Property Disclosure', 'Review & Submit']
+const STEPS = ['Ownership & FICA', 'Property Information', 'Disclosure & Confirmation', 'Review & Send']
 
 const SELLER_STATUS_LABELS = {
   [SELLER_ONBOARDING_STATUS.NOT_STARTED]: 'Not Started',
@@ -323,23 +323,23 @@ const BRAND_ACTION_BUTTON_CLASS =
 const SELLER_ONBOARDING_NOTIFICATION_TIMEOUT_MS = 8000
 const STEP_META = [
   {
-    label: 'Seller Information',
-    helper: 'Confirm seller identity and ownership structure.',
+    label: 'Ownership & FICA',
+    helper: 'Confirm ownership, authority and compliance information.',
     icon: UserRound,
   },
   {
-    label: 'Property Details',
+    label: 'Property Information',
     helper: 'Capture the property identity and sale context.',
     icon: Home,
   },
   {
-    label: 'Property Disclosure',
-    helper: 'Capture known material facts and seller declaration.',
+    label: 'Disclosure & Confirmation',
+    helper: 'Capture known property facts and confirm your information.',
     icon: ClipboardCheck,
   },
   {
-    label: 'Review & Submit',
-    helper: 'Check everything before your agent receives it.',
+    label: 'Review & Send',
+    helper: 'Check everything before sending it to your agent for review.',
     icon: ClipboardCheck,
   },
 ]
@@ -2313,11 +2313,11 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
         </span>
         <div className="min-w-0">
           <p className={`text-lg font-semibold tracking-normal ${ready ? 'text-[#14532d]' : 'text-[#7a4b10]'}`}>
-            {ready ? 'Ready to submit' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
+            {ready ? 'Ready to send to your agent' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
           </p>
           <p className={`mt-1 text-sm leading-6 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
             {ready
-              ? 'Everything required for this onboarding has been captured. Submit when the summary looks correct.'
+              ? 'Everything required for onboarding has been captured. Send it to your agent when the summary looks correct.'
               : 'Open the highlighted sections below and finish the missing details before submitting.'}
           </p>
         </div>
@@ -2382,12 +2382,12 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
           disabled={!ready || submitting}
           className={`min-h-[52px] w-full rounded-[16px] ${BRAND_ACTION_BUTTON_CLASS}`}
         >
-          {submitting ? 'Submitting...' : ready ? 'Submit Seller Information' : 'Complete required items to submit'}
+          {submitting ? 'Sending...' : ready ? 'Send onboarding to agent' : 'Complete required items to continue'}
           <CheckCircle2 size={16} />
         </Button>
         <p className={`mt-2 text-center text-xs leading-5 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
           {ready
-            ? 'You can still return to a section above before submitting.'
+            ? 'This sends your information for review. It does not sign a mandate.'
             : 'This button stays here while you complete the highlighted items.'}
         </p>
       </div>
@@ -4932,7 +4932,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         ) : null}
         {currentStep === FINAL_STEP_INDEX ? (
           <Button type="button" variant="ghost" onClick={handleSubmit} disabled={submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
-            {submitting ? 'Submitting...' : 'Submit Seller Information'}
+            {submitting ? 'Sending...' : 'Send onboarding to agent'}
             <CheckCircle2 size={14} />
           </Button>
         ) : null}
@@ -4965,7 +4965,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
           {currentStep === FINAL_STEP_INDEX ? (
             <Button type="button" variant="ghost" onClick={handleSubmit} disabled={submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
-              {submitting ? 'Submitting...' : 'Submit Seller Information'}
+              {submitting ? 'Sending...' : 'Send onboarding to agent'}
               <CheckCircle2 size={14} />
             </Button>
           ) : null}
@@ -6451,11 +6451,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
           {currentStep === FINAL_STEP_INDEX ? (
             <StepShell
-              eyebrow="Review & Submit"
+              eyebrow="Review & Send"
               title="Check your seller file"
               description="Once submitted, your agent will review the information and prepare the next step in your selling journey."
             >
               <div className="grid grid-cols-1 gap-4">
+                <div className="rounded-[18px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#35546c]"><p className="font-semibold text-[#172334]">What happens next</p><p className="mt-1">This sends your ownership, FICA, property and disclosure information to your agent. Your agent will review it and, if needed, send a separate formal signing pack or arrange a manual mandate. Submitting onboarding does not sign a mandate.</p></div>
                 <ReviewReadinessPanel
                   issueGroups={submitIssueGroups}
                   sellerName={getSellerDisplayName(listing, form)}

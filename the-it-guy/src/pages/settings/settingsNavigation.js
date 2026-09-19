@@ -1,5 +1,4 @@
 import {
-  BriefcaseBusiness,
   Building2,
   Mail,
   Palette,
@@ -48,15 +47,6 @@ export const SETTINGS_NAV_GROUPS = [
         keywords: 'company agency attorney modules bond cancellation principal branches permissions visibility governance',
       },
       {
-        to: '/settings/business-lines',
-        label: 'Business Lines',
-        description: 'Enable Sales, Rentals, or both for the organisation.',
-        icon: BriefcaseBusiness,
-        roles: ['agent'],
-        permission: PERMISSIONS.manageWorkspaceSettings,
-        keywords: 'business lines business focus sales rentals workspace split rental agents departments',
-      },
-      {
         to: '/settings/branding',
         label: 'Branding',
         description: 'Logos, colours, email branding, and portal branding.',
@@ -76,7 +66,7 @@ export const SETTINGS_NAV_GROUPS = [
         keywords: 'communications email templates preview buyer seller viewing appointment valuation notifications',
       },
       {
-        to: '/settings/roles',
+        to: '/settings/organisation/roles',
         label: 'Roles & Permissions',
         description: 'User roles, permission groups, and access control.',
         icon: UsersRound,

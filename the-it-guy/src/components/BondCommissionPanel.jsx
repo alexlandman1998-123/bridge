@@ -4,6 +4,7 @@ import {
   saveTransactionBondCloseout,
   uploadTransactionBondCloseoutDocument,
 } from '../lib/api'
+import DocumentUploadStatus from './documents/DocumentUploadStatus'
 
 const currency = new Intl.NumberFormat('en-ZA', {
   style: 'currency',
@@ -38,6 +39,7 @@ function BondCommissionPanel({ transaction, unit, buyer, visible = true }) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [uploadProgress, setUploadProgress] = useState({})
   const [form, setForm] = useState({
     budgetedAmount: '',
     actualPaidAmount: '',
@@ -120,15 +122,18 @@ function BondCommissionPanel({ transaction, unit, buyer, visible = true }) {
     try {
       setSaving(true)
       setError('')
+      setUploadProgress((current) => ({ ...current, [documentTypeKey]: { stage: 'preparing', message: 'Preparing a secure upload…', file } }))
       const response = await uploadTransactionBondCloseoutDocument({
         transactionId: transaction.id,
         closeoutId: closeout?.id || null,
         file,
         documentTypeKey,
         label,
+        onProgress: (progress) => setUploadProgress((current) => ({ ...current, [documentTypeKey]: { ...progress, file } })),
       })
       setCloseout(response)
     } catch (uploadError) {
+      setUploadProgress((current) => ({ ...current, [documentTypeKey]: { stage: 'failed', message: uploadError.message, file } }))
       setError(uploadError.message)
     } finally {
       setSaving(false)
@@ -313,11 +318,12 @@ function BondCommissionPanel({ transaction, unit, buyer, visible = true }) {
                     <small>{item.uploadedAt ? formatDate(item.uploadedAt) : 'Awaiting upload'}</small>
                   </div>
                   <div className="unit-access-actions">
-                    <label className="ghost-button">
-                      Upload
+                    <label className={`ghost-button${saving ? ' pointer-events-none opacity-60' : ''}`}>
+                      {uploadProgress[item.key]?.busy ? 'Uploading…' : uploadProgress[item.key]?.stage === 'failed' ? 'Try again' : 'Upload'}
                       <input
                         type="file"
                         hidden
+                        disabled={saving}
                         onChange={(event) => {
                           const file = event.target.files?.[0]
                           if (file) {
@@ -333,6 +339,7 @@ function BondCommissionPanel({ transaction, unit, buyer, visible = true }) {
                       </a>
                     ) : null}
                   </div>
+                  <DocumentUploadStatus file={uploadProgress[item.key]?.file} progress={uploadProgress[item.key]} className="mt-3" />
                 </article>
               ))}
             </div>

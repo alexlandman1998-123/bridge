@@ -631,6 +631,7 @@ export const routePermissionRules = Object.freeze([
   { prefix: '/reports', permission: PERMISSIONS.viewReports },
   { prefix: '/team', permission: PERMISSIONS.manageDevelopmentTeam },
   { prefix: '/users', appRole: APP_ROLES.attorney, workspaceType: WORKSPACE_TYPES.attorneyFirm, permission: PERMISSIONS.manageAttorneyTeam },
+  { prefix: '/settings/organisation/roles', permission: PERMISSIONS.manageUsers },
   { prefix: '/settings/users', permission: PERMISSIONS.manageUsers },
   { prefix: '/settings/billing', permission: PERMISSIONS.manageBilling },
   { prefix: '/settings/developments', permission: PERMISSIONS.manageWorkspaceSettings },

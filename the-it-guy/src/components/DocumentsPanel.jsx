@@ -2,6 +2,7 @@ import { CheckCircle2, Circle, Download, FileUp } from 'lucide-react'
 import { useState } from 'react'
 import Button from './ui/Button'
 import Field from './ui/Field'
+import DocumentUploadStatus from './documents/DocumentUploadStatus'
 
 function isTemplateDocument(name = '') {
   return /(template|blank|draft|unsigned)/i.test(String(name))
@@ -101,6 +102,7 @@ function DocumentsPanel({
 }) {
   const [documentView, setDocumentView] = useState('repository')
   const [vaultFilter, setVaultFilter] = useState('all')
+  const [selectedUploadFile, setSelectedUploadFile] = useState(null)
   const completeCount = checklist.filter((item) => item.complete).length
   const missingItems = checklist.filter((item) => !item.complete)
   const completionPercent = checklist.length ? Math.round((completeCount / checklist.length) * 100) : 0
@@ -368,8 +370,8 @@ function DocumentsPanel({
           <span>File</span>
           <span className="inline-flex min-h-[48px] cursor-pointer items-center justify-center gap-2 rounded-[14px] border border-dashed border-[#cfd9e5] bg-white px-4 py-3 text-sm font-semibold text-[#35546c] transition duration-150 ease-out hover:border-[#bfd3ea] hover:bg-[#f8fafc]">
             <FileUp size={14} />
-            Choose file
-            <input type="file" name="file" className="hidden" />
+            {selectedUploadFile ? 'Choose another file' : 'Choose file'}
+            <input type="file" name="file" className="hidden" disabled={saving} onChange={(event) => setSelectedUploadFile(event.target.files?.[0] || null)} />
           </span>
         </label>
 
@@ -401,10 +403,16 @@ function DocumentsPanel({
               <span>Mark as client visible</span>
             </label>
           ) : null}
-          <Button type="submit" disabled={saving || !canUpload}>
-            Upload
+          <Button type="submit" disabled={saving || !canUpload || !selectedUploadFile}>
+            {saving ? 'Uploading…' : 'Upload'}
           </Button>
         </div>
+
+        <DocumentUploadStatus
+          file={selectedUploadFile}
+          progress={saving ? { stage: 'uploading', message: 'Uploading securely — please keep this page open.' } : null}
+          className="xl:col-span-3"
+        />
 
         {!canUpload ? (
           <div className="xl:col-span-3 rounded-[16px] border border-dashed border-[#d8e2ee] bg-white px-4 py-4 text-sm text-[#6b7d93]">
