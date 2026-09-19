@@ -675,6 +675,24 @@ function resolveAgencyBrand(listing = {}) {
   }
 }
 
+async function fetchCurrentSellerOnboardingBranding(token = '') {
+  const normalizedToken = String(token || '').trim()
+  if (!normalizedToken || typeof fetch !== 'function') return {}
+
+  try {
+    const response = await fetch(`/api/public/seller-onboarding-branding?token=${encodeURIComponent(normalizedToken)}`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) return {}
+    const payload = await response.json().catch(() => null)
+    return payload?.branding && typeof payload.branding === 'object' ? payload.branding : {}
+  } catch {
+    // The frozen listing snapshot remains a safe fallback when the public
+    // branding endpoint is temporarily unavailable.
+    return {}
+  }
+}
+
 function normalizeSellerBrandColour(value = '', fallback = '') {
   const text = String(value || '').trim()
   if (!text) return fallback
@@ -2667,7 +2685,10 @@ function PropertyDisclosureSection({
             icon={FileCheck2}
             title="Seller Declaration"
             description="Sign only when the disclosure information is true and complete to the best of your knowledge."
-            mobilePaneIndex={signatureOnly ? 0 : declarationPaneIndex}
+            // A signer link has one actionable section. It must never be
+            // hidden by the multi-pane mobile questionnaire state.
+            mobilePane={!signatureOnly}
+            mobilePaneIndex={signatureOnly ? null : declarationPaneIndex}
           >
             <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#25603d]">
               I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
@@ -3811,7 +3832,18 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         return
       }
       const { default: html2pdf } = await import('html2pdf.js/src/index.js')
-      const agencyBrand = resolveAgencyBrand(listing)
+      // A downloaded disclosure is an official artefact. Refresh the
+      // organisation mark immediately before rendering so an older frozen
+      // onboarding payload cannot fall back to the organisation name after a
+      // logo has been configured or replaced.
+      const currentBranding = await fetchCurrentSellerOnboardingBranding(token)
+      const agencyBrand = resolveAgencyBrand({
+        ...(listing || {}),
+        branding: {
+          ...((listing && typeof listing.branding === 'object') ? listing.branding : {}),
+          ...currentBranding,
+        },
+      })
       const propertyAddress = getPropertyDisplayAddress(listing, form)
       const markup = buildPropertyDisclosureDocumentMarkup(normalizedDisclosure, {
         sellerName: getSellerDisplayName(listing, form),

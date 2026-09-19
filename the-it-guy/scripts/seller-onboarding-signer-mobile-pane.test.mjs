@@ -10,13 +10,18 @@ assert.match(
 )
 assert.match(
   source,
-  /mobilePaneIndex=\{signatureOnly \? 0 : declarationPaneIndex\}/,
-  'The declaration controls must render in that signer-specific pane.',
+  /mobilePane=\{!signatureOnly\}[\s\S]*?mobilePaneIndex=\{signatureOnly \? null : declarationPaneIndex\}/,
+  'A signer-only declaration must bypass mobile pane hiding so its signing controls always render.',
 )
 assert.match(
   source,
   /if \(hasRequestedComplianceSigner\) return 1/,
   'The mobile progress model must not derive signer panes from editable disclosure questions.',
+)
+assert.match(
+  source,
+  /fetchCurrentSellerOnboardingBranding\(token\)[\s\S]*?branding:\s*\{[\s\S]*?\.\.\.currentBranding/,
+  'Disclosure downloads must refresh the current agency branding before rendering the official PDF.',
 )
 
 console.log('seller onboarding signer mobile-pane checks passed')
