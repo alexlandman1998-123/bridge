@@ -23,5 +23,15 @@ assert.match(
   /fetchCurrentSellerOnboardingBranding\(token\)[\s\S]*?branding:\s*\{[\s\S]*?\.\.\.currentBranding/,
   'Disclosure downloads must refresh the current agency branding before rendering the official PDF.',
 )
+assert.match(
+  source,
+  /signerAcknowledgementPersistenceRef[\s\S]*?\.then\(persistAcknowledgements\)/,
+  'Signer acknowledgement changes must save in sequence rather than racing stale form snapshots.',
+)
+assert.match(
+  source,
+  /sellerComplianceSignatureDrafts[\s\S]*?if \(hasRequestedComplianceSigner \|\| !isPropertyDisclosureDigitallyComplete\(next\)\) return nextForm/,
+  'Drawing on a signer link must remain a draft until the explicit confirmation action completes the declaration.',
+)
 
 console.log('seller onboarding signer mobile-pane checks passed')

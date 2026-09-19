@@ -3033,12 +3033,19 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const draftAutosaveTimerRef = useRef(null)
   const lastDraftSignatureRef = useRef('')
   const saveDraftRef = useRef(null)
+  // Signer acknowledgements are saved independently of the final signature.
+  // Keep a serialized local draft so quick consecutive checkbox changes can
+  // never write an older acknowledgement set over a newer one.
+  const signerAcknowledgementFormRef = useRef(null)
+  const signerAcknowledgementPersistenceRef = useRef(Promise.resolve())
   const requestedComplianceSignerId = useMemo(() => getSellerComplianceSignerIdFromUrl(), [token])
   const onboardingCompletionMode = useMemo(() => getSellerOnboardingCompletionModeFromUrl(), [token])
   const isAgentAssistedCompletion = onboardingCompletionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted
 
   useEffect(() => {
     setSignerAcknowledgements(null)
+    signerAcknowledgementFormRef.current = null
+    signerAcknowledgementPersistenceRef.current = Promise.resolve()
   }, [requestedComplianceSignerId])
 
   useEffect(() => {
@@ -3251,9 +3258,21 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const pendingSignatureRequests = Array.isArray(sellerComplianceSigning?.signatureRequests)
     ? sellerComplianceSigning.signatureRequests.filter((request) => request.signerId !== activeComplianceSigner?.id)
     : []
-  const activePropertyDisclosure = useMemo(() => buildDisclosureForComplianceSigner(form?.propertyDisclosure || {}, activeComplianceSigner, {
-    preferSignerSignature: hasRequestedComplianceSigner,
-  }), [activeComplianceSigner, form?.propertyDisclosure, hasRequestedComplianceSigner])
+  const activePropertyDisclosure = useMemo(() => {
+    const disclosure = buildDisclosureForComplianceSigner(form?.propertyDisclosure || {}, activeComplianceSigner, {
+      preferSignerSignature: hasRequestedComplianceSigner,
+    })
+    if (!hasRequestedComplianceSigner || !activeComplianceSigner?.id) return disclosure
+    const signatureDrafts = form?.sellerComplianceSignatureDrafts && typeof form.sellerComplianceSignatureDrafts === 'object'
+      ? form.sellerComplianceSignatureDrafts
+      : form?.seller_compliance_signature_drafts && typeof form.seller_compliance_signature_drafts === 'object'
+        ? form.seller_compliance_signature_drafts
+        : {}
+    const signerDraft = signatureDrafts[activeComplianceSigner.id] && typeof signatureDrafts[activeComplianceSigner.id] === 'object'
+      ? signatureDrafts[activeComplianceSigner.id]
+      : {}
+    return { ...disclosure, ...signerDraft }
+  }, [activeComplianceSigner, form?.propertyDisclosure, form?.sellerComplianceSignatureDrafts, form?.seller_compliance_signature_drafts, hasRequestedComplianceSigner])
   const propertyAddressDetails = useMemo(() => getPropertyAddressDetails(listing || {}, form || {}), [listing, form])
   const propertyTypeOptions = useMemo(
     () => getPropertyTypeOptionsByCategory(form?.propertyCategory || 'residential'),
@@ -3698,6 +3717,31 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   function patchPropertyDisclosure(patchOrKey = {}, value = undefined) {
     setTermsAcceptanceError('')
+    if (hasRequestedComplianceSigner && activeComplianceSigner?.id) {
+      const patch = typeof patchOrKey === 'string' ? { [patchOrKey]: value } : patchOrKey
+      setForm((previous) => {
+        const currentDrafts = previous?.sellerComplianceSignatureDrafts && typeof previous.sellerComplianceSignatureDrafts === 'object'
+          ? previous.sellerComplianceSignatureDrafts
+          : previous?.seller_compliance_signature_drafts && typeof previous.seller_compliance_signature_drafts === 'object'
+            ? previous.seller_compliance_signature_drafts
+            : {}
+        const nextDrafts = {
+          ...currentDrafts,
+          [activeComplianceSigner.id]: {
+            ...(currentDrafts[activeComplianceSigner.id] || {}),
+            ...patch,
+          },
+        }
+        const nextForm = {
+          ...(previous || {}),
+          sellerComplianceSignatureDrafts: nextDrafts,
+          seller_compliance_signature_drafts: nextDrafts,
+        }
+        signerAcknowledgementFormRef.current = nextForm
+        return nextForm
+      })
+      return
+    }
     setForm((previous) => {
       const current = normalizePropertyDisclosure(previous?.propertyDisclosure || {}, {
         kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
@@ -3712,7 +3756,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         propertyDisclosure: next,
         propertyDisclosureStatus: getPropertyDisclosureStatus(next),
       }
-      if (!isPropertyDisclosureDigitallyComplete(next)) return nextForm
+      // On a signer-specific link, drawing a signature is only draft input.
+      // Completion must happen through the explicit confirmation button after
+      // the required acknowledgements have been persisted.
+      if (hasRequestedComplianceSigner || !isPropertyDisclosureDigitallyComplete(next)) return nextForm
       return applySellerComplianceSignatureToForm({
         formData: nextForm,
         listing: listing || {},
@@ -3730,33 +3777,36 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setTermsAcceptanceError('')
     if (hasRequestedComplianceSigner) {
       const acknowledgementDraft = readSellerDisclosureAcknowledgements(nextAcknowledgements)
-      setSignerAcknowledgements(acknowledgementDraft)
-      setForm((previous) => applySellerComplianceSignerAcknowledgementsToForm({
-        formData: previous || {},
+      const nextSignerForm = applySellerComplianceSignerAcknowledgementsToForm({
+        formData: signerAcknowledgementFormRef.current || form || {},
         listing: listing || {},
         token,
         signerId: activeComplianceSigner?.id || requestedComplianceSignerId,
         acknowledgements: acknowledgementDraft,
-      }))
-      void persistListingUpdate((row) => {
-        const storedForm = row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object'
-          ? row.sellerOnboarding.formData
-          : form || {}
-        const persistedForm = applySellerComplianceSignerAcknowledgementsToForm({
-          formData: storedForm,
-          listing: row || listing || {},
-          token,
-          signerId: activeComplianceSigner?.id || requestedComplianceSignerId,
-          acknowledgements: acknowledgementDraft,
-        })
-        return {
+      })
+      signerAcknowledgementFormRef.current = nextSignerForm
+      setSignerAcknowledgements(acknowledgementDraft)
+      setForm(nextSignerForm)
+
+      const persistAcknowledgements = async () => {
+        const updated = await persistListingUpdate((row) => ({
           ...row,
           sellerOnboarding: {
             ...(row?.sellerOnboarding || {}),
-            formData: persistedForm,
+            currentStep: 2,
+            formData: nextSignerForm,
           },
-        }
-      }, { refreshForm: true }).catch((persistError) => {
+        }))
+        if (!updated) throw new Error('Unable to save signer acknowledgements.')
+      }
+
+      // Do not refresh `form` from each acknowledgement response. Some
+      // compatibility responses omit the frozen disclosure payload, which
+      // previously made the declaration controls disappear mid-signing.
+      signerAcknowledgementPersistenceRef.current = signerAcknowledgementPersistenceRef.current
+        .catch(() => undefined)
+        .then(persistAcknowledgements)
+      void signerAcknowledgementPersistenceRef.current.catch((persistError) => {
         console.error('[Seller Onboarding] signer acknowledgement save failed', persistError)
         setError('Your acknowledgement could not be saved. Please try again before signing.')
       })
@@ -4595,7 +4645,24 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setTermsAcceptanceError('')
     setSuccess('')
 
-    const disclosure = normalizePropertyDisclosure(activePropertyDisclosure || {}, {
+    // Ensure a final signature cannot race an acknowledgement save and be
+    // overwritten by a delayed acknowledgement response.
+    await signerAcknowledgementPersistenceRef.current.catch(() => undefined)
+
+    const formForSignature = signerAcknowledgementFormRef.current || form
+    const signatureDrafts = formForSignature?.sellerComplianceSignatureDrafts && typeof formForSignature.sellerComplianceSignatureDrafts === 'object'
+      ? formForSignature.sellerComplianceSignatureDrafts
+      : formForSignature?.seller_compliance_signature_drafts && typeof formForSignature.seller_compliance_signature_drafts === 'object'
+        ? formForSignature.seller_compliance_signature_drafts
+        : {}
+    const disclosure = normalizePropertyDisclosure({
+      ...buildDisclosureForComplianceSigner(
+        formForSignature?.propertyDisclosure || {},
+        activeComplianceSigner,
+        { preferSignerSignature: true },
+      ),
+      ...(signatureDrafts[activeComplianceSigner.id] || {}),
+    }, {
       kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
     })
     const acknowledgementValue = signerAcknowledgements || activeComplianceSigner?.acknowledgements || {}
@@ -4621,7 +4688,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     setSubmitting(true)
     try {
       const signedForm = applySellerComplianceSignatureToForm({
-        formData: form,
+        formData: formForSignature,
         listing: listing || {},
         token,
         signerId: activeComplianceSigner.id,
