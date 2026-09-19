@@ -3815,6 +3815,7 @@ export async function persistSellerProfileOnboardingFormData({
   allowEmptyOverride = false,
   allowProtectedSectionOverride = false,
   explicitClearFields = [],
+  replaceToken = false,
   client: providedClient = null,
 } = {}) {
   const client = providedClient || requireClient()
@@ -3837,7 +3838,7 @@ export async function persistSellerProfileOnboardingFormData({
 
   const payload = {
     private_listing_id: scopedListingId,
-    token: normalizeText(existing?.token || normalizedToken) || generateSellerOnboardingToken(),
+    token: normalizeText(replaceToken ? normalizedToken : existing?.token || normalizedToken) || generateSellerOnboardingToken(),
     status: nextStatus,
     form_data: nextFormData,
     seller_type: normalizeNullableText(sellerType || existing?.seller_type || nextFormData.sellerType || nextFormData.ownershipType),

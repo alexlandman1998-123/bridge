@@ -1619,6 +1619,13 @@ function normalizeFormData(listing) {
     sellerLegalType: ownershipType,
     ownerEntityType,
     ownerStructureType,
+    // An agent-selected legal ownership route is part of the prepared
+    // onboarding instruction. The seller can complete its facts, but may not
+    // silently turn (for example) a company instruction into an individual.
+    ownershipRouteLocked: Boolean(existing.ownershipRouteLocked || existing.ownership_route_locked),
+    ownership_route_locked: Boolean(existing.ownershipRouteLocked || existing.ownership_route_locked),
+    ownershipRouteLockedAt: existing.ownershipRouteLockedAt || existing.ownership_route_locked_at || '',
+    ownership_route_locked_at: existing.ownershipRouteLockedAt || existing.ownership_route_locked_at || '',
     foreignOwner,
     foreignOwnerCountry: existing.foreignOwnerCountry || existing.foreign_owner_country || existing.foreign?.country || existing.foreign?.jurisdiction || canonicalFacts?.seller?.foreign_owner_country || canonicalFacts?.seller?.foreign?.country || '',
     foreignPassportNumber: existing.foreignPassportNumber || existing.foreign_passport_number || existing.passportNumber || existing.foreign?.passportNumber || existing.foreign?.passport_number || canonicalFacts?.seller?.foreign?.passport_number || '',
@@ -2085,13 +2092,14 @@ function FormSection({ icon, title, description, illustration = '', children, mo
   )
 }
 
-function ChoiceCard({ active, title, description, icon = Circle, onClick }) {
+function ChoiceCard({ active, title, description, icon = Circle, onClick, disabled = false }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={active}
-      className={`${choiceCardClass(active)} flex min-h-[62px] items-start gap-3 sm:min-h-[92px]`}
+      className={`${choiceCardClass(active)} flex min-h-[62px] items-start gap-3 disabled:cursor-not-allowed disabled:opacity-70 sm:min-h-[92px]`}
     >
       <span className={`mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border ${
         active ? 'border-[var(--seller-brand-action-border)] bg-white text-[var(--seller-brand-action)]' : 'border-[#dbe6f2] bg-[#f8fbff] text-[#60748b]'
@@ -2424,6 +2432,7 @@ function PropertyDisclosureSection({
   onConfirmSignerDeclaration,
   signerDeclarationSubmitting = false,
   signerDeclarationComplete = false,
+  onContinueToReview,
   termsAcceptanceError = '',
   acknowledgementValue = {},
   onAcknowledgementsChange,
@@ -2716,6 +2725,23 @@ function PropertyDisclosureSection({
               <Download size={15} />
               Download Disclosure PDF
             </button>
+            {!signatureOnly ? (
+              <div className="mt-5 border-t border-[#dbe6f2] pt-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={onContinueToReview}
+                  disabled={!isPropertyDisclosureDigitallyComplete(normalized)}
+                  className={`min-h-[52px] w-full rounded-[16px] ${BRAND_ACTION_BUTTON_CLASS}`}
+                >
+                  Review and send onboarding
+                  <ChevronRight size={16} />
+                </Button>
+                <p className="mt-2 text-center text-xs leading-5 text-[#60748b]">
+                  Your submission button is on the next review screen.
+                </p>
+              </div>
+            ) : null}
           </FormSection>
         ) : null}
       </div>
@@ -3552,6 +3578,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function handleOwnerEntityTypeChange(value) {
+    if (form?.ownershipRouteLocked || form?.ownership_route_locked) return
     setForm((previous) => {
       const next = { ...(previous || {}) }
       const ownerStructureType = normalizeOwnerStructureType('', value)
@@ -3561,6 +3588,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   }
 
   function handleOwnerStructureTypeChange(value) {
+    if (form?.ownershipRouteLocked || form?.ownership_route_locked) return
     setForm((previous) => {
       const next = { ...(previous || {}) }
       const ownerEntityType = next.ownerEntityType || deriveOwnerEntityType(next.ownershipType, next)
@@ -4086,7 +4114,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         return 'Please provide the foreign country or jurisdiction.'
       }
 
-      if (ownershipBranch === 'individual' || ownershipBranch === 'married') {
+      if (ownershipBranch === 'individual' || ownershipBranch === 'married' || form.ownerStructureType === 'foreign_individual') {
         if (!form.idNumber) {
           return 'Please provide ID number / passport details.'
         }
@@ -4286,7 +4314,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
             return 'Please provide the seller nationality before continuing.'
           }
         }
-        if ((ownershipBranch === 'individual' || ownershipBranch === 'married') && !form.idNumber) {
+        if ((ownershipBranch === 'individual' || ownershipBranch === 'married' || form.ownerStructureType === 'foreign_individual') && !form.idNumber) {
           return 'Please provide ID number / passport details.'
         }
         if ((ownershipBranch === 'individual' || ownershipBranch === 'married') && !resolveSellerResidentialAddress(form)) {
@@ -4575,6 +4603,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       !String(submissionForm.saResident || submissionForm.sa_resident || submissionForm.taxResident || submissionForm.tax_resident || '').trim() && 'SA resident status',
       submissionIsNaturalPersonSeller && !String(submissionForm.dateOfBirth || submissionForm.date_of_birth || submissionForm.birthDate || '').trim() && 'Date of birth',
       submissionIsNaturalPersonSeller && !String(submissionForm.nationality || '').trim() && 'Nationality',
+      submissionIsNaturalPersonSeller && !String(submissionForm.idNumber || submissionForm.id_number || submissionForm.foreignPassportNumber || submissionForm.foreign_passport_number || submissionForm.passportNumber || submissionForm.passport_number || '').trim() && 'ID number / passport',
       (submissionOwnershipBranch === 'individual' || submissionOwnershipBranch === 'married') && !resolveSellerResidentialAddress(submissionForm) && 'Residential address',
       submissionIsForeignOwner && !String(submissionForm.foreignOwnerCountry || submissionForm.foreign_owner_country || '').trim() && 'Foreign country / jurisdiction',
       submissionOwnershipBranch === 'company' && (!submissionForm.companyName || !submissionForm.companyRegistrationNumber || !submissionForm.companyRegisteredAddress) && 'Company name, registration number, and registered address',
@@ -4883,6 +4912,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
   const ownerEntityType = form.ownerEntityType || deriveOwnerEntityType(form.ownershipType, form)
   const ownerStructureType = form.ownerStructureType || deriveOwnerStructureType(form.ownershipType, ownerEntityType, form)
+  const ownershipRouteLocked = Boolean(form.ownershipRouteLocked || form.ownership_route_locked)
   const ownerStructureOptions = OWNER_STRUCTURE_TYPES_BY_ENTITY[ownerEntityType] || OWNER_STRUCTURE_TYPES_BY_ENTITY.natural_person
   const isForeignOwner = isForeignOwnerModel(ownerEntityType, ownerStructureType)
   const isNaturalPersonSeller =
@@ -5208,6 +5238,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                 illustration="ownership"
                 mobilePaneIndex={sellerPaneIndexes.ownership}
               >
+                {ownershipRouteLocked ? (
+                  <div className="mb-4 rounded-[14px] border border-[#d7e7dd] bg-[#f2faf5] px-4 py-3 text-sm leading-5 text-[#276344]">
+                    Your agent selected the legal ownership structure for this onboarding. If it needs correcting, please ask your agent to update the seller setup and send a replacement link.
+                  </div>
+                ) : null}
                 <div className="grid grid-cols-1 gap-2 sm:mt-4 sm:grid-cols-2 lg:grid-cols-4">
                   {OWNER_ENTITY_TYPES.map((item) => {
                     const active = ownerEntityType === item.value
@@ -5219,6 +5254,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         icon={OWNER_ENTITY_ICONS[item.value] || UserRound}
                         title={item.label}
                         description={item.description}
+                        disabled={ownershipRouteLocked}
                       />
                     )
                   })}
@@ -5237,6 +5273,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                           icon={OWNERSHIP_OPTION_ICONS[item.value] || OWNER_ENTITY_ICONS[ownerEntityType] || UserRound}
                           title={item.label}
                           description={item.description}
+                          disabled={ownershipRouteLocked}
                         />
                       )
                     })}
@@ -5252,8 +5289,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     {ownerStructureType === 'foreign_individual' ? (
                       <>
                         <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                          Passport / foreign ID number
-                          <input className={DETAIL_INPUT_CLASS} value={form.idNumber || form.foreignPassportNumber} onChange={(event) => {
+                          Passport / foreign ID number *
+                          <input required className={DETAIL_INPUT_CLASS} value={form.idNumber || form.foreignPassportNumber} onChange={(event) => {
                             handleFormUpdate('idNumber', event.target.value)
                             handleFormUpdate('foreignPassportNumber', event.target.value)
                           }} />
@@ -5316,8 +5353,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
                   {!['company', 'trust', 'deceased_estate', 'power_of_attorney', 'multiple_owners'].includes(ownershipBranch) ? (
                     <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                      {ownershipFieldLabels.idNumber}
-                      <input className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
+                      {ownershipFieldLabels.idNumber}{isNaturalPersonSeller ? ' *' : ''}
+                      <input required={isNaturalPersonSeller} className={DETAIL_INPUT_CLASS} value={form.idNumber} onChange={(event) => handleFormUpdate('idNumber', event.target.value)} />
                     </label>
                   ) : null}
 
@@ -6600,6 +6637,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               onConfirmSignerDeclaration={handleSignerDeclarationSubmit}
               signerDeclarationSubmitting={submitting}
               signerDeclarationComplete={Boolean(hasRequestedComplianceSigner && activeComplianceSigner?.complete)}
+              onContinueToReview={() => {
+                setCurrentStep(FINAL_STEP_INDEX)
+                setMobilePaneIndex(0)
+                scrollSellerOnboardingToTop()
+              }}
               termsAcceptanceError={termsAcceptanceError}
               acknowledgementValue={hasRequestedComplianceSigner
                 ? (signerAcknowledgements || activeComplianceSigner?.acknowledgements || {})
@@ -6802,7 +6844,11 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           <div className="absolute bottom-[-9rem] left-1/3 h-[28rem] w-[28rem] rounded-full bg-white/30 blur-3xl" />
         </div>
       ) : null}
-      <div className={shouldShowWelcome ? 'relative z-10 w-full' : PAGE_CONTAINER_CLASS}>
+      <div className={shouldShowWelcome
+        ? 'relative z-10 w-full'
+        : hasRequestedComplianceSigner
+          ? 'mx-auto w-full max-w-[560px] lg:max-w-[960px]'
+          : PAGE_CONTAINER_CLASS}>
         {content}
       </div>
     </main>

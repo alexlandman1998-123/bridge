@@ -289,9 +289,23 @@ function resolvePropertyDisclosureBranding(context = {}) {
   )
   const agencyLogoUrl = resolveDocumentAssetUrl(
     firstNonEmpty(
-      // Disclosure PDFs have a white page background. Prefer the dark/on-light
-      // mark here; agency onboarding pages can still select their light mark
-      // for dark surfaces.
+      // A disclosure PDF is always rendered on white paper. `logoLightUrl`
+      // is the agency's on-light mark (despite the historical field name),
+      // while `logoDarkUrl` is commonly the inverse/white mark used on dark
+      // portal surfaces. Keep the latter only as a legacy fallback.
+      branding.logoLightUrl,
+      branding.logo_light_url,
+      branding.logoLight,
+      branding.organisationLogoLightUrl,
+      branding.organisation_logo_light_url,
+      branding.agencyLogoLightUrl,
+      branding.agency_logo_light_url,
+      branding.logoUrl,
+      branding.logo_url,
+      branding.organisationLogoUrl,
+      branding.organisation_logo_url,
+      branding.agencyLogoUrl,
+      branding.agency_logo_url,
       branding.logoDarkUrl,
       branding.logo_dark_url,
       branding.logoDark,
@@ -299,15 +313,6 @@ function resolvePropertyDisclosureBranding(context = {}) {
       branding.organisation_logo_dark_url,
       branding.agencyLogoDarkUrl,
       branding.agency_logo_dark_url,
-      branding.logoUrl,
-      branding.logo_url,
-      branding.logoLightUrl,
-      branding.logo_light_url,
-      branding.logoLight,
-      branding.organisationLogoUrl,
-      branding.organisation_logo_url,
-      branding.agencyLogoUrl,
-      branding.agency_logo_url,
       context.logoUrl,
     ),
     context.assetBaseUrl,

@@ -120,7 +120,8 @@ test('property disclosure stays a standalone document when no compliance pack is
   assert.match(html, /Annexure A/)
   assert.match(html, /I\/We, John Smith, holder\(s\) of ID\/passport number 8001015009087, declare/)
   assert.match(html, /disclosures in this Annexure A relating to 1 Main Road, Cape Town are true, accurate and complete/)
-  assert.match(html, /kingstons-dark\.png/)
+  assert.match(html, /kingstons-light\.png/)
+  assert.doesNotMatch(html, /kingstons-dark\.png/)
   assert.match(html, /\.answer-col-unsure \{ width: 12%; \}/)
 })
 

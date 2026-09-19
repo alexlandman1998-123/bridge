@@ -9,6 +9,7 @@ import {
   normalizeSellerDocumentRequirementStatus,
 } from './sellerDocumentRequirementsService.js'
 import { buildSellerSigningStatusModel } from './sellerSigningStatusService.js'
+import { buildSellerSubject } from '../lib/sellerSubjectModel.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -248,7 +249,7 @@ function blocker(id, label, category, actionId, severity = 'blocked', sellerMess
   }
 }
 
-export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [], journey = null } = {}) {
+export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [], journey = null, sellerSubject = null } = {}) {
   const resolvedJourney = journey || buildSellerJourney({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents })
   const signingStatus = resolvedJourney.signingStatus || buildSellerSigningStatusModel({
     onboardingSubmitted: resolvedJourney.onboardingSubmitted,
@@ -258,10 +259,29 @@ export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], 
   if (!isSellerLead(lead) && !resolvedJourney.isSeller) return []
   const listingReadiness = getListingReadiness({ lead, listing: listing || {}, journey: resolvedJourney })
   const blockers = []
+  const resolvedSellerSubject = sellerSubject && typeof sellerSubject === 'object'
+    ? sellerSubject
+    : buildSellerSubject({
+        formData: getSellerOnboardingFormData(listing || {}),
+        listing: listing || {},
+        lead: { ...lead, ...contact },
+        canonicalFacts: lead?.sellerCanonicalFacts || lead?.seller_canonical_facts || listing?.sellerCanonicalFacts || listing?.seller_canonical_facts || {},
+      })
   const contactReady = hasContact({ lead, contact })
   const addressReady = Boolean(propertyAddress({ lead, listing: listing || {} }))
   const contactedOrLater = sellerStageIndex(resolvedJourney) >= (SELLER_JOURNEY_STAGE_ORDER.get('contacted') ?? 1)
   if (!contactReady) blockers.push(blocker('missing_seller_contact', 'Missing Seller Contact', 'seller', 'contact_seller', 'blocked', 'Your agent needs seller contact details.'))
+  if (!onboardingSent(resolvedJourney) && !hasProgressedPastOnboarding(resolvedJourney) && !resolvedSellerSubject.onboardingReady) {
+    const missing = resolvedSellerSubject.requiredSetupFields.join(', ')
+    blockers.push(blocker(
+      'seller_ownership_setup_required',
+      'Seller Ownership Setup Required',
+      'seller',
+      'setup_seller_ownership',
+      'blocked',
+      missing ? `Set up the legal owner before sending onboarding: ${missing}.` : 'Set up the legal owner before sending onboarding.',
+    ))
+  }
   if (contactReady && contactedOrLater && !onboardingSent(resolvedJourney) && !hasProgressedPastOnboarding(resolvedJourney)) {
     blockers.push(blocker('seller_onboarding_not_sent', 'Seller Onboarding Not Sent', 'onboarding', 'send_seller_onboarding', 'blocked', 'Send seller onboarding so the seller can provide property details and documents.'))
   }
@@ -336,6 +356,9 @@ export function getNextSellerAction(args = {}) {
   if (journey.listingLive) return action('monitor_performance', 'Monitor Performance')
   const blockers = getSellerBlockers({ ...args, journey })
   const blocking = blockers.find((item) => item.severity === 'blocked') || blockers[0] || null
+  if (blockers.some((item) => item.id === 'seller_ownership_setup_required')) {
+    return action('setup_seller_ownership', 'Set Up Seller Ownership', true, '', { blocker: blockers.find((item) => item.id === 'seller_ownership_setup_required') })
+  }
   if (blocking?.id === 'missing_seller_contact') return action('contact_seller', 'Contact Seller', true, '', { blocker: blocking })
   const stageKey = normalizeKey(journey?.stage?.key || journey?.stageKey || journey?.stage)
   const openPortalBlocker = blockers.find((item) => item.id === 'seller_onboarding_not_submitted') || blocking
@@ -410,9 +433,9 @@ export function getSellerReadiness(args = {}) {
   }
 }
 
-export function getStageAwareSellerActions({ lead = {}, contact = {}, appointments = [], listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [], journey = null, blockers = null, nextAction = null } = {}) {
+export function getStageAwareSellerActions({ lead = {}, contact = {}, appointments = [], listing = null, mandatePacketStatus = null, mandatePacket = null, documents = [], journey = null, blockers = null, nextAction = null, sellerSubject = null } = {}) {
   const resolvedJourney = journey || buildSellerJourney({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents })
-  const resolvedBlockers = blockers || getSellerBlockers({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney })
+  const resolvedBlockers = blockers || getSellerBlockers({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney, sellerSubject })
   const resolvedNextAction = nextAction || getNextSellerAction({ lead, contact, appointments, listing, mandatePacketStatus, mandatePacket, documents, journey: resolvedJourney })
   const blockedReason = (actionId) => resolvedBlockers.find((item) => item.actionId === actionId)?.label || ''
   const make = (id, label, enabled = true, meta = {}) => action(id, label, enabled, blockedReason(id), meta)
@@ -421,10 +444,17 @@ export function getStageAwareSellerActions({ lead = {}, contact = {}, appointmen
     make('open_timeline', 'Open Timeline'),
   ]
   const stageKey = resolvedJourney.stage?.key || 'new_lead'
+  const ownershipSetupBlocker = resolvedBlockers.find((item) => item.id === 'seller_ownership_setup_required') || null
   const stageActions = stageKey === 'new_lead'
     ? [make('contact_seller', 'Contact Seller', hasContact({ lead, contact })), make('open_timeline', 'Open Timeline')]
     : stageKey === 'contacted'
-    ? [make('send_seller_onboarding', 'Send Seller Onboarding', true), ...always]
+    ? ownershipSetupBlocker
+      ? [
+          make('setup_seller_ownership', 'Set Up Seller Ownership', true),
+          action('send_seller_onboarding', 'Send Seller Onboarding', false, ownershipSetupBlocker.label, { blocker: ownershipSetupBlocker }),
+          ...always,
+        ]
+      : [make('send_seller_onboarding', 'Send Seller Onboarding', true), ...always]
     : stageKey === 'seller_onboarding_sent'
         ? [
           make('follow_up_with_seller', 'Send Follow-Up', true),

@@ -18,6 +18,7 @@ import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfi
 import { isSellerStructuredFactRequirement } from './documents/sellerStructuredFactRequirementService.js'
 import { projectCanonicalSellerDocumentRows } from './documents/canonicalSellerDocumentProjectionService.js'
 import { buildSellerSigningStatusModel, getSellerSigningStatusForDocument } from './sellerSigningStatusService.js'
+import { buildSellerSubject } from '../lib/sellerSubjectModel.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -2582,6 +2583,7 @@ export function buildSellerDocumentSourceOfTruth({
   formData = {},
   mandatePacket = null,
   journey = null,
+  sellerSubject = null,
   useCanonicalProjection = true,
 } = {}) {
   const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
@@ -2592,6 +2594,24 @@ export function buildSellerDocumentSourceOfTruth({
     : Array.isArray(listing?.documents)
       ? listing.documents
       : []
+  const resolvedSellerSubject = sellerSubject && typeof sellerSubject === 'object'
+    ? sellerSubject
+    : buildSellerSubject({
+        formData: resolvedFormData,
+        listing,
+        canonicalFacts: listing?.sellerCanonicalFacts || listing?.seller_canonical_facts || resolvedFormData?.canonicalSellerFacts || resolvedFormData?.canonical_facts || {},
+      })
+  const sellerSubjectContext = {
+    kind: resolvedSellerSubject.kind,
+    legalOwnerName: resolvedSellerSubject.legalOwner?.name || '',
+    primaryContactName: resolvedSellerSubject.primaryContact?.name || '',
+    requiredSignerNames: (Array.isArray(resolvedSellerSubject.signers) ? resolvedSellerSubject.signers : [])
+      .map((signer) => normalizeText(signer?.name))
+      .filter(Boolean),
+    authorityRequirement: resolvedSellerSubject.authorityRequirement || '',
+    onboardingReady: resolvedSellerSubject.onboardingReady === true,
+    requiredSetupFields: Array.isArray(resolvedSellerSubject.requiredSetupFields) ? resolvedSellerSubject.requiredSetupFields : [],
+  }
   const kingstonsSellerPack = isKingstonsSellerDocumentContext(listing)
     ? getKingstonsSellerPackRecord(listing)
     : {}
@@ -2639,6 +2659,7 @@ export function buildSellerDocumentSourceOfTruth({
   const rows = projectedRows.map((row) => ({
     ...row,
     signingStatus: getSellerSigningStatusForDocument(row.key || row.requirementKey, signingStatus),
+    sellerSubject: sellerSubjectContext,
   }))
 
   return {
@@ -2652,6 +2673,7 @@ export function buildSellerDocumentSourceOfTruth({
     },
     rows,
     signingStatus,
+    sellerSubject: sellerSubjectContext,
     summary: buildSellerDocumentSourceSummary(rows),
     requirementPack: kingstonsRequirementPack,
   }
