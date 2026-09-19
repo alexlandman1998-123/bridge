@@ -792,7 +792,10 @@ function getSellerOnboardingCompletionModeFromUrl() {
 }
 
 function getSellerComplianceSignaturePaneIndex() {
-  return getDisclosureQuestionGroups().length + 2
+  // A signer-specific link has no editable disclosure-question panes. It is
+  // one focused declaration-and-signature pane, regardless of how the
+  // primary contact's disclosure happened to be persisted.
+  return 0
 }
 
 function resolveSellerComplianceSigningIntent({ formData = {}, listing = {}, token = '', signerId = '' } = {}) {
@@ -2639,7 +2642,7 @@ function PropertyDisclosureSection({
             icon={FileCheck2}
             title="Seller Declaration"
             description="Sign only when the disclosure information is true and complete to the best of your knowledge."
-            mobilePaneIndex={declarationPaneIndex}
+            mobilePaneIndex={signatureOnly ? 0 : declarationPaneIndex}
           >
             <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f5fbf7] p-4 text-sm leading-6 text-[#25603d]">
               I declare that the information provided above is true and complete to the best of my knowledge and that I have disclosed all known material facts relating to the property.
@@ -4966,6 +4969,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     if (currentStep === 0) return sellerPaneIndexes.sellingContext + 1
     if (currentStep === 1) return propertyPaneIndexes.count
     if (currentStep === 2) {
+      if (hasRequestedComplianceSigner) return 1
       const disclosureAnswered = getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).answered
       return 1 + getDisclosureQuestionPaneCount() + 1 + (disclosureAnswered ? 1 : 0)
     }
