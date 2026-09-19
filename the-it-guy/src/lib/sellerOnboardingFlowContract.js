@@ -483,7 +483,6 @@ const PROPERTY_BRANCH_RULES = Object.freeze({
     ]),
     documentTriggers: Object.freeze([
       'sectional_levy_statement',
-      'body_corporate_details',
     ]),
   }),
   estate_hoa: Object.freeze({
@@ -513,7 +512,6 @@ const PROPERTY_BRANCH_RULES = Object.freeze({
     ]),
     documentTriggers: Object.freeze([
       'hoa_levy_statement',
-      'hoa_details',
     ]),
   }),
   commercial: Object.freeze({
@@ -1111,10 +1109,8 @@ function collectDynamicTriggers(form = {}, source = {}) {
   )
 
   if (hasBond) triggers.push('bond_statement')
-  if (hasBond) triggers.push('bond_bank_details')
-  if (hasBond) triggers.push('settlement_figure')
   if (tenantOccupied) {
-    triggers.push('lease_agreement', 'tenant_details', 'rental_schedule', 'deposit_details', 'notice_period_details')
+    triggers.push('lease_agreement', 'rental_schedule')
   }
 
   if (['city_of_cape_town', 'cape_town', 'city_cape_town'].includes(municipality)) {

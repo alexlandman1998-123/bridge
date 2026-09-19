@@ -80,7 +80,6 @@ test('buildSellerCompliancePortalModel keeps spouse pending after primary seller
   assert.match(model.signatureRequests[0].href, /signer=spouse/)
   assert.deepEqual(model.signatureRequests[0].documents.map((document) => document.key), [
     'property_condition_disclosure',
-    'signed_fica_declaration',
   ])
 })
 

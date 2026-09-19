@@ -12,6 +12,17 @@ export const DOCUMENT_PARTY_ROLES = Object.freeze([
   'internal',
 ])
 
+// A requirement's kind controls the action a consumer may offer. It is
+// deliberately separate from the stored document source: a signed mandate,
+// for example, can arrive through the platform or be uploaded manually, but
+// remains an uploadable requirement in this seller-facing taxonomy.
+export const DOCUMENT_REQUIREMENT_KINDS = Object.freeze([
+  'upload_document',
+  'generated_document',
+  'structured_fact',
+  'internal_task',
+])
+
 function normalizeArray(value) {
   if (!value) return []
   return Array.isArray(value) ? value.filter(Boolean) : [value]
@@ -35,10 +46,15 @@ function documentDefinition({
   responsibleRoles = [],
   packKey,
   category,
+  kind = 'upload_document',
   aliases = [],
   modules = [],
 }) {
   const key = normalizeCrossModuleDocumentKey(canonicalKey)
+  const normalizedKind = normalizeCrossModuleDocumentKey(kind)
+  if (!DOCUMENT_REQUIREMENT_KINDS.includes(normalizedKind)) {
+    throw new Error(`Unsupported document requirement kind: ${kind}`)
+  }
   return Object.freeze({
     canonicalKey: key,
     label,
@@ -46,6 +62,7 @@ function documentDefinition({
     responsibleRoles: Object.freeze(uniqueNormalized([ownerRole, ...responsibleRoles])),
     packKey: normalizeCrossModuleDocumentKey(packKey),
     category: normalizeCrossModuleDocumentKey(category || packKey),
+    kind: normalizedKind,
     aliases: Object.freeze(uniqueNormalized(aliases).filter((alias) => alias !== key)),
     modules: Object.freeze(uniqueNormalized(modules)),
   })
@@ -67,6 +84,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'agent',
     responsibleRoles: ['agent'],
     packKey: 'attorney_generated_documents',
+    kind: 'generated_document',
     aliases: ['mandate_generated'],
     modules: ['listing_documents', 'transaction_documents', 'legal_workspace'],
   }),
@@ -76,6 +94,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'agent',
     responsibleRoles: ['agent'],
     packKey: 'attorney_generated_documents',
+    kind: 'generated_document',
     aliases: ['generated_offer_to_purchase', 'otp_generated', 'otp_pending_approval'],
     modules: ['buyer_onboarding', 'transaction_documents', 'legal_workspace'],
   }),
@@ -302,6 +321,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller', 'cancellation_attorney'],
     packKey: 'property_finance_existing_bond',
+    kind: 'structured_fact',
     aliases: ['seller_bond_cancellation_information', 'existing_bond_account_details'],
     modules: ['seller_portal', 'listing_documents', 'bond_cancellation'],
   }),
@@ -320,6 +340,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'cancellation_attorney',
     responsibleRoles: ['agent', 'cancellation_attorney'],
     packKey: 'property_finance_existing_bond',
+    kind: 'structured_fact',
     aliases: [],
     modules: ['bond_cancellation', 'transaction_documents'],
   }),
@@ -329,6 +350,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'cancellation_attorney',
     responsibleRoles: ['cancellation_attorney'],
     packKey: 'property_finance_existing_bond',
+    kind: 'structured_fact',
     aliases: ['settlement_figures', 'cancellation_figures', 'financial_settlement_documents'],
     modules: ['bond_cancellation', 'transaction_documents'],
   }),
@@ -421,7 +443,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller'],
     packKey: 'sectional_title_body_corporate',
-    aliases: ['levy_docs', 'body_corporate_statement'],
+    aliases: ['levy_docs', 'body_corporate_statement', 'sectional_levy_statement'],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
   documentDefinition({
@@ -439,6 +461,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller', 'agent'],
     packKey: 'sectional_title_body_corporate',
+    kind: 'structured_fact',
     aliases: [],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
@@ -484,6 +507,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller', 'agent'],
     packKey: 'estate_hoa',
+    kind: 'structured_fact',
     aliases: ['hoa_contact_details', 'hoa_consent'],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
@@ -511,6 +535,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller'],
     packKey: 'tenant_occupancy',
+    kind: 'structured_fact',
     aliases: ['occupancy_schedule'],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
@@ -529,6 +554,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller'],
     packKey: 'tenant_occupancy',
+    kind: 'structured_fact',
     aliases: [],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
@@ -538,6 +564,7 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller'],
     packKey: 'tenant_occupancy',
+    kind: 'structured_fact',
     aliases: [],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
@@ -1105,6 +1132,10 @@ export function getCrossModuleDocumentOwnerRole(value) {
   return getCrossModuleDocumentDefinition(value)?.ownerRole || ''
 }
 
+export function getCrossModuleDocumentRequirementKind(value) {
+  return getCrossModuleDocumentDefinition(value)?.kind || ''
+}
+
 export function getCrossModuleDocumentAliases(value) {
   const definition = getCrossModuleDocumentDefinition(value)
   if (!definition) return []
@@ -1128,6 +1159,7 @@ export function resolveCrossModuleDocumentReference(value, context = {}) {
     documentResponsibleRoles: definition?.responsibleRoles ? [...definition.responsibleRoles] : [],
     documentPackKey: definition?.packKey || fallbackPackKey,
     documentCategory: definition?.category || '',
+    documentRequirementKind: definition?.kind || '',
     documentLabel: definition?.label || '',
     documentAliases: definition ? [definition.canonicalKey, ...definition.aliases] : [],
   }

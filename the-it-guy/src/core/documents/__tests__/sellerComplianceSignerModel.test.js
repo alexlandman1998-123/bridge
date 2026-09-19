@@ -109,7 +109,7 @@ test('records which separate onboarding documents each signer accepted', () => {
     acceptedDocuments: ['property_condition_disclosure', 'signed_fica_declaration', 'not-a-document'],
   })
 
-  assert.deepEqual(updated[0].acceptedDocuments, ['property_condition_disclosure', 'signed_fica_declaration'])
+  assert.deepEqual(updated[0].acceptedDocuments, ['property_condition_disclosure'])
 })
 
 test('requires review when one seller uploads authority for another signer', () => {

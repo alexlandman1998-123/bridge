@@ -6,6 +6,18 @@ import {
   buildDisclosureForComplianceSigner,
   buildSellerComplianceSigningForForm,
 } from '../sellerComplianceSigningFlow.js'
+import {
+  SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS,
+  updateSellerDisclosureAcknowledgement,
+} from '../sellerDisclosureAcknowledgements.js'
+
+function requiredAcknowledgements() {
+  return [
+    SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS.termsAndConditions,
+    SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS.privacyAndPaiaNotice,
+    SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS.disclosureAccuracy,
+  ].reduce((value, key) => updateSellerDisclosureAcknowledgement(value, key, true), {})
+}
 
 const baseForm = {
   sellerFirstName: 'John',
@@ -36,6 +48,20 @@ test('applySellerComplianceSignatureToForm records the active primary signer and
   assert.equal(nextForm.sellerComplianceSigning.nextSigner.id, 'spouse')
   assert.equal(nextForm.sellerComplianceSigners.find((signer) => signer.id === 'seller-1').status, 'signed')
   assert.equal(nextForm.sellerComplianceSigners.find((signer) => signer.id === 'spouse').status, 'pending')
+})
+
+test('records explicit acknowledgement evidence on the signer who accepted it', () => {
+  const nextForm = applySellerComplianceSignatureToForm({
+    formData: baseForm,
+    signerId: 'seller-1',
+    disclosure: baseForm.propertyDisclosure,
+    acknowledgements: requiredAcknowledgements(),
+  })
+
+  const signer = nextForm.sellerComplianceSigners.find((item) => item.id === 'seller-1')
+  assert.equal(signer.acknowledgements.wordingVersion, 'arch9-seller-disclosure-acknowledgements-v1')
+  assert.equal(signer.acknowledgements.acknowledgements.find((item) => item.key === 'privacy_and_paia_notice').accepted, true)
+  assert.equal(nextForm.sellerComplianceSigners.find((item) => item.id === 'spouse').acknowledgements, null)
 })
 
 test('the normal onboarding link remains bound to the primary seller after their signature becomes complete', () => {
@@ -98,5 +124,29 @@ test('applySellerComplianceSignatureToForm completes the pack when spouse signs 
   assert.equal(afterSpouse.sellerComplianceSigning.complete, true)
   assert.equal(afterSpouse.sellerComplianceSigning.signingState.signedCount, 2)
   assert.equal(afterSpouse.sellerComplianceSigners.find((signer) => signer.id === 'seller-1').signature.value, 'John Smith')
+  assert.equal(afterSpouse.sellerComplianceSigners.find((signer) => signer.id === 'spouse').signature.value, 'Jane Smith')
+})
+
+test('a signer-specific declaration submission preserves the primary seller disclosure', () => {
+  const afterSellerOne = applySellerComplianceSignatureToForm({
+    formData: baseForm,
+    signerId: 'seller-1',
+    disclosure: baseForm.propertyDisclosure,
+  })
+  const spouseDisclosure = buildDisclosureForComplianceSigner(afterSellerOne.propertyDisclosure, {
+    id: 'spouse',
+  }, { preferSignerSignature: true })
+  const afterSpouse = applySellerComplianceSignatureToForm({
+    formData: afterSellerOne,
+    signerId: 'spouse',
+    disclosure: {
+      ...spouseDisclosure,
+      signature: 'Jane Smith',
+      signedAt: '2026-08-26',
+    },
+  })
+
+  assert.equal(afterSpouse.propertyDisclosure.signature, 'John Smith')
+  assert.equal(afterSpouse.propertyDisclosure.signedAt, '2026-08-25')
   assert.equal(afterSpouse.sellerComplianceSigners.find((signer) => signer.id === 'spouse').signature.value, 'Jane Smith')
 })

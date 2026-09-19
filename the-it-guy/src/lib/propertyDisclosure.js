@@ -2,6 +2,7 @@ import {
   isArch9SellerTermsAccepted,
   readArch9SellerTermsAcceptance,
 } from './arch9TermsAcceptance.js'
+import { areRequiredSellerDisclosureAcknowledgementsAccepted } from '../core/documents/sellerDisclosureAcknowledgements.js'
 
 export const PROPERTY_DISCLOSURE_DECISION = Object.freeze({
   none: 'none',
@@ -288,6 +289,18 @@ function resolvePropertyDisclosureBranding(context = {}) {
   )
   const agencyLogoUrl = resolveDocumentAssetUrl(
     firstNonEmpty(
+      // Disclosure PDFs have a white page background. Prefer the dark/on-light
+      // mark here; agency onboarding pages can still select their light mark
+      // for dark surfaces.
+      branding.logoDarkUrl,
+      branding.logo_dark_url,
+      branding.logoDark,
+      branding.organisationLogoDarkUrl,
+      branding.organisation_logo_dark_url,
+      branding.agencyLogoDarkUrl,
+      branding.agency_logo_dark_url,
+      branding.logoUrl,
+      branding.logo_url,
       branding.logoLightUrl,
       branding.logo_light_url,
       branding.logoLight,
@@ -295,13 +308,6 @@ function resolvePropertyDisclosureBranding(context = {}) {
       branding.organisation_logo_url,
       branding.agencyLogoUrl,
       branding.agency_logo_url,
-      branding.logoUrl,
-      branding.logo_url,
-      branding.logoDarkUrl,
-      branding.logo_dark_url,
-      branding.logoDark,
-      branding.agencyLogoDarkUrl,
-      branding.agency_logo_dark_url,
       context.logoUrl,
     ),
     context.assetBaseUrl,
@@ -444,6 +450,8 @@ export function normalizePropertyDisclosure(disclosure = {}, { kind = 'residenti
     arch9_terms_acceptance: readArch9SellerTermsAcceptance(source),
     arch9TermsAccepted: isArch9SellerTermsAccepted(source),
     arch9_terms_accepted: isArch9SellerTermsAccepted(source),
+    sellerDisclosureAcknowledgements: source.sellerDisclosureAcknowledgements || source.seller_disclosure_acknowledgements || null,
+    seller_disclosure_acknowledgements: source.seller_disclosure_acknowledgements || source.sellerDisclosureAcknowledgements || null,
     uploadedDocumentReviewed: Boolean(source.uploadedDocumentReviewed ?? source.uploaded_document_reviewed),
     reviewedAt: normalizeText(source.reviewedAt || source.reviewed_at),
     reviewedBy: normalizeText(source.reviewedBy || source.reviewed_by),
@@ -456,7 +464,10 @@ export function normalizePropertyDisclosure(disclosure = {}, { kind = 'residenti
 export function isPropertyDisclosureDigitallyComplete(disclosure = {}) {
   const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosure.kind || 'residential' })
   if (!normalized.declarationAccepted || !normalized.signature || !normalized.signedAt) return false
-  if (!isArch9SellerTermsAccepted(normalized)) return false
+  const acknowledgementValue = normalized.sellerDisclosureAcknowledgements || normalized.seller_disclosure_acknowledgements
+  if (acknowledgementValue) {
+    if (!areRequiredSellerDisclosureAcknowledgementsAccepted(acknowledgementValue)) return false
+  } else if (!isArch9SellerTermsAccepted(normalized)) return false
   const annexureResponsesComplete = PROPERTY_DISCLOSURE_QUESTIONS.every((question) => normalizeAnswer(normalized.responses?.[question.key]?.answer))
   if (annexureResponsesComplete) return true
   if (!normalized.decision) return false
@@ -720,6 +731,9 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
   const sellerName = normalizeText(context.sellerName || snapshot.sellerName || 'Seller')
   const sellerIdNumber = normalizeText(context.sellerIdNumber || snapshot.sellerIdNumber)
   const propertyAddress = normalizeText(context.propertyAddress)
+  const sellerDeclarationOpening = sellerIdNumber
+    ? `I/We, ${escapeHtml(sellerName)}, holder(s) of ID/passport number ${escapeHtml(sellerIdNumber)}, declare that the information and disclosures in this Annexure A${propertyAddress ? ` relating to ${escapeHtml(propertyAddress)}` : ''} are true, accurate and complete to the best of my/our knowledge. I/We confirm that all known material defects and relevant property information have been disclosed.`
+    : `I/We, ${escapeHtml(sellerName)}, declare that the information and disclosures in this Annexure A${propertyAddress ? ` relating to ${escapeHtml(propertyAddress)}` : ''} are true, accurate and complete to the best of my/our knowledge. I/We confirm that all known material defects and relevant property information have been disclosed.`
   const documentReference = firstNonEmpty(context.documentReference, context.listingReference, context.listingId, propertyAddress, snapshot.title)
   const documentTitle = compliancePack?.title || snapshot.title
   const branding = resolvePropertyDisclosureBranding(context)
@@ -757,9 +771,9 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     <table class="annexure-table">
       <colgroup>
         <col class="question-col" />
-        <col class="answer-col" />
-        <col class="answer-col" />
-        <col class="answer-col" />
+        <col class="answer-col answer-col-standard" />
+        <col class="answer-col answer-col-standard" />
+        <col class="answer-col answer-col-unsure" />
       </colgroup>
       <thead>
         <tr>
@@ -828,8 +842,9 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
     .annexure-table th, .annexure-table td { border: 1px solid #d7d7d7; vertical-align: top; padding: 2mm 2.3mm; }
     .annexure-table th { background: #f6f7f8; color: #111827; font-size: 8.7pt; font-weight: 700; text-align: left; text-transform: uppercase; }
     .annexure-table th:not(:first-child) { text-align: center; }
-    .question-col { width: 76%; }
-    .answer-col { width: 8%; }
+    .question-col { width: 72%; }
+    .answer-col-standard { width: 8%; }
+    .answer-col-unsure { width: 12%; }
     .question-cell { color: #1f2937; }
     .question-number { display: inline-block; min-width: 5mm; color: #111827; font-weight: 700; }
     .question-extra { display: block; margin-top: 1.5mm; padding-left: 5mm; color: #3f4a56; font-size: 8.8pt; }
@@ -863,11 +878,12 @@ export function buildPropertyDisclosureDocumentMarkup(disclosure = {}, context =
 <body>
   <main class="property-disclosure-document">
     ${hasComplianceFicaPage ? renderSellerComplianceFicaPage(compliancePack, branding, pageNumber++, pageTotal, documentReference) : ''}
-    <section class="property-disclosure-page">
-      ${renderDisclosureHeader(branding)}
-      ${renderTitle()}
-      <section class="doc-body">
-        <p class="intro">This statement declares the actual current state of the property according to the best of my knowledge. I/ We declare that as far as we are concerned no material defects to the building or equipment exist except those as stated below.</p>
+  <section class="property-disclosure-page">
+    ${renderDisclosureHeader(branding)}
+    ${renderTitle()}
+    <section class="doc-body">
+      <p class="intro declaration-opening">${sellerDeclarationOpening}</p>
+      <p class="intro">This statement declares the actual current state of the property according to the best of my knowledge. I/ We declare that as far as we are concerned no material defects to the building or equipment exist except those as stated below.</p>
         <p class="intro">Please answer Yes, No, or Unsure, and where necessary provide an explanation in clause 21 hereunder.</p>
         ${propertyAddress ? `<p class="meta"><strong>Property:</strong> ${escapeHtml(propertyAddress)}</p>` : ''}
         ${renderQuestionTable(pageOneRows)}

@@ -37,6 +37,8 @@ export function createSellerOnboardingCompletionRecord({
     notes: text(notes || source.notes),
     agentAssisted: completionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted,
     agent_assisted: completionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted,
+    reviewStatus: 'awaiting_agent_review',
+    review_status: 'awaiting_agent_review',
   }
 }
 

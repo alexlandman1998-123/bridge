@@ -19,11 +19,11 @@ export const SELLER_COMPLIANCE_SIGNER_ROLES = Object.freeze({
   authorisedSignatory: 'authorised_signatory',
 })
 
-// These remain distinct generated documents, but a seller's onboarding
-// signature expressly acknowledges both. A mandate has its own signature path.
+// The onboarding signature is limited to the property disclosure. FICA is a
+// separate, agent-reviewed signing step and must never be implied by a seller
+// completing their onboarding declaration.
 export const SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS = Object.freeze([
   Object.freeze({ key: 'property_condition_disclosure', label: 'Property Condition Disclosure' }),
-  Object.freeze({ key: 'signed_fica_declaration', label: 'Seller FICA Declaration' }),
 ])
 
 const COMPLETE_STATUSES = new Set([
@@ -162,6 +162,25 @@ function normalizeAcceptedDocuments(input = {}) {
   return keys.length ? [...new Set(keys)] : []
 }
 
+function normalizeAcknowledgements(input = {}) {
+  const source = input.acknowledgements && typeof input.acknowledgements === 'object'
+    ? input.acknowledgements
+    : input.sellerDisclosureAcknowledgements && typeof input.sellerDisclosureAcknowledgements === 'object'
+      ? input.sellerDisclosureAcknowledgements
+      : input.seller_disclosure_acknowledgements && typeof input.seller_disclosure_acknowledgements === 'object'
+        ? input.seller_disclosure_acknowledgements
+        : null
+  if (!source) return null
+  return {
+    contract: text(source.contract),
+    wordingVersion: text(source.wordingVersion || source.wording_version),
+    acceptedAt: isoDate(source.acceptedAt || source.accepted_at),
+    acknowledgements: (Array.isArray(source.acknowledgements) ? source.acknowledgements : [])
+      .map((item) => ({ key: key(item?.key), accepted: bool(item?.accepted, false) }))
+      .filter((item) => item.key),
+  }
+}
+
 export function normalizeSellerComplianceSigner(input = {}, index = 0) {
   const required = bool(input.required ?? input.is_required, true)
   const role = normalizeRole(input.role || input.signerRole || input.signer_role, index)
@@ -188,6 +207,7 @@ export function normalizeSellerComplianceSigner(input = {}, index = 0) {
     signedAt: status === SELLER_COMPLIANCE_SIGNER_STATUSES.signed ? signedAt : '',
     signature,
     acceptedDocuments: normalizeAcceptedDocuments(input),
+    acknowledgements: normalizeAcknowledgements(input),
     audit: normalizeAudit(input),
     authority,
     authorityRequired: authorityRequirement.required,
@@ -258,6 +278,7 @@ export function recordSellerComplianceSignerSignature(signers = [], signerId = '
     signature: signatureInput.signature || signatureInput.signatureValue || signatureInput.signature_value || signer.signature?.value,
     signatureType: signatureInput.signatureType || signatureInput.signature_type || signer.signature?.type || 'drawn',
     acceptedDocuments: signatureInput.acceptedDocuments || signatureInput.accepted_documents || signer.acceptedDocuments,
+    acknowledgements: signatureInput.acknowledgements || signatureInput.sellerDisclosureAcknowledgements || signatureInput.seller_disclosure_acknowledgements || signer.acknowledgements,
     audit: {
       ...signer.audit,
       ...normalizeAudit(signatureInput),

@@ -70,8 +70,8 @@ const baseLead = {
   const cases = [
     ['new_lead', { key: 'new_lead', label: 'New Lead', status: 'New' }, 'contact_seller', 'Contact Seller'],
     ['contacted', { key: 'contacted', label: 'Contacted', status: 'Active' }, 'send_seller_onboarding', 'Send Seller Onboarding'],
-    ['seller_onboarding_sent', { key: 'seller_onboarding_sent', label: 'Onboarding Sent', status: 'Sent' }, 'track_seller_onboarding', 'Track Seller Onboarding'],
-    ['seller_onboarding_submitted', { key: 'seller_onboarding_submitted', label: 'Onboarding Submitted', status: 'Submitted' }, 'generate_mandate', 'Generate Mandate'],
+    ['seller_onboarding_sent', { key: 'seller_onboarding_sent', label: 'Onboarding Sent', status: 'Sent' }, 'copy_seller_onboarding_link', 'Copy Seller Onboarding Link'],
+    ['seller_onboarding_submitted', { key: 'seller_onboarding_submitted', label: 'Onboarding Submitted', status: 'Submitted' }, 'review_seller_onboarding', 'Review Seller Onboarding'],
     ['mandate_signed', { key: 'mandate_signed', label: 'Mandate Signed', status: 'Signed' }, 'create_listing', 'Create Listing'],
   ]
   for (const [stageKey, stage, expectedId, expectedLabel] of cases) {
@@ -138,7 +138,7 @@ const baseLead = {
   const readiness = getSellerReadiness({ lead, journey })
   assert.equal(journey.stage.key, 'seller_onboarding_sent')
   assert.equal(readiness.blockers.some((item) => item.id === 'seller_onboarding_not_submitted'), true)
-  assert.equal(readiness.nextAction.id, 'track_seller_onboarding')
+  assert.equal(readiness.nextAction.id, 'copy_seller_onboarding_link')
 }
 
 {

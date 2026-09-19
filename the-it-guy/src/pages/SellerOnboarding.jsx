@@ -85,6 +85,7 @@ import {
 import {
   PROPERTY_DISCLOSURE_ANSWER,
   PROPERTY_DISCLOSURE_QUESTIONS,
+  buildPropertyDisclosureAnnexureSnapshot,
   buildPropertyDisclosureDocumentMarkup,
   getPropertyDisclosureAnswerSummary,
   getPropertyDisclosureStatus,
@@ -118,8 +119,16 @@ import {
 } from '../core/documents/sellerOnboardingAttorneyRecommendation'
 import { createSellerOnboardingGeneratedDocuments } from '../core/documents/sellerOnboardingGeneratedDocuments'
 import {
-  buildArch9SellerTermsAcceptance,
-  getArch9SellerTermsConfig,
+  SELLER_ONBOARDING_SIGNING_STAGES,
+  createSellerOnboardingSigningLifecycle,
+} from '../core/documents/sellerOnboardingSigningLifecycle'
+import {
+  areRequiredSellerDisclosureAcknowledgementsAccepted,
+  readSellerDisclosureAcknowledgements,
+  SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS,
+  updateSellerDisclosureAcknowledgement,
+} from '../core/documents/sellerDisclosureAcknowledgements'
+import {
   isArch9SellerTermsAccepted,
   readArch9SellerTermsAcceptance,
 } from '../lib/arch9TermsAcceptance'
@@ -944,8 +953,12 @@ function getPropertyDisclosureMissingItems(disclosure = {}) {
   const missing = []
   const unanswered = PROPERTY_DISCLOSURE_QUESTIONS.filter((question) => !normalized.responses?.[question.key]?.answer)
   if (unanswered.length) missing.push(`answer all Annexure A questions (${unanswered.length} remaining)`)
-  if (!normalized.declarationAccepted) missing.push('accept the seller declaration')
-  if (!isArch9SellerTermsAccepted({ propertyDisclosure: normalized })) missing.push('accept the Arch9 terms and conditions')
+  const acknowledgementValue = normalized.sellerDisclosureAcknowledgements || normalized.seller_disclosure_acknowledgements
+  if (acknowledgementValue && !areRequiredSellerDisclosureAcknowledgementsAccepted(acknowledgementValue)) {
+    missing.push('accept the required seller declaration acknowledgements')
+  } else if (!acknowledgementValue && (!normalized.declarationAccepted || !normalized.arch9TermsAccepted)) {
+    missing.push('accept the seller declaration acknowledgements')
+  }
   if (!normalized.signature) missing.push('draw a signature')
   if (!normalized.signedAt) missing.push('select a signature date')
   return missing
@@ -2408,11 +2421,15 @@ function PropertyDisclosureSection({
   onNoteChange,
   onDownload,
   onDisclosureChange,
+  onConfirmSignerDeclaration,
+  signerDeclarationSubmitting = false,
+  signerDeclarationComplete = false,
   termsAcceptanceError = '',
+  acknowledgementValue = {},
+  onAcknowledgementsChange,
 }) {
   const normalized = normalizePropertyDisclosure(disclosure, { kind: disclosureKind })
-  const termsAcceptance = readArch9SellerTermsAcceptance({ propertyDisclosure: normalized })
-  const termsConfig = getArch9SellerTermsConfig()
+  const acknowledgements = readSellerDisclosureAcknowledgements(acknowledgementValue)
   const statusLabel = getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(normalized))
   const answerSummary = getPropertyDisclosureAnswerSummary(normalized)
   const answerOptions = [
@@ -2519,12 +2536,17 @@ function PropertyDisclosureSection({
             })}
           </div>
           <div className="hidden overflow-hidden rounded-[18px] border border-[#1f2937] bg-white sm:block">
-            <table className="w-full border-collapse text-left text-sm text-[#172334]">
+            <table className="w-full table-fixed border-collapse text-left text-sm text-[#172334]">
               <thead>
                 <tr className="bg-[#d9dde2]">
                   <th className="border-b border-r border-[#1f2937] px-3 py-2 font-semibold">Question</th>
                   {answerOptions.map((option) => (
-                    <th key={option.key} className="w-[78px] border-b border-r border-[#1f2937] px-2 py-2 text-center font-semibold last:border-r-0">{option.label}</th>
+                    <th
+                      key={option.key}
+                      className={`${option.key === PROPERTY_DISCLOSURE_ANSWER.unsure ? 'w-[88px]' : 'w-[72px]'} whitespace-nowrap border-b border-r border-[#1f2937] px-1 py-2 text-center text-xs font-semibold last:border-r-0`}
+                    >
+                      {option.label}
+                    </th>
                   ))}
                 </tr>
               </thead>
@@ -2615,42 +2637,24 @@ function PropertyDisclosureSection({
             </div>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4 md:col-span-2">
-                <h4 className="text-base font-semibold tracking-normal text-[#172334]">{termsConfig.title}</h4>
-                <p className="mt-2 text-sm leading-6 text-[#35546c]">{termsConfig.body}</p>
-                <p className="mt-2 text-sm leading-6 text-[#35546c]">{termsConfig.popiBody}</p>
-                <label className="mt-4 flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#d9e2ee] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#2a4057]">
-                  <input
-                    type="checkbox"
-                    checked={termsAcceptance.accepted}
-                    disabled={signatureOnly}
-                    onChange={(event) => {
-                      const nextAcceptance = event.target.checked
-                        ? buildArch9SellerTermsAcceptance()
-                        : { ...termsAcceptance, accepted: false, acceptedAt: '', accepted_at: '' }
-                      onDisclosureChange({
-                        arch9TermsAcceptance: nextAcceptance,
-                        arch9TermsAccepted: event.target.checked,
-                        arch9TermsAcceptedAt: event.target.checked ? nextAcceptance.acceptedAt : '',
-                        arch9_terms_acceptance: nextAcceptance,
-                        arch9_terms_accepted: event.target.checked,
-                        arch9_terms_accepted_at: event.target.checked ? nextAcceptance.acceptedAt : '',
-                      })
-                    }}
-                    aria-describedby={termsAcceptanceError ? 'seller-arch9-terms-error' : undefined}
-                    className="mt-1 h-4 w-4"
-                  />
-                  <span>{termsConfig.checkboxLabel}</span>
-                </label>
-                <label className="mt-3 flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#d9e2ee] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#2a4057]">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(normalized.declarationAccepted)}
-                    disabled={signatureOnly}
-                    onChange={(event) => onDisclosureChange('declarationAccepted', event.target.checked)}
-                    className="mt-1 h-4 w-4"
-                  />
-                  <span>I accept the seller declaration</span>
-                </label>
+                <h4 className="text-base font-semibold tracking-normal text-[#172334]">Required acknowledgements</h4>
+                <p className="mt-2 text-sm leading-6 text-[#35546c]">These acknowledgements are recorded with this signer’s declaration. Marketing permission is separate and optional.</p>
+                {acknowledgements.acknowledgements.map((acknowledgement) => (
+                  <label key={acknowledgement.key} className="mt-3 flex min-h-[52px] items-start gap-3 rounded-[12px] border border-[#d9e2ee] bg-[#fbfdff] px-3 py-3 text-sm font-medium text-[#2a4057]">
+                    <input
+                      type="checkbox"
+                      checked={acknowledgement.accepted}
+                      onChange={(event) => onAcknowledgementsChange?.(
+                        updateSellerDisclosureAcknowledgement(acknowledgements, acknowledgement.key, event.target.checked),
+                        acknowledgement.key,
+                        event.target.checked,
+                      )}
+                      aria-describedby={termsAcceptanceError ? 'seller-arch9-terms-error' : undefined}
+                      className="mt-1 h-4 w-4"
+                    />
+                    <span>{acknowledgement.label}{acknowledgement.required ? ' *' : ''}</span>
+                  </label>
+                ))}
                 {termsAcceptanceError ? (
                   <p id="seller-arch9-terms-error" className="mt-2 text-sm font-semibold text-[#b42318]">
                     {termsAcceptanceError}
@@ -2679,6 +2683,30 @@ function PropertyDisclosureSection({
                 onChange={(nextSignature) => onDisclosureChange('signature', nextSignature)}
               />
             </div>
+            {signatureOnly ? (
+              <div className="mt-5 border-t border-[#dbe6f2] pt-4">
+                <p className="text-sm leading-6 text-[#35546c]">
+                  Your signature confirms this seller declaration. It does not change the shared onboarding information supplied by the primary contact.
+                </p>
+                {signerDeclarationComplete ? (
+                  <p className="mt-3 flex min-h-[52px] items-center justify-center gap-2 rounded-[16px] border border-[#b9dfc7] bg-[#edf9f1] px-4 text-sm font-semibold text-[#176c43]">
+                    <CheckCircle2 size={16} />
+                    Declaration signed
+                  </p>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={onConfirmSignerDeclaration}
+                    disabled={signerDeclarationSubmitting}
+                    className={`mt-3 min-h-[52px] w-full rounded-[16px] ${BRAND_ACTION_BUTTON_CLASS}`}
+                  >
+                    {signerDeclarationSubmitting ? 'Confirming…' : 'Confirm and sign declaration'}
+                    <CheckCircle2 size={16} />
+                  </Button>
+                )}
+              </div>
+            ) : null}
             <button
               type="button"
               onClick={onDownload}
@@ -2917,6 +2945,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [termsAcceptanceError, setTermsAcceptanceError] = useState('')
+  const [signerAcknowledgements, setSignerAcknowledgements] = useState(null)
   const [success, setSuccess] = useState('')
   const [signatureRequest, setSignatureRequest] = useState(null)
   const [signatureLinkCopied, setSignatureLinkCopied] = useState(false)
@@ -2932,6 +2961,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const requestedComplianceSignerId = useMemo(() => getSellerComplianceSignerIdFromUrl(), [token])
   const onboardingCompletionMode = useMemo(() => getSellerOnboardingCompletionModeFromUrl(), [token])
   const isAgentAssistedCompletion = onboardingCompletionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted
+
+  useEffect(() => {
+    setSignerAcknowledgements(null)
+  }, [requestedComplianceSignerId])
 
   useEffect(() => {
     let isMounted = true
@@ -3610,6 +3643,22 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         },
       })
     })
+  }
+
+  function handleDisclosureAcknowledgementsChange(nextAcknowledgements, acknowledgementKey, accepted) {
+    setTermsAcceptanceError('')
+    if (hasRequestedComplianceSigner) {
+      setSignerAcknowledgements(nextAcknowledgements)
+      return
+    }
+    const patch = {
+      sellerDisclosureAcknowledgements: nextAcknowledgements,
+      seller_disclosure_acknowledgements: nextAcknowledgements,
+    }
+    if (acknowledgementKey === SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS.disclosureAccuracy) {
+      patch.declarationAccepted = accepted
+    }
+    patchPropertyDisclosure(patch)
   }
 
   function handleDisclosureAnswerChange(questionKey, answer) {
@@ -4417,6 +4466,74 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
     void handleNext()
   }
 
+  async function handleSignerDeclarationSubmit() {
+    if (!form || submitting || !hasRequestedComplianceSigner || !activeComplianceSigner?.id || activeComplianceSigner.complete) return
+    setError('')
+    setTermsAcceptanceError('')
+    setSuccess('')
+
+    const disclosure = normalizePropertyDisclosure(activePropertyDisclosure || {}, {
+      kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
+    })
+    const acknowledgementValue = signerAcknowledgements || activeComplianceSigner?.acknowledgements || {}
+    if (!areRequiredSellerDisclosureAcknowledgementsAccepted(acknowledgementValue)) {
+      const message = 'Please accept the required seller declaration acknowledgements before signing.'
+      setTermsAcceptanceError(message)
+      setError(message)
+      scrollSellerOnboardingToTop({ focusAlert: true })
+      return
+    }
+    const missing = getPropertyDisclosureMissingItems(disclosure)
+    if (missing.length) {
+      setError(`Please complete the declaration before signing: ${missing.join(', ')}.`)
+      scrollSellerOnboardingToTop({ focusAlert: true })
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const signedForm = applySellerComplianceSignatureToForm({
+        formData: form,
+        listing: listing || {},
+        token,
+        signerId: activeComplianceSigner.id,
+        disclosure,
+        acknowledgements: acknowledgementValue,
+        audit: {
+          userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+        },
+      })
+      const updated = await persistListingUpdate((row) => ({
+        ...row,
+        sellerOnboarding: {
+          ...(row?.sellerOnboarding || {}),
+          currentStep: 2,
+          formData: signedForm,
+        },
+      }), { refreshForm: true })
+
+      if (!updated) throw new Error('Unable to save your declaration signature right now.')
+
+      const signing = buildSellerComplianceSigningForForm({
+        formData: signedForm,
+        listing: updated,
+        token,
+        signerId: activeComplianceSigner.id,
+      }).model
+      const remaining = Math.max(0, Number(signing?.signingState?.requiredCount || 0) - Number(signing?.signingState?.signedCount || 0))
+      setSuccess(remaining
+        ? 'Your seller declaration has been signed. Other required signatures are still outstanding.'
+        : 'Your seller declaration has been signed. All required seller declaration signatures are complete.')
+      scrollSellerOnboardingToTop()
+    } catch (signerSubmitError) {
+      console.error('[Seller Onboarding] signer declaration submit failed', signerSubmitError)
+      setError(resolveSellerOnboardingSubmitError(signerSubmitError))
+      scrollSellerOnboardingToTop({ focusAlert: true })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   async function handleSubmit() {
     if (!form || submitting) return
     setError('')
@@ -4428,8 +4545,9 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           kind: propertyBranch === 'commercial' || propertyBranch === 'mixed_use' ? 'commercial' : 'residential',
         })
       : submissionForm.propertyDisclosure
-    if (!isArch9SellerTermsAccepted(submissionForm)) {
-      const message = getArch9SellerTermsConfig().validationMessage
+    const submissionAcknowledgements = submissionDisclosure?.sellerDisclosureAcknowledgements || submissionDisclosure?.seller_disclosure_acknowledgements || {}
+    if (!areRequiredSellerDisclosureAcknowledgementsAccepted(submissionAcknowledgements)) {
+      const message = 'Please accept the required seller declaration acknowledgements before signing the declaration.'
       setTermsAcceptanceError(message)
       setError(message)
       setCurrentStep(2)
@@ -4496,9 +4614,13 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       ).trim()
       const normalizedSaResident = normalizeYesNoValue(submissionForm.saResident ?? submissionForm.sa_resident ?? submissionForm.taxResident ?? submissionForm.tax_resident)
       const normalizedSaResidentText = normalizedSaResident === 'yes' ? 'Yes' : normalizedSaResident === 'no' ? 'No' : ''
+      const submittedAcknowledgements = readSellerDisclosureAcknowledgements(
+        submissionDisclosure?.sellerDisclosureAcknowledgements || submissionDisclosure?.seller_disclosure_acknowledgements || {},
+      )
+      const submittedPrivacyAcknowledgement = submittedAcknowledgements.acknowledgements.find((item) => item.key === SELLER_DISCLOSURE_ACKNOWLEDGEMENT_KEYS.privacyAndPaiaNotice)
       const normalizedPopiConsent =
         normalizeAcceptedValue(submissionForm.popiConsent ?? submissionForm.popiConsentAccepted ?? submissionForm.popi_consent ?? submissionForm.popi_consent_accepted) ||
-        isArch9SellerTermsAccepted(submissionForm)
+        Boolean(submittedPrivacyAcknowledgement?.accepted)
       const normalizedPopiConsentAt = normalizedPopiConsent
         ? String(submissionForm.popiConsentAcceptedAt || submissionForm.popi_consent_accepted_at || '').trim() || new Date().toISOString()
         : ''
@@ -4509,6 +4631,12 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         mode: onboardingCompletionMode,
       })
       const generatedDocuments = createSellerOnboardingGeneratedDocuments()
+      const frozenDisclosureAt = new Date().toISOString()
+      const frozenDisclosureSnapshot = buildPropertyDisclosureAnnexureSnapshot(submissionDisclosure || {}, {
+        sellerName: getSellerDisplayName(listing, submissionForm),
+        sellerIdNumber: submissionForm.idNumber || submissionForm.foreignPassportNumber || submissionForm.passportNumber || '',
+        propertyAddress: getPropertyDisplayAddress(listing, submissionForm),
+      })
       let finalForm = {
         ...(submissionForm || {}),
         ...buildSellerEntityProfileAliases(submissionForm),
@@ -4572,6 +4700,30 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         seller_onboarding_completion: completionRecord,
         sellerOnboardingGeneratedDocuments: generatedDocuments,
         seller_onboarding_generated_documents: generatedDocuments,
+        sellerOnboardingDisclosureSnapshot: {
+          version: 1,
+          frozenAt: frozenDisclosureAt,
+          frozen_at: frozenDisclosureAt,
+          status: 'awaiting_required_signatures',
+          disclosure: frozenDisclosureSnapshot,
+        },
+        seller_onboarding_disclosure_snapshot: {
+          version: 1,
+          frozenAt: frozenDisclosureAt,
+          frozen_at: frozenDisclosureAt,
+          status: 'awaiting_required_signatures',
+          disclosure: frozenDisclosureSnapshot,
+        },
+        sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
+          existing: submissionForm.sellerOnboardingSigningLifecycle || submissionForm.seller_onboarding_signing_lifecycle,
+          stage: SELLER_ONBOARDING_SIGNING_STAGES.onboardingSubmitted,
+          metadata: { documents: ['property_condition_disclosure'], reviewStatus: 'awaiting_agent_review' },
+        }),
+        seller_onboarding_signing_lifecycle: createSellerOnboardingSigningLifecycle({
+          existing: submissionForm.sellerOnboardingSigningLifecycle || submissionForm.seller_onboarding_signing_lifecycle,
+          stage: SELLER_ONBOARDING_SIGNING_STAGES.onboardingSubmitted,
+          metadata: { documents: ['property_condition_disclosure'], reviewStatus: 'awaiting_agent_review' },
+        }),
         currentStep: FINAL_STEP_INDEX,
       }
       if (isPropertyDisclosureDigitallyComplete(finalForm.propertyDisclosure || {})) {
@@ -4581,6 +4733,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           token,
           signerId: requestedComplianceSignerId || activeComplianceSigner?.id || '',
           disclosure: finalForm.propertyDisclosure,
+          acknowledgements: finalForm.propertyDisclosure?.sellerDisclosureAcknowledgements || finalForm.propertyDisclosure?.seller_disclosure_acknowledgements || {},
           audit: {
             userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
           },
@@ -4887,7 +5040,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
       label: 'Property disclosure',
       missing: [
         ...disclosureMissing,
-        ...(!isArch9SellerTermsAccepted(form) ? ['Seller terms acceptance'] : []),
       ],
       onEdit: () => setCurrentStep(2),
     },
@@ -6445,7 +6597,14 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
               onNoteChange={handleDisclosureNoteChange}
               onDownload={handleDownloadDisclosurePdf}
               onDisclosureChange={patchPropertyDisclosure}
+              onConfirmSignerDeclaration={handleSignerDeclarationSubmit}
+              signerDeclarationSubmitting={submitting}
+              signerDeclarationComplete={Boolean(hasRequestedComplianceSigner && activeComplianceSigner?.complete)}
               termsAcceptanceError={termsAcceptanceError}
+              acknowledgementValue={hasRequestedComplianceSigner
+                ? (signerAcknowledgements || activeComplianceSigner?.acknowledgements || {})
+                : (activePropertyDisclosure?.sellerDisclosureAcknowledgements || activePropertyDisclosure?.seller_disclosure_acknowledgements || {})}
+              onAcknowledgementsChange={handleDisclosureAcknowledgementsChange}
             />
           ) : null}
 
@@ -6549,7 +6708,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                     { label: 'Disclosure Status', value: getPropertyDisclosureStatusLabel(getPropertyDisclosureStatus(form.propertyDisclosure || {})) },
                     { label: 'Annexure A Answers', value: `${getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).answered} / ${getPropertyDisclosureAnswerSummary(form.propertyDisclosure || {}).total} answered` },
                     { label: 'Declaration', value: form.propertyDisclosure?.declarationAccepted ? 'Signed' : 'Not signed' },
-                    { label: 'Arch9 Terms', value: isArch9SellerTermsAccepted(form) ? 'Accepted' : 'Not accepted' },
+                    { label: 'Required acknowledgements', value: areRequiredSellerDisclosureAcknowledgementsAccepted(form.propertyDisclosure?.sellerDisclosureAcknowledgements || form.propertyDisclosure?.seller_disclosure_acknowledgements || {}) ? 'Accepted' : 'Not accepted' },
                   ]}
                 />
               </div>

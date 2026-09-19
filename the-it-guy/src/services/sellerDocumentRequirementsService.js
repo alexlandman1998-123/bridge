@@ -15,6 +15,9 @@ import {
   SELLER_BASE_PACK_REQUIRED_KEYS,
 } from '../lib/sellerBasePackContract.js'
 import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
+import { isSellerStructuredFactRequirement } from './documents/sellerStructuredFactRequirementService.js'
+import { projectCanonicalSellerDocumentRows } from './documents/canonicalSellerDocumentProjectionService.js'
+import { buildSellerSigningStatusModel, getSellerSigningStatusForDocument } from './sellerSigningStatusService.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -2045,6 +2048,7 @@ export function buildSellerDocumentRequirementRows({ listing = {}, documents = [
     ? formData
     : getSellerOnboardingFormData(listing)
   const requiredDocuments = getSellerRequiredDocuments(listing, resolvedFormData)
+    .filter((requirement) => !isSellerStructuredFactRequirement(requirement))
   if (!requiredDocuments.length) {
     return uploadedDocuments.map((document, index) => buildExtraDocumentRow(document, index))
   }
@@ -2313,10 +2317,16 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing
     signing: complianceSigning,
     generatedAt: completedAt || new Date().toISOString(),
   })
-  // Completing onboarding prepares the declaration, but it does not sign it.
-  // Do not let an unsigned generated preview satisfy the FICA requirement or
-  // present it as an approved/downloadable final document.
-  if (!sellerCompliancePack.complete) return null
+  const requiredSigners = Array.isArray(sellerCompliancePack?.signers)
+    ? sellerCompliancePack.signers.filter((signer) => signer?.required)
+    : []
+  const ficaAcceptedByEveryRequiredSigner = requiredSigners.length > 0 && requiredSigners.every((signer) => (
+    signer?.complete === true &&
+    (Array.isArray(signer?.acceptedDocuments) ? signer.acceptedDocuments : []).includes(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION)
+  ))
+  // A disclosure signature proves the property declaration only. FICA must
+  // be accepted later in the agent-reviewed FICA and mandate signing pack.
+  if (!sellerCompliancePack.complete || !ficaAcceptedByEveryRequiredSigner) return null
   const declarationModel = buildFicaDeclarationDocumentModel({
     partyType: 'seller',
     transaction: {
@@ -2571,6 +2581,8 @@ export function buildSellerDocumentSourceOfTruth({
   documents = null,
   formData = {},
   mandatePacket = null,
+  journey = null,
+  useCanonicalProjection = true,
 } = {}) {
   const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
     ? formData
@@ -2608,11 +2620,26 @@ export function buildSellerDocumentSourceOfTruth({
   const kingstonsRequirementPack = isKingstonsSellerDocumentContext(sourceListing)
     ? buildKingstonsSellerDocumentRequirementPack(sourceListing, resolvedFormData)
     : null
-  const rows = buildSellerDocumentRequirementRows({
+  const candidateRows = buildSellerDocumentRequirementRows({
     listing: sourceListing,
     documents: [],
     formData: resolvedFormData,
   }).map((row, index) => buildSellerDocumentContractRow(row, index, sourceListing))
+  const onboardingStatus = normalizeKey(
+    sourceListing?.sellerOnboardingStatus || sourceListing?.seller_onboarding_status ||
+    sourceListing?.sellerOnboarding?.status || sourceListing?.seller_onboarding?.status,
+  )
+  const signingStatus = journey?.signingStatus || buildSellerSigningStatusModel({
+    onboardingSubmitted: ['submitted', 'completed', 'complete', 'under_review', 'onboarding_completed', 'seller_onboarding_completed'].includes(onboardingStatus),
+    onboardingReviewStatus: sourceListing?.sellerOnboardingReviewStatus || sourceListing?.seller_onboarding_review_status,
+    mandateStatus: mandatePacket?.state || sourceListing?.mandateStatus || sourceListing?.mandate_status,
+    mandateExecutionMode: sourceListing?.mandateExecutionMode || sourceListing?.mandate_execution_mode || sourceListing?.mandate?.executionMode,
+  })
+  const projectedRows = useCanonicalProjection ? projectCanonicalSellerDocumentRows(candidateRows) : candidateRows
+  const rows = projectedRows.map((row) => ({
+    ...row,
+    signingStatus: getSellerSigningStatusForDocument(row.key || row.requirementKey, signingStatus),
+  }))
 
   return {
     contractVersion: 'seller_document_source_v1',
@@ -2624,6 +2651,7 @@ export function buildSellerDocumentSourceOfTruth({
       sellerLeadId: normalizeText(sourceListing?.sellerLeadId || sourceListing?.seller_lead_id || sourceListing?.originatingCrmLeadId || sourceListing?.originating_crm_lead_id),
     },
     rows,
+    signingStatus,
     summary: buildSellerDocumentSourceSummary(rows),
     requirementPack: kingstonsRequirementPack,
   }

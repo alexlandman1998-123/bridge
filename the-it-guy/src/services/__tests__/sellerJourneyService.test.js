@@ -130,7 +130,23 @@ const onboardingSentJourney = buildSellerJourney({
 })
 
 assert.equal(onboardingSentJourney.stage.key, 'seller_onboarding_sent')
-assert.equal(onboardingSentJourney.nextRecommendedAction?.id, 'track_seller_onboarding')
-assert.equal(onboardingSentJourney.nextRecommendedAction?.label, 'Track Seller Onboarding')
+assert.equal(onboardingSentJourney.nextRecommendedAction?.id, 'copy_seller_onboarding_link')
+assert.equal(onboardingSentJourney.nextRecommendedAction?.label, 'Copy Seller Onboarding Link')
+
+const manualMandateSentJourney = buildSellerJourney({
+  lead: {
+    leadId: 'seller-lead-manual-mandate',
+    leadCategory: 'seller',
+    sellerOnboardingStatus: 'submitted',
+    sourceContext: {
+      mandateExecutionMode: 'manual',
+      manualMandateSentAt: '2026-09-19T10:00:00.000Z',
+    },
+  },
+})
+
+assert.equal(manualMandateSentJourney.mandateStatus, 'sent')
+assert.equal(manualMandateSentJourney.mandateExecutionMode, 'manual')
+assert.equal(manualMandateSentJourney.stage.key, 'mandate_sent')
 
 console.log('sellerJourneyService tests passed')

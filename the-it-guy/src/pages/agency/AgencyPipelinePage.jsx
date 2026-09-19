@@ -103,6 +103,10 @@ import {
   buildSellerDocumentSourceOfTruth,
   filterSellerDocumentRequirementsForOnboarding,
 } from '../../services/sellerDocumentRequirementsService'
+import { projectCanonicalSellerDocumentRows } from '../../services/documents/canonicalSellerDocumentProjectionService'
+import { resolveCanonicalDocumentRequestPresentation } from '../../services/documents/canonicalDocumentRequestPresentationService'
+import { projectSellerDocumentRowsForTaxonomyRollout } from '../../services/documents/sellerDocumentTaxonomyRolloutService'
+import { getSellerDocumentReleaseReadiness } from '../../services/sellerDocumentReleaseReadinessService'
 import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
 import { getSellerProcessDefinition } from '../../services/sellerProcessDefinitionService'
 import {
@@ -3998,6 +4002,8 @@ function isStaleSellerLeadDocumentRequirement(row = {}) {
 }
 
 function getSellerLeadDocumentCategoryKey(documentRow = {}) {
+  const taxonomyCategory = normalizeKey(documentRow?.taxonomyCategory || documentRow?.taxonomy_category)
+  if (['seller', 'property', 'marketing', 'legal'].includes(taxonomyCategory)) return taxonomyCategory
   const source = normalizeKey([
     documentRow?.category,
     documentRow?.categoryKey,
@@ -4036,9 +4042,12 @@ function isStaleKingstonsBaselineDocumentRow(documentRow = {}) {
 }
 
 function getSellerLeadDocumentStatusMeta(documentRow = {}) {
-  const rawStatus = normalizeText(documentRow?.statusLabel || documentRow?.status || documentRow?.documentStatus || documentRow?.document_status)
-  const status = normalizeKey(rawStatus)
   const hasFile = sellerLeadDocumentHasFileEvidence(documentRow)
+  const rawStatus = normalizeText(
+    documentRow?.statusLabel || documentRow?.status || documentRow?.documentStatus || documentRow?.document_status ||
+    (!hasFile ? documentRow?.signingStatus?.label : ''),
+  )
+  const status = normalizeKey(rawStatus)
 
   if (/(rejected|declined|failed|invalid)/.test(status)) {
     return {
@@ -4272,13 +4281,14 @@ function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
   }
 }
 
-function dedupeSellerLeadDocumentRows(rows = []) {
+function dedupeSellerLeadDocumentRows(rows = [], { useCanonicalProjection = true } = {}) {
   const mergedRows = []
   const indexByKey = new Map()
-  for (const row of Array.isArray(rows) ? rows : []) {
+  const candidateRows = useCanonicalProjection ? projectCanonicalSellerDocumentRows(rows) : rows
+  for (const row of candidateRows) {
     if (!row || typeof row !== 'object') continue
     if (isStaleSellerLeadDocumentRequirement(row)) continue
-    const key = getSellerLeadDocumentCanonicalKey(row) || normalizeKey(row.id || row.label || row.title)
+    const key = row.canonicalRequirementIdentity || row.canonical_requirement_identity || getSellerLeadDocumentCanonicalKey(row) || normalizeKey(row.id || row.label || row.title)
     if (!key) {
       mergedRows.push(row)
       continue
@@ -4470,7 +4480,7 @@ function mapSellerLeadDocumentSourceRow(row = {}) {
     category,
     document_category: category,
     status,
-    statusLabel: row?.statusLabel || status,
+    statusLabel: row?.statusLabel || (!url ? row?.signingStatus?.label : '') || status,
     url,
     fileUrl: url,
     file_url: url,
@@ -4507,6 +4517,7 @@ function buildSellerLeadDocumentRowsFromSource({
   listing = null,
   journey = null,
   mandatePacketStatus = null,
+  useCanonicalProjection = true,
 } = {}) {
   const listingRecord = listing && typeof listing === 'object' ? listing : {}
   const leadRecord = lead && typeof lead === 'object' ? lead : {}
@@ -4561,6 +4572,8 @@ function buildSellerLeadDocumentRowsFromSource({
     documents,
     formData,
     mandatePacket: buildSellerLeadMandatePacketForDocuments({ mandatePacketStatus, lead: leadRecord, listing: listingRecord }),
+    journey,
+    useCanonicalProjection,
   })
 
   return dedupeSellerLeadDocumentRows(source.rows.map(mapSellerLeadDocumentSourceRow))
@@ -11733,6 +11746,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   })
   const [sellerContactFeedbackModal, setSellerContactFeedbackModal] = useState(SELLER_CONTACT_FEEDBACK_DEFAULTS)
   const [sellerLeadEditModal, setSellerLeadEditModal] = useState({ open: false, mode: 'profile' })
+  const [mandateExecutionModalOpen, setMandateExecutionModalOpen] = useState(false)
+  const [sellerDocumentTaxonomyRolloutControl, setSellerDocumentTaxonomyRolloutControl] = useState(null)
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [sellerProfileEditForm, setSellerProfileEditForm] = useState(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
   const [buyerProfileForm, setBuyerProfileForm] = useState({})
@@ -14212,6 +14227,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedLeadIdentityKey,
     selectedLeadLinkedListingId,
   ].filter(Boolean).join(':')
+
+  useEffect(() => {
+    if (!organisationId || !selectedLeadLinkedListingId || !isSupabaseConfigured) {
+      setSellerDocumentTaxonomyRolloutControl(null)
+      return undefined
+    }
+    let cancelled = false
+    getSellerDocumentReleaseReadiness({ organisationId, listingId: selectedLeadLinkedListingId })
+      .then((report) => {
+        if (!cancelled) setSellerDocumentTaxonomyRolloutControl(report?.rollout || null)
+      })
+      .catch(() => {
+        // A missing control must remain fail-closed; do not interrupt the workspace.
+        if (!cancelled) setSellerDocumentTaxonomyRolloutControl(null)
+      })
+    return () => { cancelled = true }
+  }, [organisationId, selectedLeadLinkedListingId])
 
   useEffect(() => {
     const shouldLoadPrivateListingActivity = shouldLoadLeadWorkspaceRequest({
@@ -17006,12 +17038,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedSellerDocumentCategories = useMemo(
     () => {
-      const sourceRows = buildSellerLeadDocumentRowsFromSource({
+      const legacySourceRows = buildSellerLeadDocumentRowsFromSource({
         lead: selectedLead || {},
         listing: selectedLeadLinkedListing,
         journey: selectedSellerJourney,
         mandatePacketStatus,
+        useCanonicalProjection: false,
       })
+      const taxonomyProjection = projectSellerDocumentRowsForTaxonomyRollout({
+        rows: legacySourceRows,
+        rolloutControl: sellerDocumentTaxonomyRolloutControl,
+        listing: selectedLeadLinkedListing,
+      })
+      const sourceRows = taxonomyProjection.rows
       const usableSourceRows = selectedLeadHasKingstonsPipelineSignal
         ? sourceRows.filter((row) =>
             !isStaleKingstonsBaselineDocumentRow(row) &&
@@ -17022,7 +17061,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
         ...(selectedLeadHasKingstonsPipelineSignal ? selectedKingstonsSellerPackRows : []),
         ...usableSourceRows,
-      ])
+      ], { useCanonicalProjection: taxonomyProjection.rollout.enabled })
       const visibleRows = filterSellerDocumentRequirementsForOnboarding(mergedRows, {
         onboardingSubmitted: selectedLeadOnboardingCompleted,
       })
@@ -17048,6 +17087,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLeadLinkedListing,
       selectedLeadOnboardingCompleted,
       selectedSellerJourney,
+      sellerDocumentTaxonomyRolloutControl,
     ],
   )
 
@@ -17263,12 +17303,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
     }
 
-    if (normalizeKey(fallbackAction.id) === 'track_seller_onboarding') {
+    if (normalizeKey(fallbackAction.id) === 'copy_seller_onboarding_link') {
       return {
-        title: 'Track seller onboarding',
-        copy: 'Review the seller journey and check whether onboarding has been submitted before sending a reminder.',
-        actionId: 'track_seller_onboarding',
-        label: 'Track Seller Onboarding',
+        title: 'Seller onboarding is ready to share',
+        copy: 'Copy the secure onboarding link and send it to the seller through your preferred channel.',
+        actionId: 'copy_seller_onboarding_link',
+        label: 'Copy Seller Onboarding Link',
+        disabled: false,
+      }
+    }
+
+    if (normalizeKey(fallbackAction.id) === 'review_seller_onboarding') {
+      return {
+        title: 'Review seller onboarding',
+        copy: 'Review the frozen seller facts and property disclosure before preparing the FICA and mandate signing pack.',
+        actionId: 'review_seller_onboarding',
+        label: 'Review Seller Onboarding',
         disabled: false,
       }
     }
@@ -26166,9 +26216,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function recordManualMandateSent() {
+    if (!selectedLead?.leadId || !organisationId) return
+    const sentAt = new Date().toISOString()
+    setMandateExecutionModalOpen(false)
+    void updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+      stage: 'Mandate Sent',
+      status: 'Manual mandate sent — awaiting signed upload',
+    }).then(() => {
+      patchSelectedLeadRecord({
+        stage: 'Mandate Sent',
+        status: 'Manual mandate sent — awaiting signed upload',
+        mandateExecutionMode: 'manual',
+        mandateSentAt: sentAt,
+      }, selectedLead.leadId)
+      setMessage('Manual mandate route recorded. Upload the signed hard copy when it is returned.')
+      scheduleRecordsReload(organisationId, 500)
+    }).catch((manualRouteError) => {
+      setError(manualRouteError?.message || 'Unable to record the manual mandate route.')
+    })
+  }
+
   function handleSellerJourneyAction(actionId) {
     const id = normalizeText(actionId)
+    if (id === 'copy_seller_onboarding_link') {
+      handleCopySelectedSellerLink('onboarding')
+      return
+    }
     if (id === 'track_seller_onboarding') {
+      handleLeadWorkspaceTabSelection('overview')
+      if (typeof document !== 'undefined') {
+        window.setTimeout(() => {
+          document.querySelector('[data-testid="seller-journey-rail"]')?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+        }, 50)
+      }
+      return
+    }
+    if (id === 'review_seller_onboarding') {
       handleLeadWorkspaceTabSelection('overview')
       if (typeof document !== 'undefined') {
         window.setTimeout(() => {
@@ -26317,6 +26401,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           setError(draftError?.message || 'Unable to create a listing draft for mandate generation.')
         })
       }
+      return
+    }
+    if (id === 'choose_mandate_execution') {
+      setMandateExecutionModalOpen(true)
       return
     }
     if (['send_mandate', 'view_signing_status', 'view_mandate', 'check_signature_status', 'resend_mandate'].includes(id)) {
@@ -33971,16 +34059,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     </section>
 
                     <div className="grid min-w-0 gap-4 lg:grid-cols-2 xl:min-h-[620px] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,0.9fr)_minmax(0,0.8fr)] xl:grid-rows-[auto_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,0.95fr)_minmax(0,0.95fr)_minmax(0,0.8fr)]">
-                      <section className="min-w-0 rounded-[20px] border border-[#17364d] bg-[#102033] p-5 text-white shadow-[0_1px_2px_rgba(15,23,42,0.04),0_14px_34px_rgba(16,32,51,0.14)] lg:col-start-1 lg:row-start-1">
-                        <div className="flex h-full flex-wrap items-start justify-between gap-4">
+                      <section className="min-w-0 rounded-[20px] border border-[#cfe5d8] bg-[#f5fbf7] p-5 shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] lg:col-start-1 lg:row-start-1">
+                        <div className="flex h-full flex-col justify-between gap-5">
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#a8bfd3]">Next Best Action</p>
-                            <h3 className="mt-2 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-white">
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#dff3e7] text-[#087f4d]">
+                                <CheckCircle2 className="h-4 w-4" />
+                              </span>
+                              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#527561]">Next Best Action</p>
+                            </div>
+                            <h3 className="mt-4 line-clamp-2 text-lg font-semibold leading-6 tracking-[-0.03em] text-[#102033]">
                               {selectedLeadHasKingstonsSellerProcess
                                 ? selectedKingstonsProcessAction.title
-	                                : selectedSellerNextBestActionModel.title}
+                                : selectedSellerNextBestActionModel.title}
                             </h3>
-                            <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#c7d5e2]">
+                            <p className="mt-2 line-clamp-2 text-sm leading-5 text-[#61778c]">
                               {selectedLeadHasKingstonsSellerProcess
                                 ? selectedKingstonsProcessAction.copy
                                 : selectedSellerNextBestActionModel.copy}
@@ -33989,7 +34082,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <Button
                             type="button"
                             size="sm"
-                            className="min-h-10 shrink-0 bg-white px-4 text-[#102033] hover:bg-[#edf4fa]"
+                            className="min-h-10 w-full justify-center bg-[#087f4d] px-4 text-white hover:bg-[#066a40]"
                             onClick={() => handleSellerJourneyAction(
                               selectedLeadHasKingstonsSellerProcess
                                 ? selectedKingstonsProcessAction.actionId
@@ -33997,7 +34090,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             )}
                             disabled={selectedLeadHasKingstonsSellerProcess ? selectedKingstonsProcessAction.disabled : selectedSellerNextBestActionModel.disabled}
                           >
-                            <CheckCircle2 className="h-4 w-4" />
+                            {normalizeText(selectedLeadHasKingstonsSellerProcess
+                              ? selectedKingstonsProcessAction.actionId
+                              : selectedSellerNextBestActionModel.actionId) === 'copy_seller_onboarding_link'
+                              ? <Copy className="h-4 w-4" />
+                              : <CheckCircle2 className="h-4 w-4" />}
                             {selectedLeadHasKingstonsSellerProcess
                               ? selectedKingstonsProcessAction.label
                               : selectedSellerNextBestActionModel.label}
@@ -38946,6 +39043,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       portalActionLabel={selectedLeadIsSeller ? selectedLeadSellerOnboardingCommandLabel : 'Buyer Portal Workflow'}
                       renderActions={(documentRow, category) => {
                         const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
+                        const requestPresentation = documentRow.requestPresentation || resolveCanonicalDocumentRequestPresentation(documentRow)
                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
                         const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
                         const generatedHtml = normalizeText(documentRow.generatedHtml || documentRow.generated_html)
@@ -38974,7 +39072,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             else void handleDownloadSellerLeadDocumentUrl(documentRow)
                           }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60"><Download className="h-3.5 w-3.5" /> Download</button> : null}
                           {isFicaDocument && !detailsCaptured ? <button type="button" onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Capture details</button> : null}
-                          {(!isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
+                          {requestPresentation.action === 'generate_document' && !hasFile && !generatedHtml ? <button type="button" title={requestPresentation.helpText} onClick={() => setMessage(requestPresentation.helpText)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]"><FileText className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
+                          {requestPresentation.action === 'capture_details' ? <button type="button" title={requestPresentation.helpText} onClick={() => openSellerLeadEditModal('property')} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white"><UserRound className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
+                          {requestPresentation.action === 'upload_document' && (!isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
                             if (isSignedMandate) void handleSellerLeadSignedMandateUpload(event, documentRow)
                             else if (canUseKingstonsUpload) {
                               if (isFormalValuation) void handleKingstonsFormalValuationUpload(event)
@@ -39525,6 +39625,38 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   </section>
 </>
       )}
+
+      <Modal
+        open={mandateExecutionModalOpen}
+        onClose={() => setMandateExecutionModalOpen(false)}
+        title="How will this mandate be signed?"
+        subtitle="Choose the route that matches the seller's process. Neither option marks the mandate as signed."
+        className="max-w-2xl"
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <section className="rounded-[16px] border border-[#cfe3d8] bg-[#f4fbf6] p-4">
+            <p className="text-sm font-semibold text-[#173d2d]">Digital signing through Arch9</p>
+            <p className="mt-2 text-sm leading-6 text-[#527062]">Prepare and send the digital mandate from Documents. The journey moves to Mandate Sent once the signing request is issued.</p>
+            <Button
+              type="button"
+              className="mt-4 w-full"
+              onClick={() => {
+                setMandateExecutionModalOpen(false)
+                handleSellerJourneyAction('send_mandate')
+              }}
+            >
+              Prepare digital mandate
+            </Button>
+          </section>
+          <section className="rounded-[16px] border border-[#dbe3ec] bg-[#f8fafc] p-4">
+            <p className="text-sm font-semibold text-[#20364c]">Manual / wet-ink signing</p>
+            <p className="mt-2 text-sm leading-6 text-[#60758b]">Record that the mandate was sent manually. When it is returned, upload the signed copy from Documents.</p>
+            <Button type="button" variant="secondary" className="mt-4 w-full" onClick={recordManualMandateSent}>
+              Record manual mandate sent
+            </Button>
+          </section>
+        </div>
+      </Modal>
 
       <Modal
         open={activityComposerOpen}

@@ -13,6 +13,10 @@ import {
 } from './sellerPropertyAddress.js'
 import { SELLER_BASE_PACK_KEYS } from './sellerBasePackContract.js'
 import { withCanonicalDocumentRequestMetadata } from '../core/documents/documentRequestCanonicalAdapter.js'
+import {
+  isSellerStructuredFactRequirement,
+  partitionSellerDocumentRequirements,
+} from '../services/documents/sellerStructuredFactRequirementService.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy seller requirement engine is retained as a compatibility fallback.
@@ -995,7 +999,7 @@ export function getRequiredSellerActions(requirementProfile = {}) {
   return []
 }
 
-export function getRequiredSellerDocuments(requirementProfile = {}) {
+function getSellerRequirementCandidates(requirementProfile = {}) {
   const profile = requirementProfile || {}
   const flow = profile.flow && typeof profile.flow === 'object' ? profile.flow : {}
   const lifecycleStatus = normalizeKey(profile.lifecycleStatus || flow.lifecycle_status || 'seller_lead')
@@ -1543,6 +1547,14 @@ export function getRequiredSellerDocuments(requirementProfile = {}) {
   return docs
 }
 
+export function getRequiredSellerDocuments(requirementProfile = {}) {
+  return partitionSellerDocumentRequirements(getSellerRequirementCandidates(requirementProfile)).documentRequirements
+}
+
+export function getRequiredSellerStructuredFacts(requirementProfile = {}) {
+  return partitionSellerDocumentRequirements(getSellerRequirementCandidates(requirementProfile)).structuredFactRequirements
+}
+
 export function generateSellerDocumentRequirements(listingOrProfile) {
   const profile =
     listingOrProfile && listingOrProfile.formData
@@ -1554,6 +1566,7 @@ export function generateSellerDocumentRequirements(listingOrProfile) {
 export function syncSellerDocumentRequirements(listing = {}, existingRequirements = []) {
   const requirementProfile = buildSellerRequirementProfile(listing || {})
   const generatedRequirements = getRequiredSellerDocuments(requirementProfile)
+  const structuredFactRequirements = getRequiredSellerStructuredFacts(requirementProfile)
   const existingRows = Array.isArray(existingRequirements) ? existingRequirements : []
   const existingByKey = new Map(existingRows.map((row) => [normalizeKey(row?.requirement_key || row?.key), row]))
   const generatedKeys = new Set(generatedRequirements.map((row) => normalizeKey(row.requirement_key)))
@@ -1612,6 +1625,7 @@ export function syncSellerDocumentRequirements(listing = {}, existingRequirement
   return {
     requirementProfile,
     generatedRequirements,
+    structuredFactRequirements,
     upsertRows,
     markNotApplicableRows,
   }
@@ -1667,7 +1681,11 @@ export function getListingReadinessSummary(listing = {}) {
     return isSellerRequirementSatisfied(row, documents)
   }
 
-  const requiredRows = requirements.filter((row) => row?.is_required !== false && normalizeKey(row?.status) !== 'not_applicable')
+  const requiredRows = requirements.filter((row) => (
+    row?.is_required !== false &&
+    normalizeKey(row?.status) !== 'not_applicable' &&
+    !isSellerStructuredFactRequirement(row)
+  ))
   const completedRows = requiredRows.filter((row) => requirementSatisfied(row))
   const missingRows = requiredRows.filter((row) => !requirementSatisfied(row))
   const receivedRows = requiredRows.filter((row) => {

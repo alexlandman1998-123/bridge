@@ -19,6 +19,7 @@ test('records agent-assisted completion with immutable audit fields', () => {
   assert.equal(record.agentAssisted, true)
   assert.equal(record.completedBy, 'agent-123')
   assert.equal(record.completedAt, '2026-09-14T12:00:00.000Z')
+  assert.equal(record.reviewStatus, 'awaiting_agent_review')
 })
 
 test('reads legacy aliases and defaults safely to self service', () => {

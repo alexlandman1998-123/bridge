@@ -173,7 +173,7 @@ function assertNextAction(args, expectedId, expectedLabel) {
     sellerOnboardingToken: 'global-onboarding-token',
     sellerOnboardingStatus: 'sent',
   }
-  const { journey, readiness } = assertNextAction({ lead }, 'track_seller_onboarding', 'Track Seller Onboarding')
+  const { journey, readiness } = assertNextAction({ lead }, 'copy_seller_onboarding_link', 'Copy Seller Onboarding Link')
   assert.equal(journey.stage.key, 'seller_onboarding_sent')
   assert.equal(actionById(getSellerJourneyActions({ lead }), 'follow_up_with_seller')?.enabled, true)
   assert.equal(actionById(readiness.actions, 'generate_mandate'), null)
@@ -181,7 +181,7 @@ function assertNextAction(args, expectedId, expectedLabel) {
 }
 
 {
-  const { journey, readiness } = assertNextAction({ lead: submittedLead }, 'generate_mandate', 'Generate Mandate')
+  const { journey, readiness } = assertNextAction({ lead: submittedLead }, 'review_seller_onboarding', 'Review Seller Onboarding')
   assert.equal(journey.stage.key, 'seller_onboarding_submitted')
   assert.equal(readiness.canSendMandate, false)
   assert.equal(actionById(readiness.actions, 'open_seller_portal')?.enabled, true)

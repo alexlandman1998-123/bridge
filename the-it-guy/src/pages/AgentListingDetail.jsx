@@ -83,6 +83,16 @@ import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import { fetchDevelopmentsData } from '../lib/api'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import { SELLER_ONBOARDING_SIGNING_STAGES, createSellerOnboardingSigningLifecycle } from '../core/documents/sellerOnboardingSigningLifecycle'
+import {
+  recordSellerOnboardingReview,
+  readSellerOnboardingReview,
+  SELLER_ONBOARDING_REVIEW_STATUS,
+} from '../core/documents/sellerOnboardingReview'
+import {
+  normalizeSellerOnboardingFormalSigningSelection,
+  validateSellerOnboardingFormalSigningSelection,
+} from '../core/documents/sellerOnboardingFormalSigningPack'
+import { buildSellerOnboardingJourneyStatus } from '../core/documents/sellerOnboardingJourneyStatus'
 import { buildSellerSigningPlan } from '../lib/sellerSigningPlanModel'
 import {
   getListingReadinessSummary,
@@ -3694,6 +3704,8 @@ function AgentListingDetail() {
   const [sellerDocumentSendOpen, setSellerDocumentSendOpen] = useState(false)
   const [sellerDocumentSendStep, setSellerDocumentSendStep] = useState(1)
   const [sellerDocumentSendSaving, setSellerDocumentSendSaving] = useState(false)
+  const [sellerOnboardingReviewSaving, setSellerOnboardingReviewSaving] = useState(false)
+  const [sellerOnboardingCorrectionReason, setSellerOnboardingCorrectionReason] = useState('')
   const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
   const [primaryDocumentContactEmail, setPrimaryDocumentContactEmail] = useState('')
   const [sellerDocumentReplacementGroupId, setSellerDocumentReplacementGroupId] = useState('')
@@ -6569,11 +6581,11 @@ function AgentListingDetail() {
 
   function openSellerDocumentSend(selectionOverride = null) {
     const { byKey } = getSellerSigningDocumentOptions()
-    setSellerDocumentSendSelection({
-      disclosure: false,
-      fica: false,
+    setSellerDocumentSendSelection(normalizeSellerOnboardingFormalSigningSelection({
+      fica: byKey.fica.ready,
       mandate: byKey.mandate.ready,
-    })
+      ...(selectionOverride || {}),
+    }))
     setDetailError('')
     setDetailMessage('')
     setPrimaryDocumentContactEmail(getSellerSigningPlan().recipients[0]?.email || '')
@@ -6585,8 +6597,62 @@ function AgentListingDetail() {
     setSellerDocumentSendOpen(true)
   }
 
+  async function saveSellerOnboardingReview(status) {
+    if (!listingRecord?.id || sellerOnboardingReviewSaving) return
+    const existingForm = getListingSellerFormData(listingRecord)
+    try {
+      setSellerOnboardingReviewSaving(true)
+      setDetailError('')
+      const review = recordSellerOnboardingReview({
+        existing: existingForm.sellerOnboardingReview || existingForm.seller_onboarding_review,
+        status,
+        reason: status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? sellerOnboardingCorrectionReason : '',
+        actor: String(listingActor?.id || profile?.id || ''),
+      })
+      const lifecycleStage = status === SELLER_ONBOARDING_REVIEW_STATUS.approved
+        ? SELLER_ONBOARDING_SIGNING_STAGES.agentReviewApproved
+        : SELLER_ONBOARDING_SIGNING_STAGES.correctionRequested
+      const nextForm = {
+        ...existingForm,
+        sellerOnboardingReview: review,
+        seller_onboarding_review: review,
+        sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
+          existing: existingForm.sellerOnboardingSigningLifecycle || existingForm.seller_onboarding_signing_lifecycle,
+          stage: lifecycleStage,
+          actor: String(listingActor?.id || profile?.id || ''),
+          metadata: { reviewStatus: review.status, correctionReason: review.reason },
+        }),
+      }
+      nextForm.seller_onboarding_signing_lifecycle = nextForm.sellerOnboardingSigningLifecycle
+      await updatePrivateListingOnboardingFormData(
+        listingRecord.id,
+        nextForm,
+        { status: status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? 'in_progress' : (listingRecord?.sellerOnboardingStatus || 'completed'), syncRequirements: false },
+      )
+      patchListing((row) => ({ ...row, sellerOnboarding: { ...(row?.sellerOnboarding || {}), status: status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? 'in_progress' : row?.sellerOnboarding?.status, formData: nextForm } }))
+      setDetailMessage(status === SELLER_ONBOARDING_REVIEW_STATUS.approved
+        ? 'Seller onboarding reviewed and approved. You can now prepare the FICA and mandate signing pack.'
+        : 'Seller onboarding returned for correction. The seller can use the existing onboarding link to update the shared facts.')
+      if (status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) setSellerDocumentSendOpen(false)
+    } catch (reviewError) {
+      setDetailError(reviewError?.message || 'Unable to save the seller onboarding review.')
+    } finally {
+      setSellerOnboardingReviewSaving(false)
+    }
+  }
+
   function continueSellerDocumentSend() {
+    const onboardingReview = readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review)
+    if (onboardingReview.status !== SELLER_ONBOARDING_REVIEW_STATUS.approved) {
+      setDetailError('Review and approve the submitted seller onboarding before preparing the FICA and mandate signing pack.')
+      return
+    }
     const { documents } = getSellerSigningDocumentOptions()
+    const formalSelection = validateSellerOnboardingFormalSigningSelection(sellerDocumentSendSelection)
+    if (!formalSelection.valid) {
+      setDetailError(`Include ${formalSelection.missing.join(' and ')} in the post-review signing pack.`)
+      return
+    }
     if (!documents.some((document) => sellerDocumentSendSelection[document.key])) {
       setDetailError('Choose at least one document for this secure signing pack.')
       return
@@ -6653,7 +6719,14 @@ function AgentListingDetail() {
       return
     }
     const { documents } = getSellerSigningDocumentOptions()
-    const selected = documents.filter((document) => sellerDocumentSendSelection[document.key]).map((document) => document.key)
+    const formalSelection = validateSellerOnboardingFormalSigningSelection(sellerDocumentSendSelection)
+    if (!formalSelection.valid) {
+      setDetailError(`Include ${formalSelection.missing.join(' and ')} in the post-review signing pack.`)
+      return
+    }
+    const selected = documents
+      .filter((document) => ['fica', 'mandate'].includes(document.key) && sellerDocumentSendSelection[document.key])
+      .map((document) => document.key)
     if (!selected.length) {
       setDetailError('Choose at least one document for this secure signing pack.')
       return
@@ -6766,6 +6839,21 @@ function AgentListingDetail() {
         signingPack: buildSellerSigningPackSnapshot(selected),
       } })
       if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Unable to email the secure document link.')
+      const sentFormData = {
+        ...nextFormData,
+        sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
+          existing: nextFormData.sellerOnboardingSigningLifecycle || nextFormData.seller_onboarding_signing_lifecycle,
+          stage: SELLER_ONBOARDING_SIGNING_STAGES.packSent,
+          actor: String(listingActor?.id || profile?.id || ''),
+          metadata: { selectedDocuments: selected, route: sellerMandateSignatureRoute, signingGroupId: response?.data?.signingGroupId || response?.data?.signing_group_id || '' },
+        }),
+      }
+      sentFormData.seller_onboarding_signing_lifecycle = sentFormData.sellerOnboardingSigningLifecycle
+      await updatePrivateListingOnboardingFormData(listingRecord.id, sentFormData, {
+        status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'completed',
+        syncRequirements: false,
+      })
+      patchListing((row) => ({ ...row, sellerOnboarding: { ...(row?.sellerOnboarding || {}), formData: sentFormData } }))
       setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
       setSellerDocumentSendOpen(false)
       setDetailMessage(response?.data?.delivery === 'failed'
@@ -8139,26 +8227,20 @@ function AgentListingDetail() {
         mandateStatus: mandateWorkspace.status,
       },
     })
-    const ficaRequested = dynamicSellerRequirements.some((requirement) => {
-      const group = normalizeKey(requirement?.group || requirement?.requirement_group)
-      const status = normalizeKey(requirement?.status)
-      return group === 'fica' && status !== 'not_applicable'
-    })
     const listingCreated = complianceStatus.canTreatListingAsCreated
+    const onboardingJourney = buildSellerOnboardingJourneyStatus({
+      formData: getListingSellerFormData(listingRecord),
+      onboardingSubmitted: complianceStatus.onboardingSubmitted,
+      mandateSigned: complianceStatus.signedMandate,
+    })
     return {
       currentLabel: complianceStatus.status === 'listing_live'
         ? 'Listing live'
         : listingCreated
           ? 'Mandate signed · Listing created'
-          : complianceStatus.onboardingSubmitted
-            ? 'Onboarding submitted'
-            : 'Onboarding in progress',
-      steps: [
-        { key: 'onboarding', label: 'Onboarding submitted', complete: complianceStatus.onboardingSubmitted },
-        { key: 'fica', label: 'FICA documents requested', complete: ficaRequested },
-        { key: 'mandate', label: 'Mandate signed', complete: complianceStatus.signedMandate },
-        { key: 'listing', label: 'Listing created', complete: listingCreated },
-      ],
+          : onboardingJourney.currentLabel,
+      steps: [...onboardingJourney.steps, { key: 'listing', label: 'Listing created', complete: listingCreated }],
+      documents: onboardingJourney.documents,
       mandatePending: complianceStatus.onboardingSubmitted && !complianceStatus.signedMandate,
     }
   }, [dynamicSellerRequirements, listingRecord, mandateWorkspace.status])
@@ -11831,7 +11913,7 @@ function AgentListingDetail() {
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4">
             <legend className="px-1 text-sm font-semibold text-[#2d445e]">Include in the secure signing link</legend>
             <p className="text-sm leading-5 text-[#607387]">A completed seller profile unlocks the combined disclosure, FICA and mandate pack. Until then, you can send a mandate-only link.</p>
-            {getSellerSigningDocumentOptions().documents.map((document) => (
+            {getSellerSigningDocumentOptions().documents.filter((document) => ['fica', 'mandate'].includes(document.key)).map((document) => (
               <label key={document.key} className={`flex items-start gap-3 rounded-xl border px-3 py-3 text-sm ${document.ready ? 'border-[#dce6f2] bg-white text-[#2d445e]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
                 <input type="checkbox" className="mt-0.5 h-4 w-4" disabled={!document.ready} checked={Boolean(sellerDocumentSendSelection[document.key] && document.ready)} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
                 <span><span className="block font-semibold">{document.title}</span><span className="mt-0.5 block text-xs leading-5">{document.ready ? document.copy : document.missing[0]}</span></span>
@@ -11860,6 +11942,15 @@ function AgentListingDetail() {
         <div className="space-y-4">
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">Step {sellerDocumentSendStep} of 2 · {sellerDocumentSendStep === 1 ? 'Choose the formal documents to sign. Mandate-only is the default.' : 'Confirm the seller, mandate and signing details before sending.'}</div>
           {(() => {
+            const onboardingReview = readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review)
+            const approved = onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved
+            return <section className={`rounded-[16px] border p-4 text-sm ${approved ? 'border-[#c9e8d5] bg-[#f0faf3]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
+              <p className="font-semibold text-[#243d56]">Seller onboarding review</p>
+              <p className="mt-1 leading-5 text-[#607387]">{approved ? 'Reviewed and approved. The frozen onboarding facts are ready for the formal signing pack.' : onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested ? `Correction requested: ${onboardingReview.reason}` : 'Review the submitted ownership, FICA, property and disclosure facts before preparing the next signing step.'}</p>
+              {!approved ? <div className="mt-3 grid gap-3"><label className="grid gap-1.5 font-semibold text-[#243d56]">Correction reason <textarea value={sellerOnboardingCorrectionReason} onChange={(event) => setSellerOnboardingCorrectionReason(event.target.value)} rows={2} placeholder="Only complete this if returning the onboarding to the seller." className="rounded-xl border border-[#dce6f2] bg-white px-3 py-2 font-normal" /></label><div className="flex flex-wrap gap-2"><Button type="button" size="sm" disabled={sellerOnboardingReviewSaving} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.approved)}>Approve onboarding</Button><Button type="button" size="sm" variant="secondary" disabled={sellerOnboardingReviewSaving || !sellerOnboardingCorrectionReason.trim()} onClick={() => void saveSellerOnboardingReview(SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested)}>Request correction</Button></div></div> : null}
+            </section>
+          })()}
+          {(() => {
             const mandateReadiness = getListingMandateReadiness()
             return <div data-testid="listing-mandate-readiness" className={`rounded-[16px] border p-4 text-sm leading-5 ${mandateReadiness.ready ? 'border-[#c9e8d5] bg-[#f0faf3] text-[#176842]' : 'border-[#f2dfbd] bg-[#fff9ec] text-[#7a5a17]'}`}>
               <p className="font-semibold">{mandateReadiness.ready ? 'Mandate ready to prepare' : 'Mandate details still needed'}</p>
@@ -11867,7 +11958,7 @@ function AgentListingDetail() {
               {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerProfileBuilderReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerProfileBuilder('Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerSectionReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
             </div>
           })()}
-          {sellerDocumentSendStep === 1 ? <><fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">Mandate signature route</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send digital signing pack</span><span className="mt-1 block text-[#607387]">Send the selected frozen documents for each required seller to review and sign.</span></span></label><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Arrange manual mandate signature</span><span className="mt-1 block text-[#607387]">Create an upload task only. The mandate is not signed until the signed hard copy is uploaded and recorded.</span></span></label></fieldset>{sellerMandateSignatureRoute === 'digital_pack' ? <div className="space-y-3">{getSellerSigningDocumentOptions().documents.map((document) => (
+          {sellerDocumentSendStep === 1 ? <><fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">Mandate signature route</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send digital signing pack</span><span className="mt-1 block text-[#607387]">Send the selected frozen documents for each required seller to review and sign.</span></span></label><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Arrange manual mandate signature</span><span className="mt-1 block text-[#607387]">Create an upload task only. The mandate is not signed until the signed hard copy is uploaded and recorded.</span></span></label></fieldset>{sellerMandateSignatureRoute === 'digital_pack' ? <div className="space-y-3">{getSellerSigningDocumentOptions().documents.filter((document) => ['fica', 'mandate'].includes(document.key)).map((document) => (
             <label key={document.key} className={`flex items-start gap-3 rounded-[16px] border p-4 ${document.ready ? 'cursor-pointer border-[#dce6f2] bg-white transition hover:border-[#b7c8db]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
               <input type="checkbox" className="mt-1 h-4 w-4" disabled={!document.ready} checked={Boolean(sellerDocumentSendSelection[document.key] && document.ready)} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
               <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className={`mt-1 block text-sm leading-5 ${document.ready ? 'text-[#607387]' : 'text-[#7a5a17]'}`}>{document.ready ? `${document.copy} The seller will review the onboarding information already captured.` : document.missing[0]}</span></span>
@@ -12822,11 +12913,22 @@ function AgentListingDetail() {
                 </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {sellerOnboardingProgress.steps.map((step) => (
-                    <div key={step.key} className={`flex items-center gap-2 rounded-[10px] border px-2.5 py-2 text-xs font-semibold ${step.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : 'border-[#e1e9f2] bg-white text-[#607387]'}`}>
+                    <div key={step.key} className={`flex items-center gap-2 rounded-[10px] border px-2.5 py-2 text-xs font-semibold ${step.complete ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]' : step.attention ? 'border-[#f2dfbd] bg-[#fff9ec] text-[#8a641d]' : 'border-[#e1e9f2] bg-white text-[#607387]'}`}>
                       {step.complete ? <CheckCircle2 size={14} /> : <CircleAlert size={14} />}
                       {step.label}
                     </div>
                   ))}
+                </div>
+                <div className="mt-3 border-t border-[#e5edf6] pt-3">
+                  <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#607387]">Document status</p>
+                  <div className="mt-2 grid gap-1.5">
+                    {sellerOnboardingProgress.documents.map((document) => (
+                      <div key={document.key} className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-semibold text-[#35546c]">{document.label}</span>
+                        <span className="text-right text-[#607387]">{document.status.replace(/_/g, ' ')}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 {sellerOnboardingProgress.mandatePending ? (
                   <p className="mt-3 text-xs leading-5 text-[#607387]">The mandate can be uploaded later. FICA requests remain visible in Documents until the agency receives and reviews the evidence.</p>

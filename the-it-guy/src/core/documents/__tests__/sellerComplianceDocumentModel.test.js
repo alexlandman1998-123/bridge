@@ -105,13 +105,23 @@ test('buildPropertyDisclosureDocumentMarkup renders FICA and signer pages when c
 test('property disclosure stays a standalone document when no compliance pack is supplied', () => {
   const html = buildPropertyDisclosureDocumentMarkup(completedDisclosure, {
     sellerName: 'John Smith',
+    sellerIdNumber: '8001015009087',
     propertyAddress: '1 Main Road, Cape Town',
     documentReference: 'LIST-123',
+    branding: {
+      organisationName: 'Kingstons Real Estate',
+      logoLightUrl: '/brand/kingstons-light.png',
+      logoDarkUrl: '/brand/kingstons-dark.png',
+    },
   })
 
   assert.doesNotMatch(html, /FICA Summary/)
   assert.doesNotMatch(html, /Signature Certificate/)
   assert.match(html, /Annexure A/)
+  assert.match(html, /I\/We, John Smith, holder\(s\) of ID\/passport number 8001015009087, declare/)
+  assert.match(html, /disclosures in this Annexure A relating to 1 Main Road, Cape Town are true, accurate and complete/)
+  assert.match(html, /kingstons-dark\.png/)
+  assert.match(html, /\.answer-col-unsure \{ width: 12%; \}/)
 })
 
 test('property disclosure requests details for answers that indicate a defect', () => {

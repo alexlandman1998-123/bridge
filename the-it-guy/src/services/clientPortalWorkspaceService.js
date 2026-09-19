@@ -362,7 +362,7 @@ function sellerPortalStatusCards({ journey = null, documentCenter = null, requir
     {
       key: 'mandate',
       label: 'Mandate',
-      value: journey?.kpis?.find((item) => item.key === 'mandate')?.value || 'Not started',
+      value: journey?.signingStatus?.mandate?.label || journey?.kpis?.find((item) => item.key === 'mandate')?.value || 'Not started',
     },
     {
       key: 'listing',
@@ -1068,6 +1068,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     appointments,
     offers: rawOffers,
     sellerJourney,
+    sellerSigningStatus: sellerJourney.signingStatus,
     sellerPortalJourney,
     sellerMandateContinuity,
     stage: sellerTransactionTracking.stage,
@@ -1127,6 +1128,7 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
       sellerOnboardingStatus: status,
       listingStatus: sellerPortalStage,
       mandateStatus: mandatePacket?.state || listing?.mandateStatus || listing?.mandate_status || '',
+      sellerSigningStatus: sellerJourney.signingStatus,
       sellerLeadId,
       listingId,
       sellerComplianceSigning,

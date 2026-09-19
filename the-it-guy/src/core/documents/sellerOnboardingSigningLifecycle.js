@@ -2,6 +2,8 @@ export const SELLER_ONBOARDING_SIGNING_LIFECYCLE_CONTRACT = 'arch9-seller-onboar
 
 export const SELLER_ONBOARDING_SIGNING_STAGES = Object.freeze({
   onboardingSubmitted: 'onboarding_submitted',
+  agentReviewApproved: 'agent_review_approved',
+  correctionRequested: 'correction_requested',
   packPrepared: 'pack_prepared',
   packSent: 'pack_sent',
   partiallySigned: 'partially_signed',

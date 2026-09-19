@@ -3,6 +3,10 @@ import {
   recordSellerComplianceSignerSignature,
   SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS,
 } from './sellerComplianceSignerModel.js'
+import {
+  buildSellerDisclosureAcknowledgementEvidence,
+  SELLER_DISCLOSURE_ACKNOWLEDGEMENTS,
+} from './sellerDisclosureAcknowledgements.js'
 
 export const SELLER_COMPLIANCE_SIGNING_FLOW_CONTRACT = 'arch9-seller-compliance-signing-flow-v1'
 
@@ -90,6 +94,7 @@ export function applySellerComplianceSignatureToForm({
   token = '',
   signerId = '',
   disclosure = {},
+  acknowledgements = null,
   audit = {},
 } = {}) {
   const flow = buildSellerComplianceSigningForForm({
@@ -101,6 +106,21 @@ export function applySellerComplianceSignatureToForm({
   })
   const signer = flow.activeSigner
   if (!signer?.id) return formData || {}
+  const suppliedAcknowledgements = acknowledgements || disclosure.sellerDisclosureAcknowledgements || disclosure.seller_disclosure_acknowledgements
+  // Existing completed onboarding records used one combined terms/POPI checkbox.
+  // Retain their signing evidence while all newly edited declarations must use
+  // the explicit acknowledgement record validated by the form.
+  const legacyAcknowledgements = disclosure.declarationAccepted && (disclosure.arch9TermsAccepted || disclosure.arch9_terms_accepted)
+    ? {
+        acknowledgements: SELLER_DISCLOSURE_ACKNOWLEDGEMENTS.map((item) => ({
+          key: item.key,
+          accepted: item.required,
+        })),
+      }
+    : {}
+  const acknowledgementEvidence = buildSellerDisclosureAcknowledgementEvidence(
+    suppliedAcknowledgements || legacyAcknowledgements,
+  )
 
   const updatedSigners = recordSellerComplianceSignerSignature(flow.model.signers, signer.id, {
     signature: disclosure.signature,
@@ -108,6 +128,7 @@ export function applySellerComplianceSignatureToForm({
     signatureType: disclosure.signature && String(disclosure.signature).startsWith('data:image/') ? 'drawn' : 'typed',
     signedAt: disclosure.signedAt || disclosure.signed_at,
     acceptedDocuments: SELLER_COMPLIANCE_SIGNATURE_DOCUMENTS.map((document) => document.key),
+    acknowledgements: acknowledgementEvidence,
     ...audit,
   })
   const updatedSigning = buildSellerCompliancePortalModel({

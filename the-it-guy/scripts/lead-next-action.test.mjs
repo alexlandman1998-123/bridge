@@ -73,7 +73,7 @@ assert.equal(
     [],
     { now },
   ),
-  'Track Seller Onboarding',
+  'Copy Seller Onboarding Link',
 )
 
 assert.equal(
@@ -83,5 +83,5 @@ assert.equal(
     [],
     { now },
   ),
-  'Generate Mandate',
+  'Review Seller Onboarding',
 )
