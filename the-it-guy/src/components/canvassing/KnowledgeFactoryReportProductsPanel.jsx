@@ -158,6 +158,23 @@ export default function KnowledgeFactoryReportProductsPanel({
                   </ul>
                 </div>
               ) : null}
+              <div className="mt-4 rounded-lg border border-slate-200 p-3 text-xs text-slate-600">
+                <p className="font-semibold uppercase tracking-wide text-slate-500">
+                  UAT contract dependencies
+                </p>
+                <p className="mt-1">
+                  {product.contractValidationCount}/{product.requiredContractOperations?.length || 0} passed: {product.requiredContractOperations?.join(", ") || "None"}
+                </p>
+                {product.missingContractOperations?.length ? (
+                  <p className="mt-1 font-medium text-amber-700">
+                    Still required: {product.missingContractOperations.join(", ")}
+                  </p>
+                ) : (
+                  <p className="mt-1 font-medium text-emerald-700">
+                    Contract evidence complete.
+                  </p>
+                )}
+              </div>
               <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
                 <label className="text-sm font-medium text-slate-700">
                   Proposed selling price

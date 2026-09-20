@@ -15,7 +15,6 @@ export const resourceSite = cache(async () => {
 
 export function ResourceShell({ site, href, children }: { site: ResolvedSite; href: string; children: ReactNode }) {
   return <main className={`${templateClassName(site.templateKey)} ${styles.page}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
-    {site.preview && <div className="preview-banner">Preview site — not yet connected to a client domain</div>}
     <SiteHeader site={site} currentHref={href} />{children}<SiteFooter site={site} />
   </main>
 }

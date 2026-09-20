@@ -18,12 +18,41 @@ const response = (status: number, body: RecordValue) => new Response(JSON.string
 const token = () => crypto.getRandomValues(new Uint8Array(32)).reduce((value, byte) => value + byte.toString(16).padStart(2, "0"), "");
 async function hash(value: string) { return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)))).map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 function snapshot(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as RecordValue : {}; }
+function signingPackStatusSummary(value: unknown) {
+  const pack = snapshot(value);
+  const seller = snapshot(pack.seller);
+  return {
+    selectedDocuments: orderDocuments(pack.selectedDocuments),
+    frozenAt: text(pack.frozenAt),
+    seller: {
+      name: text(seller.name), firstName: text(seller.firstName), surname: text(seller.surname),
+      idNumber: text(seller.idNumber), dateOfBirth: text(seller.dateOfBirth), nationality: text(seller.nationality),
+      countryOfResidence: text(seller.countryOfResidence), residentialAddress: text(seller.residentialAddress),
+      incomeTaxNumber: text(seller.incomeTaxNumber), email: email(seller.email), phone: text(seller.phone),
+      occupation: text(seller.occupation), sourceOfFunds: text(seller.sourceOfFunds),
+    },
+  };
+}
+function ficaDetailErrors(fica: RecordValue, seller: RecordValue = {}) {
+  const errors = [] as string[];
+  const legalType = text(seller.legalType).toLowerCase();
+  const naturalPerson = !["company", "close_corporation", "foreign_company", "trust", "foreign_trust", "deceased_estate"].includes(legalType);
+  if (naturalPerson && !text(fica.firstName)) errors.push("first name");
+  if (naturalPerson && !text(fica.surname)) errors.push("surname");
+  if (!text(fica.idNumber)) errors.push("ID or passport number");
+  if (naturalPerson && !text(fica.dateOfBirth)) errors.push("date of birth");
+  if (!text(fica.residentialAddress)) errors.push("residential or registered address");
+  return errors;
+}
 async function syncSigningSellerDetails(admin: any, session: RecordValue, fica: RecordValue) {
   const { data, error } = await admin.rpc("bridge_update_listing_signing_seller_details", {
     p_session_id: session.id,
     p_seller: {
-      idNumber: text(fica.idNumber), residentialAddress: text(fica.residentialAddress), incomeTaxNumber: text(fica.incomeTaxNumber),
-      email: email(fica.email), phone: text(fica.phone),
+      firstName: text(fica.firstName), surname: text(fica.surname),
+      idNumber: text(fica.idNumber), dateOfBirth: text(fica.dateOfBirth), nationality: text(fica.nationality),
+      countryOfResidence: text(fica.countryOfResidence), residentialAddress: text(fica.residentialAddress),
+      incomeTaxNumber: text(fica.incomeTaxNumber), email: email(fica.email), phone: text(fica.phone),
+      occupation: text(fica.occupation), sourceOfFunds: text(fica.sourceOfFunds),
     },
   });
   const result = snapshot(data);
@@ -75,7 +104,7 @@ function signedPackDocumentHtml(documentKey: string, session: RecordValue, signe
   const detail = documentKey === "mandate"
     ? `Asking price: ${escapeHtml(mandate.askingPrice)}<br>Commission: ${escapeHtml(mandate.commissionBasis === "fixed" ? mandate.commissionAmount : `${text(mandate.commissionPercentage)}%`)} ${escapeHtml(mandate.vatHandling)}`
     : documentKey === "fica"
-      ? `Seller/entity: ${escapeHtml(seller.name)}<br>Legal type: ${escapeHtml(seller.legalType)}<br>ID / passport: ${escapeHtml(seller.idNumber)}`
+      ? `Seller/entity: ${escapeHtml(seller.name)}<br>First name: ${escapeHtml(seller.firstName)}<br>Surname: ${escapeHtml(seller.surname)}<br>Legal type: ${escapeHtml(seller.legalType)}<br>ID / passport: ${escapeHtml(seller.idNumber)}<br>Date of birth: ${escapeHtml(seller.dateOfBirth)}<br>Nationality: ${escapeHtml(seller.nationality)}<br>Country of residence: ${escapeHtml(seller.countryOfResidence)}<br>Residential or registered address: ${escapeHtml(seller.residentialAddress)}<br>Income tax number: ${escapeHtml(seller.incomeTaxNumber)}<br>Email: ${escapeHtml(seller.email)}<br>Phone: ${escapeHtml(seller.phone)}<br>Occupation: ${escapeHtml(seller.occupation)}<br>Source of funds: ${escapeHtml(seller.sourceOfFunds)}`
       : Object.entries(disclosureResponses).map(([key, value]) => `${escapeHtml(key.replaceAll("_", " "))}: ${escapeHtml(snapshot(value).answer)}`).join("<br>") || "The seller reviewed the property-condition disclosure included in this signing pack.";
   const signatureMarkup = /^data:image\/(png|jpeg);base64,/i.test(signature)
     ? `<img src="${escapeHtml(signature)}" alt="Signature of ${escapeHtml(signedName)}" style="display:block;max-width:280px;max-height:120px;border-bottom:1px solid #172334">`
@@ -161,14 +190,16 @@ Deno.serve(async (req) => {
     const packDigest = await hash(JSON.stringify(packSnapshot));
     const signingGroupId = crypto.randomUUID();
     if (supersededSigningGroupId) {
-      const { data: replacement, error: replacementError } = await admin.rpc("bridge_replace_listing_seller_signing_pack", {
-        p_listing_id: listing.id,
-        p_superseded_signing_group_id: supersededSigningGroupId,
-        p_replacement_signing_group_id: signingGroupId,
-        p_reason: replacementReason,
-        p_initiated_by: user.id,
-      });
-      if (replacementError || !replacement) return response(409, { success: false, error: replacementError?.message || "This seller signing pack cannot be replaced." });
+      const { data: sourceSessions, error: sourceError } = await admin.from("private_listing_mandate_signing_sessions")
+        .select("status").eq("private_listing_id", listing.id).eq("signing_group_id", supersededSigningGroupId);
+      if (sourceError || !Array.isArray(sourceSessions) || !sourceSessions.length) return response(404, { success: false, error: "The seller signing pack to correct was not found." });
+      const hasSignedSource = sourceSessions.some((source: RecordValue) => text(source.status) === "signed");
+      const procedure = hasSignedSource ? "bridge_amend_listing_seller_signing_pack" : "bridge_replace_listing_seller_signing_pack";
+      const parameters = hasSignedSource
+        ? { p_listing_id: listing.id, p_signed_signing_group_id: supersededSigningGroupId, p_amendment_signing_group_id: signingGroupId, p_reason: replacementReason, p_initiated_by: user.id }
+        : { p_listing_id: listing.id, p_superseded_signing_group_id: supersededSigningGroupId, p_replacement_signing_group_id: signingGroupId, p_reason: replacementReason, p_initiated_by: user.id };
+      const { data: replacement, error: replacementError } = await admin.rpc(procedure, parameters);
+      if (replacementError || !replacement) return response(409, { success: false, error: replacementError?.message || "This seller signing pack cannot be corrected." });
     }
     // A replacement link should supersede an active link for the same signer
     // only when it covers at least one of the same documents. This keeps a
@@ -213,7 +244,7 @@ Deno.serve(async (req) => {
     }
     const delivery = issued.every((item) => item.delivery === "sent") ? "sent" : issued.some((item) => item.delivery === "sent") ? "partial" : "failed";
     if (delivery !== "failed" && selectedDocuments.includes("mandate")) await admin.from("private_listings").update({ mandate_status: "sent_to_seller", listing_status: "mandate_sent" }).eq("id", listing.id);
-    return response(200, { success: true, delivery, signingLink: issued[0]?.signingLink || "", signingLinks: issued, expiresAt });
+    return response(200, { success: true, delivery, signingLink: issued[0]?.signingLink || "", signingLinks: issued, expiresAt, correctedSigningGroupId: supersededSigningGroupId || null });
   }
 
   if (action === "status" || action === "revoke") {
@@ -223,20 +254,26 @@ Deno.serve(async (req) => {
     const { listing } = authorizationResult;
     if (action === "status") {
       const { data: sessions, error } = await admin.from("private_listing_mandate_signing_sessions")
-      .select("id, status, signer_email, signer_name, selected_documents, document_progress, signing_group_id, is_primary_document_contact, primary_document_contact_email, signing_pack_version, signing_pack_digest, signing_pack_frozen_at, expires_at, viewed_at, signed_at, created_at")
+      .select("id, status, signer_email, signer_name, selected_documents, document_progress, signing_group_id, is_primary_document_contact, primary_document_contact_email, signing_pack_version, signing_pack_digest, signing_pack_frozen_at, signing_pack_snapshot, expires_at, viewed_at, signed_at, created_at")
         .eq("private_listing_id", listing.id).order("created_at", { ascending: false }).limit(10);
       if (error) return response(500, { success: false, error: "Unable to load seller document link status." });
       const now = Date.now();
-      const normalizedSessions = (sessions || []).map((session: RecordValue) => ({
-        ...session,
-        status: text(session.status) === "active" && new Date(text(session.expires_at)).getTime() <= now ? "expired" : session.status,
-      }));
+      const normalizedSessions = (sessions || []).map((session: RecordValue) => {
+        const { signing_pack_snapshot: packSnapshot, ...safeSession } = session;
+        return {
+          ...safeSession,
+          status: text(session.status) === "active" && new Date(text(session.expires_at)).getTime() <= now ? "expired" : session.status,
+          signingPackSummary: signingPackStatusSummary(packSnapshot),
+        };
+      });
       const sessionIds = normalizedSessions.map((session: RecordValue) => text(session.id)).filter(Boolean);
-      const [{ data: invitations }, { data: taskPlan }] = await Promise.all([
+      const [{ data: invitations }, { data: taskPlan }, { data: replacements, error: replacementsError }] = await Promise.all([
         sessionIds.length ? admin.from("private_listing_seller_portal_recipient_invites").select("signing_session_id, recipient_name, recipient_email, status, sent_at, expires_at, opened_at, consumed_at").in("signing_session_id", sessionIds) : Promise.resolve({ data: [] }),
         admin.from("private_listing_seller_portal_task_plans").select("task_plan, updated_at").eq("private_listing_id", listing.id).maybeSingle(),
+        admin.from("private_listing_signing_pack_replacements").select("id, superseded_signing_group_id, replacement_signing_group_id, reason, initiated_by, created_at").eq("private_listing_id", listing.id).order("created_at", { ascending: false }).limit(20),
       ]);
-      return response(200, { success: true, sessions: normalizedSessions, portalInvitations: invitations || [], portalTaskPlan: snapshot(taskPlan) });
+      if (replacementsError) return response(500, { success: false, error: "Unable to load seller signing correction history." });
+      return response(200, { success: true, sessions: normalizedSessions, portalInvitations: invitations || [], portalTaskPlan: snapshot(taskPlan), replacements: replacements || [] });
     }
     const sessionId = text(body.sessionId);
     if (!sessionId) return response(400, { success: false, error: "Choose the document link to revoke." });
@@ -285,7 +322,8 @@ Deno.serve(async (req) => {
   if (action === "save-fica-details") {
     if (session.is_primary_document_contact === false) return response(403, { success: false, error: "Only the primary document contact can change shared seller details. You can review the frozen pack and sign it, or ask the agent to prepare a replacement." });
     const fica = snapshot(snapshot(body.sellerResponses).fica);
-    if (!text(fica.idNumber) || !text(fica.residentialAddress)) return response(400, { success: false, error: "Add your ID or passport number and residential or registered address before continuing." });
+    const missing = ficaDetailErrors(fica, snapshot(snapshot(session.signing_pack_snapshot).seller));
+    if (missing.length) return response(400, { success: false, error: `Add ${missing.join(", ")} before continuing.` });
     try {
       const saved = await syncSigningSellerDetails(admin, session, fica);
       return response(200, { success: true, signingPack: saved.signingPack, signingPackDigest: saved.signingPackDigest, changedFields: saved.changedFields });
@@ -335,7 +373,10 @@ Deno.serve(async (req) => {
       const answers = disclosureQuestionKeys.map((key) => text(snapshot(disclosureResponses[key]).answer));
       if (answers.some((answer) => !["yes", "no", "unsure"].includes(answer))) return response(400, { success: false, error: "Answer every property disclosure question before signing." });
     }
-    if (isPrimaryDocumentContact && selectedDocuments.includes("fica") && (!text(fica.idNumber) || !text(fica.residentialAddress))) return response(400, { success: false, error: "Add your ID or passport number and residential or registered address before signing the FICA declaration." });
+    if (isPrimaryDocumentContact && selectedDocuments.includes("fica")) {
+      const missing = ficaDetailErrors(fica, snapshot(frozenPack.seller));
+      if (missing.length) return response(400, { success: false, error: `Add ${missing.join(", ")} before signing the FICA declaration.` });
+    }
 
     let syncedPack = frozenPack;
     if (isPrimaryDocumentContact && selectedDocuments.includes("fica")) {
@@ -352,7 +393,10 @@ Deno.serve(async (req) => {
       seller: {
         ...snapshot(existingPack.seller),
         ...(selectedDocuments.includes("fica") ? {
-          idNumber: text(fica.idNumber), residentialAddress: text(fica.residentialAddress), incomeTaxNumber: text(fica.incomeTaxNumber), email: email(fica.email), phone: text(fica.phone),
+          firstName: text(fica.firstName), surname: text(fica.surname), name: [text(fica.firstName), text(fica.surname)].filter(Boolean).join(" "),
+          idNumber: text(fica.idNumber), dateOfBirth: text(fica.dateOfBirth), nationality: text(fica.nationality), countryOfResidence: text(fica.countryOfResidence),
+          residentialAddress: text(fica.residentialAddress), incomeTaxNumber: text(fica.incomeTaxNumber), email: email(fica.email), phone: text(fica.phone),
+          occupation: text(fica.occupation), sourceOfFunds: text(fica.sourceOfFunds),
         } : {}),
       },
     } : frozenPack;

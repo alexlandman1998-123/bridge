@@ -14,7 +14,7 @@ function FeatureIcon({ type }: { type: 'bed' | 'bath' | 'parking' }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 14.5 6.5 9h11l2.5 5.5V18H4zM7 18v2m10-2v2M7.5 14.5h.01m8.98 0h.01" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6"/></svg>
 }
 
-function CompactCard({ property }: { property: PublicProperty }) {
+function CompactCard({ property, showConsultant }: { property: PublicProperty; showConsultant: boolean }) {
   const image = property.media.find((media) => media.type === 'image' && media.url)
   const href = `/properties/${propertySlug(property)}`
   const features = [
@@ -34,10 +34,11 @@ function CompactCard({ property }: { property: PublicProperty }) {
       {features.length ? <span className="featured-property-divider" aria-hidden="true" /> : null}
       {features.length ? <span className="featured-property-features">{features.map((feature) => <span key={feature.type}><FeatureIcon type={feature.type} /><span>{feature.value}</span><span className="sr-only"> {feature.label}</span></span>)}</span> : null}
     </Link>
+    {showConsultant && property.consultant ? <div className="featured-property-agent">{property.consultant.avatarUrl ? <Image src={property.consultant.avatarUrl} alt="" aria-hidden="true" width={40} height={40} /> : <span aria-hidden="true">{property.consultant.name.split(/\s+/).map(part => part[0]).join('').slice(0, 2)}</span>}<p><small>Listed with</small><b>{property.consultant.name}</b></p></div> : null}
   </article>
 }
 
-export function FeaturedPropertyCarousel({ heading = 'Featured properties', properties }: { heading?: string; properties: PublicProperty[] }) {
+export function FeaturedPropertyCarousel({ heading = 'Featured properties', properties, showConsultant = false }: { heading?: string; properties: PublicProperty[]; showConsultant?: boolean }) {
   const sale = useMemo(() => properties.filter((property) => property.transactionType === 'sale'), [properties])
   const rental = useMemo(() => properties.filter((property) => property.transactionType === 'rental'), [properties])
   const hasBoth = sale.length > 0 && rental.length > 0
@@ -77,7 +78,7 @@ export function FeaturedPropertyCarousel({ heading = 'Featured properties', prop
     track.scrollBy({ left: direction * ((card?.offsetWidth || 320) + 20), behavior: 'smooth' })
   }
 
-  return <section className="featured-properties-section" aria-labelledby="featured-properties-heading">
+  return <section className={`featured-properties-section${showConsultant ? ' featured-properties-section--with-consultants' : ''}`} aria-labelledby="featured-properties-heading">
     <div className="content-shell featured-properties-shell">
       <header className="featured-properties-header">
         <h2 id="featured-properties-heading">{heading}</h2>
@@ -88,7 +89,7 @@ export function FeaturedPropertyCarousel({ heading = 'Featured properties', prop
       </header>
       {visibleProperties.length ? <>
         <div className="featured-carousel" onScroll={updateScrollState} ref={trackRef} tabIndex={0} aria-label={`${type === 'sale' ? 'For sale' : 'To rent'} featured properties`}>
-          {visibleProperties.map((property) => <CompactCard key={property.id} property={property} />)}
+          {visibleProperties.map((property) => <CompactCard key={property.id} property={property} showConsultant={showConsultant} />)}
         </div>
         {(canScrollBack || canScrollForward) ? <div className="featured-carousel-footer"><div className="featured-progress" aria-hidden="true"><span style={{ width: `${scrollProgress}%` }} /></div><div className="featured-carousel-controls"><button aria-label="Previous featured property" disabled={!canScrollBack} onClick={() => scrollByCard(-1)} type="button">←</button><button aria-label="Next featured property" disabled={!canScrollForward} onClick={() => scrollByCard(1)} type="button">→</button></div></div> : null}
       </> : <p className="featured-empty">No featured properties are available at the moment.</p>}

@@ -27,7 +27,7 @@ export function buildSellerOnboardingSigningAuditExport({ lifecycle = {}, signin
   return {
     contract: SELLER_ONBOARDING_SIGNING_LIFECYCLE_CONTRACT,
     lifecycle: createSellerOnboardingSigningLifecycle({ existing: lifecycle }),
-    signatures: (Array.isArray(signingSessions) ? signingSessions : []).map((session) => ({ signerEmail: text(session.signer_email || session.signerEmail).toLowerCase(), status: text(session.status), signedAt: session.signed_at || session.signedAt || null, signingGroupId: session.signing_group_id || session.signingGroupId || null })),
+    signatures: (Array.isArray(signingSessions) ? signingSessions : []).map((session) => ({ signerEmail: text(session.signer_email || session.signerEmail).toLowerCase(), signerName: text(session.signer_name || session.signerName), status: text(session.status), signedAt: session.signed_at || session.signedAt || null, signingGroupId: session.signing_group_id || session.signingGroupId || null, selectedDocuments: Array.isArray(session.selected_documents || session.selectedDocuments) ? (session.selected_documents || session.selectedDocuments) : [], signingPackVersion: text(session.signing_pack_version || session.signingPackVersion), signingPackDigest: text(session.signing_pack_digest || session.signingPackDigest), signingPackFrozenAt: session.signing_pack_frozen_at || session.signingPackFrozenAt || null })),
     replacements: Array.isArray(replacements) ? replacements : [],
   }
 }

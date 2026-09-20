@@ -9,8 +9,10 @@ const row = (labelText, value) => text(value) ? { label: labelText, value: text(
 function sellerRows(pack = {}) {
   const seller = record(pack.seller)
   return [
-    row('Seller / entity', seller.name), row('Legal type', label(seller.legalType)), row('ID / passport number', seller.idNumber),
-    row('Marital status', label(seller.maritalStatus)), row('Email', seller.email), row('Mobile', seller.phone),
+    row('Seller / entity', seller.name), row('First name', seller.firstName), row('Surname', seller.surname),
+    row('Legal type', label(seller.legalType)), row('ID / passport number', seller.idNumber), row('Date of birth', seller.dateOfBirth),
+    row('Nationality', seller.nationality), row('Country of residence', seller.countryOfResidence), row('Marital status', label(seller.maritalStatus)),
+    row('Email', seller.email), row('Mobile', seller.phone), row('Occupation', seller.occupation), row('Source of funds', seller.sourceOfFunds),
     row('Company', seller.companyName), row('Company registration number', seller.companyRegistrationNumber),
     row('Trust', seller.trustName), row('Trust registration number', seller.trustRegistrationNumber),
   ].filter(Boolean)

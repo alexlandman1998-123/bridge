@@ -9,6 +9,7 @@ import {
   confirmKnowledgeFactoryReportPurchase,
   executeKnowledgeFactoryReportPurchase,
   listKnowledgeFactoryPurchasableProducts,
+  quoteKnowledgeFactoryReportPurchase,
 } from "../../services/propertyIntelligence/knowledgeFactoryReportPurchaseService";
 import Modal from "../ui/Modal";
 
@@ -28,6 +29,7 @@ export default function KnowledgeFactoryReportPurchaseModal({
     selected: "",
     purpose: "Canvassing potential seller opportunity",
     saved: null,
+    attested: false,
   });
   const [saving, setSaving] = useState(false);
   const [executing, setExecuting] = useState(false);
@@ -60,12 +62,12 @@ export default function KnowledgeFactoryReportPurchaseModal({
   }, [organisationId]);
   const selected =
     state.products.find((item) => item.productId === state.selected) || null;
-  async function confirm(event) {
+  async function quote(event) {
     event.preventDefault();
     if (!selected || saving || state.purpose.trim().length < 10) return;
     setSaving(true);
     try {
-      const result = await confirmKnowledgeFactoryReportPurchase({
+      const result = await quoteKnowledgeFactoryReportPurchase({
         organisationId,
         propertyId: property?.propertyId || property?.id,
         productId: selected.productId,
@@ -81,6 +83,22 @@ export default function KnowledgeFactoryReportPurchaseModal({
         ...previous,
         error: error?.message || "The report selection could not be confirmed.",
       }));
+    } finally {
+      setSaving(false);
+    }
+  }
+  async function confirmQuote() {
+    if (!state.saved?.id || !state.attested || saving) return;
+    setSaving(true);
+    try {
+      const result = await confirmKnowledgeFactoryReportPurchase({
+        organisationId,
+        intentId: state.saved.id,
+        attested: true,
+      });
+      setState((previous) => ({ ...previous, saved: result.intent || previous.saved, error: "" }));
+    } catch (error) {
+      setState((previous) => ({ ...previous, error: error?.message || "The report quote could not be confirmed." }));
     } finally {
       setSaving(false);
     }
@@ -116,17 +134,15 @@ export default function KnowledgeFactoryReportPurchaseModal({
     >
       {state.saved ? (
         <div className="space-y-4">
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-950">
+          <div className={`rounded-xl border p-4 ${state.saved.status === "confirmed_pending_execution" ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-blue-200 bg-blue-50 text-blue-950"}`}>
             <p className="flex items-center gap-2 font-semibold">
               <CheckCircle2 size={18} />
-              Report selection confirmed
+              {state.saved.status === "confirmed_pending_execution" ? "Report quote confirmed" : "UAT cost estimate ready"}
             </p>
             <p className="mt-2 text-sm leading-6">
-              {state.saved.product_name} at{" "}
-              {money(state.saved.customer_price_cents)} has been recorded for
-              this property. No supplier data has been requested or charged in
-              this step.
+              {state.saved.product_name} costs {money(state.saved.customer_price_cents)} to the customer. The fixed package query was estimated at {Number.isFinite(Number(state.saved.quoted_supplier_credits)) ? `${state.saved.quoted_supplier_credits} supplier credits` : "supplier-recorded credits"}. No supplier report data has been requested or charged in this step.
             </p>
+            <p className="mt-2 text-xs">Quote expires {state.saved.quote_expires_at ? new Intl.DateTimeFormat("en-ZA", { dateStyle: "medium", timeStyle: "short" }).format(new Date(state.saved.quote_expires_at)) : "soon"}.</p>
           </div>
           {state.error ? (
             <p
@@ -136,7 +152,12 @@ export default function KnowledgeFactoryReportPurchaseModal({
               {state.error}
             </p>
           ) : null}
-          {report ? (
+          {state.saved.status !== "confirmed_pending_execution" ? (
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
+              <label className="flex items-start gap-2 text-sm leading-5 text-slate-700"><input type="checkbox" checked={state.attested} onChange={(event) => setState((previous) => ({ ...previous, attested: event.target.checked }))} className="mt-1" />I confirm this lookup is necessary for the stated business purpose and that I have authority to request it.</label>
+              <button type="button" disabled={!state.attested || saving} onClick={() => void confirmQuote()} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#1769dc] px-4 text-sm font-semibold text-white disabled:bg-slate-300">{saving ? <LoaderCircle className="animate-spin" size={16} /> : <CheckCircle2 size={16} />}{saving ? "Confirming…" : `Confirm report at ${money(state.saved.customer_price_cents)}`}</button>
+            </div>
+          ) : report ? (
             <div className="rounded-xl border border-slate-200 bg-white p-4">
               <p className="font-semibold text-slate-900">Report ready</p>
               <p className="mt-1 text-sm leading-6 text-slate-600">
@@ -163,7 +184,7 @@ export default function KnowledgeFactoryReportPurchaseModal({
             </div>
           )}
           <div className="flex flex-wrap justify-end gap-2">
-            {!report ? (
+            {state.saved.status === "confirmed_pending_execution" && !report ? (
               <button
                 type="button"
                 disabled={executing}
@@ -189,14 +210,12 @@ export default function KnowledgeFactoryReportPurchaseModal({
           </div>
         </div>
       ) : (
-        <form className="space-y-5" onSubmit={confirm}>
+        <form className="space-y-5" onSubmit={quote}>
           <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
             <div className="flex gap-2">
               <ShieldCheck className="mt-0.5 shrink-0" size={17} />
               <p>
-                Review the package and price before confirming. This records a
-                controlled purchase intention only; it does not retrieve
-                supplier data or use credits.
+                Review the package and price before requesting a cost-only UAT estimate. It does not retrieve supplier report data or use credits.
               </p>
             </div>
           </div>
@@ -279,11 +298,6 @@ export default function KnowledgeFactoryReportPurchaseModal({
               className="mt-1.5 min-h-24 w-full rounded-xl border border-slate-200 px-3 py-2"
             />
           </label>
-          <label className="flex items-start gap-2 text-sm leading-5 text-slate-700">
-            <input required type="checkbox" className="mt-1" />I confirm this
-            lookup is necessary for the stated business purpose and that I have
-            authority to request it.
-          </label>
           <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
             <button
               type="button"
@@ -304,8 +318,8 @@ export default function KnowledgeFactoryReportPurchaseModal({
                 <CreditCard size={16} />
               )}
               {saving
-                ? "Confirming…"
-                : `Confirm ${selected ? money(selected.customerPriceCents) : "report"}`}
+                ? "Getting estimate…"
+                : `Get UAT estimate for ${selected ? money(selected.customerPriceCents) : "report"}`}
             </button>
           </div>
         </form>

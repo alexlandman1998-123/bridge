@@ -1,69 +1,72 @@
-import { isSupabaseConfigured, supabase } from '../../lib/supabaseClient'
-import {
-  buildKnowledgeFactoryFicaHandoff,
-  getKnowledgeFactoryFicaVerificationAvailability,
-} from './knowledgeFactoryFicaVerificationService.js'
+import { supabase } from "../../lib/supabaseClient";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const ITEMS = ['identity', 'proof_of_address', 'source_of_funds']
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const ITEMS = ["identity", "proof_of_address", "source_of_funds"];
 
-function text(value) { return String(value || '').trim() }
-function organisationId(value) { if (!UUID.test(text(value))) throw new Error('Select a valid organisation workspace.'); return text(value) }
-function checklist(value = {}) { return Object.fromEntries(ITEMS.map((key) => [key, ['not_requested', 'requested', 'received', 'verified', 'rejected'].includes(text(value[key])) ? text(value[key]) : 'not_requested'])) }
+function text(value = "") { return String(value || "").trim(); }
+function validOrganisation(value) {
+  if (!UUID.test(text(value))) throw new Error("Select a valid organisation workspace.");
+  return text(value);
+}
+function checklist(value = {}) {
+  return Object.fromEntries(ITEMS.map((key) => [
+    key,
+    ["not_requested", "requested", "received", "verified", "rejected"].includes(text(value[key]))
+      ? text(value[key]) : "not_requested",
+  ]));
+}
 function map(row = {}) {
   return {
     ...row,
     documentChecklist: checklist(row.document_checklist),
     consentCapturedAt: row.consent_captured_at,
-    verificationProviderStatus: row.verification_provider_status,
+    verificationProviderStatus: text(row.verification_provider_status) || "not_configured",
     documentReadiness: row.document_readiness || {},
     providerCheckStatuses: row.provider_check_statuses || {},
     providerOverallStatus: row.provider_overall_status,
     providerResultExpiresAt: row.provider_result_expires_at,
-    staffApprovalStatus: row.staff_approval_status || 'not_ready',
+    staffApprovalStatus: row.staff_approval_status || "not_ready",
     certificateDocumentId: row.certificate_document_id,
     certificateSupersededAt: row.certificate_superseded_at,
-  }
+  };
+}
+async function call(body) {
+  const { data: { session }, error } = await supabase.auth.getSession();
+  if (error || !session?.access_token) throw new Error("Please sign in again before using FICA/KYC.");
+  const response = await fetch("/api/knowledge-factory/fica-demo", {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(text(payload?.error) || `FICA demo request failed (HTTP ${response.status}).`);
+  return payload || {};
 }
 
-export async function listKnowledgeFactoryFicaCases({ organisationId: value } = {}) {
-  if (!isSupabaseConfigured || !supabase) throw new Error('FICA case storage is not configured.')
-  const { data, error } = await supabase.from('knowledge_factory_fica_cases').select('*').eq('organisation_id', organisationId(value)).order('created_at', { ascending: false })
-  if (error) throw new Error(error.message || 'FICA cases could not be loaded.')
-  return (data || []).map(map)
+export async function listKnowledgeFactoryFicaCases({ organisationId } = {}) {
+  const result = await call({ action: "list", organisationId: validOrganisation(organisationId) });
+  return (result.items || []).map(map);
 }
 
-export async function createKnowledgeFactoryFicaCase({ organisationId: value, prospectId = '', subjectName, entityType = 'individual', consentVersion = 'arch9_fica_kyc_v1' } = {}) {
-  if (!isSupabaseConfigured || !supabase) throw new Error('FICA case storage is not configured.')
-  const { data: auth } = await supabase.auth.getUser()
-  const userId = auth?.user?.id
-  if (!userId) throw new Error('Sign in before creating a FICA case.')
-  const name = text(subjectName)
-  if (name.length < 2) throw new Error('Enter the subject’s name.')
-  const { data, error } = await supabase.from('knowledge_factory_fica_cases').insert({ organisation_id: organisationId(value), prospect_id: UUID.test(text(prospectId)) ? text(prospectId) : null, created_by: userId, subject_name: name, entity_type: ['individual', 'company', 'trust'].includes(text(entityType)) ? text(entityType) : 'individual', status: 'consent_captured', consent_captured_at: new Date().toISOString(), consent_captured_by: userId, consent_version: text(consentVersion), document_checklist: checklist() }).select('*').single()
-  if (error || !data) throw new Error(error?.message || 'FICA case could not be created.')
-  return map(data)
+export async function createKnowledgeFactoryFicaCase({ organisationId, subjectName, entityType = "individual", partyRole = "seller", consentCaptured = false } = {}) {
+  const result = await call({
+    action: "create",
+    organisationId: validOrganisation(organisationId),
+    subjectName: text(subjectName),
+    entityType: text(entityType),
+    partyRole: text(partyRole),
+    consentCaptured: consentCaptured === true,
+  });
+  return map(result.item);
 }
 
-export async function updateKnowledgeFactoryFicaChecklist({ id, documentChecklist, status = 'documents_requested' } = {}) {
-  if (!isSupabaseConfigured || !supabase || !UUID.test(text(id))) throw new Error('A valid FICA case is required.')
-  const { data, error } = await supabase.from('knowledge_factory_fica_cases').update({ document_checklist: checklist(documentChecklist), status, updated_at: new Date().toISOString() }).eq('id', text(id)).select('*').single()
-  if (error || !data) throw new Error(error?.message || 'FICA checklist could not be updated.')
-  return map(data)
-}
-
-export async function startKnowledgeFactoryFicaVerification({ id, handoff } = {}) {
-  if (!isSupabaseConfigured || !supabase || !UUID.test(text(id))) throw new Error('A valid FICA case is required.')
-  const normalizedHandoff = buildKnowledgeFactoryFicaHandoff(handoff)
-  const availability = getKnowledgeFactoryFicaVerificationAvailability(normalizedHandoff, 'ready')
-  if (!availability.enabled) throw new Error(availability.reason)
-  const { data, error } = await supabase.functions.invoke('knowledge-factory-fica', { body: { caseId: text(id) } })
-  if (error) {
-    const message = text(data?.error) || 'Knowledge Factory verification is not configured.'
-    throw new Error(message)
-  }
-  if (data?.status !== 'submitted') {
-    throw new Error(text(data?.error) || 'Knowledge Factory verification is not configured.')
-  }
-  return data
+export async function updateKnowledgeFactoryFicaChecklist({ organisationId, id, documentChecklist } = {}) {
+  if (!UUID.test(text(id))) throw new Error("A valid FICA case is required.");
+  const result = await call({
+    action: "update_checklist",
+    organisationId: validOrganisation(organisationId),
+    caseId: text(id),
+    documentChecklist: checklist(documentChecklist),
+  });
+  return map(result.item);
 }

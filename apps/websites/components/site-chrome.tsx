@@ -9,6 +9,7 @@ import { ResponsiveSiteHeader } from './responsive-site-header'
 function resourceLinks(hasBlogPosts: boolean) {
   return [
     ...(hasBlogPosts ? [{ href: '/blog', label: 'Journal' }] : []),
+    { href: '/areas', label: 'Areas' },
     { href: '/calculators', label: 'Calculators' },
     { href: '/preapproval', label: 'Get preapproved' },
   ]

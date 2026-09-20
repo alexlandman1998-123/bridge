@@ -37,19 +37,22 @@ export function listKnowledgeFactoryPurchasableProducts({
     organisationId: text(organisationId),
   });
 }
-export function confirmKnowledgeFactoryReportPurchase({
+export function quoteKnowledgeFactoryReportPurchase({
   organisationId,
   propertyId,
   productId,
   purpose,
 } = {}) {
   return call({
-    action: "confirm",
+    action: "quote",
     organisationId: text(organisationId),
     propertyId: text(propertyId),
     productId: text(productId),
     purpose: text(purpose),
   });
+}
+export function confirmKnowledgeFactoryReportPurchase({ organisationId, intentId, attested } = {}) {
+  return call({ action: "confirm", organisationId: text(organisationId), intentId: text(intentId), attested: attested === true })
 }
 export function executeKnowledgeFactoryReportPurchase({
   organisationId,

@@ -4,6 +4,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { MobileNavigation } from './mobile-navigation'
+import { ValuationModal } from './valuation-modal'
 import resourceStyles from './resource-navigation.module.css'
 import type { ResolvedSite } from '@/lib/types'
 import { selectWebsiteLogo } from '@/lib/website-brand'
@@ -26,19 +27,22 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
   overlay: boolean
 }) {
   const [scrolled, setScrolled] = useState(false)
+  const lwpInterior = site.name === 'LWP Properties' && !overlay
+  const transitionsOnScroll = overlay || lwpInterior
 
   useEffect(() => {
-    if (!overlay) return
+    if (!transitionsOnScroll) return
     const update = () => setScrolled(window.scrollY > 28)
     update()
     window.addEventListener('scroll', update, { passive: true })
     return () => window.removeEventListener('scroll', update)
-  }, [overlay])
+  }, [transitionsOnScroll])
 
-  const useLightLogo = overlay && !scrolled
+  const useLightLogo = transitionsOnScroll && !scrolled
   const headerClassName = [
     'site-header',
     overlay ? 'site-header--overlay' : 'site-header--solid',
+    lwpInterior ? 'site-header--lwp-interior' : '',
     scrolled ? 'is-scrolled' : '',
   ].filter(Boolean).join(' ')
 
@@ -54,7 +58,7 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
         <div className={resourceStyles.dropdown}>{resources.map(item => <Link key={item.href} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined}>{item.label}<span aria-hidden="true">↗</span></Link>)}</div>
       </details>
     </nav>
-    <Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link>
-    <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={homeSeekers ? 'Book a valuation' : 'Enquire now'} />
+    {site.name === 'LWP Properties' ? <ValuationModal privacyPolicyUrl={site.privacyPolicyUrl} triggerClassName="header-cta" /> : <Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link>}
+    <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={site.name === 'LWP Properties' ? 'See your home’s value' : homeSeekers ? 'Book a valuation' : 'Enquire now'} />
   </header>
 }

@@ -1,0 +1,7 @@
+import { supabase } from '../../lib/supabaseClient'
+
+function text(value = '') { return String(value || '').trim() }
+async function call(body) { const { data: { session }, error } = await supabase.auth.getSession(); if (error || !session?.access_token) throw new Error('Please sign in again before managing UAT contract discovery.'); const response = await fetch('/api/knowledge-factory/contract-discovery', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(body) }); const payload = await response.json().catch(() => ({})); if (!response.ok) throw new Error(text(payload?.error) || `UAT contract discovery failed (HTTP ${response.status}).`); return payload || {} }
+export function listKnowledgeFactoryContractChecks({ organisationId } = {}) { return call({ action: 'list', organisationId: text(organisationId) }) }
+export function createKnowledgeFactoryContractCheck({ organisationId, operationKey, purpose } = {}) { return call({ action: 'create', organisationId: text(organisationId), operationKey: text(operationKey), purpose: text(purpose) }) }
+export function updateKnowledgeFactoryContractCheck({ organisationId, id, status, outcomeNote, observedFields, costEvidence } = {}) { return call({ action: 'update', organisationId: text(organisationId), id: text(id), status: text(status), outcomeNote: text(outcomeNote), observedFields: Array.isArray(observedFields) ? observedFields : [], costEvidence: costEvidence || {} }) }

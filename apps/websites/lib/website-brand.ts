@@ -4,7 +4,11 @@ import type { ResolvedSite } from '@/lib/types'
  * The studio names the two files by the background they are intended for.
  * Keep that decision in one place so the header and footer cannot drift.
  */
-export function selectWebsiteLogo(site: Pick<ResolvedSite, 'logoUrl' | 'logoLightUrl' | 'logoDarkUrl'>, darkBackground = false): string | undefined {
+export function selectWebsiteLogo(site: Pick<ResolvedSite, 'logoUrl' | 'logoLightUrl' | 'logoDarkUrl'> & { name?: string }, darkBackground = false): string | undefined {
+  // The supplied LWP lock-up has a baked black rectangle. Use the clean
+  // transparent version across the site so the mark sits naturally on both
+  // the dark opening header and the light scrolled state.
+  if (site.name === 'LWP Properties') return '/images/lwp-logo-white-transparent.png'
   return darkBackground
     ? site.logoDarkUrl || site.logoUrl || site.logoLightUrl
     : site.logoLightUrl || site.logoUrl || site.logoDarkUrl

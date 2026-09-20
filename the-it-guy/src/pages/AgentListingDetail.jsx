@@ -83,7 +83,7 @@ import { requestPersistedPdfAccess } from '../lib/documentPacketsApi'
 import { fetchDevelopmentsData } from '../lib/api'
 import { resolveOnboardingBranding } from '../lib/onboardingBranding'
 import { downloadHtmlDocumentPdf } from '../lib/htmlDocumentPdf'
-import { SELLER_ONBOARDING_SIGNING_STAGES, createSellerOnboardingSigningLifecycle } from '../core/documents/sellerOnboardingSigningLifecycle'
+import { SELLER_ONBOARDING_SIGNING_STAGES, buildSellerOnboardingSigningAuditExport, createSellerOnboardingSigningLifecycle } from '../core/documents/sellerOnboardingSigningLifecycle'
 import {
   recordSellerOnboardingReview,
   readSellerOnboardingReview,
@@ -96,6 +96,7 @@ import {
 import { createSellerOnboardingFormalPackApproval } from '../core/documents/sellerOnboardingFormalPackApproval'
 import { createSellerOnboardingFormalPackDispatch } from '../core/documents/sellerOnboardingFormalPackDispatch'
 import { createSellerOnboardingManualSigningPack } from '../core/documents/sellerOnboardingManualSigningPack'
+import { buildSellerOnboardingSigningPackSnapshot } from '../core/documents/sellerOnboardingSigningPackSnapshot'
 import { createSellerOnboardingCorrectionControl } from '../core/documents/sellerOnboardingCorrectionControl'
 import { buildSellerOnboardingJourneyStatus } from '../core/documents/sellerOnboardingJourneyStatus'
 import { buildSellerSigningPlan } from '../lib/sellerSigningPlanModel'
@@ -3677,6 +3678,7 @@ function AgentListingDetail() {
   const [sellerDocumentSigningSessions, setSellerDocumentSigningSessions] = useState([])
   const [sellerPortalInvitationStatus, setSellerPortalInvitationStatus] = useState([])
   const [sellerPortalTaskPlan, setSellerPortalTaskPlan] = useState({})
+  const [sellerSigningReplacements, setSellerSigningReplacements] = useState([])
   const [sellerDocumentSigningSessionsLoading, setSellerDocumentSigningSessionsLoading] = useState(false)
   const [sellerDocumentSigningSessionAction, setSellerDocumentSigningSessionAction] = useState('')
   const [lastSellerDocumentSigningLink, setLastSellerDocumentSigningLink] = useState('')
@@ -6487,76 +6489,24 @@ function AgentListingDetail() {
         required: true,
       }))
     const propertyAddress = listingRecord?.propertyAddress || form.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || ''
-    const sellerName = resolveSellerNameFromListing(listingRecord) || form.sellerName || ''
     const signingBranding = resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace)
-    const personName = (person = {}) => person.fullName || person.name || [person.firstName, person.surname || person.lastName].filter(Boolean).join(' ')
-    const personParty = (person = {}, role = 'Seller') => ({
-      name: personName(person), role, idNumber: person.idNumber || person.id_number || person.passportNumber || '',
-      incomeTaxNumber: person.incomeTaxNumber || person.taxNumber || person.tax_number || '',
-      residentialAddress: person.residentialAddress || person.residential_address || person.address || '', email: person.email || '', phone: person.phone || '',
-    })
-    const sellerType = String(form.sellerLegalType || form.seller_legal_type || form.sellerType || listingRecord?.sellerType || '').toLowerCase()
-    const ficaParties = sellerType === 'multiple_owners'
-      ? (Array.isArray(form.multipleOwners || form.owners) ? (form.multipleOwners || form.owners) : []).map((owner) => personParty(owner, 'Seller'))
-      : ['company', 'close_corporation', 'foreign_company'].includes(sellerType)
-        ? (Array.isArray(form.companyDirectors) ? form.companyDirectors : []).map((director) => personParty(director, 'Director'))
-        : ['trust', 'foreign_trust'].includes(sellerType)
-          ? (Array.isArray(form.trustees) ? form.trustees : []).map((trustee) => personParty(trustee, 'Trustee'))
-          : [personParty({ name: sellerName, idNumber: form.idNumber || form.sellerIdNumber, incomeTaxNumber: form.sellerIncomeTaxNumber || form.incomeTaxNumber || form.taxNumber, residentialAddress: form.residentialAddress || form.residential_address || form.physicalAddress, email: resolveSellerEmailFromListing(listingRecord) || form.email, phone: resolveSellerPhoneFromListing(listingRecord) || form.phone })]
-    return {
-      version: 'seller_signing_pack_v1',
+    return buildSellerOnboardingSigningPackSnapshot({
+      formData: form,
+      listing: listingRecord || {},
+      recipients: signingPlan.recipients,
       selectedDocuments,
-      onboardingSource: {
-        kind: 'seller_onboarding_submission',
-        submittedAt: form.submittedAt || form.submitted_at || listingRecord?.sellerOnboarding?.submittedAt || listingRecord?.sellerOnboarding?.submitted_at || null,
-        message: 'Seller facts were captured in onboarding and frozen into this signing pack for review and confirmation.',
-      },
+      propertyAddress,
       branding: signingBranding,
-      seller: {
-        legalType: form.sellerLegalType || form.seller_legal_type || form.sellerType || listingRecord?.sellerType || '',
-        ownershipType: form.ownerStructureType || form.owner_structure_type || form.ownershipType || '',
-        name: sellerName,
-        email: resolveSellerEmailFromListing(listingRecord) || form.email || '',
-        phone: resolveSellerPhoneFromListing(listingRecord) || form.phone || '',
-        idNumber: form.idNumber || form.sellerIdNumber || '',
-        residentialAddress: form.residentialAddress || form.residential_address || form.physicalAddress || '',
-        incomeTaxNumber: form.sellerIncomeTaxNumber || form.incomeTaxNumber || form.taxNumber || '',
-        maritalStatus: form.maritalStatus || form.maritalRegime || '',
-        companyName: form.companyName || '',
-        companyRegistrationNumber: form.companyRegistrationNumber || '',
-        trustName: form.trustName || '',
-        trustRegistrationNumber: form.trustRegistrationNumber || '',
-        parties: ficaParties.filter((party) => party.name || party.idNumber || party.email),
-      },
-      proposedTransferAttorney: form.proposedTransferAttorney || null,
-      property: {
-        address: propertyAddress,
-        titleDeedNumber: form.titleDeedNumber || form.deedNumber || '',
-        bondStatus: form.bondStatus || form.propertyBondStatus || '',
-      },
-      disclosure: form.propertyDisclosure || form.property_disclosure || {},
       sellerPortalTasks,
-      signers: signingPlan.recipients.map((recipient) => ({
-        name: recipient.name || '',
-        email: recipient.email || '',
-        role: recipient.role || '',
-      })),
       mandate: {
-        propertyAddress,
         mandateType: marketingDraft.mandateType || listingRecord?.mandateType || form.mandateType || 'sole',
         askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
         commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage',
         commissionPercentage: commissionDraft.basis === 'fixed' ? '' : String(commissionDraft.percentage || ''),
         commissionAmount: commissionDraft.basis === 'fixed' ? String(commissionDraft.amount || '') : '',
         vatHandling: String(commissionDraft.vatHandling || ''),
-        branding: signingBranding,
       },
-      templateVersions: {
-        mandate: form.mandateTemplateVersion || form.mandate_template_version || 'agency_sales_mandate_vnext',
-        disclosure: 'property_disclosure_annexure_a_v1',
-        fica: 'arch9_fica_declaration_v1',
-      },
-    }
+    })
   }
 
   function openSellerDocumentSend(selectionOverride = null) {
@@ -6658,6 +6608,7 @@ function AgentListingDetail() {
       setSellerDocumentSigningSessions(Array.isArray(result?.data?.sessions) ? result.data.sessions : [])
       setSellerPortalInvitationStatus(Array.isArray(result?.data?.portalInvitations) ? result.data.portalInvitations : [])
       setSellerPortalTaskPlan(result?.data?.portalTaskPlan && typeof result.data.portalTaskPlan === 'object' ? result.data.portalTaskPlan : {})
+      setSellerSigningReplacements(Array.isArray(result?.data?.replacements) ? result.data.replacements : [])
     } catch (error) {
       if (!silent) setDetailError(error?.message || 'Unable to load seller document link status.')
     } finally {
@@ -6689,6 +6640,18 @@ function AgentListingDetail() {
     } catch {
       setDetailError('Unable to copy the signing link. Please use a browser that permits clipboard access.')
     }
+  }
+
+  function downloadSellerSigningAudit() {
+    if (!sellerDocumentSigningSessions.length) return
+    const formData = getListingSellerFormData(listingRecord)
+    const audit = buildSellerOnboardingSigningAuditExport({
+      lifecycle: formData.sellerOnboardingSigningLifecycle || formData.seller_onboarding_signing_lifecycle,
+      signingSessions: sellerDocumentSigningSessions,
+      replacements: sellerSigningReplacements,
+    })
+    downloadBlob(new Blob([JSON.stringify({ ...audit, exportedAt: new Date().toISOString(), listingId: listingRecord?.id || null }, null, 2)], { type: 'application/json;charset=utf-8' }), `${sanitizeFileName(resolveSellerNameFromListing(listingRecord) || 'seller')}-signing-audit.json`)
+    setDetailMessage('Seller signing audit downloaded.')
   }
 
   async function saveSellerDocumentSendSelection() {
@@ -12023,9 +11986,9 @@ function AgentListingDetail() {
             </div>
           })()}
           {(() => {
-            const activeGroups = [...new Map(sellerDocumentSigningSessions.filter((session) => session?.status === 'active' && session?.signing_group_id).map((session) => [session.signing_group_id, session])).values()]
-            if (!activeGroups.length) return null
-            return <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm text-[#7a5a17]"><p className="font-semibold">Replace an active signing pack</p><p className="mt-1 leading-5">A replacement revokes every open link in that pack and preserves the original as audit evidence. It cannot alter a fully signed pack.</p><label className="mt-3 grid gap-1.5 font-semibold">Pack to replace<Field as="select" value={sellerDocumentReplacementGroupId} onChange={(event) => setSellerDocumentReplacementGroupId(event.target.value)}><option value="">Send a separate new pack</option>{activeGroups.map((session) => <option key={session.signing_group_id} value={session.signing_group_id}>Sent {session.created_at ? new Date(session.created_at).toLocaleDateString('en-ZA') : 'previously'} · {session.signer_name || session.signer_email}</option>)}</Field></label>{sellerDocumentReplacementGroupId ? <label className="mt-3 grid gap-1.5 font-semibold">Reason for replacement<textarea value={sellerDocumentReplacementReason} onChange={(event) => setSellerDocumentReplacementReason(event.target.value)} rows={3} placeholder="For example: Seller corrected the asking price." className="rounded-xl border border-[#e4c77f] bg-white px-3 py-2 font-normal text-[#243d56]" /></label> : null}</div>
+            const correctionGroups = [...sellerDocumentSigningSessions.filter((session) => session?.signing_group_id).reduce((groups, session) => { const key = String(session.signing_group_id); const current = groups.get(key) || []; current.push(session); groups.set(key, current); return groups }, new Map()).entries()].map(([id, sessions]) => ({ id, sessions, hasSigned: sessions.some((session) => String(session.status) === 'signed'), hasOpen: sessions.some((session) => String(session.status) === 'active'), latest: sessions[0] }))
+            if (!correctionGroups.length) return null
+            return <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm text-[#7a5a17]"><p className="font-semibold">Correct or replace a signing pack</p><p className="mt-1 leading-5">Open packs are replaced and their uncompleted links are revoked. If anyone has signed, Arch9 creates a new amendment pack and keeps the original signed pack unchanged as audit evidence.</p><label className="mt-3 grid gap-1.5 font-semibold">Pack to correct<Field as="select" value={sellerDocumentReplacementGroupId} onChange={(event) => setSellerDocumentReplacementGroupId(event.target.value)}><option value="">Send a separate new pack</option>{correctionGroups.map((group) => <option key={group.id} value={group.id}>{group.hasSigned ? 'Signed — create amendment' : group.hasOpen ? 'Open — replace links' : 'Previous pack'} · Sent {group.latest?.created_at ? new Date(group.latest.created_at).toLocaleDateString('en-ZA') : 'previously'} · {group.latest?.signer_name || group.latest?.signer_email}</option>)}</Field></label>{sellerDocumentReplacementGroupId ? <label className="mt-3 grid gap-1.5 font-semibold">Reason for correction<textarea value={sellerDocumentReplacementReason} onChange={(event) => setSellerDocumentReplacementReason(event.target.value)} rows={3} placeholder="For example: Seller corrected the asking price." className="rounded-xl border border-[#e4c77f] bg-white px-3 py-2 font-normal text-[#243d56]" /></label> : null}</div>
           })()}
           {sellerDocumentSendSelection.fica ? <div className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><p className="font-semibold text-[#243d56]">FICA confirmation</p><p className="mt-1 text-[#607387]">{formatStatusLabel(listingRecord?.sellerType || getListingSellerFormData(listingRecord)?.sellerType || 'seller')} seller · confirm the listed seller/contact details are correct before sending.</p></div> : null}
           {sellerDocumentSendSelection.mandate ? <label className="grid gap-2 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Proposed conveyancing attorney <span className="font-normal text-[#607387]">(optional — included in the mandate for seller approval)</span><Field as="select" value={preferredTransferAttorneyOptionId} disabled={preferredTransferAttorneyLoading} onChange={(event) => setPreferredTransferAttorneyOptionId(event.target.value)}><option value="">Do not include an attorney</option>{preferredTransferAttorneyOptions.map((partner) => <option key={partner.id} value={partner.id}>{partner.companyName || 'Connected transfer attorney'}</option>)}</Field>{preferredTransferAttorneyLoading ? <span className="text-xs font-normal text-[#607387]">Loading connected attorney partners…</span> : null}</label> : null}
@@ -15462,6 +15425,15 @@ function AgentListingDetail() {
               const invitation = portalInvitationBySession.get(String(session.id || '')) || {}
               return { id: session.id, name: invitation.recipient_name || session.signer_name || 'Seller', email: invitation.recipient_email || session.signer_email || '', role: session.is_primary_document_contact ? 'Primary contact' : 'Co-signer', signing: String(session.status || 'active') === 'signed' ? 'Signed' : String(session.status || 'active') === 'revoked' ? 'Replaced / paused' : 'Awaiting signature', portal: invitation.status ? String(invitation.status).replace(/_/g, ' ') : 'Not issued' }
             })
+            const currentSigningPack = sellerDocumentSigningSessions.find((session) => session?.is_primary_document_contact && ['active', 'signed'].includes(String(session?.status || ''))) || sellerDocumentSigningSessions.find((session) => ['active', 'signed'].includes(String(session?.status || '')))
+            const currentFica = currentSigningPack?.signingPackSummary?.seller || {}
+            const currentPackIncludesFica = Array.isArray(currentSigningPack?.signingPackSummary?.selectedDocuments) && currentSigningPack.signingPackSummary.selectedDocuments.includes('fica')
+            const currentFicaRows = [
+              ['Name', [currentFica.firstName, currentFica.surname].filter(Boolean).join(' ') || currentFica.name],
+              ['ID / passport', currentFica.idNumber], ['Date of birth', currentFica.dateOfBirth], ['Nationality', currentFica.nationality],
+              ['Residence', currentFica.countryOfResidence], ['Address', currentFica.residentialAddress], ['Tax number', currentFica.incomeTaxNumber],
+              ['Email', currentFica.email], ['Phone', currentFica.phone], ['Occupation', currentFica.occupation], ['Source of funds', currentFica.sourceOfFunds],
+            ].filter(([, value]) => String(value || '').trim())
             const portalTasks = Array.isArray(sellerPortalTaskPlan.task_plan) ? sellerPortalTaskPlan.task_plan : []
             const statusDotClass = (complete, required = true) => {
               if (complete) return 'bg-[#1f9d61]'
@@ -15583,8 +15555,10 @@ function AgentListingDetail() {
 
                 {portalSignerRows.length ? (
                   <article className="rounded-[24px] border border-[#d8e6f2] bg-[#fbfdff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
-                    <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Seller Portal status</h3><p className="mt-1 text-sm text-[#607387]">Signing, invitation delivery, and outstanding seller documents for this listing.</p></div><Button type="button" size="sm" variant="secondary" onClick={() => void loadSellerDocumentSigningSessions()} disabled={sellerDocumentSigningSessionsLoading}>{sellerDocumentSigningSessionsLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}Refresh</Button></div>
+                    <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Seller Portal status</h3><p className="mt-1 text-sm text-[#607387]">Signing, invitation delivery, and outstanding seller documents for this listing.</p></div><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={downloadSellerSigningAudit} disabled={!sellerDocumentSigningSessions.length}><Download size={14} />Download audit</Button><Button type="button" size="sm" variant="secondary" onClick={() => void loadSellerDocumentSigningSessions()} disabled={sellerDocumentSigningSessionsLoading}>{sellerDocumentSigningSessionsLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}Refresh</Button></div></div>
                     <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#dce6f2] bg-white"><table className="min-w-full text-left text-sm"><thead className="bg-[#f5f9fc] text-xs text-[#607387]"><tr><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Signing</th><th className="px-3 py-2">Portal invitation</th></tr></thead><tbody>{portalSignerRows.map((owner) => <tr key={owner.id} className="border-t border-[#edf2f7]"><td className="px-3 py-3"><p className="font-semibold text-[#243d56]">{owner.name}</p><p className="text-xs text-[#607387]">{owner.email || 'Email pending'}</p></td><td className="px-3 py-3 text-[#425970]">{owner.role}</td><td className="px-3 py-3 text-[#425970]">{owner.signing}</td><td className="px-3 py-3 capitalize text-[#425970]">{owner.portal}</td></tr>)}</tbody></table></div>
+                    {currentPackIncludesFica ? <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-semibold text-[#243d56]">Shared FICA details in this signing pack</p><p className="mt-1 text-xs leading-5 text-[#607387]">This is the current unsigned-pack record. Updates made by the primary contact are reflected here for the agent and every signer.</p></div><span className="rounded-full bg-[#edf7f1] px-2.5 py-1 text-xs font-semibold text-[#187446]">{String(currentSigningPack?.status || '') === 'signed' ? 'Signed pack' : 'Live pack'}</span></div>{currentFicaRows.length ? <dl className="mt-3 grid gap-x-5 gap-y-2 text-sm sm:grid-cols-2">{currentFicaRows.map(([label, value]) => <div key={label} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-2"><dt className="font-semibold text-[#6b7d93]">{label}</dt><dd className="break-words text-[#243d56]">{value}</dd></div>)}</dl> : <p className="mt-3 text-sm text-[#607387]">No shared FICA details have been saved yet.</p>}</div> : null}
+                    {sellerSigningReplacements.length ? <div className="mt-4 rounded-[14px] border border-[#f2dfbd] bg-[#fff9ec] p-4"><p className="text-sm font-semibold text-[#7a5a17]">Correction history</p><ul className="mt-2 space-y-2 text-sm text-[#7a5a17]">{sellerSigningReplacements.slice(0, 3).map((replacement) => <li key={replacement.id} className="rounded-lg bg-white/70 px-3 py-2"><span className="font-semibold">{replacement.created_at ? new Date(replacement.created_at).toLocaleDateString('en-ZA') : 'Previous pack'}</span> · {replacement.reason || 'Correction recorded'}<span className="mt-1 block text-xs">Source {String(replacement.superseded_signing_group_id || '').slice(0, 8)} → version {String(replacement.replacement_signing_group_id || '').slice(0, 8)}</span></li>)}</ul></div> : null}
                     <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-3"><p className="text-sm font-semibold text-[#243d56]">Outstanding portal documents</p>{portalTasks.length ? <div className="mt-2 flex flex-wrap gap-2">{portalTasks.map((task) => <span key={task.key} className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-xs font-semibold text-[#35546c]">{task.title || task.key}</span>)}</div> : <p className="mt-1 text-sm text-[#607387]">No outstanding seller-visible document tasks.</p>}</div>
                   </article>
                 ) : null}

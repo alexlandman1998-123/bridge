@@ -149,4 +149,29 @@ assert.equal(manualMandateSentJourney.mandateStatus, 'sent')
 assert.equal(manualMandateSentJourney.mandateExecutionMode, 'manual')
 assert.equal(manualMandateSentJourney.stage.key, 'mandate_sent')
 
+const digitallyDispatchedPackJourney = buildSellerJourney({
+  lead: {
+    leadId: 'seller-lead-dispatched-pack',
+    leadCategory: 'seller',
+    sellerOnboardingStatus: 'completed',
+    listingId: 'listing-dispatched-pack',
+  },
+  listing: {
+    id: 'listing-dispatched-pack',
+    sellerLeadId: 'seller-lead-dispatched-pack',
+    listingStatus: 'listing_review',
+    sellerOnboarding: {
+      status: 'completed',
+      formData: {
+        sellerOnboardingSigningLifecycle: { stage: 'pack_sent' },
+        sellerOnboardingFormalPackDispatch: { delivery: 'sent', deliveredRecipientCount: 1 },
+      },
+    },
+    mandateStatus: 'sent',
+  },
+})
+
+assert.equal(digitallyDispatchedPackJourney.mandateStatus, 'sent')
+assert.equal(digitallyDispatchedPackJourney.stage.key, 'mandate_sent')
+
 console.log('sellerJourneyService tests passed')

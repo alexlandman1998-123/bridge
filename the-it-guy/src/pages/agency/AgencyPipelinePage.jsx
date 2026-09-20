@@ -120,6 +120,7 @@ import { getSellerDocumentReleaseReadiness } from '../../services/sellerDocument
 import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
 import { buildSellerCompliancePortalModel } from '../../core/documents/sellerCompliancePortalModel'
 import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts'
+import { buildSellerOnboardingSigningPackSnapshot } from '../../core/documents/sellerOnboardingSigningPackSnapshot'
 import { createSellerOnboardingFormalPackApproval } from '../../core/documents/sellerOnboardingFormalPackApproval'
 import { createSellerOnboardingFormalPackDispatch } from '../../core/documents/sellerOnboardingFormalPackDispatch'
 import { createSellerOnboardingManualSigningPack } from '../../core/documents/sellerOnboardingManualSigningPack'
@@ -11858,6 +11859,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerOnboardingReviewRoute, setSellerOnboardingReviewRoute] = useState('digital_pack')
   const [sellerSigningPackModalOpen, setSellerSigningPackModalOpen] = useState(false)
   const [sellerSigningPackSaving, setSellerSigningPackSaving] = useState(false)
+  const [sellerSigningPackError, setSellerSigningPackError] = useState('')
   const [sellerSigningPackPrimaryEmail, setSellerSigningPackPrimaryEmail] = useState('')
   const [sellerSigningPackTerms, setSellerSigningPackTerms] = useState({
     mandateType: 'sole',
@@ -26613,6 +26615,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   function openSellerLeadSigningPack() {
     const formData = getLeadSellerOnboardingFormData(selectedLead)
+    setSellerSigningPackError('')
     setSellerSigningPackPrimaryEmail(getSellerLeadSigningRecipients()[0]?.email || '')
     setSellerSigningPackTerms({
       mandateType: normalizeText(formData.mandateType || selectedLeadLinkedListing?.mandateType),
@@ -26635,6 +26638,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   async function sendSellerLeadSigningPack() {
     const listingId = normalizeText(selectedLeadLinkedListingId)
+    const leadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLead?.id)
     if (!listingId || sellerSigningPackSaving) return
     const recipients = getSellerLeadSigningRecipients()
     const incompleteRecipients = recipients.map((signer, index) => {
@@ -26642,21 +26646,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return missing.length ? `${signer.name || `Signer ${index + 1}`} — missing ${missing.join(' and ')}` : ''
     }).filter(Boolean)
     if (!recipients.length || incompleteRecipients.length) {
-      setError(`Complete required signer details before sending: ${incompleteRecipients.join('; ') || 'at least one signer is required'}.`)
+      setSellerSigningPackError(`Complete required signer details before sending: ${incompleteRecipients.join('; ') || 'at least one signer is required'}.`)
       return
     }
     const percentage = Number(sellerSigningPackTerms.commissionPercentage)
     const amount = Number(sellerSigningPackTerms.commissionAmount)
     if (!normalizeText(sellerSigningPackTerms.mandateType)) {
-      setError('Choose the mandate type before sending.')
+      setSellerSigningPackError('Choose the mandate type before sending.')
       return
     }
     if (sellerSigningPackTerms.commissionBasis === 'fixed' ? !(amount > 0) : !(percentage > 0)) {
-      setError(sellerSigningPackTerms.commissionBasis === 'fixed' ? 'Enter a fixed Rand commission amount before sending.' : 'Enter a commission percentage before sending.')
+      setSellerSigningPackError(sellerSigningPackTerms.commissionBasis === 'fixed' ? 'Enter a fixed Rand commission amount before sending.' : 'Enter a commission percentage before sending.')
       return
     }
     if (!normalizeText(sellerSigningPackTerms.vatHandling)) {
-      setError('Select the VAT treatment before sending the mandate.')
+      setSellerSigningPackError('Select the VAT treatment before sending the mandate.')
       return
     }
 
@@ -26689,13 +26693,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       actor: normalizeText(currentAgent?.id),
       at: now,
     })
-    const signingPack = {
-      seller: { name: recipients[0].name },
-      property: { address: propertyAddress },
-      signers: recipients,
-      mandate: { propertyAddress, mandateType: sellerSigningPackTerms.mandateType, commissionBasis: commission.basis, commissionPercentage: commission.percentage, commissionAmount: commission.amount, vatHandling: commission.vatHandling },
-      branding: selectedLeadLinkedListing?.branding || {},
-    }
+    const signingBranding = resolveOnboardingBranding(
+      selectedLeadLinkedListing?.branding,
+      currentWorkspace?.branding,
+      currentWorkspace,
+    )
+    const signingPack = buildSellerOnboardingSigningPackSnapshot({
+      formData,
+      listing: selectedLeadLinkedListing || {},
+      recipients,
+      selectedDocuments: ['fica', 'mandate'],
+      propertyAddress,
+      branding: signingBranding,
+      mandate: {
+        propertyAddress,
+        mandateType: sellerSigningPackTerms.mandateType,
+        commissionBasis: commission.basis,
+        commissionPercentage: commission.percentage,
+        commissionAmount: commission.amount,
+        vatHandling: commission.vatHandling,
+      },
+      generatedAt: now,
+    })
     const manualSigningPack = sellerOnboardingReviewRoute === 'manual_upload'
       ? createSellerOnboardingManualSigningPack({
           existing: formData.sellerOnboardingManualSigningPack || formData.seller_onboarding_manual_signing_pack,
@@ -26734,8 +26753,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
     nextFormData.seller_onboarding_signing_lifecycle = nextFormData.sellerOnboardingSigningLifecycle
 
+    setSellerSigningPackError('')
     setSellerSigningPackSaving(true)
-    setError('')
+    if (sellerOnboardingReviewRoute === 'digital_pack') {
+      setSellerSigningPackModalOpen(false)
+      setMessage('FICA and mandate signing pack is being prepared in the background. You can keep working on this lead.')
+    }
     try {
       await updatePrivateListing(listingId, { mandateType: sellerSigningPackTerms.mandateType }, { includeRequirementsAndDocuments: false })
       await persistSellerProfileOnboardingFormData({
@@ -26745,7 +26768,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       })
 
       if (sellerOnboardingReviewRoute === 'manual_upload') {
-        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
+        await updatePrivateListing(listingId, {
+          mandateType: sellerSigningPackTerms.mandateType,
+          mandateStatus: 'sent',
+        }, { includeRequirementsAndDocuments: false })
+        await updateAgencyCrmLeadRecord(organisationId, leadId, {
           stage: 'Mandate Sent',
           status: 'Physical FICA and mandate pack prepared — awaiting signed upload',
           mandateExecutionMode: 'manual',
@@ -26756,7 +26783,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           status: 'Physical FICA and mandate pack prepared — awaiting signed upload',
           mandateExecutionMode: 'manual',
           mandatePreparedAt: now,
-        }, selectedLead.leadId)
+        }, leadId)
         setSellerSigningPackModalOpen(false)
         setMessage('Physical FICA and mandate copies are prepared. Download them from Documents and upload the wet-ink signed copies when returned.')
         return
@@ -26812,6 +26839,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       sentFormData.seller_onboarding_signing_lifecycle = sentFormData.sellerOnboardingSigningLifecycle
       await persistSellerProfileOnboardingFormData({ listingId, formData: sentFormData, status: 'completed' })
+      await updatePrivateListing(listingId, {
+        mandateType: sellerSigningPackTerms.mandateType,
+        mandateStatus: 'sent',
+      }, { includeRequirementsAndDocuments: false })
       const deliveredCount = (Array.isArray(response?.data?.signingLinks) ? response.data.signingLinks : []).filter((item) => item?.delivery === 'sent').length
       const leadPatch = {
         stage: 'Mandate Sent',
@@ -26819,22 +26850,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         mandateStatus: 'sent_to_seller',
         mandateSentAt: now,
       }
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
-      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+      await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch)
+      await createAgencyCrmLeadActivity(organisationId, leadId, {
         agent: currentAgent,
         activityType: 'Seller signing pack sent',
         activityNote: `FICA declaration and mandate sent to ${deliveredCount || recipients.length} of ${recipients.length} signer${recipients.length === 1 ? '' : 's'}.`,
         outcome: delivery === 'sent' ? 'Sent for signature' : 'Partial delivery',
         activityDate: now,
       }, { actor: currentAgent })
-      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      patchSelectedLeadRecord(leadPatch, leadId)
       setSellerSigningPackModalOpen(false)
       setMessage(delivery === 'sent'
         ? `FICA declaration and mandate sent to ${recipients.length} required signer${recipients.length === 1 ? '' : 's'}.`
         : `The signing pack reached ${deliveredCount} of ${recipients.length} signers. Review delivery before resending.`)
       scheduleRecordsReload(organisationId, 750)
     } catch (signingError) {
-      setError(signingError?.message || 'Unable to prepare and send the seller signing pack.')
+      setSellerSigningPackError(signingError?.message || 'Unable to prepare and send the seller signing pack.')
+      setSellerSigningPackModalOpen(true)
     } finally {
       setSellerSigningPackSaving(false)
     }
@@ -40311,7 +40343,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       <Modal
         open={sellerSigningPackModalOpen}
-        onClose={sellerSigningPackSaving ? undefined : () => setSellerSigningPackModalOpen(false)}
+        onClose={() => setSellerSigningPackModalOpen(false)}
         title="Prepare FICA + mandate signing pack"
         subtitle="This stays on the seller lead. It does not create, publish, or activate a market listing."
         className="max-w-3xl"
@@ -40325,6 +40357,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         )}
       >
         <div className="space-y-5">
+          {sellerSigningPackError ? (
+            <div role="alert" className="rounded-[16px] border border-[#f3c6c1] bg-[#fff6f5] px-4 py-3 text-sm leading-6 text-[#a33c32]">
+              {sellerSigningPackError}
+            </div>
+          ) : null}
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
             The seller’s submitted onboarding facts remain frozen. This step adds the commercial terms and sends the separate Seller FICA Declaration and mandate for signature.
           </div>

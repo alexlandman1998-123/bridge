@@ -34,6 +34,7 @@ const PRODUCTS = {
       { key: "provenance", title: "Report reference and purpose" },
     ],
     costValidationRecipeId: "package_basic_v1",
+    requiredContractOperations: ["property_by_id", "owners"],
     priceCents: 500,
   },
   full_canvassing_report: {
@@ -73,6 +74,13 @@ const PRODUCTS = {
       { key: "provenance", title: "Report reference and purpose" },
     ],
     costValidationRecipeId: "package_full_v1",
+    requiredContractOperations: [
+      "property_by_id",
+      "owners",
+      "municipal_valuation",
+      "transfers",
+      "bonds",
+    ],
     priceCents: 2500,
   },
 };
@@ -216,13 +224,18 @@ function estimateSupplierCostCents(credits, creditsPerCent) {
     return null;
   return Math.ceil(safeCredits / safeRate);
 }
-function mergeProducts(rows, validations, commercialPolicy = null) {
+function mergeProducts(rows, validations, commercialPolicy = null, contractChecks = []) {
   const saved = new Map((rows || []).map((row) => [row.product_id, row]));
   const latestCost = new Map();
   for (const item of validations || []) {
     if (item.outcome === "validated" && !latestCost.has(item.recipe_id))
       latestCost.set(item.recipe_id, item);
   }
+  const passedContractOperations = new Set(
+    (contractChecks || [])
+      .filter((item) => item.status === "passed")
+      .map((item) => item.operation_key),
+  );
   return Object.entries(PRODUCTS).map(([productId, template]) => {
     const row = saved.get(productId);
     const validationRecipeId =
@@ -237,6 +250,11 @@ function mergeProducts(rows, validations, commercialPolicy = null) {
       commercialPolicy?.supplier_credits_per_cent,
     );
     const customerPriceCents = row?.customer_price_cents ?? template.priceCents;
+    const requiredContractOperations =
+      row?.required_contract_operations || template.requiredContractOperations;
+    const missingContractOperations = requiredContractOperations.filter(
+      (operation) => !passedContractOperations.has(operation),
+    );
     return {
       productId,
       name: row?.name || template.name,
@@ -246,6 +264,10 @@ function mergeProducts(rows, validations, commercialPolicy = null) {
       sections: template.sections,
       definitionVersion: row?.definition_version || template.definitionVersion,
       recipeIds: template.recipeIds,
+      requiredContractOperations,
+      missingContractOperations,
+      contractValidationCount:
+        requiredContractOperations.length - missingContractOperations.length,
       costValidationRecipeId: validationRecipeId,
       customerPriceCents,
       status: row?.status || "draft",
@@ -261,6 +283,7 @@ function mergeProducts(rows, validations, commercialPolicy = null) {
       commercialPolicyConfigured: Boolean(commercialPolicy),
       canMarkUatValidated:
         evidence.length === 1 &&
+        missingContractOperations.length === 0 &&
         validatedSupplierCostCents !== null &&
         customerPriceCents > validatedSupplierCostCents,
       updatedAt: row?.updated_at || null,
@@ -288,11 +311,12 @@ export default async function handler(request, response) {
       { data: products, error: productError },
       { data: validations, error: validationError },
       { data: commercialPolicy, error: commercialPolicyError },
+      { data: contractChecks, error: contractCheckError },
     ] = await Promise.all([
       db
         .from("knowledge_factory_report_products")
         .select(
-          "product_id, name, description, customer_price_cents, status, definition_version, cost_validation_recipe_id, updated_at",
+          "product_id, name, description, customer_price_cents, status, definition_version, cost_validation_recipe_id, required_contract_operations, updated_at",
         )
         .eq("organisation_id", organisationId),
       db
@@ -306,12 +330,16 @@ export default async function handler(request, response) {
         .select("supplier_credits_per_cent")
         .eq("organisation_id", organisationId)
         .maybeSingle(),
+      db
+        .from("knowledge_factory_uat_contract_checks")
+        .select("operation_key, status")
+        .eq("organisation_id", organisationId),
     ]);
-    if (productError || validationError || commercialPolicyError)
+    if (productError || validationError || commercialPolicyError || contractCheckError)
       throw new Error("The Phase 1 report-package workspace is unavailable.");
     if (action === "list")
       return json(response, 200, {
-        products: mergeProducts(products, validations, commercialPolicy),
+        products: mergeProducts(products, validations, commercialPolicy, contractChecks),
       });
     const productId = text(input.productId, 80);
     const template = PRODUCTS[productId];
@@ -319,7 +347,7 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error: "Choose a supported report package.",
       });
-    const allProducts = mergeProducts(products, validations, commercialPolicy);
+    const allProducts = mergeProducts(products, validations, commercialPolicy, contractChecks);
     const current = allProducts.find((item) => item.productId === productId);
     const selectedPriceCents = priceCents(input.customerPriceCents);
     const status =
@@ -333,6 +361,13 @@ export default async function handler(request, response) {
       return json(response, 400, {
         error:
           "Validate this package's complete query in UAT before marking it ready.",
+      });
+    if (
+      input.markUatValidated === true &&
+      current?.missingContractOperations?.length
+    )
+      return json(response, 400, {
+        error: `Pass the required UAT contract checks first: ${current.missingContractOperations.join(", ")}.`,
       });
     if (
       input.markUatValidated === true &&
@@ -364,6 +399,7 @@ export default async function handler(request, response) {
           excluded_field_manifest: template.excludedFields,
           definition_version: template.definitionVersion,
           cost_validation_recipe_id: template.costValidationRecipeId,
+          required_contract_operations: template.requiredContractOperations,
           customer_price_cents: selectedPriceCents,
           status,
           created_by: actorId,
@@ -376,13 +412,13 @@ export default async function handler(request, response) {
     const { data: nextProducts, error: reloadError } = await db
       .from("knowledge_factory_report_products")
       .select(
-        "product_id, name, description, customer_price_cents, status, definition_version, cost_validation_recipe_id, updated_at",
+        "product_id, name, description, customer_price_cents, status, definition_version, cost_validation_recipe_id, required_contract_operations, updated_at",
       )
       .eq("organisation_id", organisationId);
     if (reloadError)
       throw new Error("The saved report package could not be reloaded.");
     return json(response, 200, {
-      products: mergeProducts(nextProducts, validations, commercialPolicy),
+      products: mergeProducts(nextProducts, validations, commercialPolicy, contractChecks),
     });
   } catch (error) {
     json(response, Number(error?.status || 502), {

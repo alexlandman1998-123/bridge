@@ -12,11 +12,13 @@ import { useEffect, useState } from "react";
 import { useWorkspace } from "../../context/WorkspaceContext";
 import { getKnowledgeFactoryOperationsSnapshot } from "../../services/propertyIntelligence/knowledgeFactoryOperationsService";
 import KnowledgeFactoryUatCasesPanel from "./KnowledgeFactoryUatCasesPanel";
+import KnowledgeFactoryContractDiscoveryPanel from "./KnowledgeFactoryContractDiscoveryPanel";
 import KnowledgeFactoryCommercialPolicyPanel from "./KnowledgeFactoryCommercialPolicyPanel";
 import KnowledgeFactoryCostMatrixPanel from "./KnowledgeFactoryCostMatrixPanel";
 import KnowledgeFactoryReportProductsPanel from "./KnowledgeFactoryReportProductsPanel";
 import KnowledgeFactoryPackageCommercialPolicyPanel from "./KnowledgeFactoryPackageCommercialPolicyPanel";
 import KnowledgeFactoryPackagePilotPanel from "./KnowledgeFactoryPackagePilotPanel";
+import KnowledgeFactoryDemoReadinessPanel from "./KnowledgeFactoryDemoReadinessPanel";
 
 function formatDate(value) {
   const date = new Date(value);
@@ -297,6 +299,8 @@ export default function KnowledgeFactoryOperationsWorkspace() {
             organisationId={organisationId}
           />
           <KnowledgeFactoryUatCasesPanel organisationId={organisationId} />
+          <KnowledgeFactoryContractDiscoveryPanel organisationId={organisationId} />
+          <KnowledgeFactoryDemoReadinessPanel organisationId={organisationId} />
           <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div className="border-b border-slate-200 p-5">
               <h3 className="font-semibold">Recent audited activity</h3>

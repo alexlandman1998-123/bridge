@@ -61,6 +61,10 @@ test('seller lead owns the signing-pack send action', () => {
   assert.match(pipelineSource, /Choose the mandate type before sending/)
   assert.match(pipelineSource, /Complete required signer details before sending/)
   assert.match(pipelineSource, /Required signer/)
+  assert.match(pipelineSource, /sellerSigningPackError/)
+  assert.match(pipelineSource, /being prepared in the background/)
+  assert.match(pipelineSource, /setSellerSigningPackModalOpen\(true\)/)
+  assert.match(pipelineSource, /mandateStatus: 'sent'/)
   assert.doesNotMatch(pipelineSource.match(/function continueSellerOnboardingReview\(\) \{([\s\S]*?)\n  \}/)?.[1] || '', /sellerDocumentAction/)
 })
 

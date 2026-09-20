@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
+  Eye,
   FileText,
   LoaderCircle,
   RefreshCw,
@@ -35,6 +36,125 @@ function money(value) {
   return Number.isFinite(amount)
     ? `R${amount.toLocaleString("en-ZA")}`
     : "Not supplied";
+}
+
+function reportDate(value) {
+  if (!value) return "Not supplied";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? text(value)
+    : new Intl.DateTimeFormat("en-ZA", { dateStyle: "medium" }).format(parsed);
+}
+
+function DetailRow({ label, value }) {
+  const display = Array.isArray(value)
+    ? value.filter(Boolean).join(" / ")
+    : value;
+  const hasValue = display !== undefined && display !== null && display !== "";
+  return (
+    <div className="grid gap-1 border-b border-slate-100 py-2.5 sm:grid-cols-[11rem_1fr] sm:gap-4">
+      <dt className="text-xs font-medium text-slate-500">{label}</dt>
+      <dd className="break-words text-sm text-slate-800">{hasValue ? display : "Not supplied"}</dd>
+    </div>
+  );
+}
+
+function ReportReviewModal({ report, downloading, onClose, onDownload }) {
+  if (!report) return null;
+  const property = report.report_data?.property || {};
+  const owners = Array.isArray(report.report_data?.owners)
+    ? report.report_data.owners
+    : [];
+  const valuation = report.report_data?.municipalValuation || {};
+  const transactions = Array.isArray(report.report_data?.transactions)
+    ? report.report_data.transactions
+    : [];
+  const finance = report.report_data?.finance || {};
+  const signals = report.opportunity_signals || {};
+  const definition = report.report_definition_snapshot || {};
+  const context = report.request_context_snapshot || {};
+  const isFull = report.product_id === "full_canvassing_report";
+  const pdfAvailable = report.report_snapshot_version === "canvassing-report-v1";
+  return (
+    <Modal
+      open
+      onClose={() => {
+        if (!downloading) onClose?.();
+      }}
+      title="Property report review"
+      subtitle={property.address || `Property ${report.property_id}`}
+      className="max-w-3xl"
+    >
+      <div className="max-h-[68vh] space-y-5 overflow-y-auto pr-1">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm leading-6 text-blue-950">
+          This is the saved UAT report snapshot. Reviewing or downloading it does not make another supplier request or use more supplier credits.
+        </div>
+        <section>
+          <h3 className="text-sm font-semibold text-slate-900">Report record</h3>
+          <dl className="mt-2">
+            <DetailRow label="Package" value={definition.name || report.product_id?.replace(/_/g, " ")} />
+            <DetailRow label="Generated" value={formatDate(report.executed_at)} />
+            <DetailRow label="Business purpose" value={context.requestPurpose} />
+            <DetailRow label="Supplier credits used" value={Number.isFinite(Number(report.credits_consumed)) ? report.credits_consumed : "Not supplied"} />
+          </dl>
+        </section>
+        <section>
+          <h3 className="text-sm font-semibold text-slate-900">Property identity</h3>
+          <dl className="mt-2">
+            <DetailRow label="Property ID" value={property.propertyId || report.property_id} />
+            <DetailRow label="Address" value={property.address} />
+            <DetailRow label="Suburb / town" value={[property.suburb, property.town]} />
+            <DetailRow label="Province / postal code" value={[property.province, property.postalCode]} />
+            <DetailRow label="Property type / extent" value={[property.type, property.extent ? `${property.extent} sqm` : ""]} />
+          </dl>
+        </section>
+        <section>
+          <h3 className="text-sm font-semibold text-slate-900">Current ownership</h3>
+          <dl className="mt-2">
+            {owners.length ? owners.map((owner, index) => (
+              <DetailRow key={`${owner?.name || "owner"}-${index}`} label={`Owner ${index + 1}`} value={[owner?.name, owner?.type, owner?.share ? `Share: ${owner.share}` : ""]} />
+            )) : <DetailRow label="Owner record" value="No current owner record was supplied in this saved snapshot." />}
+            <DetailRow label="Ownership registered" value={reportDate(signals.ownershipRegisteredAt)} />
+            <DetailRow label="Approximate tenure" value={Number.isFinite(Number(signals.ownershipTenureYears)) ? `${signals.ownershipTenureYears} years` : "Not supplied"} />
+          </dl>
+        </section>
+        {isFull ? <>
+          <section>
+            <h3 className="text-sm font-semibold text-slate-900">Municipal valuation and zoning</h3>
+            <dl className="mt-2">
+              <DetailRow label="Municipal valuation" value={money(valuation.value)} />
+              <DetailRow label="Valuation date" value={reportDate(valuation.date)} />
+              <DetailRow label="Municipality / zoning" value={[valuation.municipality, valuation.zoning]} />
+            </dl>
+          </section>
+          <section>
+            <h3 className="text-sm font-semibold text-slate-900">Transfer and finance indicators</h3>
+            <dl className="mt-2">
+              {transactions.length ? transactions.map((transaction, index) => <DetailRow key={`${transaction?.registeredAt || "transfer"}-${index}`} label={`Transfer ${index + 1}`} value={[transaction?.registeredAt ? `Registered ${reportDate(transaction.registeredAt)}` : "", Number.isFinite(Number(transaction?.purchaseAmount)) ? money(transaction.purchaseAmount) : "", transaction?.isCurrentOwner ? "Current ownership record" : ""]} />) : <DetailRow label="Transfer history" value="No transfer timeline was supplied in this saved snapshot." />}
+              <DetailRow label="Current finance indicator" value={finance.hasCurrentBond === true ? "Recorded" : "No record supplied"} />
+              <DetailRow label="Current bond count" value={finance.currentBondCount} />
+            </dl>
+          </section>
+        </> : null}
+        <section>
+          <h3 className="text-sm font-semibold text-slate-900">Scope and provenance</h3>
+          <dl className="mt-2">
+            <DetailRow label="Snapshot version" value={report.report_snapshot_version} />
+            <DetailRow label="Definition version" value={definition.definitionVersion} />
+            <DetailRow label="Cost-validation recipe" value={definition.costValidationRecipeId} />
+            <DetailRow label="Not included" value={Array.isArray(definition.excludedFields) ? definition.excludedFields.join("; ") : "Not supplied"} />
+          </dl>
+        </section>
+      </div>
+      <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-slate-200 pt-4">
+        <button type="button" disabled={!pdfAvailable || downloading} onClick={() => void onDownload?.(report)} className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#1769dc] px-4 text-sm font-semibold text-white disabled:bg-slate-300" title={pdfAvailable ? "Download the reviewed saved snapshot" : "This older report cannot be rendered from a complete saved snapshot"}>
+          {downloading ? <LoaderCircle className="animate-spin" size={16} /> : <Download size={16} />}
+          {downloading ? "Preparing PDF..." : "Download PDF"}
+        </button>
+        <button type="button" disabled={downloading} onClick={onClose} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700">Close</button>
+      </div>
+    </Modal>
+  );
 }
 
 function ConversionModal({ report, saving, error, onClose, onSubmit }) {
@@ -230,6 +350,7 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
     error: "",
   });
   const [downloadingReportId, setDownloadingReportId] = useState("");
+  const [reviewingReport, setReviewingReport] = useState(null);
 
   async function load() {
     if (!organisationId) return;
@@ -387,6 +508,13 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
                     type="button"
+                    onClick={() => setReviewingReport(report)}
+                    className="inline-flex min-h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    <Eye size={16} /> Review report
+                  </button>
+                  <button
+                    type="button"
                     disabled={
                       report.report_snapshot_version !== "canvassing-report-v1" ||
                       Boolean(downloadingReportId)
@@ -451,6 +579,12 @@ export default function KnowledgeFactoryPackageReportsWorkspace({
           setConversion({ report: null, saving: false, error: "" })
         }
         onSubmit={convert}
+      />
+      <ReportReviewModal
+        report={reviewingReport}
+        downloading={downloadingReportId === reviewingReport?.id}
+        onClose={() => setReviewingReport(null)}
+        onDownload={download}
       />
     </section>
   );

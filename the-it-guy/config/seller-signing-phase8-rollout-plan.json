@@ -1,0 +1,28 @@
+{
+  "contract": "arch9-seller-signing-phase8-rollout-v1",
+  "status": "hold_for_named_pilot",
+  "feature": "seller_fica_mandate_signing",
+  "rollout": {
+    "globalEnablement": false,
+    "requiresNamedAgency": true,
+    "requiresHumanApproval": true,
+    "pilotAgencyOrganisationIds": [],
+    "productionMigrationApplied": false,
+    "productionFunctionDeployed": false
+  },
+  "requiredScenarios": [
+    "individual seller with pre-filled FICA details",
+    "multiple signers with one primary contact",
+    "company or trust seller route",
+    "manual FICA and mandate route",
+    "digital pack correction before signature",
+    "amendment after an existing signature",
+    "audit export includes versions, signatures and amendment lineage"
+  ],
+  "promotionRequirements": [
+    "Apply the reviewed append-only migrations in a controlled environment.",
+    "Deploy the matching listing-mandate-signing Edge Function and primary workspace together.",
+    "Run the focused Phase 4 through Phase 8 checks.",
+    "Complete the required scenarios for one named agency and record approval before global enablement."
+  ]
+}

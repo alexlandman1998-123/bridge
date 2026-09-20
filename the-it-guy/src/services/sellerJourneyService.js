@@ -420,6 +420,34 @@ function hasSellerOnboardingDurableSubmissionEvidence({ lead = {}, listing = {} 
   )
 }
 
+function getSellerOnboardingSigningEvidence({ lead = {}, listing = {} } = {}) {
+  const canonicalListing = hasCanonicalSellerListing({ lead, listing })
+  const onboarding = listing?.sellerOnboarding && typeof listing.sellerOnboarding === 'object'
+    ? listing.sellerOnboarding
+    : listing?.seller_onboarding && typeof listing.seller_onboarding === 'object'
+      ? listing.seller_onboarding
+      : !canonicalListing && lead?.sellerOnboarding && typeof lead.sellerOnboarding === 'object'
+        ? lead.sellerOnboarding
+        : !canonicalListing && lead?.seller_onboarding && typeof lead.seller_onboarding === 'object'
+          ? lead.seller_onboarding
+          : {}
+  const formData = onboarding?.formData && typeof onboarding.formData === 'object'
+    ? onboarding.formData
+    : onboarding?.form_data && typeof onboarding.form_data === 'object'
+      ? onboarding.form_data
+      : onboarding
+  const lifecycle = formData?.sellerOnboardingSigningLifecycle || formData?.seller_onboarding_signing_lifecycle || {}
+  const dispatch = formData?.sellerOnboardingFormalPackDispatch || formData?.seller_onboarding_formal_pack_dispatch || {}
+  const stage = normalizeKey(lifecycle?.stage)
+  const delivery = normalizeKey(dispatch?.delivery || dispatch?.status)
+  const deliveredRecipientCount = Number(dispatch?.deliveredRecipientCount || dispatch?.delivered_recipient_count || 0)
+  return {
+    packSent: ['pack_sent', 'partially_signed', 'mandate_signed'].includes(stage) ||
+      (['sent', 'partial'].includes(delivery) && deliveredRecipientCount > 0),
+    manualAwaitingUpload: stage === 'manual_awaiting_upload',
+  }
+}
+
 function readListingId(listing = {}) {
   return firstPresent(listing?.id, listing?.listingId, listing?.listing_id, listing?.privateListingId, listing?.private_listing_id)
 }
@@ -552,6 +580,7 @@ function leadStageImpliesSubmittedOnboarding(leadStageIndex = 0, onboardingSigna
 
 function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, mandatePacket = null, documents = [] } = {}) {
   const canonicalListing = hasCanonicalSellerListing({ lead, listing })
+  const onboardingSigningEvidence = getSellerOnboardingSigningEvidence({ lead, listing })
   const packet = mandatePacket || mandatePacketStatus?.packet || (!canonicalListing && lead?.mandatePacket) || null
   const sourceContext = packet?.source_context_json && typeof packet.source_context_json === 'object'
     ? packet.source_context_json
@@ -648,6 +677,7 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
       packet?.completedAt,
       packet?.completed_at,
     ) ||
+      onboardingSigningEvidence.packSent ||
       hasConfirmedMandateSendJob(mandatePacketStatus?.legalDocumentJob) ||
       (Array.isArray(signers) && signers.some(hasMandateSignerDeliveryEvidence)),
   )
@@ -659,6 +689,7 @@ function getMandateStatus({ lead = {}, listing = {}, mandatePacketStatus = {}, m
   ) {
     return 'signed'
   }
+  if (onboardingSigningEvidence.packSent || onboardingSigningEvidence.manualAwaitingUpload) return 'sent'
   if (executionMode === 'manual' && manuallySent) return 'sent'
   if (
     mandatePacketRef ||

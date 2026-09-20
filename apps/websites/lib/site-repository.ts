@@ -235,9 +235,27 @@ async function getPublishedWebsiteListings(
     const listingId = String(channel.listing_id)
     const listing = eligibleListings.get(listingId)
     if (!listing || !channel.publication_json || typeof channel.publication_json !== 'object' || Array.isArray(channel.publication_json)) return []
+    const snapshot = channel.publication_json as Record<string, unknown>
     const consultant = consultants.get(listing.assignedAgentId)
+    // Some imported agency listings belong to public-directory agents who do not
+    // have a platform login/profile. Preserve the verified public consultant
+    // snapshot in that case instead of dropping the agent from the website.
+    const snapshotConsultant = {
+      name: String(snapshot.consultant_name || '').trim() || undefined,
+      email: String(snapshot.consultant_email || '').trim() || undefined,
+      phone: String(snapshot.consultant_phone || '').trim() || undefined,
+      avatarUrl: String(snapshot.consultant_avatar_url || '').trim() || undefined,
+    }
     return [{
-      row: { ...(channel.publication_json as Record<string, unknown>), listing_id: listingId, arch9_reference: listing.reference, consultant_name: consultant?.name, consultant_email: consultant?.email, consultant_phone: consultant?.phone, consultant_avatar_url: consultant?.avatarUrl },
+      row: {
+        ...snapshot,
+        listing_id: listingId,
+        arch9_reference: listing.reference,
+        consultant_name: consultant?.name || snapshotConsultant.name,
+        consultant_email: consultant?.email || snapshotConsultant.email,
+        consultant_phone: consultant?.phone || snapshotConsultant.phone,
+        consultant_avatar_url: consultant?.avatarUrl || snapshotConsultant.avatarUrl,
+      },
       media: mapSnapshotMedia(channel.media_json),
     }]
   })
@@ -249,6 +267,56 @@ export async function getPublicProperties(site: ResolvedSite, query: Record<stri
   const listings = await getPublishedWebsiteListings(supabase, site)
   const publishedProperties = mapPublishedProperties(listings)
   return filterProperties(publishedProperties, query)
+}
+
+export async function getPublicTeamMembers(site: ResolvedSite) {
+  const supabase = getServerSupabase()
+  const [{ data: members, error: membersError }, directoryResult] = await Promise.all([
+    supabase
+      .from('organisation_users')
+      .select('user_id, first_name, last_name, job_title, workspace_role, status')
+      .eq('organisation_id', site.organisationId)
+      .eq('status', 'active')
+      .limit(100),
+    supabase
+      .from('agency_public_agents')
+      .select('id, first_name, last_name, full_name, job_title, avatar_url, sort_order')
+      .eq('organisation_id', site.organisationId)
+      .eq('is_public', true)
+      .eq('status', 'active')
+      .order('sort_order', { ascending: true })
+      .order('full_name', { ascending: true }),
+  ])
+  if (membersError) throw membersError
+
+  // Sites deployed before the directory migration remain usable while their
+  // database is upgraded. The directory becomes the primary source once it
+  // exists, and intentionally does not imply a CRM login or membership.
+  const directoryUnavailable = directoryResult.error?.code === '42P01' || directoryResult.error?.code === 'PGRST205'
+  if (directoryResult.error && !directoryUnavailable) throw directoryResult.error
+  const directory = directoryResult.data || []
+
+  const ids = (members || []).map((member) => String(member.user_id)).filter(Boolean)
+  const profilesResult = ids.length
+    ? await supabase.from('profiles').select('id, full_name, first_name, last_name, avatar_url').in('id', ids)
+    : { data: [], error: null }
+  if (profilesResult.error) throw profilesResult.error
+
+  const profilesById = new Map((profilesResult.data || []).map((profile) => [String(profile.id), profile]))
+  const accountMembers = (members || []).flatMap((member) => {
+    const profile = profilesById.get(String(member.user_id))
+    const name = [profile?.first_name || member.first_name, profile?.last_name || member.last_name].filter(Boolean).join(' ') || String(profile?.full_name || '').trim()
+    if (!name) return []
+    return [{ id: String(member.user_id), name, role: String(member.job_title || member.workspace_role || 'Property consultant'), avatarUrl: String(profile?.avatar_url || '').trim() || undefined }]
+  })
+  const directoryMembers = directory.map((agent) => ({
+    id: String(agent.id),
+    name: String(agent.full_name || [agent.first_name, agent.last_name].filter(Boolean).join(' ')).trim(),
+    role: String(agent.job_title || 'Property practitioner'),
+    avatarUrl: String(agent.avatar_url || '').trim() || undefined,
+  })).filter((agent) => agent.name)
+  const directoryNames = new Set(directoryMembers.map((agent) => agent.name.toLowerCase()))
+  return [...directoryMembers, ...accountMembers.filter((agent) => !directoryNames.has(agent.name.toLowerCase()))]
 }
 
 export async function getPublicProperty(site: ResolvedSite, slug: string): Promise<PublicProperty | null> {
@@ -484,7 +552,10 @@ async function resolveLocalSitePreview(siteId: string): Promise<ResolvedSite | n
       .from('website_site_revisions')
       .select('id, brand_json')
       .eq('website_site_id', site.id)
-      .eq('status', 'draft')
+      // Local review should prefer an editable draft, but remain available
+      // after that draft has been published.
+      .in('status', ['draft', 'published'])
+      .order('status', { ascending: true })
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),

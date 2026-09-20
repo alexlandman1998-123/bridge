@@ -3,12 +3,14 @@
 import { FormEvent, useRef, useState } from 'react'
 
 type LeadPurpose = 'general_enquiry' | 'valuation_request' | 'campaign_enquiry' | 'newsletter_signup'
-type Props = { propertyId?: string; pageId?: string; purpose?: LeadPurpose; variant?: 'default' | 'homepage' | 'valuation'; privacyPolicyUrl?: string; heading?: string; intro?: string; source?: string }
+type Props = { propertyId?: string; pageId?: string; purpose?: LeadPurpose; variant?: 'default' | 'homepage' | 'valuation' | 'valuation-modal'; privacyPolicyUrl?: string; heading?: string; intro?: string; source?: string; submitLabel?: string }
 
-export function LeadForm({ propertyId, pageId, purpose, variant = 'default', privacyPolicyUrl, heading, intro, source }: Props) {
+export function LeadForm({ propertyId, pageId, purpose, variant = 'default', privacyPolicyUrl, heading, intro, source, submitLabel }: Props) {
   const isNewsletter = purpose === 'newsletter_signup'
   const homepageForm = variant === 'homepage' && !isNewsletter
   const valuationForm = variant === 'valuation' && !isNewsletter
+  const valuationModal = variant === 'valuation-modal' && !isNewsletter
+  const propertyValuationForm = valuationForm || valuationModal
   const [intent, setIntent] = useState<'Buy' | 'Sell' | 'Rent' | 'Other'>('Buy')
   const [state, setState] = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
   const [errorMessage, setErrorMessage] = useState('')
@@ -42,7 +44,7 @@ export function LeadForm({ propertyId, pageId, purpose, variant = 'default', pri
           name: form.get('name'),
           email: form.get('email'),
           phone: form.get('phone'),
-          message: isNewsletter ? 'Newsletter signup — property updates requested.' : `${valuationForm ? `Property address: ${String(form.get('propertyAddress') || '')}\nProperty type: ${String(form.get('propertyType') || '')}\nBedrooms: ${String(form.get('bedrooms') || '')}\n\n` : ''}${homepageForm ? `Homepage contact intent: ${intent}\n\n` : ''}${String(form.get('message') || '')}`,
+          message: isNewsletter ? 'Newsletter signup — property updates requested.' : `${propertyValuationForm ? `Property address: ${String(form.get('propertyAddress') || '')}\nProperty type: ${String(form.get('propertyType') || '')}\nBedrooms: ${String(form.get('bedrooms') || '')}\n\n` : ''}${homepageForm ? `Homepage contact intent: ${intent}\n\n` : ''}${String(form.get('message') || '')}`,
           companyWebsite: form.get('companyWebsite'),
           privacyAccepted: form.get('privacyAccepted') === 'on',
           marketingConsent: form.get('marketingConsent') === 'on',
@@ -71,14 +73,15 @@ export function LeadForm({ propertyId, pageId, purpose, variant = 'default', pri
       <label className="honeypot" aria-hidden="true">Company website<input name="companyWebsite" autoComplete="off" tabIndex={-1} /></label>
       {homepageForm ? <><h3>{heading || 'How can we help?'}</h3>{intro && <p className="lead-form-intro">{intro}</p>}<div className="intent-chips" aria-label="Enquiry intent">{(['Buy', 'Sell', 'Rent', 'Other'] as const).map((option) => <button aria-pressed={intent === option} className={intent === option ? 'is-selected' : ''} key={option} onClick={() => setIntent(option)} type="button">{option}</button>)}</div></> : null}
       {valuationForm ? <><h3>Let’s start with your home.</h3><p className="valuation-form-intro">A few details. A more informed next move.</p><p className="valuation-form-step"><span>01</span> Your property</p><label className="lead-field valuation-address">Property address<input name="propertyAddress" placeholder="Street address and suburb" required /></label><label className="lead-field valuation-property-type">Property type<select name="propertyType" defaultValue=""><option value="" disabled>Select type</option><option>House</option><option>Apartment</option><option>Townhouse</option><option>Land</option></select></label><label className="lead-field valuation-bedrooms">Bedrooms<select name="bedrooms" defaultValue=""><option value="" disabled>Select</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5+</option></select></label></> : null}
+      {valuationModal ? <label className="lead-field valuation-address">Property address<input name="propertyAddress" placeholder="Street address and suburb" required /></label> : null}
       {valuationForm && <p className="valuation-form-step"><span>02</span> Your details</p>}
-      <label className="lead-field lead-name">{homepageForm || valuationForm ? 'Full name' : 'Name'}<input name="name" autoComplete="name" placeholder={homepageForm || valuationForm || isNewsletter ? 'Your name' : undefined} required /></label>
-      <label className="lead-field lead-email">Email<input name="email" type="email" autoComplete="email" placeholder={homepageForm || valuationForm || isNewsletter ? 'you@example.com' : undefined} required={isNewsletter} /></label>
-      {!isNewsletter && <><label className="lead-field lead-phone">Mobile number<input name="phone" type="tel" autoComplete="tel" placeholder={homepageForm || valuationForm ? '+27' : undefined} /></label>{homepageForm || valuationForm ? <p className="contact-method-note">Please provide an email address or mobile number.</p> : null}</>}
-      {!isNewsletter && <label className="lead-field lead-message">{valuationForm ? 'Anything else? (optional)' : 'Message'}<textarea name="message" rows={3} placeholder={homepageForm ? 'Tell us what you have in mind…' : purpose === 'valuation_request' ? 'Tell us about your property' : 'How can we help?'} /></label>}
+      <label className="lead-field lead-name">{homepageForm || propertyValuationForm ? 'Full name' : 'Name'}<input name="name" autoComplete="name" placeholder={homepageForm || propertyValuationForm || isNewsletter ? 'Your name' : undefined} required /></label>
+      <label className="lead-field lead-email">Email<input name="email" type="email" autoComplete="email" placeholder={homepageForm || propertyValuationForm || isNewsletter ? 'you@example.com' : undefined} required={isNewsletter} /></label>
+      {!isNewsletter && <><label className="lead-field lead-phone">Mobile number<input name="phone" type="tel" autoComplete="tel" placeholder={homepageForm || propertyValuationForm ? '+27' : undefined} /></label>{homepageForm || propertyValuationForm ? <p className="contact-method-note">Please provide an email address or mobile number.</p> : null}</>}
+      {!isNewsletter && !valuationModal && <label className="lead-field lead-message">{valuationForm ? 'Anything else? (optional)' : 'Message'}<textarea name="message" rows={3} placeholder={homepageForm ? 'Tell us what you have in mind…' : purpose === 'valuation_request' ? 'Tell us about your property' : 'How can we help?'} /></label>}
       <label className="consent"><input name="privacyAccepted" type="checkbox" required /> {isNewsletter ? 'I agree to my details being used for this subscription.' : 'I agree to be contacted about my enquiry.'}</label>
       <label className="consent"><input name="marketingConsent" type="checkbox" required={isNewsletter} /> {isNewsletter ? 'Send me property news and market updates.' : homepageForm ? 'Send me property news and updates (optional).' : 'I would also like to receive relevant property updates.'}</label>
-      <button disabled={state === 'sending'} type="submit">{state === 'sending' ? 'Sending…' : isNewsletter ? 'Subscribe' : homepageForm ? <>Send enquiry <span aria-hidden="true">→</span></> : valuationForm ? <>Request my valuation <span aria-hidden="true">→</span></> : 'Send enquiry'}</button>
+      <button disabled={state === 'sending'} type="submit">{state === 'sending' ? 'Sending…' : isNewsletter ? 'Subscribe' : homepageForm ? <>Send enquiry <span aria-hidden="true">→</span></> : propertyValuationForm ? <>{submitLabel || 'Request my valuation'} <span aria-hidden="true">→</span></> : 'Send enquiry'}</button>
       {homepageForm ? <p className="privacy-note">Your details are handled in line with our {privacyPolicyUrl ? <a href={privacyPolicyUrl}>Privacy Policy</a> : 'Privacy Policy'}.</p> : null}
       <p aria-live="polite" className={state === 'error' ? 'form-error' : 'form-message'}>{state === 'success' ? isNewsletter ? 'Thank you. You are subscribed to property updates.' : 'Thank you. Your enquiry has been sent.' : state === 'error' ? errorMessage : ''}</p>
     </form>

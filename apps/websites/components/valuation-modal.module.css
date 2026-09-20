@@ -1,0 +1,25 @@
+.backdrop { align-items: center; background: rgba(8,8,8,.78); backdrop-filter: blur(12px); display: flex; inset: 0; justify-content: center; padding: 24px; position: fixed; z-index: 100; }
+.modal { background: #f7f6f3; box-shadow: 0 28px 90px rgba(0,0,0,.42); display: grid; grid-template-columns: minmax(300px,.87fr) minmax(430px,1.13fr); max-height: min(820px, calc(100vh - 48px)); max-width: 1030px; overflow: auto; width: 100%; }
+.intro { background: #171717; box-sizing: border-box; color: #fff; display: flex; flex-direction: column; min-height: 620px; padding: 72px clamp(38px,5vw,76px) 50px; }
+.intro > p, .overline { color: #d8d7d3; font-size: 10px; font-weight: 800; letter-spacing: .17em; margin: 0; text-transform: uppercase; }
+.intro > p::before { color: #e2232b; content: '›'; font-size: 25px; font-weight: 400; margin-right: 9px; vertical-align: -2px; }
+.intro h2 { font-size: clamp(48px,5.3vw,76px); font-weight: 700; letter-spacing: -.09em; line-height: .86; margin: 41px 0 30px; max-width: 370px; }
+.intro > span { color: #c5c4c0; font-size: 16px; line-height: 1.6; max-width: 310px; }
+.intro > b { color: #e2232b; font-size: 11px; letter-spacing: .1em; line-height: 1.45; margin-top: auto; }
+.formPanel { box-sizing: border-box; min-height: 620px; padding: 78px clamp(38px,6vw,76px) 48px; position: relative; }
+.overline { color: #6a6a65; margin-bottom: 32px; }
+.close { align-items: center; background: transparent; border: 1px solid #aaa9a5; color: #222; cursor: pointer; display: flex; font-size: 32px; font-weight: 300; height: 43px; justify-content: center; line-height: 1; padding: 0 0 5px; position: absolute; right: 25px; top: 25px; width: 43px; }
+.close:hover { border-color: #e2232b; color: #e2232b; }
+.formPanel :global(.lead-form) { background: transparent; display: grid; gap: 18px; padding: 0; }
+.formPanel :global(.lead-form .honeypot), .formPanel :global(.lead-form .contact-method-note), .formPanel :global(.lead-form .consent + .consent) { display: none; }
+.formPanel :global(.lead-form .lead-field) { color: #5d5d59; display: grid; font-size: 12px; font-weight: 700; gap: 8px; }
+.formPanel :global(.lead-form input) { background: transparent; border: 0; border-bottom: 1px solid #aaa9a5; border-radius: 0; box-sizing: border-box; color: #171717; font: inherit; font-size: 18px; min-height: 42px; outline: 0; padding: 3px 0 9px; width: 100%; }
+.formPanel :global(.lead-form input:focus) { border-color: #e2232b; }
+.formPanel :global(.lead-form input::placeholder) { color: #abb1bf; }
+.formPanel :global(.lead-form .consent) { align-items: start; color: #696965; display: flex; font-size: 11px; gap: 8px; line-height: 1.45; margin: 3px 0 0; }
+.formPanel :global(.lead-form .consent input) { accent-color: #e2232b; flex: 0 0 auto; height: 15px; margin: 0; min-height: 15px; width: 15px; }
+.formPanel :global(.lead-form button[type='submit']) { background: #171717; border: 0; color: #fff; cursor: pointer; font-size: 11px; font-weight: 800; justify-self: start; letter-spacing: .08em; margin-top: 15px; min-height: 58px; padding: 0 24px; text-transform: uppercase; }
+.formPanel :global(.lead-form button[type='submit']:hover) { background: #e2232b; }
+.formPanel :global(.lead-form .form-message), .formPanel :global(.lead-form .form-error) { font-size: 12px; margin: 0; }
+.formPanel :global(.lead-form .form-error) { color: #b51f27; }
+@media (max-width: 760px) { .backdrop { align-items: end; padding: 0; } .modal { display: block; max-height: 92vh; } .intro { min-height: 0; padding: 42px 28px 35px; } .intro h2 { font-size: 51px; margin: 28px 0 18px; } .intro > b { display: none; } .formPanel { min-height: 0; padding: 48px 28px 36px; } .close { right: 18px; top: 17px; } }

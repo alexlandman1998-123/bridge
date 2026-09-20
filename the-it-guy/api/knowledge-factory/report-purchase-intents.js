@@ -225,6 +225,33 @@ async function supplierReport(config, productId, propertyId) {
     vendorRequestId: text(response.headers.get("x-request-id"), 200) || null,
   };
 }
+async function supplierQuote(config, productId, propertyId) {
+  const response = await fetch(config.endpoint, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${await supplierToken(config)}`,
+      "GraphQL-Cost": "validate",
+    },
+    body: JSON.stringify({
+      operationName: "CanvassingReportQuote",
+      query: packageReportQuery(productId, "CanvassingReportQuote"),
+      variables: { id: propertyId },
+    }),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload?.errors?.length) {
+    const error = new Error(
+      supplierError(payload, "Knowledge Factory could not quote this report"),
+    );
+    error.status = 502;
+    throw error;
+  }
+  return {
+    costs: supplierCosts(payload),
+    vendorRequestId: text(response.headers.get("x-request-id"), 200) || null,
+  };
+}
 function reportData(property, productId) {
   const addresses = Array.isArray(property?.streetAddress)
     ? property.streetAddress
@@ -600,7 +627,7 @@ export default async function handler(request, response) {
     const action = text(input.action, 40);
     if (
       !validUuid(organisationId) ||
-      !["list_products", "confirm", "execute"].includes(action)
+      !["list_products", "quote", "confirm", "execute"].includes(action)
     )
       return json(response, 400, {
         error: "A valid organisation and action are required.",
@@ -622,6 +649,67 @@ export default async function handler(request, response) {
       if (error) throw new Error("Approved report packages are unavailable.");
       return json(response, 200, { products: (data || []).map(productView) });
     }
+    if (action === "quote") {
+      const productId = text(input.productId, 80);
+      const purpose = text(input.purpose, 500);
+      const selectedPropertyId = propertyId(input.propertyId);
+      if (purpose.length < 10)
+        return json(response, 400, {
+          error: "Provide a business purpose of at least 10 characters.",
+        });
+      const { data: product, error: productError } = await db
+        .from("knowledge_factory_report_products")
+        .select(
+          "product_id, name, description, field_manifest, customer_price_cents, cost_validation_recipe_id, status",
+        )
+        .eq("organisation_id", organisationId)
+        .eq("product_id", productId)
+        .eq("status", "uat_validated")
+        .maybeSingle();
+      if (productError || !product)
+        return json(response, 409, {
+          error: "This report package is not yet approved for UAT use.",
+        });
+      await assertPackageCommercialPolicy(db, organisationId, actorId, product);
+      const supplierConfig = supplierRuntime();
+      if (!/\/uat\/graphql\/?$/i.test(supplierConfig.endpoint)) {
+        const error = new Error(
+          "Cost-only report quotes are restricted to the UAT supplier endpoint.",
+        );
+        error.status = 409;
+        throw error;
+      }
+      const quote = await supplierQuote(supplierConfig, product.product_id, selectedPropertyId);
+      const quoteExpiresAt = new Date(Date.now() + 20 * 60_000).toISOString();
+      const { data, error } = await db
+        .from("knowledge_factory_report_purchase_intents")
+        .insert({
+          organisation_id: organisationId,
+          actor_id: actorId,
+          property_id: selectedPropertyId,
+          product_id: product.product_id,
+          product_name: product.name,
+          included_fields: product.field_manifest,
+          customer_price_cents: product.customer_price_cents,
+          request_purpose: purpose,
+          status: "quoted",
+          quoted_supplier_credits: quote.costs.credits,
+          quoted_field_cost: quote.costs.fieldCost,
+          quoted_type_cost: quote.costs.typeCost,
+          quoted_price_surcharge: quote.costs.surcharge,
+          quote_expires_at: quoteExpiresAt,
+        })
+        .select(
+          "id, property_id, product_id, product_name, customer_price_cents, request_purpose, status, quoted_supplier_credits, quoted_field_cost, quoted_type_cost, quoted_price_surcharge, quote_expires_at, created_at",
+        )
+        .single();
+      if (error || !data) throw new Error("Your report quote could not be saved.");
+      return json(response, 201, {
+        intent: data,
+        message:
+          "Cost-only quote saved. No supplier report data has been requested or charged.",
+      });
+    }
     if (action === "execute") {
       const intentId = text(input.intentId, 100);
       if (!validUuid(intentId))
@@ -636,6 +724,7 @@ export default async function handler(request, response) {
         .eq("organisation_id", organisationId)
         .eq("actor_id", actorId)
         .eq("status", "confirmed_pending_execution")
+        .gt("quote_expires_at", new Date().toISOString())
         .select(
           "id, property_id, product_id, product_name, included_fields, customer_price_cents, request_purpose",
         )
@@ -820,47 +909,38 @@ export default async function handler(request, response) {
         throw error;
       }
     }
-    const productId = text(input.productId, 80);
-    const purpose = text(input.purpose, 500);
-    if (purpose.length < 10)
+    const intentId = text(input.intentId, 100);
+    if (!validUuid(intentId) || input.attested !== true)
       return json(response, 400, {
-        error: "Provide a business purpose of at least 10 characters.",
+        error:
+          "Confirm the stated business purpose and authority before accepting this quote.",
       });
-    const { data: product, error: productError } = await db
-      .from("knowledge_factory_report_products")
-      .select(
-        "product_id, name, description, field_manifest, customer_price_cents",
-      )
-      .eq("organisation_id", organisationId)
-      .eq("product_id", productId)
-      .eq("status", "uat_validated")
-      .maybeSingle();
-    if (productError || !product)
-      return json(response, 409, {
-        error: "This report package is not yet approved for UAT use.",
-      });
+    const confirmedAt = new Date().toISOString();
     const { data, error } = await db
       .from("knowledge_factory_report_purchase_intents")
-      .insert({
-        organisation_id: organisationId,
-        actor_id: actorId,
-        property_id: propertyId(input.propertyId),
-        product_id: product.product_id,
-        product_name: product.name,
-        included_fields: product.field_manifest,
-        customer_price_cents: product.customer_price_cents,
-        request_purpose: purpose,
+      .update({
+        status: "confirmed_pending_execution",
+        confirmation_attested_at: confirmedAt,
+        confirmed_at: confirmedAt,
+        updated_at: confirmedAt,
       })
+      .eq("id", intentId)
+      .eq("organisation_id", organisationId)
+      .eq("actor_id", actorId)
+      .eq("status", "quoted")
+      .gt("quote_expires_at", confirmedAt)
       .select(
-        "id, property_id, product_id, product_name, customer_price_cents, request_purpose, status, created_at",
+        "id, property_id, product_id, product_name, customer_price_cents, request_purpose, status, quoted_supplier_credits, quoted_field_cost, quoted_type_cost, quoted_price_surcharge, quote_expires_at, confirmation_attested_at, confirmed_at, created_at",
       )
-      .single();
+      .maybeSingle();
     if (error || !data)
-      throw new Error("Your report confirmation could not be saved.");
+      return json(response, 409, {
+        error: "This quote is no longer available. Request a new estimate.",
+      });
     return json(response, 201, {
       intent: data,
       message:
-        "Report selection confirmed. No supplier data has been requested yet.",
+        "Report quote confirmed. No supplier report data has been requested yet.",
     });
   } catch (error) {
     json(response, Number(error?.status || 502), {
