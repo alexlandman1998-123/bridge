@@ -62,6 +62,34 @@ function firstText(...values: unknown[]) {
   return "";
 }
 
+/**
+ * Email clients fetch logos after delivery, so a Supabase signed Storage URL
+ * is already likely to be expired by the time it is opened. Brand assets used
+ * in email must therefore use the public object path, just as the onboarding
+ * UI does. Non-Storage URLs are deliberately preserved.
+ */
+export function normalizeEmailLogoUrl(...values: unknown[]) {
+  const raw = firstText(...values);
+  if (!raw) return undefined;
+
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" && url.protocol !== "http:") return raw;
+    const signedStoragePrefix = "/storage/v1/object/sign/";
+    if (url.pathname.startsWith(signedStoragePrefix)) {
+      url.pathname = url.pathname.replace(
+        signedStoragePrefix,
+        "/storage/v1/object/public/",
+      );
+      url.search = "";
+      url.hash = "";
+    }
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
+
 function readEnvText(name: string) {
   try {
     return normalizeText(Deno.env.get(name));
@@ -120,6 +148,67 @@ function pickNestedBranding(value: unknown) {
   const emailBranding = toRecord(record.emailBranding);
   const email = toRecord(record.email);
   return { ...record, ...branding, ...emailBranding, ...email };
+}
+
+function extractAgencyOnboardingEmailBranding(
+  row: Record<string, unknown> = {},
+): Partial<EmailBranding> {
+  const settings = toRecord(row.settings_json);
+  const onboarding = toRecord(
+    settings.agencyOnboarding || settings.agency_onboarding,
+  );
+  const branding = toRecord(
+    onboarding.branding || onboarding.branding_json ||
+      onboarding.portalBranding || onboarding.portal_branding,
+  );
+  if (!Object.keys(branding).length) return {};
+
+  return {
+    organisationId: firstText(row.organisation_id) || undefined,
+    organisationName: firstText(
+      branding.organisationName,
+      branding.organisation_name,
+      branding.displayName,
+      branding.display_name,
+    ) || undefined,
+    logoUrl: firstText(
+      branding.logoDark,
+      branding.logoDarkUrl,
+      branding.logo_dark_url,
+      branding.logoLight,
+      branding.logoLightUrl,
+      branding.logo_light_url,
+      branding.logoUrl,
+      branding.logo_url,
+    ) || undefined,
+    logoLightUrl: firstText(
+      branding.logoLight,
+      branding.logoLightUrl,
+      branding.logo_light_url,
+    ) || undefined,
+    logoDarkUrl: firstText(
+      branding.logoDark,
+      branding.logoDarkUrl,
+      branding.logo_dark_url,
+    ) || undefined,
+    logoIconUrl: firstText(
+      branding.logoIcon,
+      branding.logoIconUrl,
+      branding.logo_icon_url,
+    ) || undefined,
+    primaryColor: firstText(
+      toRecord(branding.brandColours).primary,
+      toRecord(branding.brandColors).primary,
+      branding.primaryColor,
+      branding.primary_color,
+    ) || undefined,
+    secondaryColor: firstText(
+      toRecord(branding.brandColours).secondary,
+      toRecord(branding.brandColors).secondary,
+      branding.secondaryColor,
+      branding.secondary_color,
+    ) || undefined,
+  };
 }
 
 function shouldIgnoreBrandingLookupError(error: unknown, tableName: string) {
@@ -183,7 +272,7 @@ export function normalizeEmailBranding(
       input.organisation_name,
       DEFAULT_EMAIL_BRANDING.organisationName,
     ),
-    logoUrl: firstText(
+    logoUrl: normalizeEmailLogoUrl(
       input.logoUrl,
       input.logo_url,
       input.organisationLogoUrl,
@@ -194,32 +283,31 @@ export function normalizeEmailBranding(
       input.brand_logo_url,
       input.logoDarkUrl,
       input.logo_dark_url,
-    ) || undefined,
-    logoLightUrl: firstText(
+    ),
+    logoLightUrl: normalizeEmailLogoUrl(
       input.logoLightUrl,
       input.logo_light_url,
       input.logoLight,
       input.logo_light,
       input.organisationLogoLightUrl,
       input.organisation_logo_light_url,
-    ) || undefined,
-    logoDarkUrl: firstText(
+    ),
+    logoDarkUrl: normalizeEmailLogoUrl(
       input.logoDarkUrl,
       input.logo_dark_url,
       input.logoDark,
       input.logo_dark,
       input.organisationLogoDarkUrl,
       input.organisation_logo_dark_url,
-    ) || undefined,
-    logoIconUrl: firstText(
+    ),
+    logoIconUrl: normalizeEmailLogoUrl(
       input.logoIconUrl,
       input.logo_icon_url,
       input.organisationLogoIconUrl,
       input.organisation_logo_icon_url,
       input.logoIcon,
       input.logo_icon,
-    ) ||
-      undefined,
+    ),
     primaryColor: normalizeBrandColor(
       firstText(
         input.primaryColor,
@@ -761,6 +849,10 @@ export async function resolveEmailBranding({
         extractEmailBrandingFromSettings(settingsRow),
         extractEmailBrandingFromOrganisation(organisationRow),
         extractEmailBrandingFromOrganisationBranding(brandingRow),
+        // The onboarding editor is the current source for agency branding.
+        // Overlay only that subtree so ordinary email settings retain their
+        // established precedence over canonical organisation defaults.
+        extractAgencyOnboardingEmailBranding(settingsRow),
         { organisationId: resolvedOrganisationId },
       );
       emailBrandingLookupCache.set(cacheKey, {

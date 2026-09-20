@@ -16,4 +16,4 @@
 .submit:hover { background: var(--home-accent, #e2232b); border-color: var(--home-accent, #e2232b); transform: translateY(-1px); }
 .finder :is(button, input, select, summary):focus-visible { outline: 2px solid var(--home-accent, #9a1715); outline-offset: 5px; }
 @media (max-width: 760px) { .finder { border-radius: 15px; padding: 14px; } .note { display: none; } .fields { grid-template-columns: 1fr 1fr; } .location { grid-column: 1 / -1; } .finder .submit { min-height: 52px; } }
-@media (max-width: 480px) { .top { margin-inline: 1px; } .fields { grid-template-columns: 1fr; } .location { grid-column: auto; } .finder .submit { min-height: 52px; } }
+@media (max-width: 480px) { .top { margin-inline: 1px; } .fields { grid-template-columns: minmax(0, 1fr) minmax(135px, .9fr); } .location { grid-column: 1 / -1; } .finder .submit { min-height: 52px; padding-inline: 14px; } }

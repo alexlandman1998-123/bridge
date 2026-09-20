@@ -35,7 +35,7 @@ export default async function HomePage() {
   if (!site || !page) notFound()
 
   return (
-    <main className={`${templateClassName(site.templateKey)} ${isHomeSeekersTemplate(site.templateKey) ? styles.homepage : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
+    <main className={`${templateClassName(site.templateKey)} ${isHomeSeekersTemplate(site.templateKey) ? styles.homepage : ''}${site.name === 'LWP Properties' ? ` ${styles['lwp-home']}` : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
       <SiteHeader site={site} enquiryHref="/valuation" homepage />
       <ContentBlocks page={page} properties={site.properties} site={site} templateKey={site.templateKey} blogPosts={blogPosts} />
       <SiteFooter site={site} />

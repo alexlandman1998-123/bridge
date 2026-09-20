@@ -994,6 +994,20 @@ async function safeReadSellerOnboardingForListing(listingId = '') {
   return Array.isArray(data) ? data[0] || null : null
 }
 
+// A seller lead can briefly carry more than one listing reference while it is
+// being converted into a private listing.  Do not let an older reference hide
+// the submitted onboarding attached to the resolved listing.
+async function safeReadSellerOnboardingForListingCandidates(listingIds = []) {
+  const candidates = [...new Set((Array.isArray(listingIds) ? listingIds : [])
+    .map(normalizeText)
+    .filter(isUuidLike))]
+  for (const listingId of candidates) {
+    const onboarding = await safeReadSellerOnboardingForListing(listingId)
+    if (onboarding) return { listingId, onboarding }
+  }
+  return { listingId: '', onboarding: null }
+}
+
 function getNormalizedListingId(row = {}) {
   return normalizeText(row?.id || row?.listingId || row?.listing_id || row?.privateListingId || row?.private_listing_id)
 }
@@ -1240,7 +1254,12 @@ export async function fetchAgentLeadWorkspace({
     if (hydratedLinkedListing) break
   }
   const fallbackListingId = [...new Set(candidateListingIds)][0] || ''
-  const fallbackSellerOnboarding = fallbackListingId ? await safeReadSellerOnboardingForListing(fallbackListingId) : null
+  const onboardingResolution = await safeReadSellerOnboardingForListingCandidates([
+    getNormalizedListingId(hydratedLinkedListing),
+    ...candidateListingIds,
+  ])
+  const fallbackSellerOnboarding = onboardingResolution.onboarding
+  const onboardingListingId = onboardingResolution.listingId || fallbackListingId
   const hydratedListingSource = hydratedLinkedListing && fallbackSellerOnboarding
     ? {
         ...hydratedLinkedListing,
@@ -1249,11 +1268,11 @@ export async function fetchAgentLeadWorkspace({
       }
     : hydratedLinkedListing
   const hydratedListing = hydratedListingSource ? normalizeListing(hydratedListingSource) : null
-  const fallbackListing = !hydratedListing && fallbackListingId && fallbackSellerOnboarding
+  const fallbackListing = !hydratedListing && onboardingListingId && fallbackSellerOnboarding
     ? normalizeListing({
-        id: fallbackListingId,
-        listing_id: fallbackListingId,
-        listingId: fallbackListingId,
+        id: onboardingListingId,
+        listing_id: onboardingListingId,
+        listingId: onboardingListingId,
         organisation_id: lead?.organisation_id,
         leadId: context.leadId,
         sellerLeadId: context.leadId,

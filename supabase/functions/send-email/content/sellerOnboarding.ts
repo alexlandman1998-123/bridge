@@ -391,16 +391,32 @@ function formatExpiryCopy(expiryDays: number) {
   }.`;
 }
 
-function renderSimpleBullet(copy: string, primaryColor = "#006B4D") {
-  const bulletColor = normalizeBrandColor(primaryColor, "#006B4D");
-  return `
+function renderSellerOnboardingSteps(primaryColor: string) {
+  const steps = [
+    ["1", "Share the essentials", "Confirm your seller, ownership and property information."],
+    ["2", "Complete the disclosure", "Record the property information your agent needs to review."],
+    ["3", "Your agent takes it from there", "They will confirm the next FICA and mandate step with you."],
+  ];
+
+  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 26px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid #DCE7E2; border-radius: 12px; background: #F8FBFA;">
     <tr>
-      <td width="18" valign="top" style="width: 18px; padding: 2px 8px 8px 0; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.5; color: ${bulletColor};">&bull;</td>
-      <td valign="top" style="padding: 0 0 8px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; line-height: 1.55; color: #334155;">${
-    escapeHtml(copy)
-  }</td>
+      <td style="padding: 20px; font-family: Arial, Helvetica, sans-serif;">
+        <p style="margin: 0 0 14px; font-size: 12px; line-height: 1.3; letter-spacing: 0.1em; color: ${primaryColor}; font-weight: 700; text-transform: uppercase;">A simple three-step process</p>
+        ${steps.map(([number, heading, copy], index) => `
+          <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: collapse;${index ? " border-top: 1px solid #DCE7E2;" : ""}">
+            <tr>
+              <td width="34" valign="top" style="width: 34px; padding: ${index ? "14px" : "0"} 10px 0 0;">
+                <div style="width: 26px; height: 26px; border-radius: 13px; background: ${primaryColor}; color: #FFFFFF; font-family: Arial, Helvetica, sans-serif; font-size: 12px; font-weight: 700; line-height: 26px; text-align: center;">${number}</div>
+              </td>
+              <td valign="top" style="padding: ${index ? "14px" : "0"} 0 0; font-family: Arial, Helvetica, sans-serif;">
+                <p style="margin: 0; font-size: 14px; line-height: 1.4; color: #17233A; font-weight: 700;">${heading}</p>
+                <p style="margin: 3px 0 0; font-size: 13px; line-height: 1.55; color: #52657A;">${copy}</p>
+              </td>
+            </tr>
+          </table>`).join("")}
+      </td>
     </tr>
-  `;
+  </table>`;
 }
 
 function renderSummaryRows(rows: { label: string; value: string }[]) {
@@ -526,12 +542,19 @@ function buildPremiumSellerOnboardingInvitationHtml({
           <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="600" class="arch9-shell" style="width: 600px; max-width: 600px; border-collapse: separate; border-spacing: 0; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; overflow: hidden;">
             <tr>
               <td class="arch9-header" bgcolor="${primaryColor}" height="72" valign="middle" style="height: 72px; padding: 0 32px; background: ${primaryColor}; font-family: Arial, Helvetica, sans-serif;">
-                ${headerBrandHtml}
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: collapse;">
+                  <tr>
+                    <td valign="middle">${headerBrandHtml}</td>
+                    <td align="right" valign="middle" style="padding-left: 16px; font-family: Arial, Helvetica, sans-serif;">
+                      <span style="display: inline-block; padding: 7px 10px; border: 1px solid rgba(255,255,255,0.35); border-radius: 999px; color: #FFFFFF; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap;">Secure onboarding</span>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
             <tr>
               <td class="arch9-padded" style="padding: 36px 32px 0; background: #FFFFFF; font-family: Arial, Helvetica, sans-serif;">
-                <p style="margin: 0 0 14px; font-size: 12px; line-height: 1.3; letter-spacing: 0.12em; color: ${secondaryColor}; font-weight: 700; text-transform: uppercase;">Seller information</p>
+                <p style="margin: 0 0 14px; font-size: 12px; line-height: 1.3; letter-spacing: 0.12em; color: ${secondaryColor}; font-weight: 700; text-transform: uppercase;">Seller onboarding</p>
                 <h1 style="margin: 0; font-size: 30px; line-height: 1.2; color: #17233A; font-weight: 700;">${
     escapeHtml(resolvedTitle)
   }</h1>
@@ -548,39 +571,15 @@ function buildPremiumSellerOnboardingInvitationHtml({
   }</div>
                 <p style="margin: 12px 0 0; font-size: 12px; line-height: 1.55; color: #64748B;">If the button does not work, copy this secure link:<br /><a href="${safeOnboardingUrl}" style="color: ${primaryColor}; text-decoration: underline; word-break: break-all;">${safeOnboardingUrl}</a></p>
 
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 26px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid #DCE7E2; border-radius: 8px; background: #F7FBF9;">
+                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="margin: 26px 0 0; border-collapse: separate; border-spacing: 0; border: 1px solid #DCE7E2; border-radius: 12px; background: #F7FBF9;">
                   <tr>
                     <td style="padding: 18px; font-family: Arial, Helvetica, sans-serif;">
-                      <p style="margin: 0 0 8px; font-size: 15px; line-height: 1.5; color: #17233A; font-weight: 700;">This usually takes about 8 minutes.</p>
-                      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #334155;">You can complete it on any device. Your information is stored securely in Arch9 and is shared only with authorised people working on your sale.</p>
+                      <p style="margin: 0 0 5px; font-size: 15px; line-height: 1.5; color: #17233A; font-weight: 700;">Allow about 8 minutes.</p>
+                      <p style="margin: 0; font-size: 14px; line-height: 1.6; color: #334155;">You can complete this on any device, save as you go, and return to the same secure link if you need to pause.</p>
                     </td>
                   </tr>
                 </table>
-
-                <h2 style="margin: 28px 0 12px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What you will need</h2>
-                <table role="presentation" cellspacing="0" cellpadding="0" border="0" width="100%" style="border-collapse: collapse;">
-                  ${
-    renderSimpleBullet(
-      "Your contact, FICA, and ownership details.",
-      primaryColor,
-    )
-  }
-                  ${
-    renderSimpleBullet(
-      "Core property information for the sale record.",
-      primaryColor,
-    )
-  }
-                  ${
-    renderSimpleBullet(
-      "Any mandate, rates, levy, bond, or property documents you already have available.",
-      primaryColor,
-    )
-  }
-                </table>
-
-                <h2 style="margin: 20px 0 8px; font-size: 18px; line-height: 1.35; color: #17233A; font-weight: 700;">What happens after you submit</h2>
-                <p style="margin: 0; font-size: 15px; line-height: 1.65; color: #334155;">Your agent will review your answers, confirm anything outstanding, and prepare the next step in the mandate and listing workflow.</p>
+                ${renderSellerOnboardingSteps(primaryColor)}
                 <p style="margin: 14px 0 0; font-size: 13px; line-height: 1.55; color: #64748B;">${
     escapeHtml(expiryCopy)
   }</p>

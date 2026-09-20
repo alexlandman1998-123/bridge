@@ -6,11 +6,13 @@ import { usePathname } from 'next/navigation'
 
 type Item = { href: string; label: string }
 
-export function MobileNavigation({ items, currentHref, enquiryHref, enquiryLabel }: {
+export function MobileNavigation({ items, currentHref, enquiryHref, enquiryLabel, brandName, brandNote }: {
   items: Item[]
   currentHref?: string
   enquiryHref: string
   enquiryLabel: string
+  brandName?: string
+  brandNote?: string
 }) {
   const menu = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
@@ -18,6 +20,13 @@ export function MobileNavigation({ items, currentHref, enquiryHref, enquiryLabel
   const pathname = usePathname()
 
   useEffect(() => { setOpen(false) }, [pathname, currentHref])
+
+  useEffect(() => {
+    if (!open) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previousOverflow }
+  }, [open])
 
   useEffect(() => {
     const close = () => setOpen(false)
@@ -60,10 +69,17 @@ export function MobileNavigation({ items, currentHref, enquiryHref, enquiryLabel
       }
       setOpen(value => !value)
     }}><span /><span /><span /></button>
+    {open ? <button type="button" className="mobile-menu-backdrop" aria-label="Close navigation" onClick={() => setOpen(false)} /> : null}
     <nav id={navigationId} aria-label="Mobile primary" hidden={!open} onClick={event => {
       if (event.target instanceof Element && event.target.closest('a')) setOpen(false)
     }}>
-      {items.map(item => <Link href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} key={`${item.href}-${item.label}`}>{item.label}</Link>)}
+      <div className="mobile-menu-intro">
+        <span>{brandName ?? 'Explore'}</span>
+        <strong>{brandNote ?? 'Find your next move.'}</strong>
+      </div>
+      <div className="mobile-menu-links">
+        {items.map((item, index) => <Link href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} data-index={index + 1} key={`${item.href}-${item.label}`}><span>{item.label}</span><b aria-hidden="true">↗</b></Link>)}
+      </div>
       <Link className="header-cta" href={enquiryHref}>{enquiryLabel}</Link>
     </nav>
   </div>

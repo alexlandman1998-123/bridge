@@ -715,7 +715,6 @@ export async function handleSellerOnboardingEmail(
       error: emailResult.error?.message ||
         "Failed to send seller onboarding email.",
       details: emailResult.error,
-      timings,
     });
   }
 
@@ -746,6 +745,5 @@ export async function handleSellerOnboardingEmail(
     canonicalInviteLink: canonicalClientInvite?.inviteLink || null,
     legacyOnboardingLink: portalDocumentsMode ? legacyOnboardingLink : null,
     communicationType,
-    timings,
   });
 }

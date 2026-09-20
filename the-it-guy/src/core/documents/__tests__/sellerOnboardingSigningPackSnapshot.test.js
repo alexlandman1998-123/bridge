@@ -45,8 +45,12 @@ test('projects relevant directors and trustees instead of a generic seller party
 
   assert.equal(company.seller.parties[0].role, 'Director')
   assert.equal(company.seller.parties[0].name, 'Nandi Dlamini')
+  assert.equal(company.seller.companyName, 'Example Holdings')
+  assert.equal(company.seller.companyRegistrationNumber, '2020/123456/07')
   assert.equal(trust.seller.parties[0].role, 'Trustee')
   assert.equal(trust.seller.parties[0].authorityBasis, 'Trust resolution')
+  assert.equal(trust.seller.trustName, 'Example Family Trust')
+  assert.equal(trust.seller.trustRegistrationNumber, 'IT123/2020')
 })
 
 test('uses the canonical onboarding facts mapping for legacy and authority fields', () => {

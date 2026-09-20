@@ -100,3 +100,36 @@ test('blocks obsolete FICA and mandate drafts when the agent requests a correcti
   assert.equal(fica.canDownload, false)
   assert.match(mandate.downloadReason, /correction was requested/i)
 })
+
+test('refreshes the disclosure HTML with the public on-light agency logo', () => {
+  const signedLogoUrl = 'https://example.supabase.co/storage/v1/object/sign/organisation-assets/kingdom-light.png?token=expired'
+  const result = buildSellerDocumentSourceOfTruth({
+    listing: {
+      id: 'listing-branding',
+      sellerOnboarding: { status: 'completed' },
+      documentRequirements: requiredDocuments,
+      branding: { organisationName: 'Kingdom Real Estate', logoLightUrl: signedLogoUrl },
+    },
+    formData: {
+      sellerName: 'Alex Landman',
+      idNumber: '8001015009087',
+      propertyDisclosure: {
+        declarationAccepted: true,
+        signature: 'Alex Landman',
+        signedAt: '2026-09-20T10:00:00.000Z',
+        decision: 'none',
+        arch9TermsAccepted: true,
+      },
+      sellerPostOnboardingDrafts: {
+        documents: [
+          { key: 'signed_disclosure_form', status: 'completed', generatedHtml: '<html>stale disclosure</html>' },
+        ],
+      },
+    },
+  })
+  const disclosure = result.rows.find((row) => row.key === 'signed_disclosure_form')
+  assert.match(disclosure.upload.generatedHtml, /\/storage\/v1\/object\/public\/organisation-assets\/kingdom-light\.png/)
+  assert.doesNotMatch(disclosure.upload.generatedHtml, /object\/sign/)
+  assert.equal(disclosure.canUpload, false)
+  assert.equal(disclosure.canDownload, true)
+})

@@ -20,6 +20,7 @@ import { isSellerStructuredFactRequirement } from './documents/sellerStructuredF
 import { projectCanonicalSellerDocumentRows } from './documents/canonicalSellerDocumentProjectionService.js'
 import { buildSellerSigningStatusModel, getSellerSigningStatusForDocument } from './sellerSigningStatusService.js'
 import { buildSellerSubject } from '../lib/sellerSubjectModel.js'
+import { resolveOnboardingBranding } from '../lib/onboardingBranding.js'
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -133,14 +134,18 @@ function resolveSellerDocumentBranding(listing = {}, formData = {}) {
     listing?.agency_address,
   ))
 
+  const resolvedBranding = resolveOnboardingBranding(portalBranding, listingBranding, listing)
   return {
     ...listingBranding,
     ...portalBranding,
-    organisationName,
-    agencyName: organisationName,
-    logoUrl,
-    logoLightUrl,
-    logoDarkUrl,
+    organisationName: resolvedBranding.organisationName || organisationName,
+    agencyName: resolvedBranding.organisationName || organisationName,
+    // Do not retain expiring signed-storage URLs in a PDF template. The
+    // shared resolver converts them to the public logo asset URL.
+    logoUrl: resolvedBranding.logoLightUrl || resolvedBranding.logoDarkUrl || logoUrl,
+    logoLightUrl: resolvedBranding.logoLightUrl || logoLightUrl,
+    logoDarkUrl: resolvedBranding.logoDarkUrl || logoDarkUrl,
+    logoIconUrl: resolvedBranding.logoIconUrl || '',
     website: normalizeText(firstPresent(portalBranding.website, portalBranding.organisationWebsite, listingBranding.website, listing?.organisationWebsite, listing?.website)),
     email: normalizeText(firstPresent(portalBranding.email, portalBranding.organisationEmail, listingBranding.email, listing?.organisationEmail, listing?.agencyEmail)),
     phone: normalizeText(firstPresent(portalBranding.phone, portalBranding.telephone, portalBranding.organisationPhone, listingBranding.phone, listingBranding.telephone, listing?.organisationPhone, listing?.agencyPhone)),
@@ -2344,13 +2349,19 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
   const agentReviewApproved = isSellerOnboardingReviewApproved(listing, formData)
   const correctionRequested = isSellerOnboardingCorrectionRequested(formData)
   const commissionConfirmed = isSellerOnboardingCommissionConfirmed(formData)
+  const refreshedDisclosure = buildSellerPropertyDisclosureDocumentFromFormData(formData, listing)
   return readSellerPostOnboardingDrafts(formData)
     .map((draft) => {
       const requirementKey = normalizeSellerBasePackKey(draft?.requirementKey || draft?.key)
-      const generatedHtml = normalizeText(draft?.generatedHtml || draft?.generated_html)
+      const isDisclosure = requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
+      // The disclosure is a frozen fact snapshot, but its corporate identity
+      // must be rendered from the current agency branding. This also repairs
+      // older frozen HTML produced before the on-light logo was available.
+      const generatedHtml = isDisclosure
+        ? normalizeText(refreshedDisclosure?.generatedHtml || refreshedDisclosure?.generated_html || draft?.generatedHtml || draft?.generated_html)
+        : normalizeText(draft?.generatedHtml || draft?.generated_html)
       if (!requirementKey || !generatedHtml) return null
       const availability = getSellerPostOnboardingPdfAvailability(draft, { agentReviewApproved, commissionConfirmed })
-      const isDisclosure = requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
       const label = requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
         ? 'Signed Mandate'
         : normalizeText(draft?.name) || (isDisclosure ? 'Mandatory Disclosure / Defects Form' : 'Seller FICA Declaration')

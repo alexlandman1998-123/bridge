@@ -3674,14 +3674,17 @@ function AgentListingDetail() {
   const [primaryDocumentContactEmail, setPrimaryDocumentContactEmail] = useState('')
   const [sellerDocumentReplacementGroupId, setSellerDocumentReplacementGroupId] = useState('')
   const [sellerDocumentReplacementReason, setSellerDocumentReplacementReason] = useState('')
+  const [sellerDocumentCorrectionRequestActivityId, setSellerDocumentCorrectionRequestActivityId] = useState('')
   const [sellerMandateSignatureRoute, setSellerMandateSignatureRoute] = useState('digital_pack')
   const [sellerDocumentSigningSessions, setSellerDocumentSigningSessions] = useState([])
   const [sellerPortalInvitationStatus, setSellerPortalInvitationStatus] = useState([])
   const [sellerPortalTaskPlan, setSellerPortalTaskPlan] = useState({})
   const [sellerSigningReplacements, setSellerSigningReplacements] = useState([])
+  const [sellerSigningCorrectionActivities, setSellerSigningCorrectionActivities] = useState([])
   const [sellerDocumentSigningSessionsLoading, setSellerDocumentSigningSessionsLoading] = useState(false)
   const [sellerDocumentSigningSessionAction, setSellerDocumentSigningSessionAction] = useState('')
   const [lastSellerDocumentSigningLink, setLastSellerDocumentSigningLink] = useState('')
+  const [lastSellerDocumentSigningLinks, setLastSellerDocumentSigningLinks] = useState({})
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
@@ -6509,7 +6512,7 @@ function AgentListingDetail() {
     })
   }
 
-  function openSellerDocumentSend(selectionOverride = null) {
+  function openSellerDocumentSend(selectionOverride = null, correctionRequest = null) {
     const { byKey } = getSellerSigningDocumentOptions()
     setSellerDocumentSendSelection(normalizeSellerOnboardingFormalSigningSelection({
       fica: byKey.fica.ready,
@@ -6520,8 +6523,10 @@ function AgentListingDetail() {
     setDetailMessage('')
     setPrimaryDocumentContactEmail(getSellerSigningPlan().recipients[0]?.email || '')
     const activeGroup = sellerDocumentSigningSessions.find((session) => session?.status === 'active' && session?.signing_group_id)?.signing_group_id || ''
-    setSellerDocumentReplacementGroupId(activeGroup)
-    setSellerDocumentReplacementReason('')
+    const requestedGroup = String(correctionRequest?.metadata?.signingGroupId || '')
+    setSellerDocumentReplacementGroupId(requestedGroup || activeGroup)
+    setSellerDocumentReplacementReason(String(correctionRequest?.metadata?.issue || ''))
+    setSellerDocumentCorrectionRequestActivityId(String(correctionRequest?.id || ''))
     setSellerMandateSignatureRoute('digital_pack')
     setSellerDocumentSendStep(2)
     setSellerDocumentSendOpen(true)
@@ -6609,6 +6614,7 @@ function AgentListingDetail() {
       setSellerPortalInvitationStatus(Array.isArray(result?.data?.portalInvitations) ? result.data.portalInvitations : [])
       setSellerPortalTaskPlan(result?.data?.portalTaskPlan && typeof result.data.portalTaskPlan === 'object' ? result.data.portalTaskPlan : {})
       setSellerSigningReplacements(Array.isArray(result?.data?.replacements) ? result.data.replacements : [])
+      setSellerSigningCorrectionActivities(Array.isArray(result?.data?.correctionActivities) ? result.data.correctionActivities : [])
     } catch (error) {
       if (!silent) setDetailError(error?.message || 'Unable to load seller document link status.')
     } finally {
@@ -6632,13 +6638,37 @@ function AgentListingDetail() {
     }
   }
 
-  async function copyLastSellerDocumentSigningLink() {
-    if (!lastSellerDocumentSigningLink) return
+  async function copyLastSellerDocumentSigningLink(link = lastSellerDocumentSigningLink) {
+    if (!link) return
     try {
-      await navigator.clipboard.writeText(lastSellerDocumentSigningLink)
+      await navigator.clipboard.writeText(link)
       setDetailMessage('Secure seller document link copied. Treat it as sensitive and share it only with the seller.')
     } catch {
       setDetailError('Unable to copy the signing link. Please use a browser that permits clipboard access.')
+    }
+  }
+
+  async function resendSellerDocumentSigningSession(sessionId) {
+    if (!sessionId || !isUuidLike(listingRecord?.id)) return
+    try {
+      setSellerDocumentSigningSessionAction(`resend:${sessionId}`)
+      setDetailError('')
+      const result = await invokeEdgeFunction('listing-mandate-signing', { body: {
+        action: 'resend', listingId: listingRecord.id, sessionId,
+        agentName: String(listingActor?.name || profile?.fullName || profile?.email || 'Your agent').trim(),
+      } })
+      if (result?.error || result?.data?.success === false) throw new Error(result?.error?.message || result?.data?.error || 'Unable to send a fresh seller document link.')
+      const link = String(result?.data?.signingLink || '')
+      setLastSellerDocumentSigningLink(link)
+      setLastSellerDocumentSigningLinks((current) => ({ ...current, [sessionId]: link }))
+      setDetailMessage(result?.data?.delivery === 'failed'
+        ? 'A fresh signing link was created, but email delivery failed. Copy the link below and share it securely; the previous link has been invalidated.'
+        : 'A fresh signing link was emailed. The previous link no longer works.')
+      await loadSellerDocumentSigningSessions({ silent: true })
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to send a fresh seller document link.')
+    } finally {
+      setSellerDocumentSigningSessionAction('')
     }
   }
 
@@ -6649,6 +6679,7 @@ function AgentListingDetail() {
       lifecycle: formData.sellerOnboardingSigningLifecycle || formData.seller_onboarding_signing_lifecycle,
       signingSessions: sellerDocumentSigningSessions,
       replacements: sellerSigningReplacements,
+      correctionActivities: sellerSigningCorrectionActivities,
     })
     downloadBlob(new Blob([JSON.stringify({ ...audit, exportedAt: new Date().toISOString(), listingId: listingRecord?.id || null }, null, 2)], { type: 'application/json;charset=utf-8' }), `${sanitizeFileName(resolveSellerNameFromListing(listingRecord) || 'seller')}-signing-audit.json`)
     setDetailMessage('Seller signing audit downloaded.')
@@ -6694,6 +6725,10 @@ function AgentListingDetail() {
     }
     if (sellerDocumentReplacementGroupId && sellerDocumentReplacementReason.trim().length < 5) {
       setDetailError('Give a short reason before replacing an active seller signing pack.')
+      return
+    }
+    if (sellerDocumentCorrectionRequestActivityId && sellerMandateSignatureRoute === 'manual_upload') {
+      setDetailError('Use a digital replacement pack for this seller correction request so the signed-record audit can be linked to the replacement.')
       return
     }
     const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
@@ -6809,6 +6844,7 @@ function AgentListingDetail() {
         primaryDocumentContactEmail: primarySigner.email,
         supersededSigningGroupId: sellerDocumentReplacementGroupId || undefined,
         replacementReason: sellerDocumentReplacementGroupId ? sellerDocumentReplacementReason.trim() : undefined,
+        correctionRequestActivityId: sellerDocumentCorrectionRequestActivityId || undefined,
         agentName: String(listingActor?.name || profile?.fullName || profile?.email || 'Agent').trim(),
         selectedDocuments: selected,
         mandateSnapshot: {
@@ -6845,6 +6881,9 @@ function AgentListingDetail() {
             selectedDocuments: selected,
             route: sellerMandateSignatureRoute,
             signingGroupId: formalPackDispatch.signingGroupId,
+            supersededSigningGroupId: formalPackDispatch.supersededSigningGroupId,
+            isAmendment: formalPackDispatch.isAmendment,
+            signedSessionsRetained: formalPackDispatch.signedSessionsRetained,
             delivery: formalPackDispatch.delivery,
             deliveredRecipientCount: formalPackDispatch.deliveredRecipientCount,
             recipientCount: formalPackDispatch.recipientCount,
@@ -6858,8 +6897,12 @@ function AgentListingDetail() {
       })
       patchListing((row) => ({ ...row, sellerOnboarding: { ...(row?.sellerOnboarding || {}), formData: sentFormData } }))
       setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
+      setLastSellerDocumentSigningLinks(Object.fromEntries((Array.isArray(response?.data?.signingLinks) ? response.data.signingLinks : []).map((item) => [String(item?.signerEmail || '').toLowerCase(), String(item?.signingLink || '')]).filter(([key, value]) => key && value)))
       setSellerDocumentSendOpen(false)
-      setDetailMessage(formalPackDispatch.delivery === 'failed'
+      setSellerDocumentCorrectionRequestActivityId('')
+      setDetailMessage(formalPackDispatch.isAmendment
+        ? `Amendment signing pack prepared for ${signingPlan.recipients.length} required signer${signingPlan.recipients.length === 1 ? '' : 's'}. The original signed pack remains unchanged as audit evidence.${formalPackDispatch.delivery === 'failed' ? ' No email delivery was confirmed; copy the new link below to share it safely.' : formalPackDispatch.delivery === 'partial' ? ` ${formalPackDispatch.deliveredRecipientCount} of ${formalPackDispatch.recipientCount} signing links were delivered.` : ''}`
+        : formalPackDispatch.delivery === 'failed'
         ? 'The signing pack was prepared, but no delivery was confirmed. Copy the new link below to share it safely with the seller.'
         : formalPackDispatch.delivery === 'partial'
           ? `Signing links were delivered to ${formalPackDispatch.deliveredRecipientCount} of ${formalPackDispatch.recipientCount} required signers. Check the delivery status before resending the failed recipient.`
@@ -6991,6 +7034,7 @@ function AgentListingDetail() {
       } })
       if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Mandate signing email could not be sent.')
       setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
+      setLastSellerDocumentSigningLinks(Object.fromEntries((Array.isArray(response?.data?.signingLinks) ? response.data.signingLinks : []).map((item) => [String(item?.signerEmail || '').toLowerCase(), String(item?.signingLink || '')]).filter(([key, value]) => key && value)))
       setDetailMessage(response?.data?.delivery === 'failed'
         ? 'The secure link was created but email delivery failed. Copy the new link from the document status area to share it safely.'
         : 'A secure one-time signing link has been emailed to the seller.')
@@ -15423,17 +15467,36 @@ function AgentListingDetail() {
             const portalInvitationBySession = new Map(sellerPortalInvitationStatus.map((invite) => [String(invite.signing_session_id || ''), invite]))
             const portalSignerRows = sellerDocumentSigningSessions.map((session) => {
               const invitation = portalInvitationBySession.get(String(session.id || '')) || {}
-              return { id: session.id, name: invitation.recipient_name || session.signer_name || 'Seller', email: invitation.recipient_email || session.signer_email || '', role: session.is_primary_document_contact ? 'Primary contact' : 'Co-signer', signing: String(session.status || 'active') === 'signed' ? 'Signed' : String(session.status || 'active') === 'revoked' ? 'Replaced / paused' : 'Awaiting signature', portal: invitation.status ? String(invitation.status).replace(/_/g, ' ') : 'Not issued' }
+              const sessionEmail = String(invitation.recipient_email || session.signer_email || '').toLowerCase()
+              return { id: session.id, name: invitation.recipient_name || session.signer_name || 'Seller', email: sessionEmail, role: session.is_primary_document_contact ? 'Primary contact' : 'Co-signer', signing: String(session.status || 'active') === 'signed' ? 'Signed' : String(session.status || 'active') === 'revoked' ? 'Replaced / paused' : 'Awaiting signature', portal: invitation.status ? String(invitation.status).replace(/_/g, ' ') : 'Not issued', active: String(session.status || 'active') === 'active', rawLink: lastSellerDocumentSigningLinks[session.id] || lastSellerDocumentSigningLinks[sessionEmail] || '' }
             })
             const currentSigningPack = sellerDocumentSigningSessions.find((session) => session?.is_primary_document_contact && ['active', 'signed'].includes(String(session?.status || ''))) || sellerDocumentSigningSessions.find((session) => ['active', 'signed'].includes(String(session?.status || '')))
             const currentFica = currentSigningPack?.signingPackSummary?.seller || {}
             const currentPackIncludesFica = Array.isArray(currentSigningPack?.signingPackSummary?.selectedDocuments) && currentSigningPack.signingPackSummary.selectedDocuments.includes('fica')
-            const currentFicaRows = [
-              ['Name', [currentFica.firstName, currentFica.surname].filter(Boolean).join(' ') || currentFica.name],
-              ['ID / passport', currentFica.idNumber], ['Date of birth', currentFica.dateOfBirth], ['Nationality', currentFica.nationality],
-              ['Residence', currentFica.countryOfResidence], ['Address', currentFica.residentialAddress], ['Tax number', currentFica.incomeTaxNumber],
-              ['Email', currentFica.email], ['Phone', currentFica.phone], ['Occupation', currentFica.occupation], ['Source of funds', currentFica.sourceOfFunds],
-            ].filter(([, value]) => String(value || '').trim())
+            const currentFicaLegalType = String(currentFica.legalType || '').trim().toLowerCase()
+            const currentFicaIsTrust = ['trust', 'foreign_trust'].includes(currentFicaLegalType)
+            const currentFicaIsEntity = ['company', 'close_corporation', 'foreign_company', 'trust', 'foreign_trust', 'deceased_estate'].includes(currentFicaLegalType)
+            const currentFicaRows = (currentFicaIsEntity
+              ? [
+                  ['Legal owner type', currentFicaLegalType.replaceAll('_', ' ')],
+                  [currentFicaIsTrust ? 'Trust name' : 'Entity name', currentFicaIsTrust ? currentFica.trustName || currentFica.name : currentFica.companyName || currentFica.name],
+                  [currentFicaIsTrust ? 'Trust registration' : 'Company registration', currentFicaIsTrust ? currentFica.trustRegistrationNumber : currentFica.companyRegistrationNumber],
+                  ['Registered address', currentFicaIsTrust ? currentFica.trustRegisteredAddress : currentFica.companyRegisteredAddress],
+                  ['Email', currentFica.email], ['Phone', currentFica.phone],
+                ]
+              : [
+                  ['Name', [currentFica.firstName, currentFica.surname].filter(Boolean).join(' ') || currentFica.name],
+                  ['ID / passport', currentFica.idNumber], ['Date of birth', currentFica.dateOfBirth], ['Nationality', currentFica.nationality],
+                  ['Residence', currentFica.countryOfResidence], ['Address', currentFica.residentialAddress], ['Tax number', currentFica.incomeTaxNumber],
+                  ['Email', currentFica.email], ['Phone', currentFica.phone], ['Occupation', currentFica.occupation], ['Source of funds', currentFica.sourceOfFunds],
+                ]).filter(([, value]) => String(value || '').trim())
+            const correctionResolutionRequestIds = new Set(sellerSigningCorrectionActivities
+              .filter((activity) => String(activity?.activity_type || '') === 'seller_signing_pack_correction_actioned')
+              .map((activity) => String(activity?.metadata?.sourceRequestActivityId || ''))
+              .filter(Boolean))
+            const pendingSigningCorrections = sellerSigningCorrectionActivities
+              .filter((activity) => String(activity?.activity_type || '') === 'seller_signing_pack_post_signature_correction_requested')
+              .filter((activity) => !correctionResolutionRequestIds.has(String(activity?.id || '')))
             const portalTasks = Array.isArray(sellerPortalTaskPlan.task_plan) ? sellerPortalTaskPlan.task_plan : []
             const statusDotClass = (complete, required = true) => {
               if (complete) return 'bg-[#1f9d61]'
@@ -15556,7 +15619,9 @@ function AgentListingDetail() {
                 {portalSignerRows.length ? (
                   <article className="rounded-[24px] border border-[#d8e6f2] bg-[#fbfdff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
                     <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Seller Portal status</h3><p className="mt-1 text-sm text-[#607387]">Signing, invitation delivery, and outstanding seller documents for this listing.</p></div><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={downloadSellerSigningAudit} disabled={!sellerDocumentSigningSessions.length}><Download size={14} />Download audit</Button><Button type="button" size="sm" variant="secondary" onClick={() => void loadSellerDocumentSigningSessions()} disabled={sellerDocumentSigningSessionsLoading}>{sellerDocumentSigningSessionsLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}Refresh</Button></div></div>
-                    <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#dce6f2] bg-white"><table className="min-w-full text-left text-sm"><thead className="bg-[#f5f9fc] text-xs text-[#607387]"><tr><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Signing</th><th className="px-3 py-2">Portal invitation</th></tr></thead><tbody>{portalSignerRows.map((owner) => <tr key={owner.id} className="border-t border-[#edf2f7]"><td className="px-3 py-3"><p className="font-semibold text-[#243d56]">{owner.name}</p><p className="text-xs text-[#607387]">{owner.email || 'Email pending'}</p></td><td className="px-3 py-3 text-[#425970]">{owner.role}</td><td className="px-3 py-3 text-[#425970]">{owner.signing}</td><td className="px-3 py-3 capitalize text-[#425970]">{owner.portal}</td></tr>)}</tbody></table></div>
+                    <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#dce6f2] bg-white"><table className="min-w-full text-left text-sm"><thead className="bg-[#f5f9fc] text-xs text-[#607387]"><tr><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Signing</th><th className="px-3 py-2">Portal invitation</th><th className="px-3 py-2">Delivery</th></tr></thead><tbody>{portalSignerRows.map((owner) => <tr key={owner.id} className="border-t border-[#edf2f7]"><td className="px-3 py-3"><p className="font-semibold text-[#243d56]">{owner.name}</p><p className="text-xs text-[#607387]">{owner.email || 'Email pending'}</p></td><td className="px-3 py-3 text-[#425970]">{owner.role}</td><td className="px-3 py-3 text-[#425970]">{owner.signing}</td><td className="px-3 py-3 capitalize text-[#425970]">{owner.portal}</td><td className="px-3 py-3">{owner.active ? <div className="flex flex-wrap gap-2">{owner.rawLink ? <button type="button" onClick={() => void copyLastSellerDocumentSigningLink(owner.rawLink)} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[#dbe6f2] px-2 text-xs font-semibold text-[#35546c]"><Copy size={12} />Copy link</button> : null}<button type="button" onClick={() => void resendSellerDocumentSigningSession(owner.id)} disabled={sellerDocumentSigningSessionAction === `resend:${owner.id}`} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[#dbe6f2] px-2 text-xs font-semibold text-[#35546c] disabled:opacity-60">{sellerDocumentSigningSessionAction === `resend:${owner.id}` ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}Send fresh link</button></div> : <span className="text-xs text-[#607387]">—</span>}</td></tr>)}</tbody></table></div>
+                    <p className="mt-3 text-xs leading-5 text-[#607387]">A fresh link is safe for email-recovery: it invalidates the previous secure URL and records the reissue in the listing audit.</p>
+                    {pendingSigningCorrections.length ? <div className="mt-4 rounded-[14px] border border-[#f2dfbd] bg-[#fff9ec] p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-sm font-semibold text-[#7a5a17]">Seller correction requests</p><p className="mt-1 text-xs leading-5 text-[#7a5a17]">These requests were made after signing. Preparing a replacement keeps the signed pack intact and links the new pack to the request.</p></div><span className="rounded-full bg-white/70 px-2.5 py-1 text-xs font-semibold text-[#7a5a17]">{pendingSigningCorrections.length} open</span></div><div className="mt-3 space-y-2">{pendingSigningCorrections.map((request) => <div key={request.id} className="rounded-xl border border-[#f2dfbd] bg-white/80 p-3"><p className="text-sm font-semibold text-[#5f4610]">{request.metadata?.issue || request.activity_description || 'Seller requested a correction.'}</p><p className="mt-1 text-xs text-[#7a5a17]">Requested {request.created_at ? new Date(request.created_at).toLocaleString('en-ZA') : 'recently'}</p><Button type="button" size="sm" className="mt-3" onClick={() => openSellerDocumentSend({ fica: true, mandate: true }, request)}>Prepare replacement pack</Button></div>)}</div></div> : null}
                     {currentPackIncludesFica ? <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-4"><div className="flex flex-wrap items-start justify-between gap-2"><div><p className="text-sm font-semibold text-[#243d56]">Shared FICA details in this signing pack</p><p className="mt-1 text-xs leading-5 text-[#607387]">This is the current unsigned-pack record. Updates made by the primary contact are reflected here for the agent and every signer.</p></div><span className="rounded-full bg-[#edf7f1] px-2.5 py-1 text-xs font-semibold text-[#187446]">{String(currentSigningPack?.status || '') === 'signed' ? 'Signed pack' : 'Live pack'}</span></div>{currentFicaRows.length ? <dl className="mt-3 grid gap-x-5 gap-y-2 text-sm sm:grid-cols-2">{currentFicaRows.map(([label, value]) => <div key={label} className="grid grid-cols-[8rem_minmax(0,1fr)] gap-2"><dt className="font-semibold text-[#6b7d93]">{label}</dt><dd className="break-words text-[#243d56]">{value}</dd></div>)}</dl> : <p className="mt-3 text-sm text-[#607387]">No shared FICA details have been saved yet.</p>}</div> : null}
                     {sellerSigningReplacements.length ? <div className="mt-4 rounded-[14px] border border-[#f2dfbd] bg-[#fff9ec] p-4"><p className="text-sm font-semibold text-[#7a5a17]">Correction history</p><ul className="mt-2 space-y-2 text-sm text-[#7a5a17]">{sellerSigningReplacements.slice(0, 3).map((replacement) => <li key={replacement.id} className="rounded-lg bg-white/70 px-3 py-2"><span className="font-semibold">{replacement.created_at ? new Date(replacement.created_at).toLocaleDateString('en-ZA') : 'Previous pack'}</span> · {replacement.reason || 'Correction recorded'}<span className="mt-1 block text-xs">Source {String(replacement.superseded_signing_group_id || '').slice(0, 8)} → version {String(replacement.replacement_signing_group_id || '').slice(0, 8)}</span></li>)}</ul></div> : null}
                     <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-3"><p className="text-sm font-semibold text-[#243d56]">Outstanding portal documents</p>{portalTasks.length ? <div className="mt-2 flex flex-wrap gap-2">{portalTasks.map((task) => <span key={task.key} className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-xs font-semibold text-[#35546c]">{task.title || task.key}</span>)}</div> : <p className="mt-1 text-sm text-[#607387]">No outstanding seller-visible document tasks.</p>}</div>

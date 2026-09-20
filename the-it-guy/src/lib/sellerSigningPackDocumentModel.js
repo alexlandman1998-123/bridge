@@ -14,13 +14,15 @@ function sellerRows(pack = {}) {
     row('Nationality', seller.nationality), row('Country of residence', seller.countryOfResidence), row('Marital status', label(seller.maritalStatus)),
     row('Email', seller.email), row('Mobile', seller.phone), row('Occupation', seller.occupation), row('Source of funds', seller.sourceOfFunds),
     row('Company', seller.companyName), row('Company registration number', seller.companyRegistrationNumber),
-    row('Trust', seller.trustName), row('Trust registration number', seller.trustRegistrationNumber),
+    row('Company registered address', seller.companyRegisteredAddress),
+    row('Trust', seller.trustName), row('Trust registration number', seller.trustRegistrationNumber), row('Trust registered address', seller.trustRegisteredAddress),
   ].filter(Boolean)
 }
 
 function partyRows(seller = {}) {
   const parties = Array.isArray(seller.parties) ? seller.parties : []
-  if (parties.length <= 1) return []
+  const entity = ['company', 'close_corporation', 'foreign_company', 'trust', 'foreign_trust', 'deceased_estate'].includes(text(seller.legalType).toLowerCase())
+  if (!parties.length || (parties.length === 1 && !entity)) return []
   return parties.flatMap((party, index) => {
     const person = record(party); const title = `${text(person.role) || 'Seller'} ${index + 1}`
     return [

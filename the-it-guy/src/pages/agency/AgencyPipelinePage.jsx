@@ -4060,6 +4060,16 @@ function isStaleKingstonsBaselineDocumentRow(documentRow = {}) {
 
 function getSellerLeadDocumentStatusMeta(documentRow = {}) {
   const hasFile = sellerLeadDocumentHasFileEvidence(documentRow)
+  // A post-onboarding document can be an intentionally generated HTML/PDF
+  // artefact rather than an uploaded file. Count it as evidence only when
+  // the lifecycle explicitly permits it to be downloaded; an unapproved
+  // FICA/mandate draft must not look like a completed signed document.
+  const hasAvailableGeneratedArtifact = Boolean(
+    normalizeText(documentRow?.generatedHtml || documentRow?.generated_html) &&
+    documentRow?.canDownload !== false &&
+    documentRow?.can_download !== false,
+  )
+  const hasDocumentEvidence = hasFile || hasAvailableGeneratedArtifact
   const rawStatus = normalizeText(
     documentRow?.statusLabel || documentRow?.status || documentRow?.documentStatus || documentRow?.document_status ||
     (!hasFile ? documentRow?.signingStatus?.label : ''),
@@ -4075,7 +4085,7 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
       Icon: AlertTriangle,
     }
   }
-  if (hasFile && /(approved|complete|completed|signed|verified|accepted|done)/.test(status)) {
+  if (hasDocumentEvidence && /(approved|complete|completed|signed|verified|accepted|done)/.test(status)) {
     return {
       state: 'complete',
       label: rawStatus || 'Complete',
@@ -4084,7 +4094,7 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
       Icon: CheckCircle2,
     }
   }
-  if (hasFile) {
+  if (hasDocumentEvidence) {
     return {
       state: 'review',
       label: rawStatus || 'Uploaded',
@@ -4485,6 +4495,17 @@ function mapSellerLeadDocumentSourceRow(row = {}) {
   const packetId = firstWorkspaceText(row?.packetId, row?.packet_id, upload.packetId, upload.packet_id, originalDocument.packetId, originalDocument.packet_id)
   const packetVersionId = firstWorkspaceText(row?.packetVersionId, row?.packet_version_id, upload.packetVersionId, upload.packet_version_id, originalDocument.packetVersionId, originalDocument.packet_version_id)
   const canonicalKey = getSellerLeadDocumentCanonicalKey({ ...row, key, label })
+  const canUpload = row?.canUpload !== false && row?.can_upload !== false && upload?.canUpload !== false && upload?.can_upload !== false
+  const canDownload = row?.canDownload !== false && row?.can_download !== false && upload?.canDownload !== false && upload?.can_download !== false
+  const completionRoute = firstWorkspaceText(
+    row?.completionRoute,
+    row?.completion_route,
+    upload?.completionRoute,
+    upload?.completion_route,
+    originalDocument?.completionRoute,
+    originalDocument?.completion_route,
+  )
+  const sourceDocument = normalizeText(originalDocument?.source || upload?.source)
 
   return {
     ...row,
@@ -4519,12 +4540,27 @@ function mapSellerLeadDocumentSourceRow(row = {}) {
     generated_html: generatedHtml,
     generatedFileName,
     generated_file_name: generatedFileName,
+    canUpload,
+    can_upload: canUpload,
+    canDownload,
+    can_download: canDownload,
+    downloadReason: firstWorkspaceText(row?.downloadReason, row?.download_reason, upload?.downloadReason, upload?.download_reason, originalDocument?.downloadReason, originalDocument?.download_reason),
+    download_reason: firstWorkspaceText(row?.downloadReason, row?.download_reason, upload?.downloadReason, upload?.download_reason, originalDocument?.downloadReason, originalDocument?.download_reason),
+    completionRoute,
+    completion_route: completionRoute,
+    isGeneratedDraft: row?.isGeneratedDraft === true || row?.is_generated_draft === true || upload?.isGeneratedDraft === true || upload?.is_generated_draft === true || originalDocument?.isGeneratedDraft === true || originalDocument?.is_generated_draft === true,
+    is_generated_draft: row?.isGeneratedDraft === true || row?.is_generated_draft === true || upload?.isGeneratedDraft === true || upload?.is_generated_draft === true || originalDocument?.isGeneratedDraft === true || originalDocument?.is_generated_draft === true,
+    sourceDocument,
+    source_document: sourceDocument,
     uploadedFileName: firstWorkspaceText(upload.fileName, row.uploadedFileName, originalDocument.fileName, originalDocument.file_name, originalDocument.document_name, generatedFileName),
     packetId,
     packet_id: packetId,
     packetVersionId,
     packet_version_id: packetVersionId,
-    canonicalFinalArtifact: Boolean(canonicalKey === 'signed_mandate' && packetId && packetVersionId && !url),
+    // A packet/version pair exists as soon as a signing request is prepared.
+    // It is not a final signed mandate until the authoritative source marks
+    // it as one. Otherwise the Documents tab incorrectly exposes Download.
+    canonicalFinalArtifact: row?.canonicalFinalArtifact === true || originalDocument?.source === 'document_packets.final_signed_artifact',
     originalDocument,
   }
 }
@@ -12017,10 +12053,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     emailStatus: 'idle',
     link: '',
     recipient: '',
-    preparationMs: null,
-    resendSubmissionMs: null,
-    deliveryPersistenceMs: null,
-    totalEmailMs: null,
     error: '',
   })
   const [sellerFollowUpSending, setSellerFollowUpSending] = useState(false)
@@ -24271,10 +24303,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       emailStatus: 'idle',
       link: '',
       recipient: sellerEmail,
-      preparationMs: null,
-      resendSubmissionMs: null,
-      deliveryPersistenceMs: null,
-      totalEmailMs: null,
       error: '',
     })
     try {
@@ -24386,7 +24414,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             linkStatus: 'ready',
             emailStatus: 'sending',
             link: onboardingLink,
-            preparationMs: Number.isFinite(onboarding?.preparationMs) ? onboarding.preparationMs : null,
           }))
         }
       } else {
@@ -24542,7 +24569,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       if (isSupabaseConfigured) {
         try {
-          const emailStartedAt = typeof performance !== 'undefined' ? performance.now() : Date.now()
           const agencyEmailBranding = resolveAgencyOfferEmailBranding({
             organisationId,
             organisationName,
@@ -24607,7 +24633,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 setSellerOnboardingDeliveryState((previous) => ({
                   ...previous,
                   emailStatus: 'failed',
-                  totalEmailMs: Math.max(0, Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - emailStartedAt)),
                   error: emailError?.message || 'Email could not be sent.',
                 }))
                 return
@@ -24623,15 +24648,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               setSellerOnboardingDeliveryState((previous) => ({
                 ...previous,
                 emailStatus: 'sent',
-                resendSubmissionMs: Number.isFinite(emailResult?.timings?.resendSubmissionMs)
-                  ? emailResult.timings.resendSubmissionMs
-                  : null,
-                deliveryPersistenceMs: Number.isFinite(emailResult?.timings?.deliveryPersistenceMs)
-                  ? emailResult.timings.deliveryPersistenceMs
-                  : null,
-                totalEmailMs: Number.isFinite(emailResult?.timings?.totalMs)
-                  ? emailResult.timings.totalMs
-                  : Math.max(0, Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - emailStartedAt)),
                 error: '',
               }))
             })
@@ -24644,7 +24660,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               setSellerOnboardingDeliveryState((previous) => ({
                 ...previous,
                 emailStatus: 'failed',
-                totalEmailMs: Math.max(0, Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - emailStartedAt)),
                 error: emailError?.message || 'Email could not be sent.',
               }))
             })
@@ -26639,7 +26654,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function sendSellerLeadSigningPack() {
     const listingId = normalizeText(selectedLeadLinkedListingId)
     const leadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLead?.id)
-    if (!listingId || sellerSigningPackSaving) return
+    if (sellerSigningPackSaving) return
+    // Never fail silently when the lead has not hydrated its private-listing
+    // link yet. This was the one early return that made “Send FICA + mandate”
+    // appear to do nothing.
+    if (!listingId) {
+      setSellerSigningPackError('This seller lead is still loading its onboarding record. Close this window, reload the lead, and try again. No signing pack has been sent.')
+      setSellerSigningPackModalOpen(true)
+      return
+    }
     const recipients = getSellerLeadSigningRecipients()
     const incompleteRecipients = recipients.map((signer, index) => {
       const missing = [!signer.name && 'full name', !isValidEmail(signer.email) && 'valid email'].filter(Boolean)
@@ -32149,15 +32172,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       ? 'Email sending'
                       : 'Email not started'}
               </span>
-              {Number.isFinite(sellerOnboardingDeliveryState.preparationMs) ? (
-                <span className="text-xs text-[#6b7f92]">Link {sellerOnboardingDeliveryState.preparationMs} ms</span>
-              ) : null}
-              {Number.isFinite(sellerOnboardingDeliveryState.resendSubmissionMs) ? (
-                <span className="text-xs text-[#6b7f92]">Resend {sellerOnboardingDeliveryState.resendSubmissionMs} ms</span>
-              ) : null}
-              {Number.isFinite(sellerOnboardingDeliveryState.deliveryPersistenceMs) ? (
-                <span className="text-xs text-[#6b7f92]">Delivery log {sellerOnboardingDeliveryState.deliveryPersistenceMs} ms</span>
-              ) : null}
             </div>
             {sellerOnboardingDeliveryState.link ? (
               <div className="flex items-center gap-2">
@@ -39714,23 +39728,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const isOwnershipDriven = selectedLeadHasKingstonsPipelineSignal && (requirementLane === 'ownership_driven' || requirementSection === 'seller_identity_fica')
                         const isPackDocument = selectedLeadHasKingstonsPipelineSignal && KINGSTONS_SELLER_PACK_KEY_SET.has(basePackDocumentKey || documentKey)
                         const isFicaDocument = basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION || isOwnershipDriven
-                        const requiresOwnershipSetup = needsSellerOwnershipSetup({ sellerSubject: documentRow.sellerSubject })
+                        const isPostOnboardingDocument = ['seller_onboarding', 'agent_review_signing_pack', 'manual_upload'].includes(normalizeKey(documentRow.completionRoute || documentRow.completion_route))
+                        const requiresOwnershipSetup = !isPostOnboardingDocument && needsSellerOwnershipSetup({ sellerSubject: documentRow.sellerSubject })
                         const detailsCaptured = hasKingstonsSellerPackDetailsCompletionSignal(selectedKingstonsSellerPack)
                         const canUseKingstonsUpload = isFormalValuation || ((isPackDocument || isOwnershipDriven) && (!isFicaDocument || detailsCaptured))
                         const isSignedMandate = !selectedLeadHasKingstonsPipelineSignal && basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
                         const uploadKey = normalizeText(documentRow.id || documentRow.requirementId || documentRow.requirement_id || documentKey || documentRow.label)
                         const uploadBusy = sellerLeadDocumentUploadingKey === uploadKey || (isFormalValuation ? formalValuationUploading : sellerPackUploadingKey === documentKey)
                         return <>
-                          {hasFile || generatedHtml || documentRow.canonicalFinalArtifact ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => {
+                          {(documentRow.canDownload !== false && documentRow.can_download !== false) && (hasFile || generatedHtml || documentRow.canonicalFinalArtifact) ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => {
                             if (generatedHtml && !documentStoragePath && !documentUrl) void handleDownloadGeneratedSellerLeadDocument(documentRow, generatedHtml)
                             else if (documentRow.canonicalFinalArtifact && !documentStoragePath && !documentUrl) void handleOpenSellerLeadFinalSignedDocument(documentRow)
                             else void handleDownloadSellerLeadDocumentUrl(documentRow)
                           }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60"><Download className="h-3.5 w-3.5" /> Download</button> : null}
                           {isFicaDocument && requiresOwnershipSetup ? <button type="button" onClick={() => openSellerLeadEditModal('profile')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Set Up Ownership</button> : null}
-                          {isFicaDocument && !requiresOwnershipSetup && !detailsCaptured ? <button type="button" onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Capture details</button> : null}
+                          {isFicaDocument && !isPostOnboardingDocument && !requiresOwnershipSetup && !detailsCaptured ? <button type="button" onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Capture details</button> : null}
                           {requestPresentation.action === 'generate_document' && !hasFile && !generatedHtml ? <button type="button" title={requestPresentation.helpText} onClick={() => setMessage(requestPresentation.helpText)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]"><FileText className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
                           {requestPresentation.action === 'capture_details' ? <button type="button" title={requestPresentation.helpText} onClick={() => openSellerLeadEditModal('property')} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white"><UserRound className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
-                          {requestPresentation.action === 'upload_document' && (!isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
+                          {documentRow.canUpload !== false && documentRow.can_upload !== false && requestPresentation.action === 'upload_document' && (!isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
                             if (isSignedMandate) void handleSellerLeadSignedMandateUpload(event, documentRow)
                             else if (canUseKingstonsUpload) {
                               if (isFormalValuation) void handleKingstonsFormalValuationUpload(event)

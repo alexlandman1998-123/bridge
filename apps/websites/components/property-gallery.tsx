@@ -4,11 +4,6 @@ import Image from 'next/image'
 import { useEffect, useState } from 'react'
 import type { PublicProperty } from '@/lib/types'
 
-function isWebsiteImage(url: string): boolean {
-  if (url.startsWith('/')) return true
-  try { return new URL(url).hostname.endsWith('.supabase.co') } catch { return false }
-}
-
 export function PropertyGallery({ property }: { property: PublicProperty }) {
   const images = property.media.filter((media) => media.type === 'image' && media.url)
   const [open, setOpen] = useState(false)
@@ -21,9 +16,7 @@ export function PropertyGallery({ property }: { property: PublicProperty }) {
     return () => window.removeEventListener('listing-gallery:open', openGallery)
   }, [])
   const show = (index = 0) => { setActive(index); setOpen(true) }
-  const image = (media: PublicProperty['media'][number], sizes: string, priority = false) => isWebsiteImage(media.url)
-    ? <Image src={media.url} alt={media.caption || property.title} fill priority={priority} sizes={sizes} />
-    : <span>{media.caption || property.propertyType}</span>
+  const image = (media: PublicProperty['media'][number], sizes: string, priority = false) => <Image src={media.url} alt={media.caption || property.title} fill priority={priority} sizes={sizes} />
 
   return <>
     <div className="listing-gallery">

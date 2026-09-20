@@ -8,33 +8,33 @@ import type { PublicProperty } from '@/lib/types'
 
 const money = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', maximumFractionDigits: 0 })
 
-function FeatureIcon({ type }: { type: 'bed' | 'bath' | 'parking' }) {
+function FeatureIcon({ type }: { type: 'bed' | 'bath' | 'area' }) {
   if (type === 'bed') return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M3 12h18v7H3zM5 12V8.5A2.5 2.5 0 0 1 7.5 6h2A2.5 2.5 0 0 1 12 8.5V12m0-2.5A2.5 2.5 0 0 1 14.5 7h2A2.5 2.5 0 0 1 19 9.5V12M5 19v2m14-2v2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6"/></svg>
   if (type === 'bath') return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 12h16M6 12V9.5m12 2.5V9.5M5 12c0 4.1 2.6 6 7 6s7-1.9 7-6M8 18v2m8-2v2M8 8a1.5 1.5 0 1 1 3 0v1.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6"/></svg>
-  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M4 14.5 6.5 9h11l2.5 5.5V18H4zM7 18v2m10-2v2M7.5 14.5h.01m8.98 0h.01" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6"/></svg>
+  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none"><path d="M5 5h14v14H5zM9 5v4H5m10-4v4h4M9 19v-4H5m10 4v-4h4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6"/></svg>
 }
 
 function CompactCard({ property, showConsultant }: { property: PublicProperty; showConsultant: boolean }) {
   const image = property.media.find((media) => media.type === 'image' && media.url)
   const href = `/properties/${propertySlug(property)}`
   const features = [
-    property.bedrooms ? { type: 'bed' as const, value: property.bedrooms, label: 'bedrooms' } : null,
-    property.bathrooms ? { type: 'bath' as const, value: property.bathrooms, label: 'bathrooms' } : null,
-    property.parkingBays ? { type: 'parking' as const, value: property.parkingBays, label: 'parking bays' } : null,
-  ].filter(Boolean) as Array<{ type: 'bed' | 'bath' | 'parking'; value: number; label: string }>
+    { type: 'bed' as const, value: property.bedrooms, label: 'bedrooms' },
+    { type: 'bath' as const, value: property.bathrooms, label: 'bathrooms' },
+    { type: 'area' as const, value: property.floorSize, label: 'square metres' },
+  ]
 
   return <article className="featured-property-card">
     <Link className="featured-property-image" href={href} aria-label={`View ${property.title}`}>
-      {image ? <Image src={image.url} alt={image.caption || property.title} fill sizes="(max-width: 760px) 85vw, (max-width: 1120px) 46vw, 28vw" /> : <div className="featured-property-placeholder" />}
+      {image ? <Image src={image.url} alt={image.caption || property.title} fill quality={88} sizes="(max-width: 760px) 85vw, (max-width: 1120px) 46vw, 28vw" /> : <div className="featured-property-placeholder" />}
     </Link>
     <Link className="featured-property-details" href={href} aria-label={`View ${property.title}`}>
       <strong>{property.price ? money.format(property.price) : 'Price on request'}</strong>
       <span className="featured-property-suburb">{property.suburb || 'Location on request'}</span>
       {property.province ? <span className="featured-property-region">{property.province}</span> : null}
-      {features.length ? <span className="featured-property-divider" aria-hidden="true" /> : null}
-      {features.length ? <span className="featured-property-features">{features.map((feature) => <span key={feature.type}><FeatureIcon type={feature.type} /><span>{feature.value}</span><span className="sr-only"> {feature.label}</span></span>)}</span> : null}
+      <span className="featured-property-divider" aria-hidden="true" />
+      <span className="featured-property-features">{features.map((feature) => <span key={feature.type}><FeatureIcon type={feature.type} /><span>{feature.value || '—'}{feature.type === 'area' && feature.value ? ' m²' : ''}</span><span className="sr-only"> {feature.label}</span></span>)}</span>
     </Link>
-    {showConsultant && property.consultant ? <div className="featured-property-agent">{property.consultant.avatarUrl ? <Image src={property.consultant.avatarUrl} alt="" aria-hidden="true" width={40} height={40} /> : <span aria-hidden="true">{property.consultant.name.split(/\s+/).map(part => part[0]).join('').slice(0, 2)}</span>}<p><small>Listed with</small><b>{property.consultant.name}</b></p></div> : null}
+    {showConsultant ? <div className="featured-property-agent">{property.consultant?.avatarUrl ? <Image src={property.consultant.avatarUrl} alt="" aria-hidden="true" width={40} height={40} /> : <span aria-hidden="true">{(property.consultant?.name || 'LWP Properties').split(/\s+/).map(part => part[0]).join('').slice(0, 2)}</span>}<p><small>Listed with</small><b>{property.consultant?.name || 'LWP Properties team'}</b></p></div> : null}
   </article>
 }
 

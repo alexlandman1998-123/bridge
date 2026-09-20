@@ -178,7 +178,10 @@ function mapSnapshotMedia(value: unknown): PublicProperty['media'] {
     if (!item || typeof item !== 'object') return []
     const row = item as Record<string, unknown>
     const type = String(row.media_type || '') as PublicProperty['media'][number]['type']
-    const url = String(row.file_url || '')
+    // LWP's public feed often stores a 304px thumbnail URL. Strip only the
+    // thumbnail transform so Next Image can optimise the original asset for
+    // the card's actual display size instead of enlarging a soft preview.
+    const url = String(row.file_url || '').replace(/_t_c(?:_[a-z]+_\d+)+(?=\.[a-z0-9]+$)/i, '')
     if (!allowed.has(type) || !/^https:\/\/[^\s]+$/i.test(url)) return []
     return [{ type, url, caption: row.caption ? String(row.caption) : undefined, order: Number(row.sort_order || 0) }]
   })

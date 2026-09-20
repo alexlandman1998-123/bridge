@@ -59,6 +59,6 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
       </details>
     </nav>
     {site.name === 'LWP Properties' ? <ValuationModal privacyPolicyUrl={site.privacyPolicyUrl} triggerClassName="header-cta" /> : <Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link>}
-    <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={site.name === 'LWP Properties' ? 'See your home’s value' : homeSeekers ? 'Book a valuation' : 'Enquire now'} />
+    <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={site.name === 'LWP Properties' ? 'See your home’s value' : homeSeekers ? 'Book a valuation' : 'Enquire now'} brandName={site.name} brandNote={site.name === 'LWP Properties' ? 'Beyond the sale.' : undefined} />
   </header>
 }

@@ -139,8 +139,10 @@ export function buildSellerOnboardingSigningPackSnapshot({
     vatNumber: firstText(canonicalSeller.vat_number, form.vatNumber, form.vat_number),
     companyName: firstText(canonicalSeller.company?.name, form.companyName, form.company_name),
     companyRegistrationNumber: firstText(canonicalSeller.company?.registration_number, form.companyRegistrationNumber, form.company_registration_number),
+    companyRegisteredAddress: firstText(canonicalSeller.company?.registered_address, form.companyRegisteredAddress, form.company_registered_address),
     trustName: firstText(canonicalSeller.trust?.name, form.trustName, form.trust_name),
     trustRegistrationNumber: firstText(canonicalSeller.trust?.registration_number, form.trustRegistrationNumber, form.trust_registration_number),
+    trustRegisteredAddress: firstText(canonicalSeller.trust?.registered_address, form.trustRegisteredAddress, form.trust_registered_address),
   }
   const parties = canonicalParties(canonicalSeller)
   if (!parties.length) parties.push(...selectedParties(form, seller))

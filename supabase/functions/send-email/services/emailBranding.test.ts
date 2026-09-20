@@ -6,6 +6,7 @@ import {
   normalizeBrandColor,
   normalizeEmailAddress,
   normalizeEmailBranding,
+  normalizeEmailLogoUrl,
   resolveEmailBranding,
 } from "./emailBranding.ts";
 
@@ -76,6 +77,19 @@ Deno.test("normalizeEmailBranding accepts canonical and legacy payload aliases",
   assertEquals(branding.secondaryColor, "#fedcba");
   assertEquals(branding.supportEmail, "hello@example.test");
   assertEquals(branding.supportPhone, "+27 11 000 0000");
+});
+
+Deno.test("email logo URLs use a durable public Storage path", () => {
+  assertEquals(
+    normalizeEmailLogoUrl(
+      "https://project.supabase.co/storage/v1/object/sign/brand-assets/kingdom/logo.png?token=temporary",
+    ),
+    "https://project.supabase.co/storage/v1/object/public/brand-assets/kingdom/logo.png",
+  );
+  assertEquals(
+    normalizeEmailLogoUrl("https://cdn.example.test/kingdom-logo.png"),
+    "https://cdn.example.test/kingdom-logo.png",
+  );
 });
 
 Deno.test("extractEmailBrandingFromPayload reads top-level and metadata fields", () => {
@@ -184,6 +198,40 @@ Deno.test("resolveEmailBranding merges database sources and lets payload fields 
   assertEquals(branding.supportEmail, "org@example.test");
   assertEquals(branding.supportPhone, "+27 21 000 0000");
   assertEquals(branding.website, "https://org.example.test");
+});
+
+Deno.test("resolveEmailBranding uses the current agency-onboarding dark-header logo", async () => {
+  const branding = await resolveEmailBranding({
+    supabase: createMockSupabase({
+      rows: {
+        organisation_branding: {
+          organisation_id: "org-current-onboarding-brand",
+          logo_light_url: "https://cdn.example.test/legacy-light-logo.png",
+        },
+        organisation_settings: {
+          organisation_id: "org-current-onboarding-brand",
+          settings_json: {
+            agencyOnboarding: {
+              branding: {
+                logoDark: "https://cdn.example.test/current-dark-header-logo.png",
+                logoLight: "https://cdn.example.test/current-light-surface-logo.png",
+              },
+            },
+          },
+        },
+      },
+    }),
+    organisationId: "org-current-onboarding-brand",
+  });
+
+  assertEquals(
+    branding.logoDarkUrl,
+    "https://cdn.example.test/current-dark-header-logo.png",
+  );
+  assertEquals(
+    branding.logoLightUrl,
+    "https://cdn.example.test/current-light-surface-logo.png",
+  );
 });
 
 Deno.test("resolveEmailBranding uses explicit organisation id for lookups and payload for final copy", async () => {

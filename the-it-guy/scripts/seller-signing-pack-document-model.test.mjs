@@ -22,4 +22,17 @@ const fica = buildSellerSigningDocumentModel({
 }, 'fica')
 assert.match(fica.sections[0].rows.map((item) => item.label).join('|'), /Authorised signer 1/)
 
+const companyFica = buildSellerSigningDocumentModel({
+  seller: {
+    name: 'Example Holdings (Pty) Ltd', legalType: 'company', companyName: 'Example Holdings (Pty) Ltd',
+    companyRegistrationNumber: '2020/123456/07', companyRegisteredAddress: '2 Business Park, Pretoria',
+    parties: [{ role: 'Director', name: 'Nandi Dlamini', idNumber: '8001015009087', email: 'nandi@example.com' }],
+  },
+  property: { address: '2 Business Park, Pretoria' },
+}, 'fica')
+const companyRows = companyFica.sections[0].rows.map((item) => `${item.label}: ${item.value}`).join('|')
+assert.match(companyRows, /Company: Example Holdings \(Pty\) Ltd/)
+assert.match(companyRows, /Company registration number: 2020\/123456\/07/)
+assert.match(companyRows, /Director 1: Nandi Dlamini/)
+
 console.log('seller signing pack document model checks passed')

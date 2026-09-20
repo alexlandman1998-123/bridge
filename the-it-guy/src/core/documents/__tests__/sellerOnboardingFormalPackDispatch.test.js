@@ -13,6 +13,9 @@ test('records digital delivery without retaining signer links or treating it as 
     response: {
       delivery: 'partial',
       signingGroupId: 'group-1',
+      correctedSigningGroupId: 'signed-group-1',
+      isAmendment: true,
+      signedSessionsRetained: 1,
       expiresAt: '2026-09-26T10:30:00.000Z',
       signingLinks: [
         { signerName: 'Alex', signerEmail: 'alex@example.com', delivery: 'sent', signingLink: 'secret-1' },
@@ -24,6 +27,9 @@ test('records digital delivery without retaining signer links or treating it as 
   assert.equal(dispatch.deliveredRecipientCount, 1)
   assert.equal(dispatch.recipientCount, 2)
   assert.equal(dispatch.signingGroupId, 'group-1')
+  assert.equal(dispatch.supersededSigningGroupId, 'signed-group-1')
+  assert.equal(dispatch.isAmendment, true)
+  assert.equal(dispatch.signedSessionsRetained, 1)
   assert.equal('signingLink' in dispatch.recipients[0], false)
   assert.equal(JSON.stringify(dispatch).includes('secret-1'), false)
   assert.equal(JSON.stringify(dispatch).includes('signedAt'), false)
