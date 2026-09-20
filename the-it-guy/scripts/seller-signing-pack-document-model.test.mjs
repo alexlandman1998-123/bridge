@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { buildSellerSigningDocumentModel } from '../src/lib/sellerSigningPackDocumentModel.js'
+
+const root = resolve(import.meta.dirname, '..')
+const read = (path) => readFileSync(resolve(root, path), 'utf8')
 
 const disclosure = buildSellerSigningDocumentModel({
   disclosure: { responses: { electrical_faults: { answer: 'yes', note: 'Socket issue' } } },
@@ -34,5 +39,21 @@ const companyRows = companyFica.sections[0].rows.map((item) => `${item.label}: $
 assert.match(companyRows, /Company: Example Holdings \(Pty\) Ltd/)
 assert.match(companyRows, /Company registration number: 2020\/123456\/07/)
 assert.match(companyRows, /Director 1: Nandi Dlamini/)
+
+const riskDataFica = buildSellerSigningDocumentModel({
+  seller: {
+    name: 'Alex', legalType: 'individual', occupation: 'Engineer', sourceOfFunds: 'Salary',
+    idNumber: '9001015000000', residentialAddress: '1 Main Street',
+  },
+}, 'fica')
+const riskDataRows = riskDataFica.sections[0].rows.map((item) => item.label).join('|')
+assert.doesNotMatch(riskDataRows, /Occupation|Source of funds/)
+
+const signingPage = read('src/pages/ListingMandateSigning.jsx')
+const signedDocumentFunction = read('../supabase/functions/listing-mandate-signing/index.ts')
+assert.match(signingPage, /min-w-0 max-w-full/)
+assert.match(signingPage, /showReadOnlyDocumentDetails/)
+assert.doesNotMatch(signingPage, /<FicaField label="Occupation"/)
+assert.doesNotMatch(signedDocumentFunction, /Phone: \$\{escapeHtml\(seller\.phone\)\}<br>Occupation/)
 
 console.log('seller signing pack document model checks passed')

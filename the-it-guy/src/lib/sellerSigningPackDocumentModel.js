@@ -12,7 +12,7 @@ function sellerRows(pack = {}) {
     row('Seller / entity', seller.name), row('First name', seller.firstName), row('Surname', seller.surname),
     row('Legal type', label(seller.legalType)), row('ID / passport number', seller.idNumber), row('Date of birth', seller.dateOfBirth),
     row('Nationality', seller.nationality), row('Country of residence', seller.countryOfResidence), row('Marital status', label(seller.maritalStatus)),
-    row('Email', seller.email), row('Mobile', seller.phone), row('Occupation', seller.occupation), row('Source of funds', seller.sourceOfFunds),
+    row('Email', seller.email), row('Mobile', seller.phone),
     row('Company', seller.companyName), row('Company registration number', seller.companyRegistrationNumber),
     row('Company registered address', seller.companyRegisteredAddress),
     row('Trust', seller.trustName), row('Trust registration number', seller.trustRegistrationNumber), row('Trust registered address', seller.trustRegisteredAddress),
