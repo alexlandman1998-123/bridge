@@ -3,6 +3,7 @@ import {
   createPrivatePropertyClient,
   createPrivatePropertyToken,
   extractPrivatePropertyXmlTag,
+  PRIVATE_PROPERTY_TOKEN_TTL_MS,
   summarizePrivatePropertySoapResponse,
 } from '../server/services/privatePropertyClient.js'
 
@@ -17,6 +18,16 @@ const token = createPrivatePropertyToken({
 assert.equal(token.digest, 'ZrQYLN0HV+XAd4uil/E9Z0whYqM=')
 assert.equal(token.userName, 'Arch9User')
 assert.equal(token.uid, '1738906')
+
+const productionCompatibleToken = createPrivatePropertyToken({
+  username: 'Arch9User',
+  password: 'secret',
+})
+assert.match(productionCompatibleToken.uid, /^\d{7}$/)
+assert.equal(
+  Date.parse(productionCompatibleToken.expires) - Date.parse(productionCompatibleToken.stampTime),
+  PRIVATE_PROPERTY_TOKEN_TTL_MS,
+)
 
 const calls = []
 const fakeFetch = async (url, options) => {

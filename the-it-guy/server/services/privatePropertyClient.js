@@ -1,7 +1,8 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomInt } from 'node:crypto'
 
 export const PRIVATE_PROPERTY_SANDBOX_BASE_URL = 'https://services.sandbox.pp.co.za/AgentImport/AgentImport.asmx'
 export const PRIVATE_PROPERTY_DEFAULT_TIMEOUT_MS = 25000
+export const PRIVATE_PROPERTY_TOKEN_TTL_MS = 24 * 60 * 60 * 1000
 
 export class PrivatePropertySoapError extends Error {
   constructor(message, details = {}) {
@@ -48,15 +49,18 @@ export function createPrivatePropertyTimestamp(date = new Date()) {
 export function createPrivatePropertyToken({
   username,
   password,
-  uid = randomBytes(12).toString('hex'),
-  stampTime = createPrivatePropertyTimestamp(),
-  expires = createPrivatePropertyTimestamp(new Date(Date.now() + 30 * 60 * 1000)),
+  uid,
+  stampTime,
+  expires,
 } = {}) {
+  const generatedAt = new Date()
   const user = normalizePrivatePropertyText(username)
   const pass = normalizePrivatePropertySecret(password)
-  const tokenUid = normalizePrivatePropertyText(uid)
-  const tokenStampTime = normalizePrivatePropertyText(stampTime)
-  const tokenExpires = normalizePrivatePropertyText(expires)
+  const tokenUid = normalizePrivatePropertyText(uid === undefined ? randomInt(1_000_000, 10_000_000) : uid)
+  const tokenStampTime = normalizePrivatePropertyText(stampTime === undefined ? createPrivatePropertyTimestamp(generatedAt) : stampTime)
+  const tokenExpires = normalizePrivatePropertyText(expires === undefined
+    ? createPrivatePropertyTimestamp(new Date(generatedAt.getTime() + PRIVATE_PROPERTY_TOKEN_TTL_MS))
+    : expires)
 
   if (!user) throw new Error('Private Property username is required.')
   if (!pass) throw new Error('Private Property password is required.')
