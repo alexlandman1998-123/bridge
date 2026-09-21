@@ -13,6 +13,7 @@ import {
   parsePrivatePropertyListingEvents,
   parsePrivatePropertyModelRows,
 } from './private-property-cli-utils.mjs'
+import { privatePropertyAgents } from '../api/admin/private-property/agent-mappings.js'
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -98,6 +99,14 @@ assert.equal(events[0].propertyId, 'PRV-202608201031-U8YM')
 assert.equal(events[0].privatePropertyRef, 'T2870287')
 assert.equal(events[0].eventStatus, 'Active')
 assert.equal(extractPrivatePropertyXmlBlocks('<a><b>1</b><b>2</b></a>', 'b').length, 2)
+assert.deepEqual(privatePropertyAgents('<NewDataSet><Agents><AgentId>production-agent-id</AgentId><PrivatePropertyAgentId>internal-id</PrivatePropertyAgentId><firstName>Kevin</firstName><LastName>Croft</LastName><email>kevin@example.com</email></Agents></NewDataSet>'), [{
+  privatePropertyAgentId: 'production-agent-id',
+  privatePropertyInternalId: 'internal-id',
+  email: 'kevin@example.com',
+  firstName: 'Kevin',
+  lastName: 'Croft',
+  active: true,
+}])
 
 const statusUpdateSource = read('scripts/private-property-status-update.mjs')
 assert.match(statusUpdateSource, /--apply/)
