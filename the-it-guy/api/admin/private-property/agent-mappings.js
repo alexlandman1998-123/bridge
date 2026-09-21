@@ -24,8 +24,9 @@ function runtimeEnv() {
 }
 function header(headers = {}, name) { const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name); return normalizePrivatePropertyText(Array.isArray(entry?.[1]) ? entry[1][0] : entry?.[1]) }
 export function privatePropertyAgents(xml = '') {
-  const pluralRows = extractPrivatePropertyXmlBlocks(xml, 'Agents')
-  const rows = pluralRows.length ? pluralRows : extractPrivatePropertyXmlBlocks(xml, 'Agent')
+  const currentRowsXml = String(xml).replace(/<diffgr:before\b[\s\S]*?<\/diffgr:before>/gi, '')
+  const pluralRows = extractPrivatePropertyXmlBlocks(currentRowsXml, 'Agents')
+  const rows = pluralRows.length ? pluralRows : extractPrivatePropertyXmlBlocks(currentRowsXml, 'Agent')
   return rows.map((agent) => ({ privatePropertyAgentId: extractPrivatePropertyXmlTag(agent, 'AgentId'), privatePropertyInternalId: extractPrivatePropertyXmlTag(agent, 'PrivatePropertyAgentId'), email: extractPrivatePropertyXmlTag(agent, 'Email').toLowerCase(), firstName: extractPrivatePropertyXmlTag(agent, 'FirstName'), lastName: extractPrivatePropertyXmlTag(agent, 'LastName'), active: extractPrivatePropertyXmlTag(agent, 'Active').toLowerCase() !== 'false' })).filter((agent) => agent.privatePropertyAgentId)
 }
 function executive(user = {}) { const meta = user.app_metadata || {}; return [meta.role, meta.app_role, ...(Array.isArray(meta.roles) ? meta.roles : [])].some((role) => normalizePrivatePropertyText(role).toLowerCase().replace(/[\s-]+/g, '_') === 'executive') }

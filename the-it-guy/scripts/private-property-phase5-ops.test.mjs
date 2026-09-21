@@ -107,6 +107,7 @@ assert.deepEqual(privatePropertyAgents('<NewDataSet><Agents><AgentId>production-
   lastName: 'Croft',
   active: true,
 }])
+assert.deepEqual(privatePropertyAgents('<diffgr:diffgram xmlns:diffgr="urn:schemas-microsoft-com:xml-diffgram-v1"><NewDataSet><Agents><AgentId>current-agent-id</AgentId><Email>current@example.com</Email></Agents></NewDataSet><diffgr:before><Agents><AgentId>removed-agent-id</AgentId><Email>removed@example.com</Email></Agents></diffgr:before></diffgr:diffgram>').map((agent) => agent.privatePropertyAgentId), ['current-agent-id'])
 
 const statusUpdateSource = read('scripts/private-property-status-update.mjs')
 assert.match(statusUpdateSource, /--apply/)
