@@ -88,6 +88,8 @@ const unitImage = (unit, media) =>
   media.galleryImageUrls?.[0] ||
   media.heroImageUrl ||
   "/demo-listing-images/revo-sales-cover.png";
+const sitePlanImageUrl = (media = {}) =>
+  media.sitePlanUrl || media.masterplanUrl || "";
 const sceneBackgroundStyle = (scene, fallbackUrl) => {
   const crop = normaliseSitePlanViewport(scene?.viewport);
   const horizontal =
@@ -631,7 +633,10 @@ export default function PublicDevelopmentVisualExplorer({
     });
   }, [inventory, selectedId]);
   useEffect(() => {
-    const url = scene?.background?.url || media.sitePlanUrl;
+    // A published visual-map snapshot can legitimately have no background
+    // while an older development still keeps its masterplan in the legacy
+    // field. Keep that map visible rather than falling through to inventory.
+    const url = scene?.background?.url || sitePlanImageUrl(media);
     if (simulatedFailedSceneIds.includes(scene?.id)) {
       queueMicrotask(() => {
         setSceneImageStatus("error");
@@ -669,6 +674,7 @@ export default function PublicDevelopmentVisualExplorer({
     scene?.background?.url,
     scene?.id,
     media.sitePlanUrl,
+    media.masterplanUrl,
     simulatedFailedSceneIds,
   ]);
   useEffect(() => {
@@ -756,7 +762,7 @@ export default function PublicDevelopmentVisualExplorer({
     if (!replaceHistory)
       setSceneHistory((current) => [...current, sceneId].slice(-20));
     if (sceneImageStatus === "ready")
-      setPreviousSceneStyle(sceneBackgroundStyle(scene, media.sitePlanUrl));
+      setPreviousSceneStyle(sceneBackgroundStyle(scene, sitePlanImageUrl(media)));
     setSceneImageStatus("loading");
     setSceneId(nextSceneId);
     setZoom(1);
@@ -977,7 +983,7 @@ export default function PublicDevelopmentVisualExplorer({
         {sceneImageStatus === "ready" ? (
           <div
             className="absolute inset-0 opacity-100 motion-safe:transition-opacity motion-safe:duration-300"
-            style={sceneBackgroundStyle(scene, media.sitePlanUrl)}
+            style={sceneBackgroundStyle(scene, sitePlanImageUrl(media))}
           />
         ) : null}
         <svg

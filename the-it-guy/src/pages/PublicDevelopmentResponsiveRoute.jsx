@@ -293,12 +293,19 @@ export default function PublicDevelopmentResponsiveRoute() {
   const fromPrice = Math.min(...prices);
   const agency =
     text(data.developerCompany).replace(/\s+site$/i, "") || "Revo Property";
-  const hero = media.heroImageUrl || "";
+  // A logo is a brand mark, never a hero or gallery image. Older drafts could
+  // accidentally use the same uploaded logo for every image slot.
+  const developmentLogoUrls = new Set(
+    [media.developmentLogoUrl, media.developmentLogoLightUrl, media.developmentLogoDarkUrl]
+      .map(text)
+      .filter(Boolean),
+  );
+  const heroCandidate = media.coverImageUrl || media.heroImageUrl || "";
+  const hero = developmentLogoUrls.has(text(heroCandidate)) ? "" : heroCandidate;
   const images = [
     ...new Set(
-      [...list(media.galleryImageUrls), ...list(media.imageUrls), hero].filter(
-        Boolean,
-      ),
+      [...list(media.galleryImageUrls), ...list(media.imageUrls), hero]
+        .filter((url) => Boolean(url) && !developmentLogoUrls.has(text(url))),
     ),
   ];
   const enquiry =
@@ -306,14 +313,6 @@ export default function PublicDevelopmentResponsiveRoute() {
     marketing.externalLinks?.bookingViewingUrl ||
     "#enquire";
   const branding = data.organisationBranding || {};
-  // The high-contrast mark is explicitly intended for dark hero and mobile
-  // surfaces. The primary/light record can be a coloured logo.
-  const logoUrl = text(
-    branding.logoHighContrastUrl ||
-      branding.logoUrl ||
-      branding.logoDarkUrl ||
-      branding.logoLightUrl,
-  );
   const brandStyle = {
     "--development-primary": text(branding.primaryColour) || "#073e32",
     "--development-accent": text(branding.accentColour) || "#d0ab55",
@@ -334,24 +333,10 @@ export default function PublicDevelopmentResponsiveRoute() {
   };
   return mobileViewport ? (
     <div className="public-development-mobile" style={brandStyle}>
-      {logoUrl ? (
-        <img
-          className="public-development-mobile-logo"
-          src={logoUrl}
-          alt={`${agency} logo`}
-        />
-      ) : null}
       <MobilePublicDevelopmentExperience {...sharedProps} />
     </div>
   ) : (
     <div className="public-development-desktop" style={brandStyle}>
-      {logoUrl ? (
-        <img
-          className="public-development-revo-logo"
-          src={logoUrl}
-          alt={`${agency} logo`}
-        />
-      ) : null}
       <PublicDevelopmentLandingPage {...sharedProps} />
     </div>
   );

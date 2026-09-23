@@ -24,6 +24,7 @@ export default function MobilePublicDevelopmentExperience({
   const description =
     marketing.listingOverview?.shortDescription ||
     "Contemporary coastal living in the heart of Sea Point.";
+  const developmentLogo = media.developmentLogoLightUrl || media.developmentLogoUrl || "";
   return (
     <main className="min-h-screen bg-[#f5f2eb] pb-20 text-[#14352c]">
       <section
@@ -38,10 +39,7 @@ export default function MobilePublicDevelopmentExperience({
         />
         <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/10 to-[#061d18]/90" />
         <header className="absolute inset-x-0 top-0 z-10 flex h-18 items-center justify-between px-5">
-          <span className="text-[11px] font-semibold tracking-[.15em]">
-            <i className="mr-1 font-serif text-2xl text-[#d0ab55]">R</i>
-            {agency.toUpperCase()}
-          </span>
+          {developmentLogo ? <img src={developmentLogo} alt={`${data.name} logo`} className="h-10 max-w-[160px] object-contain object-left" /> : <span className="text-[11px] font-semibold tracking-[.15em]">{agency.toUpperCase()}</span>}
           <button
             onClick={() => setMenu(true)}
             aria-label="Open navigation"
