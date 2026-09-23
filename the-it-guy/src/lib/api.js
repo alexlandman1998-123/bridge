@@ -1008,9 +1008,12 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
       whyThisDevelopment: '',
     },
     mediaLibrary: {
+      coverImageUrl: '',
       heroImageUrl: '',
       galleryImageUrls: '',
       developmentLogoUrl: '',
+      developmentLogoLightUrl: '',
+      developmentLogoDarkUrl: '',
       sitePlanUrl: '',
       sitePlanViewport: {},
       sitePlanNotShownUnitIds: [],
@@ -2679,6 +2682,9 @@ function normalizeMarketingContent(value) {
       ),
     },
     mediaLibrary: hydrateVisualMapMediaLibrary({
+      coverImageUrl: normalizeTextValue(
+        mediaLibrarySource.coverImageUrl ?? mediaLibrarySource.cover_image_url ?? defaults.mediaLibrary.coverImageUrl,
+      ),
       heroImageUrl: normalizeTextValue(
         mediaLibrarySource.heroImageUrl ?? mediaLibrarySource.hero_image_url ?? defaults.mediaLibrary.heroImageUrl,
       ),
@@ -2691,6 +2697,16 @@ function normalizeMarketingContent(value) {
         mediaLibrarySource.developmentLogoUrl ??
           mediaLibrarySource.development_logo_url ??
           defaults.mediaLibrary.developmentLogoUrl,
+      ),
+      developmentLogoLightUrl: normalizeTextValue(
+        mediaLibrarySource.developmentLogoLightUrl ??
+          mediaLibrarySource.development_logo_light_url ??
+          defaults.mediaLibrary.developmentLogoLightUrl,
+      ),
+      developmentLogoDarkUrl: normalizeTextValue(
+        mediaLibrarySource.developmentLogoDarkUrl ??
+          mediaLibrarySource.development_logo_dark_url ??
+          defaults.mediaLibrary.developmentLogoDarkUrl,
       ),
       sitePlanUrl: normalizeTextValue(
         mediaLibrarySource.sitePlanUrl ?? mediaLibrarySource.site_plan_url ?? defaults.mediaLibrary.sitePlanUrl,

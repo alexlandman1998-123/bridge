@@ -15,6 +15,10 @@ const list = (value) =>
         .split(/\r?\n|,/)
         .map(text)
         .filter(Boolean);
+const publicAssetUrl = (assets, documentType) =>
+  (Array.isArray(assets) ? assets : []).find(
+    (asset) => text(asset?.documentType || asset?.document_type).toLowerCase() === documentType,
+  )?.fileUrl || "";
 const keyFor = (status) => {
   const value = text(status).toLowerCase();
   if (value.includes("reserve") || value.includes("offer")) return "reserved";
@@ -282,7 +286,17 @@ export default function PublicDevelopmentResponsiveRoute() {
 
   const data = state.data;
   const marketing = data.marketing || {};
-  const media = hydrateVisualMapMediaLibrary(marketing.mediaLibrary || {}, {
+  const sourceMedia = marketing.mediaLibrary || {};
+  const media = hydrateVisualMapMediaLibrary({
+    ...sourceMedia,
+    // A published page may predate these media pointers. The curated public
+    // asset list is the safe recovery source for its already-public uploads.
+    coverImageUrl: sourceMedia.coverImageUrl || publicAssetUrl(data.assets, "cover"),
+    masterplanUrl:
+      sourceMedia.masterplanUrl ||
+      sourceMedia.sitePlanUrl ||
+      publicAssetUrl(data.assets, "site_plan"),
+  }, {
     preferPublished: true,
   });
   const inventory = Array.isArray(data.inventory) ? data.inventory : [];
