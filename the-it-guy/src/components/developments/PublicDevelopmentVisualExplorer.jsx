@@ -82,12 +82,21 @@ const money = (value, compact = false) => {
     maximumFractionDigits: 0,
   }).format(amount);
 };
-const unitImage = (unit, media) =>
-  unit.imageUrl ||
-  unit.heroImageUrl ||
-  media.galleryImageUrls?.[0] ||
-  media.heroImageUrl ||
-  "/demo-listing-images/revo-sales-cover.png";
+const imageList = (value) =>
+  (Array.isArray(value) ? value : String(value || "").split(/\r?\n|,/))
+    .map((url) => String(url || "").trim())
+    .filter(Boolean);
+const developmentImages = (media = {}) =>
+  [
+    media.coverImageUrl,
+    ...imageList(media.galleryImageUrls),
+    ...imageList(media.imageUrls),
+    media.heroImageUrl,
+  ].filter((url, index, images) => url && images.indexOf(url) === index);
+// Availability is for choosing a residence, not presenting potentially stale
+// per-unit imports. Keep each card on the approved development cover image.
+const unitImage = (_unit, media) =>
+  developmentImages(media)[0] || "/demo-listing-images/revo-sales-cover.png";
 const sitePlanImageUrl = (media = {}) =>
   media.sitePlanUrl || media.masterplanUrl || "";
 const sceneBackgroundStyle = (scene, fallbackUrl) => {
@@ -199,12 +208,14 @@ function UnitDrawer({
 }) {
   if (!unit) return null;
   const status = STATUS[visualUnitStatus(unit.status)];
+  const images = developmentImages(media);
+  const galleryImages = images.length ? images : [unitImage(unit, media)];
   const plan =
     unit.floorplanUrl ||
     unit.floorPlanUrl ||
     unit.floorplanImageUrl ||
     floorPlanFallback?.url;
-  const capture = () => {
+  const capture = (intent = "enquiry") => {
     try {
       window.sessionStorage.setItem(
         "arch9:development-enquiry-unit",
@@ -212,6 +223,7 @@ function UnitDrawer({
           id: unit.id,
           unitNumber: unit.unitNumber,
           price: unit.price,
+          intent,
         }),
       );
     } catch {
@@ -227,11 +239,16 @@ function UnitDrawer({
       >
         <X size={18} />
       </button>
-      <img
-        src={unitImage(unit, media)}
-        alt=""
-        className="h-52 w-full object-cover md:h-64"
-      />
+      <div className="flex snap-x snap-mandatory overflow-x-auto bg-[#f0eee8]">
+        {galleryImages.map((image, index) => (
+          <img
+            key={image}
+            src={image}
+            alt={`${unit.unitNumber} development image ${index + 1}`}
+            className="h-52 w-full shrink-0 snap-center object-cover md:h-64"
+          />
+        ))}
+      </div>
       <div className="p-6 md:p-8">
         <span
           className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${status.chip}`}
@@ -308,11 +325,20 @@ function UnitDrawer({
         </div>
         <a
           href={enquiry}
-          onClick={capture}
+          onClick={() => capture("enquiry")}
           className="mt-3 flex h-14 items-center justify-center bg-[#073e32] font-semibold text-white"
         >
           Enquire about {unit.unitNumber}
         </a>
+        {visualUnitStatus(unit.status) === "available" ? (
+          <a
+            href={enquiry}
+            onClick={() => capture("reservation")}
+            className="mt-2 flex h-14 items-center justify-center border border-[#073e32] font-semibold text-[#073e32]"
+          >
+            Reserve unit {unit.unitNumber}
+          </a>
+        ) : null}
       </div>
     </aside>
   );
