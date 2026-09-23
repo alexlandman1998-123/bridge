@@ -1,6 +1,7 @@
 import { ArrowRight, Menu, X } from "lucide-react";
 import { useState } from "react";
 import PublicDevelopmentVisualExplorer from "../components/developments/PublicDevelopmentVisualExplorer.jsx";
+import PublicDevelopmentEnquiryForm from "../components/developments/PublicDevelopmentEnquiryForm.jsx";
 const money = (value) =>
   Number(value)
     ? `R${(Number(value) / 1000000).toFixed(Number(value) % 1000000 ? 2 : 0)}m`
@@ -24,6 +25,11 @@ export default function MobilePublicDevelopmentExperience({
   const description =
     marketing.listingOverview?.shortDescription ||
     "Contemporary coastal living in the heart of Sea Point.";
+  const scrollToEnquiry = (event) => {
+    event?.preventDefault();
+    document.getElementById("enquire")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => document.querySelector("#enquire input[name='name']")?.focus(), 550);
+  };
   return (
     <main className="min-h-screen bg-[#f5f2eb] pb-20 text-[#14352c]">
       <section
@@ -179,12 +185,7 @@ export default function MobilePublicDevelopmentExperience({
         <h2 className="mt-4 font-serif text-4xl leading-none">
           Let’s talk about your future home.
         </h2>
-        <a
-          href={enquiry}
-          className="mt-7 flex h-14 items-center justify-center gap-2 bg-[#d0ab55] font-semibold text-[#14352c]"
-        >
-          Enquire now <ArrowRight size={17} />
-        </a>
+        <div className="mt-7"><PublicDevelopmentEnquiryForm developmentName={data.name} agency={agency} enquiry={enquiry} /></div>
       </section>
       {lightbox !== null ? (
         <div className="fixed inset-0 z-[80] grid place-items-center bg-black/95 p-5">
@@ -202,7 +203,8 @@ export default function MobilePublicDevelopmentExperience({
         </div>
       ) : null}
       <a
-        href={enquiry}
+        href="#enquire"
+        onClick={scrollToEnquiry}
         className="fixed inset-x-0 bottom-0 z-30 flex min-h-16 items-center justify-between bg-[#fffdf9] px-5 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-5px_20px_rgba(9,38,30,.13)]"
       >
         <span className="text-sm text-[#64766d]">

@@ -3,6 +3,17 @@
   position: relative;
 }
 
+.public-development-desktop > main,
+.public-development-mobile > main {
+  background-color: var(--development-surface) !important;
+}
+
+.public-development-desktop #overview,
+.public-development-mobile #overview,
+.public-development-mobile #enquire {
+  background-color: var(--development-primary) !important;
+}
+
 .public-development-desktop #overview > .absolute.inset-0 {
   background: rgba(0, 0, 0, 0.64) !important;
 }
@@ -90,7 +101,7 @@
 }
 
 .public-development-desktop #enquire {
-  background: #050505 !important;
+  background: var(--development-primary) !important;
 }
 
 .public-development-desktop #enquire,

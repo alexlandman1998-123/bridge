@@ -12,6 +12,28 @@ export function isPdfSitePlanFile(file) {
   return String(file?.type || '').toLowerCase() === 'application/pdf' || name.endsWith('.pdf')
 }
 
+export function isSvgSitePlanFile(file) {
+  const name = fileName(file?.name).toLowerCase()
+  return String(file?.type || '').toLowerCase() === 'image/svg+xml' || name.endsWith('.svg')
+}
+
+export async function extractSitePlanSvgTextAnchors(file) {
+  if (!isSvgSitePlanFile(file)) return []
+  const document = new DOMParser().parseFromString(await file.text(), 'image/svg+xml')
+  const root = document.documentElement
+  const box = (root.getAttribute('viewBox') || '').trim().split(/[ ,]+/).map(Number)
+  const width = Number(box[2]) || Number.parseFloat(root.getAttribute('width')) || 0
+  const height = Number(box[3]) || Number.parseFloat(root.getAttribute('height')) || 0
+  if (!width || !height) return []
+  return [...document.querySelectorAll('text')].flatMap(node => {
+    const label = String(node.textContent || '').trim()
+    const x = Number.parseFloat(node.getAttribute('x') || '')
+    const y = Number.parseFloat(node.getAttribute('y') || '')
+    if (!label || !Number.isFinite(x) || !Number.isFinite(y)) return []
+    return [{ label, x: Math.max(3, Math.min(97, ((x - (Number(box[0]) || 0)) / width) * 100)), y: Math.max(3, Math.min(97, ((y - (Number(box[1]) || 0)) / height) * 100)) }]
+  })
+}
+
 export function validateSitePlanFile(file) {
   if (!file || typeof file.arrayBuffer !== 'function') {
     throw new Error('Choose an image or PDF site plan before uploading.')
@@ -67,6 +89,35 @@ export async function renderSitePlanPdfFirstPage(file) {
     throw new Error(error?.message || 'Could not convert the first PDF page into a site-plan image.')
   } finally {
     await loadingTask.destroy()
+  }
+}
+
+export async function renderSitePlanUploadImage(file) {
+  validateSitePlanFile(file)
+  if (isSvgSitePlanFile(file)) return file
+  if (!isSvgSitePlanFile(file)) return renderSitePlanPdfFirstPage(file)
+
+  const objectUrl = URL.createObjectURL(file)
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const nextImage = new Image()
+      nextImage.onload = () => resolve(nextImage)
+      nextImage.onerror = () => reject(new Error('Could not convert this SVG site plan into an image.'))
+      nextImage.src = objectUrl
+    })
+    const scale = Math.min(1, MAX_RENDER_DIMENSION / Math.max(image.naturalWidth, image.naturalHeight, 1))
+    const canvas = window.document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Your browser could not prepare this SVG site plan.')
+    context.drawImage(image, 0, 0, canvas.width, canvas.height)
+    const blob = await canvasToPng(canvas)
+    return new File([blob], `${fileName(file.name).replace(/\.svg$/i, '')}-map.png`, {
+      type: 'image/png', lastModified: file.lastModified || Date.now(),
+    })
+  } finally {
+    URL.revokeObjectURL(objectUrl)
   }
 }
 

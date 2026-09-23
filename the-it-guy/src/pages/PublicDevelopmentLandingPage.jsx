@@ -1,6 +1,7 @@
 import { ArrowLeft, ArrowRight, ChevronRight, MapPin } from "lucide-react";
 import { useRef, useState } from "react";
 import PublicDevelopmentVisualExplorer from "../components/developments/PublicDevelopmentVisualExplorer.jsx";
+import PublicDevelopmentEnquiryForm from "../components/developments/PublicDevelopmentEnquiryForm.jsx";
 
 const STATUS = {
   available: ["Available", "bg-[#e7f4eb] text-[#286647]", "bg-[#38a467]"],
@@ -43,31 +44,17 @@ const Eyebrow = ({ children, className = "" }) => (
   </p>
 );
 function AgencyMark({ name, logo }) {
-  return logo ? (
-    <img
-      src={logo}
-      alt={`${name} logo`}
-      className="h-8 max-w-[145px] object-contain object-left"
-    />
-  ) : (
-    <span className="font-semibold tracking-[.15em] text-white">
-      <i className="mr-1 font-serif text-3xl font-normal text-[#c5a050]">R</i>
-      {text(name)
-        .replace(/\s+site$/i, "")
-        .toUpperCase()}
-    </span>
-  );
+  return logo ? <img src={logo} alt={`${name} logo`} className="h-8 max-w-[145px] object-contain object-left" /> : <span className="font-semibold tracking-[.15em] text-white">{text(name).toUpperCase()}</span>;
 }
-function DevelopmentMark() {
+function DevelopmentMark({ name, logo }) {
+  if (logo) return <img src={logo} alt={`${name} logo`} className="h-10 max-w-[180px] object-contain object-left" />;
   return (
     <span className="inline-flex items-center gap-2 text-white">
       <i className="grid h-8 w-6 place-items-center border border-white/70 text-[.63rem] font-medium tracking-[-.13em]">
-        HH
+        {text(name).slice(0, 2).toUpperCase() || "DP"}
       </i>
       <span className="font-serif text-[.65rem] leading-[1.05] tracking-[.16em]">
-        HARBOUR HEIGHTS
-        <br />
-        <small className="text-[.48rem] tracking-[.31em]">RESIDENCES</small>
+        {text(name).toUpperCase() || "DEVELOPMENT"}
       </span>
     </span>
   );
@@ -90,8 +77,11 @@ export default function PublicDevelopmentLandingPage({
   const [availableOnly, setAvailableOnly] = useState(false);
   const gallery = useRef(null);
   const overview = marketing.listingOverview || {};
-  const agencyLogo =
-    media.agencyLogoUrl || media.logoLightUrl || media.logoUrl || "";
+  const developmentLogoLight = text(media.developmentLogoLightUrl || media.developmentLogoUrl);
+  const developmentLogoDark = text(media.developmentLogoDarkUrl || developmentLogoLight);
+  const isDevelopmentLogo = (url) => text(url) && [developmentLogoLight, developmentLogoDark].includes(text(url));
+  const galleryImages = images.filter((url) => !isDevelopmentLogo(url));
+  const agencyLogo = media.agencyLogoUrl || media.logoLightUrl || media.logoUrl || "";
   const groups = Object.values(
     inventory.reduce((result, unit) => {
       const key = unit.unitType || "Residence";
@@ -100,6 +90,8 @@ export default function PublicDevelopmentLandingPage({
     }, {}),
   );
   const types = groups.map((items) => items[0].unitType || "Residence");
+  const bedroomLabels = types.map(beds).filter(Boolean);
+  const bedroomSummary = bedroomLabels.length === 1 ? bedroomLabels[0].replace(/ Bedroom(s)?$/i, "") : bedroomLabels.length ? bedroomLabels.join(" · ").replaceAll(" Bedroom", "") : "—";
   const live = inventory.filter(
     (unit) =>
       (typeFilter === "all" || unit.unitType === typeFilter) &&
@@ -109,6 +101,11 @@ export default function PublicDevelopmentLandingPage({
     overview.locationLabel ||
     data.location ||
     [data.suburb, data.city].filter(Boolean).join(", ");
+  const scrollToEnquiry = (event) => {
+    event?.preventDefault();
+    document.getElementById("enquire")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => document.querySelector("#enquire input[name='name']")?.focus(), 550);
+  };
   return (
     <main className="min-h-screen bg-[#f5f2eb] text-[#153d33]">
       <section
@@ -121,9 +118,9 @@ export default function PublicDevelopmentLandingPage({
           className="absolute inset-0 h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#061c18]/82 via-[#0c2821]/34 to-transparent" />
-        <header className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-[1420px] items-center justify-between px-6 py-6 md:px-10">
-          <AgencyMark name={agency} logo={agencyLogo} />
-          <nav className="hidden gap-6 text-xs lg:flex">
+        <header className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-[1420px] items-center px-6 py-6 md:px-10">
+          <DevelopmentMark name={data.name} logo={developmentLogoLight} />
+          <nav className="ml-auto flex gap-6 text-xs">
             {[
               ["Overview", "#overview"],
               ["Residences", "#residences"],
@@ -137,27 +134,18 @@ export default function PublicDevelopmentLandingPage({
               </a>
             ))}
           </nav>
-          <div className="flex items-center gap-5">
-            <DevelopmentMark />
-            <a
-              href={enquiry}
-              className="hidden border border-white/60 px-4 py-2 text-xs font-semibold sm:block"
-            >
-              Enquire now
-            </a>
-          </div>
         </header>
         <div className="relative mx-auto flex min-h-[86vh] max-w-[1420px] items-end px-6 pb-16 pt-32 md:px-10 md:pb-20">
           <div className="max-w-xl">
             <Eyebrow className="text-[#d7b867]">
-              Now selling · {data.suburb || "Sea Point"}
+              Now selling · {location || "Location to be confirmed"}
             </Eyebrow>
             <h1 className="mt-4 font-serif text-5xl leading-[.93] tracking-[-.05em] md:text-7xl">
               {data.name}
             </h1>
             <p className="mt-6 max-w-sm text-base leading-6 text-white/90">
               {overview.shortDescription ||
-                "Contemporary coastal living in the heart of Sea Point."}
+                "Discover a considered collection of new homes at this sought-after address."}
             </p>
             <div className="mt-7 flex gap-6 border-l border-white/35 pl-5 text-xs text-white/85">
               <span>
@@ -167,7 +155,7 @@ export default function PublicDevelopmentLandingPage({
                 </strong>
               </span>
               <span>
-                <strong className="block text-xl text-white">1–3</strong>
+                <strong className="block text-xl text-white">{bedroomSummary}</strong>
                 Bedrooms
               </span>
               <span>
@@ -185,7 +173,8 @@ export default function PublicDevelopmentLandingPage({
                 View residences <ArrowRight size={15} />
               </a>
               <a
-                href={enquiry}
+                href="#enquire"
+                onClick={scrollToEnquiry}
                 className="border border-white/70 px-5 py-3 text-sm font-semibold"
               >
                 Enquire now
@@ -222,7 +211,7 @@ export default function PublicDevelopmentLandingPage({
           {images[0] ? (
             <img
               src={images[0]}
-              alt="Harbour Heights lifestyle"
+              alt={`${data.name} lifestyle`}
               className="min-h-[310px] h-full w-full object-cover"
             />
           ) : null}
@@ -233,7 +222,7 @@ export default function PublicDevelopmentLandingPage({
           {[
             [inventory.length || data.totalUnitsExpected, "Residences"],
             [available.length, "Available"],
-            ["1–3", "Bedrooms"],
+            [bedroomSummary, "Bedrooms"],
             [money(fromPrice, true), "From"],
           ].map(([value, label]) => (
             <div key={label} className="px-5 py-7 md:px-8">
@@ -277,11 +266,11 @@ export default function PublicDevelopmentLandingPage({
                 key={first.unitType || index}
                 className="overflow-hidden border border-[#e2dbcf] bg-[#fcfaf5]"
               >
-                <img
-                  src={images[index % Math.max(images.length, 1)] || hero}
+                {galleryImages[index % Math.max(galleryImages.length, 1)] ? <img
+                  src={galleryImages[index % Math.max(galleryImages.length, 1)]}
                   alt=""
                   className="h-48 w-full object-cover"
-                />
+                /> : null}
                 <div className="p-5">
                   <h3 className="font-serif text-2xl">
                     {beds(first.unitType)}
@@ -310,7 +299,7 @@ export default function PublicDevelopmentLandingPage({
           <div>
             <Eyebrow>Gallery</Eyebrow>
             <h2 className="mt-3 font-serif text-4xl md:text-5xl">
-              A glimpse of life at Harbour Heights.
+              A glimpse of life at {data.name}.
             </h2>
           </div>
           <div className="hidden gap-2 md:flex">
@@ -336,17 +325,17 @@ export default function PublicDevelopmentLandingPage({
           ref={gallery}
           className="mt-8 flex snap-x gap-4 overflow-x-auto px-5 pb-3 md:px-8"
         >
-          {images
+          {galleryImages
             .concat(
-              images.length < 4
-                ? [hero, media.sitePlanUrl].filter(Boolean)
+              galleryImages.length < 4
+                ? [hero, media.sitePlanUrl].filter((url) => url && !isDevelopmentLogo(url))
                 : [],
             )
             .map((url, index) => (
               <img
                 key={`${url}-${index}`}
                 src={url}
-                alt="Harbour Heights gallery"
+                alt={`${data.name} gallery`}
                 className="h-56 w-[280px] shrink-0 snap-start rounded-[8px] object-cover md:h-64 md:w-[360px]"
               />
             ))}
@@ -386,7 +375,8 @@ export default function PublicDevelopmentLandingPage({
               return (
                 <a
                   key={unit.id}
-                  href={enquiry}
+                  href="#enquire"
+                  onClick={scrollToEnquiry}
                   className="grid grid-cols-[.75fr_1.2fr_.65fr_.6fr_.85fr_.75fr_18px] items-center gap-3 border-b border-[#e9e2d7] px-3 py-4 text-sm last:border-0 hover:bg-[#faf8f3]"
                 >
                   <strong>{unit.unitNumber}</strong>
@@ -407,10 +397,10 @@ export default function PublicDevelopmentLandingPage({
         </div>
       </section>
       <section id="enquire" className="bg-[#063a31] text-[#f7f0e3]">
-        <div className="mx-auto grid max-w-[1280px] gap-8 px-5 py-16 md:grid-cols-[1.2fr_.85fr_auto] md:items-end md:px-8 md:py-20">
+        <div className="mx-auto grid max-w-[1280px] gap-8 px-5 py-16 md:grid-cols-[1fr_.95fr] md:items-center md:px-8 md:py-20">
           <div>
             <Eyebrow className="text-[#d5b365]">
-              Make Harbour Heights home
+              Make {data.name} home
             </Eyebrow>
             <h2 className="mt-3 font-serif text-4xl leading-[1.02] md:text-5xl">
               Let’s talk about your future home.
@@ -420,20 +410,11 @@ export default function PublicDevelopmentLandingPage({
             Register your interest or speak to the {agency} sales team for more
             information about {data.name}.
           </p>
-          <a
-            href={
-              enquiry === "#enquire"
-                ? `mailto:?subject=${encodeURIComponent(data.name)}`
-                : enquiry
-            }
-            className="inline-flex items-center justify-center gap-3 bg-[#d0ab55] px-6 py-3.5 text-sm font-semibold text-[#14352c]"
-          >
-            Enquire now <ArrowRight size={16} />
-          </a>
+          <PublicDevelopmentEnquiryForm developmentName={data.name} agency={agency} enquiry={enquiry} />
         </div>
         <footer className="border-t border-white/15">
           <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-5 px-5 py-6 text-xs text-white/65 md:px-8">
-            <AgencyMark name={agency} logo={agencyLogo} />
+            <DevelopmentMark name={data.name} logo={developmentLogoDark} />
             <span>{location}</span>
             <span>Privacy · Terms · Powered by Arch9</span>
           </div>

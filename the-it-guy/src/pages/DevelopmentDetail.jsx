@@ -17,7 +17,7 @@ import { getReportNextAction } from '../core/transactions/reportNextAction'
 import { resolveTransactionWorkspaceRoute } from '../core/transactions/transactionWorkspaceRouting'
 import { selectCurrentDevelopmentTransactionRows } from '../core/developments/developmentTransactionVisibility.js'
 import { buildDevelopmentDemandIntelligence } from '../core/developments/developmentDemandIntelligence'
-import { extractSitePlanPdfTextAnchors, isPdfSitePlanFile, renderSitePlanPdfFirstPage, validateSitePlanFile } from '../core/developments/developmentSitePlanPdfRenderer'
+import { extractSitePlanPdfTextAnchors, extractSitePlanSvgTextAnchors, isPdfSitePlanFile, isSvgSitePlanFile, renderSitePlanUploadImage, validateSitePlanFile } from '../core/developments/developmentSitePlanPdfRenderer'
 import { buildDevelopmentSitePlanSyndicationPayload } from '../core/developments/developmentSitePlanSyndication'
 import { buildPdfSitePlanUnitSuggestions } from '../core/developments/developmentSitePlanSuggestions'
 import { evaluateDevelopmentSitePlanQuality } from '../core/developments/developmentSitePlanQuality'
@@ -64,6 +64,7 @@ const MARKETING_HUB_SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'content', label: 'Development Content' },
   { id: 'public-page', label: 'Public Page' },
+  { id: 'ci-setup', label: 'CI Setup' },
   { id: 'media', label: 'Media Library' },
   { id: 'floor-plans', label: 'Floor Plans' },
   { id: 'documents', label: 'Documents' },
@@ -169,6 +170,11 @@ const DEFAULT_DETAILS_FORM = {
       heroImageUrl: '',
       galleryImageUrls: '',
       developmentLogoUrl: '',
+      developmentLogoLightUrl: '',
+      developmentLogoDarkUrl: '',
+      primaryColour: '#073e32',
+      accentColour: '#d0ab55',
+      surfaceColour: '#f5f2eb',
       sitePlanUrl: '',
       sitePlanMap: {},
       sitePlanViewport: {},
@@ -1312,6 +1318,11 @@ function normalizeMarketingContentForm(input = null) {
       heroImageUrl: text(mediaLibrarySource.heroImageUrl, mediaLibrarySource.hero_image_url || defaults.mediaLibrary.heroImageUrl),
       galleryImageUrls: text(mediaLibrarySource.galleryImageUrls, mediaLibrarySource.gallery_image_urls || defaults.mediaLibrary.galleryImageUrls),
       developmentLogoUrl: text(mediaLibrarySource.developmentLogoUrl, mediaLibrarySource.development_logo_url || defaults.mediaLibrary.developmentLogoUrl),
+      developmentLogoLightUrl: text(mediaLibrarySource.developmentLogoLightUrl, defaults.mediaLibrary.developmentLogoLightUrl),
+      developmentLogoDarkUrl: text(mediaLibrarySource.developmentLogoDarkUrl, defaults.mediaLibrary.developmentLogoDarkUrl),
+      primaryColour: text(mediaLibrarySource.primaryColour, defaults.mediaLibrary.primaryColour),
+      accentColour: text(mediaLibrarySource.accentColour, defaults.mediaLibrary.accentColour),
+      surfaceColour: text(mediaLibrarySource.surfaceColour, defaults.mediaLibrary.surfaceColour),
       sitePlanUrl: text(mediaLibrarySource.sitePlanUrl, mediaLibrarySource.site_plan_url || defaults.mediaLibrary.sitePlanUrl),
       sitePlanMap: mediaLibrarySource.sitePlanMap && typeof mediaLibrarySource.sitePlanMap === 'object' && !Array.isArray(mediaLibrarySource.sitePlanMap) ? mediaLibrarySource.sitePlanMap : defaults.mediaLibrary.sitePlanMap,
       sitePlanViewport: mediaLibrarySource.sitePlanViewport && typeof mediaLibrarySource.sitePlanViewport === 'object' && !Array.isArray(mediaLibrarySource.sitePlanViewport) ? mediaLibrarySource.sitePlanViewport : defaults.mediaLibrary.sitePlanViewport,
@@ -4474,6 +4485,9 @@ function DevelopmentDetail() {
 
     if (documentType === 'logo') {
       nextMediaLibrary.developmentLogoUrl = urls[0] || nextMediaLibrary.developmentLogoUrl
+      nextMediaLibrary.developmentLogoLightUrl = urls[0] || nextMediaLibrary.developmentLogoLightUrl
+    } else if (documentType === 'logo-dark') {
+      nextMediaLibrary.developmentLogoDarkUrl = urls[0] || nextMediaLibrary.developmentLogoDarkUrl
     } else if (documentType === 'floorplan') {
       nextMediaLibrary.floorplanUrls = appendUniqueTextareaValues(nextMediaLibrary.floorplanUrls, urls)
       if (selectedMarketingFloorplan?.id) {
@@ -4637,11 +4651,12 @@ function DevelopmentDetail() {
       validateSitePlanFile(sourceFile)
 
       const sourceIsPdf = isPdfSitePlanFile(sourceFile)
-      const mapImageFile = await renderSitePlanPdfFirstPage(sourceFile)
+      const sourceIsSvg = isSvgSitePlanFile(sourceFile)
+      const mapImageFile = await renderSitePlanUploadImage(sourceFile)
       let nextSuggestions = {}
-      if (sourceIsPdf) {
+      if (sourceIsPdf || sourceIsSvg) {
         try {
-          const textAnchors = await extractSitePlanPdfTextAnchors(sourceFile)
+          const textAnchors = sourceIsSvg ? await extractSitePlanSvgTextAnchors(sourceFile) : await extractSitePlanPdfTextAnchors(sourceFile)
           nextSuggestions = buildPdfSitePlanUnitSuggestions({
             units: unitRows,
             textAnchors,
@@ -5231,6 +5246,41 @@ function DevelopmentDetail() {
       setFeedback('')
       await deleteDevelopmentDocument(documentId)
       setFeedback('Development document removed.')
+      await loadData()
+    } catch (deleteError) {
+      setError(deleteError.message)
+    } finally {
+      setDocumentSaving(false)
+    }
+  }
+
+  async function handleRemoveMarketingAsset(asset) {
+    if (!asset?.id) return
+    try {
+      setDocumentSaving(true)
+      setError('')
+      setFeedback('')
+      await deleteDevelopmentDocument(asset.id)
+
+      const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
+      const mediaLibrary = { ...normalizedMarketing.mediaLibrary }
+      const assetUrl = String(asset.fileUrl || '')
+      mediaLibrary.galleryImageUrls = listToTextarea(textareaToList(mediaLibrary.galleryImageUrls).filter(url => url !== assetUrl))
+      if (mediaLibrary.heroImageUrl === assetUrl) mediaLibrary.heroImageUrl = ''
+      if (mediaLibrary.developmentLogoUrl === assetUrl) mediaLibrary.developmentLogoUrl = ''
+      if (mediaLibrary.developmentLogoLightUrl === assetUrl) mediaLibrary.developmentLogoLightUrl = ''
+      if (mediaLibrary.developmentLogoDarkUrl === assetUrl) mediaLibrary.developmentLogoDarkUrl = ''
+      const nextDetailsForm = {
+        ...detailsForm,
+        marketing: {
+          ...normalizedMarketing,
+          mediaLibrary
+        }
+      }
+      setDetailsForm(nextDetailsForm)
+      await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
+      setFeedback('Media asset removed.')
+      window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (deleteError) {
       setError(deleteError.message)
@@ -6384,7 +6434,7 @@ function DevelopmentDetail() {
             <p className="mt-1 max-w-2xl text-sm leading-6 text-[#6b7d93]">{description}</p>
           </div>
           {canManageDevelopment ? (
-            <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#167a4b] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#12683f]">
+            <label onDragOver={event => event.preventDefault()} onDrop={event => { event.preventDefault(); void handleMarketingAssetFileUpload({ target: { files: event.dataTransfer.files, value: '' } }, documentType, { uploadKey: documentType, successMessage: `${title} uploaded to the marketing library.` }) }} className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-[#167a4b] px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#12683f]">
               <Upload size={16} /> {marketingAssetUploading === documentType ? 'Uploading…' : 'Upload'}
               <input
                 type="file"
@@ -6414,9 +6464,12 @@ function DevelopmentDetail() {
                   <p className="mt-1 min-h-10 text-xs leading-5 text-[#718299]">{item.description || `Version ${item.version}`}</p>
                   <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#edf1f5] pt-3">
                     <span className="text-xs text-[#718299]">{formatDate(item.uploadedAt)}</span>
-                    <a href={item.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[#2171c7] hover:text-[#14569f]">
-                      Open <ArrowUpRight size={13} />
-                    </a>
+                    <div className="flex items-center gap-3">
+                      <a href={item.fileUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-[#2171c7] hover:text-[#14569f]">
+                        Open <ArrowUpRight size={13} />
+                      </a>
+                      {canManageDevelopment ? <button type="button" onClick={() => void handleRemoveMarketingAsset(item)} disabled={documentSaving} className="inline-flex items-center gap-1 text-xs font-semibold text-[#b42318] hover:text-[#8f1711] disabled:opacity-50"><Trash2 size={13} /> Delete</button> : null}
+                    </div>
                   </div>
                 </div>
               </article>
@@ -6775,13 +6828,80 @@ function DevelopmentDetail() {
   function renderMarketingHubSection() {
     if (marketingHubSection === 'overview') return renderMarketingHubOverview()
     if (marketingHubSection === 'public-page') return renderMarketingPublicPageSection()
+    if (marketingHubSection === 'ci-setup') {
+      const lightLogo = marketingForm.mediaLibrary.developmentLogoLightUrl || marketingForm.mediaLibrary.developmentLogoUrl
+      const darkLogo = marketingForm.mediaLibrary.developmentLogoDarkUrl
+      const coverImage = marketingForm.mediaLibrary.heroImageUrl
+      const handleDrop = (event, documentType, options) => {
+        event.preventDefault()
+        void handleMarketingAssetFileUpload({ target: { files: event.dataTransfer.files, value: '' } }, documentType, options)
+      }
+      return (
+        <div className="space-y-5">
+          <form onSubmit={handleMarketingSave} className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="text-base font-semibold text-[#142132]">Website colour scheme</h3>
+                <p className="mt-1 text-sm text-[#60758c]">These three colours are used by the public development website for its core surfaces, calls to action and accents.</p>
+              </div>
+              {canManageDevelopment ? <Button type="submit" variant="secondary" disabled={detailsSaving}>{detailsSaving ? 'Saving…' : 'Save CI colours'}</Button> : null}
+            </div>
+            <fieldset disabled={!canManageDevelopment} className="mt-5 grid gap-4 md:grid-cols-3 disabled:opacity-70">
+              {[
+                ['primaryColour', 'Primary', 'Main dark sections and buttons'],
+                ['accentColour', 'Accent', 'Calls to action and highlights'],
+                ['surfaceColour', 'Surface', 'Light page background']
+              ].map(([field, label, hint]) => (
+                <label key={field} className="rounded-xl border border-[#dbe6f2] bg-white p-3">
+                  <span className="block text-sm font-semibold text-[#20364c]">{label}</span>
+                  <span className="mt-1 block text-xs text-[#6b7d93]">{hint}</span>
+                  <span className="mt-3 flex items-center gap-3">
+                    <input type="color" value={marketingForm.mediaLibrary[field] || '#073e32'} onChange={event => setMarketingField('mediaLibrary', field, event.target.value)} className="h-10 w-12 cursor-pointer rounded border border-[#cbd8e5] bg-white p-1" />
+                    <span className="font-mono text-sm text-[#526a82]">{marketingForm.mediaLibrary[field] || 'Not set'}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          </form>
+          <section className="rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
+            <h3 className="text-base font-semibold text-[#142132]">Development brand</h3>
+            <p className="mt-1 text-sm text-[#60758c]">Upload both logo versions once. These previews show how they will appear on the public website.</p>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              {[
+                ['logo', 'development-logo', 'Light logo', 'Use on dark sections', lightLogo, 'bg-[#062c26]'],
+                ['logo-dark', 'development-logo-dark', 'Dark logo', 'Use on light sections', darkLogo, 'bg-white']
+              ].map(([documentType, uploadKey, label, hint, value, previewClass]) => (
+                <label key={documentType} className="cursor-pointer overflow-hidden rounded-xl border border-[#d7e1ec] bg-white">
+                  <div className={`flex h-36 items-center justify-center p-6 ${previewClass}`}>
+                    {value ? <img src={value} alt={`${label} preview`} className="max-h-full max-w-full object-contain" /> : <span className="text-sm font-medium text-[#73869b]">No {label.toLowerCase()} uploaded</span>}
+                  </div>
+                  <div className="border-t border-[#e9eff5] px-4 py-3">
+                    <span className="block text-sm font-semibold text-[#20364c]"><ImagePlus size={15} className="mr-2 inline" />{marketingAssetUploading === uploadKey ? 'Uploading…' : `Upload ${label}`}</span>
+                    <span className="mt-1 block text-xs text-[#6b7d93]">{hint}</span>
+                  </div>
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, documentType, { uploadKey, successMessage: `${label} uploaded.` })} />
+                </label>
+              ))}
+            </div>
+          </section>
+          <section className="overflow-hidden rounded-[18px] border border-[#dbe6f2] bg-[#f8fbff] p-5">
+            <h3 className="text-base font-semibold text-[#142132]">Cover photo</h3>
+            <p className="mt-1 text-sm text-[#60758c]">This appears behind the headline on the public development page.</p>
+            <label onDragOver={event => event.preventDefault()} onDrop={event => handleDrop(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} className="mt-4 flex min-h-[190px] cursor-pointer items-center justify-center overflow-hidden rounded-xl border border-dashed border-[#aebfd2] bg-white">
+              {coverImage ? <img src={coverImage} alt="Cover photo preview" className="h-full w-full object-cover" /> : <span className="text-sm font-semibold text-[#526a82]"><ImagePlus size={16} className="mr-2 inline" />Drop a cover photo here or browse</span>}
+              <input type="file" accept="image/*" className="hidden" disabled={Boolean(marketingAssetUploading)} onChange={event => void handleMarketingAssetFileUpload(event, 'cover', { uploadKey: 'cover-photo', setAsHero: true, successMessage: 'Cover photo uploaded.' })} />
+            </label>
+          </section>
+        </div>
+      )
+    }
     if (marketingHubSection === 'media')
       return renderMarketingAssetSection({
-        title: 'Media Library',
-        description: 'Images, renders and development branding from the existing document library.',
+        title: 'Media library',
+        description: 'Drop photos here or use Upload. Every image can be opened or deleted from this library.',
         items: marketingAssetGroups.find(group => group.key === 'gallery')?.items || [],
         documentType: 'marketing',
-        emptyMessage: 'Upload imagery or branding to begin building the media library.'
+        emptyMessage: 'Drop photos here or use Upload to build the media library.'
       })
     if (marketingHubSection === 'floor-plans')
       return renderMarketingAssetSection({
@@ -6904,8 +7024,8 @@ function DevelopmentDetail() {
               <div className="space-y-4">
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#e8eef5] pb-4">
                   <div>
-                    <h4 className="text-lg font-semibold tracking-[-0.025em] text-[#142132]">Global Brand Settings</h4>
-                    <p className="mt-1 text-sm text-[#60758c]">Shared development-level listing identity and publishing controls.</p>
+                    <h4 className="text-lg font-semibold tracking-[-0.025em] text-[#142132]">Global listing settings</h4>
+                    <p className="mt-1 text-sm text-[#60758c]">Shared listing copy and publishing controls. Brand assets and colours are managed in CI Setup.</p>
                   </div>
                   <Button type="button" variant="secondary" onClick={() => setMarketingUnitTab('overview')}>
                     Back to Unit Type
@@ -6917,49 +7037,6 @@ function DevelopmentDetail() {
                   </DetailField>
                   <DetailField label="Listing Heading">
                     <Field value={marketingForm.listingOverview.listingHeading} onChange={event => setMarketingField('listingOverview', 'listingHeading', event.target.value)} />
-                  </DetailField>
-                  <DetailField label="Cover Image">
-                    <label className="flex min-h-[84px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-white px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
-                      <span className="inline-flex items-center gap-2">
-                        <ImagePlus size={15} />
-                        {marketingAssetUploading === 'cover-image' ? 'Uploading...' : 'Upload Cover Image'}
-                      </span>
-                      <span className="mt-1 text-xs font-medium text-[#6b7d93]">{marketingForm.mediaLibrary.heroImageUrl ? getAssetFileLabel(marketingForm.mediaLibrary.heroImageUrl, 'Cover image') : 'No cover image uploaded'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={Boolean(marketingAssetUploading)}
-                        onChange={event =>
-                          void handleMarketingAssetFileUpload(event, 'marketing', {
-                            uploadKey: 'cover-image',
-                            setAsHero: true,
-                            successMessage: 'Cover image uploaded.'
-                          })
-                        }
-                      />
-                    </label>
-                  </DetailField>
-                  <DetailField label="Development Logo">
-                    <label className="flex min-h-[84px] cursor-pointer flex-col justify-center rounded-[14px] border border-dashed border-[#cad9e9] bg-white px-4 py-3 text-sm font-semibold text-[#20364c] hover:border-[#9fb8d0] hover:bg-[#f7fbff]">
-                      <span className="inline-flex items-center gap-2">
-                        <ImagePlus size={15} />
-                        {marketingAssetUploading === 'development-logo' ? 'Uploading...' : 'Upload Logo'}
-                      </span>
-                      <span className="mt-1 text-xs font-medium text-[#6b7d93]">{marketingForm.mediaLibrary.developmentLogoUrl ? getAssetFileLabel(marketingForm.mediaLibrary.developmentLogoUrl, 'Logo') : 'No logo uploaded'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={Boolean(marketingAssetUploading)}
-                        onChange={event =>
-                          void handleMarketingAssetFileUpload(event, 'logo', {
-                            uploadKey: 'development-logo',
-                            successMessage: 'Development logo uploaded.'
-                          })
-                        }
-                      />
-                    </label>
                   </DetailField>
                   <DetailField label="Public Listing URL">
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">

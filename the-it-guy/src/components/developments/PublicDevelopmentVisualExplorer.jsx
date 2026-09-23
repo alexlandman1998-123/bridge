@@ -1439,7 +1439,7 @@ export default function PublicDevelopmentVisualExplorer({
                     <button
                       aria-label="Save residence"
                       onClick={() => toggleShortlist(String(unit.id))}
-                      className="absolute right-3 top-3 text-[#8a928d]"
+                      className={`${layout === "grid" ? "absolute right-3 top-3" : "absolute bottom-3 right-3"} text-[#8a928d]`}
                     >
                       <Heart
                         size={16}
@@ -1451,7 +1451,7 @@ export default function PublicDevelopmentVisualExplorer({
                     <button
                       aria-label="Compare residence"
                       onClick={() => toggleCompare(String(unit.id))}
-                      className={`absolute right-10 top-3 ${comparison.has(String(unit.id)) ? "text-[#0c5a49]" : "text-[#8a928d]"}`}
+                      className={`${layout === "grid" ? "absolute right-10 top-3" : "absolute bottom-3 right-10"} ${comparison.has(String(unit.id)) ? "text-[#0c5a49]" : "text-[#8a928d]"}`}
                     >
                       <GitCompareArrows size={16} />
                     </button>
