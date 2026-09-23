@@ -465,6 +465,7 @@ export default function PublicDevelopmentVisualExplorer({
   );
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [sceneImageStatus, setSceneImageStatus] = useState("loading");
+  const [sceneAspectRatio, setSceneAspectRatio] = useState(0);
   const [previousSceneStyle, setPreviousSceneStyle] = useState(null);
   const [journeyNotice, setJourneyNotice] = useState("");
   const [failedSceneIds, setFailedSceneIds] = useState(
@@ -653,6 +654,9 @@ export default function PublicDevelopmentVisualExplorer({
     const image = new Image();
     image.onload = () => {
       if (!active) return;
+      setSceneAspectRatio(
+        image.naturalWidth / Math.max(image.naturalHeight, 1),
+      );
       setSceneImageStatus("ready");
       setFailedSceneIds((current) => {
         if (!current.has(scene.id)) return current;
@@ -663,6 +667,7 @@ export default function PublicDevelopmentVisualExplorer({
     };
     image.onerror = () => {
       if (!active) return;
+      setSceneAspectRatio(0);
       setSceneImageStatus("error");
       setFailedSceneIds((current) => new Set([...current, scene.id]));
     };
@@ -883,7 +888,8 @@ export default function PublicDevelopmentVisualExplorer({
       role="application"
       aria-label={`Interactive ${scene?.name || "development"} plan. Use plus and minus to zoom and drag to pan.`}
       tabIndex={0}
-      className="relative h-full min-h-[430px] touch-none overflow-hidden bg-[#d8ded8] select-none"
+      className="relative h-full max-w-full min-h-[430px] touch-none overflow-hidden bg-[#d8ded8] select-none"
+      style={sceneAspectRatio ? { aspectRatio: sceneAspectRatio } : undefined}
       onWheel={(event) =>
         setZoom((value) =>
           Math.min(2.5, Math.max(1, value + (event.deltaY < 0 ? 0.1 : -0.1))),
@@ -1376,7 +1382,7 @@ export default function PublicDevelopmentVisualExplorer({
           }}
         >
           <div
-            className={`${mobile && view !== "map" ? "hidden" : ""} min-h-0`}
+            className={`${mobile && view !== "map" ? "hidden" : ""} flex min-h-0 items-center justify-center bg-[#d8ded8]`}
           >
             {canvas}
           </div>

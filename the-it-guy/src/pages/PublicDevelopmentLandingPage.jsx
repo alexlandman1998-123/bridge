@@ -46,7 +46,7 @@ function AgencyMark({ name, logo }) {
   return logo ? <img src={logo} alt={`${name} logo`} className="h-8 max-w-[145px] object-contain object-left" /> : <span className="font-semibold tracking-[.15em] text-white">{text(name).toUpperCase()}</span>;
 }
 function DevelopmentMark({ name, logo }) {
-  if (logo) return <img src={logo} alt={`${name} logo`} className="h-10 max-w-[180px] object-contain object-left" />;
+  if (logo) return <img src={logo} alt={`${name} logo`} className="h-12 max-w-[220px] object-contain object-left" />;
   return (
     <span className="inline-flex items-center gap-2 text-white">
       <i className="grid h-8 w-6 place-items-center border border-white/70 text-[.63rem] font-medium tracking-[-.13em]">

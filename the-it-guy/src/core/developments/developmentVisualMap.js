@@ -1096,7 +1096,7 @@ export function setVisualMapPublicationStatus(visualMap, publicationStatus) {
 export function getPublishedVisualMap(visualMap) {
   const map = resolveDevelopmentVisualMap({ visualMap });
   if (!map.publishedSnapshot) return map;
-  return resolveDevelopmentVisualMap({
+  const published = resolveDevelopmentVisualMap({
     visualMap: {
       schemaVersion: map.schemaVersion,
       revision: map.publishedSnapshot.revision,
@@ -1107,6 +1107,12 @@ export function getPublishedVisualMap(visualMap) {
       publishedSnapshot: map.publishedSnapshot,
     },
   });
+  // A snapshot with no image cannot be an interactive public plan. This can
+  // occur for maps published before their site-plan upload or unit mapping was
+  // saved. Prefer the complete current map rather than render its blank,
+  // marker-less snapshot over the current masterplan image.
+  const defaultScene = getVisualMapScene(published, published.defaultSceneId);
+  return defaultScene?.background?.url ? published : map;
 }
 
 export function hydrateVisualMapMediaLibrary(mediaLibrary = {}, options = {}) {
