@@ -32,10 +32,6 @@
   color: #14352c !important;
 }
 
-.public-development-desktop #overview header > :last-child > a {
-  display: none;
-}
-
 .public-development-desktop main > section > .mx-auto,
 .public-development-desktop #availability > .mx-auto {
   max-width: 1520px !important;
