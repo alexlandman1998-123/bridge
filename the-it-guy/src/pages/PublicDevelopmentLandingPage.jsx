@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ChevronRight, MapPin } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight } from "lucide-react";
 import { useRef, useState } from "react";
 import PublicDevelopmentVisualExplorer from "../components/developments/PublicDevelopmentVisualExplorer.jsx";
 import PublicDevelopmentEnquiryForm from "../components/developments/PublicDevelopmentEnquiryForm.jsx";
@@ -123,7 +123,6 @@ export default function PublicDevelopmentLandingPage({
           <nav className="ml-auto flex gap-6 text-xs">
             {[
               ["Overview", "#overview"],
-              ["Residences", "#residences"],
               ["Availability", "#availability"],
               ["Location", "#location"],
               ["Gallery", "#gallery"],
@@ -189,34 +188,6 @@ export default function PublicDevelopmentLandingPage({
         enquiry={enquiry}
         freshness={freshness}
       />
-      <section className="mx-auto grid max-w-[1280px] gap-10 px-5 py-20 md:grid-cols-[.85fr_1.15fr] md:px-8 md:py-28">
-        <div>
-          <Eyebrow>The development</Eyebrow>
-          <h2 className="mt-3 font-serif text-4xl leading-[1.02] md:text-5xl">
-            A considered collection of contemporary homes.
-          </h2>
-          <p className="mt-6 max-w-lg text-base leading-8 text-[#586c62]">
-            {overview.listingDescription ||
-              "A carefully composed collection of contemporary homes, designed around light, privacy and everyday ease."}
-          </p>
-          <a
-            id="location"
-            href={marketing.externalLinks?.googleMapsUrl || "#"}
-            className="mt-7 inline-flex items-center gap-2 border-b border-[#b58b3c] pb-1 text-sm font-semibold"
-          >
-            {location} <MapPin size={15} /> View location
-          </a>
-        </div>
-        <div className="overflow-hidden rounded-[9px] bg-[#e6e0d5]">
-          {images[0] ? (
-            <img
-              src={images[0]}
-              alt={`${data.name} lifestyle`}
-              className="min-h-[310px] h-full w-full object-cover"
-            />
-          ) : null}
-        </div>
-      </section>
       <section className="border-y border-[#e1dacd] bg-[#ece7dc]">
         <div className="mx-auto grid max-w-[1280px] grid-cols-2 divide-x divide-y divide-[#dcd3c3] px-5 md:grid-cols-4 md:divide-y-0 md:px-8">
           {[
@@ -232,66 +203,6 @@ export default function PublicDevelopmentLandingPage({
               </span>
             </div>
           ))}
-        </div>
-      </section>
-      <section
-        id="residences"
-        className="mx-auto max-w-[1280px] px-5 py-20 md:px-8 md:py-28"
-      >
-        <div className="flex items-end justify-between">
-          <div>
-            <Eyebrow>Residences</Eyebrow>
-            <h2 className="mt-3 font-serif text-4xl md:text-5xl">
-              Find your space.
-            </h2>
-          </div>
-          <a
-            href="#live-availability"
-            className="hidden border border-[#cab999] px-4 py-2 text-xs font-semibold md:block"
-          >
-            View all availability
-          </a>
-        </div>
-        <div className="mt-9 grid gap-5 md:grid-cols-3">
-          {groups.map((items, index) => {
-            const first = items[0];
-            const itemPrices = items
-              .map((item) => Number(item.price))
-              .filter(Boolean);
-            const sizes = items
-              .map((item) => Number(item.sizeSqm))
-              .filter(Boolean);
-            return (
-              <article
-                key={first.unitType || index}
-                className="overflow-hidden border border-[#e2dbcf] bg-[#fcfaf5]"
-              >
-                {galleryImages[index % Math.max(galleryImages.length, 1)] ? <img
-                  src={galleryImages[index % Math.max(galleryImages.length, 1)]}
-                  alt=""
-                  className="h-48 w-full object-cover"
-                /> : null}
-                <div className="p-5">
-                  <h3 className="font-serif text-2xl">
-                    {beds(first.unitType)}
-                  </h3>
-                  <p className="mt-3 text-sm leading-6 text-[#65776d]">
-                    From {money(Math.min(...itemPrices), true)}
-                    <br />
-                    {sizes.length
-                      ? `${Math.min(...sizes)}–${Math.max(...sizes)} m²`
-                      : "Size on request"}
-                  </p>
-                  <a
-                    href="#live-availability"
-                    className="mt-5 inline-flex items-center gap-2 text-sm font-semibold"
-                  >
-                    Explore <ArrowRight size={14} />
-                  </a>
-                </div>
-              </article>
-            );
-          })}
         </div>
       </section>
       <section id="gallery" className="py-8">

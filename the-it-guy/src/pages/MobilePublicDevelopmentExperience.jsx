@@ -96,7 +96,6 @@ export default function MobilePublicDevelopmentExperience({
             {[
               ["Overview", "#overview"],
               ["Availability", "#availability"],
-              ["Residences", "#residences"],
               ["Gallery", "#gallery"],
               ["Enquire", "#enquire"],
             ].map(([label, href]) => (
@@ -114,40 +113,6 @@ export default function MobilePublicDevelopmentExperience({
         freshness={freshness}
         mobile
       />
-      <section id="residences" className="px-5 py-14">
-        <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#a98034]">
-          Residences
-        </p>
-        <h2 className="mt-4 font-serif text-4xl leading-none">
-          Find your space.
-        </h2>
-        <div className="mt-7 flex snap-x gap-4 overflow-x-auto pb-3">
-          {inventory.slice(0, 6).map((unit, index) => (
-            <a
-              key={unit.id}
-              href="#availability"
-              className="w-[78vw] shrink-0 snap-start overflow-hidden rounded-lg border bg-[#fffdf9]"
-            >
-              <img
-                src={images[index % images.length] || hero}
-                alt=""
-                loading="lazy"
-                className="h-44 w-full object-cover"
-              />
-              <div className="p-4">
-                <div className="flex justify-between">
-                  <b className="text-xl">{unit.unitNumber}</b>
-                  <b>{money(unit.price)}</b>
-                </div>
-                <p className="mt-2 text-sm text-[#607269]">
-                  {unit.unitType || "Residence"}
-                  {unit.sizeSqm ? ` · ${unit.sizeSqm} m²` : ""}
-                </p>
-              </div>
-            </a>
-          ))}
-        </div>
-      </section>
       <section id="gallery" className="py-8">
         <div className="px-5">
           <p className="text-[11px] font-bold uppercase tracking-[.2em] text-[#a98034]">
