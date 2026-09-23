@@ -4,7 +4,11 @@ import { isSupabaseConfigured, supabase } from "../lib/supabaseClient";
 import PublicDevelopmentLandingPage from "./PublicDevelopmentLandingPage";
 import MobilePublicDevelopmentExperience from "./MobilePublicDevelopmentExperience";
 import "./public-development-responsive.css";
-import { hydrateVisualMapMediaLibrary } from "../core/developments/developmentVisualMap.js";
+import {
+  getPublishedVisualMap,
+  hydrateVisualMapMediaLibrary,
+  resolveDevelopmentVisualMap,
+} from "../core/developments/developmentVisualMap.js";
 import { normaliseDevelopmentVisualEvent } from "../core/developments/developmentVisualAnalytics.js";
 
 const text = (value) => String(value || "").trim();
@@ -23,6 +27,16 @@ const keyFor = (status) => {
     return "unreleased";
   return "available";
 };
+const firstAssetUrl = (assets, ...documentTypes) =>
+  (Array.isArray(assets) ? assets : [])
+    .filter((asset) =>
+      documentTypes.includes(text(asset?.documentType).toLowerCase()),
+    )
+    .map((asset) => text(asset?.fileUrl))
+    .find(Boolean) || "";
+const hasMappedScene = (visualMap) =>
+  Array.isArray(visualMap?.scenes) &&
+  visualMap.scenes.some((scene) => Array.isArray(scene?.hotspots) && scene.hotspots.length > 0);
 const createAnalyticsSessionId = () => {
   if (typeof crypto !== "undefined" && crypto.randomUUID)
     return crypto.randomUUID();
@@ -282,9 +296,42 @@ export default function PublicDevelopmentResponsiveRoute() {
 
   const data = state.data;
   const marketing = data.marketing || {};
-  const media = hydrateVisualMapMediaLibrary(marketing.mediaLibrary || {}, {
-    preferPublished: true,
+  const mediaLibrary = marketing.mediaLibrary || {};
+  const visualMap = resolveDevelopmentVisualMap(mediaLibrary);
+  const publishedVisualMap = getPublishedVisualMap(visualMap);
+  // A historical published snapshot can be empty after an asset replacement.
+  // Prefer it when it contains mappings, but never blank a live visualiser when
+  // the current map has the unit allocations that snapshot omitted.
+  const publicVisualMap =
+    hasMappedScene(publishedVisualMap) || !hasMappedScene(visualMap)
+      ? publishedVisualMap
+      : visualMap;
+  const assetSitePlan = firstAssetUrl(data.assets, "site_plan");
+  const assetLogo = firstAssetUrl(data.assets, "logo");
+  const hydratedMedia = hydrateVisualMapMediaLibrary({
+    ...mediaLibrary,
+    visualMap: publicVisualMap,
+    sitePlanUrl: text(mediaLibrary.sitePlanUrl) || assetSitePlan,
+    developmentLogoUrl: text(mediaLibrary.developmentLogoUrl) || assetLogo,
+    developmentLogoLightUrl:
+      text(mediaLibrary.developmentLogoLightUrl) ||
+      text(mediaLibrary.developmentLogoUrl) ||
+      assetLogo,
+    developmentLogoDarkUrl:
+      text(mediaLibrary.developmentLogoDarkUrl) ||
+      text(mediaLibrary.developmentLogoLightUrl) ||
+      text(mediaLibrary.developmentLogoUrl) ||
+      assetLogo,
   });
+  // The visual-map projection intentionally owns sitePlanUrl. Retain the
+  // document fallback when an older published scene has no background URL.
+  const media = {
+    ...hydratedMedia,
+    sitePlanUrl:
+      text(hydratedMedia.sitePlanUrl) ||
+      text(mediaLibrary.sitePlanUrl) ||
+      assetSitePlan,
+  };
   const inventory = Array.isArray(data.inventory) ? data.inventory : [];
   const available = inventory.filter(
     (unit) => keyFor(unit.status) === "available",

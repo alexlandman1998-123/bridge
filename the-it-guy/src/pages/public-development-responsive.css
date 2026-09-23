@@ -43,14 +43,6 @@
   color: #14352c !important;
 }
 
-.public-development-desktop #overview header > :first-child {
-  opacity: 0;
-}
-
-.public-development-mobile #overview header > :first-child {
-  opacity: 0;
-}
-
 .public-development-revo-logo {
   position: absolute;
   top: 1.45rem;
@@ -71,10 +63,6 @@
   max-height: 44px;
   object-fit: contain;
   object-position: left center;
-}
-
-.public-development-desktop #overview header > :last-child > a {
-  display: none;
 }
 
 .public-development-desktop main > section > .mx-auto,

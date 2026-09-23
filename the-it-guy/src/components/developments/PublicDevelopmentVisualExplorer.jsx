@@ -82,10 +82,17 @@ const money = (value, compact = false) => {
     maximumFractionDigits: 0,
   }).format(amount);
 };
+const firstMediaImage = (value) => {
+  if (Array.isArray(value)) return value.find((url) => String(url || "").trim()) || "";
+  return String(value || "")
+    .split(/\r?\n|,/)
+    .map((url) => url.trim())
+    .find(Boolean) || "";
+};
 const unitImage = (unit, media) =>
   unit.imageUrl ||
   unit.heroImageUrl ||
-  media.galleryImageUrls?.[0] ||
+  firstMediaImage(media.galleryImageUrls) ||
   media.heroImageUrl ||
   "/demo-listing-images/revo-sales-cover.png";
 const sceneBackgroundStyle = (scene, fallbackUrl) => {
