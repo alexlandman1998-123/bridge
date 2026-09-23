@@ -198,19 +198,23 @@ export function buildRentalProperty24PayloadPreview(listing = {}, options = {}) 
       carports: row.carports,
       floorSize: row.floorSize,
       erfSize: row.erfSize,
+      retirementAccommodation: row.retirementAccommodation,
       garden: garden.value,
       pool: pool.value,
       flatlet: flatlet.value,
     },
     rentalInfo: {
       monthlyRent: row.monthlyRent,
+      rentalPriceFrequency: row.rentalPriceFrequency,
       depositAmount: row.depositAmount,
+      depositPolicy: row.depositPolicy,
       depositRequirement: row.depositRequirement,
       depositMultiplier: row.depositMultiplier,
       availableFrom: row.availableFrom,
       occupationDate: row.occupationDate || row.availableFrom,
       leasePeriodMonths: row.leasePeriodMonths,
       leasePeriodType: row.leasePeriodType,
+      rentalMandateType: row.rentalMandateType,
       rentalIncludes: row.rentalIncludes,
       rentalExcludes: row.rentalExcludes,
       applicationFee: row.applicationFee,
@@ -287,9 +291,11 @@ export function buildRentalProperty24Readiness(listing = {}, options = {}) {
     'Map the assigned Arch9 agent to Property24',
     { backendResolved: sourceReferenceResolvedByBackend },
   )
-  addItem(items, 'suburbId', 'Property24 suburb', Boolean(payloadPreview.property.suburbId), payloadPreview.property.suburbId || row.location || 'Missing Property24 suburb id', 'Resolve the Property24 suburb id')
+  addItem(items, 'suburbId', 'Property24 suburb', Boolean(payloadPreview.property.suburbId), payloadPreview.property.suburbId || row.location || 'Address could not be matched to a Property24 suburb', 'Check the property address and suburb, then run the Property24 check again')
   addItem(items, 'propertyTypeId', 'Property24 property type', Boolean(payloadPreview.property.propertyTypeId), payloadPreview.property.propertyTypeId || row.propertyType || 'Missing Property24 property type id', 'Resolve the Property24 property type id')
   addItem(items, 'monthlyRent', 'Monthly rent', Boolean(row.monthlyRent), row.monthlyRent ? `R${row.monthlyRent}` : 'Missing monthly rent', 'Capture monthly rent')
+  addItem(items, 'rentalPriceFrequency', 'Rental price frequency', Boolean(row.rentalPriceFrequency), row.rentalPriceFrequency || 'Missing rental price frequency', 'Capture the rental price frequency')
+  addItem(items, 'depositPolicy', 'Deposit policy', Boolean(row.depositPolicy && normalizeKey(row.depositPolicy) !== 'not_captured'), row.depositPolicy || 'Deposit policy not captured', 'Choose whether a deposit is required or not required')
   addItem(items, 'availableFrom', 'Available from', Boolean(row.availableFrom), row.availableFrom || 'Missing availability date', 'Capture availability date')
   addItem(items, 'expiryDate', 'Listing expiry', Boolean(payloadPreview.expiryDate), payloadPreview.expiryDate || 'Missing mandate end date', 'Capture mandate end / expiry date')
   addItem(items, 'description', 'Public description', Boolean(payloadPreview.marketing.description), payloadPreview.marketing.description ? 'Description ready' : 'Missing public description', 'Capture a public rental description')

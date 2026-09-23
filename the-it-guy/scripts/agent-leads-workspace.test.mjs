@@ -353,6 +353,15 @@ try {
   }
   assert.ok(!workspaceSource.includes("{ key: 'mandate', label: 'Mandate'"), 'seller lead workspace should not expose the retired Mandate tab')
   assert.ok(!workspaceSource.includes("label: selectedLeadMandatePrimaryLabel"), 'seller lead action menu should not expose generate/send mandate actions')
+  const sellerActionsMenuSource = workspaceSource.match(/selectedLeadIsSeller\n\s*\? \[[\s\S]*?\n\s*\]\n\s*: \[/)?.[0] || ''
+  for (const removedAction of ['Create Listing Draft', 'Upload Signed Mandate', 'Follow Up With Client', 'Schedule Appointment', 'Copy Listing Link']) {
+    assert.ok(!sellerActionsMenuSource.includes(removedAction), `seller Actions menu should not expose ${removedAction}`)
+  }
+  for (const remainingAction of ['Edit Seller Details', 'Copy Seller Onboarding Link', 'Copy Seller Portal Link']) {
+    assert.ok(sellerActionsMenuSource.includes(remainingAction), `seller Actions menu should retain ${remainingAction}`)
+  }
+  assert.ok(workspaceSource.includes('function handleOpenSelectedLeadAssignment()'), 'Change Owner should use the existing assignment workflow')
+  assert.ok(workspaceSource.includes('onClick: handleOpenSelectedLeadAssignment'), 'Change Owner should open the assignment workflow')
   assert.ok(!workspaceSource.includes('Review Mandate / Signing'), 'seller lead page should not mount the retired mandate quick-start review action')
   assert.ok(!workspaceSource.includes('autoGenerateEnabled={legalWorkspaceOpen}'), 'seller lead page should not auto-open the mandate document generator')
   assert.ok(workspaceSource.includes("setActiveWorkspaceTab('seller')"), 'edit seller should open the seller tab')

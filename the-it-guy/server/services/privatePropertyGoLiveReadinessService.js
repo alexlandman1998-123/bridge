@@ -10,6 +10,7 @@ import {
   createPrivatePropertyArch9ListingPreview,
   fetchArch9ListingForPrivatePropertyPreview,
 } from './privatePropertyListingPreviewService.js'
+import { evaluateListingPortalAddressProtection } from './listingPortalAddressProtectionService.js'
 
 export const PRIVATE_PROPERTY_GO_LIVE_READINESS_SERVICE_VERSION = 'arch9_private_property_go_live_readiness_service_v1'
 
@@ -102,6 +103,11 @@ export function createPrivatePropertyGoLiveReadinessReport({
       options: previewOptions,
     })
     : null
+  const addressProtection = evaluateListingPortalAddressProtection({
+    listing: bundle?.listing || {},
+    publication: bundle?.publication || {},
+    existingPrivatePropertySync: bundle?.existingSync || {},
+  })
 
   if (preview && agentMappingResolution) {
     preview.mappingResolution = agentMappingResolution
@@ -137,6 +143,16 @@ export function createPrivatePropertyGoLiveReadinessReport({
     buildCheck('location_resolution', buildLocationBlockers(preview), [], {
       address: preview?.payloadPreview?.address || null,
     }),
+    buildCheck(
+      'activated_address_protection',
+      addressProtection.privateProperty.blockers,
+      addressProtection.privateProperty.warnings,
+      {
+        activated: addressProtection.privateProperty.activated,
+        addressChanged: addressProtection.privateProperty.addressChanged,
+        baselineCaptured: Boolean(addressProtection.privateProperty.baselineFingerprint),
+      },
+    ),
     buildCheck('production_approval', buildProductionApprovalBlockers({ environment: normalizedEnvironment, agencyConfig }), [], {
       environment: normalizedEnvironment,
       status: agencyConfig?.status || '',
@@ -166,6 +182,7 @@ export function createPrivatePropertyGoLiveReadinessReport({
     checks,
     agencyConfig,
     agentMapping: agentMappingResolution?.agentMapping || { agentIds: '' },
+    addressProtection,
     preview: preview
       ? {
         status: preview.status,

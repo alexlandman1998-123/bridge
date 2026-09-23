@@ -4,6 +4,8 @@ import {
 } from '../src/services/rentals/rentalListingArchitecture.js'
 import {
   buildRentalProperty24FieldComparison,
+  PROPERTY24_RENTAL_LISTING_API_VERSION,
+  PROPERTY24_RENTAL_LISTING_SERVICE,
   RENTAL_PROPERTY24_FIELD_COMPARISON_VERSION,
   RENTAL_PROPERTY24_FIELD_STATUS,
 } from '../src/services/rentals/rentalListingProperty24FieldComparisonModel.js'
@@ -15,7 +17,9 @@ import {
 const readyComparison = buildRentalProperty24FieldComparison(RENTAL_LISTING_RELEASE_GATE_FIXTURE)
 
 assert.equal(readyComparison.version, RENTAL_PROPERTY24_FIELD_COMPARISON_VERSION)
-assert.equal(readyComparison.property24Service, 'Listing Service v53')
+assert.equal(PROPERTY24_RENTAL_LISTING_API_VERSION, 'v55')
+assert.equal(PROPERTY24_RENTAL_LISTING_SERVICE, 'Listing Service v55')
+assert.equal(readyComparison.property24Service, PROPERTY24_RENTAL_LISTING_SERVICE)
 assert.equal(readyComparison.listingType, 'Rental')
 assert.equal(readyComparison.readyForBackendAdapter, true)
 assert.equal(readyComparison.summary.blockers, 0)
@@ -39,8 +43,10 @@ assert.equal(readyRows.contactAgentIds.property24Field, 'contactAgentIds')
 assert.equal(readyRows.contactAgentIds.status, RENTAL_PROPERTY24_FIELD_STATUS.MAPPED)
 assert.equal(readyRows.monthlyRent.property24Field, 'price')
 assert.equal(readyRows.monthlyRent.property24Value, 22000)
-assert.equal(readyRows.rentalRate.property24Field, 'rentalInfo.rentalRate')
-assert.equal(readyRows.rentalRate.property24Value, 'Month')
+assert.equal(readyRows.rentalPriceFrequency.property24Field, 'rentalInfo.rentalRate')
+assert.equal(readyRows.rentalPriceFrequency.property24Value, 'Month')
+assert.equal(readyRows.depositPolicy.property24Field, 'rentalInfo.depositRequirementsComments')
+assert.equal(readyRows.depositPolicy.status, RENTAL_PROPERTY24_FIELD_STATUS.MAPPED)
 assert.equal(readyRows.availableFrom.property24Field, 'occupationDate')
 assert.equal(readyRows.availableFrom.property24Value, '2026-09-01T00:00:00.000Z')
 assert.equal(readyRows.expiryDate.property24Field, 'expiryDate')

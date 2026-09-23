@@ -1505,7 +1505,12 @@ const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS =
 const PRIVATE_LISTING_REQUIREMENT_MUTATION_SELECT_FIELDS_BASE =
   'id, private_listing_id, requirement_key, requirement_name, requirement_description, requirement_group, document_visibility, status, is_required, generated_from, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS =
-  'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, uploaded_by, status, visibility, canonical_requirement_instance_id, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, promotion_status, promotion_error, promotion_attempted_at, promotion_revision, review_revision, review_started_at, reviewed_at, reviewed_by, review_reason, rejection_reason, review_due_at, review_sla_revision, review_sla_level, review_sla_escalated_at, uploaded_at, created_at, updated_at'
+  'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, generated_html, generated_file_name, signing_session_id, uploaded_by, status, visibility, canonical_requirement_instance_id, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, promotion_status, promotion_error, promotion_attempted_at, promotion_revision, review_revision, review_started_at, reviewed_at, reviewed_by, review_reason, rejection_reason, review_due_at, review_sla_revision, review_sla_level, review_sla_escalated_at, uploaded_at, created_at, updated_at'
+// Keep signed HTML in the first schema-drift fallback. Falling straight back
+// to the legacy projection would recreate the production bug whenever an
+// unrelated, newer review column has not reached an environment yet.
+const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_WITH_SIGNED_ARTIFACT =
+  'id, private_listing_id, requirement_id, document_type, category, document_name, storage_path, file_url, generated_html, generated_file_name, signing_session_id, uploaded_by, status, visibility, uploaded_at, created_at, updated_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY =
   'id, private_listing_id, requirement_id, document_type, document_name, status, pending_transaction_promotion, promoted_transaction_id, promoted_document_id, uploaded_at, created_at'
 const PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN =
@@ -1519,6 +1524,7 @@ const PRIVATE_LISTING_REQUIREMENT_SELECT_VARIANTS = [
 ]
 const PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS = [
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS,
+  PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_WITH_SIGNED_ARTIFACT,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_LEGACY,
   PRIVATE_LISTING_DOCUMENT_SELECT_FIELDS_MIN,
 ]
@@ -1871,6 +1877,12 @@ function normalizeDocumentRows(rows = []) {
       storage_path: normalizeText(row?.storage_path || ''),
       file_url: normalizeText(row?.file_url || ''),
       fileUrl: normalizeText(row?.file_url || ''),
+      generated_html: normalizeText(row?.generated_html || row?.generatedHtml || ''),
+      generatedHtml: normalizeText(row?.generated_html || row?.generatedHtml || ''),
+      generated_file_name: normalizeText(row?.generated_file_name || row?.generatedFileName || ''),
+      generatedFileName: normalizeText(row?.generated_file_name || row?.generatedFileName || ''),
+      signing_session_id: normalizeText(row?.signing_session_id || row?.signingSessionId || ''),
+      signingSessionId: normalizeText(row?.signing_session_id || row?.signingSessionId || ''),
       // Server-side Phase 4 payloads can represent the canonical final
       // mandate as an identity-only descriptor. Keep that identity through
       // the legacy listing mapper; it must never be converted back into a
@@ -1962,6 +1974,24 @@ function stripUnsupportedLocationColumns(payload = {}) {
     delete next[column]
   }
   return next
+}
+
+function isRentalPrivateListingPayload(payload = {}) {
+  return normalizeKey(payload.listingCategory || payload.listing_category) === 'rental'
+}
+
+function missingRentalCaptureColumns(error) {
+  const requiredColumns = [
+    'seller_canonical_facts_json',
+    'seller_canonical_fact_readiness_json',
+    'seller_canonical_facts_updated_at',
+    'formatted_address',
+    'street_number',
+    'street_name',
+    'street_address',
+    'country',
+  ]
+  return requiredColumns.filter((column) => isMissingColumnError(error, column))
 }
 
 const PRIVATE_LISTING_DEVELOPMENT_LINK_COLUMNS = [
@@ -2777,6 +2807,25 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   const sectionalTitleNumber = pickFirstText(canonicalPropertyFacts.sectionalTitleNumber, canonicalPropertyFacts.sectional_title_number, canonicalPropertyFacts.sectionalTitleScheme, canonicalSellerFacts.sectionalTitleNumber, canonicalSellerFacts.sectional_title_number)
   const streetNumber = pickFirstText(row.street_number, onboardingFormData.streetNumber, onboardingFormData.street_number, canonicalPropertyFacts.streetNumber, canonicalPropertyFacts.street_number)
   const streetName = pickFirstText(row.street_name, onboardingFormData.streetName, onboardingFormData.street_name, onboardingFormData.route, canonicalPropertyFacts.streetName, canonicalPropertyFacts.street_name, canonicalPropertyFacts.route)
+  // Publication data is the durable source for listings created through the
+  // marketing workspace. Older private_listings rows can legitimately have
+  // blank presentation columns, so retain both published and onboarding
+  // values when building the editor read model instead of falling through to
+  // form defaults.
+  const publicationAddress = pickFirstText(publicationDraft?.address)
+  const onboardingAddress = pickFirstText(
+    onboardingFormData.propertyAddress,
+    onboardingFormData.formattedAddress,
+    onboardingFormData.streetAddress,
+  )
+  const propertyAddress = pickFirstText(row.address_line_1, publicationAddress, onboardingAddress)
+  const propertyType = pickFirstText(row.property_type, publicationDraft?.propertyType, onboardingFormData.propertyType)
+  const askingPrice = normalizeNumber(row.asking_price) ?? normalizeNumber(publicationDraft?.askingPrice) ?? normalizeNumber(onboardingFormData.askingPrice) ?? 0
+  const estimatedValue = normalizeNumber(row.estimated_value) ?? askingPrice
+  const suburb = pickFirstText(row.suburb, publicationDraft?.suburb, onboardingFormData.suburb, canonicalPropertyFacts.suburb)
+  const city = pickFirstText(row.city, onboardingFormData.city, canonicalPropertyFacts.city)
+  const province = pickFirstText(row.province, publicationDraft?.province, onboardingFormData.province, canonicalPropertyFacts.province)
+  const postalCode = pickFirstText(row.postal_code, onboardingFormData.postalCode, onboardingFormData.postal_code, canonicalPropertyFacts.postalCode, canonicalPropertyFacts.postal_code)
 
   const mapped = {
     id: row.id,
@@ -2798,28 +2847,37 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     listingReference: row.listing_reference || '',
     listingStatus,
     listingVisibility: normalizeStatus(row.listing_visibility, LISTING_VISIBILITY, 'internal'),
-    propertyCategory: normalizePropertyCategory(row.property_category || row.property_type, { fallback: 'residential' }),
+    propertyCategory: normalizePropertyCategory(row.property_category || propertyType, { fallback: 'residential' }),
     listingSource: normalizeListingSource(row.listing_source || row.stock_source || row.listing_category, { fallback: 'private_listing' }),
-    propertyStructureType: normalizePropertyStructureType(row.property_structure_type || row.ownership_structure || row.property_type, { fallback: 'other' }),
-    propertyType: row.property_type || '',
+    propertyStructureType: normalizePropertyStructureType(
+      row.property_structure_type ||
+        onboardingFormData.propertyStructureType ||
+        onboardingFormData.property_structure_type ||
+        canonicalPropertyFacts.propertyStructureType ||
+        canonicalPropertyFacts.property_structure_type ||
+        row.ownership_structure ||
+        propertyType,
+      { fallback: 'other' },
+    ),
+    propertyType,
     listingCategory: row.listing_category || 'private_sale',
     title: pickFirstText(row.title, publicationDraft?.title),
     description: listingDescription,
-    askingPrice: Number(row.asking_price || 0) || 0,
-    estimatedValue: Number(row.estimated_value || 0) || 0,
-    addressLine1: row.address_line_1 || '',
-    formattedAddress: row.formatted_address || '',
+    askingPrice,
+    estimatedValue,
+    addressLine1: propertyAddress,
+    formattedAddress: pickFirstText(row.formatted_address, publicationAddress, onboardingFormData.formattedAddress, onboardingAddress),
     streetNumber,
     street_number: streetNumber,
     streetName,
     street_name: streetName,
-    streetAddress: row.street_address || row.address_line_1 || '',
+    streetAddress: pickFirstText(row.street_address, propertyAddress),
     addressLine2: row.address_line_2 || '',
-    suburb: row.suburb || '',
-    city: row.city || '',
-    province: row.province || '',
+    suburb,
+    city,
+    province,
     country: row.country || 'South Africa',
-    postalCode: row.postal_code || '',
+    postalCode,
     latitude: row.latitude === null || row.latitude === undefined ? null : Number(row.latitude),
     longitude: row.longitude === null || row.longitude === undefined ? null : Number(row.longitude),
     googlePlaceId: row.google_place_id || '',
@@ -2891,7 +2949,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     internalListingNotes: row.internal_listing_notes || onboardingNotes,
     // Compatibility shape used by existing listing UI while migration is underway.
     listingTitle: pickFirstText(row.title, publicationDraft?.title, row.address_line_1, 'Untitled listing'),
-    propertyAddress: [row.address_line_1, row.address_line_2].filter(Boolean).join(', '),
+    propertyAddress: [propertyAddress, row.address_line_2].filter(Boolean).join(', '),
     status: listingStatus,
     listingStatusLegacy: listingStatus,
     lifecycleStatus: listingStatus,
@@ -2922,19 +2980,19 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
     },
     propertyDetails: {
       headline: pickFirstText(row.title, publicationDraft?.title),
-      propertyType: row.property_type || '',
+      propertyType,
       listingStatus,
-      addressLine1: row.address_line_1 || '',
-      formattedAddress: row.formatted_address || '',
+      addressLine1: propertyAddress,
+      formattedAddress: pickFirstText(row.formatted_address, publicationAddress, onboardingFormData.formattedAddress, onboardingAddress),
       streetNumber,
       streetName,
-      streetAddress: row.street_address || row.address_line_1 || '',
-      postalCode: row.postal_code || '',
+      streetAddress: pickFirstText(row.street_address, propertyAddress),
+      postalCode,
       country: row.country || 'South Africa',
       googlePlaceId: row.google_place_id || '',
-      suburb: row.suburb || '',
-      city: row.city || '',
-      province: row.province || '',
+      suburb,
+      city,
+      province,
       bedrooms,
       bathrooms,
       garages,
@@ -2943,7 +3001,7 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
       openParking: normalizeNumber(onboardingFormData.parkingOpen) ?? 0,
       erfSize,
       floorSize,
-      price: normalizeNumber(onboardingFormData.askingPrice) ?? (Number(row.asking_price || 0) || 0),
+      price: normalizeNumber(onboardingFormData.askingPrice) ?? askingPrice,
       levies,
       leviesNotApplicable: Boolean(onboardingFormData.leviesNotApplicable),
       ratesTaxes,
@@ -5386,6 +5444,13 @@ export async function createPrivateListing(payload = {}, options = {}) {
 
   const listingPayload = buildPrivateListingPayload(payload, user.id)
   let insert = await client.from('private_listings').insert(listingPayload).select('*').single()
+  const rentalCaptureColumns = isRentalPrivateListingPayload(payload) ? missingRentalCaptureColumns(insert.error) : []
+  if (rentalCaptureColumns.length) {
+    throw new Error(
+      `Rental listing was not saved because the database is missing required rental storage fields: ${rentalCaptureColumns.join(', ')}. ` +
+      'Apply the rental listing persistence migration, then try again. No rental fields were discarded.',
+    )
+  }
   if (insert.error && (
     isMissingColumnError(insert.error, 'branch_id') ||
     isMissingColumnError(insert.error, 'property_category') ||
@@ -5572,29 +5637,24 @@ export async function updatePrivateListing(listingId, payload = {}, options = {}
   if (payload.internalListingNotes !== undefined) patch.internal_listing_notes = normalizeNullableText(payload.internalListingNotes)
 
   let updateQuery = await client.from('private_listings').update(patch).eq('id', normalizedId).select('*').single()
-  if (updateQuery.error && (
-    isMissingColumnError(updateQuery.error, 'property_category') ||
-    isMissingColumnError(updateQuery.error, 'listing_source') ||
-    isMissingColumnError(updateQuery.error, 'property_structure_type') ||
-    isMissingColumnError(updateQuery.error, 'mandate_packet_id') ||
-    isMissingColumnError(updateQuery.error, 'seller_canonical_facts_json') ||
-    isMissingColumnError(updateQuery.error, 'seller_canonical_fact_readiness_json') ||
-    isMissingColumnError(updateQuery.error, 'seller_canonical_facts_updated_at') ||
-    hasMissingPrivateListingDevelopmentLinkColumn(updateQuery.error) ||
-    hasMissingPrivateListingLocationColumn(updateQuery.error) ||
-    hasMissingPrivateListingPortalColumn(updateQuery.error)
-  )) {
+  if (updateQuery.error && isMissingColumnError(updateQuery.error)) {
+    // Schema compatibility must be surgical. A missing legacy field such as
+    // street_number must not discard supported fields such as
+    // formatted_address, property_structure_type, or canonical facts.
     const compatiblePatch = { ...patch }
-    if (isMissingColumnError(updateQuery.error, 'mandate_packet_id')) delete compatiblePatch.mandate_packet_id
-    delete compatiblePatch.seller_canonical_facts_json
-    delete compatiblePatch.seller_canonical_fact_readiness_json
-    delete compatiblePatch.seller_canonical_facts_updated_at
-    updateQuery = await client
-      .from('private_listings')
-      .update(stripUnsupportedDevelopmentLinkColumns(stripUnsupportedLocationColumns(stripUnsupportedPortalColumns(stripUnsupportedTaxonomyColumns(compatiblePatch)))))
-      .eq('id', normalizedId)
-      .select('*')
-      .single()
+    const maximumRetries = Object.keys(compatiblePatch).length
+    for (let attempt = 0; updateQuery.error && attempt < maximumRetries; attempt += 1) {
+      const missingColumn = Object.keys(compatiblePatch)
+        .find((column) => isMissingColumnError(updateQuery.error, column))
+      if (!missingColumn) break
+      delete compatiblePatch[missingColumn]
+      updateQuery = await client
+        .from('private_listings')
+        .update(compatiblePatch)
+        .eq('id', normalizedId)
+        .select('*')
+        .single()
+    }
   }
   if (updateQuery.error) throw updateQuery.error
   const [onboardingMap, requirementsMap, documentsMap, mandatePacketsMap] = await Promise.all([
@@ -8730,6 +8790,8 @@ export const __privateListingServiceTestUtils = Object.freeze({
   getSellerCompletionRequirements,
   resolveSellerCompletionTransactionId,
   resolveSellerCompletionAssignedAgentId,
+  normalizeDocumentRows,
+  privateListingDocumentSelectVariants: PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
 })
 
 export async function uploadPrivateListingDocument(listingId, file, {

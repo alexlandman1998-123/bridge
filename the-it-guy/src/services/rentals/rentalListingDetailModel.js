@@ -9,6 +9,10 @@ import {
 import {
   buildRentalProperty24Readiness,
 } from './rentalListingProperty24ReadinessModel.js'
+import {
+  normalizeRentalDistributionChannels,
+  RENTAL_DISTRIBUTION_CHANNELS,
+} from './rentalListingDraftModel.js'
 
 export const RENTAL_LISTING_DETAIL_VERSION = 'arch9_rental_listing_detail_v1'
 
@@ -28,6 +32,10 @@ function hasValue(value) {
   return normalizeText(value) !== '' && value !== null && value !== undefined
 }
 
+function isPublishedChannelStatus(value) {
+  return PROPERTY24_PUBLISHED_STATUSES.has(normalizeKey(value))
+}
+
 function replaceListingId(path = '', listingId = '') {
   return normalizeText(path).replace(':listingId', encodeURIComponent(normalizeText(listingId)))
 }
@@ -44,6 +52,7 @@ export function getRentalListingDetailTabs(listingId = '') {
 
 export function resolveRentalListingDetailTab(tabKey = '') {
   const normalized = normalizeKey(tabKey || 'overview')
+  if (normalized === 'syndication') return 'marketing'
   return RENTAL_LISTING_DETAIL_TABS.some((tab) => tab.key === normalized) ? normalized : 'overview'
 }
 
@@ -93,9 +102,21 @@ export function buildRentalListingReadinessItems(row = {}) {
 
 export function buildRentalListingDetailView(listing = {}) {
   const row = buildRentalListingIndexRow(listing)
+  const facts = listing.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object' ? listing.sellerCanonicalFacts : {}
+  const publication = listing.listingPublicationData && typeof listing.listingPublicationData === 'object'
+    ? listing.listingPublicationData
+    : listing.publicationData && typeof listing.publicationData === 'object' ? listing.publicationData : {}
+  const selectedDistributionChannels = normalizeRentalDistributionChannels(
+    facts.distribution?.selectedChannels || facts.distribution?.selected_channels || publication.selectedSyndicationChannels || publication.selected_syndication_channels,
+  )
   const readinessItems = buildRentalListingReadinessItems(row)
   const property24Readiness = buildRentalProperty24Readiness(listing)
   const completedReadinessCount = readinessItems.filter((item) => item.complete).length
+  const channels = [
+    { key: 'property24', label: 'Property24', status: row.property24Status, selected: selectedDistributionChannels.includes('property24') },
+    { key: 'private_property', label: 'Private Property', status: row.privatePropertyStatus, selected: selectedDistributionChannels.includes('private_property') },
+    { key: 'agency_website', label: 'Agency Website', status: row.websiteStatus, selected: selectedDistributionChannels.includes('agency_website') },
+  ]
   return {
     version: RENTAL_LISTING_DETAIL_VERSION,
     listing,
@@ -106,6 +127,11 @@ export function buildRentalListingDetailView(listing = {}) {
     completedReadinessCount,
     totalReadinessCount: readinessItems.length,
     readinessPercent: readinessItems.length ? Math.round((completedReadinessCount / readinessItems.length) * 100) : 0,
+    channels,
+    selectedDistributionChannels: selectedDistributionChannels.map((key) => RENTAL_DISTRIBUTION_CHANNELS.find((channel) => channel.key === key)).filter(Boolean),
+    liveChannelCount: channels.filter((channel) => isPublishedChannelStatus(channel.status)).length,
+    channelCount: channels.length,
+    lastUpdatedAt: row.updatedAt || null,
     statusLabel: formatRentalIndexStatusLabel(row.statusGroup),
     property24StatusLabel: formatRentalIndexStatusLabel(row.property24Status),
     mandateStatusLabel: formatRentalIndexStatusLabel(row.mandateStatus),

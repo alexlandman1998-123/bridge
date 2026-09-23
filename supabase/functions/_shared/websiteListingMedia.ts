@@ -1,5 +1,6 @@
 export const WEBSITE_LISTING_MEDIA_BUCKET = "listing-media";
 export const WEBSITE_LISTING_MEDIA_MAX_BYTES = 15 * 1024 * 1024;
+export const WEBSITE_LISTING_MEDIA_MAX_ITEMS = 100;
 
 export type WebsiteListingAction = "publish" | "update" | "unpublish";
 export type WebsiteMediaType = "image" | "floor_plan";

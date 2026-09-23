@@ -1,7 +1,7 @@
 export const SYNDICATION_FACTS_VERSION = 'arch9_listing_syndication_facts_v1'
 
 export const SYNDICATION_PRICE_PRESENTATIONS = Object.freeze(['Standard', 'Poa', 'Negotiable', 'OffersFrom'])
-export const SYNDICATION_RENTAL_PRICE_PERIODS = Object.freeze(['PerMonth', 'PerWeek', 'PerDay', 'PerM2'])
+export const SYNDICATION_RENTAL_PRICE_PERIODS = Object.freeze(['PerMonth', 'PerWeek', 'PerDay', 'PerM2', 'PerYear'])
 export const SYNDICATION_AREA_UNITS = Object.freeze(['SquareMetres', 'SquareFeet', 'Hectares', 'Acres'])
 
 function text(value = '') {
@@ -56,6 +56,7 @@ function rentalPricePeriod(value) {
     per_week: 'PerWeek', weekly: 'PerWeek', week: 'PerWeek', perweek: 'PerWeek',
     per_day: 'PerDay', daily: 'PerDay', day: 'PerDay', perday: 'PerDay',
     per_m2: 'PerM2', perm2: 'PerM2', per_square_metre: 'PerM2', per_square_meter: 'PerM2',
+    annual: 'PerYear', annually: 'PerYear', yearly: 'PerYear', year: 'PerYear', per_year: 'PerYear', peryear: 'PerYear',
   }
   return aliases[normalized] || 'PerMonth'
 }
@@ -101,6 +102,7 @@ export function buildSyndicationFacts({ listing = {}, publication = {}, facts = 
   const source = object(facts)
   const canonical = object(listing.seller_canonical_facts_json || listing.sellerCanonicalFacts)
   const property = object(canonical.property)
+  const rentalInfo = object(canonical.rentalInfo || canonical.rental_info)
   // Phase 3 keeps new listing terms in the established onboarding payload until
   // the facts migration is applied. Read both shapes so adapters have one model.
   const onboarding = object(listing.sellerOnboarding?.formData || listing.seller_onboarding?.form_data)
@@ -115,11 +117,11 @@ export function buildSyndicationFacts({ listing = {}, publication = {}, facts = 
     propertyCategory: firstText(source.propertyCategory, source.property_category, propertyDetails.propertyCategory, onboarding.propertyCategory, listing.property_category, listing.propertyCategory, publication.property_category, publication.propertyCategory) || null,
     propertySubtype: firstText(source.propertySubtype, source.property_subtype, propertyDetails.propertySubtype, onboarding.propertySubtype, listing.property_type, listing.propertyType, publication.property_type, publication.propertyType) || null,
     listingPurpose,
-    mandateType: firstText(source.mandateType, source.mandate_type, listing.mandate_type, listing.mandateType) || null,
+    mandateType: firstText(source.mandateType, source.mandate_type, rentalInfo.rentalMandateType, rentalInfo.rental_mandate_type, listing.mandate_type, listing.mandateType) || null,
     pricePresentation: presentation,
     offersFromPrice: presentation === 'OffersFrom' ? offersFromPrice : null,
     rentalPricePeriod: listingPurpose === 'Rental'
-      ? rentalPricePeriod(firstText(source.rentalPricePeriod, source.rental_price_period, propertyDetails.rentalPricePeriod, onboarding.rentalPricePeriod, publication.rental_price_type, publication.rentalPriceType, listing.rental_price_type, listing.rentalPriceType))
+      ? rentalPricePeriod(firstText(source.rentalPricePeriod, source.rental_price_period, rentalInfo.rentalPriceFrequency, rentalInfo.rental_price_frequency, propertyDetails.rentalPricePeriod, onboarding.rentalPricePeriod, publication.rental_price_type, publication.rentalPriceType, listing.rental_price_type, listing.rentalPriceType))
       : null,
     availableFrom: date(firstText(source.availableFrom, source.available_from, propertyDetails.availableFrom, onboarding.availableFrom, publication.available_from, publication.availableFrom, listing.available_from, listing.availableFrom)),
     floorArea: number(firstText(source.floorArea, source.floor_area, propertyDetails.floorSize, onboarding.floorSize, publication.floor_size, publication.floorSize, listing.floor_size, listing.floorSize, property.floorSize)),

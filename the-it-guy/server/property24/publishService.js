@@ -302,6 +302,9 @@ export async function resolveProperty24ListingPublishConfiguration({
       property24UserGroupId: credentials.userGroupId,
       property24CredentialSource: credentials.source,
     } : {}),
+    // No organisation vault credential means there is no organisation-scoped
+    // group to send. The caller must not inherit a global header.
+    property24SendUserGroupHeader: credentials ? Boolean(credentials.userGroupId) : false,
     syndicationEnabled: Boolean(
       config.syndicationEnabled && (
         accountSettings.configured
@@ -406,6 +409,7 @@ export async function buildProperty24ListingSubmitPlan({
       photosChanged,
       includeSubmitPayload: true,
       requirePhotoBytes: loadImageBytes,
+      expectedPhotoPayloadCount: loaded.summary.requested,
     },
   })
 }
@@ -417,6 +421,7 @@ export async function buildProperty24RentalListingSubmitPlan({
   agentId,
   agentSourceReference,
   environment = 'exdev',
+  apiVersion,
   sandboxPayloadTestMode = true,
   suburbId,
   propertyTypeId,
@@ -470,12 +475,14 @@ export async function buildProperty24RentalListingSubmitPlan({
     options: {
       agencyId,
       environment,
+      apiVersion,
       sandboxPayloadTestMode,
       expiryDate,
       listingNumber,
       photosChanged,
       includeSubmitPayload: true,
       requirePhotoBytes: loadImageBytes,
+      expectedPhotoPayloadCount: loaded.summary.requested,
     },
     imageByteLoad: {
       summary: loaded.summary,

@@ -5,7 +5,6 @@ import LoadingSkeleton from '../../components/LoadingSkeleton'
 import JourneyStageOverrideActions from '../../components/journey/JourneyStageOverrideActions'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
-import AreaMultiSelect from '../../components/location/AreaMultiSelect'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import BuyerJourneyOverviewPanel from './BuyerJourneyOverviewPanel'
 import LeadWorkspaceLoadingShell from './LeadWorkspaceLoadingShell'
@@ -33,6 +32,7 @@ import { buildManualFicaPackDocument } from '../../services/documents/ficaManual
 import {
   SELLER_BASE_PACK_COMPLETION_ROUTES,
   SELLER_BASE_PACK_KEYS,
+  SELLER_DOCUMENT_ARTIFACT_STAGES,
   getSellerBasePackDefinition,
   normalizeSellerBasePackKey,
 } from '../../lib/sellerBasePackContract'
@@ -115,8 +115,6 @@ import {
 } from '../../services/sellerDocumentRequirementsService'
 import { projectCanonicalSellerDocumentRows } from '../../services/documents/canonicalSellerDocumentProjectionService'
 import { resolveCanonicalDocumentRequestPresentation } from '../../services/documents/canonicalDocumentRequestPresentationService'
-import { projectSellerDocumentRowsForTaxonomyRollout } from '../../services/documents/sellerDocumentTaxonomyRolloutService'
-import { getSellerDocumentReleaseReadiness } from '../../services/sellerDocumentReleaseReadinessService'
 import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
 import { buildSellerCompliancePortalModel } from '../../core/documents/sellerCompliancePortalModel'
 import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts'
@@ -273,6 +271,7 @@ import {
 const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
 const PIPELINE_RECORDS_TIMEOUT_MS = 10000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
+const SELLER_DOCUMENT_HYDRATION_TIMEOUT_MS = 20000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
 const PIPELINE_APPOINTMENT_ROLLING_PAST_DAYS = 45
 const PIPELINE_APPOINTMENT_ROLLING_FUTURE_DAYS = 180
@@ -2860,11 +2859,11 @@ function buildKingstonsSellerPackDocumentRows(lead = {}, {
     return isKingstonsGeneratedSellerPackRequirementRow(documentRow)
   })
 
-  return dedupeSellerLeadDocumentRows([
+  return projectCanonicalSellerDocumentRows([
     ...baselineRows,
     ...roleplayerFicaRows,
     ...generatedRows,
-  ])
+  ]).filter((row) => !isStaleSellerLeadDocumentRequirement(row))
 }
 
 function summarizeKingstonsSellerPack(documentRows = []) {
@@ -4058,6 +4057,27 @@ function isStaleKingstonsBaselineDocumentRow(documentRow = {}) {
   return KINGSTONS_STALE_BASELINE_DOCUMENT_KEYS.has(getSellerLeadDocumentCanonicalKey(documentRow))
 }
 
+function isCompletedSellerSigningAcknowledgement(documentRow = {}) {
+  const document = documentRow?.originalDocument || documentRow?.original?.document || {}
+  const key = normalizeSellerBasePackKey(
+    documentRow?.key || documentRow?.requirementKey || documentRow?.requirement_key ||
+    document?.document_type || document?.documentType || document?.requirement_key || document?.requirementKey,
+  )
+  const status = normalizeKey(
+    documentRow?.status || documentRow?.statusLabel ||
+    document?.status || document?.document_status || document?.documentStatus,
+  )
+  return Boolean(
+    normalizeText(document?.id || document?.document_id || documentRow?.documentId || documentRow?.document_id) &&
+    [
+      SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+      SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
+      SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION,
+    ].includes(key) &&
+    ['completed', 'approved', 'signed', 'fully_signed'].includes(status),
+  )
+}
+
 function getSellerLeadDocumentStatusMeta(documentRow = {}) {
   const hasFile = sellerLeadDocumentHasFileEvidence(documentRow)
   // A post-onboarding document can be an intentionally generated HTML/PDF
@@ -4066,15 +4086,39 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
   // FICA/mandate draft must not look like a completed signed document.
   const hasAvailableGeneratedArtifact = Boolean(
     normalizeText(documentRow?.generatedHtml || documentRow?.generated_html) &&
+    !isSellerFinalDocumentAwaitingServerPdf(documentRow) &&
     documentRow?.canDownload !== false &&
     documentRow?.can_download !== false,
   )
-  const hasDocumentEvidence = hasFile || hasAvailableGeneratedArtifact
+  // Signing acknowledgements can be completed in the seller pack before a
+  // separate downloadable artifact is attached. They are real completion
+  // evidence and must not be relabelled as an upload requirement.
+  const hasDocumentEvidence = hasFile || hasAvailableGeneratedArtifact || isCompletedSellerSigningAcknowledgement(documentRow)
   const rawStatus = normalizeText(
     documentRow?.statusLabel || documentRow?.status || documentRow?.documentStatus || documentRow?.document_status ||
     (!hasFile ? documentRow?.signingStatus?.label : ''),
   )
   const status = normalizeKey(rawStatus)
+
+  if (isSellerFinalDocumentRecoveryRequired(documentRow)) {
+    return {
+      state: 'danger',
+      label: 'PDF recovery required',
+      pillClass: 'border-[#f2c9c4] bg-[#fff5f4] text-[#9f3028]',
+      iconClass: 'bg-[#fff5f4] text-[#9f3028]',
+      Icon: AlertTriangle,
+    }
+  }
+
+  if (isSellerFinalDocumentAwaitingServerPdf(documentRow)) {
+    return {
+      state: 'review',
+      label: 'Finalising PDF',
+      pillClass: 'border-[#cddceb] bg-[#f4f8fb] text-[#47627b]',
+      iconClass: 'bg-[#edf4f8] text-[#47627b]',
+      Icon: Clock3,
+    }
+  }
 
   if (/(rejected|declined|failed|invalid)/.test(status)) {
     return {
@@ -4112,6 +4156,28 @@ function getSellerLeadDocumentStatusMeta(documentRow = {}) {
     iconClass: 'bg-[#f3f7fb] text-[#7890a8]',
     Icon: FileText,
   }
+}
+
+function isSellerFinalDocumentRecoveryRequired(documentRow = {}) {
+  return normalizeKey(
+    documentRow?.artifactRecoveryState || documentRow?.artifact_recovery_state,
+  ) === 'missing_final_pdf'
+}
+
+function isSellerFinalDocumentAwaitingServerPdf(documentRow = {}) {
+  if (sellerLeadDocumentHasFileEvidence(documentRow)) return false
+  if (isSellerFinalDocumentRecoveryRequired(documentRow)) return false
+  const pdfState = normalizeKey(documentRow?.serverPdfState || documentRow?.server_pdf_state)
+  if (pdfState) return ['queued', 'processing', 'finalising', 'finalizing'].includes(pdfState)
+  const stage = normalizeKey(documentRow?.documentContract?.stage || documentRow?.document_contract?.stage)
+  if (stage === SELLER_DOCUMENT_ARTIFACT_STAGES.FINAL_SIGNED) return false
+  const canonicalKey = normalizeSellerBasePackKey(
+    documentRow?.key || documentRow?.requirementKey || documentRow?.requirement_key ||
+    documentRow?.documentType || documentRow?.document_type,
+  )
+  const signingSessionId = normalizeText(documentRow?.signingSessionId || documentRow?.signing_session_id)
+  const status = normalizeKey(documentRow?.status || documentRow?.statusLabel || documentRow?.documentStatus || documentRow?.document_status)
+  return Boolean(canonicalKey && signingSessionId && ['queued', 'processing', 'finalising', 'finalizing'].includes(status))
 }
 
 function getSellerLeadDocumentCanonicalLabel(row = {}) {
@@ -4179,15 +4245,6 @@ function getSellerLeadDocumentCanonicalKey(row = {}) {
   return normalizeKey(row?.key || row?.requirementKey || row?.requirement_key || row?.label || row?.title || row?.id)
 }
 
-function getSellerLeadDocumentStatusRank(status = '') {
-  const normalized = normalizeKey(status)
-  if (/(approved|complete|completed|signed|verified|accepted|done|fully_signed)/.test(normalized)) return 5
-  if (/(review|submitted|received|uploaded|processing)/.test(normalized)) return 4
-  if (/(rejected|declined|failed|invalid)/.test(normalized)) return 3
-  if (/(required|requested|pending|missing|outstanding)/.test(normalized)) return 1
-  return normalized ? 2 : 0
-}
-
 function sellerLeadDocumentHasFileEvidence(row = {}) {
   const originalDocument = row?.originalDocument || row?.original?.document || {}
   return Boolean(
@@ -4220,115 +4277,6 @@ function sellerLeadDocumentHasFileEvidence(row = {}) {
         (row?.packetId || row?.packet_id) &&
         (row?.packetVersionId || row?.packet_version_id)),
   )
-}
-
-function mergeSellerLeadDocumentRows(existing = {}, incoming = {}) {
-  const existingRequired = existing.required !== false
-  const incomingRequired = incoming.required !== false
-  const existingStatusRank = getSellerLeadDocumentStatusRank(existing.status || existing.statusLabel)
-  const incomingStatusRank = getSellerLeadDocumentStatusRank(incoming.status || incoming.statusLabel)
-  const existingHasFile = sellerLeadDocumentHasFileEvidence(existing)
-  const incomingHasFile = sellerLeadDocumentHasFileEvidence(incoming)
-  const incomingIsStronger =
-    incomingStatusRank > existingStatusRank ||
-    (incomingStatusRank === existingStatusRank && incomingHasFile && !existingHasFile)
-  const base = incomingIsStronger ? incoming : existing
-  const overlay = base === existing ? incoming : existing
-  const statusSource = incomingStatusRank > existingStatusRank ? incoming : existing
-  const url = firstWorkspaceText(
-    incoming.url,
-    incoming.fileUrl,
-    incoming.file_url,
-    incoming.downloadUrl,
-    incoming.download_url,
-    existing.url,
-    existing.fileUrl,
-    existing.file_url,
-    existing.downloadUrl,
-    existing.download_url,
-  )
-  const storagePath = firstWorkspaceText(incoming.storagePath, incoming.storage_path, incoming.filePath, incoming.file_path, existing.storagePath, existing.storage_path, existing.filePath, existing.file_path)
-  const storageBucket = firstWorkspaceText(incoming.storageBucket, incoming.storage_bucket, existing.storageBucket, existing.storage_bucket)
-  const generatedHtml = firstWorkspaceText(incoming.generatedHtml, incoming.generated_html, existing.generatedHtml, existing.generated_html)
-  const generatedFileName = firstWorkspaceText(incoming.generatedFileName, incoming.generated_file_name, existing.generatedFileName, existing.generated_file_name)
-  const uploadedAt = firstWorkspaceText(incoming.uploadedAt, incoming.uploaded_at, existing.uploadedAt, existing.uploaded_at)
-  const uploadedBy = firstWorkspaceText(incoming.uploadedBy, incoming.uploaded_by, existing.uploadedBy, existing.uploaded_by)
-  const packetId = firstWorkspaceText(incoming.packetId, incoming.packet_id, existing.packetId, existing.packet_id)
-  const packetVersionId = firstWorkspaceText(incoming.packetVersionId, incoming.packet_version_id, existing.packetVersionId, existing.packet_version_id)
-  const canonicalKey = getSellerLeadDocumentCanonicalKey(base) || getSellerLeadDocumentCanonicalKey(overlay)
-  const canonicalLabel = canonicalKey === 'signed_mandate'
-    ? 'Signed Mandate'
-    : canonicalKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
-      ? 'Signed Mandatory Disclosure / Defects Form'
-      : canonicalKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
-        ? 'Signed FICA Declaration'
-        : base.label || base.title || overlay.label || overlay.title
-
-  return {
-    ...overlay,
-    ...base,
-    id: base.id || overlay.id,
-    key: canonicalKey || base.key || overlay.key,
-    requirementKey: canonicalKey || base.requirementKey || overlay.requirementKey,
-    requirement_key: canonicalKey || base.requirement_key || overlay.requirement_key,
-    title: canonicalLabel,
-    label: canonicalLabel,
-    required: existingRequired || incomingRequired,
-    status: statusSource.status || statusSource.statusLabel || base.status,
-    statusLabel: statusSource.statusLabel || statusSource.status || base.statusLabel,
-    url,
-    fileUrl: url,
-    file_url: url,
-    downloadUrl: url,
-    download_url: url,
-    storagePath,
-    storage_path: storagePath,
-    storageBucket,
-    storage_bucket: storageBucket,
-    generatedHtml,
-    generated_html: generatedHtml,
-    generatedFileName,
-    generated_file_name: generatedFileName,
-    uploadedFileName: firstWorkspaceText(incoming.uploadedFileName, existing.uploadedFileName, generatedFileName),
-    uploaded_file_name: firstWorkspaceText(incoming.uploaded_file_name, incoming.uploadedFileName, existing.uploaded_file_name, existing.uploadedFileName, generatedFileName),
-    uploadedAt,
-    uploaded_at: uploadedAt,
-    uploadedBy,
-    uploaded_by: uploadedBy,
-    packetId,
-    packet_id: packetId,
-    packetVersionId,
-    packet_version_id: packetVersionId,
-    canonicalFinalArtifact: Boolean(
-      canonicalKey === 'signed_mandate' &&
-        packetId &&
-        packetVersionId &&
-        (incoming.canonicalFinalArtifact || existing.canonicalFinalArtifact || !url),
-    ),
-  }
-}
-
-function dedupeSellerLeadDocumentRows(rows = [], { useCanonicalProjection = true } = {}) {
-  const mergedRows = []
-  const indexByKey = new Map()
-  const candidateRows = useCanonicalProjection ? projectCanonicalSellerDocumentRows(rows) : rows
-  for (const row of candidateRows) {
-    if (!row || typeof row !== 'object') continue
-    if (isStaleSellerLeadDocumentRequirement(row)) continue
-    const key = row.canonicalRequirementIdentity || row.canonical_requirement_identity || getSellerLeadDocumentCanonicalKey(row) || normalizeKey(row.id || row.label || row.title)
-    if (!key) {
-      mergedRows.push(row)
-      continue
-    }
-    if (!indexByKey.has(key)) {
-      indexByKey.set(key, mergedRows.length)
-      mergedRows.push(row)
-      continue
-    }
-    const index = indexByKey.get(key)
-    mergedRows[index] = mergeSellerLeadDocumentRows(mergedRows[index], row)
-  }
-  return mergedRows
 }
 
 function buildSellerLeadMandatePacketForDocuments({
@@ -4570,7 +4518,6 @@ function buildSellerLeadDocumentRowsFromSource({
   listing = null,
   journey = null,
   mandatePacketStatus = null,
-  useCanonicalProjection = true,
 } = {}) {
   const listingRecord = listing && typeof listing === 'object' ? listing : {}
   const leadRecord = lead && typeof lead === 'object' ? lead : {}
@@ -4637,10 +4584,11 @@ function buildSellerLeadDocumentRowsFromSource({
     formData,
     mandatePacket: buildSellerLeadMandatePacketForDocuments({ mandatePacketStatus, lead: leadRecord, listing: listingRecord }),
     journey,
-    useCanonicalProjection,
   })
 
-  return dedupeSellerLeadDocumentRows(source.rows.map(mapSellerLeadDocumentSourceRow))
+  return source.rows
+    .map(mapSellerLeadDocumentSourceRow)
+    .filter((row) => !isStaleSellerLeadDocumentRequirement(row))
 }
 
 function openSellerLeadGeneratedDocumentHtml(markup = '', fileName = 'seller-document.html') {
@@ -4666,11 +4614,6 @@ function sanitizeSellerLeadDownloadFileName(value = '', fallback = 'seller-docum
     .replace(/\s+/g, ' ')
     .trim()
   return normalized || fallback
-}
-
-function toSellerLeadPdfFileName(value = '', fallback = 'seller-document.pdf') {
-  const raw = sanitizeSellerLeadDownloadFileName(value || fallback, fallback)
-  return raw.replace(/\.(html?|pdf)$/i, '') + '.pdf'
 }
 
 function sanitizeBuyerOnboardingDownloadFileName(value = '', fallback = 'buyer-onboarding-form.html') {
@@ -5516,66 +5459,6 @@ async function triggerSellerLeadBrowserDownload(url = '', fileName = 'seller-doc
     if (objectUrl && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
       URL.revokeObjectURL(objectUrl)
     }
-  }
-}
-
-async function downloadGeneratedSellerLeadDocumentPdf(markup = '', fileName = 'seller-document.pdf') {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    throw new Error('PDF downloads are only available in the browser.')
-  }
-
-  let pdfStage = null
-  let styleElement = null
-  try {
-    const { default: html2pdf } = await import('html2pdf.js/src/index.js')
-    const pdfDocument = new window.DOMParser().parseFromString(String(markup || ''), 'text/html')
-    const style = pdfDocument.head.querySelector('style')
-    styleElement = document.createElement('style')
-    styleElement.setAttribute('data-seller-lead-generated-document-pdf-style', 'true')
-    styleElement.textContent = style?.textContent || ''
-    pdfStage = document.createElement('div')
-    pdfStage.setAttribute('data-seller-lead-generated-document-pdf-stage', 'true')
-    pdfStage.style.position = 'fixed'
-    pdfStage.style.left = '-10000px'
-    pdfStage.style.top = '0'
-    pdfStage.style.width = '210mm'
-    pdfStage.style.background = '#ffffff'
-    pdfStage.style.pointerEvents = 'none'
-    pdfStage.innerHTML = pdfDocument.body.innerHTML
-    document.head.appendChild(styleElement)
-    document.body.appendChild(pdfStage)
-
-    const imageLoads = Array.from(pdfStage.querySelectorAll('img')).map((image) => {
-      if (image.complete) return Promise.resolve()
-      return new Promise((resolve) => {
-        image.onload = resolve
-        image.onerror = resolve
-      })
-    })
-    await Promise.all(imageLoads)
-    await new Promise((resolve) => window.requestAnimationFrame(resolve))
-
-    const exportTarget = pdfStage.querySelector('.property-disclosure-document') || pdfStage
-    await html2pdf()
-      .set({
-        margin: 0,
-        filename: toSellerLeadPdfFileName(fileName),
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          windowWidth: 794,
-          windowHeight: 1123,
-        },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        pagebreak: { mode: ['css', 'legacy'] },
-      })
-      .from(exportTarget)
-      .save()
-  } finally {
-    pdfStage?.remove()
-    styleElement?.remove()
   }
 }
 
@@ -10680,6 +10563,7 @@ const BUYER_QUALIFICATION_NOTE_FIELDS = [
 const BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT = 2
 
 const BUYER_MOVE_TIMEFRAME_OPTIONS = ['', 'Immediately', '1-3 months', '3-6 months', '6+ months', 'Just browsing']
+const BUYER_BUDGET_OPTIONS = ['', 'Under R 1m', 'R 1m – R 2m', 'R 2m – R 3m', 'R 3m – R 5m', 'R 5m – R 8m', 'R 8m+', 'Flexible / discuss']
 const BUYER_FINANCE_TYPE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure']
 const BUYER_SUBJECT_TO_FINANCE_OPTIONS = ['', 'Yes', 'No', 'Unsure']
 const BUYER_PRE_APPROVAL_OPTIONS = ['', 'Not started', 'Pre-approved', 'Submitted', 'Needs bond originator', 'Cash buyer']
@@ -11904,7 +11788,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     commissionAmount: '',
     vatHandling: '',
   })
-  const [sellerDocumentTaxonomyRolloutControl, setSellerDocumentTaxonomyRolloutControl] = useState(null)
   const [leadDetailForm, setLeadDetailForm] = useState(LEAD_DETAIL_DEFAULTS)
   const [sellerProfileEditForm, setSellerProfileEditForm] = useState(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
   const [buyerProfileForm, setBuyerProfileForm] = useState({})
@@ -12040,6 +11923,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [canonicalOfferNotesById, setCanonicalOfferNotesById] = useState({})
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
   const [appointmentListingOptions, setAppointmentListingOptions] = useState([])
+  // The listing option collection is intentionally lightweight and is refreshed by
+  // several independent pipeline requests. Keep the document-complete read model
+  // outside that collection so a later shallow snapshot cannot erase signed files.
+  const [selectedLeadHydratedListing, setSelectedLeadHydratedListing] = useState(null)
+  const [selectedLeadDocumentHydrationStatus, setSelectedLeadDocumentHydrationStatus] = useState('idle')
   const [showDayImportBusy, setShowDayImportBusy] = useState(false)
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
@@ -12459,6 +12347,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             return []
           })
           const privateListingsPromise = withPipelineTimeout(
+            // Listing requirements and signing documents are loaded only for the
+            // open seller below. Fetching them for every listing can exceed the
+            // pipeline's first-paint deadline and causes the whole listing result
+            // to be discarded, including completed seller documents.
             getOrganisationPrivateListings(orgId, { includeRequirementsAndDocuments: false }),
             'Private listing data is taking too long to load.',
             PIPELINE_RECORDS_TIMEOUT_MS,
@@ -14278,6 +14170,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  function handleOpenSelectedLeadAssignment() {
+    setLeadActionsMenuOpen(false)
+    if (!selectedLeadIsSeller) {
+      setMessage('Owner changes for buyer leads can be managed from the Lead Assigned To card.')
+      return
+    }
+    if (!canReassignSelectedSellerLead) {
+      setError('You do not have permission to reassign this lead.')
+      return
+    }
+    setLeadWorkspaceTab('overview')
+    setSellerAssignmentMenuOpen(true)
+  }
+
   const selectedLeadHasKingstonsPipelineSignal = useMemo(() => {
     if (!selectedLeadIsSeller) return false
     return hasKingstonsPipelineSignal({
@@ -14329,9 +14235,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const resolveLeadLinkedListing = useCallback(
     (lead = {}) => {
-      const listingId = normalizeText(lead?.listingId || lead?.listing_id)
-      if (listingId && appointmentListingById.has(listingId)) {
-        const listingOption = appointmentListingById.get(listingId)
+      const expandListingOption = (listingOption) => {
+        if (!listingOption) return null
         const sourceListing = isPlainObject(listingOption?.sourceListing) ? listingOption.sourceListing : {}
         // Appointment options are deliberately compact. Seller-journey decisions need
         // the complete linked listing, otherwise async hydration drops mandate and
@@ -14344,8 +14249,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sourceListing: Object.keys(sourceListing).length ? sourceListing : listingOption?.sourceListing,
         }
       }
+      const listingId = normalizeText(lead?.listingId || lead?.listing_id)
+      if (listingId && appointmentListingById.has(listingId)) {
+        return expandListingOption(appointmentListingById.get(listingId))
+      }
       const leadIsSeller = resolveLeadCategoryView(lead) === 'seller'
-      const sellerOnboardingToken = normalizeText(lead?.sellerOnboardingToken || lead?.seller_onboarding_token || lead?.sellerOnboarding?.token)
+      const leadIdentity = normalizeLeadIdentityKey(lead?.leadId || lead?.lead_id || lead?.id)
+      const sellerOnboardingToken = normalizeText(
+        lead?.sellerOnboardingToken || lead?.seller_onboarding_token || lead?.sellerOnboarding?.token || lead?.seller_onboarding?.token,
+      )
+      // Older seller leads can retain a CRM/property reference in listing_id rather
+      // than the private-listing UUID. Match the canonical listing's seller lead or
+      // onboarding token before treating that reference as authoritative. This keeps
+      // completed signing-pack documents visible after the listing is created.
+      if (leadIsSeller && (leadIdentity || sellerOnboardingToken)) {
+        const linkedOption = appointmentListingOptions.find((option) => {
+          const source = isPlainObject(option?.sourceListing) ? option.sourceListing : option
+          const listingLeadIdentities = [
+            source?.sellerLeadId,
+            source?.seller_lead_id,
+            source?.originatingCrmLeadId,
+            source?.originating_crm_lead_id,
+          ].map(normalizeLeadIdentityKey).filter(Boolean)
+          const listingOnboardingToken = normalizeText(
+            source?.sellerOnboardingToken || source?.seller_onboarding_token || source?.sellerOnboarding?.token || source?.seller_onboarding?.token,
+          )
+          return (leadIdentity && listingLeadIdentities.includes(leadIdentity)) ||
+            (sellerOnboardingToken && listingOnboardingToken === sellerOnboardingToken)
+        })
+        if (linkedOption) return expandListingOption(linkedOption)
+      }
       if (leadIsSeller && (listingId || sellerOnboardingToken)) return null
       const possibleLabels = [
         lead?.propertyInterest,
@@ -14358,13 +14291,29 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       }
       return null
     },
-    [appointmentListingById, appointmentListingByLabel],
+    [appointmentListingById, appointmentListingByLabel, appointmentListingOptions],
   )
 
-  const selectedLeadLinkedListing = useMemo(
-    () => (selectedLead ? resolveLeadLinkedListing(selectedLead) : null),
-    [resolveLeadLinkedListing, selectedLead],
-  )
+  const selectedLeadLinkedListing = useMemo(() => {
+    const resolvedListing = selectedLead ? resolveLeadLinkedListing(selectedLead) : null
+    const expectedListingId = normalizeText(
+      resolvedListing?.id ||
+        resolvedListing?.listingId ||
+        resolvedListing?.listing_id ||
+        selectedLead?.listingId ||
+        selectedLead?.listing_id ||
+        selectedLead?.privateListingId ||
+        selectedLead?.private_listing_id,
+    )
+    const hydratedListingId = normalizeText(
+      selectedLeadHydratedListing?.id ||
+        selectedLeadHydratedListing?.listingId ||
+        selectedLeadHydratedListing?.listing_id,
+    )
+    return expectedListingId && hydratedListingId === expectedListingId
+      ? selectedLeadHydratedListing
+      : resolvedListing
+  }, [resolveLeadLinkedListing, selectedLead, selectedLeadHydratedListing])
   const selectedLeadLinkedListingId = normalizeText(
     selectedLeadLinkedListing?.id ||
       selectedLeadLinkedListing?.listingId ||
@@ -14382,21 +14331,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ].filter(Boolean).join(':')
 
   useEffect(() => {
-    if (!organisationId || !selectedLeadLinkedListingId || !isSupabaseConfigured) {
-      setSellerDocumentTaxonomyRolloutControl(null)
+    if (!selectedLeadLinkedListingId || !isSupabaseConfigured) {
+      setSelectedLeadHydratedListing(null)
+      setSelectedLeadDocumentHydrationStatus('idle')
       return undefined
     }
+
+    setSelectedLeadDocumentHydrationStatus('loading')
+    setSelectedLeadHydratedListing((current) => {
+      const currentId = normalizeText(current?.id || current?.listingId || current?.listing_id)
+      return currentId === selectedLeadLinkedListingId ? current : null
+    })
+
     let cancelled = false
-    getSellerDocumentReleaseReadiness({ organisationId, listingId: selectedLeadLinkedListingId })
-      .then((report) => {
-        if (!cancelled) setSellerDocumentTaxonomyRolloutControl(report?.rollout || null)
-      })
-      .catch(() => {
-        // A missing control must remain fail-closed; do not interrupt the workspace.
-        if (!cancelled) setSellerDocumentTaxonomyRolloutControl(null)
-      })
-    return () => { cancelled = true }
-  }, [organisationId, selectedLeadLinkedListingId])
+    void withPipelineTimeout(
+      getPrivateListing(selectedLeadLinkedListingId, {
+        includeRequirementsAndDocuments: true,
+        includeDistributionData: false,
+      }),
+      'Seller document data is taking too long to load.',
+      SELLER_DOCUMENT_HYDRATION_TIMEOUT_MS,
+    ).then((listing) => {
+      if (cancelled || !listing) return
+      const hydratedListing = {
+        ...listing,
+        listingOptionSourceAuthority: 'canonical_hydrated_listing',
+      }
+      setSelectedLeadHydratedListing(hydratedListing)
+      setSelectedLeadDocumentHydrationStatus('ready')
+      const option = normalizeAppointmentListingOption(hydratedListing)
+      if (!option) return
+      setAppointmentListingOptions((previous) => dedupeListingOptions([
+        option,
+        ...previous,
+      ]))
+    }).catch((listingError) => {
+      // Keep the lead workspace usable with its shallow listing snapshot. A retry
+      // on the next refresh can still attach the completed signing evidence.
+      console.warn('[PIPELINE] seller document hydration failed; continuing with listing snapshot.', listingError)
+      if (!cancelled) setSelectedLeadDocumentHydrationStatus('error')
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedLeadLinkedListingId])
 
   useEffect(() => {
     const shouldLoadPrivateListingActivity = shouldLoadLeadWorkspaceRequest({
@@ -15922,14 +15901,33 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const mandateHasFinalArtifact = (Array.isArray(mandatePacketStatus?.versions) ? mandatePacketStatus.versions : []).some((version) =>
       normalizeText(version?.final_signed_file_path || version?.final_signed_file_url || version?.final_signed_file_access_url),
     )
+    const listingMandateStatus = normalizeText(
+      selectedLeadLinkedListing?.mandateStatus ||
+        selectedLeadLinkedListing?.mandate_status ||
+        selectedLeadLinkedListing?.mandate?.status ||
+        selectedLead?.mandateStatus ||
+        selectedLead?.mandate_status,
+    ).toLowerCase()
+    const listingHasSignedMandate = (Array.isArray(selectedLeadLinkedListing?.documents)
+      ? selectedLeadLinkedListing.documents
+      : []).some((document) => {
+      const documentType = normalizeSellerBasePackKey(
+        document?.documentType || document?.document_type || document?.requirementKey || document?.requirement_key,
+      )
+      const documentStatus = normalizeText(document?.status || document?.documentStatus || document?.document_status).toLowerCase()
+      return documentType === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE &&
+        ['completed', 'approved', 'signed', 'fully_signed'].includes(documentStatus)
+    })
     return (
       ['signed', 'signed_uploaded', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandateSigningStatus) ||
       ['signed', 'signed_uploaded', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandateSourceSigningStatus) ||
       ['signed', 'signed_uploaded', 'uploaded_signed', 'completed', 'fully_signed'].includes(mandatePacketState) ||
+      ['signed', 'signed_uploaded', 'uploaded_signed', 'completed', 'fully_signed'].includes(listingMandateStatus) ||
+      listingHasSignedMandate ||
       allRequiredSignersCompleted ||
       mandateHasFinalArtifact
     )
-  }, [mandatePacketStatus])
+  }, [mandatePacketStatus, selectedLead, selectedLeadLinkedListing])
 
   const selectedLeadEffectiveLifecycleStage =
     !selectedLead
@@ -17199,31 +17197,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const selectedSellerDocumentCategories = useMemo(
     () => {
-      const legacySourceRows = buildSellerLeadDocumentRowsFromSource({
+      const sourceRows = buildSellerLeadDocumentRowsFromSource({
         lead: selectedLead || {},
         listing: selectedLeadLinkedListing,
         journey: selectedSellerJourney,
         mandatePacketStatus,
-        useCanonicalProjection: false,
       })
-      const taxonomyProjection = projectSellerDocumentRowsForTaxonomyRollout({
-        rows: legacySourceRows,
-        rolloutControl: sellerDocumentTaxonomyRolloutControl,
-        listing: selectedLeadLinkedListing,
-      })
-      const sourceRows = taxonomyProjection.rows
-      const usableSourceRows = selectedLeadHasKingstonsPipelineSignal
-        ? sourceRows.filter((row) =>
-            !isStaleKingstonsBaselineDocumentRow(row) &&
-            !isRedundantKingstonsGenericFicaRequirement(row)
-          )
-        : sourceRows
-      const mergedRows = dedupeSellerLeadDocumentRows([
+      const usableSourceRows = sourceRows.filter((row) =>
+        !isStaleKingstonsBaselineDocumentRow(row) &&
+        !isRedundantKingstonsGenericFicaRequirement(row)
+      )
+      const mergedRows = projectCanonicalSellerDocumentRows([
         ...(selectedKingstonsFormalValuationRow ? [selectedKingstonsFormalValuationRow] : []),
-        ...(selectedLeadHasKingstonsPipelineSignal ? selectedKingstonsSellerPackRows : []),
         ...usableSourceRows,
-      ], { useCanonicalProjection: taxonomyProjection.rollout.enabled })
-      const visibleRows = filterSellerDocumentRequirementsForOnboarding(mergedRows, {
+      ]).filter((row) => !isStaleSellerLeadDocumentRequirement(row))
+      const visibleRows = filterSellerDocumentRequirementsForOnboarding([
+        ...mergedRows,
+      ], {
         onboardingSubmitted: selectedLeadOnboardingCompleted,
       })
       if (
@@ -17242,13 +17232,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [
       mandatePacketStatus,
       selectedKingstonsFormalValuationRow,
-      selectedKingstonsSellerPackRows,
       selectedLead,
       selectedLeadHasKingstonsPipelineSignal,
       selectedLeadLinkedListing,
       selectedLeadOnboardingCompleted,
       selectedSellerJourney,
-      sellerDocumentTaxonomyRolloutControl,
     ],
   )
 
@@ -17418,6 +17406,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ])
 
   const selectedSellerNextBestActionModel = useMemo(() => {
+    if (
+      selectedLeadLinkedListingId &&
+      ['idle', 'loading'].includes(selectedLeadDocumentHydrationStatus)
+    ) {
+      return {
+        title: 'Checking signed documents',
+        copy: 'Loading the canonical seller document record before calculating the next action.',
+        actionId: 'seller_documents_loading',
+        label: 'Checking Documents…',
+        disabled: true,
+      }
+    }
     const fallbackAction = selectedSellerReadiness.nextAction || {}
     const complianceBlocker = selectedSellerComplianceAgentStatus.nextBlocker || null
     const onboardingSubmittedOrLater = Boolean(
@@ -17509,6 +17509,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }, [
     selectedSellerComplianceAgentStatus.nextBlocker,
     selectedSellerComplianceAgentStatus.signedMandate,
+    selectedLeadDocumentHydrationStatus,
+    selectedLeadLinkedListingId,
     selectedSellerJourney.mandateStatus,
     selectedSellerJourney.onboardingSubmitted,
     selectedSellerJourney.stage?.key,
@@ -26182,7 +26184,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...(Array.isArray(rawPayload.sellerDocuments) ? rawPayload.sellerDocuments : []),
         ...(Array.isArray(rawPayload.seller_documents) ? rawPayload.seller_documents : []),
       ]
-      const nextSellerDocuments = dedupeSellerLeadDocumentRows([...existingSellerDocuments, uploadedRow])
+      const nextSellerDocuments = projectCanonicalSellerDocumentRows([...existingSellerDocuments, uploadedRow])
       const rawEnquiryPayload = {
         ...rawPayload,
         sellerDocuments: nextSellerDocuments,
@@ -28534,22 +28536,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setKingstonsSellerPackWizardError(sellerPackError?.message || 'Unable to save the Seller Pack details.')
     } finally {
       setKingstonsSellerPackWizardSaving(false)
-    }
-  }
-
-  async function handleDownloadGeneratedSellerLeadDocument(documentRow = {}, generatedHtml = '') {
-    const openingKey = normalizeText(documentRow?.id || documentRow?.key || documentRow?.label)
-    try {
-      setError('')
-      setOpeningSellerLeadDocumentId(openingKey)
-      await downloadGeneratedSellerLeadDocumentPdf(
-        generatedHtml,
-        documentRow.generatedFileName || documentRow.generated_file_name || documentRow.uploadedFileName || `${documentRow.label || 'seller-document'}.pdf`,
-      )
-    } catch (downloadError) {
-      setError(downloadError?.message || 'Unable to download this document PDF right now.')
-    } finally {
-      setOpeningSellerLeadDocumentId('')
     }
   }
 
@@ -33843,15 +33829,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                {[
 	                                  ...(selectedLeadIsSeller
 	                                    ? [
-	                                        {
-	                                          label: selectedSellerJourney.listingCreated ? 'Open Listing' : 'Create Listing Draft',
-	                                          Icon: Home,
-	                                          tone: 'text-[#29435d]',
-	                                          onClick: () => {
-	                                            setLeadActionsMenuOpen(false)
-	                                            handleSellerJourneyAction(selectedSellerJourney.listingCreated ? 'open_listing' : 'create_listing')
-	                                          },
-	                                        },
 		                                        {
 		                                          label: selectedLeadSellerOnboardingCommandLabel,
 		                                          Icon: Mail,
@@ -33862,35 +33839,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                            handleSellerOnboardingCommand()
 		                                          },
 		                                        },
-		                                        {
-		                                          label: 'Upload Signed Mandate',
-		                                          Icon: Upload,
-		                                          tone: 'text-[#29435d]',
-		                                          disabled: sellerLeadMandateUploading || selectedSellerJourney.mandateStatus === 'signed',
-		                                          onClick: () => {
-		                                            setLeadActionsMenuOpen(false)
-		                                            handleSellerJourneyAction('record_hard_copy_mandate')
-		                                          },
-		                                        },
-		                                        {
-		                                          label: sellerFollowUpSending ? 'Sending Follow-Up…' : 'Follow Up With Client',
-		                                          Icon: Mail,
-	                                          tone: 'text-[#29435d]',
-	                                          disabled: sellerFollowUpSending || !normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token),
-	                                          onClick: () => {
-	                                            setLeadActionsMenuOpen(false)
-	                                            handleSellerJourneyAction('follow_up_with_seller')
-	                                          },
-	                                        },
-		                                        {
-		                                          label: 'Schedule Appointment',
-		                                          Icon: CalendarDays,
-	                                          tone: 'text-[#29435d]',
-	                                          onClick: () => {
-	                                            setLeadActionsMenuOpen(false)
-	                                            handleScheduleSellerAppointment()
-	                                          },
-	                                        },
 	                                        {
 	                                          label: 'Edit Seller Details',
 	                                          Icon: Pencil,
@@ -33911,12 +33859,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                          Icon: Copy,
 	                                          tone: 'text-[#29435d]',
 	                                          onClick: () => handleCopySelectedSellerLink('portal'),
-	                                        },
-	                                        {
-	                                          label: 'Copy Listing Link',
-	                                          Icon: Copy,
-	                                          tone: 'text-[#29435d]',
-	                                          onClick: () => handleCopySelectedSellerLink('listing'),
 	                                        },
 	                                      ]
 	                                    : [
@@ -33999,10 +33941,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                    label: 'Change Owner',
 	                                    Icon: UserRound,
 	                                    tone: 'text-[#29435d]',
-	                                    onClick: () => {
-	                                      setLeadActionsMenuOpen(false)
-	                                      setMessage('Owner changes can be managed from lead assignment settings.')
-	                                    },
+	                                    onClick: handleOpenSelectedLeadAssignment,
 	                                  },
 	                                  {
 	                                    label: 'Mark as Lost',
@@ -34446,7 +34385,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 <Button type="button" size="sm" variant="secondary" onClick={() => handleLeadWorkspaceTabSelection('appointments')}>Manage viewings</Button>
                               </>
                             ) : (
-                              <Button type="button" size="sm" onClick={() => handleBuyerJourneyScheduleViewingAction()}>Schedule viewing</Button>
+                              <Button type="button" size="sm" onClick={() => handleBuyerJourneyScheduleViewingAction()}>Arrange a viewing</Button>
                             )
                           ) : buyerJourneyActionStage === BUYER_PROCESS_STAGE_KEYS.transactionSetup ? (
 	                            <>
@@ -35893,7 +35832,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const buyerJourneyWhatsNext = (() => {
                           if (journeyAction.key === 'mark_contacted') return { ...journeyAction, icon: Phone, actions: [{ key: journeyAction.key, label: 'Mark contacted', icon: CheckCircle2, primary: true, onClick: () => void handleBuyerJourneyMarkContactedAndQualify() }] }
                           if (journeyAction.key === 'qualify') return { ...journeyAction, icon: CheckSquare, actions: [{ key: journeyAction.key, label: 'Qualify lead', icon: Pencil, primary: true, onClick: handleOpenBuyerQualificationAction }] }
-                          if (journeyAction.key === 'schedule_viewing') return { ...journeyAction, icon: CalendarDays, actions: [{ key: journeyAction.key, label: 'Schedule viewing', icon: CalendarDays, primary: true, onClick: () => handleBuyerJourneyScheduleViewingAction() }] }
+                          if (journeyAction.key === 'schedule_viewing') return { ...journeyAction, icon: CalendarDays, actions: [{ key: journeyAction.key, label: 'Arrange a viewing', icon: CalendarDays, primary: true, onClick: () => handleBuyerJourneyScheduleViewingAction() }] }
                           if (journeyAction.key === 'progress_from_viewing') return { ...journeyAction, icon: CalendarDays, actions: [
                             { key: journeyAction.key, label: selectedLeadUsesKingstonsInPersonOtpFlow ? 'Upload signed OTP' : 'Open transaction setup', icon: FileText, primary: true, onClick: () => void handleBuyerJourneyMakeOfferAction() },
                             { key: 'another_viewing', label: 'Set another viewing', icon: CalendarDays, primary: false, onClick: () => handleBuyerJourneyScheduleViewingAction({ another: true }) },
@@ -35978,7 +35917,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <div className="grid gap-4 md:grid-cols-2">
                                         <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           What is your budget?
-                                          <Field className={BUYER_QUALIFICATION_FIELD_CLASS} placeholder="R 2 500 000" value={buyerQualificationForm.budget} onChange={(event) => updateBuyerQualificationField('budget', event.target.value)} />
+                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.budget} onChange={(event) => updateBuyerQualificationField('budget', event.target.value)}>
+                                            {BUYER_BUDGET_OPTIONS.map((option) => <option key={option || 'empty-budget'} value={option}>{option || 'Select budget range'}</option>)}
+                                          </Field>
                                         </label>
                                         <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                           When would you like to move?
@@ -35989,31 +35930,24 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           </Field>
                                         </label>
                                       </div>
-                                      <AreaMultiSelect
-                                        label="Which areas should we focus on?"
-                                        value={parseBuyerQualificationAreas(buyerQualificationForm.areaInterest)}
-                                        onChange={(areas) => updateBuyerQualificationField('areaInterest', areas.join(', '))}
-                                        placeholder="Search or add an area"
-                                        description="Press Enter or + to add more than one area."
-                                        className="text-sm font-semibold normal-case tracking-normal text-[#29435d] [&>div]:min-h-[44px] [&>div]:rounded-[12px] [&>div]:border-[#dbe7f2] [&>div]:shadow-none [&_input]:text-sm [&_input]:font-medium"
+                                      <AddressAutocomplete
+                                        label="Which area should we focus on?"
+                                        value={buyerQualificationForm.areaInterest ? { formattedAddress: buyerQualificationForm.areaInterest } : null}
+                                        onInputValueChange={(value) => updateBuyerQualificationField('areaInterest', value)}
+                                        onChange={(value) => updateBuyerQualificationField('areaInterest', value?.formattedAddress || '')}
+                                        predictionTypes={['(regions)']}
+                                        placeholder="Search with Google Places"
+                                        description="Start typing a suburb, town, or area and choose a Google result."
+                                        hideUnavailableMessage
                                       />
-                                      <div className="grid gap-4 md:grid-cols-2">
-                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                          Cash buyer or bond?
-                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.financeType} onChange={(event) => updateBuyerQualificationField('financeType', event.target.value)}>
-                                            {BUYER_FINANCE_TYPE_OPTIONS.map((option) => (
-                                              <option key={option || 'empty-finance'} value={option}>{option || 'Select finance type'}</option>
-                                            ))}
-                                          </Field>
-                                        </label>
-                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                          Is the purchase subject to finance?
-                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.subjectToFinance} onChange={(event) => updateBuyerQualificationField('subjectToFinance', event.target.value)}>
-                                            {BUYER_SUBJECT_TO_FINANCE_OPTIONS.map((option) => (
-                                              <option key={option || 'empty-subject-to-finance'} value={option}>{option || 'Select answer'}</option>
-                                            ))}
-                                          </Field>
-                                        </label>
+                                      <div>
+                                        <span className={BUYER_QUALIFICATION_LABEL_CLASS}>Finance readiness</span>
+                                        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+                                          {['Cash', 'Bond', 'Pre-approved', 'Needs assistance'].map((option) => {
+                                            const selected = buyerQualificationForm.financeType === option
+                                            return <button key={option} type="button" className={`rounded-[12px] border px-3 py-3 text-sm font-semibold transition ${selected ? 'border-[#157aaf] bg-[#eaf5fb] text-[#135e89] ring-2 ring-[#c9e7f5]' : 'border-[#dbe7f2] bg-white text-[#29435d] hover:border-[#9ec9df]'}`} onClick={() => updateBuyerQualificationField('financeType', option)} aria-pressed={selected}>{option}</button>
+                                          })}
+                                        </div>
                                       </div>
                                       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                         <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
@@ -36028,14 +35962,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                             ))}
                                           </Field>
                                         </label>
-                                        <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
-                                          Do you need to sell a property first?
-                                          <Field as="select" className={BUYER_QUALIFICATION_FIELD_CLASS} value={buyerQualificationForm.propertyToSell} onChange={(event) => updateBuyerQualificationField('propertyToSell', event.target.value)}>
-                                            {BUYER_PROPERTY_TO_SELL_OPTIONS.map((option) => (
-                                              <option key={option || 'empty-property-to-sell'} value={option}>{option || 'Select answer'}</option>
-                                            ))}
-                                          </Field>
-                                        </label>
+                                        <div>
+                                          <span className={BUYER_QUALIFICATION_LABEL_CLASS}>Do you need to sell a property first?</span>
+                                          <div className="mt-2 flex gap-2">
+                                            {['Yes', 'No'].map((option) => <button key={option} type="button" className={`flex-1 rounded-[12px] border px-3 py-2.5 text-sm font-semibold ${buyerQualificationForm.propertyToSell === option ? 'border-[#157aaf] bg-[#eaf5fb] text-[#135e89]' : 'border-[#dbe7f2] bg-white text-[#29435d]'}`} onClick={() => updateBuyerQualificationField('propertyToSell', option)} aria-pressed={buyerQualificationForm.propertyToSell === option}>{option}</button>)}
+                                          </div>
+                                        </div>
                                       </div>
                                       <label className={BUYER_QUALIFICATION_LABEL_CLASS}>
                                         What type of property do you need?
@@ -39701,6 +39633,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         Document uploads are available while the rest of this lead workspace keeps syncing in the background.
                       </div>
                     ) : null}
+                    {selectedLeadIsSeller && selectedLeadLinkedListingId && ['idle', 'loading'].includes(selectedLeadDocumentHydrationStatus) ? (
+                      <div className="rounded-[20px] border border-[#dce7f2] bg-white p-6" role="status" aria-live="polite">
+                        <div className="h-4 w-48 animate-pulse rounded-full bg-slate-200" />
+                        <div className="mt-4 h-40 animate-pulse rounded-[16px] bg-slate-100" />
+                        <p className="mt-4 text-sm font-semibold text-[#60758b]">Loading signed seller documents…</p>
+                      </div>
+                    ) : (
                     <Suspense fallback={<div className="rounded-[20px] border border-[#dce7f2] bg-white p-6"><div className="h-4 w-48 animate-pulse rounded-full bg-slate-200" /><div className="mt-4 h-40 animate-pulse rounded-[16px] bg-slate-100" /></div>}>
                     <LeadDocumentWorkspace
                       partyType={selectedLeadIsSeller ? 'seller' : 'buyer'}
@@ -39716,6 +39655,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
                         const generatedHtml = normalizeText(documentRow.generatedHtml || documentRow.generated_html)
                         const hasFile = sellerLeadDocumentHasFileEvidence(documentRow)
+                        const awaitingServerPdf = isSellerFinalDocumentAwaitingServerPdf(documentRow)
                         if (!selectedLeadIsSeller) {
                           if (hasFile && documentUrl) return <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a]"><Download className="h-3.5 w-3.5" /> Download</a>
                           if (documentKey === 'uploaded_otp') return <button type="button" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)} className="inline-flex min-h-9 items-center rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]">{hasFile ? 'View' : 'Upload'}</button>
@@ -39728,6 +39668,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const isOwnershipDriven = selectedLeadHasKingstonsPipelineSignal && (requirementLane === 'ownership_driven' || requirementSection === 'seller_identity_fica')
                         const isPackDocument = selectedLeadHasKingstonsPipelineSignal && KINGSTONS_SELLER_PACK_KEY_SET.has(basePackDocumentKey || documentKey)
                         const isFicaDocument = basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION || isOwnershipDriven
+                        const completionAcknowledgementOnly = isCompletedSellerSigningAcknowledgement(documentRow) && !hasFile && !generatedHtml
                         const isPostOnboardingDocument = ['seller_onboarding', 'agent_review_signing_pack', 'manual_upload'].includes(normalizeKey(documentRow.completionRoute || documentRow.completion_route))
                         const requiresOwnershipSetup = !isPostOnboardingDocument && needsSellerOwnershipSetup({ sellerSubject: documentRow.sellerSubject })
                         const detailsCaptured = hasKingstonsSellerPackDetailsCompletionSignal(selectedKingstonsSellerPack)
@@ -39736,16 +39677,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const uploadKey = normalizeText(documentRow.id || documentRow.requirementId || documentRow.requirement_id || documentKey || documentRow.label)
                         const uploadBusy = sellerLeadDocumentUploadingKey === uploadKey || (isFormalValuation ? formalValuationUploading : sellerPackUploadingKey === documentKey)
                         return <>
-                          {(documentRow.canDownload !== false && documentRow.can_download !== false) && (hasFile || generatedHtml || documentRow.canonicalFinalArtifact) ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => {
-                            if (generatedHtml && !documentStoragePath && !documentUrl) void handleDownloadGeneratedSellerLeadDocument(documentRow, generatedHtml)
+                          {(documentRow.canDownload !== false && documentRow.can_download !== false) && (hasFile || (!awaitingServerPdf && generatedHtml) || documentRow.canonicalFinalArtifact) ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => {
+                            if (generatedHtml && !documentStoragePath && !documentUrl) openSellerLeadGeneratedDocumentHtml(generatedHtml, documentRow.generatedFileName || documentRow.generated_file_name || `${documentRow.label || 'seller-document'}.html`)
                             else if (documentRow.canonicalFinalArtifact && !documentStoragePath && !documentUrl) void handleOpenSellerLeadFinalSignedDocument(documentRow)
                             else void handleDownloadSellerLeadDocumentUrl(documentRow)
-                          }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60"><Download className="h-3.5 w-3.5" /> Download</button> : null}
+                          }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60">{generatedHtml && !hasFile ? <ExternalLink className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />} {generatedHtml && !hasFile ? 'Open preview' : 'Download'}</button> : null}
+                          {awaitingServerPdf ? <span className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-[#f7fafc] px-3 text-xs font-semibold text-[#6a8098]"><Clock3 className="h-3.5 w-3.5" /> Finalising PDF</span> : null}
                           {isFicaDocument && requiresOwnershipSetup ? <button type="button" onClick={() => openSellerLeadEditModal('profile')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Set Up Ownership</button> : null}
-                          {isFicaDocument && !isPostOnboardingDocument && !requiresOwnershipSetup && !detailsCaptured ? <button type="button" onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Capture details</button> : null}
+                          {selectedLeadHasKingstonsPipelineSignal && isFicaDocument && !completionAcknowledgementOnly && !isPostOnboardingDocument && !requiresOwnershipSetup && !detailsCaptured ? <button type="button" onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Capture details</button> : null}
                           {requestPresentation.action === 'generate_document' && !hasFile && !generatedHtml ? <button type="button" title={requestPresentation.helpText} onClick={() => setMessage(requestPresentation.helpText)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]"><FileText className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
                           {requestPresentation.action === 'capture_details' ? <button type="button" title={requestPresentation.helpText} onClick={() => openSellerLeadEditModal('property')} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white"><UserRound className="h-3.5 w-3.5" />{requestPresentation.actionLabel}</button> : null}
-                          {documentRow.canUpload !== false && documentRow.can_upload !== false && requestPresentation.action === 'upload_document' && (!isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
+                          {documentRow.canUpload !== false && documentRow.can_upload !== false && !completionAcknowledgementOnly && requestPresentation.action === 'upload_document' && (!isFicaDocument || detailsCaptured) ? <label className={`inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border px-3 text-xs font-semibold ${uploadBusy || sellerLeadMandateUploading ? 'cursor-not-allowed border-[#e5edf5] text-[#a0afbf]' : 'cursor-pointer border-[#cfdceb] text-[#315b7a]'}`}><Upload className="h-3.5 w-3.5" />{uploadBusy || (isSignedMandate && sellerLeadMandateUploading) ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}<input type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={uploadBusy || sellerLeadMandateUploading} onChange={(event) => {
                             if (isSignedMandate) void handleSellerLeadSignedMandateUpload(event, documentRow)
                             else if (canUseKingstonsUpload) {
                               if (isFormalValuation) void handleKingstonsFormalValuationUpload(event)
@@ -39756,6 +39698,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       }}
                     />
                     </Suspense>
+                    )}
                     {!selectedLeadIsSeller ? <input ref={agentBuyerDocumentUploadInputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" disabled={agentBuyerDocumentUploading} onChange={(event) => void uploadAgentBuyerLeadDocument(event)} /> : null}
                     {routeLeadHydrationStatus === '__legacy_document_workspace__' && (selectedLeadIsSeller ? (
                       <section className="overflow-hidden rounded-[30px] border border-[#dbe7f2] bg-white shadow-[0_18px_44px_rgba(31,54,78,0.07)]">
@@ -39869,9 +39812,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         const statusMeta = getSellerLeadDocumentStatusMeta(documentRow)
                                         const StatusIcon = statusMeta.Icon
                                         const documentUrl = documentRow.url || documentRow.fileUrl || documentRow.file_url || documentRow.downloadUrl || documentRow.download_url
-                                        const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
-                                        const documentHasFile = Boolean(documentUrl || documentStoragePath)
+	                                        const documentStoragePath = normalizeText(documentRow.storagePath || documentRow.storage_path)
+	                                        const documentHasFile = Boolean(documentUrl || documentStoragePath)
                                         const generatedHtml = normalizeText(documentRow.generatedHtml || documentRow.generated_html)
+	                                        const awaitingServerPdf = isSellerFinalDocumentAwaitingServerPdf(documentRow)
+	                                        const completionAcknowledgementOnly = statusMeta.state === 'complete' && !documentHasFile && !generatedHtml
 	                                        const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
 	                                        const canOpenCanonicalFinalArtifact = Boolean(documentRow.canonicalFinalArtifact && documentRow.packetId && documentRow.packetVersionId)
 	                                        const openingCanonicalArtifact = openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)
@@ -39898,9 +39843,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                        const canUploadKingstonsDocument = isKingstonsFormalValuationDocument ||
 		                                          ((isKingstonsSellerPackDocument || isKingstonsOwnershipDrivenDocument) && canUploadKingstonsSellerPackDocument)
 		                                        const isUploadingKingstonsDocument = isKingstonsFormalValuationDocument ? formalValuationUploading : sellerPackUploadingKey === documentKey
-			                                        const canUploadSellerLeadSignedMandate = selectedLeadIsSeller &&
-			                                          !selectedLeadHasKingstonsPipelineSignal &&
-			                                          basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
+		                                        const canUploadSellerLeadSignedMandate = selectedLeadIsSeller &&
+		                                          !selectedLeadHasKingstonsPipelineSignal &&
+		                                          basePackDocumentKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE &&
+		                                          !completionAcknowledgementOnly
 		                                        const sellerLeadDocumentUploadKey = normalizeText(
 		                                          documentRow.id ||
 		                                            documentRow.requirementId ||
@@ -39921,7 +39867,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 		                                        const canUploadSellerLeadDocument = selectedLeadIsSeller &&
 		                                          !canUploadSellerLeadSignedMandate &&
 		                                          !canUploadKingstonsDocument &&
-		                                          !(isKingstonsFicaDocument && !sellerPackDetailsCaptured)
+		                                          !(isKingstonsFicaDocument && !sellerPackDetailsCaptured) &&
+		                                          !completionAcknowledgementOnly
 			                                        return (
 			                                          <div key={documentRow.id || documentRow.key || documentRow.label} data-seller-document-key={basePackDocumentKey || documentKey} className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#e6eef7] bg-white px-4 py-3">
 	                                            <div className="flex min-w-0 items-center gap-3">
@@ -39950,29 +39897,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                                     {documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
                                                   </a>
                                                 )
-                                              ) : generatedHtml ? (
-                                                shouldDownloadDocument ? (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => void handleDownloadGeneratedSellerLeadDocument(documentRow, generatedHtml)}
-                                                    disabled={openingCanonicalArtifact}
-                                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3] disabled:cursor-not-allowed disabled:opacity-70"
-                                                  >
-                                                    {openingCanonicalArtifact ? 'Downloading...' : documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
-                                                  </button>
-                                                ) : (
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => openSellerLeadGeneratedDocumentHtml(
+	                                              ) : awaitingServerPdf ? (
+	                                                <span className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-[#f7fafc] px-3 text-xs font-semibold text-[#6a8098]"><Clock3 className="h-3.5 w-3.5" /> Finalising PDF</span>
+	                                              ) : generatedHtml ? (
+	                                                  <button
+	                                                    type="button"
+	                                                    onClick={() => openSellerLeadGeneratedDocumentHtml(
                                                       generatedHtml,
                                                       documentRow.generatedFileName || documentRow.generated_file_name || documentRow.uploadedFileName || `${documentRow.label || 'seller-document'}.html`,
-                                                    )}
-                                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]"
-                                                  >
-                                                    {documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
-                                                  </button>
-                                                )
-                                              ) : canOpenCanonicalFinalArtifact ? (
+	                                                    )}
+	                                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]"
+	                                                  >
+	                                                    Open preview <ExternalLink className="h-3.5 w-3.5" />
+	                                                  </button>
+	                                              ) : canOpenCanonicalFinalArtifact ? (
                                                 <button
                                                   type="button"
                                                   onClick={() => void handleOpenSellerLeadFinalSignedDocument(documentRow)}
@@ -39982,7 +39920,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                  {openingCanonicalArtifact ? 'Downloading...' : documentActionLabel} <ExternalLink className="h-3.5 w-3.5" />
 	                                                </button>
 	                                              ) : null}
-		                                              {isKingstonsFicaDocument && !sellerPackDetailsCaptured ? (
+		                                      {selectedLeadHasKingstonsPipelineSignal && isKingstonsFicaDocument && !sellerPackDetailsCaptured ? (
 		                                                <button
 		                                                  type="button"
 	                                                  onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')}

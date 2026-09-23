@@ -1,6 +1,7 @@
 import { buildSyndicationFacts } from '../../src/services/syndicationFactsService.js'
 import { evaluateProperty24ListingCategoryContract } from '../property24/listingCategoryContract.js'
 import { resolveSyndicationReviewRollout } from './syndicationReviewRolloutService.js'
+import { evaluateListingPortalAddressProtection } from './listingPortalAddressProtectionService.js'
 
 export const SYNDICATION_CHANNEL_PREFLIGHT_VERSION = 'arch9_syndication_channel_preflight_v1'
 
@@ -50,9 +51,9 @@ function sharedDataBlockers(data, facts) {
   return blockers
 }
 
-function privatePropertyPreflight({ data, facts, sharedBlockers }) {
-  const blockers = [...sharedBlockers]
-  const warnings = []
+function privatePropertyPreflight({ data, facts, sharedBlockers, addressProtection }) {
+  const blockers = [...sharedBlockers, ...(addressProtection.privateProperty.blockers || [])]
+  const warnings = [...(addressProtection.privateProperty.warnings || [])]
   const propertyType = key(data.propertyType || facts.propertyCategory)
   const isResidential = !['land', 'farm', 'commercial', 'industrial', 'mixed_use'].includes(propertyType)
 
@@ -80,7 +81,7 @@ function privatePropertyPreflight({ data, facts, sharedBlockers }) {
   })
 }
 
-function property24Preflight({ listing, publication, data, facts, sharedBlockers }) {
+function property24Preflight({ listing, publication, data, facts, sharedBlockers, addressProtection }) {
   const categoryContract = evaluateProperty24ListingCategoryContract({
     listing: {
       ...listing,
@@ -91,11 +92,8 @@ function property24Preflight({ listing, publication, data, facts, sharedBlockers
     listingType: facts.listingPurpose,
   })
   const blockers = [...sharedBlockers, ...categoryContract.blockers]
-  const warnings = []
+  const warnings = [...(addressProtection.property24.warnings || [])]
 
-  if (facts.listingPurpose === 'Rental' && facts.rentalPricePeriod !== 'PerMonth') {
-    blockers.push('property24_rental_price_period_not_verified')
-  }
   if (facts.listingPurpose === 'Sale' && ['Negotiable', 'OffersFrom'].includes(facts.pricePresentation)) {
     blockers.push('property24_price_presentation_not_verified')
   }
@@ -115,6 +113,7 @@ function property24Preflight({ listing, publication, data, facts, sharedBlockers
       rentalPricePeriod: facts.listingPurpose === 'Rental' ? facts.rentalPricePeriod : null,
       requiresMappedPrimaryAgent: true,
       requiresMappedSuburbAndPropertyType: true,
+      requiresExactCurrentSuburbLookup: addressProtection.property24.requiresExactCurrentLookup,
       requiresFutureExpiryDate: true,
     },
     contract: categoryContract,
@@ -157,15 +156,17 @@ export async function fetchSyndicationChannelPreflightInput({ client, listingId 
     throw error
   }
 
-  const [publication, onboarding] = await Promise.all([
+  const [publication, onboarding, privatePropertySync] = await Promise.all([
     fetchOptionalSingle(client, 'listing_publication_data', 'listing_id', normalizedListingId),
     fetchOptionalSingle(client, 'private_listing_seller_onboarding', 'private_listing_id', normalizedListingId),
+    fetchOptionalSingle(client, 'private_property_listing_syncs', 'private_listing_id', normalizedListingId),
   ])
 
   return {
     listing: {
       ...listingResult.data,
       sellerOnboarding: onboarding ? { formData: onboarding.form_data || {} } : undefined,
+      privatePropertySync: privatePropertySync || undefined,
     },
     publication: publication || {},
   }
@@ -186,8 +187,13 @@ export function buildSyndicationChannelPreflight({
   const normalizedFacts = buildSyndicationFacts({ listing, publication, facts })
   const data = listingData(listing, publication)
   const sharedBlockers = sharedDataBlockers(data, normalizedFacts)
-  const privateProperty = privatePropertyPreflight({ data, facts: normalizedFacts, sharedBlockers })
-  const property24 = property24Preflight({ listing, publication, data, facts: normalizedFacts, sharedBlockers })
+  const addressProtection = evaluateListingPortalAddressProtection({
+    listing,
+    publication,
+    existingPrivatePropertySync: listing.privatePropertySync || listing.private_property_sync || {},
+  })
+  const privateProperty = privatePropertyPreflight({ data, facts: normalizedFacts, sharedBlockers, addressProtection })
+  const property24 = property24Preflight({ listing, publication, data, facts: normalizedFacts, sharedBlockers, addressProtection })
   const channels = { privateProperty, property24 }
   const readyChannels = Object.values(channels).filter((channel) => channel.dataReady).map((channel) => channel.channel)
   const rollout = resolveSyndicationReviewRollout({
@@ -201,6 +207,7 @@ export function buildSyndicationChannelPreflight({
     listingId: text(listing.id) || null,
     rollout,
     facts: normalizedFacts,
+    addressProtection,
     shared: {
       dataReady: sharedBlockers.length === 0,
       blockers: sharedBlockers,

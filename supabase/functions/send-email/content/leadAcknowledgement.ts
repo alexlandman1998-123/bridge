@@ -108,6 +108,7 @@ export type LeadAcknowledgementContentInput = {
   agentJobTitle?: string;
   agentBio?: string;
   agentAvatarUrl?: string;
+  viewingAvailabilityUrl?: string;
   responseExpectation?: string;
   customResponseText?: string;
 };
@@ -134,6 +135,7 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
   const nextText = responseText(input.responseExpectation, input.customResponseText, agentFirstName);
   const phoneHref = telHref(input.agentPhone);
   const emailHref = cleanText(input.agentEmail) ? `mailto:${cleanText(input.agentEmail)}` : "";
+  const viewingHref = cleanText(input.viewingAvailabilityUrl) || emailHref;
 
   const headerBrand = input.organisationLogoUrl
     ? `<img src="${escapeHtml(input.organisationLogoUrl)}" alt="${escapeHtml(organisationName)}" width="190" style="display:block;max-width:190px;width:100%;height:auto;border:0;" />`
@@ -165,6 +167,15 @@ export function buildLeadAcknowledgementEmailHtml(input: LeadAcknowledgementCont
                     </td>
                   </tr>
                 </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:8px 4px 22px;">
+                <div style="padding:22px 24px;border:1px solid ${accent};border-radius:12px;background:#fffaf1;">
+                  <h2 style="margin:0 0 10px;font-size:20px;line-height:1.3;color:${primary};">Arrange your viewing</h2>
+                  <p style="margin:0 0 14px;font-size:15px;line-height:1.65;color:#111827;">Tell us when you would like to view the property. We’ll also confirm your budget, preferred area, move timeframe, finance readiness, and whether you need to sell another property first.</p>
+                  ${viewingHref ? `<a href="${escapeHtml(viewingHref)}" style="display:inline-block;background:${primary};color:#ffffff;text-decoration:none;border-radius:7px;padding:12px 18px;font-size:14px;font-weight:700;">Arrange a viewing</a>` : ""}
+                </div>
               </td>
             </tr>
             <tr>

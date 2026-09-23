@@ -15,7 +15,7 @@ export function resolveCommercialListingCategory(listing = {}, property = {}) {
     .replace(/[^a-z0-9]+/g, '_')
   if (['industrial', 'warehouse', 'factory', 'logistics', 'distribution_centre'].includes(value)) return 'industrial'
   if (['agricultural', 'farm', 'smallholding', 'agricultural_land'].includes(value)) return 'agricultural'
-  if (['development_land', 'land', 'vacant_land', 'vacant_stand', 'plot'].includes(value)) return 'land_development'
+  if (['land', 'vacant_land', 'vacant_stand', 'plot'].includes(value)) return 'land'
   return 'commercial'
 }
 
@@ -44,13 +44,6 @@ function valueForFacts(listing = {}, property = {}) {
   }
 }
 
-const REQUIRED_FACTS = Object.freeze({
-  commercial: ['grossLettableArea', 'zoning', 'parking', 'listingTerms'],
-  industrial: ['warehouseOrFactoryArea', 'yardSize', 'powerSupply', 'loadingAccess'],
-  agricultural: ['farmSize', 'waterSupplyOrRights', 'agriculturalUse'],
-  land_development: ['erfSize', 'zoning', 'developmentRights'],
-})
-
 function hasListingTerms(facts = {}, listing = {}) {
   const intent = text(listing.listing_type).toLowerCase()
   if (intent === 'lease' || intent === 'rental') {
@@ -62,7 +55,7 @@ function hasListingTerms(facts = {}, listing = {}) {
 export function evaluateCommercialListingReadiness({ listing = {}, property = {} } = {}) {
   const category = resolveCommercialListingCategory(listing, property)
   const facts = valueForFacts(listing, property)
-  const requiredFacts = REQUIRED_FACTS[category] || REQUIRED_FACTS.commercial
+  const requiredFacts = getSpecialistSalesRequiredFields(resolveSpecialistSalesCategory(category) || 'commercial')
   const missingFacts = requiredFacts.filter((name) => name === 'listingTerms'
     ? !hasListingTerms(facts, listing)
     : !facts[name])
@@ -76,3 +69,4 @@ export function evaluateCommercialListingReadiness({ listing = {}, property = {}
     complete: missingFacts.length === 0,
   }
 }
+import { getSpecialistSalesRequiredFields, resolveSpecialistSalesCategory } from '../../services/listings/specialistSalesListingSchema.js'

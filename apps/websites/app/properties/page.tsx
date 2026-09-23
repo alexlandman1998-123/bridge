@@ -6,7 +6,7 @@ import { PropertyCard } from '@/components/property-card'
 import { PropertySort } from '@/components/property-sort'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { getPublicProperties, resolveSite } from '@/lib/site-repository'
-import { templateClassName } from '@/lib/site-templates'
+import { hasEditorialPropertyExperience, templateClassName } from '@/lib/site-templates'
 
 export const dynamic = 'force-dynamic'
 type Query = { q?: string; type?: string; propertyType?: string; bedrooms?: string; minPrice?: string; maxPrice?: string; area?: string; priceRange?: string; availability?: string; sort?: string }
@@ -31,8 +31,8 @@ export default async function PropertiesPage({ searchParams }: Props) {
     return sort === 'price-asc' ? a.price - b.price : b.price - a.price
   })
   const rental = transactionType === 'rental'
-  const lwpBuying = site.name === 'LWP Properties' && !rental
-  const lwpRenting = site.name === 'LWP Properties' && rental
+  const lwpBuying = hasEditorialPropertyExperience(site) && !rental
+  const lwpRenting = hasEditorialPropertyExperience(site) && rental
   const resultLabel = rental ? 'to rent' : 'for sale'
   const clearHref = `/properties?type=${transactionType}`
   const filtered = Object.entries(query).some(([key, value]) => !['type', 'sort'].includes(key) && value)

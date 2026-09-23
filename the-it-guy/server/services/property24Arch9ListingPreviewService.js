@@ -26,7 +26,8 @@ function firstText(...values) {
 
 function hydrateListingFromOnboarding(listing = {}, onboarding = {}) {
   const formData = asObject(onboarding.form_data || onboarding.formData)
-  if (!Object.keys(formData).length) return listing
+  const canonicalFacts = asObject(listing.sellerCanonicalFacts || listing.seller_canonical_facts)
+  const canonicalProperty = asObject(canonicalFacts.property)
 
   const mandateEndDate = firstText(
     listing.mandate_end_date,
@@ -61,9 +62,23 @@ function hydrateListingFromOnboarding(listing = {}, onboarding = {}) {
     formData.propertyNotes,
     formData.description,
   )
+  const selectedFeatures = Array.isArray(formData.features)
+    ? formData.features
+    : Array.isArray(formData.keySellingPoints)
+      ? formData.keySellingPoints
+      : []
 
   return {
     ...listing,
+    propertyCategory: firstText(listing.propertyCategory, listing.property_category, formData.propertyCategory, formData.property_category, canonicalProperty.propertyCategory),
+    exactAddressVisibility: firstText(listing.exactAddressVisibility, listing.exact_address_visibility, formData.exactAddressVisibility, formData.exact_address_visibility, canonicalProperty.exactAddressVisibility),
+    features: Array.isArray(listing.features) && listing.features.length ? listing.features : selectedFeatures,
+    selectedFeatures: Array.isArray(listing.selectedFeatures) && listing.selectedFeatures.length ? listing.selectedFeatures : selectedFeatures,
+    addressLine1: firstText(listing.addressLine1, listing.address_line_1, formData.propertyAddress),
+    streetAddress: firstText(listing.streetAddress, listing.street_address, formData.streetAddress, formData.propertyAddress),
+    suburb: firstText(listing.suburb, formData.suburb),
+    city: firstText(listing.city, formData.city),
+    province: firstText(listing.province, formData.province),
     ...(listingDescription
       ? {
           description: firstText(listing.description, listingDescription),

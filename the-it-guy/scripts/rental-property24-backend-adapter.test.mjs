@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   createProperty24RentalListingPlan,
+  isProperty24RentalListingApiVersionSupported,
   PROPERTY24_RENTAL_LISTING_ADAPTER_VERSION,
 } from '../server/services/property24RentalListingAdapter.js'
 import {
@@ -28,6 +29,7 @@ assert.equal(previewOnly.canSubmit, false)
 assert.deepEqual(previewOnly.dataBlockers, [])
 assert.deepEqual(previewOnly.technicalBlockers, ['listing_image_bytes_not_loaded_for_property24_submit'])
 assert.equal(previewOnly.summary.listingType, 'Rental')
+assert.equal(previewOnly.summary.property24ApiVersion, 'v55')
 assert.equal(previewOnly.summary.agencyId, 31382)
 assert.deepEqual(previewOnly.summary.contactAgentIds, [77959])
 assert.equal(previewOnly.summary.monthlyRent, 22000)
@@ -75,6 +77,30 @@ assert.equal(submitReady.payload.rentalInfo.rentalRate, 'Month')
 assert.equal(submitReady.payload.rentalInfo.depositRequirementsComments, 'Equal to deposit amount R44000')
 assert.equal(submitReady.payload.rentalInfo.leasePeriod, '12 Months')
 assert.equal(submitReady.payload.photos[0].bytes, 'base64-rental-image')
+
+const featureParityPreview = createProperty24RentalListingPlan({
+  listing: {
+    ...RENTAL_LISTING_RELEASE_GATE_FIXTURE,
+    parkingBays: 16,
+    flatlet: undefined,
+    exactAddressVisibility: 'hide_street_address',
+    sellerCanonicalFacts: {
+      ...RENTAL_LISTING_RELEASE_GATE_FIXTURE.sellerCanonicalFacts,
+      propertyProfile: {
+        selectedFeatures: ['Flatlet', 'Staff Quarters', 'Fibre', 'Security'],
+        portalFeatures: { alarm: true },
+      },
+    },
+  },
+  agentMapping: {
+    property24AgentId: 77959,
+    sourceReference: 'arch9-agent-1',
+  },
+})
+assert.equal(featureParityPreview.previewPayload.propertyFeatures.flatlet, true)
+assert.equal(featureParityPreview.previewPayload.propertyFeatures.parking.open, 16)
+assert.equal(featureParityPreview.previewPayload.propertyInfo.showLocation, false)
+assert.match(featureParityPreview.previewPayload.description, /Additional features include staff accommodation, fibre connectivity, Security and Alarm\./)
 
 const fakeAgentIdPreview = createProperty24RentalListingPlan({
   listing: {
@@ -146,5 +172,21 @@ assert.equal(missingRentalApproval.canPreview, true)
 assert.equal(missingRentalApproval.canSubmit, true)
 assert.ok(missingRentalApproval.qualityWarnings.includes('rental_mandate_not_signed'))
 assert.ok(missingRentalApproval.qualityWarnings.includes('rental_marketing_not_approved'))
+
+assert.equal(isProperty24RentalListingApiVersionSupported('v55'), true)
+assert.equal(isProperty24RentalListingApiVersionSupported('v53'), false)
+
+const legacyVersionPreview = createProperty24RentalListingPlan({
+  listing: RENTAL_LISTING_RELEASE_GATE_FIXTURE,
+  agentMapping: {
+    property24AgentId: 77959,
+    sourceReference: 'arch9-agent-1',
+  },
+  options: { apiVersion: 'v53' },
+})
+
+assert.equal(legacyVersionPreview.canPreview, false)
+assert.equal(legacyVersionPreview.summary.property24ApiVersion, 'v53')
+assert.ok(legacyVersionPreview.dataBlockers.includes('property24_rental_listing_service_v55_required'))
 
 console.log('Rental Property24 backend adapter contract passed')

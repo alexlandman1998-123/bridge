@@ -177,7 +177,7 @@ function BlogSidebarPanel({ label, open, onToggle, children }) {
   return <section className="wlo-blog-sidebar-panel"><button className="wlo-blog-sidebar-toggle" type="button" aria-expanded={open} onClick={onToggle}><span>{label}</span><ChevronRight size={16} aria-hidden="true" /></button>{open ? <div className="wlo-blog-sidebar-content">{children}</div> : null}</section>
 }
 
-function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAssets = [], websiteListings = [], canEdit, error, mediaError, listingError, saving, uploading, updatingMedia, onSave, onUpload, onUpdateMedia, onManage, editorPostId = '', onOpenEditor, onCloseEditor }) {
+function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAssets = [], websiteListings = [], canEdit, canCreate, creatingDraft, loading, error, mediaError, listingError, saving, uploading, updatingMedia, onSave, onUpload, onUpdateMedia, onManage, onCreateDraft, editorPostId = '', onOpenEditor, onCloseEditor }) {
   const [view, setView] = useState('drafts')
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState(null)
@@ -206,6 +206,13 @@ function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAs
     const next = cleanBlogPost(source)
     setEditing(next); setSavedSnapshot(fingerprint(next)); setSaveState('saved'); setShowPreview(false); setScheduledFor(next.scheduledFor ? String(next.scheduledFor).slice(0, 16) : ''); setEditorError(''); setMediaUploadError(''); setMediaUploadNotice(''); setPublishPanelOpen(true); setFeaturedImagePanelOpen(true); setSeoPanelOpen(false); setActionsPanelOpen(false)
   }, [editorPostId, posts, draftPosts, publishedPosts])
+  // A deleted article can still be present in the URL while its draft refreshes.
+  // Leave the editor once the refreshed, error-free post list confirms it is gone.
+  useEffect(() => {
+    if (!editorPostId || editorPostId === 'new' || requestedPost || loading || error) return
+    setEditing(null)
+    onCloseEditor?.()
+  }, [editorPostId, requestedPost, loading, error, onCloseEditor])
   const isDirty = Boolean(editing && fingerprint(editing) !== savedSnapshot)
   const validationMessage = blogValidationMessage(editing, mediaAssets, websiteListings)
   useEffect(() => {
@@ -224,7 +231,10 @@ function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAs
     window.addEventListener('beforeunload', warn)
     return () => window.removeEventListener('beforeunload', warn)
   }, [isDirty])
-  const openNew = () => { if (canEdit) onOpenEditor?.('new') }
+  const openNew = async () => {
+    if (canEdit) { onOpenEditor?.('new'); return }
+    if (await onCreateDraft?.()) onOpenEditor?.('new')
+  }
   const openPost = (post) => onOpenEditor?.(post.id)
   const change = (field, value) => { setEditorError(''); setEditing((current) => ({ ...current, [field]: value, ...(field === 'title' && !current.slug ? { slug: blogSlugFromTitle(value) } : {}) })) }
   const chooseCover = (assetId) => { const asset = mediaAssets.find((item) => item.id === assetId); change('coverImageUrl', asset?.public_url || ''); change('coverImageAlt', asset?.alt_text || '') }
@@ -258,10 +268,10 @@ function WebsiteBlog({ posts = [], draftPosts = [], publishedPosts = [], mediaAs
     setEditorError('')
     const result = await onManage(editing.id, action, nextSchedule ? new Date(nextSchedule).toISOString() : null)
     if (!result) return
-    if (action === 'delete') { onCloseEditor?.(); return }
+    if (action === 'delete') return
     setEditing((current) => ({ ...current, lifecycleStatus: result.status || current.lifecycleStatus, scheduledFor: result.scheduledFor || null }))
   }
-  if (!editorPostId) return <section className="wlo-section-card wlo-blog-library" aria-label="Website blog"><WebsiteSectionHeading title="Blog & resources" detail="Share useful local insight and build trust with buyers, sellers and landlords." action={<button className="ww-publish" type="button" disabled={!canEdit} onClick={openNew}>Create post</button>} />
+  if (!editorPostId) return <section className="wlo-section-card wlo-blog-library" aria-label="Website blog"><WebsiteSectionHeading title="Blog & resources" detail="Share useful local insight and build trust with buyers, sellers and landlords." action={<button className="ww-publish" type="button" disabled={!canCreate || creatingDraft} onClick={() => void openNew()}>{creatingDraft ? 'Preparing editor…' : 'Create post'}</button>} />
     {error ? <p className="ww-error">Blog posts will be available once the Website workspace migration is applied.</p> : null}
     <div className="wlo-blog-library-controls"><input className="wlo-blog-search" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search posts, topics or keywords…" aria-label="Search blog posts" /><nav className="wlo-blog-tabs" aria-label="Blog post status"><button className={view === 'all' ? 'active' : ''} type="button" onClick={() => setView('all')}>All <b>{allPosts.length}</b></button><button className={view === 'drafts' ? 'active' : ''} type="button" onClick={() => setView('drafts')}>Drafts <b>{editablePosts.length}</b></button><button className={view === 'published' ? 'active' : ''} type="button" onClick={() => setView('published')}>Published <b>{livePosts.length}</b></button></nav></div>
     <div className="wlo-blog-card-grid">{visiblePosts.length ? visiblePosts.map((post) => { const cover = post.cover_image_url || post.coverImageUrl; const state = String(post.lifecycle_status || post.status || 'draft').replaceAll('_', ' '); return <button type="button" key={post.id} className="wlo-blog-card" onClick={() => openPost(post)}>{cover ? <img src={cover} alt="" /> : <div className="wlo-blog-card-placeholder"><FileText size={26} /></div>}<span className="wlo-blog-card-status"><i className={state === 'published' ? 'published' : ''} />{state}</span><div><strong>{post.title || 'Untitled article'}</strong><p>{post.summary || 'Start writing a useful local property story.'}</p><small>{post.author_name || post.authorName || 'Your agency'} · /blog/{post.slug || 'new-post'}</small></div></button> }) : <p className="wlo-table-empty">{query ? 'No articles match your search.' : 'No posts in this view yet.'}</p>}</div>
@@ -335,7 +345,7 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
   const refresh = async () => {
     setError('')
     setOverview((current) => ({ ...current, mode: 'loading' }))
-    try { setOverview(await getWebsiteWorkspaceOverview(organisationId, { leadWindowDays })) } catch (loadError) { setError(loadError?.message || 'Website settings could not be loaded.'); setOverview({ mode: 'error', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '', mediaAssets: [], mediaAssetsError: '', websiteListings: [], websiteListingsError: '' }) }
+    try { const next = await getWebsiteWorkspaceOverview(organisationId, { leadWindowDays }); setOverview(next); return next } catch (loadError) { setError(loadError?.message || 'Website settings could not be loaded.'); setOverview({ mode: 'error', pilot: null, productionRelease: null, productionDarkLaunch: null, site: null, domains: [], pages: [], publishedRevision: null, publicationEvents: [], managementEvents: [], publicationReadiness: null, analytics: null, analyticsError: '', websiteLeads: [], websiteLeadsError: '', websiteSubmissions: [], websiteSubmissionsError: '', blogPosts: [], draftBlogPosts: [], publishedBlogPosts: [], blogPostsError: '', mediaAssets: [], mediaAssetsError: '', websiteListings: [], websiteListingsError: '' }); return null }
   }
 
   useEffect(() => { void refresh() }, [organisationId, leadWindowDays])
@@ -470,6 +480,20 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
       if (type === 'discard') setNotice('Your unpublished changes were discarded. Your live website was not changed.')
     } catch (actionError) { setError(actionError?.message || 'Website publishing action could not be completed.') } finally { setAction('') }
   }
+  const createBlogDraft = async () => {
+    if (!overview.site?.id || overview.draftRevision?.id || action) return Boolean(overview.draftRevision?.id)
+    setAction('blog-draft'); setError(''); setNotice('')
+    try {
+      await createWebsiteDraft(overview.site.id)
+      const next = await refresh()
+      if (!next?.draftRevision?.id) throw new Error('The article draft could not be prepared.')
+      setNotice('Your private website draft is ready. Start writing your article.')
+      return true
+    } catch (draftError) {
+      setError(draftError?.message || 'The article draft could not be prepared.')
+      return false
+    } finally { setAction('') }
+  }
   const saveBlog = async (post) => {
     if (!overview.site?.id || !overview.draftRevision?.id || action) return null
     setAction('blog'); setError(''); setNotice('')
@@ -508,6 +532,9 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
     setAction('blog-manage'); setError(''); setNotice('')
     try {
       const result = await manageWebsiteBlogPost({ siteId: overview.site.id, revisionId: overview.draftRevision.id, postId, action: blogAction, scheduledFor })
+      // The post has been removed from the draft. Clear its route before the
+      // refreshed list arrives so the editor never tries to render that ID.
+      if (blogAction === 'delete') onCloseBlogEditor?.()
       await refresh()
       setNotice(blogAction === 'schedule' ? 'Article scheduling has been saved. It becomes visible after the website revision is published and the scheduled time arrives.' : `Article ${blogAction.replaceAll('_', ' ')}.`)
       return result
@@ -541,7 +568,7 @@ export default function WebsiteWorkspace({ onBack, blogEditorId = '', onOpenBlog
       {activeSection === 'leads' ? <WebsiteLeads leads={overview.websiteLeads} error={overview.websiteLeadsError} loading={overview.mode === 'loading'} windowDays={leadWindowDays} onWindowChange={setLeadWindowDays} onOpenListing={(listingId) => navigate(`/agent/listings/${encodeURIComponent(listingId)}`)} /> : null}
       {activeSection === 'analytics' ? <WebsiteAnalytics analytics={overview.analytics} error={overview.analyticsError} /> : null}
       {activeSection === 'submissions' ? <WebsiteFormSubmissions submissions={overview.websiteSubmissions || []} error={overview.websiteSubmissionsError} loading={overview.mode === 'loading'} windowDays={leadWindowDays} onWindowChange={setLeadWindowDays} /> : null}
-      {activeSection === 'blog' ? <WebsiteBlog posts={overview.blogPosts} draftPosts={overview.draftBlogPosts} publishedPosts={overview.publishedBlogPosts} mediaAssets={overview.mediaAssets} websiteListings={overview.websiteListings} canEdit={Boolean(overview.draftRevision)} error={overview.blogPostsError} mediaError={overview.mediaAssetsError} listingError={overview.websiteListingsError} saving={action === 'blog'} uploading={action === 'blog-media'} updatingMedia={action === 'blog-media-meta'} onSave={saveBlog} onUpload={uploadBlogMedia} onUpdateMedia={updateBlogMedia} onManage={manageBlog} editorPostId={blogEditorId} onOpenEditor={onOpenBlogEditor} onCloseEditor={onCloseBlogEditor} /> : null}
+      {activeSection === 'blog' ? <WebsiteBlog posts={overview.blogPosts} draftPosts={overview.draftBlogPosts} publishedPosts={overview.publishedBlogPosts} mediaAssets={overview.mediaAssets} websiteListings={overview.websiteListings} canEdit={Boolean(overview.draftRevision)} canCreate={overview.mode === 'connected' && Boolean(overview.site?.id) && !action} creatingDraft={action === 'blog-draft'} loading={overview.mode === 'loading'} error={overview.blogPostsError} mediaError={overview.mediaAssetsError} listingError={overview.websiteListingsError} saving={action === 'blog'} uploading={action === 'blog-media'} updatingMedia={action === 'blog-media-meta'} onSave={saveBlog} onUpload={uploadBlogMedia} onUpdateMedia={updateBlogMedia} onManage={manageBlog} onCreateDraft={createBlogDraft} editorPostId={blogEditorId} onOpenEditor={onOpenBlogEditor} onCloseEditor={onCloseBlogEditor} /> : null}
     </div>
   )
 

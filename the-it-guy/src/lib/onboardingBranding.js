@@ -260,6 +260,14 @@ export function normalizeOnboardingLogoUrl(value = '') {
     const url = new URL(text)
     const signedStoragePrefix = '/storage/v1/object/sign/'
     if (url.pathname.startsWith(signedStoragePrefix)) {
+      // Seller-signing branding is copied to the private `documents` bucket.
+      // A signed URL is its access contract; converting it to `/public/` makes
+      // the logo unavailable and causes the signing page to fall back to
+      // initials. Public organisation-branding assets can still use their
+      // durable public URL below.
+      if (url.pathname.startsWith(`${signedStoragePrefix}documents/`)) {
+        return url.toString()
+      }
       url.pathname = url.pathname.replace(signedStoragePrefix, '/storage/v1/object/public/')
       url.search = ''
       url.hash = ''

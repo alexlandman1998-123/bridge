@@ -8,7 +8,7 @@ function text(value = '') {
 }
 
 function propertyTypeIdForCategory(category) {
-  return ({ commercial: 11, industrial: 12, agricultural: 10, land_development: 8 })[category] || null
+  return ({ commercial: 11, industrial: 12, agricultural: 10, land: 8 })[category] || null
 }
 
 function listingType(listing = {}) {

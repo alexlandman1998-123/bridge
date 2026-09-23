@@ -1,0 +1,224 @@
+{
+  "contract": "arch9-kingdom-production-baseline-v1",
+  "recordedAt": "2026-09-21T11:49:16.114Z",
+  "origin": "https://www.kingdomrealestate.co.za",
+  "routes": {
+    "/": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/",
+      "contentType": "text/html",
+      "title": "Kingdom Real Estate | Exceptional homes in Pretoria",
+      "description": "Premium properties and personal real estate service in Pretoria from Kingdom Real Estate.",
+      "canonical": "/",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/blog/market-report",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/valuation"
+      ],
+      "hasLeadForm": true
+    },
+    "/properties": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/properties",
+      "contentType": "text/html",
+      "title": "Homes for sale | Kingdom Real Estate",
+      "description": "A mobile-first property website platform.",
+      "canonical": "",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/valuation"
+      ],
+      "hasLeadForm": true
+    },
+    "/valuation": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/valuation",
+      "contentType": "text/html",
+      "title": "Sell your property | Kingdom Real Estate",
+      "description": "A mobile-first property website platform.",
+      "canonical": "",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/valuation"
+      ],
+      "hasLeadForm": true
+    },
+    "/about": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/about",
+      "contentType": "text/html",
+      "title": "About Kingdom Real Estate",
+      "description": "Learn about Kingdom Real Estate and its approach to luxury property.",
+      "canonical": "/about",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/valuation"
+      ],
+      "hasLeadForm": false
+    },
+    "/contact": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/contact",
+      "contentType": "text/html",
+      "title": "Contact Kingdom Real Estate",
+      "description": "Contact Kingdom Real Estate about property for sale, to rent, or listing your home.",
+      "canonical": "/contact",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/valuation"
+      ],
+      "hasLeadForm": true
+    },
+    "/blog": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/blog",
+      "contentType": "text/html",
+      "title": "Property journal | Kingdom Real Estate",
+      "description": "Ideas and practical guides for your next property move.",
+      "canonical": "/blog",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/blog/market-report",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/valuation"
+      ],
+      "hasLeadForm": true
+    },
+    "/areas": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/areas",
+      "contentType": "text/html",
+      "title": "Arch9 Websites",
+      "description": "A mobile-first property website platform.",
+      "canonical": "",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/properties?type=sale&amp;q=Centurion",
+        "/properties?type=sale&amp;q=Kyalami",
+        "/properties?type=sale&amp;q=Midrand",
+        "/properties?type=sale&amp;q=Sandton",
+        "/properties?type=sale&amp;q=Waterfall",
+        "/valuation"
+      ],
+      "hasLeadForm": false
+    },
+    "/calculators": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/calculators",
+      "contentType": "text/html",
+      "title": "Property calculators | Kingdom Real Estate",
+      "description": "Explore monthly bond repayments, a home budget and a deposit savings plan.",
+      "canonical": "/calculators",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/valuation"
+      ],
+      "hasLeadForm": false
+    },
+    "/preapproval": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/preapproval",
+      "contentType": "text/html",
+      "title": "Start your preapproval | Kingdom Real Estate",
+      "description": "Request help with a home-loan preapproval assessment before your next move.",
+      "canonical": "/preapproval",
+      "navigation": [
+        "/",
+        "/about",
+        "/areas",
+        "/blog",
+        "/calculators",
+        "/contact",
+        "/preapproval",
+        "/properties",
+        "/properties?type=rental",
+        "/properties?type=sale",
+        "/valuation"
+      ],
+      "hasLeadForm": true
+    },
+    "/robots.txt": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/robots.txt",
+      "contentType": "text/plain",
+      "bodySha256": "84bb9f2e318fe03079b9e734dc349d204b05abbd360838a10dbb73c391c967a6"
+    },
+    "/sitemap.xml": {
+      "status": 200,
+      "finalUrl": "https://www.kingdomrealestate.co.za/sitemap.xml",
+      "contentType": "application/xml",
+      "bodySha256": "5f3d0cc39bf7a628b9866ece0907d67d93f58b5703ad48f4f51290a75c19fd82"
+    }
+  }
+}

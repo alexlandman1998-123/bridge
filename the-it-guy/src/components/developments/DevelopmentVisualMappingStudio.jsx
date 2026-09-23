@@ -83,9 +83,11 @@ const backgroundStyleForScene = (scene) => {
     viewport.height === 100 ? 50 : (viewport.y / (100 - viewport.height)) * 100;
   return {
     backgroundImage: `linear-gradient(rgba(8,28,24,.08),rgba(8,28,24,.12)),url(${scene.background.url})`,
-    backgroundPosition: `${horizontal}% ${vertical}%`,
+    backgroundPosition: "center",
     backgroundRepeat: "no-repeat",
-    backgroundSize: `${10000 / viewport.width}% ${10000 / viewport.height}%`,
+    // Never stretch a masterplan to fill a wide editor.  The SVG overlay below
+    // uses the same 'meet' behaviour, keeping unit pins on their real homes.
+    backgroundSize: "contain",
   };
 };
 
@@ -110,6 +112,7 @@ export default function DevelopmentVisualMappingStudio({
   const [labelManuallyPlaced, setLabelManuallyPlaced] = useState(false);
   const [mode, setMode] = useState("draw");
   const [draggingIndex, setDraggingIndex] = useState(null);
+  const [draggingHotspotId, setDraggingHotspotId] = useState(null);
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [feedback, setFeedback] = useState("");
@@ -139,7 +142,9 @@ export default function DevelopmentVisualMappingStudio({
     setSceneForm({ name: "", type: "building", url: "" });
     setNavigationHotspotId("");
     setAssetUploading(false);
-    setWorkspaceMode("guided");
+    // A development plan is normally mapped by dropping one clear unit pin at
+    // a time. The journey builder remains available, but is not the default.
+    setWorkspaceMode("advanced");
     setPreviewOpen(false);
   }, [open, visualMap]);
 
@@ -282,7 +287,7 @@ export default function DevelopmentVisualMappingStudio({
     setPoints(nextPoints);
     setLabelPosition(hotspot?.label?.position || centroid(nextPoints));
     setLabelManuallyPlaced(Boolean(hotspot?.label?.position));
-    setMode(nextPoints.length ? "edit" : "draw");
+    setMode(nextPoints.length ? "edit" : "pin");
     setUndoStack([]);
     setRedoStack([]);
     setFeedback(
@@ -311,6 +316,25 @@ export default function DevelopmentVisualMappingStudio({
       return;
     }
     if (!unitId || draggingIndex !== null) return;
+    if (mode === "pin") {
+      const unit = unitById.get(unitId);
+      const existing = scene.hotspots.filter(
+        (item) => !(item.type === "unit" && item.target.id === unitId),
+      );
+      setDraftMap(replaceVisualMapSceneHotspots(draftMap, scene.id, [...existing, {
+        id: selectedHotspot?.id || `unit:${unitId}`,
+        type: "unit",
+        target: { type: "unit", id: unitId },
+        geometry: { type: "point", coordinates: point },
+        label: { text: text(unit?.displayNumber || unit?.unitNumber || unit?.unit_number), position: point },
+        visibility: selectedHotspot?.visibility || "public",
+        displayOrder: selectedHotspot?.displayOrder ?? existing.length,
+      }]));
+      const currentIndex = inventory.findIndex((item) => text(item.id) === unitId);
+      const nextUnit = inventory.slice(currentIndex + 1).find((item) => !mappedUnitIds.has(text(item.id)));
+      setFeedback(`Unit ${unit?.displayNumber || unitId} pinned. ${nextUnit ? `Select Unit ${nextUnit.displayNumber || nextUnit.id} next.` : "All units are pinned."}`);
+      return;
+    }
     if (mode === "label") {
       recordChange();
       setLabelPosition(point);
@@ -394,6 +418,14 @@ export default function DevelopmentVisualMappingStudio({
   }
 
   function moveVertex(event) {
+    if (draggingHotspotId) {
+      const point = coordinatesForEvent(event);
+      if (!point) return;
+      setDraftMap(replaceVisualMapSceneHotspots(draftMap, scene.id, scene.hotspots.map(hotspot =>
+        hotspot.id === draggingHotspotId ? { ...hotspot, geometry: { type: 'point', coordinates: point }, label: { ...hotspot.label, position: point } } : hotspot,
+      )));
+      return;
+    }
     if (draggingIndex === null) return;
     const point = coordinatesForEvent(event);
     if (!point) return;
@@ -462,14 +494,14 @@ export default function DevelopmentVisualMappingStudio({
               onClick={() => setWorkspaceMode("guided")}
               className={`rounded-md px-3 py-1.5 text-xs font-semibold ${workspaceMode === "guided" ? "bg-white text-[#234c3d] shadow-sm" : "text-[#687970]"}`}
             >
-              Guided setup
+              Journey builder
             </button>
             <button
               type="button"
               onClick={() => setWorkspaceMode("advanced")}
               className={`rounded-md px-3 py-1.5 text-xs font-semibold ${workspaceMode === "advanced" ? "bg-white text-[#234c3d] shadow-sm" : "text-[#687970]"}`}
             >
-              Advanced mapping
+              Quick map
             </button>
           </div>
           <Button
@@ -1162,14 +1194,14 @@ export default function DevelopmentVisualMappingStudio({
               ref={mapRef}
               onClick={handleCanvasClick}
               onPointerMove={moveVertex}
-              onPointerUp={() => setDraggingIndex(null)}
+              onPointerUp={() => { setDraggingIndex(null); setDraggingHotspotId(null); }}
               className={`relative h-full min-h-[440px] overflow-hidden rounded-xl border border-white/70 bg-[#d6ded9] bg-no-repeat shadow-inner ${mode === "draw" || mode === "label" || navigationHotspotId ? "cursor-crosshair" : ""}`}
               style={backgroundStyle}
             >
               <svg
                 className="absolute inset-0 h-full w-full"
                 viewBox="0 0 100 100"
-                preserveAspectRatio="none"
+                preserveAspectRatio="xMidYMid meet"
               >
                 {(scene?.hotspots || []).map((hotspot) => {
                   const unit = unitById.get(hotspot.target.id);
@@ -1198,6 +1230,8 @@ export default function DevelopmentVisualMappingStudio({
                             : colours.stroke
                         }
                         strokeWidth={selected ? 1 : 0.45}
+                        className="cursor-grab active:cursor-grabbing"
+                        onPointerDown={(event) => { event.stopPropagation(); setDraggingHotspotId(hotspot.id); event.currentTarget.setPointerCapture?.(event.pointerId); }}
                         onClick={(event) => {
                           event.stopPropagation();
                           getVisualHotspotSceneId(hotspot)
@@ -1271,7 +1305,9 @@ export default function DevelopmentVisualMappingStudio({
                     Unit {unitById.get(unitId)?.displayNumber || unitId}
                   </strong>
                   <span className="ml-2 text-[#6e8178]">
-                    {mode === "draw"
+                    {mode === "pin"
+                      ? "Click the home to pin this unit"
+                      : mode === "draw"
                       ? "Click each corner"
                       : mode === "label"
                         ? "Click the label position"
@@ -1295,6 +1331,14 @@ export default function DevelopmentVisualMappingStudio({
                   boundary, then apply it to the draft.
                 </p>
                 <div className="mt-4 grid gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={mode === "pin" ? "primary" : "secondary"}
+                    onClick={() => setMode("pin")}
+                  >
+                    <MousePointer2 size={14} /> Pin unit with one click
+                  </Button>
                   <Button
                     type="button"
                     size="sm"

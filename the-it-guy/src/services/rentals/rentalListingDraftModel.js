@@ -1,5 +1,36 @@
 export const RENTAL_LISTING_CAPTURE_VERSION = 'arch9_rental_listing_capture_v1'
 
+export const RENTAL_PRICE_FREQUENCIES = Object.freeze([
+  'monthly',
+  'weekly',
+  'daily',
+  'per_square_metre',
+  'annual',
+])
+
+export const RENTAL_MANDATE_TYPES = Object.freeze([
+  'standard_rental',
+  'house_share',
+])
+
+export const RENTAL_DEPOSIT_POLICIES = Object.freeze([
+  'not_captured',
+  'deposit_required',
+  'no_deposit',
+])
+
+export const RETIREMENT_ACCOMMODATION_OPTIONS = Object.freeze([
+  'not_captured',
+  'yes',
+  'no',
+])
+
+export const RENTAL_DISTRIBUTION_CHANNELS = Object.freeze([
+  { key: 'property24', label: 'Property24' },
+  { key: 'private_property', label: 'Private Property' },
+  { key: 'agency_website', label: 'Agency Website' },
+])
+
 export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   title: '',
   landlordName: '',
@@ -16,6 +47,7 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   province: '',
   postalCode: '',
   exactAddressVisibility: 'hide_street_number',
+  propertyCategory: 'residential',
   propertyType: 'Apartment',
   bedrooms: '',
   bathrooms: '',
@@ -34,13 +66,16 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   floorSize: '',
   erfSize: '',
   monthlyRent: '',
+  rentalPriceFrequency: 'monthly',
   depositAmount: '',
+  depositPolicy: 'not_captured',
   depositRequirement: '',
   depositMultiplier: '1',
   availableFrom: '',
   occupationDate: '',
   leasePeriodMonths: '12',
   leasePeriodType: 'fixed_12_months',
+  rentalMandateType: 'standard_rental',
   rentalIncludes: '',
   rentalExcludes: '',
   applicationFee: '',
@@ -48,6 +83,7 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   creditCheckFee: '',
   keyDepositAmount: '',
   utilityDepositAmount: '',
+  retirementAccommodation: 'not_captured',
   furnishedStatus: 'unfurnished',
   petsPolicy: 'subject_to_approval',
   utilitiesPolicy: 'tenant_pays',
@@ -88,6 +124,7 @@ export const RENTAL_LISTING_INITIAL_FORM = Object.freeze({
   galleryImages: [],
   coverImageId: '',
   internalNotes: '',
+  selectedSyndicationChannels: [],
 })
 
 export const RENTAL_FEATURE_OPTIONS = Object.freeze([
@@ -141,7 +178,7 @@ export const RENTAL_SELECT_OPTIONS = Object.freeze({
     { value: 'prepaid_electricity', label: 'Prepaid electricity' },
   ],
   exactAddressVisibility: [
-    { value: 'hide_street_number', label: 'Hide street number on portals' },
+    { value: 'hide_street_number', label: 'Contact agent for street address' },
     { value: 'show_exact_address', label: 'Show exact address on portals' },
     { value: 'complex_only', label: 'Show complex/building only' },
   ],
@@ -151,6 +188,27 @@ export const RENTAL_SELECT_OPTIONS = Object.freeze({
     { value: 'fixed_24_months', label: '24 months' },
     { value: 'month_to_month', label: 'Month to month' },
     { value: 'negotiable', label: 'Negotiable' },
+  ],
+  rentalPriceFrequency: [
+    { value: 'monthly', label: 'Per month' },
+    { value: 'weekly', label: 'Per week' },
+    { value: 'daily', label: 'Per day' },
+    { value: 'per_square_metre', label: 'Per square metre' },
+    { value: 'annual', label: 'Per year' },
+  ],
+  rentalMandateType: [
+    { value: 'standard_rental', label: 'Standard rental' },
+    { value: 'house_share', label: 'House share' },
+  ],
+  depositPolicy: [
+    { value: 'not_captured', label: 'Not captured yet' },
+    { value: 'deposit_required', label: 'Deposit required' },
+    { value: 'no_deposit', label: 'No deposit required' },
+  ],
+  retirementAccommodation: [
+    { value: 'not_captured', label: 'Not captured' },
+    { value: 'yes', label: 'Yes' },
+    { value: 'no', label: 'No' },
   ],
   yesNoUnknown: [
     { value: '', label: 'Not captured' },
@@ -204,6 +262,44 @@ function normalizeTextArray(values = []) {
   return [...new Set((Array.isArray(values) ? values : []).map(normalizeText).filter(Boolean))]
 }
 
+function normalizeEnum(value, allowedValues, fallback) {
+  const normalized = normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_')
+  return allowedValues.includes(normalized) ? normalized : fallback
+}
+
+export function normalizeRentalPriceFrequency(value) {
+  return normalizeEnum(value, RENTAL_PRICE_FREQUENCIES, 'monthly')
+}
+
+export function normalizeRentalMandateType(value) {
+  return normalizeEnum(value, RENTAL_MANDATE_TYPES, 'standard_rental')
+}
+
+export function normalizeRentalDepositPolicy(value) {
+  return normalizeEnum(value, RENTAL_DEPOSIT_POLICIES, 'not_captured')
+}
+
+export function normalizeRetirementAccommodation(value) {
+  return normalizeEnum(value, RETIREMENT_ACCOMMODATION_OPTIONS, 'not_captured')
+}
+
+export function normalizeRentalDistributionChannels(values = []) {
+  const aliases = {
+    privateproperty: 'private_property',
+    private_property: 'private_property',
+    property24: 'property24',
+    agencywebsite: 'agency_website',
+    agency_website: 'agency_website',
+    website: 'agency_website',
+  }
+  const selected = Array.isArray(values) ? values : []
+  const allowed = new Set(RENTAL_DISTRIBUTION_CHANNELS.map((channel) => channel.key))
+  return [...new Set(selected
+    .map((value) => normalizeText(value).toLowerCase().replace(/[\s-]+/g, '_'))
+    .map((value) => aliases[value] || value)
+    .filter((value) => allowed.has(value)))]
+}
+
 function joinNonEmpty(parts, separator = ', ') {
   return parts.map(normalizeText).filter(Boolean).join(separator)
 }
@@ -215,9 +311,14 @@ export function buildRentalListingTitle(form = {}) {
 }
 
 export function validateRentalListingDraftForm(form = {}, context = {}) {
-  void form
   const errors = []
   if (!normalizeText(context.organisationId)) errors.push('Organisation context is required.')
+  if (!normalizeText(form.propertyAddress)) errors.push('Property address is required.')
+  if (!normalizeNumber(form.monthlyRent)) errors.push('Rental amount is required.')
+  if (!normalizeText(form.rentalPriceFrequency)) errors.push('Rental price frequency is required.')
+  if (normalizeRentalDepositPolicy(form.depositPolicy) === 'not_captured') errors.push('Choose whether a deposit is required.')
+  if (!normalizeText(form.availableFrom) && !normalizeText(form.occupationDate)) errors.push('Available from or occupation date is required.')
+  if (!normalizeText(form.description)) errors.push('Public rental description is required.')
   return errors
 }
 
@@ -274,6 +375,7 @@ export function buildRentalCanonicalFacts(form = {}) {
     city: normalizeText(form.city),
     province: normalizeText(form.province),
     propertyProfile: {
+      propertyCategory: normalizeText(form.propertyCategory) || 'residential',
       propertyType: normalizeText(form.propertyType) || 'Apartment',
       bedrooms: normalizeNumber(form.bedrooms),
       bathrooms: normalizeNumber(form.bathrooms),
@@ -293,17 +395,21 @@ export function buildRentalCanonicalFacts(form = {}) {
       erfSize: normalizeNumber(form.erfSize),
       selectedFeatures: normalizeTextArray(form.selectedFeatures),
       amenities: normalizeTextArray(form.amenities),
+      retirementAccommodation: normalizeRetirementAccommodation(form.retirementAccommodation),
       portalFeatures,
     },
     rentalInfo: {
       monthlyRent,
+      rentalPriceFrequency: normalizeRentalPriceFrequency(form.rentalPriceFrequency),
       depositAmount,
+      depositPolicy: normalizeRentalDepositPolicy(form.depositPolicy),
       depositRequirement: normalizeText(form.depositRequirement),
       depositMultiplier: normalizeNumber(form.depositMultiplier),
       availableFrom: normalizeText(form.availableFrom),
       occupationDate: normalizeText(form.occupationDate),
       leasePeriodMonths,
       leasePeriodType: normalizeText(form.leasePeriodType) || 'fixed_12_months',
+      rentalMandateType: normalizeRentalMandateType(form.rentalMandateType),
       rentalIncludes: normalizeText(form.rentalIncludes),
       rentalExcludes: normalizeText(form.rentalExcludes),
       applicationFee: normalizeNumber(form.applicationFee),
@@ -322,6 +428,9 @@ export function buildRentalCanonicalFacts(form = {}) {
       mandateEndDate: normalizeText(form.mandateEndDate),
       marketingApprovalStatus: normalizeText(form.marketingApprovalStatus) || 'draft',
     },
+    distribution: {
+      selectedChannels: normalizeRentalDistributionChannels(form.selectedSyndicationChannels),
+    },
   }
 }
 
@@ -333,7 +442,9 @@ export function buildRentalCanonicalFactReadiness(form = {}) {
     landlordContact: Boolean(normalizeText(form.landlordEmail) || normalizeText(form.landlordPhone)),
     propertyAddress: Boolean(normalizeText(form.propertyAddress)),
     monthlyRent: Boolean(normalizeNumber(form.monthlyRent)),
+    rentalPriceFrequency: Boolean(normalizeText(form.rentalPriceFrequency)),
     depositAmount: Boolean(normalizeNumber(form.depositAmount)),
+    depositPolicy: normalizeRentalDepositPolicy(form.depositPolicy) !== 'not_captured',
     availableFrom: Boolean(normalizeText(form.availableFrom)),
     occupationDate: Boolean(normalizeText(form.occupationDate || form.availableFrom)),
     leasePeriodMonths: Boolean(normalizeNumber(form.leasePeriodMonths)),
@@ -359,9 +470,12 @@ export function buildRentalListingNotes(form = {}) {
     `Available from: ${facts.rentalInfo.availableFrom || 'Not captured'}`,
     `Occupation date: ${facts.rentalInfo.occupationDate || facts.rentalInfo.availableFrom || 'Not captured'}`,
     `Monthly rent: ${facts.rentalInfo.monthlyRent === null ? 'Not captured' : `R${facts.rentalInfo.monthlyRent}`}`,
+    `Rental price frequency: ${optionLabel('rentalPriceFrequency', facts.rentalInfo.rentalPriceFrequency) || 'Not captured'}`,
     `Deposit: ${facts.rentalInfo.depositAmount === null ? 'Not captured' : `R${facts.rentalInfo.depositAmount}`}`,
+    `Deposit policy: ${optionLabel('depositPolicy', facts.rentalInfo.depositPolicy) || 'Not captured'}`,
     `Deposit requirement: ${facts.rentalInfo.depositRequirement || 'Not captured'}`,
     `Lease period: ${facts.rentalInfo.leasePeriodMonths || 'Not captured'} months`,
+    `Rental mandate type: ${optionLabel('rentalMandateType', facts.rentalInfo.rentalMandateType) || 'Not captured'}`,
     `Rental includes: ${facts.rentalInfo.rentalIncludes || 'Not captured'}`,
     `Rental excludes: ${facts.rentalInfo.rentalExcludes || 'Not captured'}`,
     `Furnished: ${optionLabel('furnishedStatus', facts.rentalInfo.furnishedStatus)}`,
@@ -369,12 +483,16 @@ export function buildRentalListingNotes(form = {}) {
     `Utilities: ${optionLabel('utilitiesPolicy', facts.rentalInfo.utilitiesPolicy)}`,
     `Inspection: ${optionLabel('inspectionStatus', facts.rentalInfo.inspectionStatus)}`,
     `Marketing approval: ${optionLabel('marketingApprovalStatus', facts.rentalInfo.marketingApprovalStatus)}`,
+    `Distribution: ${facts.distribution?.selectedChannels?.map((key) => RENTAL_DISTRIBUTION_CHANNELS.find((channel) => channel.key === key)?.label || key).join(', ') || 'Not selected'}`,
   ]
   if (facts.propertyProfile?.floorSize !== null) lines.push(`Floor size: ${facts.propertyProfile.floorSize} m2`)
   if (facts.propertyProfile?.erfSize !== null) lines.push(`Erf size: ${facts.propertyProfile.erfSize} m2`)
   if (facts.propertyProfile?.garages !== null) lines.push(`Garages: ${facts.propertyProfile.garages}`)
   if (facts.propertyProfile?.coveredParking !== null) lines.push(`Covered parking: ${facts.propertyProfile.coveredParking}`)
   if (facts.propertyProfile?.openParking !== null) lines.push(`Open parking: ${facts.propertyProfile.openParking}`)
+  if (facts.propertyProfile?.retirementAccommodation !== 'not_captured') {
+    lines.push(`Retirement accommodation: ${optionLabel('retirementAccommodation', facts.propertyProfile.retirementAccommodation)}`)
+  }
   if (facts.propertyProfile?.selectedFeatures?.length) lines.push(`Features: ${facts.propertyProfile.selectedFeatures.join(', ')}`)
   if (facts.propertyProfile?.amenities?.length) lines.push(`Amenities: ${facts.propertyProfile.amenities.join(', ')}`)
   const capturedPortalFeatures = Object.entries(facts.propertyProfile?.portalFeatures || {})
@@ -401,6 +519,7 @@ export function buildRentalPublicationDraft(form = {}) {
     city: normalizeText(form.city),
     province: normalizeText(form.province),
     propertyType: normalizeText(form.propertyType),
+    propertyCategory: normalizeText(form.propertyCategory) || 'residential',
     listingType: 'Rental',
     askingPrice: normalizeNumber(form.monthlyRent),
     bedrooms: normalizeNumber(form.bedrooms),
@@ -416,17 +535,23 @@ export function buildRentalPublicationDraft(form = {}) {
     features: normalizeTextArray([...(Array.isArray(form.selectedFeatures) ? form.selectedFeatures : []), ...rentalFeatures]),
     amenities: normalizeTextArray(form.amenities),
     rentalTerms: {
+      rentalPriceFrequency: normalizeRentalPriceFrequency(form.rentalPriceFrequency),
       availableFrom: normalizeText(form.availableFrom),
       occupationDate: normalizeText(form.occupationDate),
       leasePeriodMonths: normalizeNumber(form.leasePeriodMonths),
       leasePeriodType: normalizeText(form.leasePeriodType),
       depositRequirement: normalizeText(form.depositRequirement),
+      depositPolicy: normalizeRentalDepositPolicy(form.depositPolicy),
+      rentalMandateType: normalizeRentalMandateType(form.rentalMandateType),
       rentalIncludes: normalizeText(form.rentalIncludes),
       rentalExcludes: normalizeText(form.rentalExcludes),
     },
+    retirementAccommodation: normalizeRetirementAccommodation(form.retirementAccommodation),
     property24ExpiryDate: normalizeText(form.property24ExpiryDate),
     property24SuburbId: normalizeText(form.property24SuburbId),
     portalFeatures: buildRentalCanonicalFacts(form).propertyProfile.portalFeatures,
+    selectedSyndicationChannels: normalizeRentalDistributionChannels(form.selectedSyndicationChannels),
+    exactAddressVisibility: normalizeText(form.exactAddressVisibility) || 'hide_street_address',
     status: normalizeText(form.marketingApprovalStatus) === 'approved' ? 'Ready' : 'Draft',
   }
 }
@@ -443,7 +568,7 @@ export function buildRentalPrivateListingPayload(form = {}, context = {}) {
     sellerOnboardingStatus: 'not_started',
     listingVisibility: 'internal',
     title,
-    propertyCategory: 'residential',
+    propertyCategory: normalizeText(form.propertyCategory) || 'residential',
     listingSource: 'private_listing',
     propertyStructureType: 'other',
     propertyType: normalizeText(form.propertyType),

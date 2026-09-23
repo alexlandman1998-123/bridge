@@ -10,6 +10,7 @@ import {
   sha256Hex,
   WEBSITE_LISTING_MEDIA_BUCKET,
   WEBSITE_LISTING_MEDIA_MAX_BYTES,
+  WEBSITE_LISTING_MEDIA_MAX_ITEMS,
   websiteListingMediaStoragePath,
   type WebsiteMediaType,
 } from "../_shared/websiteListingMedia.ts";
@@ -397,11 +398,11 @@ Deno.serve(async (req) => {
         "Add at least one listing image before publishing.",
       );
     }
-    if ((sourceMedia.data || []).length > 50) {
+    if ((sourceMedia.data || []).length > WEBSITE_LISTING_MEDIA_MAX_ITEMS) {
       throw new RequestError(
         422,
         "listing_media_limit",
-        "A website listing can publish at most 50 images and floor plans.",
+        `A website listing can publish at most ${WEBSITE_LISTING_MEDIA_MAX_ITEMS} images and floor plans.`,
       );
     }
 

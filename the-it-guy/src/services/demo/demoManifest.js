@@ -158,12 +158,68 @@ const LWP_PROPERTIES_DEMO_PROFILE = Object.freeze({
   }),
 })
 
+function createRequestedAgencyDemoProfile({ id, name, email }) {
+  const principalLabel = name.replace(/\s+Properties$/i, '').trim() || name
+  return Object.freeze({
+    id,
+    name,
+    type: 'agency',
+    demoOnly: true,
+    workspaceId: id,
+    businessLines: Object.freeze(['sales', 'rentals']),
+    profile: Object.freeze({
+      id: `${id}-principal`,
+      email,
+      fullName: `${name} Demo Principal`,
+      firstName: principalLabel,
+      lastName: 'Principal',
+      companyName: name,
+      role: 'agent',
+      systemRole: 'professional',
+      onboardingCompleted: true,
+    }),
+    seedData: Object.freeze({
+      seedKey: `${id}-demo-seed-v1`,
+      sourceScripts: Object.freeze([
+        'scripts/agencyDemoBootstrap.mjs',
+        'scripts/seed-agency-demo-transactions.mjs',
+        'scripts/seed-agency-demo-listing-images.mjs',
+      ]),
+      branches: HOME_SEEKERS_DEMO_PROFILE.seedData.branches,
+      listings: HOME_SEEKERS_DEMO_PROFILE.seedData.listings,
+      team: HOME_SEEKERS_DEMO_PROFILE.seedData.team,
+      clients: HOME_SEEKERS_DEMO_PROFILE.seedData.clients,
+      demoScenarios: HOME_SEEKERS_DEMO_PROFILE.seedData.demoScenarios,
+    }),
+  })
+}
+
+const REQUESTED_AGENCY_DEMO_PROFILES = Object.freeze([
+  createRequestedAgencyDemoProfile({ id: 'thoka-properties', name: 'Thoka Properties', email: 'principal@thoka-properties.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'ultimate-gauteng-homes', name: 'Ultimate Gauteng Homes', email: 'principal@ultimate-gauteng-homes.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'property-connect', name: 'Property Connect', email: 'principal@property-connect.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'property-legends', name: 'Property Legends', email: 'principal@property-legends.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'just-imagine-properties', name: 'Just Imagine Properties', email: 'principal@just-imagine-properties.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'matchmaker-realty', name: 'Matchmaker Realty', email: 'principal@matchmaker-realty.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'vd5-properties', name: 'VD5 Properties', email: 'principal@vd5-properties.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'dream-supreme-properties', name: 'Dream Supreme Properties', email: 'principal@dream-supreme-properties.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'dunamis-properties', name: 'Dunamis Properties', email: 'principal@dunamis-properties.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'keyworx-properties', name: 'Keyworx Properties', email: 'principal@keyworx-properties.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'vanguard-properties', name: 'Vanguard Properties', email: 'principal@vanguard-properties.demo' }),
+  createRequestedAgencyDemoProfile({ id: 'newberry-property', name: 'Newberry Property', email: 'principal@newberry-property.demo' }),
+])
+
 export const DEMO_ENVIRONMENT_DOMAINS = Object.freeze({
   'home-seekers': Object.freeze(['homeseekers.demo.local', 'home-seekers.demo.local']),
   oriprop: Object.freeze(['oriprop.demo.local']),
 })
 
-export const DEMO_ACCOUNTS = Object.freeze([HOME_SEEKERS_DEMO_PROFILE, ORIPROP_DEMO_PROFILE, LWP_PROPERTIES_DEMO_PROFILE])
+export const DEMO_ACCOUNTS = Object.freeze([
+  HOME_SEEKERS_DEMO_PROFILE,
+  ORIPROP_DEMO_PROFILE,
+  LWP_PROPERTIES_DEMO_PROFILE,
+  ...REQUESTED_AGENCY_DEMO_PROFILES,
+])
 
 export const DEMO_SEED_MANIFEST = Object.freeze([
   Object.freeze({

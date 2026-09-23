@@ -32,7 +32,7 @@ assert.equal(resolveRentalListingWorkspaceTabFromDetailTab('mandate'), 'mandate'
 assert.equal(resolveRentalListingWorkspaceTabFromDetailTab('inspection'), 'property')
 assert.equal(resolveRentalListingWorkspaceTabFromDetailTab('property'), 'property')
 assert.equal(resolveRentalListingWorkspaceTabFromDetailTab('marketing'), 'marketing')
-assert.equal(resolveRentalListingWorkspaceTabFromDetailTab('syndication'), 'syndication')
+assert.equal(resolveRentalListingWorkspaceTabFromDetailTab('syndication'), 'marketing')
 assert.equal(resolveRentalListingWorkspaceTabFromDetailTab('applications'), 'activity')
 assert.equal(resolveRentalListingWorkspaceTabFromDetailTab('activity'), 'activity')
 
@@ -50,7 +50,7 @@ assert.deepEqual(resolveRentalListingWorkspaceTarget('media'), {
 })
 assert.deepEqual(resolveRentalListingWorkspaceTarget('syndication'), {
   workspaceTab: 'syndication',
-  detailTab: 'syndication',
+  detailTab: 'marketing',
 })
 assert.equal(resolveRentalListingWorkspaceTarget('unknown').workspaceTab, 'overview')
 

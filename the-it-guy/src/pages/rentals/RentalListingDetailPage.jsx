@@ -5,6 +5,7 @@ import {
   CalendarDays,
   CheckCircle2,
   CircleAlert,
+  Building2,
   Eye,
   Home,
   Loader2,
@@ -13,6 +14,7 @@ import {
   Save,
   Send,
   ShieldCheck,
+  SlidersHorizontal,
   Trash2,
   Users,
   X,
@@ -26,8 +28,10 @@ import {
   getRentalListingForAgent,
   previewPrivatePropertyRentalListing,
   publishPrivatePropertyRentalListing,
+  expirePrivatePropertyRentalListing,
   previewRentalProperty24Listing,
   publishRentalProperty24Listing,
+  expireRentalProperty24Listing,
   updateRentalListingDraft,
 } from '../../services/rentals/rentalListingDraftService'
 import { deletePrivateListing } from '../../services/privateListingService'
@@ -78,6 +82,24 @@ const PORTAL_FEATURE_FIELDS = Object.freeze([
   ['satellite', 'Satellite'],
 ])
 
+const PROPERTY_CATEGORY_OPTIONS = Object.freeze([
+  { value: 'residential', label: 'Residential' },
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'industrial', label: 'Industrial' },
+  { value: 'retail', label: 'Retail' },
+  { value: 'agricultural', label: 'Farm / agricultural' },
+  { value: 'vacant_land', label: 'Vacant land' },
+  { value: 'mixed_use', label: 'Mixed use' },
+])
+
+const PER_SQUARE_METRE_RENTAL_CATEGORIES = new Set(['commercial', 'industrial', 'retail', 'vacant_land', 'mixed_use'])
+
+function rentalPriceFrequencyOptions(propertyCategory) {
+  return RENTAL_SELECT_OPTIONS.rentalPriceFrequency.filter((option) => (
+    option.value !== 'per_square_metre' || PER_SQUARE_METRE_RENTAL_CATEGORIES.has(propertyCategory)
+  ))
+}
+
 function formatCurrency(value) {
   const amount = Number(value || 0)
   if (!Number.isFinite(amount) || amount <= 0) return 'Not captured'
@@ -99,6 +121,90 @@ function formatDate(value) {
   }).format(date)
 }
 
+function formatDateTime(value) {
+  if (!value) return 'Not yet updated'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value)
+  return new Intl.DateTimeFormat('en-ZA', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
+}
+
+function formatRentalHeroAddress(row = {}) {
+  const address = String(row.address || '').trim()
+  const location = [row.suburb, row.city]
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .join(', ')
+  if (!address) return location || 'Location pending'
+  if (!location || address.toLocaleLowerCase().includes(location.toLocaleLowerCase())) return address
+  return `${address}, ${location}`
+}
+
+function formatRelativeTime(value) {
+  if (!value) return ''
+  const timestamp = new Date(value).getTime()
+  if (Number.isNaN(timestamp)) return ''
+  const elapsedMinutes = Math.max(0, Math.round((Date.now() - timestamp) / 60_000))
+  if (elapsedMinutes < 1) return 'Just now'
+  if (elapsedMinutes < 60) return `${elapsedMinutes}m ago`
+  const elapsedHours = Math.round(elapsedMinutes / 60)
+  if (elapsedHours < 24) return `${elapsedHours}h ago`
+  const elapsedDays = Math.round(elapsedHours / 24)
+  return `${elapsedDays}d ago`
+}
+
+function RentalDistributionChannel({
+  icon = Building2,
+  logoSrc = '',
+  name,
+  subtitle = '',
+  reference = '',
+  status = 'not_published',
+  contextTitle = '',
+  lastSynced = '',
+  actions = [],
+}) {
+  const Icon = icon
+  const statusKey = String(status || '').trim().toLowerCase().replace(/[\s-]+/g, '_')
+  const live = ['live', 'published', 'active'].includes(statusKey)
+  const syncing = ['syncing', 'updating', 'publishing', 'submitted', 'pending'].includes(statusKey)
+  const attention = ['needs_attention', 'attention', 'warning', 'blocked', 'missing', 'failed', 'error'].includes(statusKey)
+  const dotClass = live ? 'bg-[#1f9d64]' : attention ? 'bg-[#d99321]' : syncing ? 'bg-[#2f6fb3]' : 'border border-[#aebdca] bg-white'
+  const statusTextClass = live ? 'text-[#18713e]' : attention ? 'text-[#9a5b13]' : syncing ? 'text-[#2f6fb3]' : 'text-[#526a82]'
+  const statusLabel = live ? 'Live' : attention ? 'Needs attention' : syncing ? 'Syncing' : 'Not published'
+
+  return (
+    <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(250px,1fr)_minmax(170px,0.7fr)_minmax(130px,170px)_auto] lg:items-center">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-[10px] border border-[#dbe6f2] bg-white text-[#1f4f78]">
+          {logoSrc ? <img src={logoSrc} alt={`${name} logo`} className="max-h-7 max-w-8 object-contain" /> : <Icon size={18} />}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold leading-5 text-[#142132]">{name}</p>
+          {subtitle ? <p className="truncate text-xs leading-5 text-[#607387]">{subtitle}</p> : null}
+          {reference ? <span className="mt-1 inline-flex max-w-full rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]"><span className="truncate">{reference}</span></span> : null}
+          {contextTitle ? <p className="mt-1 text-xs font-semibold leading-5 text-[#8a5b13]">{contextTitle}</p> : null}
+        </div>
+      </div>
+      <div className="min-w-0 md:justify-self-start"><p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusTextClass}`}><span className={`h-2 w-2 rounded-full ${dotClass}`} />{statusLabel}</p></div>
+      <div className="min-w-0">
+        {lastSynced ? <><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last synced</p><p className="mt-0.5 text-xs font-semibold text-[#607387]">{lastSynced}</p></> : null}
+      </div>
+      <div className="flex justify-start lg:justify-end">
+        <details className="relative open:z-40">
+          <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden"><SlidersHorizontal size={15} />Manage</summary>
+          <div className="absolute right-0 z-30 mt-2 grid w-56 gap-1.5 overflow-hidden rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">{actions}</div>
+        </details>
+      </div>
+    </div>
+  )
+}
+
 function RentalListingImage({ src, title }) {
   if (src) {
     return <img src={src} alt={title} className="h-full w-full object-cover" />
@@ -109,6 +215,130 @@ function RentalListingImage({ src, title }) {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_20%,rgba(255,255,255,0.28),transparent_48%)]" />
       <Home className="relative text-white/80" size={42} aria-hidden="true" />
     </div>
+  )
+}
+
+function RentalMarketingOverview({ detail, row, galleryImages, onOpenEdit }) {
+  const listing = detail?.listing || {}
+  const facts = listing.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object' ? listing.sellerCanonicalFacts : {}
+  const publication = listing.listingPublicationData && typeof listing.listingPublicationData === 'object'
+    ? listing.listingPublicationData
+    : listing.publicationData && typeof listing.publicationData === 'object' ? listing.publicationData : {}
+  const propertyProfile = facts.propertyProfile && typeof facts.propertyProfile === 'object' ? facts.propertyProfile : {}
+  const imageUrl = (image) => image?.file_url || image?.fileUrl || image?.public_url || image?.publicUrl || image?.url || ''
+  const isCover = (image) => Boolean(image?.is_cover || image?.isCover || image?.cover)
+  const imageMedia = galleryImages.length
+    ? galleryImages
+    : row.imageUrl
+      ? [{ id: 'listing-cover', file_url: row.imageUrl, is_cover: true }]
+      : []
+  const orderedImages = [...imageMedia].sort((first, second) => Number(isCover(second)) - Number(isCover(first)))
+  const listingMedia = Array.isArray(listing.listingMedia) ? listing.listingMedia : []
+  const hasFloorPlan = listingMedia.some((item) => String(item?.media_type || item?.mediaType || '').toLowerCase().includes('floor'))
+  const videoLink = listing.video_link || listing.videoLink || publication.video_link || publication.videoLink || ''
+  const virtualTourLink = listing.virtual_tour_link || listing.virtualTourLink || publication.virtual_tour_link || publication.virtualTourLink || ''
+  const sellingPoints = Array.isArray(propertyProfile.selectedFeatures)
+    ? propertyProfile.selectedFeatures
+    : Array.isArray(listing.selectedFeatures)
+      ? listing.selectedFeatures
+      : Array.isArray(publication.features)
+        ? publication.features
+        : Array.isArray(listing.features)
+          ? listing.features
+      : []
+  const outlinedButtonClass = 'inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] shadow-sm transition hover:border-[#b7c8db] hover:bg-[#f7fbff]'
+  const mediaActionClass = 'inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[#dbe6f2] bg-white text-[#42617f] shadow-sm transition hover:border-[#b7c8db] hover:bg-[#f7fbff]'
+
+  return (
+    <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)]">
+      <article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-[#142132]">Listing Content</h3>
+            <p className="mt-1 text-sm text-[#607387]">Marketing-facing copy tenants will see.</p>
+          </div>
+          <button type="button" className={outlinedButtonClass} onClick={onOpenEdit}>
+            Edit property details <ArrowLeft className="rotate-180" size={16} aria-hidden="true" />
+          </button>
+        </div>
+        <div className="mt-5 grid gap-4">
+          <div>
+            <p className="text-sm font-semibold text-[#2d445e]">Headline</p>
+            <p className="mt-2 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm text-[#22374d]">{row.title}</p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-[#2d445e]">Description</p>
+            <p className="mt-2 min-h-36 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#607387]">{listing.description || 'Add a public rental description for prospective tenants.'}</p>
+          </div>
+          {sellingPoints.length ? (
+            <div>
+              <p className="text-sm font-semibold text-[#2d445e]">Key selling points</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {sellingPoints.slice(0, 8).map((point) => <span key={point} className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#42617f]">{point}</span>)}
+                <button type="button" className={outlinedButtonClass} onClick={onOpenEdit}>Edit</button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </article>
+
+      <article className="min-w-0 overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h3 className="text-base font-semibold text-[#142132]">Media</h3>
+            <p className="mt-1 text-sm text-[#607387]">Control what tenants see across your marketing channels.</p>
+          </div>
+          <button type="button" className={outlinedButtonClass} onClick={onOpenEdit}>
+            <Pencil size={16} aria-hidden="true" /> Edit Media
+          </button>
+        </div>
+
+        <div className="mt-5 max-w-full overflow-x-auto pb-2">
+          <div className="flex w-max min-w-full gap-3">
+            {orderedImages.map((image, index) => {
+              const cover = index === 0
+              return (
+                <div key={image.id || image.file_id || imageUrl(image) || index} className={`shrink-0 overflow-hidden rounded-[14px] border bg-white ${cover ? 'w-[440px] max-w-[68vw] border-[#1f4f78]' : 'w-[170px] border-[#dbe6f2]'}`}>
+                  <div className={`relative ${cover ? 'h-[184px]' : 'h-[184px]'}`}>
+                    <RentalListingImage src={imageUrl(image)} title={row.title} />
+                    {cover ? <span className="absolute left-2 top-2 rounded-full bg-[#123955] px-2 py-1 text-[0.62rem] font-semibold text-white">Cover</span> : null}
+                  </div>
+                  <div className="flex h-11 items-center justify-between gap-2 border-t border-[#edf2f7] px-3">
+                    <span className="text-xs font-semibold text-[#42617f]">{cover ? 'Cover' : 'Photo'}</span>
+                    <div className="flex items-center gap-1">
+                      <button type="button" onClick={onOpenEdit} className={mediaActionClass} aria-label="Open media editor"><ArrowLeft size={14} /></button>
+                      <button type="button" onClick={onOpenEdit} className={mediaActionClass} aria-label="Open media editor"><ArrowLeft className="rotate-180" size={14} /></button>
+                      <button type="button" onClick={onOpenEdit} className={`${mediaActionClass} text-[#c74d4d]`} aria-label="Open media editor"><Trash2 size={14} /></button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+            <button type="button" onClick={onOpenEdit} className="grid h-[229px] w-[150px] shrink-0 place-items-center rounded-[14px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] text-xs font-semibold text-[#5f7894]"><span><Home className="mx-auto mb-1" size={18} />Add Photos</span></button>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <span className="rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-3 py-1 text-xs font-semibold text-[#1f7d44]">{orderedImages.length ? `${orderedImages.length} photo${orderedImages.length === 1 ? '' : 's'}` : 'No photos'}</span>
+          <span className="rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-3 py-1 text-xs font-semibold text-[#1f7d44]">{orderedImages.length ? 'Cover selected' : 'Cover missing'}</span>
+          <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#607387]">{hasFloorPlan ? 'Floor plan added' : 'Floor plan missing'}</span>
+          <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#607387]">{videoLink ? 'Video added' : 'Video not added'}</span>
+          <span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#607387]">{virtualTourLink ? 'Virtual tour added' : 'Virtual tour not added'}</span>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <button type="button" onClick={onOpenEdit} className="min-w-0 text-left">
+            <span className="text-sm font-semibold text-[#2d445e]">Video Link</span>
+            <span className="mt-2 block truncate rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm text-[#90a0b2]">{videoLink || 'https://youtu.be/...'}</span>
+          </button>
+          <button type="button" onClick={onOpenEdit} className="min-w-0 text-left">
+            <span className="text-sm font-semibold text-[#2d445e]">Virtual Tour Link</span>
+            <span className="mt-2 block truncate rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm text-[#90a0b2]">{virtualTourLink || 'https://my.matterport.com/...'}</span>
+          </button>
+        </div>
+        <button type="button" onClick={onOpenEdit} className={`mt-4 w-full ${outlinedButtonClass}`}><Pencil size={16} aria-hidden="true" /> Upload Floor Plan</button>
+      </article>
+    </section>
   )
 }
 
@@ -312,6 +542,7 @@ function Property24ReadinessItem({ item }) {
 function Property24SyndicationPanel({
   detail,
   onPublish,
+  onExpireProperty24,
   publishing,
   publishError,
   property24Preview,
@@ -324,6 +555,7 @@ function Property24SyndicationPanel({
   privatePropertyError,
   onCheckPrivateProperty,
   onPublishPrivateProperty,
+  onExpirePrivateProperty,
 }) {
   const readiness = detail.property24Readiness
   const previewDetails = getProperty24PreviewDetails(property24Preview)
@@ -334,6 +566,7 @@ function Property24SyndicationPanel({
   const localBlockers = readiness?.blockers || []
   const blockers = property24Preview ? previewIssues : localBlockers
   const canPublish = Boolean(property24Preview && previewDetails.canSubmit)
+  const selectedDistributionLabels = (detail.selectedDistributionChannels || []).map((channel) => channel.label)
   const statusToneClasses = previewStatus.tone === 'success'
     ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]'
     : previewStatus.tone === 'warning'
@@ -342,6 +575,14 @@ function Property24SyndicationPanel({
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">
       <DetailPanel eyebrow="Syndication" title="Property24 Rental Readiness">
+        <div className="mb-4 rounded-[8px] border border-[#cfe0ef] bg-[#f8fbff] p-4">
+          <p className="text-sm font-semibold text-[#18324b]">Selected distribution</p>
+          <p className="mt-1 text-xs font-semibold text-[#607891]">
+            {selectedDistributionLabels.length
+              ? `${selectedDistributionLabels.join(', ')} selected at review. Run each readiness check, then confirm publication.`
+              : 'No channels were selected at review. You can still check readiness here before deciding where to publish.'}
+          </p>
+        </div>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-4 rounded-[8px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
           <div className="flex min-w-0 items-center gap-4">
             <img src="/lead-sources/property24.png" alt="Property24" className="h-14 w-20 shrink-0 object-contain" />
@@ -458,7 +699,7 @@ function Property24SyndicationPanel({
           )}
         </DetailPanel>
 
-        <DetailPanel eyebrow={property24Preview ? 'Backend payload preview' : 'Local payload preview'} title="Listing Service v53">
+        <DetailPanel eyebrow={property24Preview ? 'Backend payload preview' : 'Local payload preview'} title="Listing Service v55">
           <pre className="max-h-[520px] overflow-auto rounded-[8px] border border-[#dbe6f2] bg-[#0f1f2f] p-4 text-xs font-semibold leading-relaxed text-[#d8e7f5]">
             {JSON.stringify(payload, null, 2)}
           </pre>
@@ -489,6 +730,7 @@ function SelectField({ label, name, value, options, onChange }) {
 }
 
 function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, canSubmit, error }) {
+  const priceFrequencyOptions = rentalPriceFrequencyOptions(form.propertyCategory)
   return (
     <form onSubmit={onSubmit} className="ui-panel ui-panel-body grid gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -522,6 +764,8 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
           <span>Property type</span>
           <input {...formField('propertyType', form.propertyType, onChange)} />
         </label>
+        <SelectField label="Property category" name="propertyCategory" value={form.propertyCategory} onChange={onChange} options={PROPERTY_CATEGORY_OPTIONS} />
+        <SelectField label="Retirement accommodation (optional)" name="retirementAccommodation" value={form.retirementAccommodation} onChange={onChange} options={RENTAL_SELECT_OPTIONS.retirementAccommodation} />
         <label className="form-field md:col-span-3">
           <span>Property address</span>
           <input {...formField('propertyAddress', form.propertyAddress, onChange)} />
@@ -545,10 +789,6 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
         <label className="form-field">
           <span>Suburb</span>
           <input {...formField('suburb', form.suburb, onChange)} />
-        </label>
-        <label className="form-field">
-          <span>Property24 suburb ID</span>
-          <input inputMode="numeric" {...formField('property24SuburbId', form.property24SuburbId, onChange)} placeholder="Property24 suburb lookup ID" />
         </label>
         <label className="form-field">
           <span>City</span>
@@ -593,13 +833,16 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
 
       <div className="grid gap-4 md:grid-cols-4">
         <label className="form-field">
-          <span>Monthly rent</span>
+          <span>Rental amount</span>
           <input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, onChange)} />
         </label>
-        <label className="form-field">
+        <SelectField label="Rental price frequency" name="rentalPriceFrequency" value={form.rentalPriceFrequency} onChange={onChange} options={priceFrequencyOptions} />
+        <SelectField label="Rental type" name="rentalMandateType" value={form.rentalMandateType} onChange={onChange} options={RENTAL_SELECT_OPTIONS.rentalMandateType} />
+        <SelectField label="Deposit policy" name="depositPolicy" value={form.depositPolicy} onChange={onChange} options={RENTAL_SELECT_OPTIONS.depositPolicy} />
+        {form.depositPolicy !== 'no_deposit' ? <label className="form-field">
           <span>Deposit</span>
           <input type="number" min="0" {...formField('depositAmount', form.depositAmount, onChange)} />
-        </label>
+        </label> : null}
         <label className="form-field">
           <span>Available from</span>
           <input type="date" {...formField('availableFrom', form.availableFrom, onChange)} />
@@ -608,10 +851,10 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
           <span>Lease period months</span>
           <input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, onChange)} />
         </label>
-        <label className="form-field">
+        {form.depositPolicy !== 'no_deposit' ? <label className="form-field">
           <span>Deposit multiplier</span>
           <input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, onChange)} />
-        </label>
+        </label> : null}
         <label className="form-field">
           <span>Occupation date</span>
           <input type="date" {...formField('occupationDate', form.occupationDate, onChange)} />
@@ -677,10 +920,10 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
         <SelectField label="Pets" name="petsPolicy" value={form.petsPolicy} onChange={onChange} options={RENTAL_SELECT_OPTIONS.petsPolicy} />
         <SelectField label="Utilities" name="utilitiesPolicy" value={form.utilitiesPolicy} onChange={onChange} options={RENTAL_SELECT_OPTIONS.utilitiesPolicy} />
         <SelectField label="Inspection" name="inspectionStatus" value={form.inspectionStatus} onChange={onChange} options={RENTAL_SELECT_OPTIONS.inspectionStatus} />
-        <label className="form-field md:col-span-2">
+        {form.depositPolicy !== 'no_deposit' ? <label className="form-field md:col-span-2">
           <span>Deposit requirements</span>
           <input {...formField('depositRequirement', form.depositRequirement, onChange)} />
-        </label>
+        </label> : null}
         <label className="form-field">
           <span>Application fee</span>
           <input type="number" min="0" {...formField('applicationFee', form.applicationFee, onChange)} />
@@ -746,39 +989,53 @@ function RentalListingEditPanel({ form, onChange, onCancel, onSubmit, saving, ca
 
 function RentalOverview({ detail, onOpenMarketing }) {
   const row = detail.row
-  const readiness = detail.readinessItems || []
-  const completed = readiness.filter((item) => item.complete).length
-  const pipeline = [
-    { label: 'Applications', value: row.applicationCount || 0, fill: 100 },
-    { label: 'Screening', value: 0, fill: 0 },
-    { label: 'Approved', value: 0, fill: 0 },
+  const applicationCount = Number(row.applicationCount || 0)
+  const metrics = [
+    { label: 'Views', value: '0', meta: 'No analytics yet', icon: Eye, tone: 'border-t-[#76c6fb] bg-[#e8f4ff] text-[#2363a0]' },
+    { label: 'Applications', value: applicationCount, meta: applicationCount ? 'In the tenant queue' : 'No applications yet', icon: Users, tone: 'border-t-[#38d39f] bg-[#e4fbf3] text-[#0b9270]' },
+    { label: 'Viewings', value: '0', meta: '0 upcoming', icon: CalendarDays, tone: 'border-t-[#6e91ff] bg-[#edf1ff] text-[#365caf]' },
+    { label: 'Offers', value: '0', meta: '0 active', icon: BadgeCheck, tone: 'border-t-[#f9b528] bg-[#fff3d9] text-[#aa7416]' },
+    { label: 'Days listed', value: '—', meta: 'Rental draft', icon: Home, tone: 'border-t-[#9baabd] bg-[#f2f5f8] text-[#526b83]' },
   ]
   return (
     <section className="space-y-5">
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <FactCard label="Monthly rent" value={formatCurrency(row.monthlyRent)} detail="Rental terms" icon={<Home size={18} aria-hidden="true" />} />
-        <FactCard label="Available" value={formatDate(row.availableFrom)} detail={row.leasePeriodMonths ? `${row.leasePeriodMonths} month lease` : 'Lease period pending'} icon={<CalendarDays size={18} aria-hidden="true" />} />
-        <FactCard label="Landlord" value={row.landlordName || 'Not captured'} detail={row.landlordContact || 'Contact pending'} icon={<Users size={18} aria-hidden="true" />} />
-        <FactCard label="Readiness" value={`${detail.readinessPercent}%`} detail={`${detail.completedReadinessCount}/${detail.totalReadinessCount} checks complete`} icon={<BadgeCheck size={18} aria-hidden="true" />} />
+      <section className="rounded-[28px] border border-[#e1e9f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)] sm:p-7">
+        <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {metrics.map((metric) => {
+            const Icon = metric.icon
+            return (
+              <article key={metric.label} className={`flex min-h-[184px] flex-col justify-between rounded-[16px] border border-[#e0e9f2] border-t-[4px] bg-gradient-to-br from-white to-[#fbfdff] p-4 ${metric.tone.split(' ').at(0)}`}>
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-[0.82rem] font-semibold text-[#637996]">{metric.label}</p>
+                  <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[11px] ${metric.tone.split(' ').slice(1).join(' ')}`}><Icon size={17} /></span>
+                </div>
+                <p className="mt-4 text-[2.35rem] font-semibold leading-none tracking-[-0.05em] text-[#10243a]">{metric.value}</p>
+                <span className="mt-4 inline-flex w-fit rounded-[10px] bg-[#f3f6f8] px-2.5 py-1.5 text-xs font-semibold text-[#60758c]">{metric.meta}</span>
+              </article>
+            )
+          })}
+        </div>
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
+          <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">Current listing period</span>
+        </div>
       </section>
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        {[
-          { label: 'Applications', value: row.applicationCount || 0, meta: 'Interested tenants' },
-          { label: 'Available from', value: formatDate(row.availableFrom), meta: 'Occupation date' },
-          { label: 'Monthly rent', value: formatCurrency(row.monthlyRent), meta: 'Advertised rental' },
-          { label: 'Lease term', value: row.leasePeriodMonths ? `${row.leasePeriodMonths} months` : '—', meta: 'Proposed lease period' },
-          { label: 'Property24', value: detail.property24StatusLabel, meta: 'Listing channel status' },
-        ].map((card) => <article key={card.label} className="flex min-h-[132px] flex-col justify-between rounded-[20px] border border-[#dde4ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"><p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">{card.label}</p><p className="text-[1.25rem] font-semibold text-[#142132]">{card.value}</p><p className="text-sm text-[#607387]">{card.meta}</p></article>)}
+      <section className="grid items-stretch gap-5 xl:grid-cols-2">
+        <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Latest Tenant Activity</h2><span className="text-xs font-semibold text-[#1f4f78]">View applications</span></div>
+          <div className="mt-4 flex-1 rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">No tenant activity yet.</div>
+        </article>
+        <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+          <div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Upcoming Viewings</h2><span className="text-xs font-semibold text-[#1f4f78]">View all</span></div>
+          <div className="mt-4 flex-1 rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">No upcoming viewings.</div>
+        </article>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-3">
-        <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><h3 className="text-[1rem] font-semibold text-[#142132]">Listing readiness</h3><p className="mt-1 text-sm text-[#607387]">What the landlord listing still needs before it can go live.</p><div className="mt-5 space-y-3">{readiness.map((item) => <div key={item.key} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2.5"><span className="text-sm font-medium text-[#22374d]">{item.label}</span><span className={`text-xs font-semibold ${item.complete ? 'text-[#1f7d44]' : 'text-[#9a5b13]'}`}>{item.complete ? 'Complete' : 'Needs attention'}</span></div>)}</div></article>
-        <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><h3 className="text-[1rem] font-semibold text-[#142132]">Tenant journey</h3><p className="mt-1 text-sm text-[#607387]">How prospective tenants are progressing through the rental pipeline.</p><div className="mt-5 space-y-3">{pipeline.map((step) => <div key={step.label} className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5"><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold text-[#22374d]">{step.label}</span><span className="text-sm font-semibold text-[#142132]">{step.value}</span></div><div className="mt-3 h-3 overflow-hidden rounded-full bg-[#dbe6f2]"><div className="h-full rounded-full bg-[#1f4f78]" style={{ width: `${step.fill}%` }} /></div></div>)}</div></article>
-        <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><h3 className="text-[1rem] font-semibold text-[#142132]">Rental pricing</h3><p className="mt-1 text-sm text-[#607387]">Current advertised monthly rent and rental terms.</p><div className="mt-5 space-y-4"><div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4"><div className="flex items-center justify-between gap-3"><span className="text-sm font-semibold text-[#22374d]">Monthly rent</span><span className="text-sm font-semibold text-[#142132]">{formatCurrency(row.monthlyRent)}</span></div><div className="mt-3 h-3 overflow-hidden rounded-full bg-[#dbe6f2]"><div className="h-full w-full rounded-full bg-[#1f4f78]" /></div></div><div className="rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4"><p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Deposit</p><p className="mt-2 text-[1.2rem] font-semibold text-[#142132]">{formatCurrency(row.depositAmount)}</p><p className="mt-1 text-sm text-[#607387]">{row.furnishedStatus || 'Rental terms pending'}</p></div></div></article>
+      <section className="grid items-stretch gap-5 xl:grid-cols-3">
+        <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Tenant</h2><span className="text-xs font-semibold text-[#1f4f78]">Open tenant</span></div><p className="mt-4 text-sm font-semibold text-[#142132]">No tenant placed</p><p className="mt-2 text-sm text-[#607387]">A tenant profile will appear here once an application is approved.</p></article>
+        <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]"><div className="flex items-center justify-between gap-3"><h2 className="text-base font-semibold text-[#142132]">Marketing</h2><button type="button" onClick={onOpenMarketing} className="text-xs font-semibold text-[#1f4f78]">Open marketing</button></div><div className="mt-4 space-y-2 text-sm text-[#607387]"><div className="flex justify-between border-b border-[#edf2f7] py-2"><span>Property24</span><strong>{detail.property24StatusLabel}</strong></div><div className="flex justify-between py-2"><span>Readiness</span><strong>{detail.readinessPercent}%</strong></div></div></article>
+        <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]"><h2 className="text-base font-semibold text-[#142132]">Rental Position</h2><div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2"><div><p className="text-xs text-[#6b7d93]">Monthly rent</p><p className="mt-1 font-semibold text-[#142132]">{formatCurrency(row.monthlyRent)}</p></div><div><p className="text-xs text-[#6b7d93]">Available from</p><p className="mt-1 font-semibold text-[#142132]">{formatDate(row.availableFrom)}</p></div><div><p className="text-xs text-[#6b7d93]">Deposit</p><p className="mt-1 font-semibold text-[#142132]">{formatCurrency(row.depositAmount)}</p></div><div><p className="text-xs text-[#6b7d93]">Lease term</p><p className="mt-1 font-semibold text-[#142132]">{row.leasePeriodMonths ? `${row.leasePeriodMonths} months` : '—'}</p></div></div></article>
       </section>
-
-      <section className="grid gap-5 xl:grid-cols-2"><article className="flex flex-col rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><p className="text-[0.72rem] uppercase tracking-[0.08em] text-[#7b8ca2]">Next best action</p><h3 className="mt-2 text-[1.02rem] font-semibold text-[#142132]">{row.nextAction || 'Prepare rental marketing'}</h3><p className="mt-2 text-sm leading-6 text-[#607387]">{completed} of {readiness.length} listing readiness checks are complete. Use Marketing to prepare the public listing and Property24 publishing.</p><div className="mt-5"><button type="button" className="ui-pill-button ui-pill-button-active" onClick={onOpenMarketing}>Open Marketing</button></div></article><article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]"><h3 className="text-[1rem] font-semibold text-[#142132]">Landlord and listing activity</h3><p className="mt-1 text-sm text-[#607387]">Latest rental listing updates and required landlord actions.</p><div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-3.5"><p className="text-sm font-semibold text-[#22374d]">Rental listing ready for review</p><p className="mt-1 text-sm text-[#607387]">Complete any outstanding listing details, then publish through the Marketing workspace.</p></div></article></section>
     </section>
   )
 }
@@ -799,6 +1056,8 @@ function RentalTabContent({
   privatePropertyError,
   onCheckPrivateProperty,
   onPublishPrivateProperty,
+  onExpireProperty24,
+  onExpirePrivateProperty,
   onOpenMarketing,
   onOpenEdit,
   property24ExpiryDate,
@@ -868,15 +1127,80 @@ function RentalTabContent({
   }
   if (activeTab === 'marketing') {
     const previewStatus = getProperty24ReadinessStatus(property24Preview)
+    const galleryImages = (Array.isArray(detail.listing?.listingMedia) ? detail.listing.listingMedia : Array.isArray(detail.listing?.galleryImages) ? detail.listing.galleryImages : [])
+      .filter((item) => String(item?.media_type || item?.mediaType || 'image').toLowerCase() === 'image')
     const readyItems = (detail.readinessItems || []).filter((item) => item.complete).length
     const readinessPercent = detail.readinessPercent || 0
-    const channelLive = ['published', 'live', 'active', 'on_portal'].includes(String(row.property24Status || '').toLowerCase()) ? 1 : 0
     const remainingReadinessCount = Math.max(0, (detail.totalReadinessCount || 0) - readyItems)
+    const listing = detail.listing || {}
+    const publication = listing.listingPublicationData && typeof listing.listingPublicationData === 'object'
+      ? listing.listingPublicationData
+      : listing.publicationData && typeof listing.publicationData === 'object' ? listing.publicationData : {}
+    const findChannel = (key) => detail.channels.find((channel) => channel.key === key) || {}
+    const property24Channel = findChannel('property24')
+    const privatePropertyChannel = findChannel('private_property')
+    const property24Status = property24Channel.status || 'not_published'
+    const privatePropertyStatus = privatePropertyChannel.status || 'not_published'
+    const property24Reference = listing.property24Reference || listing.property24_reference || publication.property24Reference || publication.property24_reference || ''
+    const privatePropertyReference = listing.privatePropertyReference || listing.private_property_reference || publication.privatePropertyReference || publication.private_property_reference || ''
+    const property24Url = listing.property24ListingUrl || listing.property24_listing_url || publication.property24ListingUrl || publication.property24_listing_url || ''
+    const privatePropertyUrl = listing.privatePropertyListingUrl || listing.private_property_listing_url || publication.privatePropertyListingUrl || publication.private_property_listing_url || ''
+    const property24LastSynced = formatRelativeTime(listing.property24LastSyncedAt || listing.property24_last_synced_at || publication.property24LastSyncedAt || publication.property24_last_synced_at)
+    const privatePropertyLastSynced = formatRelativeTime(listing.privatePropertyLastSyncedAt || listing.private_property_last_synced_at || publication.privatePropertyLastSyncedAt || publication.private_property_last_synced_at)
+    const channelMenuItemClass = 'flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-50'
     return (
       <section className="space-y-5">
-        <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="grid sm:grid-cols-3"><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{readinessPercent}%</p><p className="text-sm font-semibold text-[#607387]">Listing readiness</p><button type="button" onClick={onOpenEdit} className="mt-1 text-xs font-semibold text-[#1f4f78]">View checklist</button></div><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{channelLive} / 1</p><p className="text-sm font-semibold text-[#607387]">Channels live</p><button type="button" onClick={onCheckProperty24} className="mt-1 text-xs font-semibold text-[#1f4f78]">View channels</button></div><div className="p-5"><p className="text-2xl font-semibold text-[#142132]">{row.property24ExpiryDate ? formatDate(row.property24ExpiryDate) : '—'}</p><p className="text-sm font-semibold text-[#607387]">Last synced</p></div></div>{remainingReadinessCount ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2f7] bg-[#fffaf0] px-5 py-3 text-sm font-semibold text-[#8a5b13]"><span>Complete {remainingReadinessCount} remaining item{remainingReadinessCount === 1 ? '' : 's'} before publishing.</span><button type="button" onClick={onOpenEdit} className="rounded-lg border border-[#f1dfb8] bg-white px-3 py-2 text-xs font-semibold">View readiness items</button></div> : null}</section>
-        <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.8fr)]"><article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Listing Content</h3><p className="mt-1 text-sm text-[#607387]">Marketing-facing copy tenants will see.</p></div><button type="button" className="ui-pill-button" onClick={onOpenEdit}>Edit property details</button></div><div className="mt-5 grid gap-4"><div><p className="text-sm font-semibold text-[#2d445e]">Headline</p><p className="mt-2 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm text-[#22374d]">{row.title}</p></div><div><p className="text-sm font-semibold text-[#2d445e]">Description</p><p className="mt-2 min-h-36 rounded-[12px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-3 text-sm leading-6 text-[#607387]">{detail.listing?.description || 'Add a public rental description for prospective tenants.'}</p></div></div></article><article className="rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Media</h3><p className="mt-1 text-sm text-[#607387]">Control what tenants see across your marketing channels.</p></div><button type="button" className="ui-pill-button" onClick={onOpenEdit}>Edit Media</button></div><div className="mt-5 flex gap-3 overflow-x-auto pb-2"><div className="w-[440px] max-w-[68vw] shrink-0 overflow-hidden rounded-[14px] border border-[#1f4f78] bg-white"><div className="relative h-[184px]"><RentalListingImage src={row.imageUrl} title={row.title} /><span className="absolute left-2 top-2 rounded-full bg-[#123955] px-2 py-1 text-[0.62rem] font-semibold text-white">Cover</span></div><div className="h-11 border-t border-[#edf2f7] px-3 py-3 text-xs font-semibold text-[#607387]">Cover selected</div></div><button type="button" onClick={onOpenEdit} className="grid h-[229px] w-[150px] shrink-0 place-items-center rounded-[14px] border border-dashed border-[#c9d8e8] bg-[#fbfdff] text-xs font-semibold text-[#5f7894]"><span><Home className="mx-auto mb-1" size={18} />Add Photos</span></button></div><div className="mt-4 flex flex-wrap gap-2"><span className="rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-3 py-1 text-xs font-semibold text-[#1f7d44]">{row.imageUrl ? '1 photo' : 'No photos'}</span><span className="rounded-full border border-[#d8eddf] bg-[#ecfaf1] px-3 py-1 text-xs font-semibold text-[#1f7d44]">Cover selected</span><span className="rounded-full border border-[#dbe6f2] bg-[#f8fbff] px-3 py-1 text-xs font-semibold text-[#607387]">Floor plan missing</span></div></article></section>
-        <article className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#edf2f7] p-5"><div><h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3><p className="mt-1 text-sm text-[#607387]">Manage where this rental is advertised.</p></div><button type="button" className="ui-pill-button" onClick={onCheckProperty24} disabled={checkingProperty24}>{checkingProperty24 ? <Loader2 size={16} className="animate-spin" /> : <Eye size={16} />}Manage</button></div><div className="flex flex-wrap items-center justify-between gap-4 border-b border-[#edf2f7] p-5"><div><p className="font-semibold text-[#142132]">Property24</p><p className="mt-1 text-sm text-[#607387]">South Africa's property portal</p></div><span className="text-sm font-semibold text-[#607387]">{previewStatus.label}</span><div className="flex gap-2"><button type="button" className="ui-pill-button" onClick={onCheckProperty24} disabled={checkingProperty24}>Preview readiness</button><button type="button" className="ui-pill-button ui-pill-button-active" onClick={onPublish} disabled={publishing || !getProperty24PreviewDetails(property24Preview).canSubmit}>{publishing ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}Publish</button></div></div><WebsiteListingPublicationPanel variant="channel" listingId={detail.listing?.id || row.id} listingTitle={row.title} onPrepare={onPrepareWebsitePublication} /></article>
+        <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]"><div className="grid sm:grid-cols-3"><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{readinessPercent}%</p><p className="text-sm font-semibold text-[#607387]">Listing readiness</p><button type="button" onClick={onOpenEdit} className="mt-1 text-xs font-semibold text-[#1f4f78]">Open multi-step editor</button></div><div className="border-b border-[#edf2f7] p-5 sm:border-b-0 sm:border-r"><p className="text-2xl font-semibold text-[#142132]">{detail.liveChannelCount} / {detail.channelCount}</p><p className="text-sm font-semibold text-[#607387]">Channels live</p><button type="button" onClick={onCheckProperty24} className="mt-1 text-xs font-semibold text-[#1f4f78]">View channels</button></div><div className="p-5"><p className="text-xl font-semibold text-[#142132]">{formatDateTime(detail.lastUpdatedAt)}</p><p className="text-sm font-semibold text-[#607387]">Last listing update</p></div></div>{remainingReadinessCount ? <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[#edf2f7] bg-[#fffaf0] px-5 py-3 text-sm font-semibold text-[#8a5b13]"><span>Complete {remainingReadinessCount} remaining item{remainingReadinessCount === 1 ? '' : 's'} before publishing.</span><button type="button" onClick={onOpenEdit} className="rounded-lg border border-[#f1dfb8] bg-white px-3 py-2 text-xs font-semibold">Open multi-step editor</button></div> : null}</section>
+        <RentalMarketingOverview detail={detail} row={row} galleryImages={galleryImages} onOpenEdit={onOpenEdit} />
+        <article id="listing-distribution-channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+          <div className="border-b border-[#edf2f7] p-5"><h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3><p className="mt-1 text-sm text-[#607387]">Manage where this rental is advertised.</p></div>
+          <RentalDistributionChannel
+            logoSrc="/lead-sources/property24.png"
+            name="Property24"
+            subtitle="South Africa's property portal"
+            reference={property24Reference ? `Ref: ${property24Reference}` : ''}
+            status={property24Status}
+            contextTitle={['published', 'live', 'active'].includes(String(property24Status).toLowerCase()) ? 'Published and up to date' : previewStatus.label === 'Ready to publish' ? 'Ready to publish' : 'Run readiness check before publishing'}
+            lastSynced={property24LastSynced}
+            actions={[
+              property24Url ? <a key="view" href={property24Url} target="_blank" rel="noreferrer" className={channelMenuItemClass}><Eye size={15} />View live listing</a> : null,
+              <button key="check" type="button" onClick={onCheckProperty24} disabled={checkingProperty24 || publishing} className={channelMenuItemClass}>{checkingProperty24 ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check readiness</button>,
+              <button key="publish" type="button" onClick={onPublish} disabled={publishing || !getProperty24PreviewDetails(property24Preview).canSubmit} className={channelMenuItemClass}>{publishing ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish</button>,
+              ['published', 'live', 'active'].includes(String(property24Status).toLowerCase()) ? <button key="expire" type="button" onClick={onExpireProperty24} disabled={publishing} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishing ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Expire listing</button> : null,
+            ].filter(Boolean)}
+          />
+          <RentalDistributionChannel
+            icon={Home}
+            logoSrc="/lead-sources/private-property.jpeg"
+            name="Private Property"
+            subtitle="Property portal"
+            reference={privatePropertyReference ? `Ref: ${privatePropertyReference}` : ''}
+            status={privatePropertyStatus}
+            contextTitle={['published', 'live', 'active'].includes(String(privatePropertyStatus).toLowerCase()) ? 'Published and up to date' : privatePropertyPreview?.ready ? 'Ready to publish' : 'Run readiness check before publishing'}
+            lastSynced={privatePropertyLastSynced}
+            actions={[
+              privatePropertyUrl ? <a key="view" href={privatePropertyUrl} target="_blank" rel="noreferrer" className={channelMenuItemClass}><Eye size={15} />View live listing</a> : null,
+              <button key="check" type="button" onClick={onCheckPrivateProperty} disabled={checkingPrivateProperty || publishingPrivateProperty} className={channelMenuItemClass}>{checkingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <Eye size={15} />}Check readiness</button>,
+              <button key="publish" type="button" onClick={onPublishPrivateProperty} disabled={!privatePropertyPreview?.ready || publishingPrivateProperty} className={channelMenuItemClass}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish</button>,
+              ['published', 'live', 'active'].includes(String(privatePropertyStatus).toLowerCase()) ? <button key="expire" type="button" onClick={onExpirePrivateProperty} disabled={publishingPrivateProperty} className={`${channelMenuItemClass} text-[#a43d35] hover:bg-[#fff5f5]`}>{publishingPrivateProperty ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Expire listing</button> : null,
+            ].filter(Boolean)}
+          />
+          <WebsiteListingPublicationPanel variant="channel" listingId={detail.listing?.id || row.id} listingTitle={row.title} onPrepare={onPrepareWebsitePublication} />
+        </article>
+        {property24Preview && getProperty24PreviewIssues(property24Preview).length ? (
+          <section className="rounded-[18px] border border-[#f1dfb8] bg-[#fffaf0] p-4">
+            <p className="text-sm font-semibold text-[#8a5b13]">Property24 needs attention</p>
+            <div className="mt-3 grid gap-2">
+              {getProperty24PreviewIssues(property24Preview).map((issue) => (
+                <div key={issue.key} className="rounded-xl border border-[#f1dfb8] bg-white px-3 py-2">
+                  <p className="text-sm font-semibold text-[#18324b]">{issue.label}</p>
+                  <p className="mt-1 text-xs text-[#8a5b13]">{issue.detail}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+        {privatePropertyError ? <p className="rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{privatePropertyError}</p> : null}
         <section className="rounded-[18px] border border-[#cfe0ef] bg-[#f8fbff] p-4"><div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between"><div><p className="text-sm font-semibold text-[#1f4f78]">Property24 expiry date</p><p className="mt-1 text-sm text-[#607387]">Set when this rental should be removed from Property24.</p></div><div className="flex flex-wrap gap-2"><input type="date" value={property24ExpiryDate} onChange={(event) => onProperty24ExpiryChange(event.target.value)} className="min-h-10 rounded-xl border border-[#dbe6f2] bg-white px-3 text-sm" disabled={savingProperty24Expiry} /><button type="button" className="ui-pill-button ui-pill-button-active" onClick={onSaveProperty24Expiry} disabled={savingProperty24Expiry}>Save expiry</button></div></div></section>
         {property24PreviewError ? <p className="rounded-[12px] border border-[#f2c6c6] bg-[#fff7f7] px-4 py-3 text-sm font-semibold text-[#9f3131]">{property24PreviewError}</p> : null}
       </section>
@@ -1007,10 +1331,7 @@ export default function RentalListingDetailPage() {
   }, [routeTab])
 
   function openEditPanel() {
-    if (listing) setEditForm(buildRentalListingEditForm(listing))
-    setEditError('')
-    setSuccessMessage('')
-    setEditOpen(true)
+    navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}/edit`)
   }
 
   function updateEditForm(name, value) {
@@ -1123,6 +1444,21 @@ export default function RentalListingDetailPage() {
     }
   }
 
+  async function handleProperty24Expire() {
+    if (!window.confirm('Expire this rental on Property24? It will no longer be advertised there.')) return
+    try {
+      setPublishing(true)
+      setPublishError('')
+      await expireRentalProperty24Listing(listingId)
+      setSuccessMessage('Rental expired on Property24.')
+      await loadListing()
+    } catch (expireError) {
+      setPublishError(expireError?.message || 'Unable to expire this rental on Property24.')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
   async function handleCheckProperty24Readiness() {
     try {
       setCheckingProperty24(true)
@@ -1183,6 +1519,21 @@ export default function RentalListingDetailPage() {
       await loadListing()
     } catch (publishError) {
       setPrivatePropertyError(publishError?.message || 'Unable to publish this rental to Private Property.')
+    } finally {
+      setPublishingPrivateProperty(false)
+    }
+  }
+
+  async function handlePrivatePropertyExpire() {
+    if (!window.confirm('Expire this rental on Private Property? It will no longer be advertised there.')) return
+    try {
+      setPublishingPrivateProperty(true)
+      setPrivatePropertyError('')
+      await expirePrivatePropertyRentalListing(listingId)
+      setSuccessMessage('Rental expired on Private Property.')
+      await loadListing()
+    } catch (expireError) {
+      setPrivatePropertyError(expireError?.message || 'Unable to expire this rental on Private Property.')
     } finally {
       setPublishingPrivateProperty(false)
     }
@@ -1265,12 +1616,12 @@ export default function RentalListingDetailPage() {
   return (
     <section className="page-content">
       <div className="ui-section-stack">
-        <header className="relative isolate min-h-[330px] overflow-hidden rounded-[24px] border border-[#d7e1eb] bg-[#153751] shadow-[0_12px_28px_rgba(15,23,42,0.12)] sm:min-h-[360px]">
+        <header className="relative isolate min-h-[240px] overflow-hidden rounded-[24px] border border-[#d7e1eb] bg-[#153751] shadow-[0_12px_28px_rgba(15,23,42,0.12)] sm:min-h-[300px]">
           <div className="absolute inset-0 -z-20">
             <RentalListingImage src={row.imageUrl} title={row.title} />
           </div>
           <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(8,35,56,0.94)_0%,rgba(13,49,75,0.83)_46%,rgba(20,55,81,0.42)_100%)]" />
-          <div className="flex min-h-[330px] flex-col justify-between gap-8 p-5 sm:min-h-[360px] sm:p-8 lg:p-10">
+          <div className="flex min-h-[240px] flex-col justify-between gap-6 p-5 sm:min-h-[300px] sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -1299,16 +1650,16 @@ export default function RentalListingDetailPage() {
                 </button>
               </div>
             </div>
-            <div className="max-w-5xl">
-              <h1 className="text-3xl font-semibold tracking-[-0.045em] text-white sm:text-4xl lg:text-[2.75rem]">{row.title}</h1>
-              <p className="mt-3 text-base font-medium text-white/85 sm:text-lg">{[row.address, row.location].filter(Boolean).join(', ') || 'Location pending'}</p>
-              <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-white/85 sm:text-base">
+            <div className="max-w-4xl">
+              <h1 className="text-3xl font-semibold tracking-[-0.04em] text-white sm:text-4xl">{row.title}</h1>
+              <p className="mt-2 text-base font-semibold text-white/90 sm:text-lg">{formatRentalHeroAddress(row)}</p>
+              <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm font-semibold text-white/90">
                 <span>{row.propertyType || 'Rental property'}</span>
                 {row.bedrooms ? <><span className="text-white/50">•</span><span>{row.bedrooms} {Number(row.bedrooms) === 1 ? 'bed' : 'beds'}</span></> : null}
                 {row.bathrooms ? <><span className="text-white/50">•</span><span>{row.bathrooms} {Number(row.bathrooms) === 1 ? 'bath' : 'baths'}</span></> : null}
                 {row.parkingBays ? <><span className="text-white/50">•</span><span>{row.parkingBays} parking {Number(row.parkingBays) === 1 ? 'bay' : 'bays'}</span></> : null}
               </div>
-              <p className="mt-5 text-2xl font-semibold tracking-[-0.03em] text-white sm:text-3xl">{formatCurrency(row.monthlyRent)} <span className="text-base font-medium text-white/75 sm:text-lg">per month</span></p>
+              <p className="mt-4 text-xl font-semibold tracking-[-0.03em] text-white sm:text-2xl">{formatCurrency(row.monthlyRent)} <span className="text-sm font-medium text-white/75 sm:text-base">per month</span></p>
             </div>
           </div>
         </header>
@@ -1318,32 +1669,6 @@ export default function RentalListingDetailPage() {
             <CheckCircle2 size={16} aria-hidden="true" />
             {successMessage}
           </p>
-        ) : null}
-
-        <ListingAgentReassignmentPanel
-          listingId={row.id}
-          listing={listing}
-          listingType="rental"
-          onReassigned={async () => {
-            await loadListing()
-            setSuccessMessage('Rental listing agent reassigned successfully.')
-          }}
-        />
-
-        {editOpen ? (
-          <RentalListingEditPanel
-            form={editForm}
-            onChange={updateEditForm}
-            onCancel={() => {
-              setEditOpen(false)
-              setEditError('')
-              if (listing) setEditForm(buildRentalListingEditForm(listing))
-            }}
-            onSubmit={handleEditSubmit}
-            saving={savingEdit}
-            canSubmit={canSaveEdit}
-            error={editError}
-          />
         ) : null}
 
         <section className="rounded-[24px] border border-[#dde4ee] bg-white p-2 shadow-[0_10px_24px_rgba(15,23,42,0.05)]" data-testid="rental-listing-shared-workspace-tabs">
@@ -1356,10 +1681,21 @@ export default function RentalListingDetailPage() {
           />
         </section>
 
+        <ListingAgentReassignmentPanel
+          listingId={row.id}
+          listing={listing}
+          listingType="rental"
+          onReassigned={async () => {
+            await loadListing()
+            setSuccessMessage('Rental listing agent reassigned successfully.')
+          }}
+        />
+
         <RentalTabContent
           activeTab={activeTab}
           detail={detail}
           onPublish={handleProperty24Publish}
+          onExpireProperty24={handleProperty24Expire}
           publishing={publishing}
           publishError={publishError}
           property24Preview={property24Preview}
@@ -1372,6 +1708,7 @@ export default function RentalListingDetailPage() {
           privatePropertyError={privatePropertyError}
           onCheckPrivateProperty={handleCheckPrivatePropertyReadiness}
           onPublishPrivateProperty={handlePrivatePropertyPublish}
+          onExpirePrivateProperty={handlePrivatePropertyExpire}
           onOpenMarketing={() => setActiveTab('marketing')}
           onOpenEdit={openEditPanel}
           property24ExpiryDate={property24ExpiryDate}

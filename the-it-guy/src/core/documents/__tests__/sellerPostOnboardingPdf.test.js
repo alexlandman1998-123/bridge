@@ -29,6 +29,13 @@ test('FICA remains blocked until agent review, while mandate also needs commissi
   )
   assert.equal(mandateApproved.available, true)
   assert.equal(mandateApproved.signable, false)
+
+  const preparationSummary = getSellerPostOnboardingPdfAvailability(
+    { key: 'signed_mandate', generatedHtml: '<html></html>', metadata: { notForSignature: true } },
+    { agentReviewApproved: true, commissionConfirmed: true },
+  )
+  assert.equal(preparationSummary.available, false)
+  assert.match(preparationSummary.reason, /review only/)
 })
 
 test('PDF conversion does not invent a file when the frozen HTML is absent', () => {

@@ -50,8 +50,27 @@ assert.ok(
   'a compact listing query must not replace a richer hydrated listing of equal authority',
 )
 
+const canonicalHydratedListing = {
+  ...hydrated,
+  sourceAuthority: 'canonical_hydrated_listing',
+  sourceListing: {
+    ...hydrated.sourceListing,
+    documentRequirements: [{ id: 'requirement-mandate', requirement_key: 'signed_mandate' }],
+    documents: [{ id: 'document-mandate', document_type: 'signed_mandate', status: 'completed', storage_path: 'seller-signing/listing/session/signed-mandate.pdf' }],
+  },
+}
+assert.equal(
+  selectAuthoritativeListingOptionSource(canonicalHydratedListing, newerCompactListing).sourceListing.documents[0].id,
+  'document-mandate',
+  'a shallow canonical listing must never replace the document-complete read model',
+)
+
 const pageSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 assert.match(pageSource, /listingOptionSourceAuthority:\s*'lead_projection'/)
+assert.match(pageSource, /listingOptionSourceAuthority:\s*'canonical_hydrated_listing'/)
+assert.match(pageSource, /selectedLeadHydratedListing/)
+assert.match(pageSource, /Loading signed seller documents/)
+assert.match(pageSource, /Checking signed documents/)
 assert.match(pageSource, /selectAuthoritativeListingOptionSource\(existing, option\)/)
 
 console.log('seller listing hydration authority tests passed')

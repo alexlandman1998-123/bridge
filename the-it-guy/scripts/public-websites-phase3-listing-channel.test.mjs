@@ -72,7 +72,9 @@ assert.match(durableMediaDatabaseTest, /not has_table_privilege\('authenticated'
 assert.match(durableMediaDatabaseTest, /confdeltype = 'n'/, 'durable media pgTAP checks cleanup-safe source deletion')
 assert.match(durableMediaHelpers, /source\.origin !== project\.origin/, 'rejects cross-project and external storage URLs')
 assert.match(durableMediaHelpers, /SHA-256/, 'uses content-addressed immutable object paths')
+assert.match(durableMediaHelpers, /WEBSITE_LISTING_MEDIA_MAX_ITEMS = 100/, 'supports normal large property galleries while retaining a bounded media batch')
 assert.match(durableMediaFunction, /admin\.storage\.from\(source\.bucket\)\.download/, 'downloads source media server-side')
+assert.match(durableMediaFunction, /sourceMedia\.data \|\| \[\]\)\.length > WEBSITE_LISTING_MEDIA_MAX_ITEMS/, 'enforces the shared website media batch limit')
 assert.match(durableMediaFunction, /upsert: false/, 'does not overwrite immutable CDN objects')
 assert.match(durableMediaFunction, /website_register_listing_media_assets/, 'atomically registers the copied media set')
 assert.match(durableMediaFunction, /website_commit_listing_publication/, 'commits only through the server-side publisher')
@@ -82,10 +84,12 @@ assert.match(durableMediaFunction, /admin\.auth\.getUser\(token\)/, 'verifies th
 
 assert.match(service, /website_get_listing_publication_status/, 'client loads readiness from the guarded RPC')
 assert.match(service, /functions\.invoke\('website-listing-publication'/, 'client routes mutations through the durable media publisher')
+assert.match(service, /error\?\.context/, 'reads the Edge Function response when a publication request fails')
+assert.match(service, /payload\?\.error/, 'shows the actionable Edge Function error instead of a generic non-2xx message')
 for (const label of ['Publish', 'Update website', 'Unpublish', 'Refresh status', 'View listing']) {
   assert.match(panel, new RegExp(label, 'i'), `renders the ${label} control`)
 }
-assert.match(panel, /MoreVertical/, 'groups secondary website actions in the channel menu')
+assert.match(panel, /SlidersHorizontal/, 'groups secondary website actions in the channel menu')
 assert.match(panel, /Agency Website/, 'renders the website as a first-class listing channel')
 assert.match(panel, /mediaCleanupPending/i, 'surfaces incomplete public media cleanup')
 assert.match(listingDetail, /<WebsiteListingPublicationPanel/, 'mounts the channel controls in listing detail')

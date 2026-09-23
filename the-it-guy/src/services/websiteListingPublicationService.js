@@ -22,7 +22,19 @@ export async function setWebsiteListingPublication(listingId, action) {
   const { data, error } = await client.functions.invoke('website-listing-publication', {
     body: { listingId, action: safeAction },
   })
-  if (error) throw error
+  if (error) {
+    let message = error?.message || 'The agency website publication request failed.'
+    const response = error?.context
+    if (response && typeof response.json === 'function') {
+      try {
+        const payload = await (typeof response.clone === 'function' ? response.clone() : response).json()
+        message = String(payload?.error || payload?.message || message).trim() || message
+      } catch {
+        // Preserve the transport error when the Edge Function did not return JSON.
+      }
+    }
+    throw new Error(message)
+  }
   if (data?.error) throw new Error(data.error)
   return data?.publication && typeof data.publication === 'object'
     ? { ...data.publication, mediaCleanupPending: Number(data?.media?.pending || 0) }

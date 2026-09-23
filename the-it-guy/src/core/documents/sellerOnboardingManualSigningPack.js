@@ -23,7 +23,7 @@ export function createSellerOnboardingManualSigningPack({ existing = {}, formalP
   const approval = record(formalPackApproval)
   if (approval.status !== 'approved' || approval.signingRoute !== 'manual_upload') throw new Error('Approve the onboarding and choose the manual signing route before preparing physical copies.')
   const drafts = Array.isArray(record(postOnboardingDrafts).documents) ? postOnboardingDrafts.documents : []
-  const ficaDraft = drafts.find((draft) => text(draft?.requirementKey || draft?.key) === 'signed_fica_declaration')
+  const ficaDraft = drafts.find((draft) => text(draft?.targetRequirementKey || draft?.requirementKey || draft?.key) === 'signed_fica_declaration')
   if (!text(ficaDraft?.generatedHtml || ficaDraft?.generated_html)) throw new Error('The approved FICA declaration draft is unavailable.')
   const entry = {
     generatedAt: text(generatedAt), generatedBy: text(actor), status: 'awaiting_signed_hard_copy',

@@ -5,6 +5,7 @@ import { LeadForm } from '@/components/lead-form'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { getPublicPage, resolveSite } from '@/lib/site-repository'
 import { templateClassName } from '@/lib/site-templates'
+import { hasEditorialPropertyExperience } from '@/lib/site-templates'
 
 export const dynamic = 'force-dynamic'
 const loadSite = cache(async () => resolveSite((await headers()).get('host')))
@@ -18,7 +19,7 @@ export default async function ValuationPage() {
   const site = await loadSite()
   if (!site) notFound()
   const page = await getPublicPage(site, 'valuation')
-  const lwp = site.name === 'LWP Properties'
+  const lwp = hasEditorialPropertyExperience(site)
   return <main className={`${templateClassName(site.templateKey)} valuation-page`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
     <SiteHeader site={site} enquiryHref="#valuation-form" currentHref="/valuation" />
     {lwp ? <>

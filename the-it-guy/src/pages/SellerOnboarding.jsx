@@ -574,7 +574,6 @@ function resolveAgencyBrand(listing = {}) {
     accent_color: listing?.accent_color,
   }
   const brandingSources = [
-    listing?.branding,
     onboardingBranding,
     // Include the parent records too: resolveOnboardingBranding deliberately
     // traverses portalBranding/portal_branding and other legacy nesting.
@@ -588,6 +587,9 @@ function resolveAgencyBrand(listing = {}) {
     listing?.sellerOnboarding?.portal_branding,
     listing?.seller_onboarding?.portalBranding,
     listing?.seller_onboarding?.portal_branding,
+    // The onboarding invitation captured the agency identity for this seller
+    // journey. Current listing branding is only a legacy fallback.
+    listing?.branding,
     listingBranding,
     listing?.agency,
     listing?.organisation,
@@ -4883,16 +4885,30 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         formData: finalForm,
         onboardingSubmitted: true,
       })
+      // Resolve branding again at the commit boundary. The initial public page
+      // load may have used an older invitation snapshot or completed before the
+      // branding request; neither may define a legal document's final lineage.
+      const currentBranding = await fetchCurrentSellerOnboardingBranding(token)
+      const submissionAgencyBrand = resolveAgencyBrand({
+        ...(listing || {}),
+        branding: {
+          ...((listing && typeof listing.branding === 'object') ? listing.branding : {}),
+          ...currentBranding,
+        },
+      })
       const postOnboardingDrafts = buildSellerPostOnboardingDrafts({
         formData: finalForm,
         listing: listing || {},
         branding: {
-          organisationName: agencyBrand.name,
-          agencyName: agencyBrand.name,
-          logoUrl: agencyBrand.logoUrl,
-          logoDarkUrl: agencyBrand.logoDarkUrl,
-          logoLightUrl: agencyBrand.logoLightUrl,
-          logoIconUrl: agencyBrand.logoIconUrl,
+          organisationName: submissionAgencyBrand.name,
+          agencyName: submissionAgencyBrand.name,
+          logoUrl: submissionAgencyBrand.logoUrl,
+          logoDarkUrl: submissionAgencyBrand.logoDarkUrl,
+          logoLightUrl: submissionAgencyBrand.logoLightUrl,
+          logoIconUrl: submissionAgencyBrand.logoIconUrl,
+          primaryColour: submissionAgencyBrand.primaryColour,
+          secondaryColour: submissionAgencyBrand.secondaryColour,
+          accentColour: submissionAgencyBrand.accentColour,
         },
         generatedAt: frozenDisclosureAt,
       })

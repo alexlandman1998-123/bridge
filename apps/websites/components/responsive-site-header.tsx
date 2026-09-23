@@ -8,6 +8,7 @@ import { ValuationModal } from './valuation-modal'
 import resourceStyles from './resource-navigation.module.css'
 import type { ResolvedSite } from '@/lib/types'
 import { selectWebsiteLogo } from '@/lib/website-brand'
+import { hasEditorialPropertyExperience } from '@/lib/site-templates'
 
 type NavigationItem = { href: string; label: string }
 
@@ -27,7 +28,8 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
   overlay: boolean
 }) {
   const [scrolled, setScrolled] = useState(false)
-  const lwpInterior = site.name === 'LWP Properties' && !overlay
+  const lwp = hasEditorialPropertyExperience(site)
+  const lwpInterior = hasEditorialPropertyExperience(site) && !overlay
   const transitionsOnScroll = overlay || lwpInterior
 
   useEffect(() => {
@@ -49,7 +51,7 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
   return <header className={headerClassName}>
     <Link className="wordmark" href="/" aria-label={`${site.name} home`}>
       <HeaderLogo site={site} light={useLightLogo} />
-      {homeSeekers ? <span className="header-brand-note">Beyond the sale.</span> : null}
+      {homeSeekers && lwp ? <span className="header-brand-note">Beyond the sale.</span> : null}
     </Link>
     <nav aria-label="Primary">
       {navigation.map((item) => <Link href={item.href} aria-current={currentHref === item.href ? 'page' : undefined} key={`${item.href}-${item.label}`}>{item.label}</Link>)}
@@ -58,7 +60,7 @@ export function ResponsiveSiteHeader({ site, navigation, resources, enquiryHref,
         <div className={resourceStyles.dropdown}>{resources.map(item => <Link key={item.href} href={item.href} aria-current={currentHref === item.href ? 'page' : undefined}>{item.label}<span aria-hidden="true">↗</span></Link>)}</div>
       </details>
     </nav>
-    {site.name === 'LWP Properties' ? <ValuationModal privacyPolicyUrl={site.privacyPolicyUrl} triggerClassName="header-cta" /> : <Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link>}
-    <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={site.name === 'LWP Properties' ? 'See your home’s value' : homeSeekers ? 'Book a valuation' : 'Enquire now'} brandName={site.name} brandNote={site.name === 'LWP Properties' ? 'Beyond the sale.' : undefined} />
+    {lwp ? <ValuationModal privacyPolicyUrl={site.privacyPolicyUrl} triggerClassName="header-cta" /> : <Link className="header-cta" href={enquiryHref}>{homeSeekers ? 'Book a valuation' : 'Enquire now'}</Link>}
+    <MobileNavigation items={[...navigation, ...resources]} currentHref={currentHref} enquiryHref={enquiryHref} enquiryLabel={lwp ? 'See your home’s value' : homeSeekers ? 'Book a valuation' : 'Enquire now'} brandName={site.name} brandNote={lwp ? 'Beyond the sale.' : undefined} />
   </header>
 }

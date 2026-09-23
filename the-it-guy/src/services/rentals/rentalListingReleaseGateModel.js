@@ -86,7 +86,9 @@ export const RENTAL_LISTING_RELEASE_GATE_FIXTURE = Object.freeze({
     landlordEmail: 'landlord@example.com',
     rentalInfo: {
       monthlyRent: 22000,
+      rentalPriceFrequency: 'monthly',
       depositAmount: 44000,
+      depositPolicy: 'deposit_required',
       availableFrom: '2026-09-01',
       leasePeriodMonths: 12,
       furnishedStatus: 'unfurnished',

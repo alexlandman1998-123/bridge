@@ -30,15 +30,14 @@ assert.equal(incompleteIndustrial.category, 'industrial')
 assert.deepEqual(incompleteIndustrial.missingFacts, ['loadingAccess'])
 
 const land = evaluateCommercialListingReadiness({
-  listing: { listing_type: 'sale', listing_category: 'development_land', pricing: 9200000 },
+  listing: { listing_type: 'sale', listing_category: 'vacant_land', pricing: 9200000 },
   property: {
-    property_type: 'development_land',
+    property_type: 'vacant_land',
     land_size_m2: 42000,
     zoning: 'Mixed use',
-    development_rights: 'Approved for 96 units',
   },
 })
-assert.equal(land.category, 'land_development')
+assert.equal(land.category, 'land')
 assert.equal(land.complete, true)
 
 console.log('Property24 commercial listing readiness passed')

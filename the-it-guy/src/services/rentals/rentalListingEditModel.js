@@ -4,6 +4,7 @@ import {
   buildRentalListingNotes,
   buildRentalListingTitle,
   buildRentalPublicationDraft,
+  normalizeRentalDistributionChannels,
   RENTAL_AMENITY_OPTIONS,
   RENTAL_FEATURE_OPTIONS,
   RENTAL_LISTING_INITIAL_FORM,
@@ -41,9 +42,29 @@ export function buildRentalListingEditForm(listing = {}) {
       : raw.publicationData && typeof raw.publicationData === 'object'
         ? raw.publicationData
         : {}
-  const listingMedia = Array.isArray(raw.listingMedia) ? raw.listingMedia : Array.isArray(raw.media) ? raw.media : []
+  // `getPrivateListing` exposes persisted media as `galleryImages`/`images`, while
+  // some listing surfaces still use `listingMedia`/`media`.  Prefer all of those
+  // representations so opening the guided editor cannot turn an existing gallery
+  // into an empty array and delete it on save.
+  const listingMedia = Array.isArray(raw.listingMedia)
+    ? raw.listingMedia
+    : Array.isArray(raw.media)
+      ? raw.media
+      : Array.isArray(raw.galleryImages)
+        ? raw.galleryImages
+        : Array.isArray(raw.images)
+          ? raw.images
+          : Array.isArray(raw.marketing?.imageGallery)
+            ? raw.marketing.imageGallery
+            : []
   const galleryImages = listingMedia
-    .filter((item) => String(item?.media_type || item?.mediaType || '').trim().toLowerCase() === 'image')
+    // Distribution media is already image-only but is normalised without a
+    // `media_type` property. Keep those rows as well as raw `listing_media`
+    // rows so existing gallery assets survive an edit.
+    .filter((item) => {
+      const mediaType = String(item?.media_type || item?.mediaType || '').trim().toLowerCase()
+      return mediaType === 'image' || (!mediaType && Boolean(item?.file_url || item?.fileUrl || item?.url || item?.signed_url || item?.signedUrl || item?.public_url || item?.publicUrl))
+    })
     .map((item, index) => ({
       id: String(item.id || item.path || item.file_url || item.fileUrl || `gallery-${index + 1}`),
       name: String(item.caption || item.name || `Image ${index + 1}`),
@@ -80,6 +101,7 @@ export function buildRentalListingEditForm(listing = {}) {
     province: normalizeText(row.province),
     postalCode: normalizeText(row.postalCode),
     exactAddressVisibility: normalizeText(row.exactAddressVisibility) || RENTAL_LISTING_INITIAL_FORM.exactAddressVisibility,
+    propertyCategory: normalizeText(raw.propertyCategory || raw.property_category || propertyProfile.propertyCategory || propertyProfile.property_category) || RENTAL_LISTING_INITIAL_FORM.propertyCategory,
     propertyType: normalizeText(row.propertyType) || RENTAL_LISTING_INITIAL_FORM.propertyType,
     bedrooms: formValue(row.bedrooms),
     bathrooms: formValue(row.bathrooms),
@@ -98,13 +120,16 @@ export function buildRentalListingEditForm(listing = {}) {
     floorSize: formValue(row.floorSize || publication.floorSize || publication.floor_size || propertyProfile.floorSize || propertyProfile.floor_size),
     erfSize: formValue(row.erfSize || publication.erfSize || publication.erf_size || propertyProfile.erfSize || propertyProfile.erf_size),
     monthlyRent: formValue(row.monthlyRent),
+    rentalPriceFrequency: normalizeText(rentalInfo.rentalPriceFrequency || rentalInfo.rental_price_frequency) || RENTAL_LISTING_INITIAL_FORM.rentalPriceFrequency,
     depositAmount: formValue(row.depositAmount),
+    depositPolicy: normalizeText(rentalInfo.depositPolicy || rentalInfo.deposit_policy) || RENTAL_LISTING_INITIAL_FORM.depositPolicy,
     depositRequirement: normalizeText(row.depositRequirement),
     depositMultiplier: formValue(row.depositMultiplier || RENTAL_LISTING_INITIAL_FORM.depositMultiplier),
     availableFrom: normalizeText(row.availableFrom),
     occupationDate: normalizeText(row.occupationDate),
     leasePeriodMonths: formValue(row.leasePeriodMonths || RENTAL_LISTING_INITIAL_FORM.leasePeriodMonths),
     leasePeriodType: normalizeText(row.leasePeriodType) || RENTAL_LISTING_INITIAL_FORM.leasePeriodType,
+    rentalMandateType: normalizeText(rentalInfo.rentalMandateType || rentalInfo.rental_mandate_type) || RENTAL_LISTING_INITIAL_FORM.rentalMandateType,
     rentalIncludes: normalizeText(row.rentalIncludes),
     rentalExcludes: normalizeText(row.rentalExcludes),
     applicationFee: formValue(row.applicationFee),
@@ -112,6 +137,7 @@ export function buildRentalListingEditForm(listing = {}) {
     creditCheckFee: formValue(row.creditCheckFee),
     keyDepositAmount: formValue(row.keyDepositAmount),
     utilityDepositAmount: formValue(row.utilityDepositAmount),
+    retirementAccommodation: normalizeText(propertyProfile.retirementAccommodation || propertyProfile.retirement_accommodation || publication.retirementAccommodation || publication.retirement_accommodation) || RENTAL_LISTING_INITIAL_FORM.retirementAccommodation,
     furnishedStatus: normalizeText(row.furnishedStatus) || RENTAL_LISTING_INITIAL_FORM.furnishedStatus,
     petsPolicy: normalizeText(row.petsPolicy) || RENTAL_LISTING_INITIAL_FORM.petsPolicy,
     utilitiesPolicy: normalizeText(row.utilitiesPolicy) || RENTAL_LISTING_INITIAL_FORM.utilitiesPolicy,
@@ -160,6 +186,12 @@ export function buildRentalListingEditForm(listing = {}) {
     galleryImages,
     coverImageId,
     internalNotes: normalizeText(raw.internalNotes || raw.internal_notes || raw.internalListingNotes || raw.internal_listing_notes),
+    selectedSyndicationChannels: normalizeRentalDistributionChannels(
+      facts.distribution?.selectedChannels ||
+      facts.distribution?.selected_channels ||
+      publication.selectedSyndicationChannels ||
+      publication.selected_syndication_channels,
+    ),
   }
 }
 
@@ -172,6 +204,7 @@ export function buildRentalListingUpdatePayload(form = {}) {
   const canonicalFacts = buildRentalCanonicalFacts(form)
   return {
     title,
+    propertyCategory: normalizeText(form.propertyCategory) || 'residential',
     propertyType: normalizeText(form.propertyType),
     listingCategory: 'rental',
     askingPrice: canonicalFacts.rentalInfo.monthlyRent,

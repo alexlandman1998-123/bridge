@@ -47,6 +47,7 @@ export function resolveArch9PrivatePropertyStatus({ externalStatus = '', isOnPor
 
 export function summarizePrivatePropertySyncPayload(payloadSummary = {}) {
   const payload = normalizeJsonObject(payloadSummary)
+  const addressFingerprint = normalizePrivatePropertyText(payload.addressFingerprint || payload.address_fingerprint)
   return {
     propertyId: normalizePrivatePropertyText(payload.propertyId),
     branchId: normalizePrivatePropertyText(payload.branchId),
@@ -61,6 +62,7 @@ export function summarizePrivatePropertySyncPayload(payloadSummary = {}) {
     imageUrlCount: payload.imageUrlCount ?? null,
     photoUrlPayloadCount: payload.photoUrlPayloadCount ?? null,
     attributeCount: payload.attributeCount ?? null,
+    ...(addressFingerprint ? { addressFingerprint } : {}),
   }
 }
 

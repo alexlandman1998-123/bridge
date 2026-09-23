@@ -3653,7 +3653,7 @@ function ProspectGeneratedDemoCard({ config, copiedKey, onCopy, onEdit }) {
       </div>
       <button className="secondary-button compact" onClick={() => onEdit(config)} type="button">
         <NotebookPen size={15} />
-        <span>Use as form</span>
+        <span>Edit demo</span>
       </button>
     </article>
   )
@@ -3678,6 +3678,7 @@ function ProspectDemoGeneratorView() {
   const [assetsNeedReupload, setAssetsNeedReupload] = useState(false)
 
   const activeSlug = normalizeDemoSlug(form.slug || form.agencyName || savedConfig?.slug)
+  const isEditingDemo = Boolean(savedConfig?.slug && savedConfig.slug === activeSlug)
   const buyerOnboardingLink = buildDemoLink(activeSlug, 'onboarding')
   const buyerPortalLink = buildDemoLink(activeSlug, 'buyer')
   const tenantPortalLink = buildDemoLink(activeSlug, 'tenant')
@@ -3786,7 +3787,9 @@ function ProspectDemoGeneratorView() {
     setError('')
     setSuccess('')
 
-    const slug = normalizeDemoSlug(form.slug || form.agencyName)
+    // An existing demo's slug is its public address. Keep it fixed while editing so
+    // the links already shared with a prospect receive the new branding.
+    const slug = isEditingDemo ? savedConfig.slug : normalizeDemoSlug(form.slug || form.agencyName)
     if (!slug) {
       setError('Add an agency name or slug first.')
       return
@@ -3836,7 +3839,9 @@ function ProspectDemoGeneratorView() {
         return [nextConfig, ...previous.filter((item) => item.slug !== nextConfig.slug)]
       })
       setHasLoadedGeneratedDemos(true)
-      setSuccess('Prospect demo generated. Copy the links below and send them to the prospect.')
+      setSuccess(isEditingDemo
+        ? 'Demo updated. The existing links now use these changes when the page is refreshed.'
+        : 'Prospect demo generated. Copy the links below and send them to the prospect.')
       setActiveTab('create')
     } catch (saveError) {
       setError(saveError?.message || 'Unable to save the prospect demo.')
@@ -3897,8 +3902,10 @@ function ProspectDemoGeneratorView() {
         <div className="prospect-demo-panel-header">
           <div>
             <span className="prospect-demo-kicker">Internal utility</span>
-            <h2>Create prospect demo links</h2>
-            <p>Generate personalised buyer onboarding and buyer portal demos from existing Arch9 client experiences.</p>
+            <h2>{isEditingDemo ? 'Edit prospect demo links' : 'Create prospect demo links'}</h2>
+            <p>{isEditingDemo
+              ? 'Update the branding and content below. The demo URLs already sent to the prospect stay the same.'
+              : 'Generate personalised buyer onboarding and buyer portal demos from existing Arch9 client experiences.'}</p>
           </div>
           <span className="prospect-demo-mode">Demo mode only</span>
         </div>
@@ -3967,6 +3974,7 @@ function ProspectDemoGeneratorView() {
                 <label className="prospect-field">
                   <span>URL slug</span>
                   <input
+                    disabled={isEditingDemo}
                     onChange={(event) => {
                       setSlugTouched(true)
                       setForm((previous) => ({ ...previous, slug: normalizeDemoSlug(event.target.value) }))
@@ -3974,7 +3982,9 @@ function ProspectDemoGeneratorView() {
                     placeholder="hello-group"
                     value={form.slug}
                   />
-                  <small>{activeSlug ? `/demo/${activeSlug}/buyer` : 'Used in both demo links'}</small>
+                  <small>{isEditingDemo
+                    ? `Locked to keep /demo/${activeSlug}/buyer and the other shared links working`
+                    : activeSlug ? `/demo/${activeSlug}/buyer` : 'Used in both demo links'}</small>
                 </label>
               </div>
             </div>
@@ -4044,7 +4054,7 @@ function ProspectDemoGeneratorView() {
             <div className="prospect-submit-row">
               <button className="primary-button" disabled={isSaving} type="submit">
                 {isSaving ? <Loader2 className="spin" size={16} /> : <Plus size={16} />}
-                <span>Generate Demo</span>
+                <span>{isEditingDemo ? 'Save demo changes' : 'Generate Demo'}</span>
               </button>
               <button className="secondary-button compact" onClick={clearDraft} type="button">
                 <X size={16} />
@@ -6172,7 +6182,7 @@ function InboundLeadsView({ onRefresh, snapshot }) {
   )
 }
 
-function SettingsView({ access, profile }) {
+function SettingsView({ access, profile, snapshot = EMPTY_DASHBOARD }) {
   const configStatus = getSupabaseConfigStatus()
   const rows = [
     ['Access level', formatAdminLevelLabel(access.level)],
@@ -6199,7 +6209,7 @@ function SettingsView({ access, profile }) {
           ))}
         </dl>
       </section>
-      <Property24CredentialsView access={access} />
+      <Property24CredentialsView access={access} organisations={snapshot.drilldowns?.activeOrganisations || []} />
       <PrivatePropertyConfigurationView access={access} />
       <PrivatePropertyAgentMappingsView access={access} />
     </div>
@@ -6521,7 +6531,7 @@ export default function App() {
         {view === 'prospects' ? <ProspectDemoGeneratorView /> : null}
         {view === 'support' ? <SupportView dashboard={dashboard} snapshot={support} /> : null}
         {view === 'search' ? <SearchView /> : null}
-        {view === 'settings' ? <SettingsView access={access} profile={profile} /> : null}
+        {view === 'settings' ? <SettingsView access={access} profile={profile} snapshot={dashboard} /> : null}
       </main>
     </div>
   )

@@ -91,6 +91,10 @@ async function uploadRentalGalleryImages(galleryImages = [], listingId) {
     }),
   )
 
+  const failedUploads = uploadedImages.filter((item) => item.uploadWarning)
+  if (failedUploads.length) {
+    throw new Error(`Could not save ${failedUploads.length} rental image${failedUploads.length === 1 ? '' : 's'} to the listing. Please retry the upload; no images were silently discarded.`)
+  }
   return uploadedImages.map(stripUploadOnlyFields).filter((item) => isPersistableMediaUrl(item.url || item.signedUrl || item.publicUrl))
 }
 
@@ -215,20 +219,12 @@ export async function createRentalListingDraft(form = {}, context = {}) {
   const listingId = created?.listing?.id
   if (!listingId) throw new Error('Unable to create the rental listing draft.')
 
-  const coverImage = getRentalCoverGalleryItem(form.galleryImages, form.coverImageId)
-  const uploadedCoverImages = await uploadRentalGalleryImages(coverImage ? [coverImage] : [], listingId)
+  const uploadedGalleryImages = await uploadRentalGalleryImages(form.galleryImages, listingId)
   const publicationData = buildRentalPublicationDraft(form)
   const publicationResult = await syncPrivateListingDistributionData(listingId, {
     publicationData,
-    media: buildRentalListingMediaPayload(form, uploadedCoverImages),
+    media: buildRentalListingMediaPayload(form, uploadedGalleryImages),
     externalLinks: [],
-  })
-
-  void finalizeRentalListingGalleryUploads({
-    listingId,
-    form,
-    publicationData,
-    uploadedCoverImages,
   })
 
   void createPrivateListingActivity({
@@ -399,6 +395,23 @@ export async function publishRentalProperty24Listing(listingId, options = {}) {
   return payload
 }
 
+export async function expireRentalProperty24Listing(listingId) {
+  const normalizedListingId = normalizeText(listingId)
+  if (!normalizedListingId) throw new Error('Rental listing id is required.')
+  if (!isSupabaseConfigured || !supabase) throw new Error('Sign in before updating Property24.')
+  const sessionResult = await supabase.auth.getSession()
+  const accessToken = sessionResult.data?.session?.access_token
+  if (!accessToken) throw new Error('Sign in again before updating Property24.')
+  const response = await fetch(`/api/property24/rentals/${encodeURIComponent(normalizedListingId)}/status-update`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'Expired', listingStatus: 'Expired' }),
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(formatRentalProperty24ApiError(payload, 'Property24 rental expiry failed.'))
+  return payload
+}
+
 async function callPrivatePropertyRentalAction(listingId, action, body = {}, { method = 'POST' } = {}) {
   const normalizedListingId = normalizeText(listingId)
   if (!normalizedListingId) throw new Error('Rental listing id is required.')
@@ -432,4 +445,12 @@ export function publishPrivatePropertyRentalListing(listingId) {
     'publish',
     { confirm: `PRIVATE_PROPERTY_PUBLISH:${normalizedListingId}:production` },
   )
+}
+
+export function expirePrivatePropertyRentalListing(listingId) {
+  const normalizedListingId = normalizeText(listingId)
+  return callPrivatePropertyRentalAction(normalizedListingId, 'status-update', {
+    propertyStatus: 'Inactive',
+    status: 'Inactive',
+  })
 }

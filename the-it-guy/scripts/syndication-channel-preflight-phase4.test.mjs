@@ -14,9 +14,9 @@ const residentialRental = buildSyndicationChannelPreflight({
 assert.equal(residentialRental.channels.privateProperty.status, 'ready')
 assert.equal(residentialRental.channels.privateProperty.mappedOutcome.listingType, 'ToLet')
 assert.equal(residentialRental.channels.privateProperty.mappedOutcome.rentalPricePeriod, 'PerWeek')
-assert.equal(residentialRental.channels.property24.status, 'blocked')
-assert.ok(residentialRental.channels.property24.blockers.includes('property24_rental_price_period_not_verified'))
-assert.equal(residentialRental.overall.status, 'partially_ready')
+assert.equal(residentialRental.channels.property24.status, 'ready')
+assert.equal(residentialRental.channels.property24.mappedOutcome.rentalPricePeriod, 'PerWeek')
+assert.equal(residentialRental.overall.status, 'ready')
 assert.equal(residentialRental.rollout.enabled, false)
 assert.equal(residentialRental.overall.legacyPublishPathPreserved, true)
 
@@ -33,7 +33,7 @@ const offersFromLand = buildSyndicationChannelPreflight({
 assert.equal(offersFromLand.channels.privateProperty.status, 'ready')
 assert.equal(offersFromLand.channels.privateProperty.mappedOutcome.pricePresentation, 'OffersFrom')
 assert.equal(offersFromLand.channels.property24.status, 'blocked')
-assert.ok(offersFromLand.channels.property24.blockers.includes('property24_land_development_mapping_not_verified'))
+assert.ok(offersFromLand.channels.property24.blockers.includes('property24_land_mapping_not_verified'))
 assert.ok(offersFromLand.channels.property24.blockers.includes('property24_price_presentation_not_verified'))
 
 const invalidOffer = buildSyndicationChannelPreflight({

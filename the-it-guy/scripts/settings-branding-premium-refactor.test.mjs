@@ -91,6 +91,12 @@ for (const token of [
   assert(files.organisationPage.includes(token), `branding page should expose onboarding landing branding controls: ${token}`)
 }
 
+assert.match(
+  files.organisationPage,
+  /await withBrandAssetTimeout\(saveAgencyOnboardingDraft\(nextState\.onboarding\)\)[\s\S]*?await withBrandAssetTimeout\(updateOrganisationSettings\(nextState\.organisation\)\)/,
+  'primary-logo uploads must serialize the onboarding and organisation branding writes to avoid database deadlocks',
+)
+
 for (const removedToken of [
   'Choose File',
   'organisation-logo-preview-frame',

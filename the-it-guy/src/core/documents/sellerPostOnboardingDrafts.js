@@ -2,8 +2,14 @@ import { buildFicaDeclarationDocumentMarkup } from './ficaDeclarationDocumentMar
 import { buildFicaDeclarationDocumentModel } from './ficaDeclarationDocumentModel.js'
 import { buildSellerComplianceDocumentModel } from './sellerComplianceDocumentModel.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../../lib/propertyDisclosure.js'
+import {
+  SELLER_BASE_PACK_KEYS,
+  SELLER_DOCUMENT_ARTIFACT_KEYS,
+  SELLER_DOCUMENT_ARTIFACT_STAGES,
+  SELLER_DOCUMENT_CONTRACT_VERSION,
+} from '../../lib/sellerBasePackContract.js'
 
-export const SELLER_POST_ONBOARDING_DRAFTS_CONTRACT = 'arch9-seller-post-onboarding-drafts-v1'
+export const SELLER_POST_ONBOARDING_DRAFTS_CONTRACT = 'arch9-seller-post-onboarding-drafts-v2'
 
 const text = (value) => String(value ?? '').trim()
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -84,15 +90,20 @@ function mandatePreparationMarkup({ seller, sellerId, property, reference, brand
   return `<!doctype html><html><head><meta charset="utf-8" /><title>Mandate preparation summary</title><style>body{margin:0;color:#172033;font:15px/1.55 Arial,sans-serif;background:#fff}.page{max-width:820px;margin:0 auto;padding:48px}.header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dbe4df;padding-bottom:22px}.brand{font-size:20px;font-weight:800}.brand img{max-width:220px;max-height:62px;object-fit:contain}.notice{margin:32px 0;padding:18px 20px;border:1px solid #f2c46e;background:#fff8e9;border-radius:10px;color:#704b00}.facts{border:1px solid #dbe4df;border-radius:10px;overflow:hidden}.facts div{display:grid;grid-template-columns:210px 1fr;gap:16px;padding:13px 16px;border-bottom:1px solid #e8eeeb}.facts div:last-child{border-bottom:0}.facts strong{color:#536174}h1{margin:32px 0 8px;font-size:27px}p{margin:8px 0}.footer{margin-top:34px;color:#6a7788;font-size:12px}</style></head><body><main class="page"><header class="header"><div class="brand">${brand}</div><span>Draft generated ${escapeHtml(generatedAt)}</span></header><h1>Mandate preparation summary</h1><p>This is a frozen summary of the submitted onboarding facts for the agent’s review.</p><aside class="notice"><strong>Not for signature.</strong> Commission, mandate terms, and any agency-specific conditions must be approved by the agent before a signable mandate is created or sent.</aside><section class="facts"><div><strong>Seller</strong><span>${escapeHtml(seller)}</span></div><div><strong>ID / passport</strong><span>${escapeHtml(sellerId || 'Not captured')}</span></div><div><strong>Property</strong><span>${escapeHtml(property)}</span></div><div><strong>Reference</strong><span>${escapeHtml(reference || 'Pending')}</span></div><div><strong>Commission structure</strong><span>To be confirmed by the agent</span></div></section><p class="footer">Template: seller_mandate_preparation_summary_v1</p></main></body></html>`
 }
 
-function draftDocument({ key, name, status, templateVersion, generatedAt, generatedHtml, signable = false, source = 'seller_onboarding.post_submission_draft', metadata = {} }) {
-  const fingerprint = createSellerPostOnboardingDraftFingerprint({ key, templateVersion, generatedAt, generatedHtml })
+function draftDocument({ key, targetRequirementKey = key, artifactStage = SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, name, status, templateVersion, brandingVersion, generatedAt, generatedHtml, signable = false, source = 'seller_onboarding.post_submission_draft', metadata = {} }) {
+  const fingerprint = createSellerPostOnboardingDraftFingerprint({ key, templateVersion, brandingVersion, generatedAt, generatedHtml })
   return {
     key,
-    requirementKey: key,
+    artifactKey: key,
+    targetRequirementKey,
+    requirementKey: targetRequirementKey,
+    artifactStage,
+    documentContractVersion: SELLER_DOCUMENT_CONTRACT_VERSION,
     name,
     status,
     generatedAt,
     templateVersion,
+    brandingVersion,
     generatedHtml,
     contentFingerprint: fingerprint,
     signable,
@@ -139,6 +150,29 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
   })
   const ficaHtml = buildFicaDeclarationDocumentMarkup(ficaModel)
   const mandateHtml = mandatePreparationMarkup({ seller, sellerId, property, reference, branding: safeBranding, generatedAt })
+  const brandingVersion = firstText(
+    safeBranding.brandingVersion,
+    safeBranding.branding_version,
+    safeBranding.version,
+    'seller_onboarding_branding_snapshot_v1',
+  )
+  const brandingSnapshotBase = {
+    contract: 'arch9-seller-document-branding-snapshot-v1',
+    frozenAt: generatedAt,
+    organisationName: firstText(safeBranding.organisationName, safeBranding.agencyName),
+    logoUrl: firstText(safeBranding.logoLightUrl, safeBranding.logoUrl, safeBranding.logoDarkUrl),
+    logoLightUrl: firstText(safeBranding.logoLightUrl, safeBranding.logoUrl),
+    logoDarkUrl: firstText(safeBranding.logoDarkUrl, safeBranding.logoUrl),
+    logoIconUrl: firstText(safeBranding.logoIconUrl),
+    primaryColour: firstText(safeBranding.primaryColour, safeBranding.primaryColor),
+    secondaryColour: firstText(safeBranding.secondaryColour, safeBranding.secondaryColor),
+    accentColour: firstText(safeBranding.accentColour, safeBranding.accentColor),
+    brandingVersion,
+  }
+  const brandingSnapshot = {
+    ...brandingSnapshotBase,
+    fingerprint: createSellerPostOnboardingDraftFingerprint(brandingSnapshotBase),
+  }
   const source = {
     onboardingVersion: firstText(safeFormData.sellerOnboardingCompletion?.version, safeFormData.seller_onboarding_completion?.version, 'seller_onboarding_submission_v1'),
     onboardingSubmittedAt: firstText(safeFormData.sellerOnboardingCompletion?.completedAt, safeFormData.sellerOnboardingCompletion?.completed_at, safeFormData.seller_onboarding_completion?.completedAt, safeFormData.seller_onboarding_completion?.completed_at),
@@ -149,10 +183,12 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     contract: SELLER_POST_ONBOARDING_DRAFTS_CONTRACT,
     generatedAt,
     source,
+    brandingVersion,
+    brandingSnapshot,
     documents: [
-      draftDocument({ key: 'signed_disclosure_form', name: 'Mandatory Disclosure / Defects Form', status: 'complete', templateVersion: 'property_disclosure_annexure_a_v1', generatedAt, generatedHtml: disclosureHtml, signable: true, metadata: { source: 'seller_onboarding' } }),
-      draftDocument({ key: 'signed_fica_declaration', name: 'Seller FICA Declaration', status: 'awaiting_agent_review', templateVersion: ficaModel.declaration.wordingVersion, generatedAt, generatedHtml: ficaHtml, metadata: { ficaDeclarationModel: ficaModel } }),
-      draftDocument({ key: 'signed_mandate', name: 'Mandate preparation summary', status: 'awaiting_agent_review', templateVersion: 'seller_mandate_preparation_summary_v1', generatedAt, generatedHtml: mandateHtml, metadata: { commissionPending: true, notForSignature: true } }),
+      draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.FINAL_SIGNED, name: 'Mandatory Disclosure / Defects Form', status: 'complete', templateVersion: 'property_disclosure_annexure_a_v1', brandingVersion, generatedAt, generatedHtml: disclosureHtml, signable: true, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
+      draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION, name: 'Seller FICA review draft', status: 'awaiting_agent_review', templateVersion: ficaModel.declaration.wordingVersion, brandingVersion, generatedAt, generatedHtml: ficaHtml, metadata: { ficaDeclarationModel: ficaModel, brandingSnapshot } }),
+      draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE, name: 'Mandate preparation summary', status: 'awaiting_agent_review', templateVersion: 'seller_mandate_preparation_summary_v1', brandingVersion, generatedAt, generatedHtml: mandateHtml, metadata: { commissionPending: true, notForSignature: true, brandingSnapshot } }),
     ],
   }
 }

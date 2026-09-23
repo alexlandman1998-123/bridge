@@ -1,18 +1,18 @@
 import { evaluateProperty24ListingCategoryContract } from '../property24/listingCategoryContract.js'
 import { evaluateProperty24ListingCategoryModel } from '../property24/listingCategoryModel.js'
+import {
+  appendPortalDescriptionFeatures,
+  normalizeListingPortalFeatures,
+  resolveListingAddressVisibility,
+} from './listingPortalFeatureNormalizer.js'
+import {
+  PROPERTY24_PHASE2_PROPERTY_TYPES,
+  resolveProperty24Phase2PropertyTypeId,
+} from '../property24/propertyTypeCatalogue.js'
 
-export const DEFAULT_PROPERTY24_AGENCY_ID = 31382
 export const DEFAULT_PROPERTY24_COUNTRY_ID = 1
 
-export const DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS = [
-  { id: 4, description: 'House', aliases: ['house', 'home', 'freehold', 'freehold_house'] },
-  { id: 5, description: 'Apartment / Flat', aliases: ['apartment', 'flat', 'unit', 'sectional_title', 'sectional_title_apartment'] },
-  { id: 6, description: 'Townhouse', aliases: ['townhouse', 'town_house', 'duplex', 'cluster'] },
-  { id: 8, description: 'Vacant Land / Plot', aliases: ['vacant_land', 'plot', 'land', 'stand'] },
-  { id: 10, description: 'Farm', aliases: ['farm', 'smallholding', 'small_holding', 'agricultural_holding'] },
-  { id: 11, description: 'Commercial Property', aliases: ['commercial', 'commercial_property', 'office', 'retail', 'shop'] },
-  { id: 12, description: 'Industrial Property', aliases: ['industrial', 'industrial_property', 'warehouse', 'factory'] },
-]
+export const DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS = PROPERTY24_PHASE2_PROPERTY_TYPES
 
 const RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS = new Set([4, 5, 6])
 
@@ -53,6 +53,17 @@ function firstNumber(...values) {
     if (numeric !== null) return numeric
   }
   return null
+}
+
+function asObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
 }
 
 function normalizeBoolean(value, fallback = false) {
@@ -126,6 +137,7 @@ export function resolveProperty24Status(value = '', { isNew = true } = {}) {
 }
 
 export function resolveProperty24PropertyTypeId(value, mappings = DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS) {
+  if (mappings === DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS) return resolveProperty24Phase2PropertyTypeId(value)
   const explicit = toProperty24Integer(value)
   if (explicit) return explicit
   const key = normalizeProperty24ListingKey(value)
@@ -218,13 +230,78 @@ function resolvePoa(listing = {}, publication = {}, options = {}) {
 }
 
 function resolveDescription(listing = {}, publication = {}) {
-  return firstText(
+  const description = firstText(
     publication.description,
     publication.public_description,
     listing.listing_preview_description,
     listing.listingPreviewDescription,
     listing.description,
   )
+  const features = normalizeListingPortalFeatures({ listing, publication })
+  return appendPortalDescriptionFeatures(description, [
+    ...(features.staffQuarters ? ['staff accommodation'] : []),
+    ...(features.fibre ? ['fibre connectivity'] : []),
+    ...features.additionalLabels,
+  ])
+}
+
+function resolveSpecialistFacts(listing = {}, publication = {}, options = {}) {
+  const listingCanonicalFacts = asObject(listing.seller_canonical_facts_json || listing.sellerCanonicalFacts)
+  const publicationCanonicalFacts = asObject(publication.seller_canonical_facts_json || publication.sellerCanonicalFacts)
+  const candidates = [
+    options.specialistFacts,
+    options.specialist_facts,
+    publication.specialistFacts,
+    publication.specialist_facts,
+    publicationCanonicalFacts.specialistFacts,
+    publicationCanonicalFacts.property?.specialistFacts,
+    listing.specialistFacts,
+    listing.specialist_facts,
+    listingCanonicalFacts.specialistFacts,
+    listingCanonicalFacts.property?.specialistFacts,
+  ]
+  return candidates.reduce((facts, candidate) => ({ ...facts, ...asObject(candidate) }), {})
+}
+
+function resolveSpecialistProperty24Description(description = '', facts = {}, category = '') {
+  const detailsByCategory = {
+    commercial: [
+      ['Gross lettable area', facts.grossLettableArea ? `${facts.grossLettableArea} m²` : ''],
+      ['Zoning', facts.zoning],
+      ['Parking', facts.parking],
+      ['Listing terms', facts.listingTerms],
+    ],
+    industrial: [
+      ['Warehouse / factory area', facts.warehouseOrFactoryArea ? `${facts.warehouseOrFactoryArea} m²` : ''],
+      ['Yard size', facts.yardSize ? `${facts.yardSize} m²` : ''],
+      ['Power supply', facts.powerSupply],
+      ['Loading access', facts.loadingAccess === true ? 'Yes' : facts.loadingAccess === false ? 'No' : ''],
+    ],
+    agricultural: [
+      ['Farm size', facts.farmSize ? `${facts.farmSize} ha` : ''],
+      ['Water supply / rights', facts.waterSupplyOrRights],
+      ['Agricultural use', facts.agriculturalUse],
+    ],
+    land: [
+      ['Erf / land size', facts.erfSize ? `${facts.erfSize} m²` : ''],
+      ['Zoning', facts.zoning],
+    ],
+  }
+  const entries = (detailsByCategory[category] || [])
+    .map(([label, value]) => [label, normalizeProperty24ListingText(value)])
+    .filter(([, value]) => value)
+    .filter(([label, value]) => !String(description).toLowerCase().includes(`${label}: ${value}`.toLowerCase()))
+  if (!entries.length) return description
+  const suffix = entries.map(([label, value]) => `${label}: ${value}`).join('. ')
+  const prefix = description && !/[.!?]$/.test(description) ? `${description}.` : description
+  return `${prefix}${prefix ? ' ' : ''}${suffix}.`
+}
+
+function specialistParkingCount(value) {
+  const direct = toProperty24Number(value)
+  if (direct !== null) return direct
+  const match = normalizeProperty24ListingText(value).match(/\d+(?:\.\d+)?/)
+  return match ? toProperty24Number(match[0]) : null
 }
 
 function resolveDescriptionHeader(listing = {}, publication = {}) {
@@ -241,41 +318,115 @@ function buildFee(amount) {
   return numeric === null ? undefined : { amount: numeric, unit: 'TotalPrice' }
 }
 
-function buildPropertyFeatures(listing = {}, publication = {}) {
-  const bedrooms = firstNumber(publication.bedrooms, listing.bedrooms, listing.propertyDetails?.bedrooms)
-  const bathrooms = firstNumber(publication.bathrooms, listing.bathrooms, listing.propertyDetails?.bathrooms)
-  const garages = firstNumber(publication.garages, listing.garages, listing.propertyDetails?.garages) ?? 0
-  const parkingBays = firstNumber(publication.parking_bays, publication.parkingBays, listing.parkingBays, listing.propertyDetails?.parkingBays)
+function splitProperty24StreetAddress(value = '') {
+  const line = normalizeProperty24ListingText(value).split(',')[0].trim()
+  if (!line) return { streetNumber: '', streetName: '' }
+  const match = line.match(/^(\d+[A-Za-z]?(?:[-/]\d+[A-Za-z]?)?)\s+(.+)$/)
+  return match
+    ? { streetNumber: match[1], streetName: match[2].trim() }
+    : { streetNumber: '', streetName: line }
+}
+
+function buildPropertyFeatures(listing = {}, publication = {}, { category = '' } = {}) {
+  const normalized = normalizeListingPortalFeatures({ listing, publication })
+  const specialistFacts = resolveSpecialistFacts(listing, publication)
+  const bedrooms = normalized.bedrooms
+  const bathrooms = normalized.bathrooms
+  const garages = normalized.garages ?? 0
+  const parkingBays = normalized.parkingBays ?? (category === 'commercial' ? specialistParkingCount(specialistFacts.parking) : null)
 
   return {
     ...(bedrooms !== null ? { bedrooms } : {}),
     ...(bathrooms !== null ? { bathrooms: { bathrooms } } : {}),
     garages,
     ...(parkingBays !== null ? { parking: { open: parkingBays } } : {}),
-    garden: normalizeBoolean(publication.garden ?? listing.garden ?? listing.propertyDetails?.garden, false),
-    pool: normalizeBoolean(publication.pool ?? listing.pool ?? listing.propertyDetails?.pool, false),
-    flatlet: normalizeBoolean(publication.flatlet ?? listing.flatlet ?? listing.propertyDetails?.flatlet, false),
+    garden: normalized.garden ?? false,
+    pool: normalized.pool ?? false,
+    flatlet: normalized.flatlet ?? false,
     petsAllowed: firstText(publication.petsAllowed, publication.pets_allowed, listing.petsAllowed, listing.pets_allowed) || 'DontKnow',
     furnishedStatus: firstText(publication.furnishedStatus, publication.furnished_status, listing.furnishedStatus, listing.furnished_status) || 'No',
   }
 }
 
-function buildPropertyInfo({ listing, publication, suburbId, propertyTypeId }) {
-  const erf = buildArea(firstNumber(publication.erf_size, publication.erfSize, listing.erfSize, listing.propertyDetails?.erfSize))
-  const floorArea = buildArea(firstNumber(publication.floor_size, publication.floorSize, listing.floorSize, listing.propertyDetails?.floorSize))
-  const municipalRatesAndTaxes = buildFee(firstNumber(publication.rates_taxes, publication.ratesTaxes, listing.ratesTaxes, listing.propertyDetails?.ratesTaxes))
-  const monthlyLevy = buildFee(firstNumber(publication.levies, listing.levies, listing.propertyDetails?.levies))
+export function buildProperty24CategoryPayload({ listing = {}, publication = {}, category = '', propertyTypeId = null, options = {} } = {}) {
+  const facts = resolveSpecialistFacts(listing, publication, options)
+  const propertyInfo = {}
+
+  if (category === 'commercial') {
+    const floorArea = buildArea(facts.grossLettableArea)
+    if (floorArea) propertyInfo.floorArea = floorArea
+  }
+  if (category === 'industrial') {
+    const floorArea = buildArea(facts.warehouseOrFactoryArea)
+    const erf = buildArea(facts.yardSize)
+    if (floorArea) propertyInfo.floorArea = floorArea
+    if (erf) propertyInfo.erf = erf
+  }
+  if (category === 'agricultural') {
+    const farmSizeHectares = toProperty24Number(facts.farmSize)
+    // The v55 area object is square metres. Arch9 captures farms in hectares,
+    // so convert explicitly rather than mislabelling the unit.
+    const erf = farmSizeHectares === null ? undefined : buildArea(farmSizeHectares * 10_000)
+    if (erf) propertyInfo.erf = erf
+  }
+  if (category === 'land') {
+    const erf = buildArea(facts.erfSize)
+    if (erf) propertyInfo.erf = erf
+    const zoneType = normalizeProperty24ListingText(facts.zoning)
+    if (zoneType) propertyInfo.zoneType = zoneType
+  }
 
   return {
-    showLocation: normalizeBoolean(publication.showLocation ?? listing.showLocation ?? listing.show_location, false),
+    category,
+    propertyTypeId,
+    specialistFacts: facts,
+    propertyInfo,
+    description: resolveSpecialistProperty24Description('', facts, category),
+  }
+}
+
+function buildPropertyInfo({ listing, publication, suburbId, propertyTypeId, category, options }) {
+  const canonicalFacts = listing.seller_canonical_facts_json || listing.sellerCanonicalFacts || {}
+  const categoryPayload = buildProperty24CategoryPayload({ listing, publication, category, propertyTypeId, options })
+  const combinedStreetAddress = firstText(
+    publication.streetAddress,
+    publication.street_address,
+    publication.address,
+    listing.streetAddress,
+    listing.street_address,
+    listing.address_line_1,
+    listing.addressLine1,
+    listing.formatted_address,
+    listing.formattedAddress,
+  )
+  const inferredStreetAddress = splitProperty24StreetAddress(combinedStreetAddress)
+  const erf = buildArea(firstNumber(publication.erf_size, publication.erfSize, listing.erfSize, listing.propertyDetails?.erfSize)) || categoryPayload.propertyInfo.erf
+  const floorArea = buildArea(firstNumber(publication.floor_size, publication.floorSize, listing.floorSize, listing.propertyDetails?.floorSize)) || categoryPayload.propertyInfo.floorArea
+  const municipalRatesAndTaxes = buildFee(firstNumber(publication.rates_taxes, publication.ratesTaxes, listing.ratesTaxes, listing.propertyDetails?.ratesTaxes))
+  const monthlyLevy = buildFee(firstNumber(publication.levies, listing.levies, listing.propertyDetails?.levies))
+  const addressVisibility = resolveListingAddressVisibility(
+    publication.exactAddressVisibility,
+    publication.exact_address_visibility,
+    listing.exactAddressVisibility,
+    listing.exact_address_visibility,
+    publication.showLocation,
+    publication.show_location,
+    listing.showLocation,
+    listing.show_location,
+    canonicalFacts.property24ShowLocation,
+  )
+
+  return {
+    showLocation: addressVisibility === 'show_exact_address',
     suburbId,
-    streetNumber: firstText(publication.streetNumber, publication.street_number, listing.streetNumber, listing.street_number),
-    streetName: firstText(publication.streetName, publication.street_name, listing.streetName, listing.street_name, listing.address_line_1, listing.addressLine1),
+    streetNumber: firstText(publication.streetNumber, publication.street_number, listing.streetNumber, listing.street_number, inferredStreetAddress.streetNumber),
+    streetName: firstText(publication.streetName, publication.street_name, listing.streetName, listing.street_name, inferredStreetAddress.streetName),
     sourceReference: firstText(listing.listing_reference, listing.listingReference, listing.id),
     ...(erf ? { erf } : {}),
     ...(floorArea ? { floorArea } : {}),
     ...(municipalRatesAndTaxes ? { municipalRatesAndTaxes } : {}),
     ...(monthlyLevy ? { monthlyLevy } : {}),
+    ...(categoryPayload.propertyInfo.zoneType ? { zoneType: categoryPayload.propertyInfo.zoneType } : {}),
     propertyTypeId,
   }
 }
@@ -316,7 +467,10 @@ export function createProperty24ListingPlan({
   existingSync = {},
   options = {},
 } = {}) {
-  const agencyId = toProperty24Integer(options.agencyId || existingSync.agencyId || existingSync.agency_id || DEFAULT_PROPERTY24_AGENCY_ID)
+  // The agency must come from the organisation's saved Property24 connection
+  // (or the existing portal sync for an update). Never select another agency
+  // by falling back to a platform-wide default.
+  const agencyId = toProperty24Integer(options.agencyId || existingSync.agencyId || existingSync.agency_id)
   const listingNumber = toProperty24Integer(existingSync.listingNumber || existingSync.listing_number || options.listingNumber)
   const isNew = !listingNumber
   const listingType = resolveProperty24ListingType(firstText(publication.listing_type, publication.listingType, listing.listing_type, listing.listingType))
@@ -325,7 +479,6 @@ export function createProperty24ListingPlan({
   const price = resolvePrice(listing, publication, options)
   const isPOA = resolvePoa(listing, publication, options)
   const expiryDate = resolveExpiryDate(listing, publication, options)
-  const description = resolveDescription(listing, publication)
   const descriptionHeader = resolveDescriptionHeader(listing, publication)
   const propertyTypeValue = firstText(
     catalogMapping.propertyTypeId,
@@ -336,6 +489,18 @@ export function createProperty24ListingPlan({
     listing.propertyType,
   )
   const propertyTypeId = resolveProperty24PropertyTypeId(propertyTypeValue, propertyTypeMappings)
+  const categoryPayload = buildProperty24CategoryPayload({
+    listing,
+    publication,
+    category: categoryContract.category,
+    propertyTypeId,
+    options,
+  })
+  const description = resolveSpecialistProperty24Description(
+    resolveDescription(listing, publication),
+    categoryPayload.specialistFacts,
+    categoryContract.category,
+  )
   const suburbId = resolveSuburbId(catalogMapping, listing, publication, options)
   const { property24AgentId, sourceReference } = resolveAgentMapping(agentMapping, listing, options)
   const mediaRows = normalizeMediaRows(media)
@@ -344,8 +509,11 @@ export function createProperty24ListingPlan({
   const requirePhotoBytes = options.requirePhotoBytes !== false
   const photos = buildPhotos(mediaRows, { includePhotos })
   const previewPhotos = buildPreviewPhotos(mediaRows, { includePhotos })
-  const propertyFeatures = buildPropertyFeatures(listing, publication)
-  const propertyInfo = buildPropertyInfo({ listing, publication, suburbId, propertyTypeId })
+  const expectedPhotoPayloadCount = options.expectedPhotoPayloadCount === null || options.expectedPhotoPayloadCount === undefined
+    ? imageRows.length
+    : Math.max(0, toProperty24Integer(options.expectedPhotoPayloadCount) || 0)
+  const propertyFeatures = buildPropertyFeatures(listing, publication, { category: categoryContract.category })
+  const propertyInfo = buildPropertyInfo({ listing, publication, suburbId, propertyTypeId, category: categoryContract.category, options })
   const categoryModel = evaluateProperty24ListingCategoryModel({
     listing,
     publication,
@@ -398,7 +566,11 @@ export function createProperty24ListingPlan({
   if (propertyFeatures.pool === null || propertyFeatures.pool === undefined) dataBlockers.push('missing_pool_value')
   if (propertyFeatures.flatlet === null || propertyFeatures.flatlet === undefined) dataBlockers.push('missing_flatlet_value')
 
-  if (requirePhotoBytes && includePhotos && imageRows.length && photos.length !== imageRows.length) {
+  // The byte loader deliberately limits the Property24 submission batch (20
+  // images by default). Compare against that selected batch, not every image
+  // in the Arch9 gallery, otherwise any gallery larger than the cap can never
+  // become submit-ready even when every selected image loaded successfully.
+  if (requirePhotoBytes && includePhotos && imageRows.length && photos.length !== expectedPhotoPayloadCount) {
     technicalBlockers.push('listing_image_bytes_not_loaded_for_property24_submit')
   }
 
@@ -445,6 +617,11 @@ export function createProperty24ListingPlan({
       listingType,
       categoryContract,
       categoryModel,
+      categoryPayload: {
+        category: categoryPayload.category,
+        mappedPropertyInfo: categoryPayload.propertyInfo,
+        specialistFactKeys: Object.keys(categoryPayload.specialistFacts).filter((key) => normalizeProperty24ListingText(categoryPayload.specialistFacts[key])),
+      },
       status,
       price: price || 0,
       isPOA,
@@ -452,6 +629,7 @@ export function createProperty24ListingPlan({
       propertyTypeId,
       suburbId,
       imageCount: imageRows.length,
+      expectedPhotoPayloadCount,
       photoPayloadCount: photos ? photos.length : null,
       descriptionPresent: Boolean(description),
     },
