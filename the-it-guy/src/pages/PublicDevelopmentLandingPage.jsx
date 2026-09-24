@@ -144,8 +144,8 @@ export default function PublicDevelopmentLandingPage({
               {data.name}
             </h1>
             <p className="mt-6 max-w-sm text-base leading-6 text-white/90">
-              {overview.shortDescription ||
-                "Discover a considered collection of new homes at this sought-after address."}
+              {String(overview.shortDescription || "").trim() ||
+                `Discover ${data.name || "this development"}, a considered collection of new homes.`}
             </p>
             <div className="mt-7 flex gap-6 border-l border-white/35 pl-5 text-xs text-white/85">
               <span>

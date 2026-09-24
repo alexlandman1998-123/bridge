@@ -46,6 +46,73 @@ const createAnalyticsSessionId = () => {
   });
 };
 
+const absoluteUrl = (value) => {
+  const url = text(value);
+  if (!url || typeof window === "undefined") return "";
+  try {
+    return new URL(url, window.location.origin).toString();
+  } catch {
+    return "";
+  }
+};
+
+function PublicDevelopmentMetadata({ title, description, imageUrl }) {
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+
+    const pageUrl = `${window.location.origin}${window.location.pathname}`;
+    const image = absoluteUrl(imageUrl);
+    const tags = [
+      ["name", "description", description],
+      ["property", "og:title", title],
+      ["property", "og:description", description],
+      ["property", "og:url", pageUrl],
+      ["name", "twitter:title", title],
+      ["name", "twitter:description", description],
+      ...(image
+        ? [
+            ["property", "og:image", image],
+            ["name", "twitter:image", image],
+          ]
+        : []),
+    ];
+    const originalTitle = document.title;
+    const originals = tags.map(([attribute, key, content]) => {
+      const selector = `meta[${attribute}="${key}"]`;
+      const element = document.head.querySelector(selector);
+      const created = !element;
+      const meta =
+        element || document.head.appendChild(document.createElement("meta"));
+      meta.setAttribute(attribute, key);
+      const originalContent = meta.getAttribute("content");
+      if (text(content)) meta.setAttribute("content", content);
+      return { meta, created, originalContent };
+    });
+    const canonical = document.head.querySelector('link[rel="canonical"]');
+    const canonicalCreated = !canonical;
+    const canonicalLink =
+      canonical || document.head.appendChild(document.createElement("link"));
+    const originalCanonical = canonicalLink.getAttribute("href");
+    canonicalLink.setAttribute("rel", "canonical");
+    canonicalLink.setAttribute("href", pageUrl);
+    document.title = title;
+
+    return () => {
+      document.title = originalTitle;
+      originals.forEach(({ meta, created, originalContent }) => {
+        if (created) meta.remove();
+        else if (originalContent === null) meta.removeAttribute("content");
+        else meta.setAttribute("content", originalContent);
+      });
+      if (canonicalCreated) canonicalLink.remove();
+      else if (originalCanonical === null) canonicalLink.removeAttribute("href");
+      else canonicalLink.setAttribute("href", originalCanonical);
+    };
+  }, [description, imageUrl, title]);
+
+  return null;
+}
+
 export default function PublicDevelopmentResponsiveRoute() {
   const { slug = "" } = useParams();
   const [state, setState] = useState({ loading: true, data: null, error: "" });
@@ -377,6 +444,15 @@ export default function PublicDevelopmentResponsiveRoute() {
     "--development-accent": text(media.accentColour) || text(branding.accentColour) || "#d0ab55",
     "--development-surface": text(media.surfaceColour) || "#f5f2eb",
   };
+  const seo = marketing.listingOverview || {};
+  const seoTitle =
+    text(seo.seoTitle) || text(seo.listingTitle) || text(data.name) || "Arch9";
+  const seoDescription =
+    text(seo.seoMetaDescription) ||
+    text(seo.listingDescription) ||
+    text(data.description) ||
+    `Explore ${seoTitle}.`;
+  const socialPreviewImage = hero || images[0] || "";
 
   const sharedProps = {
     data,
@@ -392,13 +468,22 @@ export default function PublicDevelopmentResponsiveRoute() {
     freshness,
     renderVisualMap: publicVisualMap,
   };
-  return mobileViewport ? (
-    <div className="public-development-mobile" style={brandStyle}>
-      <MobilePublicDevelopmentExperience {...sharedProps} />
-    </div>
-  ) : (
-    <div className="public-development-desktop" style={brandStyle}>
-      <PublicDevelopmentLandingPage {...sharedProps} />
-    </div>
+  return (
+    <>
+      <PublicDevelopmentMetadata
+        title={seoTitle}
+        description={seoDescription}
+        imageUrl={socialPreviewImage}
+      />
+      {mobileViewport ? (
+        <div className="public-development-mobile" style={brandStyle}>
+          <MobilePublicDevelopmentExperience {...sharedProps} />
+        </div>
+      ) : (
+        <div className="public-development-desktop" style={brandStyle}>
+          <PublicDevelopmentLandingPage {...sharedProps} />
+        </div>
+      )}
+    </>
   );
 }

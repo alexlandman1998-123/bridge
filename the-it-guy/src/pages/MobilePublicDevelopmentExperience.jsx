@@ -44,8 +44,8 @@ export default function MobilePublicDevelopmentExperience({
     marketing.listingOverview?.locationLabel ||
     [data.suburb, data.city].filter(Boolean).join(', ');
   const description =
-    marketing.listingOverview?.shortDescription ||
-    "Contemporary coastal living in the heart of Sea Point.";
+    String(marketing.listingOverview?.shortDescription || '').trim() ||
+    `Discover ${String(data.name || 'this development').trim()}, a considered collection of new homes.`;
   const primaryColour = String(media.primaryColour || "#073e32").trim();
   const menuTextColour = menuForeground(primaryColour);
   const menuActionColour = menuTextColour === "#ffffff" ? "#ffffff" : "#101010";
