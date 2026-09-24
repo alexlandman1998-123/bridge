@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useEffect, useMemo, useState } from 'react'
+import './onboarding-profile-setup.css'
 import { ArrowRight, BriefcaseBusiness, Building2, CheckCircle2, LogOut, Route, ShieldCheck, UserRound } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuthSession } from '../context/AuthSessionContext'
