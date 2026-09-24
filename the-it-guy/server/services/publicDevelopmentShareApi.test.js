@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import sharp from 'sharp'
 import { buildDevelopmentPageHtml, createDevelopmentPageResponse, createDevelopmentShareImageResponse } from './publicDevelopmentShareApi.js'
 
 const shell = '<!doctype html><html><head><title>Arch9 | Platform</title><meta name="description" content="old" /><meta property="og:title" content="The Future of Property" /><meta property="og:image" content="https://app.arch9.co.za/brand/old.jpg" /></head><body><div id="root"></div><script type="module" src="/assets/app.js"></script></body></html>'
@@ -14,7 +15,7 @@ test('development HTML contains saved SEO metadata and retains the app shell', a
   })
   assert.equal(result.status, 200)
   assert.match(result.body, /<title>Madison Place \| Bardene<\/title>/)
-  assert.match(result.body, /property="og:image" content="https:\/\/app\.arch9\.co\.za\/api\/public\/development-share-image\?slug=madison-place-abcf1b8a"/)
+  assert.match(result.body, /property="og:image" content="https:\/\/app\.arch9\.co\.za\/api\/public\/development-share-image\?slug=madison-place-abcf1b8a&amp;v=[a-f0-9]{12}"/)
   assert.match(result.body, /src="\/assets\/app\.js"/)
   assert.doesNotMatch(result.body, /The Future of Property|brand\/old\.jpg/)
 })
@@ -25,8 +26,9 @@ test('metadata escapes saved text', () => {
   assert.match(html, /A &quot;home&quot;/)
 })
 
-test('share image URL signs the current cover on each request', async () => {
+test('share image URL directly serves an optimized current cover', async () => {
   let signedPath = ''
+  const source = await sharp({ create: { width: 20, height: 20, channels: 3, background: '#aec2bd' } }).png().toBuffer()
   const result = await createDevelopmentShareImageResponse({
     url: '/api/public/development-share-image?slug=madison-place-abcf1b8a',
     headers: { host: 'app.arch9.co.za' },
@@ -34,11 +36,13 @@ test('share image URL signs the current cover on each request', async () => {
     dependencies: {
       loadLanding: async () => landing,
       signCover: async (path) => { signedPath = path; return { data: { signedUrl: `${cover}&fresh=yes` }, error: null } },
+      fetchImage: async () => ({ ok: true, arrayBuffer: async () => source }),
     },
   })
-  assert.equal(result.status, 302)
+  assert.equal(result.status, 200)
   assert.equal(signedPath, 'developments/abc/cover/front.png')
-  assert.match(result.headers.Location, /fresh=yes/)
+  assert.equal(result.headers['Content-Type'], 'image/jpeg')
+  assert.deepEqual(await sharp(result.body).metadata().then(({ width, height }) => ({ width, height })), { width: 1200, height: 630 })
 })
 
 test('invalid slug is rejected before fetching data', async () => {

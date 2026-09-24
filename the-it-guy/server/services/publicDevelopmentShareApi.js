@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
+import { createHash } from 'node:crypto'
+import sharp from 'sharp'
 
 const text = (value) => String(value || '').trim()
 const escapeHtml = (value) => text(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
@@ -17,12 +19,13 @@ function metadata(data, slug, origin) {
   const seo = marketing.listingOverview || {}
   const media = marketing.mediaLibrary || {}
   const name = text(data.name) || 'Development'
+  const cover = text(media.coverImageUrl || assetOfType(data.assets, 'cover') || media.heroImageUrl)
+  const coverVersion = cover ? createHash('sha256').update(cover.split('?')[0]).digest('hex').slice(0, 12) : ''
   return {
     title: text(seo.seoTitle) || text(seo.listingTitle) || name,
     description: text(seo.seoMetaDescription) || text(seo.listingDescription) || text(data.description) || `Explore ${name}.`,
     url: `${origin}/development/${encodeURIComponent(slug)}`,
-    image: text(media.coverImageUrl || assetOfType(data.assets, 'cover') || media.heroImageUrl)
-      ? `${origin}/api/public/development-share-image?slug=${encodeURIComponent(slug)}` : '',
+    image: cover ? `${origin}/api/public/development-share-image?slug=${encodeURIComponent(slug)}&v=${coverVersion}` : '',
   }
 }
 
@@ -44,6 +47,9 @@ export function buildDevelopmentPageHtml(shell, meta) {
     ['name', 'twitter:description', meta.description],
     ['property', 'og:image', meta.image],
     ['name', 'twitter:image', meta.image],
+    ['property', 'og:image:width', meta.image ? '1200' : ''],
+    ['property', 'og:image:height', meta.image ? '630' : ''],
+    ['property', 'og:image:type', meta.image ? 'image/jpeg' : ''],
   ]) {
     if (value) html = setMeta(html, attribute, key, value)
     else if (key === 'og:image' || key === 'twitter:image')
@@ -99,7 +105,24 @@ export async function createDevelopmentShareImageResponse({ method = 'GET', url 
     const client = createClient(storageOrigin, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
     const { data: signed, error } = await (dependencies.signCover || ((path) => client.storage.from('documents').createSignedUrl(path, 3600)))(match[1])
     if (error || !signed?.signedUrl) throw error || new Error('Cover unavailable.')
-    return { status: 302, headers: { Location: signed.signedUrl, 'Cache-Control': 'public, s-maxage=300' }, body: '' }
+    let body = ''
+    if (method !== 'HEAD') {
+      const imageResponse = await (dependencies.fetchImage || fetch)(signed.signedUrl)
+      if (!imageResponse.ok) throw new Error('Cover download failed.')
+      body = await sharp(Buffer.from(await imageResponse.arrayBuffer()))
+        .resize(1200, 630, { fit: 'cover', position: 'centre' })
+        .jpeg({ quality: 82, mozjpeg: true })
+        .toBuffer()
+    }
+    return {
+      status: 200,
+      headers: {
+        'Content-Type': 'image/jpeg',
+        'Cache-Control': 'public, s-maxage=3600, stale-while-revalidate=86400',
+        'X-Content-Type-Options': 'nosniff',
+      },
+      body,
+    }
   } catch {
     return { status: 404, headers: { 'Cache-Control': 'no-store' }, body: '' }
   }
