@@ -236,14 +236,15 @@ export default function PublicDevelopmentLandingPage({
         </div>
         <div
           ref={gallery}
-          className="public-development-gallery-track mt-7 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-3 md:gap-6 md:px-8"
+          className="mt-7 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-3 md:gap-6 md:px-8"
+          style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
         >
           {galleryImages.map((url, index) => (
               <img
                 key={`${url}-${index}`}
                 src={url}
                 alt={`${data.name} gallery`}
-                className="h-56 w-[280px] shrink-0 snap-center rounded-[18px] object-cover md:h-[min(52vw,620px)] md:w-[min(72vw,920px)]"
+                className="h-56 w-[280px] shrink-0 snap-center rounded-[18px] object-cover md:h-96 md:w-2/3"
               />
             ))}
         </div>

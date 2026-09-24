@@ -104,12 +104,15 @@ export default function MobilePublicDevelopmentExperience({
           </button>
         </header>
         <div className="relative flex min-h-[100svh] items-end px-6 pb-[max(2.5rem,env(safe-area-inset-bottom))] pt-32">
-          <div className="public-development-helvetica w-full max-w-[590px]">
+          <div
+            className="w-full max-w-[590px]"
+            style={{ fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif' }}
+          >
             <span className="mb-5 block h-[3px] w-12 bg-[#d7b867]" aria-hidden="true" />
             <p className="text-[11px] font-bold uppercase tracking-[.25em] text-white">
               Now selling · {location || "Location to be confirmed"}
             </p>
-            <h1 className="mt-5 max-w-[360px] text-[clamp(3.15rem,13.5vw,4.6rem)] font-medium leading-[.9] tracking-[-.055em]">
+            <h1 className="mt-5 max-w-[360px] font-medium" style={{ fontSize: "clamp(3.15rem, 13.5vw, 4.6rem)", lineHeight: 0.9, letterSpacing: "-.055em" }}>
               {data.name}
             </h1>
             <p className="mt-6 max-w-[355px] text-[1.25rem] leading-[1.3] text-white/95">
@@ -203,20 +206,23 @@ export default function MobilePublicDevelopmentExperience({
         <div
           ref={galleryTrack}
           onScroll={updateGalleryIndex}
-          className="public-development-gallery-track mt-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-1"
+          className="mt-5 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-1"
+          style={{ scrollbarWidth: "none", WebkitOverflowScrolling: "touch" }}
         >
           {images.map((image, index) => (
             <button
               key={`${image}-${index}`}
               data-gallery-card
               onClick={() => openLightbox(index)}
-              className="relative w-[calc(100vw-56px)] shrink-0 snap-center overflow-hidden rounded-[18px] text-left"
+              className="relative shrink-0 snap-center overflow-hidden rounded-2xl text-left"
+              style={{ width: "calc(100vw - 56px)" }}
             >
               <img
                 src={image}
                 alt={`Development gallery ${index + 1}`}
                 loading="lazy"
-                className="h-[min(68vw,390px)] w-full object-cover"
+                className="w-full object-cover"
+                style={{ height: "min(68vw, 390px)" }}
               />
               <small className="absolute bottom-3 left-3 rounded-full bg-black/45 px-3 py-1.5 text-xs font-medium text-white backdrop-blur-sm">
                 {String(index + 1).padStart(2, "0")} /{" "}
@@ -324,7 +330,8 @@ export default function MobilePublicDevelopmentExperience({
       <a
         href="#enquire"
         onClick={scrollToEnquiry}
-        className="fixed inset-x-0 bottom-0 z-30 grid min-h-20 grid-cols-[1fr_1fr_auto] items-center gap-3 bg-[#fffdf9]/95 px-5 pb-[max(10px,env(safe-area-inset-bottom))] pt-2 shadow-[0_-5px_20px_rgba(9,38,30,.13)] backdrop-blur-md"
+        className="fixed inset-x-0 bottom-0 z-30 grid min-h-20 grid-cols-[1fr_1fr_auto] items-center gap-3 bg-white/95 px-5 pt-2 shadow-[0_-5px_20px_rgba(9,38,30,.13)] backdrop-blur-md"
+        style={{ paddingBottom: "max(10px, env(safe-area-inset-bottom))" }}
       >
         <span className="text-sm leading-tight text-[#64766d]">
           From <b className="block font-sans text-xl font-semibold text-[#123b31]">{money(fromPrice)}</b>

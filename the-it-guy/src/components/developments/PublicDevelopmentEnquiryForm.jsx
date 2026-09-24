@@ -30,7 +30,7 @@ function contactUrl(baseUrl, developmentName, form) {
 export default function PublicDevelopmentEnquiryForm({ developmentName, agency, enquiry, tone = "dark" }) {
   const isLight = tone === "light";
   const fieldClass = isLight
-    ? "border-[#d7dfda] bg-white text-[#14352c] placeholder:text-[#819087] focus:border-[#14352c]"
+    ? "border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 focus:border-slate-800"
     : "border-white/20 bg-white text-[#14352c] placeholder:text-[#819087] focus:border-white";
   const [form, setForm] = useState(() => {
     let interest = developmentName;
@@ -62,24 +62,24 @@ export default function PublicDevelopmentEnquiryForm({ developmentName, agency, 
   };
 
   return (
-    <form onSubmit={submit} className={`rounded-[20px] border p-5 md:p-6 ${isLight ? "border-[#dce4df] bg-white shadow-sm" : "border-white/20 bg-white/[0.07] backdrop-blur-sm"}`}>
+    <form onSubmit={submit} className={`rounded-[20px] border p-5 md:p-6 ${isLight ? "border-slate-200 bg-white shadow-sm" : "border-white/20 bg-white/[0.07] backdrop-blur-sm"}`}>
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className={`text-xs font-semibold uppercase tracking-[.16em] ${isLight ? "text-[#64766d]" : "text-white/65"}`}>Enquire</p>
-          <h3 className={`mt-1 font-serif text-2xl ${isLight ? "text-[#14352c]" : "text-white"}`}>Talk to the sales team.</h3>
+          <p className={`text-xs font-semibold uppercase tracking-[.16em] ${isLight ? "text-slate-600" : "text-white/65"}`}>Enquire</p>
+          <h3 className={`mt-1 font-serif text-2xl ${isLight ? "text-slate-800" : "text-white"}`}>Talk to the sales team.</h3>
         </div>
-        <span className={`rounded-full border px-3 py-1 text-xs ${isLight ? "border-[#d7dfda] text-[#4e6258]" : "border-white/25 text-white/75"}`}>{agency}</span>
+        <span className={`rounded-full border px-3 py-1 text-xs ${isLight ? "border-slate-300 text-slate-700" : "border-white/25 text-white/75"}`}>{agency}</span>
       </div>
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-[#4e6258]" : "text-white/80"}`}>Full name<input required name="name" value={form.name} onChange={update("name")} placeholder="Your name" className={`h-11 rounded-lg border px-3 text-sm outline-none ring-0 ${fieldClass}`} /></label>
-        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-[#4e6258]" : "text-white/80"}`}>Email address<input required type="email" name="email" value={form.email} onChange={update("email")} placeholder="you@email.com" className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} /></label>
-        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-[#4e6258]" : "text-white/80"}`}>Phone number<input required type="tel" name="phone" value={form.phone} onChange={update("phone")} placeholder="Your number" className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} /></label>
-        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-[#4e6258]" : "text-white/80"}`}>I’m interested in<select name="interest" value={form.interest} onChange={update("interest")} className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`}><option>{developmentName}</option><option>Reserve a unit</option><option>Viewing options</option><option>Pricing and availability</option></select></label>
+        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Full name<input required name="name" value={form.name} onChange={update("name")} placeholder="Your name" className={`h-11 rounded-lg border px-3 text-sm outline-none ring-0 ${fieldClass}`} /></label>
+        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Email address<input required type="email" name="email" value={form.email} onChange={update("email")} placeholder="you@email.com" className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} /></label>
+        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>Phone number<input required type="tel" name="phone" value={form.phone} onChange={update("phone")} placeholder="Your number" className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`} /></label>
+        <label className={`grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>I’m interested in<select name="interest" value={form.interest} onChange={update("interest")} className={`h-11 rounded-lg border px-3 text-sm outline-none ${fieldClass}`}><option>{developmentName}</option><option>Reserve a unit</option><option>Viewing options</option><option>Pricing and availability</option></select></label>
       </div>
-      <label className={`mt-3 grid gap-1.5 text-xs font-medium ${isLight ? "text-[#4e6258]" : "text-white/80"}`}>How can we help?<textarea name="message" value={form.message} onChange={update("message")} rows="3" placeholder="Tell us what you’d like to know." className={`resize-none rounded-lg border px-3 py-2.5 text-sm outline-none ${fieldClass}`} /></label>
-      {status ? <p className={`mt-4 flex items-start gap-2 text-sm leading-5 ${isLight ? "text-[#14352c]" : "text-white/90"}`}><CheckCircle2 size={17} className="mt-0.5 shrink-0" />{status}</p> : null}
+      <label className={`mt-3 grid gap-1.5 text-xs font-medium ${isLight ? "text-slate-700" : "text-white/80"}`}>How can we help?<textarea name="message" value={form.message} onChange={update("message")} rows="3" placeholder="Tell us what you’d like to know." className={`resize-none rounded-lg border px-3 py-2.5 text-sm outline-none ${fieldClass}`} /></label>
+      {status ? <p className={`mt-4 flex items-start gap-2 text-sm leading-5 ${isLight ? "text-slate-800" : "text-white/90"}`}><CheckCircle2 size={17} className="mt-0.5 shrink-0" />{status}</p> : null}
       <button type="submit" className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[var(--development-accent)] px-5 text-sm font-semibold text-[#14352c] transition hover:brightness-105">Send enquiry <ArrowRight size={17} /></button>
-      <p className={`mt-3 text-xs leading-5 ${isLight ? "text-[#64766d]" : "text-white/60"}`}>By sending, you agree that the {agency} sales team may contact you about {developmentName}.</p>
+      <p className={`mt-3 text-xs leading-5 ${isLight ? "text-slate-600" : "text-white/60"}`}>By sending, you agree that the {agency} sales team may contact you about {developmentName}.</p>
     </form>
   );
 }

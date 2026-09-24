@@ -23,8 +23,11 @@ export default function PublicDevelopmentEnquiryDrawer({
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[100] flex items-end bg-black/45 backdrop-blur-[2px]" role="dialog" aria-modal="true" aria-label="Enquire about this development" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="max-h-[92svh] w-full overflow-y-auto rounded-t-[28px] bg-[var(--development-surface,#f5f2eb)] px-5 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-6 text-[#14352c] shadow-[0_-20px_60px_rgba(0,0,0,.22)] md:mx-auto md:max-w-2xl md:rounded-t-[28px] md:px-8">
+    <div className="fixed inset-0 flex items-end bg-black/45 backdrop-blur-sm" style={{ zIndex: 100 }} role="dialog" aria-modal="true" aria-label="Enquire about this development" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section
+        className="w-full overflow-y-auto rounded-t-3xl px-5 pt-6 text-[#14352c] shadow-2xl md:mx-auto md:max-w-2xl md:px-8"
+        style={{ maxHeight: "92svh", paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))", backgroundColor: "var(--development-surface, #f5f2eb)" }}
+      >
         <div className="mx-auto mb-5 flex max-w-xl items-start justify-between gap-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[.18em] text-[#64766d]">Make it home</p>
