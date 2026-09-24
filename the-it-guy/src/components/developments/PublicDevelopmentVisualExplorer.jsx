@@ -207,6 +207,7 @@ function UnitDrawer({
   onClose,
 }) {
   if (!unit) return null;
+  const inferredBedrooms = unit.bedrooms ?? (Number(String(unit.unitType || '').match(/(\d+)\s*bed/i)?.[1]) || null);
   const status = STATUS[visualUnitStatus(unit.status)];
   const images = developmentImages(media);
   const galleryImages = images.length ? images : [unitImage(unit, media)];
@@ -275,7 +276,7 @@ function UnitDrawer({
         <div className="mt-6 grid grid-cols-4 divide-x border-y border-[#e6dfd3] py-4 text-center text-xs text-[#61746a]">
           <span>
             <BedDouble size={18} className="mx-auto mb-1" />
-            {unit.bedrooms ?? "—"} beds
+            {inferredBedrooms ?? "—"} beds
           </span>
           <span>
             <Columns3 size={18} className="mx-auto mb-1" />
@@ -517,20 +518,37 @@ export default function PublicDevelopmentVisualExplorer({
     () => new Set(getVisualMapSceneUnitIds(visualMap, sceneId)),
     [visualMap, sceneId],
   );
+  // Developments often set shared specifications on one representative unit.
+  // Surface those values for every residence of the same unit type unless a
+  // unit has its own explicit override.
+  const inventoryWithTypeDefaults = useMemo(() => {
+    const templates = new Map();
+    inventory.forEach((unit) => {
+      const key = String(unit.unitType || '').trim();
+      if (!key) return;
+      const existing = templates.get(key) || {};
+      templates.set(key, {
+        bedrooms: existing.bedrooms ?? unit.bedrooms,
+        bathrooms: existing.bathrooms ?? unit.bathrooms,
+        parkingCount: existing.parkingCount ?? unit.parkingCount,
+      });
+    });
+    return inventory.map((unit) => ({ ...templates.get(String(unit.unitType || '').trim()), ...unit }));
+  }, [inventory]);
   const sceneInventory = useMemo(
     () =>
       allMappedUnitIds.size
-        ? inventory.filter((unit) => sceneUnitIds.has(String(unit.id)))
-        : inventory,
-    [allMappedUnitIds, inventory, sceneUnitIds],
+        ? inventoryWithTypeDefaults.filter((unit) => sceneUnitIds.has(String(unit.id)))
+        : inventoryWithTypeDefaults,
+    [allMappedUnitIds, inventoryWithTypeDefaults, sceneUnitIds],
   );
   const units = useMemo(
     () => filterPublicVisualUnits(sceneInventory, filters),
     [sceneInventory, filters],
   );
   const unitsById = useMemo(
-    () => new Map(inventory.map((unit) => [String(unit.id), unit])),
-    [inventory],
+    () => new Map(inventoryWithTypeDefaults.map((unit) => [String(unit.id), unit])),
+    [inventoryWithTypeDefaults],
   );
   const selected = unitsById.get(String(selectedId)) || null;
   const readiness = useMemo(
@@ -916,11 +934,12 @@ export default function PublicDevelopmentVisualExplorer({
       tabIndex={0}
       className="relative h-full max-w-full min-h-[430px] touch-none overflow-hidden bg-[#d8ded8] select-none"
       style={sceneAspectRatio ? { aspectRatio: sceneAspectRatio } : undefined}
-      onWheel={(event) =>
+      onWheel={(event) => {
+        event.preventDefault();
         setZoom((value) =>
           Math.min(2.5, Math.max(1, value + (event.deltaY < 0 ? 0.1 : -0.1))),
-        )
-      }
+        );
+      }}
       onKeyDown={(event) => {
         if (event.key === "+" || event.key === "=")
           setZoom((value) => Math.min(2.5, value + 0.2));
@@ -1002,7 +1021,7 @@ export default function PublicDevelopmentVisualExplorer({
       }}
     >
       <div
-        className="absolute inset-0 origin-center motion-safe:transition-transform motion-safe:duration-200"
+        className="absolute inset-0 origin-center"
         style={{ transform }}
       >
         {sceneImageStatus === "loading" && previousSceneStyle ? (
@@ -1329,7 +1348,7 @@ export default function PublicDevelopmentVisualExplorer({
             residence list remains current.
           </div>
         ) : null}
-        <div className="flex items-center gap-2 overflow-x-auto border-b border-[#e5dfd4] p-3 md:flex-wrap md:p-4">
+        <div className="grid gap-3 border-b border-[#e5dfd4] p-3 md:flex md:items-center md:gap-2 md:overflow-x-auto md:p-4">
           {mobile ? (
             <button
               onClick={() => setFilterOpen(true)}
@@ -1357,7 +1376,7 @@ export default function PublicDevelopmentVisualExplorer({
               <Share2 size={15} /> Share
             </button>
           </div>
-          <div className="ml-auto flex shrink-0 overflow-hidden rounded-md border bg-white">
+          <div className="flex shrink-0 overflow-hidden rounded-md border bg-white md:ml-auto">
             <button
               aria-label="Map and list"
               onClick={() => setLayout("list")}
@@ -1382,7 +1401,7 @@ export default function PublicDevelopmentVisualExplorer({
           </div>
         </div>
         {mobile ? (
-          <div className="border-b p-3">
+          <div className="border-b px-3 pb-4">
             <label className="relative block">
               <Search
                 size={16}
@@ -1392,7 +1411,7 @@ export default function PublicDevelopmentVisualExplorer({
                 value={filters.query}
                 onChange={(event) => setFilter("query", event.target.value)}
                 placeholder="Search residences"
-                className="h-11 w-full rounded-md border pl-9 pr-3 text-sm"
+                className="h-14 w-full rounded-xl border border-[#dfe4e0] bg-white pl-11 pr-3 text-base shadow-sm"
               />
             </label>
           </div>
@@ -1413,7 +1432,7 @@ export default function PublicDevelopmentVisualExplorer({
             {canvas}
           </div>
           <aside
-            className={`${mobile && view === "map" ? "hidden" : ""} min-h-0 overflow-y-auto border-l border-[#e5dfd4] bg-[#f8f6f1]`}
+            className={`${mobile && view === "map" ? "hidden" : ""} min-h-0 overflow-y-auto overscroll-contain touch-pan-y border-l border-[#e5dfd4] bg-[#f8f6f1] [-webkit-overflow-scrolling:touch]`}
           >
             <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-[#fffdf9]/95 px-4 py-3 backdrop-blur">
               <span>

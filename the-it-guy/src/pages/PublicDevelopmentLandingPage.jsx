@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, ChevronRight, MapPin } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronRight, MapPin, Menu, X } from "lucide-react";
 import { useRef, useState } from "react";
 import PublicDevelopmentVisualExplorer from "../components/developments/PublicDevelopmentVisualExplorer.jsx";
 
@@ -74,6 +74,7 @@ export default function PublicDevelopmentLandingPage({
 }) {
   const [typeFilter, setTypeFilter] = useState("all");
   const [availableOnly, setAvailableOnly] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const gallery = useRef(null);
   const overview = marketing.listingOverview || {};
   const developmentLogoLight = text(media.developmentLogoLightUrl || media.developmentLogoUrl);
@@ -109,12 +110,12 @@ export default function PublicDevelopmentLandingPage({
         <img
           src={hero}
           alt=""
-          className="absolute inset-0 h-full w-full object-cover"
+          className="absolute inset-0 h-full w-full object-cover object-center md:object-center"
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#061c18]/82 via-[#0c2821]/34 to-transparent" />
         <header className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-[1420px] items-center px-6 py-6 md:px-10">
           <DevelopmentMark name={data.name} logo={developmentLogoLight} />
-          <nav className="ml-auto flex gap-6 text-xs">
+          <nav className="ml-auto hidden gap-6 text-xs lg:flex">
             {[
               ["Overview", "#overview"],
               ["Residences", "#residences"],
@@ -128,47 +129,45 @@ export default function PublicDevelopmentLandingPage({
               </a>
             ))}
           </nav>
+          <button type="button" aria-label="Open menu" onClick={() => setMobileMenuOpen((open) => !open)} className="ml-auto grid h-14 w-14 place-items-center rounded-full border border-white/75 bg-black/10 lg:hidden"><span className="sr-only">Menu</span>{mobileMenuOpen ? <X size={29} /> : <Menu size={31} />}</button>
+          {mobileMenuOpen ? <nav className="absolute inset-x-5 top-[88px] grid gap-1 rounded-2xl border border-white/25 bg-[#092019]/95 p-3 text-sm shadow-2xl lg:hidden">{[["Overview", "#overview"], ["Residences", "#residences"], ["Availability", "#availability"], ["Location", "#location"], ["Gallery", "#gallery"], ["Enquire", "#enquire"]].map(([label, href]) => <a key={label} href={href} onClick={() => setMobileMenuOpen(false)} className="rounded-lg px-4 py-3 hover:bg-white/10">{label}</a>)}</nav> : null}
         </header>
-        <div className="relative mx-auto flex min-h-[86vh] max-w-[1420px] items-end px-6 pb-16 pt-32 md:px-10 md:pb-20">
-          <div className="max-w-xl">
+        <div className="relative mx-auto flex min-h-[86vh] max-w-[1420px] items-end px-5 pb-7 pt-28 md:px-10 md:pb-20">
+          <div className="w-full max-w-xl rounded-t-[26px] bg-[#071711]/82 px-5 py-6 backdrop-blur-[2px] sm:rounded-none sm:bg-transparent sm:p-0">
             <Eyebrow className="text-[#d7b867]">
               Now selling · {location || "Location to be confirmed"}
             </Eyebrow>
-            <h1 className="mt-4 font-serif text-5xl leading-[.93] tracking-[-.05em] md:text-7xl">
+            <h1 className="mt-4 font-serif text-[3.25rem] leading-[.93] tracking-[-.05em] md:text-7xl">
               {data.name}
             </h1>
             <p className="mt-6 max-w-sm text-base leading-6 text-white/90">
               {overview.shortDescription ||
                 "Discover a considered collection of new homes at this sought-after address."}
             </p>
-            <div className="mt-7 flex gap-6 border-l border-white/35 pl-5 text-xs text-white/85">
-              <span>
+            <div className="mt-7 grid grid-cols-2 rounded-2xl border border-white/70 bg-[#08241d]/90 px-6 py-5 text-sm text-white/85">
+              <span className="border-r border-white/45">
                 From
                 <strong className="block text-xl text-white">
                   {money(fromPrice, true)}
                 </strong>
               </span>
-              <span>
-                <strong className="block text-xl text-white">{bedroomSummary}</strong>
-                Bedrooms
-              </span>
-              <span>
+              <span className="pl-6">
                 <strong className="block text-xl text-white">
                   {available.length}
                 </strong>
                 Available
               </span>
             </div>
-            <div className="mt-8 flex gap-3">
+            <div className="mt-5 flex gap-3">
               <a
                 href="#residences"
-                className="inline-flex items-center gap-2 bg-[#d0ab55] px-5 py-3 text-sm font-semibold text-[#14352c]"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#d0ab55] px-5 py-4 text-lg font-semibold text-[#14352c] sm:w-auto"
               >
                 View residences <ArrowRight size={15} />
               </a>
               <a
                 href={enquiry}
-                className="border border-white/70 px-5 py-3 text-sm font-semibold"
+                className="hidden border border-white/70 px-5 py-3 text-sm font-semibold sm:block"
               >
                 Enquire now
               </a>
