@@ -1,7 +1,7 @@
 import { ArrowLeft, ArrowRight, ChevronRight } from "lucide-react";
 import { useRef, useState } from "react";
 import PublicDevelopmentVisualExplorer from "../components/developments/PublicDevelopmentVisualExplorer.jsx";
-import PublicDevelopmentEnquiryForm from "../components/developments/PublicDevelopmentEnquiryForm.jsx";
+import PublicDevelopmentEnquiryDrawer from "../components/developments/PublicDevelopmentEnquiryDrawer.jsx";
 
 const STATUS = {
   available: ["Available", "bg-[#e7f4eb] text-[#286647]", "bg-[#38a467]"],
@@ -46,8 +46,8 @@ const Eyebrow = ({ children, className = "" }) => (
 function AgencyMark({ name, logo }) {
   return logo ? <img src={logo} alt={`${name} logo`} className="h-8 max-w-[145px] object-contain object-left" /> : <span className="font-semibold tracking-[.15em] text-white">{text(name).toUpperCase()}</span>;
 }
-function DevelopmentMark({ name, logo }) {
-  if (logo) return <img src={logo} alt={`${name} logo`} className="h-10 max-w-[180px] object-contain object-left" />;
+function DevelopmentMark({ name, logo, className = "h-10 max-w-[180px]" }) {
+  if (logo) return <img src={logo} alt={`${name} logo`} className={`${className} object-contain object-left`} />;
   return (
     <span className="inline-flex items-center gap-2 text-white">
       <i className="grid h-8 w-6 place-items-center border border-white/70 text-[.63rem] font-medium tracking-[-.13em]">
@@ -72,9 +72,11 @@ export default function PublicDevelopmentLandingPage({
   images,
   enquiry,
   freshness,
+  renderVisualMap,
 }) {
   const [typeFilter, setTypeFilter] = useState("all");
   const [availableOnly, setAvailableOnly] = useState(false);
+  const [enquiryOpen, setEnquiryOpen] = useState(false);
   const gallery = useRef(null);
   const overview = marketing.listingOverview || {};
   const developmentLogoLight = text(media.developmentLogoLightUrl || media.developmentLogoUrl);
@@ -98,13 +100,12 @@ export default function PublicDevelopmentLandingPage({
       (!availableOnly || keyFor(unit.status) === "available"),
   );
   const location =
-    overview.locationLabel ||
     data.location ||
+    overview.locationLabel ||
     [data.suburb, data.city].filter(Boolean).join(", ");
   const scrollToEnquiry = (event) => {
     event?.preventDefault();
-    document.getElementById("enquire")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    window.setTimeout(() => document.querySelector("#enquire input[name='name']")?.focus(), 550);
+    setEnquiryOpen(true);
   };
   return (
     <main className="min-h-screen bg-[#f5f2eb] text-[#153d33]">
@@ -119,7 +120,7 @@ export default function PublicDevelopmentLandingPage({
         />
         <div className="absolute inset-0 bg-gradient-to-r from-[#061c18]/82 via-[#0c2821]/34 to-transparent" />
         <header className="absolute inset-x-0 top-0 z-10 mx-auto flex max-w-[1420px] items-center px-6 py-6 md:px-10">
-          <DevelopmentMark name={data.name} logo={developmentLogoLight} />
+          <DevelopmentMark name={data.name} logo={developmentLogoLight} className="h-16 max-w-[300px]" />
           <nav className="ml-auto flex gap-6 text-xs">
             {[
               ["Overview", "#overview"],
@@ -128,7 +129,7 @@ export default function PublicDevelopmentLandingPage({
               ["Gallery", "#gallery"],
               ["Enquire", "#enquire"],
             ].map(([label, href]) => (
-              <a key={label} href={href} className="hover:text-[#d5b365]">
+              <a key={label} href={href} onClick={label === "Enquire" ? scrollToEnquiry : undefined} className="hover:text-[#d5b365]">
                 {label}
               </a>
             ))}
@@ -187,6 +188,7 @@ export default function PublicDevelopmentLandingPage({
         media={media}
         enquiry={enquiry}
         freshness={freshness}
+        visualMapOverride={renderVisualMap}
       />
       <section className="border-y border-[#e1dacd] bg-[#ece7dc]">
         <div className="mx-auto grid max-w-[1280px] grid-cols-2 divide-x divide-y divide-[#dcd3c3] px-5 md:grid-cols-4 md:divide-y-0 md:px-8">
@@ -234,20 +236,14 @@ export default function PublicDevelopmentLandingPage({
         </div>
         <div
           ref={gallery}
-          className="mt-8 flex snap-x gap-4 overflow-x-auto px-5 pb-3 md:px-8"
+          className="public-development-gallery-track mt-7 flex snap-x snap-mandatory gap-4 overflow-x-auto px-5 pb-3 md:gap-6 md:px-8"
         >
-          {galleryImages
-            .concat(
-              galleryImages.length < 4
-                ? [hero, media.sitePlanUrl].filter((url) => url && !isDevelopmentLogo(url))
-                : [],
-            )
-            .map((url, index) => (
+          {galleryImages.map((url, index) => (
               <img
                 key={`${url}-${index}`}
                 src={url}
                 alt={`${data.name} gallery`}
-                className="h-56 w-[280px] shrink-0 snap-start rounded-[8px] object-cover md:h-64 md:w-[360px]"
+                className="h-56 w-[280px] shrink-0 snap-center rounded-[18px] object-cover md:h-[min(52vw,620px)] md:w-[min(72vw,920px)]"
               />
             ))}
         </div>
@@ -257,7 +253,7 @@ export default function PublicDevelopmentLandingPage({
         className="mx-auto max-w-[1280px] px-5 py-20 md:px-8 md:py-28"
       >
         <Eyebrow>Live availability</Eyebrow>
-        <h2 className="mt-3 font-serif text-4xl md:text-5xl">
+        <h2 className="mt-3 font-serif text-4xl text-[#111111] md:text-5xl">
           Choose your residence.
         </h2>
         <div className="mt-7 flex flex-wrap gap-2">
@@ -307,30 +303,27 @@ export default function PublicDevelopmentLandingPage({
           </div>
         </div>
       </section>
-      <section id="enquire" className="bg-[#063a31] text-[#f7f0e3]">
-        <div className="mx-auto grid max-w-[1280px] gap-8 px-5 py-16 md:grid-cols-[1fr_.95fr] md:items-center md:px-8 md:py-20">
-          <div>
-            <Eyebrow className="text-[#d5b365]">
-              Make {data.name} home
-            </Eyebrow>
-            <h2 className="mt-3 font-serif text-4xl leading-[1.02] md:text-5xl">
-              Let’s talk about your future home.
-            </h2>
+      <footer id="enquire" className="bg-[#063a31] text-[#f7f0e3]">
+        <div className="mx-auto flex max-w-[1280px] flex-col gap-8 px-5 py-12 md:flex-row md:items-end md:justify-between md:px-8 md:py-14">
+          <div className="space-y-4">
+            <DevelopmentMark name={data.name} logo={developmentLogoLight} className="h-14 max-w-[260px]" />
+            <p className="max-w-md text-sm leading-6 text-[#d2ded6]">
+              {data.name} is proudly presented by {agency}.
+            </p>
           </div>
-          <p className="text-sm leading-6 text-[#d2ded6]">
-            Register your interest or speak to the {agency} sales team for more
-            information about {data.name}.
-          </p>
-          <PublicDevelopmentEnquiryForm developmentName={data.name} agency={agency} enquiry={enquiry} />
-        </div>
-        <footer className="border-t border-white/15">
-          <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-5 px-5 py-6 text-xs text-white/65 md:px-8">
-            <DevelopmentMark name={data.name} logo={developmentLogoDark} />
-            <span>{location}</span>
+          <div className="flex flex-col gap-2 text-sm text-[#d2ded6] md:text-right">
+            {location ? <span>{location}</span> : null}
             <span>Privacy · Terms · Powered by Arch9</span>
           </div>
-        </footer>
-      </section>
+        </div>
+      </footer>
+      <PublicDevelopmentEnquiryDrawer
+        open={enquiryOpen}
+        onClose={() => setEnquiryOpen(false)}
+        developmentName={data.name}
+        agency={agency}
+        enquiry={enquiry}
+      />
     </main>
   );
 }

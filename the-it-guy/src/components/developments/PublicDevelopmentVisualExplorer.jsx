@@ -428,16 +428,19 @@ export default function PublicDevelopmentVisualExplorer({
   mobile = false,
   freshness = {},
   previewVisualMap = null,
+  visualMapOverride = null,
   initialSceneId = "",
   simulatedFailedSceneIds = [],
   embedded = false,
 }) {
   const visualMap = useMemo(
     () =>
-      previewVisualMap
+      visualMapOverride
+        ? resolveDevelopmentVisualMap({ visualMap: visualMapOverride })
+        : previewVisualMap
         ? resolveDevelopmentVisualMap({ visualMap: previewVisualMap })
         : getPublishedVisualMap(media.visualMap),
-    [media.visualMap, previewVisualMap],
+    [media.visualMap, previewVisualMap, visualMapOverride],
   );
   const [sceneId, setSceneId] = useState(() => {
     const requested =
@@ -470,6 +473,7 @@ export default function PublicDevelopmentVisualExplorer({
   );
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [sceneImageStatus, setSceneImageStatus] = useState("loading");
+  const [sceneImageAspectRatio, setSceneImageAspectRatio] = useState(null);
   const [previousSceneStyle, setPreviousSceneStyle] = useState(null);
   const [journeyNotice, setJourneyNotice] = useState("");
   const [failedSceneIds, setFailedSceneIds] = useState(
@@ -655,6 +659,8 @@ export default function PublicDevelopmentVisualExplorer({
     const image = new Image();
     image.onload = () => {
       if (!active) return;
+      if (image.naturalWidth && image.naturalHeight)
+        setSceneImageAspectRatio(image.naturalWidth / image.naturalHeight);
       setSceneImageStatus("ready");
       setFailedSceneIds((current) => {
         if (!current.has(scene.id)) return current;
@@ -665,6 +671,7 @@ export default function PublicDevelopmentVisualExplorer({
     };
     image.onerror = () => {
       if (!active) return;
+      setSceneImageAspectRatio(null);
       setSceneImageStatus("error");
       setFailedSceneIds((current) => new Set([...current, scene.id]));
     };
@@ -878,18 +885,22 @@ export default function PublicDevelopmentVisualExplorer({
       // The user can cancel the native share sheet without affecting their selections.
     }
   };
+  const sceneViewport = normaliseSitePlanViewport(scene?.viewport);
+  const sourceAspectRatio =
+    sceneImageAspectRatio ||
+    (Number(scene?.background?.width) > 0 && Number(scene?.background?.height) > 0
+      ? Number(scene.background.width) / Number(scene.background.height)
+      : 1);
+  const sceneAspectRatio =
+    sourceAspectRatio * (sceneViewport.width / sceneViewport.height);
   const transform = `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`;
   const canvas = (
     <div
       role="application"
       aria-label={`Interactive ${scene?.name || "development"} plan. Use plus and minus to zoom and drag to pan.`}
       tabIndex={0}
-      className="relative h-full min-h-[430px] touch-none overflow-hidden bg-[#d8ded8] select-none"
-      onWheel={(event) =>
-        setZoom((value) =>
-          Math.min(2.5, Math.max(1, value + (event.deltaY < 0 ? 0.1 : -0.1))),
-        )
-      }
+      className={`relative touch-none overflow-hidden bg-[#d8ded8] select-none ${mobile ? "h-full min-h-[430px] w-full" : fullscreen ? "h-full max-w-full w-auto" : "w-full"}`}
+      style={mobile ? undefined : { aspectRatio: sceneAspectRatio }}
       onKeyDown={(event) => {
         if (event.key === "+" || event.key === "=")
           setZoom((value) => Math.min(2.5, value + 0.2));
@@ -1373,11 +1384,11 @@ export default function PublicDevelopmentVisualExplorer({
               ? "calc(100vh - 100px)"
               : mobile
                 ? "68svh"
-                : "min(690px, 72vh)",
+                : undefined,
           }}
         >
           <div
-            className={`${mobile && view !== "map" ? "hidden" : ""} min-h-0`}
+            className={`${mobile && view !== "map" ? "hidden" : ""} min-h-0 ${mobile ? "" : "flex items-center justify-center bg-[#d8ded8]"}`}
           >
             {canvas}
           </div>
@@ -1516,34 +1527,11 @@ export default function PublicDevelopmentVisualExplorer({
     >
       {!embedded ? (
         <div className="mx-auto mb-7 max-w-[1480px] px-5">
-          <p className="text-[10px] font-bold uppercase tracking-[.2em] text-[#a47d31]">
-            Live development visualiser
-          </p>
-          <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <h2 className="font-serif text-4xl leading-none text-[#143d33] md:text-5xl">
               Find your place.
             </h2>
             <div className="flex flex-wrap items-center gap-3 text-[10px] font-semibold uppercase tracking-[.1em] text-[#61736a]">
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 ${freshness.status === "offline" || freshness.status === "delayed" ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}
-                title={
-                  freshness.updatedAt
-                    ? `Updated ${new Date(freshness.updatedAt).toLocaleTimeString()}`
-                    : "Connecting to live availability"
-                }
-              >
-                <i
-                  className={`h-1.5 w-1.5 rounded-full ${freshness.status === "refreshing" || freshness.status === "connecting" ? "animate-pulse bg-amber-500" : freshness.status === "offline" || freshness.status === "delayed" ? "bg-amber-600" : "bg-emerald-600"}`}
-                />
-                {freshness.status === "offline"
-                  ? "Offline · last known"
-                  : freshness.status === "delayed"
-                    ? "Live updates delayed"
-                    : freshness.status === "refreshing" ||
-                        freshness.status === "connecting"
-                      ? "Refreshing"
-                      : "Live availability"}
-              </span>
               {Object.entries(STATUS).map(([key, status]) => (
                 <span key={key} className="flex items-center gap-1.5">
                   <i

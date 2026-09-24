@@ -1363,9 +1363,33 @@ function normalizeMarketingContentForm(input = null) {
   }
 }
 
-function buildMarketingForm(profile = {}, development = {}) {
+function findMarketingAssetDocumentUrl(documents = [], documentType = '') {
+  const targetType = String(documentType || '').trim().toLowerCase()
+  return (Array.isArray(documents) ? documents : []).find((document) =>
+    String(document?.documentType || document?.document_type || '').trim().toLowerCase() === targetType &&
+    !document?.archivedAt &&
+    !document?.archived_at &&
+    String(document?.fileUrl || document?.file_url || '').trim(),
+  )?.fileUrl || ''
+}
+
+function buildMarketingForm(profile = {}, development = {}, documents = []) {
   const base = normalizeMarketingContentForm(profile?.marketingContent)
   const normalized = { ...base }
+  const latestLightLogo = findMarketingAssetDocumentUrl(documents, 'logo')
+  const latestDarkLogo = findMarketingAssetDocumentUrl(documents, 'logo-dark')
+
+  // Marketing content is edited as one JSON document. Recover the canonical
+  // uploaded records if an older incomplete save omitted one CI variant.
+  normalized.mediaLibrary = {
+    ...normalized.mediaLibrary,
+    developmentLogoUrl: normalized.mediaLibrary.developmentLogoUrl || latestLightLogo,
+    developmentLogoLightUrl:
+      normalized.mediaLibrary.developmentLogoLightUrl ||
+      normalized.mediaLibrary.developmentLogoUrl ||
+      latestLightLogo,
+    developmentLogoDarkUrl: normalized.mediaLibrary.developmentLogoDarkUrl || latestDarkLogo,
+  }
 
   normalized.listingOverview = {
     ...base.listingOverview,
@@ -1868,7 +1892,7 @@ function normalizeSellerDetailsForm(value = {}) {
 function buildDetailsForm(data) {
   const development = data?.development || {}
   const profile = data?.profile || {}
-  const marketing = buildMarketingForm(profile, development)
+  const marketing = buildMarketingForm(profile, development, data?.documents)
 
   return {
     name: development.name || '',
@@ -4848,6 +4872,7 @@ function DevelopmentDetail() {
     try {
       setDetailsSaving(true)
       setFeedback('')
+      setError('')
       await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload())
       setFeedback('Marketing content updated.')
       window.dispatchEvent(new Event('itg:developments-changed'))

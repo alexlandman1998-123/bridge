@@ -308,6 +308,7 @@ export default function PublicDevelopmentResponsiveRoute() {
       : visualMap;
   const assetSitePlan = firstAssetUrl(data.assets, "site_plan");
   const assetLogo = firstAssetUrl(data.assets, "logo");
+  const assetDarkLogo = firstAssetUrl(data.assets, "logo-dark");
   const hydratedMedia = hydrateVisualMapMediaLibrary({
     ...mediaLibrary,
     visualMap: publicVisualMap,
@@ -319,6 +320,7 @@ export default function PublicDevelopmentResponsiveRoute() {
       assetLogo,
     developmentLogoDarkUrl:
       text(mediaLibrary.developmentLogoDarkUrl) ||
+      assetDarkLogo ||
       text(mediaLibrary.developmentLogoLightUrl) ||
       text(mediaLibrary.developmentLogoUrl) ||
       assetLogo,
@@ -342,14 +344,29 @@ export default function PublicDevelopmentResponsiveRoute() {
     text(data.developerCompany).replace(/\s+site$/i, "") || "Revo Property";
   // A logo is a brand mark, never a hero or gallery image. Older drafts could
   // accidentally use the same uploaded logo for every image slot.
-  const developmentLogo = text(media.developmentLogoUrl);
-  const hero = text(media.heroImageUrl) === developmentLogo ? "" : media.heroImageUrl || "";
-  const images = [
-    ...new Set(
-      [...list(media.galleryImageUrls), ...list(media.imageUrls), hero]
-        .filter((url) => Boolean(url) && text(url) !== developmentLogo),
-    ),
-  ];
+  const assetKey = (value) => text(value).split("?")[0];
+  const developmentLogos = new Set(
+    [
+      media.developmentLogoUrl,
+      media.developmentLogoLightUrl,
+      media.developmentLogoDarkUrl,
+    ]
+      .map(assetKey)
+      .filter(Boolean),
+  );
+  const hero = developmentLogos.has(assetKey(media.heroImageUrl))
+    ? ""
+    : media.heroImageUrl || "";
+  const seenGalleryAssets = new Set();
+  const images = [...list(media.galleryImageUrls), ...list(media.imageUrls)].filter(
+    (url) => {
+      const key = assetKey(url);
+      if (!key || developmentLogos.has(key) || key === assetKey(hero) || seenGalleryAssets.has(key))
+        return false;
+      seenGalleryAssets.add(key);
+      return true;
+    },
+  );
   const enquiry =
     marketing.externalLinks?.whatsappEnquiryUrl ||
     marketing.externalLinks?.bookingViewingUrl ||
@@ -373,6 +390,7 @@ export default function PublicDevelopmentResponsiveRoute() {
     images,
     enquiry,
     freshness,
+    renderVisualMap: publicVisualMap,
   };
   return mobileViewport ? (
     <div className="public-development-mobile" style={brandStyle}>

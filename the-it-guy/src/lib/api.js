@@ -1011,6 +1011,11 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
       heroImageUrl: '',
       galleryImageUrls: '',
       developmentLogoUrl: '',
+      developmentLogoLightUrl: '',
+      developmentLogoDarkUrl: '',
+      primaryColour: '#073e32',
+      accentColour: '#d0ab55',
+      surfaceColour: '#f5f2eb',
       sitePlanUrl: '',
       sitePlanViewport: {},
       sitePlanNotShownUnitIds: [],
@@ -2691,6 +2696,25 @@ function normalizeMarketingContent(value) {
         mediaLibrarySource.developmentLogoUrl ??
           mediaLibrarySource.development_logo_url ??
           defaults.mediaLibrary.developmentLogoUrl,
+      ),
+      developmentLogoLightUrl: normalizeTextValue(
+        mediaLibrarySource.developmentLogoLightUrl ??
+          mediaLibrarySource.development_logo_light_url ??
+          defaults.mediaLibrary.developmentLogoLightUrl,
+      ),
+      developmentLogoDarkUrl: normalizeTextValue(
+        mediaLibrarySource.developmentLogoDarkUrl ??
+          mediaLibrarySource.development_logo_dark_url ??
+          defaults.mediaLibrary.developmentLogoDarkUrl,
+      ),
+      primaryColour: normalizeTextValue(
+        mediaLibrarySource.primaryColour ?? mediaLibrarySource.primary_colour ?? defaults.mediaLibrary.primaryColour,
+      ),
+      accentColour: normalizeTextValue(
+        mediaLibrarySource.accentColour ?? mediaLibrarySource.accent_colour ?? defaults.mediaLibrary.accentColour,
+      ),
+      surfaceColour: normalizeTextValue(
+        mediaLibrarySource.surfaceColour ?? mediaLibrarySource.surface_colour ?? defaults.mediaLibrary.surfaceColour,
       ),
       sitePlanUrl: normalizeTextValue(
         mediaLibrarySource.sitePlanUrl ?? mediaLibrarySource.site_plan_url ?? defaults.mediaLibrary.sitePlanUrl,
