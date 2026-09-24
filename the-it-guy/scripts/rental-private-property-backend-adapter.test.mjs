@@ -103,6 +103,28 @@ assert.match(plan.listingXml, /<SuburbId>140<\/SuburbId>/)
 assert.match(plan.listingXml, /<AgentId>ARCH9-SANDBOX-USER-1<\/AgentId>/)
 assert.doesNotMatch(plan.listingXml, /FullMandate|ForSale|SoleMandateExclusiveDays>\\d/)
 
+const featureParityPlan = createPrivatePropertyRentalListingPlan({
+  listing: {
+    ...rentalListing,
+    parkingBays: 16,
+    flatlet: undefined,
+    exactAddressVisibility: 'hide_street_address',
+    sellerCanonicalFacts: {
+      ...rentalListing.sellerCanonicalFacts,
+      addressProfile: { exactAddressVisibility: 'hide_street_address' },
+      propertyProfile: { selectedFeatures: ['Flatlet', 'Staff Quarters', 'Fibre', 'Security'], portalFeatures: { alarm: true } },
+    },
+  },
+  agentMapping: { privatePropertyAgentId: 'ARCH9-SANDBOX-USER-1' },
+  options: { branchGuid: '11111111-1111-4111-8111-111111111111', propertyId: 'PRV-RENTAL-FEATURES-1', suburbId: '140' },
+})
+assert.match(featureParityPlan.listingXml, /<AttributeType>Parking<\/AttributeType><Value>16<\/Value>/)
+assert.match(featureParityPlan.listingXml, /<AttributeType>Flatlet<\/AttributeType><Value>Yes<\/Value>/)
+assert.match(featureParityPlan.listingXml, /<AttributeType>StaffQuarters<\/AttributeType><Value>Yes<\/Value>/)
+assert.match(featureParityPlan.listingXml, /Additional features include fibre connectivity, Security and Alarm\./)
+assert.match(featureParityPlan.listingXml, /<HideStreetName>true<\/HideStreetName>/)
+assert.match(featureParityPlan.listingXml, /<HideStreetNo>true<\/HideStreetNo>/)
+
 const preview = createPrivatePropertyArch9ListingPreview({
   listing: rentalListing,
   agentMapping: { privatePropertyAgentId: 'ARCH9-SANDBOX-USER-1' },

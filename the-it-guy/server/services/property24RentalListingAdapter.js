@@ -6,9 +6,15 @@ import {
 } from './property24ListingMapper.js'
 import {
   buildRentalProperty24FieldComparison,
+  PROPERTY24_RENTAL_LISTING_API_VERSION,
 } from '../../src/services/rentals/rentalListingProperty24FieldComparisonModel.js'
 
 export const PROPERTY24_RENTAL_LISTING_ADAPTER_VERSION = 'arch9_property24_rental_listing_adapter_v1'
+
+export function isProperty24RentalListingApiVersionSupported(value = PROPERTY24_RENTAL_LISTING_API_VERSION) {
+  const match = normalizeProperty24ListingText(value).toLowerCase().match(/^v(\d+)$/)
+  return Boolean(match && Number(match[1]) >= 55)
+}
 
 function firstText(...values) {
   for (const value of values) {
@@ -58,11 +64,12 @@ function rentalRateFromCadence(value) {
   if (['week', 'weekly'].includes(text)) return 'Week'
   if (['day', 'daily'].includes(text)) return 'Day'
   if (['year', 'yearly', 'annual', 'annually'].includes(text)) return 'Year'
-  if (['square_metre', 'sqm', 'm2'].includes(text)) return 'SquareMetre'
+  if (['per_square_metre', 'per_square_meter', 'square_metre', 'square_meter', 'sqm', 'm2'].includes(text)) return 'SquareMetre'
   return 'Month'
 }
 
-function buildDepositComment(value) {
+function buildDepositComment(value, policy = '') {
+  if (normalizeProperty24ListingText(policy).toLowerCase() === 'no_deposit') return 'No deposit required'
   const amount = normalizeMoney(value)
   if (!amount) return ''
   return `Equal to deposit amount R${amount}`
@@ -93,11 +100,15 @@ function buildRentalValues({ listing = {}, comparison = {} } = {}) {
   const monthlyRent = normalizeMoney(rentalInfo.monthlyRent || readComparisonRow(comparison, 'monthlyRent').property24Value)
   const occupationDate = normalizeDateTime(rentalInfo.availableFrom || readComparisonRow(comparison, 'availableFrom').property24Value)
   const expiryDate = normalizeDateTime(readComparisonRow(comparison, 'expiryDate').property24Value || listing.expiryDate || listing.expiry_date || listing.mandateEndDate || listing.mandate_end_date)
-  const rentalRate = rentalRateFromCadence(rentalInfo.rentalRate || listing.rentalRate || listing.rental_rate)
+  const rentalPriceFrequency = firstText(rentalInfo.rentalPriceFrequency, rentalInfo.rental_price_frequency, listing.rentalPriceFrequency, listing.rental_price_frequency)
+  const rentalRate = rentalRateFromCadence(rentalPriceFrequency || rentalInfo.rentalRate || listing.rentalRate || listing.rental_rate)
+  const depositPolicy = firstText(rentalInfo.depositPolicy, rentalInfo.deposit_policy, listing.depositPolicy, listing.deposit_policy)
+  const rentalMandateType = firstText(rentalInfo.rentalMandateType, rentalInfo.rental_mandate_type, listing.rentalMandateType, listing.rental_mandate_type)
+  const retirementAccommodation = firstText(property.retirementAccommodation, rentalInfo.retirementAccommodation, listing.retirementAccommodation, listing.retirement_accommodation)
   const depositRequirementsComments = firstText(
     listing.depositRequirementsComments,
     listing.deposit_requirements_comments,
-    buildDepositComment(rentalInfo.depositAmount || readComparisonRow(comparison, 'depositAmount').arch9Value),
+    buildDepositComment(rentalInfo.depositAmount || readComparisonRow(comparison, 'depositAmount').arch9Value, depositPolicy),
   )
   const leasePeriod = firstText(
     listing.leasePeriod,
@@ -125,6 +136,10 @@ function buildRentalValues({ listing = {}, comparison = {} } = {}) {
     occupationDate,
     expiryDate,
     rentalRate,
+    rentalPriceFrequency,
+    depositPolicy,
+    rentalMandateType,
+    retirementAccommodation,
     rentalInfoPayload: {
       rentalRate,
       depositRequirementsComments: depositRequirementsComments || null,
@@ -136,6 +151,9 @@ function buildRentalValues({ listing = {}, comparison = {} } = {}) {
 }
 
 function buildAdaptedListing({ listing = {}, values = {} } = {}) {
+  const canonicalFacts = listing.seller_canonical_facts_json || listing.sellerCanonicalFacts || {}
+  const addressProfile = canonicalFacts.addressProfile || canonicalFacts.address_profile || {}
+  const propertyProfile = canonicalFacts.propertyProfile || canonicalFacts.property_profile || {}
   return {
     ...listing,
     listingType: 'Rental',
@@ -146,6 +164,8 @@ function buildAdaptedListing({ listing = {}, values = {} } = {}) {
     property24SuburbId: values.suburbId,
     property24PropertyTypeId: values.propertyTypeId,
     propertyType: values.property.propertyType || listing.propertyType || listing.property_type,
+    propertyCategory: listing.propertyCategory || listing.property_category || propertyProfile.propertyCategory || propertyProfile.property_category || 'residential',
+    exactAddressVisibility: listing.exactAddressVisibility || listing.exact_address_visibility || addressProfile.exactAddressVisibility || addressProfile.exact_address_visibility,
     floorSize: values.property.floorSize ?? listing.floorSize ?? listing.floor_size,
     erfSize: values.property.erfSize ?? listing.erfSize ?? listing.erf_size,
     bedrooms: values.property.bedrooms ?? listing.bedrooms,
@@ -197,14 +217,18 @@ function unique(values = []) {
   return Array.from(new Set(values.filter(Boolean)))
 }
 
-function getAdapterDataBlockers(values = {}) {
+function getAdapterDataBlockers(values = {}, { apiVersion = PROPERTY24_RENTAL_LISTING_API_VERSION } = {}) {
   const blockers = []
+  if (!isProperty24RentalListingApiVersionSupported(apiVersion)) blockers.push('property24_rental_listing_service_v55_required')
   if (!values.agencyId) blockers.push('missing_property24_agency_id')
   if (!values.suburbId) blockers.push('missing_property24_suburb_id')
   if (!values.propertyTypeId) blockers.push('missing_property24_property_type_id')
   if (!values.monthlyRent) blockers.push('missing_rental_monthly_rent')
   if (!values.expiryDate) blockers.push('missing_expiry_date')
   if (!values.rentalRate) blockers.push('missing_rental_rate')
+  if (!values.rentalPriceFrequency) blockers.push('missing_rental_price_frequency')
+  if (!values.depositPolicy || normalizeProperty24ListingText(values.depositPolicy).toLowerCase() === 'not_captured') blockers.push('missing_rental_deposit_policy')
+  if (normalizeProperty24ListingText(values.rentalMandateType).toLowerCase() === 'house_share') blockers.push('property24_house_share_not_supported')
   return unique(blockers)
 }
 
@@ -255,6 +279,7 @@ export function createProperty24RentalListingPlan({
     },
   })
   const values = buildRentalValues({ listing, comparison: fieldComparison })
+  const apiVersion = firstText(options.apiVersion, PROPERTY24_RENTAL_LISTING_API_VERSION).toLowerCase()
   const adaptedListing = buildAdaptedListing({ listing, values })
   const adaptedPublication = {
     ...buildAdaptedPublication({ values }),
@@ -292,11 +317,12 @@ export function createProperty24RentalListingPlan({
     options: adapterOptions,
   })
 
-  const adapterDataBlockers = getAdapterDataBlockers(values)
+  const adapterDataBlockers = getAdapterDataBlockers(values, { apiVersion })
   const rentalQualityWarnings = []
   // Availability and internal approvals inform an agent's decision, but are
   // not required fields in the Property24 listing payload.
   if (!values.occupationDate) rentalQualityWarnings.push('missing_rental_occupation_date')
+  if (normalizeProperty24ListingText(values.retirementAccommodation).toLowerCase() === 'yes') rentalQualityWarnings.push('property24_retirement_accommodation_not_mapped')
   rentalQualityWarnings.push(...getRentalApprovalWarnings(fieldComparison))
   const dataBlockers = unique([...(basePlan.dataBlockers || []), ...adapterDataBlockers])
   const technicalBlockers = unique(basePlan.technicalBlockers || [])
@@ -325,12 +351,16 @@ export function createProperty24RentalListingPlan({
     summary: {
       ...basePlan.summary,
       listingType: 'Rental',
+      property24ApiVersion: apiVersion,
       agencyId: values.agencyId || null,
       contactAgentIds: values.contactAgentIds,
       agentSourceReference: values.agentSourceReference,
       monthlyRent: values.monthlyRent,
       occupationDate: values.occupationDate,
       rentalRate: values.rentalRate,
+      rentalPriceFrequency: values.rentalPriceFrequency,
+      depositPolicy: values.depositPolicy,
+      rentalMandateType: values.rentalMandateType || 'standard_rental',
       rentalInfoPresent: Boolean(values.rentalInfoPayload.rentalRate),
       backendAdapterPreviewOnly: true,
     },

@@ -42,6 +42,26 @@ assert.equal(migrated.scenes[0].hotspots.length, 2);
 assert.equal(migrated.scenes[0].hotspots[1].visibility, "hidden");
 assert.deepEqual(projectVisualMapScene(migrated), legacy);
 
+const stalePublishedSnapshot = {
+  ...migrated,
+  publishedSnapshot: {
+    revision: 1,
+    defaultSceneId: "masterplan",
+    scenes: [{
+      id: "masterplan",
+      type: "masterplan",
+      background: { url: "" },
+      hotspots: [],
+    }],
+    assets: [],
+  },
+};
+assert.equal(
+  getPublishedVisualMap(stalePublishedSnapshot).scenes[0].background.url,
+  legacy.sitePlanUrl,
+  "a blank published snapshot must not hide the complete current masterplan",
+);
+
 assert.deepEqual(
   classifyVisualAsset({ name: "Block A Exterior Render.jpg" }, [
     { id: "101", block: "Block A" },

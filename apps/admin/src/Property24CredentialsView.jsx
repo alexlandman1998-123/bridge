@@ -2,10 +2,15 @@ import { KeyRound, Loader2, ShieldCheck } from 'lucide-react'
 import { useState } from 'react'
 import { supabase } from './lib/supabaseClient'
 
-const KINGDOM_ORGANISATION_ID = '13c6b79f-1d8b-4886-aabf-42ea49565ef5'
 const ARCH9_APP_URL = 'https://app.arch9.co.za'
 
-export default function Property24CredentialsView({ access }) {
+function organisationName(organisation = {}) {
+  return organisation.name || organisation.tradingName || organisation.displayName || 'Unnamed organisation'
+}
+
+export default function Property24CredentialsView({ access, organisations = [] }) {
+  const [organisationId, setOrganisationId] = useState('')
+  const [agencyId, setAgencyId] = useState('')
   const [credentialBlock, setCredentialBlock] = useState('')
   const [notice, setNotice] = useState('')
   const [isSaving, setIsSaving] = useState(false)
@@ -34,6 +39,15 @@ export default function Property24CredentialsView({ access }) {
     event.preventDefault()
     setNotice('')
     const credentials = parseCredentialBlock(credentialBlock)
+    const organisation = organisations.find((candidate) => candidate.id === organisationId)
+    if (!organisationId || !organisation) {
+      setNotice('Choose the organisation that owns these Property24 credentials.')
+      return
+    }
+    if (!/^\d+$/.test(agencyId.trim()) || Number(agencyId) <= 0) {
+      setNotice('Enter a valid Property24 agency ID.')
+      return
+    }
     if (!credentials.username || !credentials.password) {
       setNotice('Paste the Property24 username and password. Add a user-group only if Property24 supplied one.')
       return
@@ -50,7 +64,8 @@ export default function Property24CredentialsView({ access }) {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          organisationId: KINGDOM_ORGANISATION_ID,
+          organisationId,
+          agencyId: agencyId.trim(),
           username: credentials.username,
           password: credentials.password,
           userGroupId: credentials.userGroupId,
@@ -59,7 +74,7 @@ export default function Property24CredentialsView({ access }) {
       const body = await result.json().catch(() => ({}))
       if (!result.ok) throw new Error(body.message || 'The credentials could not be saved.')
       setCredentialBlock('')
-      setNotice('Kingdom’s production credentials are encrypted and saved. They are not shown again.')
+      setNotice(`${organisationName(organisation)}’s production credentials are encrypted and saved. Publishing remains disabled.`)
     } catch (error) {
       setNotice(error.message || 'The credentials could not be saved.')
     } finally {
@@ -71,15 +86,28 @@ export default function Property24CredentialsView({ access }) {
     <section className="data-panel property24-credentials-panel">
       <div className="panel-title">
         <div>
-          <h2>Kingdom Property24 credentials</h2>
-          <span>Internal-only · Production · Agency 39227</span>
+          <h2>Property24 agency credentials</h2>
+          <span>Internal-only · Production</span>
         </div>
         <ShieldCheck size={20} aria-hidden="true" />
       </div>
-      <p>Paste the Property24 username and password here. A user-group is optional and must only be included when Property24 supplied one. Values are encrypted server-side and never displayed after saving.</p>
+      <p>Choose an agency, enter its Property24 agency ID, then paste its credentials. Values are encrypted server-side and never displayed after saving. Saving never enables publishing.</p>
       <form onSubmit={save} className="property24-credentials-form">
         <label>
-          <span>Kingdom credential block</span>
+          <span>Organisation</span>
+          <select autoComplete="off" onChange={(event) => setOrganisationId(event.target.value)} required value={organisationId}>
+            <option value="">Choose an organisation</option>
+            {[...organisations].sort((left, right) => organisationName(left).localeCompare(organisationName(right))).map((organisation) => (
+              <option key={organisation.id} value={organisation.id}>{organisationName(organisation)}</option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Property24 agency ID</span>
+          <input autoComplete="off" inputMode="numeric" onChange={(event) => setAgencyId(event.target.value)} required value={agencyId} />
+        </label>
+        <label>
+          <span>Property24 credential block</span>
           <textarea
             autoComplete="off"
             onChange={(event) => setCredentialBlock(event.target.value)}

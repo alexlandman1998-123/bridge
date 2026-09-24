@@ -9,6 +9,43 @@ export function normalizePrivatePropertyPreviewText(value = '') {
   return normalizePrivatePropertyText(value)
 }
 
+function asObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+}
+
+function firstText(...values) {
+  for (const value of values) {
+    const text = normalizePrivatePropertyPreviewText(value)
+    if (text) return text
+  }
+  return ''
+}
+
+function hydratePrivatePropertyListingFromOnboarding(listing = {}, onboarding = {}) {
+  const formData = asObject(onboarding.form_data || onboarding.formData)
+  const canonicalFacts = asObject(listing.sellerCanonicalFacts || listing.seller_canonical_facts)
+  const canonicalProperty = asObject(canonicalFacts.property)
+  const selectedFeatures = Array.isArray(formData.features)
+    ? formData.features
+    : Array.isArray(formData.keySellingPoints)
+      ? formData.keySellingPoints
+      : []
+  return {
+    ...listing,
+    description: firstText(listing.description, formData.listingDescription, formData.propertyDescription, formData.propertyNotes),
+    listing_preview_description: firstText(listing.listing_preview_description, formData.listingPreviewDescription),
+    propertyCategory: firstText(listing.propertyCategory, listing.property_category, formData.propertyCategory, formData.property_category, canonicalProperty.propertyCategory),
+    exactAddressVisibility: firstText(listing.exactAddressVisibility, listing.exact_address_visibility, formData.exactAddressVisibility, formData.exact_address_visibility, canonicalProperty.exactAddressVisibility),
+    features: Array.isArray(listing.features) && listing.features.length ? listing.features : selectedFeatures,
+    selectedFeatures: Array.isArray(listing.selectedFeatures) && listing.selectedFeatures.length ? listing.selectedFeatures : selectedFeatures,
+    addressLine1: firstText(listing.addressLine1, listing.address_line_1, formData.propertyAddress),
+    streetAddress: firstText(listing.streetAddress, listing.street_address, formData.streetAddress, formData.propertyAddress),
+    suburb: firstText(listing.suburb, formData.suburb),
+    city: firstText(listing.city, formData.city),
+    province: firstText(listing.province, formData.province),
+  }
+}
+
 function isMissingRelationError(error) {
   const message = normalizePrivatePropertyPreviewText(error?.message).toLowerCase()
   return error?.code === '42P01' || message.includes('does not exist') || message.includes('schema cache')
@@ -64,14 +101,15 @@ export async function fetchArch9ListingForPrivatePropertyPreview({ client, listi
   if (!normalizedListingId) throw new Error('--listing-id is required.')
 
   const listing = await fetchRequiredSingle(client, 'private_listings', 'id', normalizedListingId)
-  const [publication, media, existingSync] = await Promise.all([
+  const [publication, media, existingSync, onboarding] = await Promise.all([
     fetchOptionalSingle(client, 'listing_publication_data', 'listing_id', normalizedListingId),
     fetchRows(client, 'listing_media', 'listing_id', normalizedListingId),
     fetchOptionalSingle(client, 'private_property_listing_syncs', 'private_listing_id', normalizedListingId),
+    fetchOptionalSingle(client, 'private_listing_seller_onboarding', 'private_listing_id', normalizedListingId),
   ])
 
   return {
-    listing,
+    listing: hydratePrivatePropertyListingFromOnboarding(listing, onboarding || {}),
     publication: publication || {},
     media,
     existingSync: existingSync || {},

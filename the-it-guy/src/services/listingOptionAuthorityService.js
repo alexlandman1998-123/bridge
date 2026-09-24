@@ -33,7 +33,10 @@ function sourceCompletenessScore(source = {}) {
   if (normalizeText(source?.sellerOnboardingStatus || source?.seller_onboarding_status)) score += 15
   if (isPlainObject(source?.sellerOnboarding) || isPlainObject(source?.seller_onboarding)) score += 60
   if (Array.isArray(source?.documents)) score += 30 + Math.min(source.documents.length, 10)
-  if (Array.isArray(source?.requirements)) score += 20 + Math.min(source.requirements.length, 10)
+  const requirements = Array.isArray(source?.documentRequirements)
+    ? source.documentRequirements
+    : source?.requirements
+  if (Array.isArray(requirements)) score += 20 + Math.min(requirements.length, 10)
   if (isPlainObject(source?.sellerCanonicalFacts || source?.seller_canonical_facts_json)) score += 20
   if (normalizeText(source?.propertyAddress || source?.property_address || source?.addressLine1 || source?.address_line_1 || source?.address)) score += 5
   return score

@@ -932,6 +932,31 @@ export async function createOrUpdateLeadFromEnquiry(
       error: warning,
     })
 
+    let notifications = null
+    if (!reusedLead && ['Property24', 'Private Property'].includes(enquiry.source) && enquiry.contact?.email) {
+      const assignedAgent = assignment?.agent || assignment?.newAgent || buildAssignedAgent(enquiry, listing) || actor || {}
+      const agentEmail = String(assignedAgent.email || assignedAgent.assignedAgentEmail || listing?.assigned_agent_email || listing?.assignedAgentEmail || '').trim().toLowerCase()
+      const agentName = String(assignedAgent.name || assignedAgent.fullName || assignedAgent.full_name || agentEmail || 'Kingdom Real Estate agent').trim()
+      const propertyLabel = String(listing?.title || enquiry.lead?.enquiredPropertyTitle || enquiry.lead?.propertyInterest || 'the property you enquired about').trim()
+      const reference = String(enquiry.externalReference || enquiry.lead?.sourceReferenceId || lead.leadId).trim()
+      const acknowledgement = await client.functions.invoke('send-email', { body: {
+        type: 'property_enquiry_acknowledgement', to: enquiry.contact.email, agentEmail: agentEmail || undefined,
+        recipientName: [enquiry.contact.firstName, enquiry.contact.lastName].filter(Boolean).join(' ') || 'there', organisationId: enquiry.organisationId,
+        leadId: lead.leadId, source: enquiry.source, originalMessage: `Thank you for your enquiry about ${propertyLabel}. A Kingdom Real Estate agent has received your enquiry and will be in touch shortly.`,
+        agentName, agentEmail: agentEmail || undefined, replyTo: agentEmail || undefined, subject: `Thanks for your enquiry about ${propertyLabel}`,
+        idempotencyKey: `portal-lead-introduction:${reference}`,
+      } }).catch((error) => ({ error }))
+      const operations = agentEmail ? await client.functions.invoke('send-email', { body: {
+        type: 'lead_operations_notification', eventKind: 'new_enquiry_assigned_agent', to: agentEmail, recipientName: agentName,
+        organisationId: enquiry.organisationId, leadId: lead.leadId, leadName: [enquiry.contact.firstName, enquiry.contact.lastName].filter(Boolean).join(' ') || 'New lead',
+        leadEmail: enquiry.contact.email, leadPhone: enquiry.contact.phone, leadSource: enquiry.source, leadStatus: 'New Lead', propertyLabel,
+        enquiryMessage: enquiry.message, assignedAgentName: agentName, assignedAgentEmail: agentEmail,
+        message: `Hi, a new ${enquiry.source} lead has been received. We have sent the inquirer an introduction email and copied you in. Please make first contact promptly.`,
+        subject: `New ${enquiry.source} lead — ${propertyLabel}`, idempotencyKey: `portal-lead-agent-notification:${reference}:${agentEmail}`,
+      } }).catch((error) => ({ error })) : { data: { skipped: true, reason: 'missing_agent_email' } }
+      notifications = { acknowledgement, operations }
+    }
+
     if (shouldCreateLeadRecommendation) {
       void import('./leadActionEngineService')
         .then(({ processLeadEvent }) => processLeadEvent({
@@ -967,6 +992,7 @@ export async function createOrUpdateLeadFromEnquiry(
       task,
       log,
       assignment,
+      notifications,
       warning,
       workflowVariant: normalizedWorkflowVariant,
     }

@@ -10,10 +10,13 @@ import { getSellerPostOnboardingPdfAvailability } from '../core/documents/seller
 import {
   getSellerBasePackAliases,
   normalizeSellerBasePackKey,
+  projectSellerDocumentArtifact,
   sellerBasePackKeysOverlap,
   SELLER_BASE_PACK_COMPLETION_ROUTES,
   SELLER_BASE_PACK_KEYS,
   SELLER_BASE_PACK_REQUIRED_KEYS,
+  SELLER_DOCUMENT_ARTIFACT_KEYS,
+  SELLER_DOCUMENT_CONTRACT_VERSION,
 } from '../lib/sellerBasePackContract.js'
 import { resolveSellerProcessProfileForOrganisation } from './sellerProcessProfileService.js'
 import { isSellerStructuredFactRequirement } from './documents/sellerStructuredFactRequirementService.js'
@@ -231,7 +234,21 @@ export function isManualSignedFicaDeclarationRequirement(requirement = {}) {
 export function filterSellerDocumentRequirementsForOnboarding(requirements = [], { onboardingSubmitted = false } = {}) {
   const rows = Array.isArray(requirements) ? requirements.filter(Boolean) : []
   if (!onboardingSubmitted) return rows
-  return rows.filter((requirement) => !isManualSignedFicaDeclarationRequirement(requirement))
+  return rows.filter((requirement) => {
+    if (!isManualSignedFicaDeclarationRequirement(requirement)) return true
+    // The onboarding page does not need a second, empty FICA upload request.
+    // It must, however, retain a declaration that the signing flow has already
+    // saved; otherwise the agent Documents view hides a real signed record.
+    const savedDocument = requirement?.original?.document || requirement?.upload || {}
+    const savedStatus = normalizeSellerDocumentRequirementStatus(
+      requirement?.status || savedDocument?.status || savedDocument?.document_status,
+    )
+    return Boolean(
+      requirement?.complete === true ||
+      ['completed', 'approved', 'uploaded', 'under_review'].includes(savedStatus) ||
+      normalizeText(savedDocument?.id || savedDocument?.documentId || savedDocument?.document_id),
+    )
+  })
 }
 
 function requirementIsActive(requirement = {}) {
@@ -2061,13 +2078,21 @@ export function buildSellerDocumentRequirementRows({ listing = {}, documents = [
   }
 
   const matchedIndexes = new Set()
-  const rows = requiredDocuments.map((requirement, index) => {
-    const matchIndex = uploadedDocuments.findIndex((document, documentIndex) =>
-      !matchedIndexes.has(documentIndex) && documentMatchesSellerRequirement(document, requirement)
-    )
-    const document = matchIndex >= 0 ? uploadedDocuments[matchIndex] : null
-    if (matchIndex >= 0) matchedIndexes.add(matchIndex)
-    return buildRequirementRow(requirement, document, index)
+  const rows = requiredDocuments.flatMap((requirement, index) => {
+    const matches = uploadedDocuments
+      .map((document, documentIndex) => ({ document, documentIndex }))
+      .filter(({ document, documentIndex }) =>
+        !matchedIndexes.has(documentIndex) && documentMatchesSellerRequirement(document, requirement)
+      )
+
+    if (!matches.length) return [buildRequirementRow(requirement, null, index)]
+    matches.forEach(({ documentIndex }) => matchedIndexes.add(documentIndex))
+    // Every matching artefact becomes a projection candidate. The canonical
+    // projector below is the only place that decides which one is authoritative.
+    return [
+      buildRequirementRow(requirement, null, index),
+      ...matches.map(({ document }, matchIndex) => buildRequirementRow(requirement, document, `${index}-${matchIndex}`)),
+    ]
   })
 
   const extraRows = uploadedDocuments
@@ -2242,6 +2267,10 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
     name: generatedDocument.title || 'Property Condition Disclosure',
     generatedHtml: buildPropertyDisclosureDocumentMarkup(disclosure, context),
     generatedFileName: fileName.replace(/\.(html?|pdf)$/i, '.pdf'),
+    canUpload: false,
+    can_upload: false,
+    canDownload: true,
+    can_download: true,
     status: 'completed',
     visibility: 'seller_visible',
     source: 'seller_onboarding.property_disclosure.generated_document',
@@ -2334,6 +2363,9 @@ function isSellerOnboardingCommissionConfirmed(formData = {}) {
 }
 
 function sellerPostOnboardingDraftFileName(key = '') {
+  const artifactKey = normalizeKey(key)
+  if (artifactKey === SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT) return 'seller-fica-declaration-draft.pdf'
+  if (artifactKey === SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY) return 'mandate-preparation-summary.pdf'
   const canonical = normalizeSellerBasePackKey(key) || normalizeKey(key)
   if (canonical === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM) return 'seller-disclosure-annexure-a.pdf'
   if (canonical === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION) return 'seller-fica-declaration-draft.pdf'
@@ -2349,45 +2381,50 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
   const agentReviewApproved = isSellerOnboardingReviewApproved(listing, formData)
   const correctionRequested = isSellerOnboardingCorrectionRequested(formData)
   const commissionConfirmed = isSellerOnboardingCommissionConfirmed(formData)
-  const refreshedDisclosure = buildSellerPropertyDisclosureDocumentFromFormData(formData, listing)
   return readSellerPostOnboardingDrafts(formData)
     .map((draft) => {
-      const requirementKey = normalizeSellerBasePackKey(draft?.requirementKey || draft?.key)
-      const isDisclosure = requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
-      // The disclosure is a frozen fact snapshot, but its corporate identity
-      // must be rendered from the current agency branding. This also repairs
-      // older frozen HTML produced before the on-light logo was available.
-      const generatedHtml = isDisclosure
-        ? normalizeText(refreshedDisclosure?.generatedHtml || refreshedDisclosure?.generated_html || draft?.generatedHtml || draft?.generated_html)
-        : normalizeText(draft?.generatedHtml || draft?.generated_html)
-      if (!requirementKey || !generatedHtml) return null
-      const availability = getSellerPostOnboardingPdfAvailability(draft, { agentReviewApproved, commissionConfirmed })
-      const label = requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
-        ? 'Signed Mandate'
-        : normalizeText(draft?.name) || (isDisclosure ? 'Mandatory Disclosure / Defects Form' : 'Seller FICA Declaration')
+      const draftArtifact = {
+        ...draft,
+        source: normalizeText(draft?.source) || SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingPostSubmissionDraftSource,
+      }
+      const documentContract = projectSellerDocumentArtifact(draftArtifact)
+      const artifactKey = documentContract.artifactKey
+      const requirementKey = documentContract.targetRequirementKey
+      const isDisclosure = artifactKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM
+      // Facts and corporate identity are one frozen document input. Rebuilding
+      // this HTML from today's listing branding breaks the audit lineage and
+      // is what repeatedly caused the disclosure to revert to another CI.
+      const generatedHtml = normalizeText(draft?.generatedHtml || draft?.generated_html)
+      if (!artifactKey || !requirementKey || !generatedHtml) return null
+      const availability = getSellerPostOnboardingPdfAvailability(draftArtifact, { agentReviewApproved, commissionConfirmed })
+      const label = normalizeText(draft?.name) || (isDisclosure ? 'Mandatory Disclosure / Defects Form' : artifactKey === SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY ? 'Mandate preparation summary' : 'Seller FICA review draft')
       return {
-        id: `seller-post-onboarding-draft:${normalizeText(listing?.id || listing?.private_listing_id || 'listing')}:${requirementKey}`,
+        id: `seller-post-onboarding-draft:${normalizeText(listing?.id || listing?.private_listing_id || 'listing')}:${artifactKey}`,
+        artifactKey,
+        artifact_key: artifactKey,
+        targetRequirementKey: requirementKey,
+        target_requirement_key: requirementKey,
         requirementKey,
         requirement_key: requirementKey,
-        document_type: requirementKey,
-        documentType: requirementKey,
+        document_type: artifactKey,
+        documentType: artifactKey,
         category: isDisclosure ? 'property_condition_disclosure' : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : 'mandate_signature',
         document_category: isDisclosure ? 'property_condition_disclosure' : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : 'mandate_signature',
         document_name: label,
         name: label,
         description: isDisclosure
           ? 'Captured and signed during seller onboarding.'
-          : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE
+          : artifactKey === SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY
             ? correctionRequested ? 'Correction requested. A replacement mandate will be prepared after the seller resubmits onboarding.' : 'Draft prepared from submitted onboarding facts. Commission and terms still need agent approval.'
             : correctionRequested ? 'Correction requested. A replacement FICA declaration will be prepared after the seller resubmits onboarding.' : 'Draft prepared from submitted onboarding facts. Awaiting agent review before signing.',
         generatedHtml,
         generated_html: generatedHtml,
-        generatedFileName: sellerPostOnboardingDraftFileName(requirementKey),
-        generated_file_name: sellerPostOnboardingDraftFileName(requirementKey),
+        generatedFileName: sellerPostOnboardingDraftFileName(artifactKey),
+        generated_file_name: sellerPostOnboardingDraftFileName(artifactKey),
         status: correctionRequested && !isDisclosure
           ? 'correction_requested'
           : normalizeSellerDocumentRequirementStatus(draft?.status || (isDisclosure ? 'completed' : 'awaiting_agent_review')),
-        visibility: 'seller_visible',
+        visibility: documentContract.visibleInSellerDocuments ? 'seller_visible' : 'internal',
         source: SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingPostSubmissionDraftSource,
         completionRoute: isDisclosure ? 'seller_onboarding' : 'agent_review_signing_pack',
         completion_route: isDisclosure ? 'seller_onboarding' : 'agent_review_signing_pack',
@@ -2407,6 +2444,7 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
           templateVersion: normalizeText(draft?.templateVersion || draft?.template_version),
           pdfAvailability: availability,
         },
+        documentContract,
       }
     })
     .filter(Boolean)
@@ -2470,11 +2508,6 @@ function buildSellerFicaDeclarationDocumentFromOnboarding(formData = {}, listing
       listing?.sellerType ||
       listing?.seller_type,
   )
-  const propertyDisclosure = isPlainObject(formData?.propertyDisclosure)
-    ? formData.propertyDisclosure
-    : isPlainObject(formData?.property_disclosure)
-      ? formData.property_disclosure
-      : {}
   const complianceSigning = isPlainObject(formData?.sellerComplianceSigning)
     ? formData.sellerComplianceSigning
     : isPlainObject(formData?.seller_compliance_signing)
@@ -2577,20 +2610,6 @@ function getDocumentIdentity(document = {}, fallback = '') {
   )
 }
 
-function dedupeSellerDocuments(documents = []) {
-  const seen = new Set()
-  const rows = []
-  for (const document of Array.isArray(documents) ? documents : []) {
-    if (!document || typeof document !== 'object') continue
-    const identity = getDocumentIdentity(document, `${rows.length}`)
-    const key = normalizeKey(identity)
-    if (key && seen.has(key)) continue
-    if (key) seen.add(key)
-    rows.push(document)
-  }
-  return rows
-}
-
 function getSellerDocumentSourceType(row = {}) {
   const requirement = row?.original?.requirement || null
   const document = row?.original?.document || null
@@ -2668,10 +2687,14 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
   const uploadUrl = row?.documentUrl || row?.url || resolveDocumentUrl(document || {})
   const uploadPath = normalizeText(document?.storagePath || document?.storage_path || document?.filePath || document?.file_path || row?.filePath)
   const source = getSellerDocumentSourceType(row)
+  const documentContract = document?.documentContract || projectSellerDocumentArtifact(
+    document || { key, status },
+    { requirementOnly: !document },
+  )
   const generatedHtml = normalizeText(document?.generatedHtml || document?.generated_html)
   const generatedFileName = normalizeText(document?.generatedFileName || document?.generated_file_name)
   const canUpload = document?.canUpload !== false && document?.can_upload !== false
-  const canDownload = document?.canDownload !== false && document?.can_download !== false
+  const canDownload = documentContract.representation.downloadable
   const downloadReason = normalizeText(document?.downloadReason || document?.download_reason)
   const isGeneratedDraft = document?.isGeneratedDraft === true || document?.is_generated_draft === true
 
@@ -2703,6 +2726,22 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
     download_reason: downloadReason,
     isGeneratedDraft,
     is_generated_draft: isGeneratedDraft,
+    documentContract,
+    document_contract_version: documentContract.contractVersion,
+    artifactKey: documentContract.artifactKey,
+    artifact_key: documentContract.artifactKey,
+    targetRequirementKey: documentContract.targetRequirementKey,
+    target_requirement_key: documentContract.targetRequirementKey,
+    artifactStage: documentContract.stage,
+    artifact_stage: documentContract.stage,
+    hasDownloadableRepresentation: documentContract.representation.downloadable,
+    has_downloadable_representation: documentContract.representation.downloadable,
+    satisfiesRequirement: documentContract.satisfiesRequirement,
+    satisfies_requirement: documentContract.satisfiesRequirement,
+    templateVersion: documentContract.templateVersion,
+    template_version: documentContract.templateVersion,
+    brandingVersion: documentContract.brandingVersion,
+    branding_version: documentContract.brandingVersion,
     packetId: normalizeText(document?.packetId || document?.packet_id),
     packetVersionId: normalizeText(document?.packetVersionId || document?.packet_version_id || document?.versionId || document?.version_id),
     requestedBy: row?.requestedBy || normalizeRequestedBy(requirement || {}, document || {}),
@@ -2783,7 +2822,6 @@ export function buildSellerDocumentSourceOfTruth({
   mandatePacket = null,
   journey = null,
   sellerSubject = null,
-  useCanonicalProjection = true,
 } = {}) {
   const resolvedFormData = isPlainObject(formData) && Object.keys(formData).length
     ? formData
@@ -2824,27 +2862,24 @@ export function buildSellerDocumentSourceOfTruth({
     mandatePacket || listing?.mandatePacket || listing?.mandate_packet || null,
   )
   const manualSigningDocuments = buildSellerOnboardingManualSigningDocuments(resolvedFormData, listing)
-  const manualSigningKeys = new Set(manualSigningDocuments.map((document) => document.requirementKey))
   const postOnboardingDraftDocuments = buildSellerPostOnboardingDraftDocuments(resolvedFormData, listing)
-  const postOnboardingDraftKeys = new Set(postOnboardingDraftDocuments.map((document) => document.requirementKey))
-  const propertyDisclosureDocument = postOnboardingDraftKeys.has(SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM)
+  const frozenDisclosureDocument = postOnboardingDraftDocuments.find((document) => (
+    normalizeSellerBasePackKey(document?.targetRequirementKey || document?.target_requirement_key || document?.requirementKey || document?.requirement_key || document?.artifactKey || document?.artifact_key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM &&
+    normalizeText(document?.generatedHtml || document?.generated_html)
+  ))
+  const propertyDisclosureDocument = frozenDisclosureDocument
     ? null
     : buildSellerPropertyDisclosureDocumentFromFormData(resolvedFormData, listing)
   const sellerFicaDeclarationDocument = buildSellerFicaDeclarationDocumentFromOnboarding(resolvedFormData, listing)
-  const visiblePostOnboardingDrafts = postOnboardingDraftDocuments.filter((draft) =>
-    !manualSigningKeys.has(draft.requirementKey) &&
-    !(draft.requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE && signedMandateDocument) &&
-    !(draft.requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION && sellerFicaDeclarationDocument),
-  )
-  const mergedDocuments = dedupeSellerDocuments([
+  const mergedDocuments = [
     ...baseDocuments,
     ...kingstonsSellerPackDocuments,
     ...(signedMandateDocument ? [signedMandateDocument] : []),
     ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
     ...(sellerFicaDeclarationDocument ? [sellerFicaDeclarationDocument] : []),
     ...manualSigningDocuments,
-    ...visiblePostOnboardingDrafts,
-  ])
+    ...postOnboardingDraftDocuments,
+  ]
   const sourceListing = {
     ...listing,
     documents: mergedDocuments,
@@ -2867,7 +2902,7 @@ export function buildSellerDocumentSourceOfTruth({
     mandateStatus: mandatePacket?.state || sourceListing?.mandateStatus || sourceListing?.mandate_status,
     mandateExecutionMode: sourceListing?.mandateExecutionMode || sourceListing?.mandate_execution_mode || sourceListing?.mandate?.executionMode,
   })
-  const projectedRows = useCanonicalProjection ? projectCanonicalSellerDocumentRows(candidateRows) : candidateRows
+  const projectedRows = projectCanonicalSellerDocumentRows(candidateRows)
   const rows = projectedRows.map((row) => ({
     ...row,
     signingStatus: getSellerSigningStatusForDocument(row.key || row.requirementKey, signingStatus),
@@ -2876,6 +2911,7 @@ export function buildSellerDocumentSourceOfTruth({
 
   return {
     contractVersion: 'seller_document_source_v1',
+    documentContractVersion: SELLER_DOCUMENT_CONTRACT_VERSION,
     sourceOfTruth: SELLER_DOCUMENT_SOURCE_OF_TRUTH,
     touchpoints: SELLER_DOCUMENT_TOUCHPOINTS,
     context: {

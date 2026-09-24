@@ -4,6 +4,10 @@ import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { saveOrganisationProperty24Credentials } from '../../../server/property24/organisationCredentialService.js'
+import {
+  fetchOrganisationProperty24Connection,
+  upsertOrganisationProperty24Connection,
+} from '../../../server/property24/organisationConnectionService.js'
 import { normalizeProperty24Text } from '../../../server/property24/client.js'
 import { writeNodeJsonResponse } from '../../../server/services/hqMissionControlApi.js'
 
@@ -104,15 +108,54 @@ export default async function handler(request, responseWriter) {
     }
 
     const body = await readJsonBody(request)
+    const agencyId = normalizeProperty24Text(body.agencyId)
+    if (!/^\d+$/.test(agencyId) || Number(agencyId) <= 0) {
+      writeNodeJsonResponse(responseWriter, response(400, {
+        error: 'property24_agency_id_invalid',
+        message: 'Enter a valid Property24 agency ID.',
+      }, request))
+      return
+    }
+    const organisationId = normalizeProperty24Text(body.organisationId)
+    const existingConnection = await fetchOrganisationProperty24Connection({
+      supabase,
+      organisationId,
+      environment: 'production',
+    })
+    if (existingConnection.enabled && existingConnection.agencyId !== agencyId) {
+      writeNodeJsonResponse(responseWriter, response(409, {
+        error: 'property24_enabled_agency_change_blocked',
+        message: 'This organisation has an enabled Property24 connection for a different agency. Disable and review that connection before changing its agency ID.',
+      }, request))
+      return
+    }
+    const connection = await upsertOrganisationProperty24Connection({
+      supabase,
+      organisationId,
+      agencyId,
+      environment: 'production',
+      // Credential replacement must not change publication state. A new
+      // connection starts disabled; activation remains a separate, verified
+      // production-cutover decision.
+      enabled: existingConnection.configured ? existingConnection.enabled : false,
+    })
     const result = await saveOrganisationProperty24Credentials({
       supabase,
-      organisationId: normalizeProperty24Text(body.organisationId),
+      organisationId,
       environment: 'production',
       username: normalizeProperty24Text(body.username),
       password: normalizeProperty24Text(body.password),
       userGroupId: normalizeProperty24Text(body.userGroupId),
     })
-    writeNodeJsonResponse(responseWriter, response(200, { configured: result.configured, updatedAt: result.updatedAt }, request))
+    writeNodeJsonResponse(responseWriter, response(200, {
+      configured: result.configured,
+      updatedAt: result.updatedAt,
+      connection: {
+        agencyId: connection.agencyId,
+        environment: connection.environment,
+        enabled: connection.enabled,
+      },
+    }, request))
   } catch (error) {
     writeNodeJsonResponse(responseWriter, response(Number(error.status || 500), {
       error: error.code || 'property24_credentials_failed',

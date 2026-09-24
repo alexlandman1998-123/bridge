@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import {
   createProperty24ApiResponse,
+  resolveProperty24ListingLocation,
   resolveProperty24ListingPublishConfiguration,
 } from '../server/property24/index.js'
 
@@ -36,6 +37,11 @@ class FakeSupabaseQuery {
     return Promise.resolve({ data: this.applyFilters()[0] || null, error: null })
   }
 
+  single() {
+    const data = this.applyFilters()[0] || null
+    return Promise.resolve({ data, error: data ? null : { code: 'PGRST116', message: 'Row not found' } })
+  }
+
   then(resolve, reject) {
     return Promise.resolve({ data: this.applyFilters(), error: null }).then(resolve, reject)
   }
@@ -53,6 +59,13 @@ function createFakeSupabase(tables = {}, user = null) {
     from(table) {
       return new FakeSupabaseQuery(tables[table] || [])
     },
+    rpc(name, args = {}) {
+      if (name !== 'get_property24_account_credentials') return Promise.resolve({ data: null, error: null })
+      const row = (tables.property24_credentials || []).find((item) => (
+        item.organisation_id === args.p_organisation_id && item.environment === args.p_environment
+      )) || null
+      return Promise.resolve({ data: row ? [row] : [], error: null })
+    },
   }
 }
 
@@ -68,6 +81,10 @@ const baseTables = {
       organisation_id: organisationId,
       assigned_agent_id: userId,
       created_by: userId,
+      suburb: 'Capital Park',
+      city: 'Pretoria',
+      province: 'Gauteng',
+      country: 'South Africa',
     },
   ],
   organisation_users: [
@@ -116,6 +133,49 @@ const baseTables = {
   ],
 }
 
+const exactProperty24Location = {
+  findSuburb: async (query) => {
+    assert.deepEqual(query, {
+      countryName: 'South Africa',
+      provinceName: 'Gauteng',
+      cityName: 'Pretoria',
+      suburbName: 'Capital Park',
+    })
+    return {
+      data: {
+        found: true,
+        suburb: {
+          id: 309,
+          name: 'Capital Park',
+          cityName: 'Pretoria',
+          provinceName: 'Gauteng',
+          countryName: 'South Africa',
+        },
+      },
+    }
+  },
+}
+
+const resolvedLocation = await resolveProperty24ListingLocation({
+  supabase: createFakeSupabase(baseTables),
+  property24: exactProperty24Location,
+  listingId,
+  suppliedSuburbId: '309',
+})
+assert.equal(resolvedLocation.suburbId, 309)
+assert.equal(resolvedLocation.label, 'Capital Park, Pretoria')
+assert.equal(resolvedLocation.verified, true)
+
+await assert.rejects(
+  resolveProperty24ListingLocation({
+    supabase: createFakeSupabase(baseTables),
+    property24: exactProperty24Location,
+    listingId,
+    suppliedSuburbId: '1987',
+  }),
+  (error) => error?.code === 'property24_suburb_id_stale' && error?.status === 422,
+)
+
 const resolvedFromSettings = await resolveProperty24ListingPublishConfiguration({
   supabase: createFakeSupabase(baseTables),
   listingId,
@@ -135,6 +195,7 @@ assert.equal(resolvedFromSettings.agentSourceReference, 'ARCH9-AGENT-001')
 assert.equal(resolvedFromSettings.syndicationEnabled, true)
 assert.equal(resolvedFromSettings.property24ResolvedMapping.source, 'organisation_settings.property24.agentMappings')
 assert.equal(resolvedFromSettings.property24ResolvedMapping.arch9UserId, userId)
+assert.equal(resolvedFromSettings.property24SendUserGroupHeader, false)
 
 const resolvedDisabledSettings = await resolveProperty24ListingPublishConfiguration({
   supabase: createFakeSupabase({
@@ -202,6 +263,32 @@ assert.equal(resolvedFromTable.agencyId, '31382')
 assert.equal(resolvedFromTable.agentId, '90001')
 assert.equal(resolvedFromTable.agentSourceReference, 'ARCH9-TABLE-AGENT')
 assert.equal(resolvedFromTable.property24ResolvedMapping.source, 'property24_agent_mappings')
+
+const resolvedWithOrganisationGroup = await resolveProperty24ListingPublishConfiguration({
+  supabase: createFakeSupabase({
+    ...baseTables,
+    property24_accounts: [{ organisation_id: organisationId, environment: 'exdev', agency_id: 31382, enabled: true }],
+    property24_credentials: [{
+      organisation_id: organisationId,
+      environment: 'exdev',
+      username: 'agency-user@example.test',
+      password: 'agency-password',
+      user_group_id: '39227',
+    }],
+  }),
+  listingId,
+  config: {
+    listingId,
+    environment: 'exdev',
+    agencyId: '',
+    property24UserGroupId: 'global-group-must-not-be-used',
+    property24SendUserGroupHeader: true,
+    syndicationEnabled: true,
+  },
+})
+assert.equal(resolvedWithOrganisationGroup.property24Username, 'agency-user@example.test')
+assert.equal(resolvedWithOrganisationGroup.property24UserGroupId, '39227')
+assert.equal(resolvedWithOrganisationGroup.property24SendUserGroupHeader, true)
 
 await assert.rejects(
   resolveProperty24ListingPublishConfiguration({
@@ -466,6 +553,13 @@ const productionStatusResponse = await createProperty24ApiResponse({
         agency_id: 40067,
         listing_number: 100314793,
       }],
+      property24_credentials: [{
+        organisation_id: organisationId,
+        environment: 'production',
+        username: 'agency-production-user@example.test',
+        password: 'agency-production-password',
+        user_group_id: '40067-group',
+      }],
     }, { id: userId, email: 'alex@arch9.co.za' }),
     resolvePublishConfig: async ({ config }) => config,
     createProperty24: (config) => {
@@ -478,7 +572,9 @@ const productionStatusResponse = await createProperty24ApiResponse({
 assert.equal(productionStatusResponse.status, 200)
 assert.equal(productionStatusConfig.environment, 'production')
 assert.equal(productionStatusConfig.agencyId, '40067')
-assert.equal(productionStatusConfig.property24Username, 'production-user@example.test')
+assert.equal(productionStatusConfig.property24Username, 'agency-production-user@example.test')
+assert.equal(productionStatusConfig.property24UserGroupId, '40067-group')
+assert.equal(productionStatusConfig.property24SendUserGroupHeader, true)
 
 const apiSource = read('server/property24/api.js')
 assert.match(apiSource, /resolveProperty24ListingPublishConfiguration/)

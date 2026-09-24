@@ -25,6 +25,7 @@ function parseArgs(argv) {
     listingNumber: '',
     photosChanged: true,
     loadImageBytes: false,
+    convertImagesToJpeg: false,
     maxImages: 20,
     listCandidates: false,
     limit: 10,
@@ -36,6 +37,8 @@ function parseArgs(argv) {
       options.photosChanged = false
     } else if (arg === '--load-image-bytes') {
       options.loadImageBytes = true
+    } else if (arg === '--convert-images-to-jpeg') {
+      options.convertImagesToJpeg = true
     } else if (arg === '--list-candidates') {
       options.listCandidates = true
     } else if (arg.startsWith('--listing-id=')) {
@@ -108,6 +111,7 @@ function buildConfig(options) {
     listingNumber: options.listingNumber,
     photosChanged: options.photosChanged,
     loadImageBytes: options.loadImageBytes,
+    convertImagesToJpeg: options.convertImagesToJpeg,
     maxImages: options.maxImages,
     listCandidates: options.listCandidates,
     limit: options.limit,
@@ -194,6 +198,7 @@ async function run() {
       storageClient: client,
       storageBaseUrl: config.supabaseUrl,
       maxImages: config.maxImages,
+      convertImagesToJpeg: config.convertImagesToJpeg,
     })
     previewMedia = loaded.media
     imageByteLoad = {
@@ -218,6 +223,7 @@ async function run() {
       expiryDate: config.expiryDate,
       listingNumber: config.listingNumber,
       photosChanged: config.photosChanged,
+      ...(imageByteLoad ? { expectedPhotoPayloadCount: imageByteLoad.summary.requested } : {}),
     },
     imageByteLoad,
   })

@@ -22,12 +22,13 @@ const commercial = evaluateProperty24ListingCategoryContract({
 assert.deepEqual(commercial.blockers, ['property24_commercial_mapping_not_verified'])
 assert.equal(commercial.publishingStatus, 'blocked_pending_property24_contract')
 
-const saleOnlyLand = evaluateProperty24ListingCategoryContract({
+const vacantLand = evaluateProperty24ListingCategoryContract({
   listing: { property_type: 'vacant land' },
   listingType: 'Rental',
 })
-assert.ok(saleOnlyLand.blockers.includes('property24_land_development_mapping_not_verified'))
-assert.ok(saleOnlyLand.blockers.includes('property24_land_development_rental_not_supported'))
+assert.ok(vacantLand.blockers.includes('property24_land_mapping_not_verified'))
+assert.equal(vacantLand.blockers.includes('property24_land_rental_not_supported'), false)
+assert.equal(resolveProperty24ListingCategory({ property_type: 'development' }), PROPERTY24_LISTING_CATEGORIES.UNKNOWN)
 
 const plan = createProperty24ListingPlan({
   listing: {

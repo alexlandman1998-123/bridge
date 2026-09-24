@@ -16,30 +16,33 @@ export function resolveProperty24EnvironmentCredentials({ env = {}, environment 
     ? env.PROPERTY24_PRODUCTION_BASE_URL
     : env.PROPERTY24_EXDEV_BASE_URL)
   const genericBaseUrl = normalizeProperty24Text(env.PROPERTY24_BASE_URL)
-  const baseUrl = specificBaseUrl || genericBaseUrl || (production ? '' : PROPERTY24_EXDEV_BASE_URL)
-  const username = normalizeProperty24Text(production
-    ? env.PROPERTY24_PRODUCTION_BASIC_AUTH_USERNAME
-    : env.PROPERTY24_EXDEV_BASIC_AUTH_USERNAME) || normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_USERNAME || env.PROPERTY24_USERNAME)
-  const password = normalizeProperty24Text(production
-    ? env.PROPERTY24_PRODUCTION_BASIC_AUTH_PASSWORD
-    : env.PROPERTY24_EXDEV_BASIC_AUTH_PASSWORD) || normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_PASSWORD || env.PROPERTY24_PASSWORD)
-  const userGroupId = normalizeProperty24Text(production
-    ? env.PROPERTY24_PRODUCTION_USER_GROUP_ID
-    : env.PROPERTY24_EXDEV_USER_GROUP_ID) || normalizeProperty24Text(env.PROPERTY24_USER_GROUP_ID)
+  // Production must never inherit a generic Property24 account. A generic
+  // account can authenticate successfully while being scoped to a different
+  // country or agency, which is more dangerous than a clear configuration
+  // failure. ExDev retains the legacy fallback during its controlled
+  // migration.
+  const baseUrl = production
+    ? specificBaseUrl
+    : specificBaseUrl || genericBaseUrl || PROPERTY24_EXDEV_BASE_URL
+  const username = production
+    ? normalizeProperty24Text(env.PROPERTY24_PRODUCTION_BASIC_AUTH_USERNAME)
+    : normalizeProperty24Text(env.PROPERTY24_EXDEV_BASIC_AUTH_USERNAME) || normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_USERNAME || env.PROPERTY24_USERNAME)
+  const password = production
+    ? normalizeProperty24Text(env.PROPERTY24_PRODUCTION_BASIC_AUTH_PASSWORD)
+    : normalizeProperty24Text(env.PROPERTY24_EXDEV_BASIC_AUTH_PASSWORD) || normalizeProperty24Text(env.PROPERTY24_BASIC_AUTH_PASSWORD || env.PROPERTY24_PASSWORD)
+  const userGroupId = production
+    ? normalizeProperty24Text(env.PROPERTY24_PRODUCTION_USER_GROUP_ID)
+    : normalizeProperty24Text(env.PROPERTY24_EXDEV_USER_GROUP_ID) || normalizeProperty24Text(env.PROPERTY24_USER_GROUP_ID)
   const resolvedEnvironment = baseUrl ? environmentFromBaseUrl(baseUrl) : targetEnvironment
   const apiVersion = normalizeProperty24Text(production
     ? env.PROPERTY24_PRODUCTION_API_VERSION
     : env.PROPERTY24_EXDEV_API_VERSION) || normalizeProperty24Text(env.PROPERTY24_API_VERSION) || (production ? 'v55' : 'v53')
-  // A Property24 user group selects the agency/country permission scope for
-  // the authenticated account.  Production must not silently discard a
-  // configured group merely because an extra opt-in flag was omitted.
-  // Sending it is therefore the default in both environments; an explicit
-  // "false" remains available for a provider-supported exception.
-  const sendUserGroupHeader = String(
-    production
-      ? (env.PROPERTY24_PRODUCTION_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || 'true')
-      : (env.PROPERTY24_EXDEV_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || 'true'),
-  ).trim().toLowerCase() !== 'false'
+  // A group header changes the account's country/agency permission scope.
+  // It is therefore an explicit production choice, validated by the
+  // read-only production-access audit before any listing submission.
+  const sendUserGroupHeader = production
+    ? String(env.PROPERTY24_PRODUCTION_SEND_USER_GROUP_HEADER || '').trim().toLowerCase() === 'true'
+    : String(env.PROPERTY24_EXDEV_SEND_USER_GROUP_HEADER || env.PROPERTY24_SEND_USER_GROUP_HEADER || 'true').trim().toLowerCase() !== 'false'
 
   return {
     environment: targetEnvironment,
@@ -50,11 +53,9 @@ export function resolveProperty24EnvironmentCredentials({ env = {}, environment 
     apiVersion,
     sendUserGroupHeader,
     configured: Boolean(baseUrl && username && password && resolvedEnvironment === targetEnvironment),
-    environmentMatches: resolvedEnvironment === targetEnvironment,
-    credentialSource: specificBaseUrl ? 'environment_specific' : 'legacy_generic',
-    // A generic value is retained only for a controlled transition. Production
-    // callers must still reject it when it resolves to the ExDev host.
-    usingLegacyGenericBaseUrl: Boolean(production && !specificBaseUrl && genericBaseUrl),
+    environmentMatches: Boolean(baseUrl) && resolvedEnvironment === targetEnvironment,
+    credentialSource: production ? 'environment_specific' : (specificBaseUrl ? 'environment_specific' : 'legacy_generic'),
+    usingLegacyGenericBaseUrl: false,
     missing: [
       ...(!baseUrl ? [`PROPERTY24_${targetEnvironment.toUpperCase()}_BASE_URL`] : []),
       ...(!username ? [`PROPERTY24_${targetEnvironment.toUpperCase()}_BASIC_AUTH_USERNAME`] : []),

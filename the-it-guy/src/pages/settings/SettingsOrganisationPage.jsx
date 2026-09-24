@@ -2555,11 +2555,14 @@ export default function SettingsOrganisationPage({ section = 'organisation' }) {
 
       setState(nextState)
 
-      const saveTasks = [saveAgencyOnboardingDraft(nextState.onboarding)]
+      // Both writes touch the same organisation branding graph through database
+      // triggers. Keep a deterministic order so a primary-logo upload cannot
+      // deadlock while the onboarding branding row and organisation row compete
+      // for those records.
+      await withBrandAssetTimeout(saveAgencyOnboardingDraft(nextState.onboarding))
       if (resolvedTargetKey === 'logoLight') {
-        saveTasks.push(updateOrganisationSettings(nextState.organisation))
+        await withBrandAssetTimeout(updateOrganisationSettings(nextState.organisation))
       }
-      await withBrandAssetTimeout(Promise.all(saveTasks))
 
       applyOrganisationState(nextState)
       if (typeof window !== 'undefined') {

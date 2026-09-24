@@ -2,6 +2,12 @@ import {
   escapePrivatePropertyXml,
   normalizePrivatePropertyText,
 } from './privatePropertyClient.js'
+import {
+  appendPortalDescriptionFeatures,
+  normalizeListingPortalFeatures,
+  resolveListingAddressVisibility,
+} from './listingPortalFeatureNormalizer.js'
+import { buildListingAddressFingerprint } from './listingPortalAddressProtectionService.js'
 
 export function normalizePrivatePropertyListingKey(value = '') {
   return normalizePrivatePropertyText(value)
@@ -26,6 +32,17 @@ function firstNumber(...values) {
     if (Number.isFinite(numeric)) return numeric
   }
   return null
+}
+
+function asObject(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
 }
 
 function toPositiveInteger(value) {
@@ -113,8 +130,8 @@ export function resolvePrivatePropertyListingType(value = '') {
 
 export function resolvePrivatePropertyCategory(value = '') {
   const key = normalizePrivatePropertyListingKey(value)
-  if (['commercial', 'commercial_property', 'office', 'offices', 'retail', 'industrial', 'warehouse', 'factory', 'shop'].includes(key)) return 'Commercial'
-  if (['farm', 'farms', 'smallholding', 'small_holding', 'farm_with_house', 'farm_land', 'agricultural_holding', 'commercial_farm', 'game_farm'].includes(key)) return 'Farms'
+  if (['commercial', 'commercial_property', 'office', 'offices', 'retail', 'industrial', 'warehouse', 'factory', 'shop', 'mixed_use'].includes(key)) return 'Commercial'
+  if (['farm', 'farms', 'agricultural', 'agriculture', 'smallholding', 'small_holding', 'farm_with_house', 'farm_land', 'agricultural_holding', 'commercial_farm', 'game_farm'].includes(key)) return 'Farms'
   if (['land', 'vacant_land', 'plot', 'stand', 'residential_land', 'commercial_land'].includes(key)) return 'Land'
   return 'Residential'
 }
@@ -216,13 +233,87 @@ function resolvePropertyId(listing = {}, publication = {}, options = {}) {
 }
 
 function resolveDescription(listing = {}, publication = {}) {
-  return firstText(
+  const description = firstText(
     publication.description,
     publication.public_description,
     listing.listing_preview_description,
     listing.listingPreviewDescription,
     listing.description,
   )
+  const features = normalizeListingPortalFeatures({ listing, publication })
+  return appendPortalDescriptionFeatures(description, [
+    ...(features.fibre ? ['fibre connectivity'] : []),
+    ...features.additionalLabels,
+  ])
+}
+
+function resolveSpecialistFacts(listing = {}, publication = {}, options = {}) {
+  const listingCanonicalFacts = asObject(listing.seller_canonical_facts_json || listing.sellerCanonicalFacts)
+  const publicationCanonicalFacts = asObject(publication.seller_canonical_facts_json || publication.sellerCanonicalFacts)
+  const candidates = [
+    options.specialistFacts,
+    options.specialist_facts,
+    publication.specialistFacts,
+    publication.specialist_facts,
+    publicationCanonicalFacts.specialistFacts,
+    publicationCanonicalFacts.property?.specialistFacts,
+    listing.specialistFacts,
+    listing.specialist_facts,
+    listingCanonicalFacts.specialistFacts,
+    listingCanonicalFacts.property?.specialistFacts,
+  ]
+  return candidates.reduce((facts, candidate) => ({ ...facts, ...asObject(candidate) }), {})
+}
+
+function resolvePrivatePropertySpecialistCategory(listing = {}, publication = {}, options = {}) {
+  const listingCanonicalFacts = asObject(listing.seller_canonical_facts_json || listing.sellerCanonicalFacts)
+  const publicationCanonicalFacts = asObject(publication.seller_canonical_facts_json || publication.sellerCanonicalFacts)
+  const value = firstText(
+    options.propertyCategory,
+    options.property_category,
+    publication.property_category,
+    publication.propertyCategory,
+    listing.property_category,
+    listing.propertyCategory,
+    publicationCanonicalFacts.propertyCategory,
+    publicationCanonicalFacts.property?.propertyCategory,
+    listingCanonicalFacts.propertyCategory,
+    listingCanonicalFacts.property?.propertyCategory,
+  )
+  const key = normalizePrivatePropertyListingKey(value)
+  if (['industrial', 'warehouse', 'factory'].includes(key)) return 'industrial'
+  if (['farm', 'farms', 'agricultural', 'agriculture', 'smallholding', 'small_holding', 'farm_with_house', 'farm_land', 'agricultural_holding', 'commercial_farm', 'game_farm'].includes(key)) return 'agricultural'
+  if (['land', 'vacant_land', 'plot', 'stand', 'residential_land', 'commercial_land'].includes(key)) return 'land'
+  if (['commercial', 'commercial_property', 'office', 'offices', 'retail', 'shop', 'mixed_use'].includes(key)) return 'commercial'
+  return ''
+}
+
+function appendSpecialistDescription(description = '', facts = {}, specialistCategory = '') {
+  const detailsByCategory = {
+    commercial: [
+      ['Zoning', facts.zoning],
+      ['Listing terms', facts.listingTerms],
+    ],
+    industrial: [
+      ['Power supply', facts.powerSupply],
+      ['Loading access', facts.loadingAccess === true ? 'Yes' : facts.loadingAccess === false ? 'No' : ''],
+    ],
+    agricultural: [
+      ['Water supply / rights', facts.waterSupplyOrRights],
+      ['Agricultural use', facts.agriculturalUse],
+    ],
+    land: [
+      ['Zoning', facts.zoning],
+    ],
+  }
+  const entries = (detailsByCategory[specialistCategory] || [])
+    .map(([label, value]) => [label, normalizePrivatePropertyText(value)])
+    .filter(([, value]) => value)
+    .filter(([label, value]) => !String(description).toLowerCase().includes(`${label}: ${value}`.toLowerCase()))
+  if (!entries.length) return description
+  const summary = entries.map(([label, value]) => `${label}: ${value}`).join('. ')
+  const prefix = description && !/[.!?]$/.test(description) ? `${description}.` : description
+  return `${prefix}${prefix ? ' ' : ''}${summary}.`
 }
 
 function resolveHeadline(listing = {}, publication = {}) {
@@ -280,6 +371,23 @@ function resolveAddress(listing = {}, publication = {}, options = {}) {
     listing.formattedAddress,
   )
   const inferredStreetAddress = splitStreetAddress(combinedStreetAddress)
+  const requestedVisibility = firstText(
+    options.exactAddressVisibility,
+    options.exact_address_visibility,
+    publication.exactAddressVisibility,
+    publication.exact_address_visibility,
+    listing.exactAddressVisibility,
+    listing.exact_address_visibility,
+  )
+  const visibility = resolveListingAddressVisibility(
+    requestedVisibility,
+    publication.showLocation,
+    publication.show_location,
+    listing.showLocation,
+    listing.show_location,
+  )
+  const showExactAddress = visibility === 'show_exact_address'
+  const showComplexOnly = visibility === 'complex_only'
 
   return {
     streetName: firstText(explicitStreetName, inferredStreetAddress.streetName),
@@ -290,10 +398,11 @@ function resolveAddress(listing = {}, publication = {}, options = {}) {
     suburbId: toPositiveInteger(firstText(options.suburbId, publication.private_property_suburb_id, publication.privatePropertySuburbId, publication.suburb_id, listing.private_property_suburb_id, listing.privatePropertySuburbId, listing.suburb_id)),
     town: firstText(options.town, publication.town, publication.city, listing.town, listing.city),
     province: resolvePrivatePropertyProvince(firstText(options.province, publication.province, listing.province)),
-    hideStreetName: normalizeBoolean(options.hideStreetName ?? publication.hide_street_name ?? publication.hideStreetName ?? listing.hide_street_name ?? listing.hideStreetName, true),
-    hideStreetNo: normalizeBoolean(options.hideStreetNo ?? publication.hide_street_no ?? publication.hideStreetNo ?? listing.hide_street_no ?? listing.hideStreetNo, true),
-    hideComplexName: normalizeBoolean(options.hideComplexName ?? publication.hide_complex_name ?? publication.hideComplexName ?? listing.hide_complex_name ?? listing.hideComplexName, true),
-    hideUnitNo: normalizeBoolean(options.hideUnitNo ?? publication.hide_unit_no ?? publication.hideUnitNo ?? listing.hide_unit_no ?? listing.hideUnitNo, true),
+    hideStreetName: requestedVisibility ? !showExactAddress : normalizeBoolean(options.hideStreetName ?? publication.hide_street_name ?? publication.hideStreetName ?? listing.hide_street_name ?? listing.hideStreetName, true),
+    hideStreetNo: requestedVisibility ? !showExactAddress : normalizeBoolean(options.hideStreetNo ?? publication.hide_street_no ?? publication.hideStreetNo ?? listing.hide_street_no ?? listing.hideStreetNo, true),
+    hideComplexName: requestedVisibility ? !(showExactAddress || showComplexOnly) : normalizeBoolean(options.hideComplexName ?? publication.hide_complex_name ?? publication.hideComplexName ?? listing.hide_complex_name ?? listing.hideComplexName, true),
+    hideUnitNo: requestedVisibility ? !showExactAddress : normalizeBoolean(options.hideUnitNo ?? publication.hide_unit_no ?? publication.hideUnitNo ?? listing.hide_unit_no ?? listing.hideUnitNo, true),
+    visibility,
   }
 }
 
@@ -400,10 +509,13 @@ function normalizeShowdayEvents(value = []) {
 function buildAttributes({ listing = {}, publication = {}, category = 'Residential', options = {} } = {}) {
   const attributes = []
   const propertyType = firstText(publication.property_type, publication.propertyType, listing.property_type, listing.propertyType)
+  const features = normalizeListingPortalFeatures({ listing, publication })
+  const specialistFacts = resolveSpecialistFacts(listing, publication, options)
+  const specialistCategory = resolvePrivatePropertySpecialistCategory(listing, publication, options)
 
   if (category === 'Residential') {
-    addAttribute(attributes, 'Bedrooms', firstNumber(publication.bedrooms, listing.bedrooms, listing.propertyDetails?.bedrooms))
-    addAttribute(attributes, 'Bathrooms', firstNumber(publication.bathrooms, listing.bathrooms, listing.propertyDetails?.bathrooms))
+    addAttribute(attributes, 'Bedrooms', features.bedrooms)
+    addAttribute(attributes, 'Bathrooms', features.bathrooms)
     addAttribute(attributes, 'HomeType', resolveHomeType(propertyType))
   }
 
@@ -420,14 +532,35 @@ function buildAttributes({ listing = {}, publication = {}, category = 'Residenti
     addAttribute(attributes, 'FarmName', resolveFarmName(listing, publication, options))
   }
 
-  addAttribute(attributes, 'FloorArea', firstNumber(publication.floor_size, publication.floorSize, listing.floor_size, listing.floorSize, listing.propertyDetails?.floorSize))
-  addAttribute(attributes, 'LandArea', firstNumber(publication.erf_size, publication.erfSize, publication.land_size, publication.landSize, listing.erf_size, listing.erfSize, listing.land_size, listing.landSize, listing.propertyDetails?.erfSize))
-  addAttribute(attributes, 'Garages', firstNumber(publication.garages, listing.garages, listing.propertyDetails?.garages))
-  addAttribute(attributes, 'Parking', firstNumber(publication.parking_bays, publication.parkingBays, listing.parking_bays, listing.parkingBays))
+  addAttribute(attributes, 'FloorArea', firstNumber(
+    publication.floor_size,
+    publication.floorSize,
+    listing.floor_size,
+    listing.floorSize,
+    listing.propertyDetails?.floorSize,
+    specialistCategory === 'commercial' ? specialistFacts.grossLettableArea : null,
+    specialistCategory === 'industrial' ? specialistFacts.warehouseOrFactoryArea : null,
+  ))
+  addAttribute(attributes, 'LandArea', firstNumber(
+    publication.erf_size,
+    publication.erfSize,
+    publication.land_size,
+    publication.landSize,
+    listing.erf_size,
+    listing.erfSize,
+    listing.propertyDetails?.erfSize,
+    specialistCategory === 'industrial' ? specialistFacts.yardSize : null,
+    specialistCategory === 'agricultural' ? specialistFacts.farmSize : null,
+    specialistCategory === 'land' ? specialistFacts.erfSize : null,
+  ))
+  addAttribute(attributes, 'Garages', features.garages)
+  addAttribute(attributes, 'Parking', firstNumber(features.parkingBays, specialistCategory === 'commercial' ? specialistFacts.parking : null))
   addAttribute(attributes, 'Rates', firstNumber(publication.rates_taxes, publication.ratesTaxes, listing.rates_taxes, listing.ratesTaxes))
   addAttribute(attributes, 'Levies', firstNumber(publication.levies, listing.levies))
-  addAttribute(attributes, 'Pool', yesNo(publication.pool ?? listing.pool))
-  addAttribute(attributes, 'Garden', yesNo(publication.garden ?? listing.garden))
+  addAttribute(attributes, 'Flatlet', yesNo(features.flatlet))
+  addAttribute(attributes, 'StaffQuarters', yesNo(features.staffQuarters))
+  addAttribute(attributes, 'Pool', yesNo(features.pool))
+  addAttribute(attributes, 'Garden', yesNo(features.garden))
   addAttribute(attributes, 'PetsAllowed', yesNo(publication.pets_allowed ?? publication.petsAllowed ?? listing.pets_allowed ?? listing.petsAllowed))
   addAttribute(attributes, 'Furnished', yesNo(publication.furnished ?? publication.furnishedStatus ?? listing.furnished ?? listing.furnishedStatus))
 
@@ -518,7 +651,19 @@ export function createPrivatePropertyListingPlan({
   options = {},
 } = {}) {
   const listingType = resolvePrivatePropertyListingType(firstText(options.listingType, publication.listing_type, publication.listingType, listing.listing_type, listing.listingType))
-  const category = resolvePrivatePropertyCategory(firstText(options.category, publication.category, publication.property_category, publication.property_type, publication.propertyType, listing.category, listing.property_category, listing.property_type, listing.propertyType))
+  const category = resolvePrivatePropertyCategory(firstText(
+    options.category,
+    publication.category,
+    publication.property_category,
+    publication.propertyCategory,
+    listing.category,
+    listing.property_category,
+    listing.propertyCategory,
+    publication.property_type,
+    publication.propertyType,
+    listing.property_type,
+    listing.propertyType,
+  ))
   const mandateType = resolvePrivatePropertyMandateType({
     listingType,
     category,
@@ -542,7 +687,9 @@ export function createPrivatePropertyListingPlan({
     firstText(options.rentalPriceType, publication.rental_price_type, publication.rentalPriceType, listing.rental_price_type, listing.rentalPriceType),
     { listingType, category },
   )
-  const description = resolveDescription(listing, publication)
+  const specialistFacts = resolveSpecialistFacts(listing, publication, options)
+  const specialistCategory = resolvePrivatePropertySpecialistCategory(listing, publication, options)
+  const description = appendSpecialistDescription(resolveDescription(listing, publication), specialistFacts, specialistCategory)
   const headline = resolveHeadline(listing, publication)
   const listingDate = resolveListingDate(listing, publication, options)
   const availableFrom = resolveAvailableFrom(listing, publication, options) || listingDate
@@ -604,6 +751,8 @@ export function createPrivatePropertyListingPlan({
     xCoordinate: firstNumber(options.xCoordinate, publication.x_coordinate, publication.xCoordinate, listing.x_coordinate, listing.xCoordinate),
     yCoordinate: firstNumber(options.yCoordinate, publication.y_coordinate, publication.yCoordinate, listing.y_coordinate, listing.yCoordinate),
     attributes,
+    specialistFacts,
+    specialistCategory: specialistCategory || null,
     rentalPriceType,
     showdayEvents: normalizeShowdayEvents(firstText(options.showdayEvents) ? options.showdayEvents : publication.showday_events || publication.showdayEvents || listing.showday_events || listing.showdayEvents || []),
     soleMandateExclusiveDays,
@@ -632,8 +781,10 @@ export function createPrivatePropertyListingPlan({
       imageUrlCount: imageRows.length,
       photoUrlPayloadCount: photoUrls ? photoUrls.length : null,
       attributeCount: attributes.length,
+      specialistCategory: specialistCategory || null,
       soleMandateExclusiveDays: soleMandateExclusiveDays || null,
       descriptionPresent: Boolean(description),
+      addressFingerprint: buildListingAddressFingerprint({ listing, publication }),
     },
     payload,
     listingXml,

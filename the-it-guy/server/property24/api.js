@@ -24,6 +24,7 @@ import {
 } from './publishService.js'
 import { resolveProperty24EnvironmentCredentials } from './environmentService.js'
 import { fetchOrganisationProperty24Credentials } from './organisationCredentialService.js'
+import { resolveProperty24ListingLocation } from './listingLocationResolutionService.js'
 import {
   applyControlledProperty24ListingPublish,
   applyControlledProperty24StatusUpdate,
@@ -256,19 +257,35 @@ export function buildProperty24ApiConfig({ env = getRuntimeEnv(), requestUrl, pa
     allowUnsafeLocalApi: normalizeBoolean(env.PROPERTY24_API_ALLOW_UNAUTHENTICATED_LOCAL, false),
     syndicationEnabled: normalizeBoolean(env.PROPERTY24_SYNDICATION_ENABLED, false),
     rentalLivePublishEnabled: normalizeBoolean(env.PROPERTY24_RENTAL_LIVE_PUBLISH_ENABLED, false),
+    rentalProductionApprovalId: normalizeProperty24Text(env.PROPERTY24_RENTAL_PRODUCTION_APPROVAL_ID),
+    rentalProductionAgencyAllowlist: normalizeProperty24Text(env.PROPERTY24_RENTAL_PRODUCTION_AGENCY_ALLOWLIST)
+      .split(',')
+      .map((item) => normalizeProperty24Text(item))
+      .filter(Boolean),
+    rentalProductionPilotListingId: normalizeProperty24Text(env.PROPERTY24_RENTAL_PRODUCTION_PILOT_LISTING_ID),
     supabaseUrl: normalizeProperty24Text(env.SUPABASE_URL || env.VITE_SUPABASE_URL),
     serviceRoleKey: normalizeProperty24Text(env.SUPABASE_SERVICE_ROLE_KEY),
     listingId: normalizeProperty24Text(route.listingId || payload.listingId || query.get('listingId')),
     explicitAgencyId,
     explicitAgentId,
     explicitAgentSourceReference,
-    agencyId: normalizeProperty24Text(firstValue(explicitAgencyId, env.PROPERTY24_DEFAULT_AGENCY_ID, '31382')),
+    // Organisation publishing resolves this from property24_accounts. A
+    // request can supply an agency only for the later connection-mismatch
+    // check; there is no platform-wide agency fallback.
+    agencyId: explicitAgencyId,
     agentId: normalizeProperty24Text(firstValue(explicitAgentId, env.PROPERTY24_DEFAULT_AGENT_ID)),
     agentSourceReference: normalizeProperty24Text(firstValue(
       explicitAgentSourceReference,
       env.PROPERTY24_DEFAULT_AGENT_SOURCE_REFERENCE,
     )),
-    suburbId: normalizeProperty24Text(firstValue(payload.suburbId, query.get('suburbId'), env.PROPERTY24_DEFAULT_SUBURB_ID)),
+    // A single production-wide suburb is unsafe: Property24 uses this numeric
+    // catalog id as the advert's suburb/city authority. Production listings
+    // must resolve their own exact id from their saved address.
+    suburbId: normalizeProperty24Text(firstValue(
+      payload.suburbId,
+      query.get('suburbId'),
+      environment === 'production' ? '' : env.PROPERTY24_DEFAULT_SUBURB_ID,
+    )),
     propertyTypeId: normalizeProperty24Text(firstValue(
       payload.propertyTypeId,
       query.get('propertyTypeId'),
@@ -507,6 +524,64 @@ function createProperty24FromConfig(config = {}) {
   })
 }
 
+function normalizeProperty24CatalogKey(value = '') {
+  return normalizeProperty24Text(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Arch9 keeps the shorter internal labels used in the capture flow, while
+// Property24's catalogue uses a few combined portal labels. These aliases are
+// intentionally narrow and still require exactly one live catalogue result.
+const PROPERTY24_PROPERTY_TYPE_ALIASES = {
+  apartment: ['apartment flat'],
+}
+
+function property24CatalogItems(response = {}) {
+  const data = response?.data
+  if (Array.isArray(data)) return data
+  if (Array.isArray(data?.items)) return data.items
+  if (Array.isArray(data?.data)) return data.data
+  if (Array.isArray(data?.propertyTypes)) return data.propertyTypes
+  if (Array.isArray(data?.PropertyTypes)) return data.PropertyTypes
+  if (Array.isArray(data?.results)) return data.results
+  if (Array.isArray(data?.Items)) return data.Items
+  if (Array.isArray(data?.Data)) return data.Data
+  return []
+}
+
+function property24CatalogId(record = {}) {
+  return normalizeProperty24Text(
+    record.id || record.Id || record.countryId || record.CountryId || record.propertyTypeId || record.PropertyTypeId,
+  )
+}
+
+function property24CatalogName(record = {}) {
+  return normalizeProperty24Text(
+    record.name || record.Name || record.description || record.Description || record.propertyTypeName || record.PropertyTypeName,
+  )
+}
+
+function property24PropertyTypeFromListing(listing = {}) {
+  const details = listing.property_details || listing.propertyDetails || {}
+  const canonicalFacts = listing.seller_canonical_facts_json || listing.sellerCanonicalFacts || {}
+  const canonicalProperty = canonicalFacts.property || canonicalFacts.propertyDetails || {}
+  return normalizeProperty24Text(
+    listing.property_type || listing.propertyType || details.property_type || details.propertyType ||
+    canonicalProperty.property_type || canonicalProperty.propertyType,
+  )
+}
+
+function property24CatalogResolutionError(code, message, details = {}) {
+  const error = new Error(message)
+  error.code = code
+  error.status = 422
+  error.details = details
+  return error
+}
+
 function toPublicPreview(preview = {}) {
   return {
     canSubmit: Boolean(preview.canSubmit),
@@ -579,7 +654,12 @@ async function resolveExistingProperty24ListingEnvironment({ supabase, config = 
     property24Password: organisationCredentials?.password || credentials.password,
     property24UserGroupId: organisationCredentials ? organisationCredentials.userGroupId : credentials.userGroupId,
     property24ApiVersion: credentials.apiVersion || config.property24ApiVersion,
-    property24SendUserGroupHeader: credentials.sendUserGroupHeader ?? config.property24SendUserGroupHeader,
+    // The organisation vault is authoritative for the group scope. An empty
+    // group means Property24 did not assign one, so omit the header rather
+    // than inheriting a platform-wide value.
+    property24SendUserGroupHeader: organisationCredentials
+      ? Boolean(organisationCredentials.userGroupId)
+      : false,
     property24CredentialSource: organisationCredentials?.source || 'environment_fallback',
     agencyId: normalizeProperty24Text(productionSync.agency_id) || config.agencyId,
     listingNumber: requestedListingNumber || normalizeProperty24Text(productionSync.listing_number),
@@ -664,6 +744,7 @@ async function resolveProperty24StatusActionConfig({ supabase, resolvedConfig, f
         supabase,
         listingId: resolvedConfig.listingId,
         environment: resolvedConfig.environment,
+        apiVersion: resolvedConfig.property24ApiVersion,
       })
   const listingReferenceResult = resolvedConfig.listingNumber || sync?.listing_number
     ? null
@@ -792,6 +873,7 @@ export async function createProperty24ApiResponse({
     const buildSubmitPlan = dependencies.buildSubmitPlan || buildProperty24ListingSubmitPlan
     const buildRentalSubmitPlan = dependencies.buildRentalSubmitPlan || buildProperty24RentalListingSubmitPlan
     const resolvePublishConfig = dependencies.resolvePublishConfig || resolveProperty24ListingPublishConfiguration
+    const resolveListingLocation = dependencies.resolveListingLocation || resolveProperty24ListingLocation
     const applyPublish = dependencies.applyPublish || applyProperty24ListingPublish
     const applyControlledPublish = dependencies.applyControlledPublish || applyControlledProperty24ListingPublish
     const applyStatusUpdate = dependencies.applyStatusUpdate || applyControlledProperty24StatusUpdate
@@ -804,6 +886,140 @@ export async function createProperty24ApiResponse({
     const resolveTargetAgentMapping = dependencies.resolveTargetAgentMapping || resolveProperty24TargetAgentMapping
     const writeListingAgentAssignment = dependencies.writeListingAgentAssignment || writePrivateListingAgentAssignment
     const recordAgentReassignmentActivity = dependencies.recordAgentReassignmentActivity || recordListingAgentReassignmentActivity
+
+    async function resolveProductionListingLocation({ supabase, resolvedConfig } = {}) {
+      if (normalizeProperty24Text(resolvedConfig?.environment).toLowerCase() !== 'production') return resolvedConfig
+      const property24 = createProperty24(resolvedConfig)
+      const location = await resolveListingLocation({
+        supabase,
+        property24,
+        listingId: resolvedConfig.listingId,
+        suppliedSuburbId: resolvedConfig.suburbId,
+      })
+      return {
+        ...resolvedConfig,
+        suburbId: String(location.suburbId),
+        property24ResolvedLocation: location,
+      }
+    }
+
+    async function resolveProductionListingPropertyType({ supabase, resolvedConfig } = {}) {
+      if (normalizeProperty24Text(resolvedConfig?.environment).toLowerCase() !== 'production') return resolvedConfig
+      if (normalizeProperty24Text(resolvedConfig?.propertyTypeId)) return resolvedConfig
+
+      const { data: listing, error: listingError } = await supabase
+        .from('private_listings')
+        // Rental deployments do not all expose the same denormalised property
+        // columns. Reading the listing record keeps the catalog resolver
+        // compatible with the canonical JSON shape used by older workspaces.
+        .select('*')
+        .eq('id', resolvedConfig.listingId)
+        .single()
+      if (listingError) throw listingError
+
+      const localLabel = property24PropertyTypeFromListing(listing)
+      const localKey = normalizeProperty24CatalogKey(localLabel)
+      if (!localKey) {
+        throw property24CatalogResolutionError(
+          'property24_property_type_missing',
+          'Choose a property type before publishing to Property24.',
+        )
+      }
+
+      const { data: savedMapping, error: savedMappingError } = await supabase
+        .from('property24_catalog_mappings')
+        .select('property24_id, property24_label')
+        .eq('environment', 'production')
+        .eq('catalog_type', 'property_type')
+        .eq('local_key', localKey)
+        .eq('status', 'active')
+        .maybeSingle()
+      if (savedMappingError && !['42P01', 'PGRST205'].includes(savedMappingError.code)) throw savedMappingError
+      if (savedMapping?.property24_id) {
+        return {
+          ...resolvedConfig,
+          propertyTypeId: String(savedMapping.property24_id),
+          property24ResolvedPropertyType: {
+            source: 'property24_catalog_mappings',
+            localLabel,
+            id: Number(savedMapping.property24_id),
+            label: normalizeProperty24Text(savedMapping.property24_label),
+          },
+        }
+      }
+
+      const property24 = createProperty24(resolvedConfig)
+      const countries = property24CatalogItems(await property24.fetchCountries())
+      const countryKey = normalizeProperty24CatalogKey(resolvedConfig?.property24ResolvedLocation?.country || 'South Africa')
+      const countryMatches = countries.filter((country) => normalizeProperty24CatalogKey(property24CatalogName(country)) === countryKey)
+      if (countryMatches.length !== 1 || !property24CatalogId(countryMatches[0])) {
+        throw property24CatalogResolutionError(
+          'property24_country_mapping_unresolved',
+          `Property24 could not resolve the country catalog entry for ${resolvedConfig?.property24ResolvedLocation?.country || 'South Africa'}.`,
+        )
+      }
+
+      const types = property24CatalogItems(await property24.fetchPropertyTypes(property24CatalogId(countryMatches[0])))
+      const acceptedTypeKeys = new Set([localKey, ...(PROPERTY24_PROPERTY_TYPE_ALIASES[localKey] || [])])
+      const typeMatches = types.filter((type) => acceptedTypeKeys.has(normalizeProperty24CatalogKey(property24CatalogName(type))))
+      if (typeMatches.length !== 1 || !property24CatalogId(typeMatches[0])) {
+        const availableTypes = types
+          .map((type) => property24CatalogName(type))
+          .filter(Boolean)
+          .slice(0, 40)
+        throw property24CatalogResolutionError(
+          'property24_property_type_mapping_unresolved',
+          `Property24 could not find one exact property type match for ${localLabel}. Available types: ${availableTypes.join(', ') || 'none returned'}.`,
+          { localLabel, candidates: availableTypes },
+        )
+      }
+
+      const propertyType = typeMatches[0]
+      const mapping = {
+        organisation_id: resolvedConfig.organisationId || null,
+        environment: 'production',
+        catalog_type: 'property_type',
+        local_key: localKey,
+        local_label: localLabel,
+        property24_id: Number(property24CatalogId(propertyType)),
+        property24_label: property24CatalogName(propertyType),
+        parent_context: { country_id: Number(property24CatalogId(countryMatches[0])) },
+        match_type: normalizeProperty24CatalogKey(property24CatalogName(propertyType)) === localKey
+          ? 'property24_exact_catalog_lookup'
+          : 'property24_catalog_semantic_alias',
+        confidence: normalizeProperty24CatalogKey(property24CatalogName(propertyType)) === localKey ? 1 : 0.99,
+        status: 'active',
+        last_seen_at: new Date().toISOString(),
+      }
+      const { error: mappingError } = await supabase
+        .from('property24_catalog_mappings')
+        // The active-row uniqueness rule is a partial PostgreSQL index, which
+        // PostgREST cannot use as an ON CONFLICT target. We already performed
+        // the active mapping lookup above, so insert the verified mapping.
+        .insert(mapping)
+      if (mappingError && !['42P01', 'PGRST205'].includes(mappingError.code)) throw mappingError
+
+      return {
+        ...resolvedConfig,
+        propertyTypeId: String(mapping.property24_id),
+        property24ResolvedPropertyType: {
+          source: 'property24_exact_catalog_lookup',
+          localLabel,
+          id: mapping.property24_id,
+          label: mapping.property24_label,
+        },
+      }
+    }
+
+    function attachResolvedLocation(preview, resolvedConfig) {
+      if (!preview || !resolvedConfig?.property24ResolvedLocation) return preview
+      preview.summary = {
+        ...(preview.summary || {}),
+        suburbId: resolvedConfig.property24ResolvedLocation.suburbId,
+        property24Location: resolvedConfig.property24ResolvedLocation,
+      }
+      return preview
+    }
 
     if (['reassignListingAgent', 'reassignRentalListingAgent'].includes(route.name)) {
       if (config.explicitAgentId || config.explicitAgentSourceReference) {
@@ -875,7 +1091,7 @@ export async function createProperty24ApiResponse({
       let property24Report = null
       try {
         if (plan.requiresProperty24Sync) {
-          const publishConfig = await resolvePublishConfig({
+          let publishConfig = await resolvePublishConfig({
             supabase,
             config: {
               ...config,
@@ -886,6 +1102,7 @@ export async function createProperty24ApiResponse({
             },
             listingId: plan.listingId,
           })
+          publishConfig = await resolveProductionListingLocation({ supabase, resolvedConfig: publishConfig })
           const resolvedMapping = publishConfig.property24ResolvedMapping || {}
           if (
             normalizeProperty24Text(resolvedMapping.arch9UserId) !== plan.targetAgentId ||
@@ -1025,7 +1242,9 @@ export async function createProperty24ApiResponse({
       const supabase = createSupabase(config)
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
       if (browserAuthFailure) return browserAuthFailure
-      const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      let resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      resolvedConfig = await resolveProductionListingLocation({ supabase, resolvedConfig })
+      resolvedConfig = await resolveProductionListingPropertyType({ supabase, resolvedConfig })
       const sandboxPayloadTestMode = canUseSandboxProperty24PayloadTest(resolvedConfig)
       const resolvedMissing = getMissingConfiguration(resolvedConfig, {
         mapping: true,
@@ -1038,7 +1257,7 @@ export async function createProperty24ApiResponse({
           mapping: resolvedConfig.property24ResolvedMapping || null,
         })
       }
-      const preview = await buildSubmitPlan({
+      const preview = attachResolvedLocation(await buildSubmitPlan({
         supabase,
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,
@@ -1055,7 +1274,7 @@ export async function createProperty24ApiResponse({
         photosChanged: resolvedConfig.photosChanged,
         convertImagesToJpeg: true,
         loadImageBytes: false,
-      })
+      }), resolvedConfig)
       const report = createProperty24PublishReport({ config: resolvedConfig, preview, apply: false })
       return buildJsonResponse(200, {
         route: route.name,
@@ -1077,7 +1296,9 @@ export async function createProperty24ApiResponse({
       const supabase = createSupabase(config)
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
       if (browserAuthFailure) return browserAuthFailure
-      const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      let resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      resolvedConfig = await resolveProductionListingLocation({ supabase, resolvedConfig })
+      resolvedConfig = await resolveProductionListingPropertyType({ supabase, resolvedConfig })
       const sandboxPayloadTestMode = canUseSandboxProperty24PayloadTest(resolvedConfig)
       const resolvedMissing = []
       if (!resolvedConfig.agencyId) resolvedMissing.push('PROPERTY24_DEFAULT_AGENCY_ID or agencyId')
@@ -1090,13 +1311,14 @@ export async function createProperty24ApiResponse({
           mapping: resolvedConfig.property24ResolvedMapping || null,
         })
       }
-      const preview = await buildRentalSubmitPlan({
+      const preview = attachResolvedLocation(await buildRentalSubmitPlan({
         supabase,
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,
         agentId: resolvedConfig.agentId,
         agentSourceReference: resolvedConfig.agentSourceReference,
         environment: resolvedConfig.environment,
+        apiVersion: resolvedConfig.property24ApiVersion,
         sandboxPayloadTestMode,
         suburbId: resolvedConfig.suburbId,
         propertyTypeId: resolvedConfig.propertyTypeId,
@@ -1107,7 +1329,7 @@ export async function createProperty24ApiResponse({
         photosChanged: resolvedConfig.photosChanged,
         convertImagesToJpeg: true,
         loadImageBytes: false,
-      })
+      }), resolvedConfig)
       const report = createProperty24PublishReport({ config: resolvedConfig, preview, apply: false })
       return buildJsonResponse(200, {
         route: route.name,
@@ -1130,7 +1352,9 @@ export async function createProperty24ApiResponse({
       const supabase = createSupabase(config)
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
       if (browserAuthFailure) return browserAuthFailure
-      const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      let resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      resolvedConfig = await resolveProductionListingLocation({ supabase, resolvedConfig })
+      resolvedConfig = await resolveProductionListingPropertyType({ supabase, resolvedConfig })
       const resolvedMissing = getMissingConfiguration(resolvedConfig, {
         enabled: true,
         mapping: true,
@@ -1143,7 +1367,7 @@ export async function createProperty24ApiResponse({
         })
       }
       const property24 = createProperty24(resolvedConfig)
-      const preview = await buildSubmitPlan({
+      const preview = attachResolvedLocation(await buildSubmitPlan({
         supabase,
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,
@@ -1158,7 +1382,7 @@ export async function createProperty24ApiResponse({
         maxImages: resolvedConfig.maxImages,
         photosChanged: resolvedConfig.photosChanged,
         convertImagesToJpeg: true,
-      })
+      }), resolvedConfig)
       let report = createProperty24PublishReport({ config: resolvedConfig, preview, apply: true })
       if (!preview.canSubmit) {
         report = await applyControlledPublish({
@@ -1217,7 +1441,9 @@ export async function createProperty24ApiResponse({
       const supabase = createSupabase(config)
       const browserAuthFailure = await authenticateBrowserProperty24ListingRequest({ supabase, headers, config })
       if (browserAuthFailure) return browserAuthFailure
-      const resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      let resolvedConfig = await resolvePublishConfig({ supabase, config, listingId: config.listingId })
+      resolvedConfig = await resolveProductionListingLocation({ supabase, resolvedConfig })
+      resolvedConfig = await resolveProductionListingPropertyType({ supabase, resolvedConfig })
       const resolvedMissing = getMissingConfiguration(resolvedConfig, {
         enabled: true,
         rentalEnabled: true,
@@ -1232,13 +1458,14 @@ export async function createProperty24ApiResponse({
       }
 
       const property24 = createProperty24(resolvedConfig)
-      const preview = await buildRentalSubmitPlan({
+      const preview = attachResolvedLocation(await buildRentalSubmitPlan({
         supabase,
         listingId: resolvedConfig.listingId,
         agencyId: resolvedConfig.agencyId,
         agentId: resolvedConfig.agentId,
         agentSourceReference: resolvedConfig.agentSourceReference,
         environment: resolvedConfig.environment,
+        apiVersion: resolvedConfig.property24ApiVersion,
         sandboxPayloadTestMode: false,
         suburbId: resolvedConfig.suburbId,
         propertyTypeId: resolvedConfig.propertyTypeId,
@@ -1249,7 +1476,7 @@ export async function createProperty24ApiResponse({
         photosChanged: resolvedConfig.photosChanged,
         convertImagesToJpeg: true,
         loadImageBytes: true,
-      })
+      }), resolvedConfig)
       let report = {
         ...createProperty24PublishReport({ config: resolvedConfig, preview, apply: true }),
         phase: 'property24-rental-publish-listing',

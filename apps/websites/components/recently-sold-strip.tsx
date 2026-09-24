@@ -8,14 +8,18 @@ const money = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR
 export function RecentlySoldStrip({ properties }: { properties: PublicProperty[] }) {
   const sold = properties.filter((property) => property.transactionType === 'sale').slice(0, 8)
   const trackRef = useRef<HTMLDivElement>(null)
+  const activeRef = useRef(0)
   const [active, setActive] = useState(0)
   useEffect(() => {
     if (sold.length < 2) return
     const timer = window.setInterval(() => {
       const track = trackRef.current
       if (!track) return
-      const next = (active + 1) % sold.length
-      track.querySelectorAll<HTMLElement>('.lwp-sold-card')[next]?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'start' })
+      const next = (activeRef.current + 1) % sold.length
+      const card = track.querySelectorAll<HTMLElement>('.lwp-sold-card')[next]
+      if (!card) return
+      track.scrollTo({ left: card.offsetLeft, behavior: 'smooth' })
+      activeRef.current = next
       setActive(next)
     }, 4600)
     return () => window.clearInterval(timer)
@@ -27,6 +31,7 @@ export function RecentlySoldStrip({ properties }: { properties: PublicProperty[]
       const track = event.currentTarget
       const cards = Array.from(track.querySelectorAll<HTMLElement>('.lwp-sold-card'))
       const nearest = cards.reduce((best, card, index) => Math.abs(card.offsetLeft - track.scrollLeft) < Math.abs(cards[best].offsetLeft - track.scrollLeft) ? index : best, 0)
+      activeRef.current = nearest
       setActive(nearest)
     }}>
       {sold.map((property, index) => {

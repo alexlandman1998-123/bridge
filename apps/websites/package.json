@@ -10,7 +10,10 @@
     "build": "next build",
     "start": "next start",
     "test": "node --test lib/*.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "baseline:kingdom": "node scripts/kingdom-production-baseline.mjs",
+    "baseline:kingdom:record": "node scripts/kingdom-production-baseline.mjs --record",
+    "verify:tenant-boundaries": "node scripts/verify-tenant-boundaries.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.112.4",

@@ -451,10 +451,14 @@ export async function createPrivatePropertyApiResponse({
         recordSync: true,
         confirmation: config.confirmation,
       })
-      return buildJsonResponse(report.status === 'BLOCKED' ? 422 : 200, {
+      const submitted = report.status === 'SUBMITTED'
+      return buildJsonResponse(submitted ? 200 : 422, {
         route: route.name,
         status: report.status,
         listingId: config.listingId,
+        message: submitted
+          ? ''
+          : report.apiResponse?.error?.message || report.nextStep || 'Private Property did not accept this listing.',
         report,
       })
     }

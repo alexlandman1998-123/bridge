@@ -30,7 +30,7 @@ const keyFor = (status) => {
 const firstAssetUrl = (assets, ...documentTypes) =>
   (Array.isArray(assets) ? assets : [])
     .filter((asset) =>
-      documentTypes.includes(text(asset?.documentType).toLowerCase()),
+      documentTypes.includes(text(asset?.documentType || asset?.document_type).toLowerCase()),
     )
     .map((asset) => text(asset?.fileUrl))
     .find(Boolean) || "";
@@ -374,11 +374,17 @@ export default function PublicDevelopmentResponsiveRoute() {
       ? publishedVisualMap
       : visualMap;
   const assetSitePlan = firstAssetUrl(data.assets, "site_plan");
+  const assetCover = firstAssetUrl(data.assets, "cover");
   const assetLogo = firstAssetUrl(data.assets, "logo");
   const assetDarkLogo = firstAssetUrl(data.assets, "logo-dark");
   const hydratedMedia = hydrateVisualMapMediaLibrary({
     ...mediaLibrary,
     visualMap: publicVisualMap,
+    coverImageUrl: text(mediaLibrary.coverImageUrl) || assetCover,
+    masterplanUrl:
+      text(mediaLibrary.masterplanUrl) ||
+      text(mediaLibrary.sitePlanUrl) ||
+      assetSitePlan,
     sitePlanUrl: text(mediaLibrary.sitePlanUrl) || assetSitePlan,
     developmentLogoUrl: text(mediaLibrary.developmentLogoUrl) || assetLogo,
     developmentLogoLightUrl:
@@ -421,9 +427,10 @@ export default function PublicDevelopmentResponsiveRoute() {
       .map(assetKey)
       .filter(Boolean),
   );
-  const hero = developmentLogos.has(assetKey(media.heroImageUrl))
+  const heroCandidate = text(media.coverImageUrl) || text(media.heroImageUrl);
+  const hero = developmentLogos.has(assetKey(heroCandidate))
     ? ""
-    : media.heroImageUrl || "";
+    : heroCandidate;
   const seenGalleryAssets = new Set();
   const images = [...list(media.galleryImageUrls), ...list(media.imageUrls)].filter(
     (url) => {

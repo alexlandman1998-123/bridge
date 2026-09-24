@@ -21,6 +21,9 @@ assert.equal(branding.accentColour, '#45de90')
 const signedLogoUrl = 'https://example.supabase.co/storage/v1/object/sign/organisation-branding/organisations/org-1/branding/logo.png?token=expiring-token'
 const publicLogoUrl = 'https://example.supabase.co/storage/v1/object/public/organisation-branding/organisations/org-1/branding/logo.png'
 assert.equal(normalizeOnboardingLogoUrl(signedLogoUrl), publicLogoUrl)
+
+const privateSigningLogoUrl = 'https://example.supabase.co/storage/v1/object/sign/documents/seller-signing/listing-1/group-1/branding/logo.png?token=temporary-access'
+assert.equal(normalizeOnboardingLogoUrl(privateSigningLogoUrl), privateSigningLogoUrl)
 assert.equal(resolveOnboardingBranding({ logo_light_url: signedLogoUrl }).logoLightUrl, publicLogoUrl)
 
 console.log('onboardingBranding tests passed')

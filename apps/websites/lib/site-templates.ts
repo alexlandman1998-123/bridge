@@ -1,11 +1,16 @@
 import styles from '@/app/agency.module.css'
-import type { WebsiteTemplateKey } from '@/lib/types'
+import type { ResolvedSite, WebsiteTemplateKey } from '@/lib/types'
 
 export const HOME_SEEKERS_TEMPLATE_KEY: WebsiteTemplateKey = 'home-seekers-v1'
 export const STANDARD_TEMPLATE_KEY: WebsiteTemplateKey = 'property-standard-v1'
 
 export function isHomeSeekersTemplate(templateKey: WebsiteTemplateKey) {
   return templateKey === HOME_SEEKERS_TEMPLATE_KEY
+}
+
+/** A site capability, never an agency-name check. */
+export function hasEditorialPropertyExperience(site: Pick<ResolvedSite, 'experienceKey'>) {
+  return site.experienceKey === 'editorial-property-v1'
 }
 
 export function templateClassName(templateKey: WebsiteTemplateKey) {

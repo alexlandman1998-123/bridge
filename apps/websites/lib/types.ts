@@ -21,12 +21,14 @@ export type PublicProperty = {
 }
 
 export type WebsiteTemplateKey = 'property-standard-v1' | 'home-seekers-v1'
+export type WebsiteExperienceKey = 'standard' | 'editorial-property-v1'
 
 export type ResolvedSite = {
   id: string
   organisationId: string
   publishedRevisionId: string
   templateKey: WebsiteTemplateKey
+  experienceKey: WebsiteExperienceKey
   name: string
   status: 'draft' | 'published' | 'suspended'
   primaryColor: string

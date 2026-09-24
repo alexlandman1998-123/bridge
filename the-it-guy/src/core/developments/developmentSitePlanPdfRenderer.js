@@ -17,20 +17,27 @@ export function isSvgSitePlanFile(file) {
   return String(file?.type || '').toLowerCase() === 'image/svg+xml' || name.endsWith('.svg')
 }
 
+// SVG plans retain the source labels and their exact drawing coordinates. This
+// lets availability mapping offer safe suggestions instead of asking users to
+// manually pin every residence.
 export async function extractSitePlanSvgTextAnchors(file) {
   if (!isSvgSitePlanFile(file)) return []
-  const document = new DOMParser().parseFromString(await file.text(), 'image/svg+xml')
+  const source = await file.text()
+  const document = new DOMParser().parseFromString(source, 'image/svg+xml')
+  if (document.querySelector('parsererror')) throw new Error('This SVG site plan could not be read.')
   const root = document.documentElement
-  const box = (root.getAttribute('viewBox') || '').trim().split(/[ ,]+/).map(Number)
-  const width = Number(box[2]) || Number.parseFloat(root.getAttribute('width')) || 0
-  const height = Number(box[3]) || Number.parseFloat(root.getAttribute('height')) || 0
+  const viewBox = (root.getAttribute('viewBox') || '').trim().split(/[ ,]+/).map(Number)
+  const width = Number(viewBox[2]) || Number.parseFloat(root.getAttribute('width')) || 0
+  const height = Number(viewBox[3]) || Number.parseFloat(root.getAttribute('height')) || 0
+  const originX = Number(viewBox[0]) || 0
+  const originY = Number(viewBox[1]) || 0
   if (!width || !height) return []
-  return [...document.querySelectorAll('text')].flatMap(node => {
+  return [...document.querySelectorAll('text')].flatMap((node) => {
     const label = String(node.textContent || '').trim()
     const x = Number.parseFloat(node.getAttribute('x') || '')
     const y = Number.parseFloat(node.getAttribute('y') || '')
     if (!label || !Number.isFinite(x) || !Number.isFinite(y)) return []
-    return [{ label, x: Math.max(3, Math.min(97, ((x - (Number(box[0]) || 0)) / width) * 100)), y: Math.max(3, Math.min(97, ((y - (Number(box[1]) || 0)) / height) * 100)) }]
+    return [{ label, x: Math.max(3, Math.min(97, ((x - originX) / width) * 100)), y: Math.max(3, Math.min(97, ((y - originY) / height) * 100)) }]
   })
 }
 
@@ -94,6 +101,8 @@ export async function renderSitePlanPdfFirstPage(file) {
 
 export async function renderSitePlanUploadImage(file) {
   validateSitePlanFile(file)
+  // Keep SVGs as their original vector files. Storage permits this media type
+  // and the editor can use its labels for suggestions without pixelation.
   if (isSvgSitePlanFile(file)) return file
   if (!isSvgSitePlanFile(file)) return renderSitePlanPdfFirstPage(file)
 

@@ -85,6 +85,8 @@ const backgroundStyleForScene = (scene) => {
     backgroundImage: `linear-gradient(rgba(8,28,24,.08),rgba(8,28,24,.12)),url(${scene.background.url})`,
     backgroundPosition: "center",
     backgroundRepeat: "no-repeat",
+    // Never stretch a masterplan to fill a wide editor.  The SVG overlay below
+    // uses the same 'meet' behaviour, keeping unit pins on their real homes.
     backgroundSize: "contain",
   };
 };

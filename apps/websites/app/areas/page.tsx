@@ -2,7 +2,7 @@ import { headers } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { resolveSite } from '@/lib/site-repository'
-import { templateClassName } from '@/lib/site-templates'
+import { hasEditorialPropertyExperience, templateClassName } from '@/lib/site-templates'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +17,7 @@ const areas = [
 export default async function AreasPage() {
   const site = await resolveSite((await headers()).get('host'))
   if (!site) notFound()
-  const lwp = site.name === 'LWP Properties'
+  const lwp = hasEditorialPropertyExperience(site)
 
   return <main className={`${templateClassName(site.templateKey)} areas-page${lwp ? ' lwp-areas-page' : ''}`} style={{ '--primary': site.primaryColor, '--secondary': site.secondaryColor, '--accent': site.accentColor } as React.CSSProperties}>
     <SiteHeader site={site} currentHref="/areas" />

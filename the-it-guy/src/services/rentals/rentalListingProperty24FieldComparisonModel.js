@@ -10,7 +10,12 @@ import {
   buildRentalProperty24Readiness,
 } from './rentalListingProperty24ReadinessModel.js'
 
-export const RENTAL_PROPERTY24_FIELD_COMPARISON_VERSION = 'arch9_rental_property24_field_comparison_v1'
+// The authenticated production catalogue was retrieved from Listing Service
+// v55. Keep this explicit instead of allowing the rental readiness screen to
+// inherit an old ExDev v53 label.
+export const PROPERTY24_RENTAL_LISTING_API_VERSION = 'v55'
+export const PROPERTY24_RENTAL_LISTING_SERVICE = `Listing Service ${PROPERTY24_RENTAL_LISTING_API_VERSION}`
+export const RENTAL_PROPERTY24_FIELD_COMPARISON_VERSION = 'arch9_rental_property24_field_comparison_v2'
 
 export const RENTAL_PROPERTY24_FIELD_STATUS = Object.freeze({
   MAPPED: 'mapped',
@@ -89,12 +94,20 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     readinessKey: 'rentalInfo',
   },
   {
-    key: 'rentalRate',
-    arch9Field: 'rentalInfo rental cadence',
+    key: 'rentalPriceFrequency',
+    arch9Field: 'rentalInfo.rentalPriceFrequency',
     property24Field: 'rentalInfo.rentalRate',
     requirement: 'Property24 rentalInfo',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
-    defaultValue: 'Month',
+    readinessKey: 'rentalPriceFrequency',
+  },
+  {
+    key: 'depositPolicy',
+    arch9Field: 'rentalInfo.depositPolicy',
+    property24Field: 'rentalInfo.depositRequirementsComments',
+    requirement: 'Arch9 must explicitly record whether a deposit is required',
+    severity: RENTAL_PROPERTY24_FIELD_SEVERITY.BLOCKER,
+    readinessKey: 'depositPolicy',
   },
   {
     key: 'availableFrom',
@@ -247,7 +260,7 @@ const PROPERTY24_RENTAL_FIELD_CONTRACT = Object.freeze([
     key: 'utilitiesPolicy',
     arch9Field: 'rentalInfo.utilitiesPolicy',
     property24Field: 'description / internal Arch9 metadata',
-    requirement: 'No direct Property24 field in Listing Service v53',
+    requirement: 'No direct Property24 field in Listing Service v55',
     severity: RENTAL_PROPERTY24_FIELD_SEVERITY.INFO,
   },
   {
@@ -301,6 +314,15 @@ function mapFurnishedStatus(value) {
   return 'No'
 }
 
+function mapRentalRate(value) {
+  const key = normalizeKey(value)
+  if (['weekly', 'week'].includes(key)) return 'Week'
+  if (['daily', 'day'].includes(key)) return 'Day'
+  if (['annual', 'annually', 'yearly', 'year'].includes(key)) return 'Year'
+  if (['per_square_metre', 'per_square_meter', 'square_metre', 'square_meter', 'sqm', 'm2'].includes(key)) return 'SquareMetre'
+  return key === 'monthly' || key === 'month' ? 'Month' : ''
+}
+
 function getValueForField(key, { listing, row, publication, rentalInfo, payloadPreview }) {
   switch (key) {
     case 'listingType':
@@ -317,8 +339,10 @@ function getValueForField(key, { listing, row, publication, rentalInfo, payloadP
       return payloadPreview.rentalInfo?.monthlyRent
     case 'rentalInfo':
       return payloadPreview.rentalInfo
-    case 'rentalRate':
-      return 'Month'
+    case 'rentalPriceFrequency':
+      return payloadPreview.rentalInfo?.rentalPriceFrequency
+    case 'depositPolicy':
+      return payloadPreview.rentalInfo?.depositPolicy
     case 'availableFrom':
       return payloadPreview.rentalInfo?.availableFrom
     case 'expiryDate':
@@ -389,7 +413,6 @@ function hasValidContractValue(definition, value) {
 
 function resolveStatus(definition, value, readinessByKey) {
   if (definition.defaultValue && !hasValue(value)) return RENTAL_PROPERTY24_FIELD_STATUS.DEFAULTED
-  if (definition.key === 'rentalRate') return RENTAL_PROPERTY24_FIELD_STATUS.DEFAULTED
   if (readinessByKey[definition.readinessKey]?.backendResolved) {
     return RENTAL_PROPERTY24_FIELD_STATUS.BACKEND_RESOLVED
   }
@@ -411,6 +434,7 @@ function resolveStatus(definition, value, readinessByKey) {
 
 function formatProperty24Value(key, value) {
   if (key === 'availableFrom' || key === 'expiryDate') return asDateTime(value)
+  if (key === 'rentalPriceFrequency') return mapRentalRate(value)
   if (key === 'depositAmount') return value ? `Equal to deposit amount R${value}` : ''
   if (key === 'leasePeriodMonths') return value ? `${value} Months` : ''
   if (Array.isArray(value)) return value
@@ -485,7 +509,7 @@ export function buildRentalProperty24FieldComparison(listing = {}, options = {})
 
   return {
     version: RENTAL_PROPERTY24_FIELD_COMPARISON_VERSION,
-    property24Service: 'Listing Service v53',
+    property24Service: PROPERTY24_RENTAL_LISTING_SERVICE,
     listingType: payloadPreview.listingType || 'Rental',
     rows,
     summary,

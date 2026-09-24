@@ -1008,6 +1008,7 @@ const DEFAULT_DEVELOPMENT_PROFILE = {
       whyThisDevelopment: '',
     },
     mediaLibrary: {
+      coverImageUrl: '',
       heroImageUrl: '',
       galleryImageUrls: '',
       developmentLogoUrl: '',
@@ -2684,6 +2685,9 @@ function normalizeMarketingContent(value) {
       ),
     },
     mediaLibrary: hydrateVisualMapMediaLibrary({
+      coverImageUrl: normalizeTextValue(
+        mediaLibrarySource.coverImageUrl ?? mediaLibrarySource.cover_image_url ?? defaults.mediaLibrary.coverImageUrl,
+      ),
       heroImageUrl: normalizeTextValue(
         mediaLibrarySource.heroImageUrl ?? mediaLibrarySource.hero_image_url ?? defaults.mediaLibrary.heroImageUrl,
       ),

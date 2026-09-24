@@ -12,7 +12,7 @@ import { ListingAnalyticsTracker } from '@/components/site-analytics'
 import { SiteFooter, SiteHeader } from '@/components/site-chrome'
 import { presentListingFeatures } from '@/lib/listing-features'
 import { getPublicProperties, getPublicProperty, propertySlug, resolveSite } from '@/lib/site-repository'
-import { templateClassName } from '@/lib/site-templates'
+import { hasEditorialPropertyExperience, templateClassName } from '@/lib/site-templates'
 
 export const dynamic = 'force-dynamic'
 type Props = { params: Promise<{ slug: string }> }
@@ -64,7 +64,7 @@ export default async function PropertyPage({ params }: Props) {
   ].filter((fact) => fact.value)
   const whatsappHref = site.whatsappNumber ? `https://wa.me/${site.whatsappNumber.replace(/\D/g, '')}?text=${encodeURIComponent(`Hello, I’m interested in ${property.title}.`)}` : undefined
   const consultant = property.consultant
-  const lwp = site.name === 'LWP Properties'
+  const lwp = hasEditorialPropertyExperience(site)
   const consultantWhatsappHref = consultant?.phone ? `https://wa.me/${consultant.phone.replace(/\D/g, '')}?text=${encodeURIComponent(`Hello ${consultant.name}, I’m interested in ${property.title}.`)}` : whatsappHref
   const pricePanel = <div className="listing-price"><p>{property.transactionType === 'rental' ? 'MONTHLY RENTAL' : 'ASKING PRICE'}</p><strong>{property.price ? money.format(property.price) : 'Price on request'}{property.transactionType === 'rental' && property.price ? <small> / pm</small> : null}</strong>{property.price ? <Link href={`/calculators?price=${property.price}#bond-calculator`}>{property.transactionType === 'rental' ? 'Check affordability' : 'Estimate your monthly bond payment'}</Link> : null}</div>
 

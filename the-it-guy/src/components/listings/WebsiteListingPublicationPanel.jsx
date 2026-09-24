@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, SlidersHorizontal, X } from 'lucide-react'
+import { CalendarDays, CheckCircle2, ExternalLink, Globe2, Loader2, RefreshCw, Send, SlidersHorizontal } from 'lucide-react'
 import Button from '../ui/Button'
+import Modal from '../ui/Modal'
 import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../../services/websiteListingPublicationService'
 
 function propertySlug(title, listingId) {
@@ -15,12 +16,13 @@ const INFRASTRUCTURE_BLOCKERS = [
   'Activate a website domain',
 ]
 
-export default function WebsiteListingPublicationPanel({ listingId, listingTitle, preparationBlockers = [], onPrepare, variant = 'panel' }) {
+export default function WebsiteListingPublicationPanel({ listingId, listingTitle, preparationBlockers = [], onPrepare, onStatusChange, variant = 'panel' }) {
   const [publication, setPublication] = useState(null)
   const [loading, setLoading] = useState(true)
   const [action, setAction] = useState('')
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  const [manageOpen, setManageOpen] = useState(false)
 
   const load = useCallback(async () => {
     if (!listingId) return
@@ -36,6 +38,7 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
   }, [listingId])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => { onStatusChange?.(publication) }, [onStatusChange, publication])
 
   const published = publication?.status === 'published'
   const effectivelyLive = published && publication?.websiteStatus === 'published' && publication?.projectionStatus === 'Published'
@@ -96,43 +99,70 @@ export default function WebsiteListingPublicationPanel({ listingId, listingTitle
     if (!hasConnectedWebsite) return null
 
     return (
-      <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(250px,1fr)_minmax(170px,0.7fr)_minmax(130px,170px)_auto] lg:items-center">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]">
-            <Globe2 size={21} />
-          </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold leading-5 text-[#142132]">Agency Website</p>
-            <p className="truncate text-xs leading-5 text-[#607387]">Your public property website</p>
+      <>
+        <div className="grid gap-4 px-4 py-4 lg:grid-cols-[minmax(250px,1fr)_minmax(170px,0.7fr)_minmax(130px,170px)_auto] lg:items-center">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-12 w-12 shrink-0 place-items-center rounded-[14px] border border-[#cfe4d8] bg-[#f2faf5] text-[#18713e]">
+              <Globe2 size={21} />
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold leading-5 text-[#142132]">Agency Website</p>
+              <p className="truncate text-xs leading-5 text-[#607387]">Your public property website</p>
+            </div>
           </div>
-        </div>
-        <div className="min-w-0 md:justify-self-start">
-          <p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusClass}`}>
-            <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
-            {statusLabel}
-          </p>
-        </div>
-        <div className="min-w-0">
-          {publication?.updatedAt ? <><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last updated</p><p className="mt-0.5 text-xs font-semibold text-[#607387]">{new Date(publication.updatedAt).toLocaleDateString()}</p></> : null}
-        </div>
-        <div className="flex justify-start lg:justify-end">
-          <details className="relative">
-            <summary className="inline-flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-sm font-semibold text-[#35546c] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] [&::-webkit-details-marker]:hidden">
+          <div className="min-w-0 md:justify-self-start">
+            <p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusClass}`}>
+              <span className={`h-2 w-2 rounded-full ${statusDotClass}`} />
+              {statusLabel}
+            </p>
+          </div>
+          <div className="min-w-0">
+            {publication?.updatedAt ? <><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last updated</p><p className="mt-0.5 text-xs font-semibold text-[#607387]">{new Date(publication.updatedAt).toLocaleDateString()}</p></> : null}
+          </div>
+          <div className="flex justify-start lg:justify-end">
+            <Button type="button" size="sm" variant="secondary" onClick={() => setManageOpen(true)}>
               <SlidersHorizontal size={15} />
               Manage
-            </summary>
-            <div className="absolute right-0 z-30 mt-2 grid w-56 gap-1.5 rounded-[16px] border border-[#dbe6f2] bg-white p-1.5 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
-              {published
-                ? <Button type="button" size="sm" className="w-full justify-start" onClick={() => void run('update')} disabled={Boolean(action) || infrastructureBlocked}>{action === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{stale ? 'Update website listing' : 'Refresh website listing'}</Button>
-                : <Button type="button" size="sm" className="w-full justify-start" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish to website</Button>}
-              {publicUrl ? <a className="inline-flex min-h-9 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-[#2f6346] hover:bg-[#f2faf5]" href={publicUrl} target="_blank" rel="noreferrer">View listing <ExternalLink size={14} /></a> : null}
-              {published ? <Button type="button" size="sm" variant="secondary" className="w-full justify-start border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={() => void run('unpublish')} disabled={Boolean(action)}>{action === 'unpublish' ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}Unpublish</Button> : null}
-            </div>
-          </details>
+            </Button>
+          </div>
+          {error ? <p className="lg:col-span-4 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
+          {notice ? <p className="lg:col-span-4 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
         </div>
-        {error ? <p className="lg:col-span-4 rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
-        {notice ? <p className="lg:col-span-4 rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
-      </div>
+
+        <Modal
+          open={manageOpen}
+          onClose={() => setManageOpen(false)}
+          title="Manage Agency Website"
+          subtitle="Publish, update, or remove this listing from the agency website."
+          className="max-w-3xl"
+          footer={(
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setManageOpen(false)}>Close</Button>
+              <Button type="button" variant="secondary" onClick={() => void load()} disabled={Boolean(action) || loading}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />Refresh status</Button>
+              {published
+                ? <Button type="button" onClick={() => void run('update')} disabled={Boolean(action) || infrastructureBlocked}>{action === 'update' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}{stale ? 'Update website listing' : 'Refresh website listing'}</Button>
+                : <Button type="button" onClick={() => void run('publish')} disabled={Boolean(action) || loading || infrastructureBlocked}>{action === 'publish' ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}Publish to website</Button>}
+            </div>
+          )}
+        >
+          <div className="grid gap-5">
+            <section className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-[14px] border border-[#dbe6f2] bg-[#fbfdff] p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Website</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.websiteStatus || 'Not created'}</p></div>
+              <div className="rounded-[14px] border border-[#dbe6f2] bg-[#fbfdff] p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Listing projection</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.projectionStatus || 'Not saved'}</p></div>
+              <div className="rounded-[14px] border border-[#dbe6f2] bg-[#fbfdff] p-3"><p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#728479]">Durable public images</p><p className="mt-1 text-sm font-semibold text-[#274634]">{publication?.durableImageCount ?? 0} / {publication?.imageCount ?? 0}</p></div>
+            </section>
+
+            {readinessBlockers.length ? <section className="rounded-[14px] border border-[#f0d9ad] bg-[#fff9ec] p-3"><p className="text-sm font-semibold text-[#825514]">Readiness checks</p><ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[#825514]">{readinessBlockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul></section> : null}
+            {publication?.mediaCleanupPending > 0 ? <section className="rounded-[14px] border border-[#efc4c4] bg-[#fff5f5] p-3 text-xs leading-5 text-[#8a3030]">{publication.mediaCleanupPending} public media object{publication.mediaCleanupPending === 1 ? '' : 's'} could not be removed yet. Retry Unpublish before closing this listing.</section> : null}
+            {error ? <p className="rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]" role="alert">{error}</p> : null}
+            {notice ? <p className="rounded-[12px] border border-[#cfe7d7] bg-[#eef9f2] px-3 py-2 text-sm text-[#257044]" role="status">{notice}</p> : null}
+            <div className="flex flex-wrap gap-2">
+              {publicUrl ? <a className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#c9d9cf] bg-white px-3 text-sm font-semibold text-[#2f6346]" href={publicUrl} target="_blank" rel="noreferrer">View listing <ExternalLink size={14} /></a> : null}
+              {published ? <Button type="button" variant="secondary" className="border-[#f3c9c9] text-[#a43d35] hover:bg-[#fff5f5]" onClick={() => void run('unpublish')} disabled={Boolean(action)}>{action === 'unpublish' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}Expire listing</Button> : null}
+            </div>
+          </div>
+        </Modal>
+      </>
     )
   }
 

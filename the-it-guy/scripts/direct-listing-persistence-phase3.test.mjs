@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
+import { verifyListingPropertyPersistenceCopies, verifyListingPropertySave } from '../src/lib/listingPropertySaveVerification.js'
+import { preferSavedPropertyFact, recoverStructuredPropertyFactsFromMarketingCopy } from '../src/lib/listingMarketingPropertyFactRecovery.js'
 
 const agentListingsSource = readFileSync(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const agentListingDetailSource = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
@@ -78,6 +80,165 @@ test('listing description is persisted and rehydrated through shared aliases', (
   assert.match(agentListingDetailSource, /description: value,\s*\n\s*listingPreviewDescription: shouldSyncPreview \? value : previous\.listingPreviewDescription/)
   assert.match(privateListingServiceSource, /onboardingFormData\.listingDescription/)
   assert.match(privateListingServiceSource, /const listingDescription = pickFirstText\(rowDescription, onboardingDescription, publicationDescription\)/)
+})
+
+test('listing editor verifies durable property details before navigating away', () => {
+  assert.match(agentListingsSource, /const savedOnboarding = await persistSellerProfileOnboardingFormData/)
+  assert.match(agentListingsSource, /const distributionSync = await syncPrivateListingDistributionData/)
+  assert.match(agentListingsSource, /const verifiedListing = await getPrivateListing/)
+  assert.match(agentListingsSource, /verifyListingPropertyPersistenceCopies\(/)
+  assert.match(agentListingsSource, /allowProtectedSectionOverride: true/)
+  assert.match(agentListingsSource, /Enter a listing price or select Price on Application\./)
+  assert.match(agentListingsSource, /const structuredAddress = composeStructuredListingAddress\(form\)/)
+  assert.doesNotMatch(agentListingsSource, /listing editor onboarding form persistence skipped/)
+  assert.doesNotMatch(agentListingsSource, /listing editor distribution sync skipped/)
+
+  const verification = verifyListingPropertySave({
+    propertyAddress: '18 Test Avenue',
+    propertyType: 'House',
+    listingPrice: '2500000',
+    bedrooms: '3',
+    bathrooms: '2',
+    garages: '1',
+    parkingCount: '2',
+    floorSize: '180',
+    erfSize: '600',
+  }, {
+    addressLine1: '18 Test Avenue',
+    propertyType: 'House',
+    askingPrice: 2500000,
+    bedrooms: 3,
+    bathrooms: 2,
+    garages: 1,
+    parkingBays: 2,
+    floorSize: 180,
+    erfSize: 600,
+  })
+  assert.equal(verification.ready, true)
+
+  const lostValues = verifyListingPropertySave({ bedrooms: '3', bathrooms: '2' }, { bedrooms: 0, bathrooms: 0 })
+  assert.equal(lostValues.ready, false)
+  assert.deepEqual(lostValues.mismatches.map((item) => item.field), ['bedrooms', 'bathrooms'])
+
+  const durableCopies = verifyListingPropertyPersistenceCopies({
+    form: {
+      propertyAddress: '18 Test Avenue',
+      propertyType: 'House',
+      propertyStructureType: 'full_title',
+      listingPrice: '2500000',
+    },
+    listing: {
+      addressLine1: '18 Test Avenue',
+      propertyType: 'House',
+      propertyStructureType: 'full_title',
+      askingPrice: 2500000,
+    },
+    onboarding: {
+      form_data: {
+        propertyAddress: '18 Test Avenue',
+        propertyType: 'House',
+        propertyStructureType: 'full_title',
+        askingPrice: 2500000,
+      },
+    },
+    publication: {
+      address: '18 Test Avenue',
+      property_type: 'House',
+      asking_price: 2500000,
+    },
+  })
+  assert.equal(durableCopies.ready, true)
+
+  const staleOnboardingCopy = verifyListingPropertyPersistenceCopies({
+    form: { propertyAddress: '18 Test Avenue', propertyType: 'House', propertyStructureType: 'full_title', listingPrice: '2500000' },
+    listing: { addressLine1: '18 Test Avenue', propertyType: 'House', propertyStructureType: 'full_title', askingPrice: 2500000 },
+    onboarding: { form_data: { propertyAddress: '', propertyType: 'House', propertyStructureType: '', askingPrice: 0 } },
+    publication: { address: '18 Test Avenue', property_type: 'House', asking_price: 2500000 },
+  })
+  assert.equal(staleOnboardingCopy.ready, false)
+  assert.deepEqual(staleOnboardingCopy.mismatches.map((item) => item.label), [
+    'property address (onboarding)',
+    'ownership scheme (onboarding)',
+    'listing price (onboarding)',
+  ])
+
+  const deployedSchemaCopies = verifyListingPropertyPersistenceCopies({
+    form: {
+      propertyAddress: '395 Paul Kruger St, Capital Park, Pretoria, 0084, South Africa',
+      streetAddress: '395 Paul Kruger Street',
+      propertyType: 'House',
+      propertyStructureType: 'full_title',
+      listingPrice: '2050000',
+      parkingCount: '16',
+    },
+    listing: {
+      addressLine1: '395 Paul Kruger Street',
+      propertyType: 'House',
+      propertyStructureType: 'full_title',
+      askingPrice: 2050000,
+    },
+    onboarding: {
+      form_data: {
+        propertyAddress: '395 Paul Kruger St, Capital Park, Pretoria, 0084, South Africa',
+        propertyType: 'House',
+        propertyStructureType: 'full_title',
+        askingPrice: 2050000,
+        parkingCount: '16',
+      },
+    },
+    publication: {
+      address: '395 Paul Kruger St, Capital Park, Pretoria, 0084, South Africa',
+      property_type: 'House',
+      asking_price: 2050000,
+      parking_bays: 16,
+    },
+  })
+  assert.equal(deployedSchemaCopies.ready, true)
+
+  const recoveredFacts = recoverStructuredPropertyFactsFromMarketingCopy(
+    'Spacious 5-Bedroom Property',
+    'This 4-bathroom home is situated on a 1,023 m² erf with parking for approximately 16 vehicles.',
+  )
+  assert.equal(recoveredFacts.bedrooms, 5)
+  assert.equal(recoveredFacts.bathrooms, 4)
+  assert.equal(recoveredFacts.erfSize, 1023)
+  assert.equal(recoveredFacts.parkingCount, 16)
+  assert.equal(recoveredFacts.garages, null)
+  assert.equal(preferSavedPropertyFact('6', recoveredFacts.bedrooms), '6')
+  assert.equal(preferSavedPropertyFact('0', recoveredFacts.bedrooms), '5')
+})
+
+test('listing persistence recognises production UUIDs and cannot silently fall back to browser storage', () => {
+  const canonicalUuidPattern = /\^\[0-9a-f\]\{8\}-\[0-9a-f\]\{4\}-\[1-5\]\[0-9a-f\]\{3\}-\[89ab\]\[0-9a-f\]\{3\}-\[0-9a-f\]\{12\}\$/
+  assert.match(agentListingsSource, canonicalUuidPattern)
+  assert.match(agentListingDetailSource, canonicalUuidPattern)
+  assert.match(agentListingsSource, /if \(isUuidLike\(editListingId\) && \(!isSupabaseConfigured \|\| !isUuidLike\(listingId\)\)\)/)
+  assert.match(agentListingsSource, /Nothing was saved; please retry after the connection is restored\./)
+
+  const productionListingId = 'de953aba-9901-48c6-aa31-c24671e50c4e'
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+  assert.equal(uuidPattern.test(productionListingId), true)
+})
+
+test('listing editor keeps its detailed record when listing-grid summaries refresh', () => {
+  assert.match(agentListingsSource, /const \[detailedEditListing, setDetailedEditListing\] = useState\(null\)/)
+  assert.match(agentListingsSource, /setDetailedEditListing\(listing\)/)
+  assert.match(agentListingsSource, /return normalizeText\(detailedEditListing\?\.id\) === editListingId\s*\? detailedEditListing\s*:\s*gridEditListingRecord/)
+  assert.match(agentListingsSource, /background grid refresh can never replace it with that\s*\/\/ summary while the publication form is being hydrated/)
+})
+
+test('listing editor rehydrates older onboarding property facts before using defaults', () => {
+  assert.match(privateListingServiceSource, /const onboardingAddress = pickFirstText\(/)
+  assert.match(privateListingServiceSource, /onboardingFormData\.propertyAddress/)
+  assert.match(privateListingServiceSource, /normalizeNumber\(onboardingFormData\.askingPrice\)/)
+  assert.match(privateListingServiceSource, /onboardingFormData\.suburb, canonicalPropertyFacts\.suburb/)
+  assert.match(privateListingServiceSource, /onboardingFormData\.postalCode/)
+})
+
+test('listing updates remove only the unsupported database column during schema fallback', () => {
+  assert.match(privateListingServiceSource, /const missingColumn = Object\.keys\(compatiblePatch\)/)
+  assert.match(privateListingServiceSource, /delete compatiblePatch\[missingColumn\]/)
+  assert.match(privateListingServiceSource, /must not discard supported fields such as/)
 })
 
 test('listing marketing saves are not blocked by browser fallback cache or click events', () => {

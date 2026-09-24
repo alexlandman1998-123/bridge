@@ -240,12 +240,18 @@ export default function DevelopmentAvailabilityWorkspace({
   const [sitePlanAspectRatio, setSitePlanAspectRatio] = useState(0);
 
   useEffect(() => {
-    if (!sitePlanUrl) { setSitePlanAspectRatio(0); return undefined; }
+    if (!sitePlanUrl) {
+      setSitePlanAspectRatio(0);
+      return undefined;
+    }
     const image = new Image();
     image.onload = () => setSitePlanAspectRatio(image.naturalWidth / Math.max(image.naturalHeight, 1));
     image.onerror = () => setSitePlanAspectRatio(0);
     image.src = sitePlanUrl;
-    return () => { image.onload = null; image.onerror = null; };
+    return () => {
+      image.onload = null;
+      image.onerror = null;
+    };
   }, [sitePlanUrl]);
   const structurePathById = useMemo(
     () => buildDevelopmentStructurePathMap(structureNodes),
@@ -1460,7 +1466,8 @@ export default function DevelopmentAvailabilityWorkspace({
               <div className="absolute inset-0" style={sitePlanBackgroundStyle(sitePlanUrl, cropDraft)} />
               <div className="absolute inset-x-4 bottom-4 rounded-[10px] bg-[#173f38]/90 px-3 py-2 text-xs font-semibold text-white">Preview: only this area will be used for availability maps.</div>
             </div>
-            <div className="space-y-4"><p className="text-xs leading-5 text-[#60758d]">Start by reducing width and height, then move the crop frame to the plotted units. Keep road labels if they help buyers orient themselves.</p><div><span className="text-xs font-semibold text-[#304b40]">Quick crops</span><div className="mt-2 flex flex-wrap gap-2"><button type="button" className="rounded-md border border-[#c8dad2] px-2.5 py-1.5 text-xs font-semibold text-[#236c4e] hover:bg-[#eff5f2]" onClick={() => setCropDraft(normaliseSitePlanViewport({ x: 0, y: 50, width: 100, height: 50 }))}>Bottom half</button><button type="button" className="rounded-md border border-[#c8dad2] px-2.5 py-1.5 text-xs font-semibold text-[#236c4e] hover:bg-[#eff5f2]" onClick={() => setCropDraft(normaliseSitePlanViewport({ x: 0, y: 0, width: 100, height: 50 }))}>Top half</button><button type="button" className="rounded-md border border-[#c8dad2] px-2.5 py-1.5 text-xs font-semibold text-[#236c4e] hover:bg-[#eff5f2]" onClick={() => setCropDraft(normaliseSitePlanViewport({ x: 0, y: 35, width: 100, height: 65 }))}>Homes focus</button></div></div>
+            <div className="space-y-4"><p className="text-xs leading-5 text-[#60758d]">Start by reducing width and height, then move the crop frame to the plotted units. Keep road labels if they help buyers orient themselves.</p>
+              <div><span className="text-xs font-semibold text-[#304b40]">Quick crops</span><div className="mt-2 flex flex-wrap gap-2"><button type="button" className="rounded-md border border-[#c8dad2] px-2.5 py-1.5 text-xs font-semibold text-[#236c4e] hover:bg-[#eff5f2]" onClick={() => setCropDraft(normaliseSitePlanViewport({ x: 0, y: 50, width: 100, height: 50 }))}>Bottom half</button><button type="button" className="rounded-md border border-[#c8dad2] px-2.5 py-1.5 text-xs font-semibold text-[#236c4e] hover:bg-[#eff5f2]" onClick={() => setCropDraft(normaliseSitePlanViewport({ x: 0, y: 0, width: 100, height: 50 }))}>Top half</button><button type="button" className="rounded-md border border-[#c8dad2] px-2.5 py-1.5 text-xs font-semibold text-[#236c4e] hover:bg-[#eff5f2]" onClick={() => setCropDraft(normaliseSitePlanViewport({ x: 0, y: 35, width: 100, height: 65 }))}>Homes focus</button></div></div>
               {[['width', 'Crop width'], ['height', 'Crop height'], ['x', 'Move left / right'], ['y', 'Move up / down']].map(([field, label]) => <label key={field} className="block"><span className="mb-1.5 flex justify-between text-xs font-semibold text-[#304b40]"><span>{label}</span><span>{Math.round(cropDraft[field])}%</span></span><input type="range" min={field === 'width' || field === 'height' ? 35 : 0} max={field === 'width' || field === 'height' ? 100 : field === 'x' ? 65 : 65} value={cropDraft[field]} onChange={(event) => updateCropDraft(field, event.target.value)} className="w-full accent-[#1c7c57]" /></label>)}
               <button type="button" className="text-xs font-semibold text-[#236c4e] underline" onClick={() => setCropDraft(normaliseSitePlanViewport({}))}>Use full original plan</button>
             </div>

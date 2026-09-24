@@ -23,10 +23,11 @@ export default function LeadDocumentWorkspace({
 }) {
   const partyLabel = partyType === 'buyer' ? 'Buyer' : 'Seller'
   const normalizedCategories = useMemo(() => categories.map((category) => {
-    const requiredItems = (category.items || []).filter((row) => row.required !== false)
+    const items = category.items || []
+    const requiredItems = items.filter((row) => row.required !== false)
     const completed = requiredItems.filter((row) => isCompletedStatus(getStatusMeta(row))).length
     const total = requiredItems.length
-    return { ...category, completed, total, progress: total ? Math.round((completed / total) * 100) : 0 }
+    return { ...category, items, completed, total, progress: total ? Math.round((completed / total) * 100) : 0 }
   }), [categories, getStatusMeta])
   const summary = useMemo(() => {
     const total = normalizedCategories.reduce((sum, category) => sum + category.total, 0)

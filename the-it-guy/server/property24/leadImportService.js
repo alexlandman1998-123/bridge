@@ -6,6 +6,41 @@ import {
 } from './reconciliationService.js'
 import { normalizeProperty24Text } from './client.js'
 
+async function sendPortalLeadNotifications({ lead = {}, listing = {}, contact = {}, organisationId = '' } = {}) {
+  const supabaseUrl = normalizeText(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL)
+  const serviceRoleKey = normalizeText(process.env.SUPABASE_SERVICE_ROLE_KEY)
+  const recipient = normalizeEmail(contact.email || lead.email)
+  const agentEmail = normalizeEmail(listing.assigned_agent_email)
+  if (!supabaseUrl || !serviceRoleKey || !recipient) return { acknowledgement: { skipped: true, reason: !recipient ? 'missing_lead_email' : 'missing_email_configuration' }, operations: { skipped: true, reason: !agentEmail ? 'missing_agent_email' : 'missing_email_configuration' } }
+
+  const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/functions/v1/send-email`
+  const send = async (payload) => {
+    const response = await fetch(endpoint, { method: 'POST', headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const data = await response.json().catch(() => ({}))
+    return response.ok && data?.ok !== false && !data?.error ? { sent: true, providerMessageId: data.providerMessageId || data.emailId || null } : { sent: false, error: data?.message || data?.error || `send_email_http_${response.status}` }
+  }
+
+  const leadName = normalizeText(lead.contactName || recipient)
+  const propertyLabel = normalizeText(listing.title || lead.listingNumber || 'the property you enquired about')
+  const stableReference = normalizeText(lead.externalReference || lead.dedupeKey || lead.listingNumber || `${recipient}:${listing.id}`)
+  const acknowledgement = await send({
+    type: 'property_enquiry_acknowledgement', to: recipient,
+    recipientName: leadName, organisationId, leadId: lead.leadId || undefined, source: 'Property24',
+    originalMessage: `Thank you for your enquiry about ${propertyLabel}. A Kingdom Real Estate agent has received your enquiry and will be in touch shortly.`,
+    agentName: agentEmail || 'Kingdom Real Estate agent', agentEmail: agentEmail || undefined, replyTo: agentEmail || undefined,
+    subject: `Thanks for your enquiry about ${propertyLabel}`, idempotencyKey: `portal-lead-introduction:${stableReference}`,
+  })
+  const operations = agentEmail ? await send({
+    type: 'lead_operations_notification', eventKind: 'new_enquiry_assigned_agent', to: agentEmail,
+    recipientName: agentEmail, organisationId, leadId: lead.leadId || undefined, leadName, leadEmail: recipient,
+    leadPhone: lead.phone, leadSource: 'Property24', leadStatus: 'New Lead', propertyLabel,
+    enquiryMessage: lead.message, assignedAgentEmail: agentEmail,
+    message: `Hi, a new Property24 lead has been received. We have sent the inquirer an introduction email and copied you in. Please make first contact promptly.`,
+    subject: `New Property24 lead — ${propertyLabel}`, idempotencyKey: `portal-lead-agent-notification:${stableReference}:${agentEmail}`,
+  }) : { skipped: true, reason: 'missing_agent_email' }
+  return { acknowledgement, operations }
+}
+
 function normalizeText(value = '') {
   return normalizeProperty24Text(value)
 }
@@ -485,6 +520,12 @@ export async function importProperty24PreparedLeads({
       )
       const developerMirror = await persistDeveloperLeadMirror(supabase, persisted, lead, listing)
         .catch((error) => ({ developerLeadId: null, warning: error?.message || 'Unable to mirror this development lead.' }))
+      const notifications = await sendPortalLeadNotifications({
+        lead: { ...lead, leadId: persisted.leadId },
+        listing,
+        contact: { email: lead.email, phone: lead.phone },
+        organisationId: persisted.organisationId,
+      }).catch((error) => ({ acknowledgement: { sent: false, error: error?.message || 'notification_failed' }, operations: { sent: false, error: error?.message || 'notification_failed' } }))
 
       results.push({
         externalReference: lead.externalReference || null,
@@ -497,6 +538,7 @@ export async function importProperty24PreparedLeads({
         contactId: persisted.contactId || null,
         logId: persisted.log?.log_id || null,
         reusedContact: Boolean(persisted.reusedContact),
+        notifications,
       })
     } catch (error) {
       results.push({

@@ -22,7 +22,6 @@
     --color-text-strong: #0F1720;
     --color-text-body: #334155;
     --color-text-muted: #6B7A90;
-    --color-text-soft: #94A3B8;
     --color-text-inverse: #F8FAFC;
 
     --color-border-soft: #E6ECF2;
@@ -34,7 +33,6 @@
     --color-primary-soft: #E8F0F6;
 
     --color-success: #1F7A5A;
-    --color-success-soft: #E8F6EF;
     --color-warning: #B7791F;
     --color-warning-soft: #FFF6E5;
     --color-danger: #B42318;
@@ -46,14 +44,11 @@
     --color-ring-primary: rgba(39, 76, 105, 0.15);
     --color-ring-sidebar: rgba(248, 250, 252, 0.14);
 
-    --space-xs: 0.25rem;
     --space-sm: 0.5rem;
     --space-md: 0.75rem;
     --space-base: 1rem;
     --space-lg: 1.25rem;
-    --space-section: 1.5rem;
     --space-xl: 2rem;
-    --space-2xl: 2.5rem;
 
     --radius-control: 0.75rem;
     --radius-surface-sm: 0.875rem;

@@ -8,6 +8,7 @@ import {
 
 const root = resolve(process.cwd())
 const source = readFileSync(resolve(root, 'src/pages/AgentListingDetail.jsx'), 'utf8')
+const salesIndexSource = readFileSync(resolve(root, 'src/pages/AgentListings.jsx'), 'utf8')
 const docSource = readFileSync(resolve(root, 'docs/sales-listing-workspace-phase3.md'), 'utf8')
 
 assert.match(source, /ListingWorkspaceTabs/)
@@ -48,5 +49,11 @@ assert.equal(resolveSalesListingWorkspaceTarget('unknown').workspaceTab, 'overvi
 assert.match(docSource, /No rental screens were changed/)
 assert.match(docSource, /No Property24 payload logic changed/)
 assert.match(docSource, /Syndication` opens the marketing console and the existing Property24 action panel/)
+
+// private_listings is shared storage. Sales must exclude rental-category,
+// rental-publication, and canonical rental records from its stock queue.
+assert.match(salesIndexSource, /function isRentalListingRecord/)
+assert.match(salesIndexSource, /facts\.rentalInfo \|\| facts\.rental_info/)
+assert.match(salesIndexSource, /!isRentalListingRecord\(listing\)/)
 
 console.log('Sales listing workspace Phase 3 checks passed.')

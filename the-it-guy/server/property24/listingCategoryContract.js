@@ -5,7 +5,9 @@ export const PROPERTY24_LISTING_CATEGORIES = Object.freeze({
   COMMERCIAL: 'commercial',
   INDUSTRIAL: 'industrial',
   AGRICULTURAL: 'agricultural',
-  LAND_DEVELOPMENT: 'land_development',
+  LAND: 'land',
+  // Kept as an export alias for callers that have not yet moved to LAND.
+  LAND_DEVELOPMENT: 'land',
   UNKNOWN: 'unknown',
 })
 
@@ -16,17 +18,18 @@ const CATEGORY_ALIASES = Object.freeze({
     'flat', 'townhouse', 'cluster', 'duplex',
   ],
   [PROPERTY24_LISTING_CATEGORIES.COMMERCIAL]: [
-    'commercial', 'commercial_property', 'office', 'retail', 'shop', 'business',
+    'commercial', 'commercial_property', 'office', 'office_building', 'medical_suite', 'business_park', 'commercial_building',
+    'retail', 'retail_store', 'shop', 'showroom', 'shopping_centre', 'business', 'mixed_use', 'mixed_use_building', 'mixed_use_estate',
   ],
   [PROPERTY24_LISTING_CATEGORIES.INDUSTRIAL]: [
-    'industrial', 'industrial_property', 'warehouse', 'factory', 'distribution',
+    'industrial', 'industrial_property', 'warehouse', 'factory', 'distribution', 'distribution_centre', 'industrial_park',
   ],
   [PROPERTY24_LISTING_CATEGORIES.AGRICULTURAL]: [
     'agricultural', 'agriculture', 'farm', 'smallholding', 'small_holding',
-    'agricultural_holding',
+    'agricultural_holding', 'agricultural_land',
   ],
-  [PROPERTY24_LISTING_CATEGORIES.LAND_DEVELOPMENT]: [
-    'land_development', 'development', 'land', 'vacant_land', 'plot', 'stand',
+  [PROPERTY24_LISTING_CATEGORIES.LAND]: [
+    'land', 'vacant_land', 'vacant_stand', 'plot', 'stand',
   ],
 })
 
@@ -60,11 +63,11 @@ export const PROPERTY24_LISTING_CATEGORY_FIELD_MATRIX = Object.freeze({
     verifiedProperty24Fields: [],
     requiredArch9FieldsBeforePublish: ['farmSize', 'waterSupplyOrRights', 'agriculturalUse'],
   },
-  [PROPERTY24_LISTING_CATEGORIES.LAND_DEVELOPMENT]: {
-    publishingStatus: 'blocked_pending_property24_contract',
-    transactionTypes: ['Sale'],
-    verifiedProperty24Fields: [],
-    requiredArch9FieldsBeforePublish: ['erfSize', 'zoning', 'developmentRights'],
+  [PROPERTY24_LISTING_CATEGORIES.LAND]: {
+    publishingStatus: 'blocked_pending_property24_v55_payload',
+    transactionTypes: ['Sale', 'Rental'],
+    verifiedProperty24Fields: ['propertyInfo.propertyTypeId', 'propertyInfo.erf', 'propertyInfo.zoneType'],
+    requiredArch9FieldsBeforePublish: ['erfSize', 'zoning'],
   },
   [PROPERTY24_LISTING_CATEGORIES.UNKNOWN]: {
     publishingStatus: 'blocked_pending_category_classification',

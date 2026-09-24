@@ -90,6 +90,7 @@ const firstMediaImage = (value) => {
     .find(Boolean) || "";
 };
 const unitImage = (unit, media) =>
+  media.coverImageUrl ||
   unit.imageUrl ||
   unit.heroImageUrl ||
   firstMediaImage(media.galleryImageUrls) ||

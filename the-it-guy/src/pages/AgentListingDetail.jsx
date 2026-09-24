@@ -137,6 +137,7 @@ import {
   validateListingSellerProfileBuilderDraft,
 } from '../lib/listingSellerProfileBuilderModel'
 import { resolveOfferLinkDeliveryPlan } from '../lib/offerLinkDeliveryPlan'
+import { getPropertyCategoryLabel, PROPERTY_CATEGORIES } from '../lib/propertyTaxonomy'
 import {
   buildSellerOnboardingLink,
   buildSellerClientPortalLink,
@@ -148,6 +149,10 @@ import {
 } from '../lib/agentListingStorage'
 import { buildDirectListingOperationalSummary } from '../lib/directListingOperationalSummary'
 import { findPrivateListingById, getPrivateListingRecordId, sanitizePrivateListingRows } from '../lib/privateListingRecordIntegrity'
+import {
+  listingPropertySaveErrorMessage,
+  verifyListingPropertyPersistenceCopies,
+} from '../lib/listingPropertySaveVerification'
 import {
   LISTING_POST_CREATE_PROGRESS_EVENT,
   readListingPostCreateProgress,
@@ -204,6 +209,7 @@ import {
   issueSellerPortalInvite,
   isSellerPortalInviteReadyAfterSignedMandate,
   markPrivateListingDocumentsPendingTransactionPromotion,
+  persistSellerProfileOnboardingFormData,
   resetSellerPortalPassword,
   sendSellerOnboarding,
   syncPrivateListingDistributionData,
@@ -420,7 +426,7 @@ function getSellerWorkspaceTabFromSearch(search = '') {
 }
 
 function isUuidLike(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
 function normalizeKey(value) {
@@ -495,10 +501,13 @@ const FEATURE_OPTIONS = [
   'New Development',
 ]
 const LISTING_TYPE_OPTIONS = ['Sale', 'Rental']
+const ADDRESS_VISIBILITY_OPTIONS = [
+  { value: 'hide_street_address', label: 'Contact agent for street address' },
+  { value: 'show_exact_address', label: 'Show full street address' },
+  { value: 'complex_only', label: 'Show complex/building only' },
+]
 const PUBLICATION_STATUS_OPTIONS = ['Draft', 'Ready', 'Published', 'Archived']
 const AMENITY_OPTIONS = ['Security Estate', 'Clubhouse', 'Kids Play Area', 'Walking Trails', 'Built-in Braai', 'Solar System', 'Staff Accommodation', 'Open Plan Living']
-const EXTERNAL_LINK_PLATFORM_OPTIONS = ['Property24', 'Private Property', 'Agency Website', 'Facebook Marketplace', 'Instagram', 'Gumtree', 'Other']
-const EXTERNAL_LINK_STATUS_OPTIONS = ['Draft', 'Live', 'Removed', 'Expired']
 const PORTAL_STATUS_OPTIONS = ['not_published', 'draft', 'published', 'paused', 'removed']
 const PROPERTY24_STATUS_UPDATE_OPTIONS = getProperty24ListingStatusOptions('sale')
 const ARCH9_PUBLIC_SITE_ORIGIN = 'https://www.arch9.co.za'
@@ -901,18 +910,12 @@ function normalizeExternalListingLinks(items = []) {
     })
 }
 
-function createExternalLinkDraft() {
-  return {
-    platform: 'Property24',
-    url: '',
-    status: 'Live',
-    publishedAt: '',
-    lastCheckedAt: '',
-    notes: '',
-  }
-}
-
 function buildListingSnapshotFormData(draft = {}) {
+  const priceOnApplication = normalizeKey(draft.pricePresentation) === 'poa'
+  const selectedFeatures = normalizeListingFeatureSelections(draft.selectedFeatures)
+  const publicationFeatures = priceOnApplication
+    ? [...selectedFeatures, 'price_on_application']
+    : selectedFeatures.filter((feature) => normalizeKey(feature) !== 'price_on_application')
   return {
     propertyAddress: String(draft.addressLine1 || '').trim(),
     formattedAddress: String(draft.formattedAddress || '').trim(),
@@ -925,7 +928,9 @@ function buildListingSnapshotFormData(draft = {}) {
     latitude: draft.latitude ?? null,
     longitude: draft.longitude ?? null,
     googlePlaceId: String(draft.googlePlaceId || '').trim(),
+    exactAddressVisibility: String(draft.exactAddressVisibility || 'hide_street_address').trim(),
     propertyType: draft.propertyType,
+    propertyCategory: String(draft.propertyCategory || 'residential').trim(),
     propertySubtype: String(draft.propertySubtype || '').trim(),
     listingType: draft.listingType,
     bedrooms: draft.bedrooms,
@@ -936,7 +941,9 @@ function buildListingSnapshotFormData(draft = {}) {
     parkingOpen: draft.openParking,
     erfSize: draft.erfSize,
     floorSize: draft.floorSize,
-    askingPrice: draft.price,
+    askingPrice: Number(draft.price || 0) || 0,
+    priceOnApplication,
+    isPOA: priceOnApplication,
     pricePresentation: String(draft.pricePresentation || 'Standard').trim(),
     levies: draft.leviesNotApplicable ? '' : draft.levies,
     leviesNotApplicable: Boolean(draft.leviesNotApplicable),
@@ -947,8 +954,8 @@ function buildListingSnapshotFormData(draft = {}) {
     offersFrom: draft.offersFrom,
     rentalPricePeriod: String(draft.rentalPricePeriod || 'PerMonth').trim(),
     availableFrom: formatDateInputValue(draft.availableFrom),
-    features: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures : [],
-    keySellingPoints: Array.isArray(draft.selectedFeatures) ? draft.selectedFeatures : [],
+    features: publicationFeatures,
+    keySellingPoints: publicationFeatures,
     amenities: Array.isArray(draft.amenities) ? draft.amenities : [],
     petFriendly: Boolean(draft.petFriendly),
     fibreReady: Boolean(draft.fibreReady),
@@ -971,6 +978,7 @@ function buildListingSnapshotFormData(draft = {}) {
     expiryDate: draft.expiryDate || '',
     property24ExpiryDate: formatDateInputValue(draft.property24ExpiryDate),
     property24SuburbId: String(draft.property24SuburbId || '').trim(),
+    privatePropertySuburbId: String(draft.privatePropertySuburbId || '').trim(),
     property24ListingUrl: String(draft.property24ListingUrl || '').trim(),
     property24Reference: String(draft.property24Reference || '').trim(),
     property24Status: String(draft.property24Status || 'not_published').trim(),
@@ -1173,12 +1181,18 @@ function getPrivatePropertyReadinessCounts(payload = {}) {
 function getPrivatePropertyReadinessIssues(payload = {}) {
   const preview = payload?.preview || payload?.readiness?.preview || payload?.report?.preview || {}
   const missingConfiguration = Array.isArray(payload?.missingConfiguration) ? payload.missingConfiguration : []
+  const warnings = [
+    ...(Array.isArray(payload?.readiness?.warnings) ? payload.readiness.warnings : []),
+    ...(Array.isArray(payload?.report?.readiness?.warnings) ? payload.report.readiness.warnings : []),
+    ...(Array.isArray(payload?.report?.warnings) ? payload.report.warnings : []),
+  ]
   const blockers = [
     ...missingConfiguration.map((item) => `Setup: ${formatPrivatePropertyBlocker(item)}`),
     ...(Array.isArray(preview.dataBlockers) ? preview.dataBlockers.map(formatPrivatePropertyBlocker) : []),
     ...(Array.isArray(preview.technicalBlockers) ? preview.technicalBlockers.map(formatPrivatePropertyBlocker) : []),
     ...(Array.isArray(payload?.readiness?.blockers) ? payload.readiness.blockers.map(formatPrivatePropertyBlocker) : []),
     ...(Array.isArray(payload?.report?.blockers) ? payload.report.blockers.map(formatPrivatePropertyBlocker) : []),
+    ...warnings.map(formatPrivatePropertyBlocker),
   ]
   return [...new Set(blockers.filter(Boolean))]
 }
@@ -2328,6 +2342,8 @@ function DistributionChannel({
   reference = '',
   status = 'pending',
   statusLabel = '',
+  contextTitle = '',
+  contextDetail = '',
   lastSynced = '',
   primaryAction = null,
   secondaryAction = null,
@@ -2359,6 +2375,8 @@ function DistributionChannel({
               <span className="truncate">{reference}</span>
             </span>
           ) : null}
+          {contextTitle ? <p className="mt-1 text-xs font-semibold leading-5 text-[#8a5b13]">{contextTitle}</p> : null}
+          {contextDetail ? <p className="mt-0.5 text-xs leading-5 text-[#607387]">{contextDetail}</p> : null}
         </div>
       </div>
       <div className="min-w-0 md:justify-self-start">
@@ -3250,6 +3268,7 @@ function buildPropertyDraft(listingRecord) {
     // title that was subsequently saved or synchronised by another workflow.
     headline: String(firstDraftValue(listingRecord?.title, listingRecord?.listingTitle, propertyDetails?.headline, onboardingFormData.propertyAddress)).trim(),
     propertyType: String(firstDraftValue(propertyDetails?.propertyType, listingRecord?.propertyType, onboardingFormData.propertyType, 'House')).trim(),
+    propertyCategory: String(firstDraftValue(propertyDetails?.propertyCategory, listingRecord?.propertyCategory, onboardingFormData.propertyCategory, 'residential')).trim(),
     propertySubtype: String(firstDraftValue(propertyDetails?.propertySubtype, onboardingFormData.propertySubtype)).trim(),
     listingType: normalizeMarketingListingType(firstDraftValue(propertyDetails?.listingType, onboardingFormData.listingType, onboardingFormData.saleType, 'Sale')),
     publicationStatus: String(firstDraftValue(propertyDetails?.publicationStatus, onboardingFormData.publicationStatus, listingRecord?.publicationData?.status, 'Draft')).trim(),
@@ -3266,6 +3285,7 @@ function buildPropertyDraft(listingRecord) {
     latitude: firstDraftValue(propertyDetails?.latitude, listingRecord?.latitude, onboardingFormData.latitude) ?? null,
     longitude: firstDraftValue(propertyDetails?.longitude, listingRecord?.longitude, onboardingFormData.longitude) ?? null,
     googlePlaceId: String(firstDraftValue(propertyDetails?.googlePlaceId, listingRecord?.googlePlaceId, listingRecord?.google_place_id, onboardingFormData.googlePlaceId)).trim(),
+    exactAddressVisibility: String(firstDraftValue(propertyDetails?.exactAddressVisibility, onboardingFormData.exactAddressVisibility, 'hide_street_address')).trim(),
     bedrooms: String(firstDraftValue(propertyDetails?.bedrooms, onboardingFormData.bedrooms)).trim(),
     bathrooms: String(firstDraftValue(propertyDetails?.bathrooms, onboardingFormData.bathrooms)).trim(),
     garages: String(firstDraftValue(propertyDetails?.garages, onboardingFormData.garages)).trim(),
@@ -3323,6 +3343,7 @@ function buildPropertyDraft(listingRecord) {
     expiryDate: String(firstDraftValue(propertyDetails?.expiryDate, onboardingFormData.expiryDate)).trim(),
     property24ExpiryDate: formatDateInputValue(firstDraftValue(propertyDetails?.property24ExpiryDate, onboardingFormData.property24ExpiryDate, onboardingFormData.property24_expiry_date)),
     property24SuburbId: String(firstDraftValue(propertyDetails?.property24SuburbId, onboardingFormData.property24SuburbId, onboardingFormData.property24_suburb_id)).trim(),
+    privatePropertySuburbId: String(firstDraftValue(propertyDetails?.privatePropertySuburbId, onboardingFormData.privatePropertySuburbId, onboardingFormData.private_property_suburb_id)).trim(),
     property24ListingUrl: String(firstDraftValue(propertyDetails?.property24ListingUrl, listingRecord?.property24ListingUrl, onboardingFormData.property24ListingUrl)).trim(),
     property24Reference: String(firstDraftValue(propertyDetails?.property24Reference, listingRecord?.property24Reference, onboardingFormData.property24Reference)).trim(),
     property24Status: String(firstDraftValue(propertyDetails?.property24Status, listingRecord?.property24Status, onboardingFormData.property24Status, 'not_published')).trim(),
@@ -3349,6 +3370,8 @@ function buildLightweightMarketingDraft(draft = {}) {
     description: String(safeDraft.description || '').trim(),
     listingPreviewDescription: String(safeDraft.listingPreviewDescription || '').trim(),
     propertySubtype: String(safeDraft.propertySubtype || '').trim(),
+    propertyCategory: String(safeDraft.propertyCategory || 'residential').trim(),
+    exactAddressVisibility: String(safeDraft.exactAddressVisibility || 'hide_street_address').trim(),
     pricePresentation: String(safeDraft.pricePresentation || 'Standard').trim(),
     offersFrom: String(safeDraft.offersFrom || '').trim(),
     rentalPricePeriod: String(safeDraft.rentalPricePeriod || 'PerMonth').trim(),
@@ -3363,6 +3386,7 @@ function buildLightweightMarketingDraft(draft = {}) {
     property24Status: String(safeDraft.property24Status || '').trim(),
     property24ExpiryDate: formatDateInputValue(safeDraft.property24ExpiryDate),
     property24SuburbId: String(safeDraft.property24SuburbId || '').trim(),
+    privatePropertySuburbId: String(safeDraft.privatePropertySuburbId || '').trim(),
     privatePropertyListingUrl: String(safeDraft.privatePropertyListingUrl || '').trim(),
     privatePropertyReference: String(safeDraft.privatePropertyReference || '').trim(),
     privatePropertyStatus: String(safeDraft.privatePropertyStatus || '').trim(),
@@ -3581,6 +3605,7 @@ function AgentListingDetail() {
   const [privatePropertyAction, setPrivatePropertyAction] = useState('')
   const [privatePropertyPreview, setPrivatePropertyPreview] = useState(null)
   const [privatePropertyStatusCheck, setPrivatePropertyStatusCheck] = useState(null)
+  const [privatePropertyManageOpen, setPrivatePropertyManageOpen] = useState(false)
   const [syndicationReviewOpen, setSyndicationReviewOpen] = useState(false)
   const [syndicationReviewLoading, setSyndicationReviewLoading] = useState(false)
   const [syndicationReview, setSyndicationReview] = useState(null)
@@ -3692,11 +3717,9 @@ function AgentListingDetail() {
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const marketingDraftDirtyRef = useRef(false)
   const hydratedMarketingListingIdRef = useRef('')
-  const [externalLinkDraft, setExternalLinkDraft] = useState(() => createExternalLinkDraft())
   const [readinessChecklistOpen, setReadinessChecklistOpen] = useState(false)
+  const [agencyWebsitePublication, setAgencyWebsitePublication] = useState(null)
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
-  const [externalLinkPanelOpen, setExternalLinkPanelOpen] = useState(false)
-  const [externalLinkEditingId, setExternalLinkEditingId] = useState('')
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
   const salesWorkspaceTabs = useMemo(() => buildListingWorkspaceTabs('sales'), [])
@@ -3769,13 +3792,13 @@ function AgentListingDetail() {
     setSellerWorkspaceTab(requestedTab)
   }, [location.search])
 
-  const loadListingData = useCallback(async () => {
-    setLoading(true)
+  const loadListingData = useCallback(async ({ showLoading = true } = {}) => {
+    if (showLoading) setLoading(true)
     setDetailError('')
     if (!listingId) {
       setPrivateListings([])
       setDetailError('This listing link is invalid. Return to Listings and open the record again.')
-      setLoading(false)
+      if (showLoading) setLoading(false)
       return
     }
 
@@ -3801,7 +3824,7 @@ function AgentListingDetail() {
     }
 
     setPrivateListings(sanitizePrivateListingRows(nextListings))
-    setLoading(false)
+    if (showLoading) setLoading(false)
   }, [listingId])
 
   useEffect(() => {
@@ -4353,6 +4376,7 @@ function AgentListingDetail() {
             listingCode: nextDraft.listingCode || row?.listingCode || '',
             listingTitle: nextDraft.headline.trim() || row?.listingTitle || '',
             propertyType: nextDraft.propertyType || row?.propertyType || 'House',
+            propertyCategory: nextDraft.propertyCategory || row?.propertyCategory || 'residential',
             status: nextDraft.publicationStatus === 'Published' ? 'active' : nextDraft.listingStatus || row?.status || 'active',
             description: nextDraft.description.trim(),
             listingDescription: nextDraft.description.trim(),
@@ -4371,6 +4395,7 @@ function AgentListingDetail() {
             latitude: nextDraft.latitude ?? null,
             longitude: nextDraft.longitude ?? null,
             googlePlaceId: nextDraft.googlePlaceId.trim(),
+            exactAddressVisibility: nextDraft.exactAddressVisibility,
             askingPrice: Number(nextDraft.price || 0),
           }
         : {}),
@@ -4396,6 +4421,7 @@ function AgentListingDetail() {
         listingCode: nextDraft.listingCode,
         headline: nextDraft.headline.trim(),
         propertyType: nextDraft.propertyType,
+        propertyCategory: nextDraft.propertyCategory,
         propertySubtype: nextDraft.propertySubtype.trim(),
         listingType: nextDraft.listingType,
         publicationStatus: nextDraft.publicationStatus,
@@ -4412,6 +4438,7 @@ function AgentListingDetail() {
         latitude: nextDraft.latitude ?? null,
         longitude: nextDraft.longitude ?? null,
         googlePlaceId: nextDraft.googlePlaceId.trim(),
+        exactAddressVisibility: nextDraft.exactAddressVisibility,
         bedrooms: nextDraft.bedrooms,
         bathrooms: nextDraft.bathrooms,
         garages: nextDraft.garages,
@@ -4450,6 +4477,7 @@ function AgentListingDetail() {
         expiryDate: nextDraft.expiryDate,
         property24ExpiryDate: formatDateInputValue(nextDraft.property24ExpiryDate),
         property24SuburbId: nextDraft.property24SuburbId.trim(),
+        privatePropertySuburbId: String(nextDraft.privatePropertySuburbId || '').trim(),
         property24ListingUrl: nextDraft.property24ListingUrl.trim(),
         property24Reference: nextDraft.property24Reference.trim(),
         property24Status: nextDraft.property24Status,
@@ -4471,7 +4499,9 @@ function AgentListingDetail() {
         latitude: nextDraft.latitude ?? null,
         longitude: nextDraft.longitude ?? null,
         googlePlaceId: nextDraft.googlePlaceId.trim(),
+        exactAddressVisibility: nextDraft.exactAddressVisibility,
         propertyType: nextDraft.propertyType,
+        propertyCategory: nextDraft.propertyCategory,
         propertySubtype: nextDraft.propertySubtype.trim(),
         listingType: nextDraft.listingType,
         askingPrice: Number(nextDraft.price || 0),
@@ -4480,6 +4510,7 @@ function AgentListingDetail() {
         rentalPricePeriod: nextDraft.rentalPricePeriod,
         availableFrom: formatDateInputValue(nextDraft.availableFrom),
         property24SuburbId: nextDraft.property24SuburbId.trim(),
+        privatePropertySuburbId: String(nextDraft.privatePropertySuburbId || '').trim(),
         bedrooms: nextDraft.bedrooms,
         bathrooms: nextDraft.bathrooms,
         garages: nextDraft.garages,
@@ -4518,23 +4549,30 @@ function AgentListingDetail() {
       return localListing
     }
 
-    const savedOnboarding = await updatePrivateListingOnboardingFormData(listingRecord.id, buildListingSnapshotFormData(nextDraft)).catch((error) => {
-      console.warn('[AgentListingDetail] listing snapshot save skipped', error)
-      setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
-      return null
+    const savedOnboarding = await persistSellerProfileOnboardingFormData({
+      listingId: listingRecord.id,
+      formData: buildListingSnapshotFormData(nextDraft),
+      status: listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status || 'in_progress',
+      allowProtectedSectionOverride: true,
     })
+    if (!savedOnboarding?.id) {
+      throw new Error('The property details could not be written to the seller-onboarding record.')
+    }
+    const persistedListing = {
+      ...localListing,
+      sellerOnboarding: {
+        ...(localListing?.sellerOnboarding || {}),
+        status: savedOnboarding.status || localListing?.sellerOnboarding?.status,
+        formData: savedOnboarding.form_data,
+      },
+    }
     if (savedOnboarding?.form_data) {
       setPrivateListings((rows) => upsertListingRecord(rows, {
-        ...localListing,
-        sellerOnboarding: {
-          ...(localListing?.sellerOnboarding || {}),
-          status: savedOnboarding.status || localListing?.sellerOnboarding?.status,
-          formData: savedOnboarding.form_data,
-        },
+        ...persistedListing,
       }))
     }
     if (message) setDetailMessage(message)
-    return localListing
+    return persistedListing
   }
 
   async function saveMarketingDraft(draftOverride = marketingDraft, options = {}) {
@@ -4579,14 +4617,32 @@ function AgentListingDetail() {
         : Array.isArray(listingRecord?.publicationData?.amenities)
           ? listingRecord.publicationData.amenities
           : []
+    const normalizedPrice = Number(String(draft.price ?? '').replace(/[^0-9.-]/g, '')) || 0
+    const priceOnApplication = normalizeKey(draft.pricePresentation) === 'poa'
+    if (!priceOnApplication && normalizedPrice <= 0) {
+      const error = new Error('Enter a listing price or choose Price on application before saving or checking Property24.')
+      setDetailError(error.message)
+      return { ok: false, error }
+    }
+    const effectiveFeatures = priceOnApplication
+      ? [...(draftFeatures.length ? draftFeatures : existingFeatures), 'price_on_application']
+      : (draftFeatures.length ? draftFeatures : existingFeatures).filter((feature) => normalizeKey(feature) !== 'price_on_application')
     let effectiveDraft = {
       ...draft,
       description: effectiveDescription,
+      price: normalizedPrice ? String(normalizedPrice) : '',
       listingPreviewDescription: String(draft.listingPreviewDescription || listingRecord?.listingPreviewDescription || listingRecord?.propertyDetails?.listingPreviewDescription || effectiveDescription || '').trim(),
-      selectedFeatures: draftFeatures.length ? draftFeatures : existingFeatures,
+      selectedFeatures: effectiveFeatures,
       amenities: draftAmenities.length ? draftAmenities : existingAmenities,
     }
-    const updatedListing = await persistListingSnapshot(effectiveDraft, { persistCoreFields: true })
+    let updatedListing = null
+    try {
+      updatedListing = await persistListingSnapshot(effectiveDraft, { persistCoreFields: true })
+    } catch (error) {
+      console.error('[AgentListingDetail] seller-onboarding listing save failed', error)
+      setDetailError(error?.message || 'The listing could not be saved to all required records.')
+      return { ok: false, error }
+    }
     if (!updatedListing?.id || !isSupabaseConfigured) {
       marketingDraftDirtyRef.current = false
       hydratedMarketingListingIdRef.current = String(updatedListing?.id || listingRecord?.id || listingId || '').trim()
@@ -4600,6 +4656,7 @@ function AgentListingDetail() {
       const listingPatch = {
         title: effectiveDraft.headline.trim() || updatedListing.listingTitle || '',
         propertyType: effectiveDraft.propertyType || updatedListing.propertyType || '',
+        propertyCategory: effectiveDraft.propertyCategory || updatedListing.propertyCategory || 'residential',
         listingStatus: effectiveDraft.listingStatus || updatedListing.listingStatus || updatedListing.status || 'mandate_signed',
         listingSource: effectiveDraft.source || updatedListing.listingSource || 'private_listing',
         description: effectiveDraft.description.trim(),
@@ -4647,7 +4704,9 @@ function AgentListingDetail() {
           latitude: effectiveDraft.latitude ?? null,
           longitude: effectiveDraft.longitude ?? null,
           googlePlaceId: effectiveDraft.googlePlaceId.trim(),
+          exactAddressVisibility: effectiveDraft.exactAddressVisibility,
           propertyType: effectiveDraft.propertyType,
+          propertyCategory: effectiveDraft.propertyCategory,
           propertySubtype: effectiveDraft.propertySubtype.trim(),
           listingType: effectiveDraft.listingType,
           askingPrice: Number(effectiveDraft.price || 0),
@@ -4683,6 +4742,32 @@ function AgentListingDetail() {
       })
       if (distributionSync?.skipped) {
         console.warn('[AgentListingDetail] listing distribution sync skipped', distributionSync.reason)
+      }
+      if (distributionSync?.skipped || !distributionSync?.publication?.listing_id) {
+        throw new Error('The listing could not be written to the Property24 publication record.')
+      }
+      const verifiedListing = await getPrivateListing(updatedListing.id, { includeRequirementsAndDocuments: false })
+      const propertySaveVerification = verifyListingPropertyPersistenceCopies({
+        form: {
+          propertyAddress: effectiveDraft.addressLine1,
+          propertyType: effectiveDraft.propertyType,
+          listingPrice: priceOnApplication ? '' : String(normalizedPrice),
+        },
+        listing: verifiedListing,
+        onboarding: updatedListing.sellerOnboarding,
+        publication: distributionSync.publication,
+      })
+      const savedOnboardingForm = updatedListing?.sellerOnboarding?.formData || {}
+      const publicationFeatures = Array.isArray(distributionSync.publication.features) ? distributionSync.publication.features : []
+      const poaVerified = !priceOnApplication || (
+        savedOnboardingForm.priceOnApplication === true &&
+        publicationFeatures.some((feature) => normalizeKey(feature) === 'price_on_application')
+      )
+      if (!propertySaveVerification.ready || !poaVerified) {
+        throw new Error(listingPropertySaveErrorMessage(propertySaveVerification))
+      }
+      if (verifiedListing?.id) {
+        setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(verifiedListing, mergedSavedListing)))
       }
       await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(effectiveDraft), { incrementListingCount: false })
       marketingDraftDirtyRef.current = false
@@ -4943,11 +5028,13 @@ function AgentListingDetail() {
         '',
     ).trim()
     const expiryDate = formatDateInputValue(marketingDraft.property24ExpiryDate)
+    const suburbId = String(marketingDraft.property24SuburbId || '').trim()
 
     return {
       ...(listingNumber ? { listingNumber } : {}),
       ...(property24ListingUrl ? { property24ListingUrl } : {}),
       ...(expiryDate ? { expiryDate } : {}),
+      ...(suburbId ? { suburbId } : {}),
     }
   }
 
@@ -5017,12 +5104,18 @@ function AgentListingDetail() {
       const payload = await callProperty24ListingAction('publish', getProperty24ActionContext(), { fallbackMessage: 'Property24 publish failed.' })
       setProperty24Preview(payload)
       const listingNumber = getProperty24ListingNumberFromResponse(payload)
-      setMarketingDraft((previous) => ({
-        ...previous,
-        property24Reference: listingNumber || previous.property24Reference,
+      const nextDraft = {
+        ...marketingDraft,
+        property24Reference: listingNumber || marketingDraft.property24Reference,
         property24Status: 'published',
-      }))
+      }
+      setMarketingDraft(nextDraft)
+      const statusSave = await saveMarketingDraft(nextDraft, { successMessage: '' })
+      if (statusSave?.ok === false) {
+        throw statusSave.error || new Error('Property24 accepted the listing, but Arch9 could not save its publication status. Please retry from this listing.')
+      }
       await loadListingData()
+      openSellerWorkspaceSection('marketing')
       setDetailError('')
       setDetailMessage(listingNumber ? `Published to Property24. Listing number ${listingNumber}.` : 'Published to Property24.')
       return payload
@@ -5150,6 +5243,11 @@ function AgentListingDetail() {
     }
   }
 
+  async function reviewPrivatePropertyIssues() {
+    setPrivatePropertyManageOpen(true)
+    return previewPrivatePropertyListing()
+  }
+
   async function publishPrivatePropertyListing() {
     if (!await requireSyndicationReviewBeforePublish('privateProperty')) return null
     const confirmation = `PRIVATE_PROPERTY_PUBLISH:${listingRecord?.id || ''}:production`
@@ -5166,12 +5264,18 @@ function AgentListingDetail() {
       setPrivatePropertyPreview(payload)
       const privatePropertyReference = getPrivatePropertyReferenceFromResponse(payload)
       const nextStatus = payload?.report?.syncResult?.arch9Status || payload?.report?.externalStatus || 'submitted'
-      setMarketingDraft((previous) => ({
-        ...previous,
-        privatePropertyReference: privatePropertyReference || previous.privatePropertyReference,
+      const nextDraft = {
+        ...marketingDraft,
+        privatePropertyReference: privatePropertyReference || marketingDraft.privatePropertyReference,
         privatePropertyStatus: nextStatus,
-      }))
+      }
+      setMarketingDraft(nextDraft)
+      const statusSave = await saveMarketingDraft(nextDraft, { successMessage: '' })
+      if (statusSave?.ok === false) {
+        throw statusSave.error || new Error('Private Property accepted the listing, but Arch9 could not save its submission status. Please retry from this listing.')
+      }
       await loadListingData()
+      openSellerWorkspaceSection('marketing')
       setDetailError('')
       setDetailMessage(privatePropertyReference
         ? `Submitted to Private Property. Reference ${privatePropertyReference}.`
@@ -5205,7 +5309,7 @@ function AgentListingDetail() {
         privatePropertyReference: privatePropertyReference || previous.privatePropertyReference,
         privatePropertyStatus: nextStatus || previous.privatePropertyStatus,
       }))
-      await loadListingData()
+      await loadListingData({ showLoading: false })
       setDetailError('')
       setDetailMessage(payload?.monitor?.status === 'ACTIVATED'
         ? 'Private Property confirms this listing is active.'
@@ -5260,7 +5364,7 @@ function AgentListingDetail() {
         property24Reference: listingNumber ? String(listingNumber) : previous.property24Reference,
         property24Status: databaseStatus || previous.property24Status,
       }))
-      await loadListingData()
+      await loadListingData({ showLoading: false })
       setDetailError('')
       setDetailMessage(portalCheck?.isOnPortal ? 'Property24 confirms this listing is live.' : 'Property24 does not currently show this listing as live.')
       return payload
@@ -8463,19 +8567,27 @@ function AgentListingDetail() {
   }, [activeListingDocumentTab, listingDocumentGroups])
 
   const listingReadinessItems = useMemo(() => {
+    const publication = listingRecord?.listingPublicationData || listingRecord?.publicationData || {}
+    const galleryImages = marketingDraft.galleryImages.length
+      ? marketingDraft.galleryImages
+      : Array.isArray(listingRecord?.galleryImages)
+        ? listingRecord.galleryImages
+        : []
+    const headline = String(marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title || publication.title || '').trim()
+    const address = String(marketingDraft.addressLine1 || listingRecord?.addressLine1 || listingRecord?.propertyAddress || publication.address || '').trim()
+    const price = Number(marketingDraft.price || listingRecord?.askingPrice || publication.askingPrice || 0)
+    const description = String(marketingDraft.description || listingRecord?.description || publication.description || '').trim()
+    const features = normalizeListingFeatureSelections(marketingDraft.selectedFeatures, listingRecord?.keySellingPoints, publication.features)
     return [
-      { key: 'address', label: 'Address captured', complete: Boolean(marketingDraft.addressLine1.trim()) },
-      { key: 'asking_price', label: 'Asking price captured', complete: Number(marketingDraft.price || listingRecord?.askingPrice || 0) > 0 },
-      { key: 'description', label: 'Description completed', complete: Boolean(marketingDraft.description.trim()) },
-      { key: 'photos', label: 'Photos uploaded', complete: marketingDraft.galleryImages.length > 0 },
-      { key: 'cover', label: 'Cover image selected', complete: Boolean(marketingDraft.coverImageId || marketingDraft.galleryImages[0]?.id) },
-      { key: 'features', label: 'Property features captured', complete: marketingDraft.selectedFeatures.length > 0 || marketingDraft.amenities.length > 0 },
-      { key: 'mandate', label: 'Mandate signed', complete: mandateWorkspace.isSigned },
-      { key: 'mandate_continuity', label: 'Mandate continuity verified', complete: mandateContinuity.ready },
-      { key: 'documents', label: 'Seller documents approved', complete: sellerDocumentExperience.summary.ready },
-      { key: 'external_links', label: 'External links added', complete: normalizeExternalListingLinks(marketingDraft.externalLinks).some((link) => link.url) },
+      { key: 'headline', label: 'Headline captured', complete: Boolean(headline) },
+      { key: 'address', label: 'Address captured', complete: Boolean(address) },
+      { key: 'asking_price', label: 'Asking price captured', complete: price > 0 },
+      { key: 'description', label: 'Description completed', complete: Boolean(description) },
+      { key: 'photos', label: 'Photos uploaded', complete: galleryImages.length > 0 },
+      { key: 'cover', label: 'Cover image selected', complete: Boolean(marketingDraft.coverImageId || listingRecord?.coverImageId || galleryImages[0]?.id) },
+      { key: 'features', label: 'Property features captured', complete: features.length > 0 || marketingDraft.amenities.length > 0 },
     ]
-  }, [listingRecord?.askingPrice, mandateContinuity.ready, mandateWorkspace.isSigned, marketingDraft, sellerDocumentExperience.summary.ready])
+  }, [listingRecord, marketingDraft])
 
   const listingReadinessCompleted = listingReadinessItems.filter((item) => item.complete).length
   const listingReadinessPercent = listingReadinessItems.length
@@ -8888,7 +9000,6 @@ function AgentListingDetail() {
   const privatePropertyStatusKey = normalizeKey(marketingDraft.privatePropertyStatus || listingRecord?.privatePropertyStatus)
   const privatePropertyHasChannel = Boolean(marketingDraft.privatePropertyListingUrl || marketingDraft.privatePropertyReference || (privatePropertyStatusKey && privatePropertyStatusKey !== 'not_published'))
   const privatePropertyLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('private')) || null
-  const agencyWebsiteLink = externalListingLinks.find((link) => normalizeKey(link.platform).includes('agency')) || null
   const privatePropertyPreviewCounts = getPrivatePropertyReadinessCounts(privatePropertyPreview)
   const privatePropertyReadinessIssues = getPrivatePropertyReadinessIssues(privatePropertyPreview)
   const privatePropertyCanSubmit = privatePropertyPreview?.ready ?? privatePropertyPreview?.readiness?.ready ?? privatePropertyPreview?.preview?.canSubmit ?? null
@@ -10375,7 +10486,16 @@ function AgentListingDetail() {
     marketingDraftDirtyRef.current = true
     setMarketingDraft((previous) => {
       if (key !== 'description') {
-        const nextDraft = { ...previous, [key]: value }
+        const invalidatesProperty24Location = ['addressLine1', 'formattedAddress', 'streetAddress', 'suburb', 'city', 'province', 'country', 'postalCode'].includes(key) &&
+          String(previous[key] || '').trim() !== String(value || '').trim()
+        const nextDraft = {
+          ...previous,
+          [key]: value,
+          ...(invalidatesProperty24Location ? {
+            property24SuburbId: '',
+            privatePropertySuburbId: '',
+          } : {}),
+        }
         writeStoredMarketingDraft(listingId, nextDraft)
         return nextDraft
       }
@@ -10786,80 +10906,6 @@ function AgentListingDetail() {
     })
   }
 
-  function updateExternalListingLink(linkId, key, value) {
-    marketingDraftDirtyRef.current = true
-    setMarketingDraft((previous) => {
-      const nextDraft = {
-        ...previous,
-        externalLinks: normalizeExternalListingLinks(previous.externalLinks).map((link) => {
-          if (String(link.id) !== String(linkId)) return link
-          const nextLink = { ...link, [key]: value }
-          if (key === 'status') {
-            nextLink.visibleToSeller = isExternalLinkSellerVisible(value)
-          }
-          return nextLink
-        }),
-      }
-      writeStoredMarketingDraft(listingId, nextDraft)
-      return nextDraft
-    })
-  }
-
-  function openExternalLinkPanel(link = null, platform = '') {
-    const normalizedLink = link ? normalizeExternalListingLinks([link])[0] : null
-    setExternalLinkDraft(normalizedLink || { ...createExternalLinkDraft(), platform: platform || createExternalLinkDraft().platform })
-    setExternalLinkEditingId(normalizedLink?.id || '')
-    setDetailError('')
-    setExternalLinkPanelOpen(true)
-  }
-
-  function closeExternalLinkPanel() {
-    setExternalLinkPanelOpen(false)
-    setExternalLinkEditingId('')
-    setExternalLinkDraft(createExternalLinkDraft())
-  }
-
-  async function submitExternalListingLink(event) {
-    event.preventDefault()
-    const url = String(externalLinkDraft.url || '').trim()
-    if (!url) {
-      setDetailError('Add a listing URL before saving the external link.')
-      return
-    }
-    const nextLink = {
-      id: externalLinkEditingId || generateId('external-link'),
-      ...externalLinkDraft,
-      url,
-      visibleToSeller: isExternalLinkSellerVisible(externalLinkDraft.status),
-    }
-    setExternalLinkDraft(createExternalLinkDraft())
-    await applyMarketingDraftAndPersist(
-      (previous) => ({
-        ...previous,
-        externalLinks: externalLinkEditingId
-          ? normalizeExternalListingLinks(previous.externalLinks).map((link) => (String(link.id) === String(externalLinkEditingId) ? nextLink : link))
-          : normalizeExternalListingLinks([...(previous.externalLinks || []), nextLink]),
-      }),
-      { message: externalLinkEditingId ? 'External listing link updated.' : 'External listing link added.' },
-    )
-    setExternalLinkEditingId('')
-    setExternalLinkPanelOpen(false)
-  }
-
-  async function addExternalListingLink(event) {
-    await submitExternalListingLink(event)
-  }
-
-  async function removeExternalListingLink(linkId) {
-    await applyMarketingDraftAndPersist(
-      (previous) => ({
-        ...previous,
-        externalLinks: normalizeExternalListingLinks(previous.externalLinks).filter((link) => String(link.id) !== String(linkId)),
-      }),
-      { message: 'External listing link removed.' },
-    )
-  }
-
   async function applyMarketingDraftAndPersist(updater, { message = '', showSaving = false } = {}) {
     const nextDraft = typeof updater === 'function' ? updater(marketingDraft) : updater
     if (!nextDraft) return null
@@ -11076,6 +11122,7 @@ function AgentListingDetail() {
   function renderProperty24ManagePanel() {
     const mandateExpiryDate = formatDateInputValue(marketingDraft.expiryDate)
     const canUseMandateExpiry = Boolean(mandateExpiryDate) && !getProperty24ExpiryDateError(mandateExpiryDate)
+    const resolvedLocation = property24Preview?.preview?.summary?.property24Location || property24Preview?.report?.preview?.summary?.property24Location || null
     return (
       <Modal
         open={property24ManageOpen}
@@ -11105,6 +11152,16 @@ function AgentListingDetail() {
               ))}
             </div>
             <p className="mt-3 text-sm leading-6 text-[#607387]">{property24NextStep}</p>
+            {property24ReadinessIssues.length ? (
+              <div className="mt-4 rounded-[14px] border border-[#f0d6a8] bg-[#fff9ed] p-3">
+                <p className="text-sm font-semibold text-[#8a5b13]">Fix these before publishing</p>
+                <ul className="mt-2 grid gap-2">
+                  {property24ReadinessIssues.map((issue) => (
+                    <li key={issue} className="rounded-lg border border-[#f4dfb9] bg-white px-3 py-2 text-sm font-medium text-[#8a5b13]">{issue}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </section>
 
           <section className="rounded-[18px] border border-[#cfe0ef] bg-[#f8fbff] p-4">
@@ -11136,6 +11193,11 @@ function AgentListingDetail() {
               <span className="text-xs font-semibold uppercase tracking-[0.08em] text-[#718198]">Property24 suburb ID</span>
               <Field inputMode="numeric" value={marketingDraft.property24SuburbId || ''} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24SuburbId: event.target.value }))} disabled={Boolean(property24Action)} placeholder="Property24 suburb lookup ID" />
             </label>
+            {resolvedLocation?.verified ? (
+              <p className="mt-3 rounded-[12px] border border-[#bfe5cf] bg-[#effbf4] px-3 py-2 text-sm font-semibold text-[#197849]">
+                Verified with Property24: {resolvedLocation.label} — suburb ID {resolvedLocation.suburbId}
+              </p>
+            ) : null}
           </section>
 
           <section className="grid gap-3 lg:grid-cols-4">
@@ -11208,54 +11270,54 @@ function AgentListingDetail() {
     )
   }
 
-  function renderExternalLinkPanel() {
+  function renderPrivatePropertyManagePanel() {
+    const privatePropertyReferenceValue = String(marketingDraft.privatePropertyReference || privatePropertyLink?.reference || '').trim()
+    const privatePropertyLiveValue = ['published', 'live', 'active'].includes(privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || ''))
+    const status = privatePropertyLiveValue ? 'Live' : formatStatusLabel(privatePropertyStatusKey || 'not_published')
+    const previewComplete = Boolean(privatePropertyPreview)
+    const hasIssues = privatePropertyReadinessIssues.length > 0
     return (
       <Modal
-        open={externalLinkPanelOpen}
-        onClose={closeExternalLinkPanel}
-        title={externalLinkEditingId ? 'Edit Channel' : 'Add Channel'}
-        subtitle="Track a manually published listing using the existing external link fields."
-        className="max-w-4xl"
+        open={privatePropertyManageOpen}
+        onClose={() => setPrivatePropertyManageOpen(false)}
+        title="Review Private Property"
+        subtitle="Check the listing requirements before submitting it to Private Property."
+        className="max-w-3xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="secondary" onClick={closeExternalLinkPanel}>Cancel</Button>
-            <Button type="submit" form="external-listing-link-form">
-              <Plus size={15} />
-              {externalLinkEditingId ? 'Save Channel' : 'Add Channel'}
+            <Button type="button" variant="secondary" onClick={() => setPrivatePropertyManageOpen(false)}>Close</Button>
+            <Button type="button" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>
+              {privatePropertyAction === 'preview' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+              Run readiness check
             </Button>
           </div>
         )}
       >
-        <form id="external-listing-link-form" onSubmit={addExternalListingLink} className="grid gap-4 md:grid-cols-2">
-          <label className="grid gap-2">
-            <span className="text-sm font-semibold text-[#2d445e]">Platform</span>
-            <Field as="select" value={externalLinkDraft.platform} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, platform: event.target.value }))}>
-              {EXTERNAL_LINK_PLATFORM_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </Field>
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-semibold text-[#2d445e]">Listing URL</span>
-            <Field value={externalLinkDraft.url} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, url: event.target.value }))} placeholder="https://..." />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-semibold text-[#2d445e]">Status</span>
-            <Field as="select" value={externalLinkDraft.status} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, status: event.target.value }))}>
-              {EXTERNAL_LINK_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
-            </Field>
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-semibold text-[#2d445e]">Published Date</span>
-            <Field type="date" value={externalLinkDraft.publishedAt} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, publishedAt: event.target.value }))} />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-sm font-semibold text-[#2d445e]">Last Checked</span>
-            <Field type="date" value={externalLinkDraft.lastCheckedAt} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, lastCheckedAt: event.target.value }))} />
-          </label>
-          <label className="grid gap-2 md:col-span-2">
-            <span className="text-sm font-semibold text-[#2d445e]">Notes</span>
-            <Field as="textarea" rows={3} value={externalLinkDraft.notes} onChange={(event) => setExternalLinkDraft((previous) => ({ ...previous, notes: event.target.value }))} placeholder="Notes or publishing metadata" />
-          </label>
-        </form>
+        <div className="grid gap-5">
+          <section className="grid gap-3 sm:grid-cols-3">
+            <InfoTile icon={Home} label="Status" value={status} status={privatePropertyLiveValue ? 'live' : privatePropertyStatusKey || 'pending'} />
+            <InfoTile icon={Link2} label="Private Property reference" value={privatePropertyReferenceValue || 'Not assigned'} />
+            <InfoTile icon={CircleAlert} label="Issues found" value={previewComplete ? privatePropertyReadinessIssues.length : 'Not checked'} status={hasIssues ? 'missing' : previewComplete ? 'complete' : 'pending'} />
+          </section>
+
+          <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
+            <div className="flex items-center gap-2 text-[#142132]">
+              <CircleAlert size={18} className={hasIssues ? 'text-[#b54708]' : 'text-[#2f8f6b]'} />
+              <p className="text-sm font-semibold">Readiness issues</p>
+            </div>
+            {!previewComplete ? (
+              <p className="mt-3 text-sm leading-6 text-[#607387]">Run the readiness check to load the exact requirements for this listing.</p>
+            ) : hasIssues ? (
+              <ul className="mt-3 grid gap-2">
+                {privatePropertyReadinessIssues.map((issue) => (
+                  <li key={issue} className="rounded-lg border border-[#f0d6a8] bg-[#fff9ed] px-3 py-2 text-sm font-medium text-[#8a5b13]">{issue}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-[#1f7d44]">No readiness issues were returned. This listing can be submitted to Private Property.</p>
+            )}
+          </section>
+        </div>
       </Modal>
     )
   }
@@ -11265,10 +11327,6 @@ function AgentListingDetail() {
     const privatePropertyReference = marketingDraft.privatePropertyReference || privatePropertyLink?.reference || ''
     const privatePropertyDistributionStatus = privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || 'not_published')
     const privatePropertyLive = ['published', 'live', 'active'].includes(privatePropertyDistributionStatus)
-    const visibleExternalListingLinks = externalListingLinks.filter((link) => {
-      const platformKey = normalizeKey(link.platform)
-      return link.id !== agencyWebsiteLink?.id && link.id !== privatePropertyLink?.id && !platformKey.includes('private')
-    })
     const property24IssueCount = property24SandboxAgentIdPending
       ? Math.max(1, property24ReadinessIssues.length)
       : property24ReadinessIssues.length
@@ -11348,7 +11406,10 @@ function AgentListingDetail() {
             View Live Listing
           </a>
         ) : property24ChannelStatus === 'needs_attention' || property24CanSubmit !== true ? (
-          <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}>
+          <Button type="button" size="sm" variant="secondary" onClick={() => {
+            setProperty24ManageOpen(true)
+            if (!property24Preview) void previewProperty24Listing()
+          }}>
             <CircleAlert size={15} />
             Review issues
           </Button>
@@ -11401,7 +11462,7 @@ function AgentListingDetail() {
             View Live Listing
           </a>
         ) : privatePropertyChannelStatus === 'needs_attention' ? (
-          <Button type="button" size="sm" variant="secondary" onClick={previewPrivatePropertyListing} disabled={Boolean(privatePropertyAction)}>
+          <Button type="button" size="sm" variant="secondary" onClick={reviewPrivatePropertyIssues} disabled={Boolean(privatePropertyAction)}>
             <CircleAlert size={15} />
             Review issues
           </Button>
@@ -11435,52 +11496,16 @@ function AgentListingDetail() {
             {privatePropertyAction === 'expire' ? <Loader2 size={15} className="animate-spin" /> : <CalendarDays size={15} />}
             Expire listing
           </button> : null,
-          <button key="manual" type="button" onClick={() => openExternalLinkPanel(privatePropertyLink, 'Private Property')} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#243d56] transition hover:bg-[#f7fbff]">
-            <Link2 size={15} />
-            Add manual link
-          </button>,
         ],
       },
-      ...visibleExternalListingLinks.map((link) => {
-        const live = isExternalLinkSellerVisible(link.status)
-        return {
-          key: link.id,
-          icon: ExternalLink,
-          name: link.platform || 'Other Channel',
-          subtitle: link.url || 'Manual publishing channel',
-          reference: '',
-          status: live ? 'live' : 'not_published',
-          statusLabel: live ? 'Live' : 'Not published',
-          contextTitle: live ? 'Published and up to date' : 'Ready to publish',
-          contextDetail: link.notes || '',
-          lastSynced: link.publishedAt ? formatDate(link.publishedAt) : link.lastCheckedAt ? formatDate(link.lastCheckedAt) : 'Manual channel',
-          primaryAction: link.url ? (
-            <a href={link.url} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
-              <Eye size={15} />
-              View Live Listing
-            </a>
-          ) : (
-            <Button type="button" size="sm" variant="secondary" disabled>
-              <Eye size={15} />
-              View Live Listing
-            </Button>
-          ),
-          secondaryAction: (
-            <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel(link)}>
-              Manage
-            </Button>
-          ),
-          menuActions: [
-            <button key="remove" type="button" onClick={() => removeExternalListingLink(link.id)} className="flex min-h-10 w-full items-center gap-2 rounded-[12px] px-3 text-left text-sm font-semibold text-[#b42318] hover:bg-[#fff5f5]">
-              <Trash2 size={15} />
-              Remove
-            </button>,
-          ],
-        }
-      }),
     ]
-    const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length
-    const channelCountLabel = channelRows.length ? `${marketingLiveChannelCount} / ${channelRows.length}` : String(marketingLiveChannelCount)
+    const agencyWebsiteConnected = Boolean(agencyWebsitePublication?.websiteSiteId && agencyWebsitePublication?.hostname)
+    const agencyWebsiteLive = agencyWebsitePublication?.status === 'published' &&
+      agencyWebsitePublication?.websiteStatus === 'published' &&
+      agencyWebsitePublication?.projectionStatus === 'Published'
+    const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length + (agencyWebsiteLive ? 1 : 0)
+    const marketingChannelCount = channelRows.length + (agencyWebsiteConnected ? 1 : 0)
+    const channelCountLabel = marketingChannelCount ? `${marketingLiveChannelCount} / ${marketingChannelCount}` : String(marketingLiveChannelCount)
     const remainingReadinessCount = incompleteReadinessItems.length
 
     return (
@@ -11665,15 +11690,11 @@ function AgentListingDetail() {
         </section>
 
         <article id="listing-distribution-channels" className="overflow-visible rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-          <div className="flex flex-col gap-3 border-b border-[#edf2f7] p-5 md:flex-row md:items-start md:justify-between">
+          <div className="border-b border-[#edf2f7] p-5">
             <div>
               <h3 className="text-base font-semibold text-[#142132]">Listing Channels</h3>
               <p className="mt-1 text-sm text-[#607387]">Manage where this property is advertised.</p>
             </div>
-            <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel()}>
-              <Plus size={15} />
-              Add Channel
-            </Button>
           </div>
 
           {channelRows.map((channel) => (
@@ -11696,34 +11717,12 @@ function AgentListingDetail() {
           ))}
 
           <WebsiteListingPublicationPanel
-            listingId={listingRecord?.id}
-            listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
-            preparationBlockers={arch9PublicationBlockers}
-            onPrepare={prepareAgencyWebsiteListing}
-          />
-
-          {!visibleExternalListingLinks.length ? (
-            <div className="grid gap-3 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-              <div className="flex items-center gap-3">
-                <span className="grid h-10 w-10 place-items-center rounded-[12px] border border-dashed border-[#c9d8e8] text-[#607387]"><Plus size={17} /></span>
-                <div>
-                  <p className="text-sm font-semibold text-[#142132]">Other Channels</p>
-                  <p className="text-xs text-[#607387]">Add a manually published listing.</p>
-                </div>
-              </div>
-              <Button type="button" size="sm" variant="secondary" onClick={() => openExternalLinkPanel()}>
-                <Plus size={15} />
-                Add Channel
-              </Button>
-            </div>
-          ) : null}
-
-          <WebsiteListingPublicationPanel
             variant="channel"
             listingId={listingRecord?.id}
             listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
             preparationBlockers={arch9PublicationBlockers}
             onPrepare={prepareAgencyWebsiteListing}
+            onStatusChange={setAgencyWebsitePublication}
           />
         </article>
 
@@ -11771,7 +11770,7 @@ function AgentListingDetail() {
         </Modal>
 
         {renderProperty24ManagePanel()}
-        {renderExternalLinkPanel()}
+        {renderPrivatePropertyManagePanel()}
       </section>
     )
   }
@@ -13092,6 +13091,12 @@ function AgentListingDetail() {
                   </Field>
                 </label>
                 <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Property Category</span>
+                  <Field as="select" value={marketingDraft.propertyCategory} onChange={(event) => updateMarketingDraft('propertyCategory', event.target.value)}>
+                    {PROPERTY_CATEGORIES.map((category) => <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>)}
+                  </Field>
+                </label>
+                <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Listing Status</span>
                   <Field as="select" value={marketingDraft.listingStatus} onChange={(event) => updateMarketingDraft('listingStatus', event.target.value)}>
                     {LISTING_STATUS_OPTIONS.map((option) => <option key={option} value={option}>{formatStatusLabel(option)}</option>)}
@@ -13100,6 +13105,12 @@ function AgentListingDetail() {
                 <label className="grid gap-2 xl:col-span-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Address</span>
                   <Field value={marketingDraft.addressLine1} onChange={(event) => updateMarketingDraft('addressLine1', event.target.value)} placeholder="Property address" />
+                </label>
+                <label className="grid gap-2 xl:col-span-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Street address on portals</span>
+                  <Field as="select" value={marketingDraft.exactAddressVisibility} onChange={(event) => updateMarketingDraft('exactAddressVisibility', event.target.value)}>
+                    {ADDRESS_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </Field>
                 </label>
                 {[
                   ['suburb', 'Suburb'],
@@ -13463,6 +13474,12 @@ function AgentListingDetail() {
                   </Field>
                 </label>
                 <label className="grid gap-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Property Category</span>
+                  <Field as="select" value={marketingDraft.propertyCategory} onChange={(event) => updateMarketingDraft('propertyCategory', event.target.value)}>
+                    {PROPERTY_CATEGORIES.map((category) => <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>)}
+                  </Field>
+                </label>
+                <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Listing Status</span>
                   <Field as="select" value={marketingDraft.listingStatus} onChange={(event) => updateMarketingDraft('listingStatus', event.target.value)}>
                     {LISTING_STATUS_OPTIONS.map((option) => (
@@ -13477,7 +13494,11 @@ function AgentListingDetail() {
                     onChange={(nextAddress) => {
                       marketingDraftDirtyRef.current = true
                       setMarketingDraft((previous) => {
-                        const nextDraft = mergeAddressIntoMarketingDraft(previous, nextAddress)
+                        const nextDraft = {
+                          ...mergeAddressIntoMarketingDraft(previous, nextAddress),
+                          property24SuburbId: '',
+                          privatePropertySuburbId: '',
+                        }
                         writeStoredMarketingDraft(listingId, nextDraft)
                         return nextDraft
                       })
@@ -13486,6 +13507,13 @@ function AgentListingDetail() {
                     description="Select the closest Google Places result, then adjust suburb or city below if needed."
                   />
                 </div>
+                <label className="grid gap-2 md:col-span-2">
+                  <span className="text-sm font-semibold text-[#2d445e]">Street address on portals</span>
+                  <Field as="select" value={marketingDraft.exactAddressVisibility} onChange={(event) => updateMarketingDraft('exactAddressVisibility', event.target.value)}>
+                    {ADDRESS_VISIBILITY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </Field>
+                  <span className="text-xs text-[#607387]">“Contact agent” hides the street details on both Property24 and Private Property.</span>
+                </label>
                 <label className="grid gap-2">
                   <span className="text-sm font-semibold text-[#2d445e]">Suburb</span>
                   <Field value={marketingDraft.suburb} onChange={(event) => updateMarketingDraft('suburb', event.target.value)} placeholder="Sandton" />

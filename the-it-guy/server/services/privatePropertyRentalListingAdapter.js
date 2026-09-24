@@ -45,6 +45,11 @@ function normalizeDateOnly(value = '') {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10)
 }
 
+function isSpecialistRentalCategory(value = '') {
+  return ['commercial', 'industrial', 'retail', 'vacant_land', 'land', 'mixed_use', 'farm', 'farms']
+    .includes(normalizeKey(value))
+}
+
 function normalizeMedia(media = []) {
   return (Array.isArray(media) ? media : [])
     .map((item, index) => {
@@ -97,7 +102,11 @@ function extractMediaItems(listing = {}, publication = {}) {
 }
 
 function splitStreetAddress(address = '') {
-  const text = normalizePrivatePropertyText(address)
+  // Address display strings often include the suburb, unit and formatted
+  // address after the first comma. Private Property's StreetName accepts the
+  // street portion only (max 50 characters), never that complete display
+  // string.
+  const text = normalizePrivatePropertyText(address).split(',')[0].trim()
   const match = text.match(/^(\d+[A-Za-z]?)\s+(.+)$/)
   if (!match) return { streetNumber: '', streetName: text }
   return { streetNumber: match[1], streetName: match[2] }
@@ -138,6 +147,12 @@ function getAdapterDataBlockers({ values = {}, options = {} } = {}) {
   // ID is supplied.
   if (!MANDATE_READY_STATUSES.has(normalizeKey(values.mandateStatus))) blockers.push('rental_mandate_not_signed')
   if (!MARKETING_READY_STATUSES.has(normalizeKey(values.marketingApprovalStatus))) blockers.push('rental_marketing_not_approved')
+  if (!values.rentalPriceFrequency) blockers.push('missing_rental_price_frequency')
+  if (normalizeKey(values.rentalPriceFrequency) === 'annual') blockers.push('private_property_rental_price_frequency_not_supported')
+  if (normalizeKey(values.rentalPriceFrequency) === 'per_square_metre' && !isSpecialistRentalCategory(values.propertyCategory)) {
+    blockers.push('private_property_per_square_metre_requires_specialist_category')
+  }
+  if (!values.depositPolicy || normalizeKey(values.depositPolicy) === 'not_captured') blockers.push('missing_rental_deposit_policy')
   if (normalizeKey(options.soleMandateExclusiveDays)) blockers.push('rental_exclusive_days_not_supported')
   return blockers
 }
@@ -160,13 +175,20 @@ export function createPrivatePropertyRentalListingPlan({
   }
   const facts = getRentalListingFacts(listing)
   const rentalInfo = getRentalListingRentalInfo(listing)
+  const addressProfile = facts.addressProfile || facts.address_profile || {}
   const row = buildRentalListingIndexRow({
     ...listing,
     listingPublicationData: rentalPublication,
   })
   const address = splitStreetAddress(firstText(row.address, listing.streetAddress, listing.street_address, listing.addressLine1, listing.address_line_1))
   const monthlyRent = firstNumber(options.price, row.monthlyRent, rentalInfo.monthlyRent, rentalInfo.monthly_rent, listing.askingPrice, listing.asking_price)
-  const depositAmount = firstNumber(options.deposit, row.depositAmount, rentalInfo.depositAmount, rentalInfo.deposit_amount)
+  const depositPolicy = firstText(row.depositPolicy, rentalInfo.depositPolicy, rentalInfo.deposit_policy)
+  const depositAmount = normalizeKey(depositPolicy) === 'no_deposit'
+    ? 0
+    : firstNumber(options.deposit, row.depositAmount, rentalInfo.depositAmount, rentalInfo.deposit_amount)
+  const rentalPriceFrequency = firstText(options.rentalPriceType, row.rentalPriceFrequency, rentalInfo.rentalPriceFrequency, rentalInfo.rental_price_frequency)
+  const rentalMandateType = firstText(row.rentalMandateType, rentalInfo.rentalMandateType, rentalInfo.rental_mandate_type)
+  const retirementAccommodation = firstText(row.retirementAccommodation, facts.propertyProfile?.retirementAccommodation, facts.propertyProfile?.retirement_accommodation)
   const availableFrom = normalizeDateOnly(firstText(options.availableFrom, row.availableFrom, rentalInfo.availableFrom, rentalInfo.available_from))
   const mandateEndDate = normalizeDateOnly(firstText(options.expiryDate, listing.mandateEndDate, listing.mandate_end_date, listing.expiryDate, listing.expiry_date))
   const suburbId = firstText(options.suburbId, listing.privatePropertySuburbId, listing.private_property_suburb_id, rentalPublication.privatePropertySuburbId, rentalPublication.private_property_suburb_id)
@@ -199,12 +221,14 @@ export function createPrivatePropertyRentalListingPlan({
     city: firstText(options.town, row.city, listing.city, facts.city),
     province: firstText(options.province, row.province, listing.province, facts.province),
     propertyType: firstText(row.propertyType, listing.propertyType, listing.property_type, 'Apartment'),
+    propertyCategory: firstText(listing.propertyCategory, listing.property_category, facts.propertyCategory, facts.property_category, 'residential'),
+    exactAddressVisibility: firstText(options.exactAddressVisibility, addressProfile.exactAddressVisibility, addressProfile.exact_address_visibility, listing.exactAddressVisibility, listing.exact_address_visibility),
     bedrooms: row.bedrooms,
     bathrooms: row.bathrooms,
     garages: firstNumber(listing.garages, listing.garage_count, row.parkingBays, 0),
     parkingBays: row.parkingBays,
-    mandateType: 'rental',
-    mandate_type: 'rental',
+    mandateType: normalizeKey(rentalMandateType) === 'house_share' ? 'house_share' : 'rental',
+    mandate_type: normalizeKey(rentalMandateType) === 'house_share' ? 'house_share' : 'rental',
   }
   const adaptedPublication = {
     ...rentalPublication,
@@ -231,7 +255,7 @@ export function createPrivatePropertyRentalListingPlan({
   const adapterOptions = {
     ...options,
     listingType: 'Rental',
-    mandateType: 'Rental',
+    mandateType: normalizeKey(rentalMandateType) === 'house_share' ? 'HouseShare' : 'Rental',
     status: 'to let',
     propertyId,
     suburbId,
@@ -243,8 +267,9 @@ export function createPrivatePropertyRentalListingPlan({
     streetNumber: firstText(options.streetNumber, adaptedListing.streetNumber),
     town: firstText(options.town, adaptedListing.city),
     province: firstText(options.province, adaptedListing.province),
-    category: firstText(options.category, 'Residential'),
-    rentalPriceType: firstText(options.rentalPriceType, rentalPublication.rentalPriceType, rentalPublication.rental_price_type, listing.rentalPriceType, listing.rental_price_type),
+    category: firstText(options.category, adaptedListing.propertyCategory, 'Residential'),
+    exactAddressVisibility: firstText(options.exactAddressVisibility, adaptedListing.exactAddressVisibility, 'hide_street_address'),
+    rentalPriceType: firstText(rentalPriceFrequency, rentalPublication.rentalPriceType, rentalPublication.rental_price_type, listing.rentalPriceType, listing.rental_price_type),
     soleMandateExclusiveDays: '',
   }
 
@@ -259,6 +284,9 @@ export function createPrivatePropertyRentalListingPlan({
   const values = {
     monthlyRent,
     depositAmount,
+    depositPolicy,
+    rentalPriceFrequency,
+    propertyCategory: adaptedListing.propertyCategory,
     availableFrom,
     suburbId,
     mandateStatus: row.mandateStatus,
@@ -267,12 +295,16 @@ export function createPrivatePropertyRentalListingPlan({
   const adapterDataBlockers = getAdapterDataBlockers({ values, options })
   const dataBlockers = unique([...(basePlan.dataBlockers || []), ...adapterDataBlockers])
   const technicalBlockers = unique(basePlan.technicalBlockers || [])
+  const qualityWarnings = unique([
+    ...(basePlan.qualityWarnings || []),
+    ...(normalizeKey(retirementAccommodation) === 'yes' ? ['private_property_retirement_accommodation_not_mapped'] : []),
+  ])
   const canPreview = dataBlockers.length === 0 && technicalBlockers.length === 0 && Boolean(basePlan.listingXml)
   const payload = {
     ...basePlan.payload,
     listingType: 'Rental',
     propertyStatus: 'ToLet',
-    mandateType: 'Rental',
+    mandateType: basePlan.payload?.mandateType || 'Rental',
     price: monthlyRent || basePlan.payload?.price || 0,
     deposit: depositAmount || 0,
     availableFrom: availableFrom || basePlan.payload?.availableFrom,
@@ -293,14 +325,18 @@ export function createPrivatePropertyRentalListingPlan({
     canSubmit: false,
     dataBlockers,
     technicalBlockers,
+    qualityWarnings,
     summary: {
       ...basePlan.summary,
       listingType: 'Rental',
-      mandateType: 'Rental',
+      mandateType: basePlan.summary?.mandateType || 'Rental',
       propertyStatus: 'ToLet',
       price: monthlyRent || 0,
       deposit: depositAmount || 0,
       rentalPriceType: basePlan.summary.rentalPriceType || '',
+      rentalPriceFrequency,
+      depositPolicy,
+      rentalMandateType: normalizeKey(rentalMandateType) === 'house_share' ? 'house_share' : 'standard_rental',
       availableFrom,
       suburbId: Number(suburbId) || null,
       rentalMandateStatus: row.mandateStatus,

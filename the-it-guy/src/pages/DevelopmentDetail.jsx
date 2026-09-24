@@ -167,6 +167,7 @@ const DEFAULT_DETAILS_FORM = {
       whyThisDevelopment: ''
     },
     mediaLibrary: {
+      coverImageUrl: '',
       heroImageUrl: '',
       galleryImageUrls: '',
       developmentLogoUrl: '',
@@ -1315,6 +1316,7 @@ function normalizeMarketingContentForm(input = null) {
       whyThisDevelopment: text(keySellingPointsSource.whyThisDevelopment, defaults.keySellingPoints.whyThisDevelopment)
     },
     mediaLibrary: hydrateVisualMapMediaLibrary({
+      coverImageUrl: text(mediaLibrarySource.coverImageUrl, mediaLibrarySource.cover_image_url || defaults.mediaLibrary.coverImageUrl),
       heroImageUrl: text(mediaLibrarySource.heroImageUrl, mediaLibrarySource.hero_image_url || defaults.mediaLibrary.heroImageUrl),
       galleryImageUrls: text(mediaLibrarySource.galleryImageUrls, mediaLibrarySource.gallery_image_urls || defaults.mediaLibrary.galleryImageUrls),
       developmentLogoUrl: text(mediaLibrarySource.developmentLogoUrl, mediaLibrarySource.development_logo_url || defaults.mediaLibrary.developmentLogoUrl),
@@ -1424,10 +1426,17 @@ function buildMarketingForm(profile = {}, development = {}, documents = []) {
   }
 
   const imageLinks = Array.isArray(profile?.imageLinks) ? profile.imageLinks : []
-  if (!normalized.mediaLibrary.heroImageUrl) {
+  const logoUrls = new Set([
+    normalized.mediaLibrary.developmentLogoUrl,
+    normalized.mediaLibrary.developmentLogoLightUrl,
+    normalized.mediaLibrary.developmentLogoDarkUrl
+  ].map(value => String(value || '').trim()).filter(Boolean))
+  const firstNonLogoImage = imageLinks.find(url => !logoUrls.has(String(url || '').trim())) || ''
+  if (!normalized.mediaLibrary.coverImageUrl || !normalized.mediaLibrary.heroImageUrl) {
     normalized.mediaLibrary = {
       ...normalized.mediaLibrary,
-      heroImageUrl: imageLinks[0] || '',
+      coverImageUrl: normalized.mediaLibrary.coverImageUrl || firstNonLogoImage,
+      heroImageUrl: normalized.mediaLibrary.heroImageUrl || firstNonLogoImage,
       galleryImageUrls: normalized.mediaLibrary.galleryImageUrls || listToTextarea(imageLinks.slice(1))
     }
   }
@@ -1472,7 +1481,7 @@ function buildMarketingForm(profile = {}, development = {}, documents = []) {
 function getMarketingLegacyPayload(marketingInput = null) {
   const marketing = normalizeMarketingContentForm(marketingInput)
   const dedupe = (values = []) => [...new Set(values.map(item => String(item || '').trim()).filter(Boolean))]
-  const imageLinks = dedupe([marketing.mediaLibrary.heroImageUrl, marketing.mediaLibrary.developmentLogoUrl, ...textareaToList(marketing.mediaLibrary.galleryImageUrls), ...marketing.floorplans.flatMap(item => textareaToList(item.imageUrls))])
+  const imageLinks = dedupe([marketing.mediaLibrary.coverImageUrl, marketing.mediaLibrary.heroImageUrl, marketing.mediaLibrary.developmentLogoUrl, marketing.mediaLibrary.developmentLogoLightUrl, marketing.mediaLibrary.developmentLogoDarkUrl, ...textareaToList(marketing.mediaLibrary.galleryImageUrls), ...marketing.floorplans.flatMap(item => textareaToList(item.imageUrls))])
 
   const sitePlans = dedupe([marketing.mediaLibrary.sitePlanUrl, marketing.mediaLibrary.masterplanUrl, ...textareaToList(marketing.mediaLibrary.floorplanUrls), ...marketing.floorplans.flatMap(item => textareaToList(item.floorplanUrls))])
 
@@ -3188,7 +3197,11 @@ function DevelopmentDetail() {
   const marketingGalleryDocuments = useMemo(() => marketingAssetDocuments.filter(item => ['marketing', 'logo'].includes(item.type)), [marketingAssetDocuments])
   const marketingVideoDocuments = useMemo(() => marketingAssetDocuments.filter(item => item.type === 'video'), [marketingAssetDocuments])
   const marketingVirtualTourDocuments = useMemo(() => marketingAssetDocuments.filter(item => item.type === 'virtual_tour'), [marketingAssetDocuments])
-  const marketingCoverImageUrl = useMemo(() => marketingForm.mediaLibrary.heroImageUrl || marketingGalleryDocuments.find(item => item.type === 'marketing' && isLikelyImageUrl(item.fileUrl))?.fileUrl || '', [marketingForm.mediaLibrary.heroImageUrl, marketingGalleryDocuments])
+  const marketingCoverImageUrl = useMemo(() => {
+    const logoUrls = new Set([marketingForm.mediaLibrary.developmentLogoUrl, marketingForm.mediaLibrary.developmentLogoLightUrl, marketingForm.mediaLibrary.developmentLogoDarkUrl].map(value => String(value || '').trim()).filter(Boolean))
+    const cover = marketingForm.mediaLibrary.coverImageUrl || marketingForm.mediaLibrary.heroImageUrl || ''
+    return !logoUrls.has(String(cover).trim()) ? cover : marketingGalleryDocuments.find(item => item.type === 'marketing' && isLikelyImageUrl(item.fileUrl))?.fileUrl || ''
+  }, [marketingForm.mediaLibrary.coverImageUrl, marketingForm.mediaLibrary.heroImageUrl, marketingForm.mediaLibrary.developmentLogoUrl, marketingForm.mediaLibrary.developmentLogoLightUrl, marketingForm.mediaLibrary.developmentLogoDarkUrl, marketingGalleryDocuments])
   const developmentHeroImageUrl = useMemo(() => {
     const explicitDevelopmentCover = data?.development?.primary_image_url || data?.development?.primaryImageUrl || data?.development?.cover_image_url || data?.development?.coverImageUrl || data?.development?.hero_image_url || data?.development?.heroImageUrl || ''
 
@@ -4507,7 +4520,12 @@ function DevelopmentDetail() {
     const normalizedMarketing = normalizeMarketingContentForm(detailsForm.marketing)
     let nextMediaLibrary = { ...normalizedMarketing.mediaLibrary }
 
-    if (documentType === 'logo') {
+    if (documentType === 'cover') {
+      nextMediaLibrary.coverImageUrl = urls[0] || nextMediaLibrary.coverImageUrl
+      if ((options.setAsHero || !nextMediaLibrary.heroImageUrl) && urls[0]) {
+        nextMediaLibrary.heroImageUrl = urls[0]
+      }
+    } else if (documentType === 'logo') {
       nextMediaLibrary.developmentLogoUrl = urls[0] || nextMediaLibrary.developmentLogoUrl
       nextMediaLibrary.developmentLogoLightUrl = urls[0] || nextMediaLibrary.developmentLogoLightUrl
     } else if (documentType === 'logo-dark') {
@@ -4730,7 +4748,7 @@ function DevelopmentDetail() {
       setSitePlanSuggestions(nextSuggestions)
       await saveDevelopmentDetails(data.development.id, buildDevelopmentDetailsPayload(nextDetailsForm))
       const suggestionCount = Object.keys(nextSuggestions).length
-      setFeedback(sourceIsPdf ? (suggestionCount ? `PDF source retained. ${suggestionCount} unit-label suggestion${suggestionCount === 1 ? '' : 's'} are ready for review.` : 'PDF source retained and page 1 is ready for manual unit mapping.') : 'Site plan uploaded and ready for mapping.')
+      setFeedback(sourceIsPdf || sourceIsSvg ? (suggestionCount ? `${sourceIsSvg ? 'SVG' : 'PDF'} labels found. ${suggestionCount} unit placements are ready for review.` : 'Site plan uploaded and ready for manual unit mapping.') : 'Site plan uploaded and ready for mapping.')
       window.dispatchEvent(new Event('itg:developments-changed'))
       await loadData()
     } catch (uploadError) {
@@ -5291,6 +5309,7 @@ function DevelopmentDetail() {
       const mediaLibrary = { ...normalizedMarketing.mediaLibrary }
       const assetUrl = String(asset.fileUrl || '')
       mediaLibrary.galleryImageUrls = listToTextarea(textareaToList(mediaLibrary.galleryImageUrls).filter(url => url !== assetUrl))
+      if (mediaLibrary.coverImageUrl === assetUrl) mediaLibrary.coverImageUrl = ''
       if (mediaLibrary.heroImageUrl === assetUrl) mediaLibrary.heroImageUrl = ''
       if (mediaLibrary.developmentLogoUrl === assetUrl) mediaLibrary.developmentLogoUrl = ''
       if (mediaLibrary.developmentLogoLightUrl === assetUrl) mediaLibrary.developmentLogoLightUrl = ''
@@ -6856,7 +6875,7 @@ function DevelopmentDetail() {
     if (marketingHubSection === 'ci-setup') {
       const lightLogo = marketingForm.mediaLibrary.developmentLogoLightUrl || marketingForm.mediaLibrary.developmentLogoUrl
       const darkLogo = marketingForm.mediaLibrary.developmentLogoDarkUrl
-      const coverImage = marketingForm.mediaLibrary.heroImageUrl
+      const coverImage = marketingForm.mediaLibrary.coverImageUrl || marketingForm.mediaLibrary.heroImageUrl
       const handleDrop = (event, documentType, options) => {
         event.preventDefault()
         void handleMarketingAssetFileUpload({ target: { files: event.dataTransfer.files, value: '' } }, documentType, options)
@@ -7063,6 +7082,7 @@ function DevelopmentDetail() {
                   <DetailField label="Listing Heading">
                     <Field value={marketingForm.listingOverview.listingHeading} onChange={event => setMarketingField('listingOverview', 'listingHeading', event.target.value)} />
                   </DetailField>
+
                   <DetailField label="Public Listing URL">
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
                       <Field value={marketingForm.externalLinks.developmentLandingPageUrl} onChange={event => setMarketingField('externalLinks', 'developmentLandingPageUrl', event.target.value)} />
@@ -10240,7 +10260,7 @@ function DevelopmentDetail() {
                                       className="hidden"
                                       disabled={Boolean(marketingAssetUploading)}
                                       onChange={event =>
-                                        void handleMarketingAssetFileUpload(event, 'marketing', {
+                                        void handleMarketingAssetFileUpload(event, 'cover', {
                                           uploadKey: 'cover',
                                           successMessage: 'Cover image uploaded.'
                                         })

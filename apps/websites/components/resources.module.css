@@ -118,9 +118,9 @@
   .page .search button { padding: 15px 18px; }
   .page .articleGrid { grid-template-columns: 1fr; gap: 36px; }
   .page .cardImage { aspect-ratio: 1.6; }
-  .page .articleIntro { padding-top: 42px; padding-bottom: 30px; } .page .articleIntro h1, .page .articleIntroLongTitle h1 { font-size: clamp(38px, 11vw, 50px); } .page .articleIntroNoHero { padding-bottom: 34px; } .page .articlePreview { margin-top: 24px; padding: 14px 15px; } .page .articleDeck { -webkit-line-clamp: 4; font-size: 14px !important; } .page .articleMeta { font-size: 11px; }
-  .page .articleMeta span + span::before, .page .articleMeta time::before { margin-right: 8px; } .page .articleHero { border-radius: 0; min-height: 240px; }
-  .page .prose { padding: 46px 20px 58px; } .page .prose h2 { margin-top: 48px; } .page .prose blockquote { font-size: 22px; padding-left: 18px; } .page .articleCta { margin-top: 56px; padding: 28px 24px; } .page .articleProperty { grid-template-columns: 1fr; } .page .articleProperty img { height: auto; }
+  .page .articleIntro { padding-top: 42px; padding-bottom: 30px; } .page .articleIntro h1, .page .articleIntroLongTitle h1 { font-size: clamp(38px, 11vw, 50px); overflow-wrap: anywhere; } .page .articleIntroNoHero { padding-bottom: 34px; } .page .articlePreview { margin-top: 24px; padding: 14px 15px; } .page .articleDeck { -webkit-line-clamp: 4; font-size: 14px !important; } .page .articleMeta { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 12px; font-size: 11px; }
+  .page .articleMeta span + span::before, .page .articleMeta time::before { content: none; margin-right: 0; } .page .articleMeta time { grid-column: 1 / -1; } .page .articleHero { border-radius: 0; height: clamp(220px, 68vw, 320px); min-height: 0; }
+  .page .prose { padding: 46px 20px 58px; } .page .prose h2, .page .prose h3, .page .prose p, .page .prose li { overflow-wrap: anywhere; } .page .prose h2 { margin-top: 48px; } .page .prose blockquote { font-size: 22px; padding-left: 18px; } .page .articleTip { margin: 32px 0; padding: 20px; } .page .articleCta { margin-top: 56px; padding: 28px 24px; } .page .articleCtaActions { align-items: flex-start; flex-direction: column; gap: 16px; } .page .articleProperty { gap: 16px; grid-template-columns: 1fr; padding: 12px; } .page .articleProperty img { height: 190px; object-fit: cover; }
   .page .relatedHeading { display: block; } .page .relatedSection { padding-bottom: 64px; }
   .page .preapproval { padding-top: 44px; } .page .application { border-left: 0; border-top: 1px solid #d3dacb; padding: 32px 0 0; }
 }

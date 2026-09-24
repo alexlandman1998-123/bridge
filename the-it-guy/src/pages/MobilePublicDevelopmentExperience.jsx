@@ -165,7 +165,7 @@ export default function MobilePublicDevelopmentExperience({
               href="#enquire"
               onClick={(event) => {
                 event.preventDefault();
-                try { window.sessionStorage.setItem("arch9:development-enquiry-interest", "Reserve a unit"); } catch {}
+                try { window.sessionStorage.setItem("arch9:development-enquiry-interest", "Reserve a unit"); } catch { /* Continue when storage is unavailable. */ }
                 window.dispatchEvent(new CustomEvent("arch9:development-enquiry-interest", { detail: "Reserve a unit" }));
                 setMenu(false);
                 setEnquiryOpen(true);

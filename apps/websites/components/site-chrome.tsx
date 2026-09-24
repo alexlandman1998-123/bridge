@@ -2,7 +2,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { hasPublishedBlogPosts } from '@/lib/site-repository'
 import type { ResolvedSite } from '@/lib/types'
-import { isHomeSeekersTemplate, templateNavigation } from '@/lib/site-templates'
+import { hasEditorialPropertyExperience, isHomeSeekersTemplate, templateNavigation } from '@/lib/site-templates'
 import { selectWebsiteLogo } from '@/lib/website-brand'
 import { ResponsiveSiteHeader } from './responsive-site-header'
 
@@ -25,7 +25,7 @@ export async function SiteHeader({ site, enquiryHref = '/valuation', homepage = 
   const homeSeekers = isHomeSeekersTemplate(site.templateKey)
   const navigation = templateNavigation(site.templateKey).filter(item => !(homepage || homeSeekers) || item.label !== 'Our people')
   const resources = resourceLinks(await hasPublishedBlogPosts(site))
-  return <ResponsiveSiteHeader site={site} navigation={navigation} resources={resources} enquiryHref={enquiryHref} currentHref={currentHref} homeSeekers={homeSeekers} overlay={homepage && homeSeekers} />
+  return <ResponsiveSiteHeader site={site} navigation={navigation} resources={resources} enquiryHref={enquiryHref} currentHref={currentHref} homeSeekers={homeSeekers} overlay={homepage && homeSeekers && hasEditorialPropertyExperience(site)} />
 }
 
 export async function SiteFooter({ site }: { site: ResolvedSite }) {

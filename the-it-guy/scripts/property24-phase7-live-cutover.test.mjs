@@ -114,6 +114,7 @@ const productionRuntime = resolveProperty24EnvironmentCredentials({
     PROPERTY24_PRODUCTION_BASIC_AUTH_USERNAME: 'production-user',
     PROPERTY24_PRODUCTION_BASIC_AUTH_PASSWORD: 'production-password',
     PROPERTY24_PRODUCTION_USER_GROUP_ID: 'south-africa-group',
+    PROPERTY24_PRODUCTION_SEND_USER_GROUP_HEADER: 'true',
   },
 })
 assert.equal(productionRuntime.environment, 'production')

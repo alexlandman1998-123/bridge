@@ -23,7 +23,12 @@ function runtimeEnv() {
   return { ...values, ...process.env }
 }
 function header(headers = {}, name) { const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === name); return normalizePrivatePropertyText(Array.isArray(entry?.[1]) ? entry[1][0] : entry?.[1]) }
-function privatePropertyAgents(xml = '') { return extractPrivatePropertyXmlBlocks(xml, 'Agent').map((agent) => ({ privatePropertyAgentId: extractPrivatePropertyXmlTag(agent, 'AgentId'), privatePropertyInternalId: extractPrivatePropertyXmlTag(agent, 'PrivatePropertyAgentId'), email: extractPrivatePropertyXmlTag(agent, 'Email').toLowerCase(), firstName: extractPrivatePropertyXmlTag(agent, 'FirstName'), lastName: extractPrivatePropertyXmlTag(agent, 'LastName'), active: extractPrivatePropertyXmlTag(agent, 'Active').toLowerCase() !== 'false' })).filter((agent) => agent.privatePropertyAgentId) }
+export function privatePropertyAgents(xml = '') {
+  const currentRowsXml = String(xml).replace(/<diffgr:before\b[\s\S]*?<\/diffgr:before>/gi, '')
+  const pluralRows = extractPrivatePropertyXmlBlocks(currentRowsXml, 'Agents')
+  const rows = pluralRows.length ? pluralRows : extractPrivatePropertyXmlBlocks(currentRowsXml, 'Agent')
+  return rows.map((agent) => ({ privatePropertyAgentId: extractPrivatePropertyXmlTag(agent, 'AgentId'), privatePropertyInternalId: extractPrivatePropertyXmlTag(agent, 'PrivatePropertyAgentId'), email: extractPrivatePropertyXmlTag(agent, 'Email').toLowerCase(), firstName: extractPrivatePropertyXmlTag(agent, 'FirstName'), lastName: extractPrivatePropertyXmlTag(agent, 'LastName'), active: extractPrivatePropertyXmlTag(agent, 'Active').toLowerCase() !== 'false' })).filter((agent) => agent.privatePropertyAgentId)
+}
 function executive(user = {}) { const meta = user.app_metadata || {}; return [meta.role, meta.app_role, ...(Array.isArray(meta.roles) ? meta.roles : [])].some((role) => normalizePrivatePropertyText(role).toLowerCase().replace(/[\s-]+/g, '_') === 'executive') }
 function cors(request) { const origin = header(request.headers, 'origin'); return { 'Cache-Control': 'no-store', 'Content-Type': 'application/json; charset=utf-8', ...(new Set(['https://admin.arch9.co.za', 'http://localhost:5173']).has(origin) ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {}), 'Access-Control-Allow-Headers': 'authorization, content-type', 'Access-Control-Allow-Methods': 'OPTIONS, GET, PUT' } }
 async function readBody(request) { const chunks = []; for await (const chunk of request) chunks.push(chunk); const value = chunks.length ? Buffer.concat(chunks).toString('utf8') : ''; return value.trim() ? JSON.parse(value) : {} }

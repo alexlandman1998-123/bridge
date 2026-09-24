@@ -71,6 +71,7 @@ assert.equal(resolvePrivatePropertyCategory('House'), 'Residential')
 assert.equal(resolvePrivatePropertyCategory('Commercial Property'), 'Commercial')
 assert.equal(resolvePrivatePropertyCategory('Vacant Land'), 'Land')
 assert.equal(resolvePrivatePropertyCategory('Farm'), 'Farms')
+assert.equal(resolvePrivatePropertyCategory('agricultural'), 'Farms')
 assert.equal(resolvePrivatePropertyProvince('Western Cape'), 'WesternCape')
 assert.equal(resolvePrivatePropertyMandateType({ listingType: 'Sale', value: 'sole mandate' }), 'FullMandate')
 
@@ -164,6 +165,49 @@ assert.equal(inferredAddressPlan.payload.address.streetNumber, '99')
 assert.equal(inferredAddressPlan.payload.address.streetName, 'Ridge Road')
 assert.doesNotMatch(inferredAddressPlan.listingXml, /<StreetName>99 Ridge Road<\/StreetName>/)
 assert.match(inferredAddressPlan.listingXml, /<StreetNumber>99<\/StreetNumber>/)
+
+const normalizedFeaturePlan = createPrivatePropertyListingPlan({
+  listing: {
+    ...inferredAddressPlan.payload,
+    id: 'normalized-feature-listing',
+    listing_reference: 'PP-FEATURE-001',
+    listing_status: 'active',
+    address_line_1: '16 Main Road',
+    suburb: 'Capital Park',
+    city: 'Pretoria',
+    province: 'Gauteng',
+    property_type: 'House',
+    asking_price: 2050000,
+    created_at: '2026-09-21T08:00:00.000Z',
+    exactAddressVisibility: 'hide_street_address',
+  },
+  publication: {
+    title: 'Feature parity listing',
+    listing_type: 'Sale',
+    property_type: 'House',
+    asking_price: 2050000,
+    bedrooms: 5,
+    bathrooms: 4,
+    garages: 2,
+    parking_bays: 16,
+    description: 'A complete portal feature test.',
+    features: ['Flatlet', 'Staff Quarters', 'Fibre', 'Security'],
+  },
+  media: [
+    { media_type: 'image', file_url: 'https://cdn.example.com/feature-one.jpg' },
+    { media_type: 'image', file_url: 'https://cdn.example.com/feature-two.jpg' },
+    { media_type: 'image', file_url: 'https://cdn.example.com/feature-three.jpg' },
+  ],
+  agentMapping: { agentIds: 'ARCH9-SANDBOX-USER-1' },
+  options: { branchGuid: 'CA167B18-C6DC-49AD-B018-2B72B187918F', suburbId: '309' },
+})
+assert.equal(normalizedFeaturePlan.canPreview, true)
+assert.match(normalizedFeaturePlan.listingXml, /<AttributeType>Parking<\/AttributeType><Value>16<\/Value>/)
+assert.match(normalizedFeaturePlan.listingXml, /<AttributeType>Flatlet<\/AttributeType><Value>Yes<\/Value>/)
+assert.match(normalizedFeaturePlan.listingXml, /<AttributeType>StaffQuarters<\/AttributeType><Value>Yes<\/Value>/)
+assert.match(normalizedFeaturePlan.listingXml, /Additional features include fibre connectivity and Security\./)
+assert.match(normalizedFeaturePlan.listingXml, /<HideStreetName>true<\/HideStreetName>/)
+assert.match(normalizedFeaturePlan.listingXml, /<HideStreetNo>true<\/HideStreetNo>/)
 
 const landFixture = createPrivatePropertySandboxFixture('sale-land')
 const landPreview = createPrivatePropertyArch9ListingPreview({

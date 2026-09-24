@@ -86,7 +86,10 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 })
 
 function stableUuid(seed) {
-  const hash = crypto.createHash('sha1').update(`${UUID_NAMESPACE}:${seed}`).digest('hex')
+  // Every agency receives the same showcase scenarios. Namespace the stable
+  // identifiers by that agency's seed key so an upsert for one demo workspace
+  // cannot reassign another workspace's transactions and related records.
+  const hash = crypto.createHash('sha1').update(`${UUID_NAMESPACE}:${SEED_KEY}:${seed}`).digest('hex')
   return [
     hash.slice(0, 8),
     hash.slice(8, 12),
@@ -538,8 +541,11 @@ function buildRows(context) {
       bank: scenario.bank || null,
       attorney: 'Landman & Naidoo Conveyancing',
       bond_originator: scenario.financeType === 'cash' ? null : 'BetterBond Demo Desk',
-      transaction_reference: scenario.reference,
-      platform_reference: scenario.reference,
+      // Platform references are globally unique in production. Keep the
+      // scenario reference recognizable while making it unique per demo
+      // agency, just like the primary keys above.
+      transaction_reference: `${ACCOUNT_CONFIG.accountId.toUpperCase()}-${scenario.reference}`,
+      platform_reference: `${ACCOUNT_CONFIG.accountId.toUpperCase()}-${scenario.reference}`,
       transaction_type: 'resale',
       transaction_origin_role: 'agent',
       transaction_origin_source: 'agent',

@@ -83,9 +83,9 @@ export default function BuyerPortalDesktopSidebar({
       data-buyer-portal-shell="desktop-sidebar"
     >
       <div className="border-b border-white/10 pb-5">
-        <div className="min-h-[56px]">
+        <div className="min-h-[80px]">
           {brandLogoUrl ? (
-            <img src={brandLogoUrl} alt={`${brandName} logo`} className="max-h-14 max-w-[190px] object-contain object-left" />
+            <img src={brandLogoUrl} alt={`${brandName} logo`} className="max-h-20 max-w-[216px] object-contain object-left" />
           ) : (
             <h1 className="text-2xl font-semibold tracking-[-0.04em] text-white">{brandName}</h1>
           )}

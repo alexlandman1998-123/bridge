@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, CheckCircle2, ChevronLeft, ChevronRight, Globe2, ImagePlus, Landmark, Loader2, Minus, Plus, Save, Trash2, UserRound, Users, X } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import AddressAutocomplete from '../../components/location/AddressAutocomplete'
-import { createRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
+import { createRentalListingDraft, getRentalListingForAgent, updateRentalListingDraft } from '../../services/rentals/rentalListingDraftService'
 import {
   buildRentalListingTitle,
+  normalizeRentalDistributionChannels,
+  RENTAL_DISTRIBUTION_CHANNELS,
   RENTAL_LISTING_INITIAL_FORM,
   RENTAL_SELECT_OPTIONS,
   validateRentalListingDraftForm,
 } from '../../services/rentals/rentalListingDraftModel'
+import { buildRentalListingEditForm } from '../../services/rentals/rentalListingEditModel'
 import { resolveRentalWorkspaceScope } from '../../services/rentals/rentalWorkspaceScope'
 import { listRentalLeads } from '../../services/rentals/rentalLeadService'
 import { linkRentalLandlordLeadToListing } from '../../services/rentals/rentalLandlordListingHandoffService'
@@ -20,7 +23,32 @@ const PROPERTY_TYPE_OPTIONS = Object.freeze([
   { value: 'Townhouse', label: 'Townhouse' },
   { value: 'Duplex', label: 'Duplex' },
   { value: 'Studio', label: 'Studio' },
+  { value: 'Office', label: 'Office / commercial' },
+  { value: 'Warehouse', label: 'Warehouse / industrial' },
+  { value: 'Retail', label: 'Retail' },
+  { value: 'Farm', label: 'Farm' },
+  { value: 'Smallholding', label: 'Smallholding' },
+  { value: 'Vacant Land', label: 'Vacant land' },
+  { value: 'Mixed-use', label: 'Mixed use' },
 ])
+
+const PROPERTY_CATEGORY_OPTIONS = Object.freeze([
+  { value: 'residential', label: 'Residential' },
+  { value: 'commercial', label: 'Commercial' },
+  { value: 'industrial', label: 'Industrial' },
+  { value: 'retail', label: 'Retail' },
+  { value: 'agricultural', label: 'Farm / agricultural' },
+  { value: 'vacant_land', label: 'Vacant land' },
+  { value: 'mixed_use', label: 'Mixed use' },
+])
+
+const PER_SQUARE_METRE_RENTAL_CATEGORIES = new Set(['commercial', 'industrial', 'retail', 'vacant_land', 'mixed_use'])
+
+function rentalPriceFrequencyOptions(propertyCategory) {
+  return RENTAL_SELECT_OPTIONS.rentalPriceFrequency.filter((option) => (
+    option.value !== 'per_square_metre' || PER_SQUARE_METRE_RENTAL_CATEGORIES.has(propertyCategory)
+  ))
+}
 
 const SELLING_POINT_OPTIONS = Object.freeze([
   ['Pool', 'pool'], ['Garden', 'garden'], ['Security', 'securityPost'], ['Electric fence', 'electricFencing'],
@@ -36,6 +64,7 @@ const CREATE_STEPS = Object.freeze([
   { key: 'property', label: 'Property', description: 'Add property details' },
   { key: 'terms', label: 'Rental terms', description: 'Price & lease' },
   { key: 'marketing', label: 'Marketing', description: 'Photos & description' },
+  { key: 'syndication', label: 'Syndication', description: 'Choose publication channels' },
   { key: 'review', label: 'Review', description: 'Confirm & create' },
 ])
 
@@ -64,6 +93,7 @@ function createInitialFormState() {
     selectedFeatures: [...RENTAL_LISTING_INITIAL_FORM.selectedFeatures],
     amenities: [...RENTAL_LISTING_INITIAL_FORM.amenities],
     galleryImages: [...RENTAL_LISTING_INITIAL_FORM.galleryImages],
+    selectedSyndicationChannels: [...RENTAL_LISTING_INITIAL_FORM.selectedSyndicationChannels],
   }
 }
 
@@ -138,7 +168,7 @@ function SelectField({ label, name, value, options, onChange }) {
 
 function FormSection({ eyebrow, title, description = '', children }) {
   return (
-    <section className="ui-panel ui-panel-body grid gap-4">
+    <section className="ui-panel ui-panel-body grid w-full min-w-0 max-w-full gap-4 overflow-hidden">
       <div>
         <p className="text-xs font-semibold uppercase text-[#607891]">{eyebrow}</p>
         <h2 className="text-lg font-semibold text-[#18324b]">{title}</h2>
@@ -231,11 +261,31 @@ function ReviewSummaryCard({ title, details, onEdit }) {
   )
 }
 
+function DistributionChannelCard({ channel, selected, needsAttention, onToggle }) {
+  const state = !selected
+    ? { label: 'Not selected', detail: 'This channel will not be prepared after saving.', classes: 'border-[#dbe6f2] bg-white text-[#607891]' }
+    : needsAttention
+      ? { label: 'Needs attention', detail: needsAttention, classes: 'border-[#f1d4a6] bg-[#fffaf0] text-[#8a5a12]' }
+      : { label: 'Selected', detail: 'This channel will be prepared after the rental is saved.', classes: 'border-[#b8ddc4] bg-[#f2fbf5] text-[#286b43]' }
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      onClick={() => onToggle(channel.key)}
+      className={`flex min-h-32 flex-col items-start rounded-[12px] border p-4 text-left transition focus:outline-none focus:ring-2 focus:ring-[#286b43] focus:ring-offset-2 ${state.classes}`}
+    >
+      <span className="flex w-full items-start justify-between gap-3"><span className="font-semibold text-[#18324b]">{channel.label}</span><span className="rounded-full border border-current/20 px-2 py-1 text-[0.7rem] font-bold">{state.label}</span></span>
+      <span className="mt-3 text-xs font-medium leading-5">{state.detail}</span>
+    </button>
+  )
+}
+
 function stepForValidationError(error = '') {
   const normalized = String(error).toLowerCase()
   if (normalized.includes('landlord')) return 'landlord'
   if (normalized.includes('property address')) return 'property'
-  if (normalized.includes('monthly rent') || normalized.includes('availability')) return 'terms'
+  if (normalized.includes('rental amount') || normalized.includes('rental price frequency') || normalized.includes('deposit') || normalized.includes('available from') || normalized.includes('occupation date')) return 'terms'
+  if (normalized.includes('public rental description')) return 'marketing'
   return 'review'
 }
 
@@ -266,12 +316,15 @@ function RentalCreateProgressNav({ activeStep, onStepClick }) {
 
 export default function RentalListingCreatePage() {
   const navigate = useNavigate()
+  const params = useParams()
   const [searchParams] = useSearchParams()
   const workspaceContext = useWorkspace()
   const rentalScope = useMemo(() => resolveRentalWorkspaceScope(workspaceContext), [workspaceContext])
   const organisationId = rentalScope.organisationId
   const branchId = rentalScope.branchId
   const assignedAgentId = rentalScope.assignedAgentId
+  const editListingId = String(params.listingId || '').trim()
+  const isEditing = Boolean(editListingId)
   const [form, setForm] = useState(createInitialFormState)
   const [activeStep, setActiveStep] = useState('landlord')
   const galleryImagesRef = useRef(form.galleryImages)
@@ -294,11 +347,17 @@ export default function RentalListingCreatePage() {
     () => [...new Set([...(form.selectedFeatures || []), ...(form.amenities || [])])],
     [form.amenities, form.selectedFeatures],
   )
+  const selectedDistributionChannels = useMemo(
+    () => normalizeRentalDistributionChannels(form.selectedSyndicationChannels),
+    [form.selectedSyndicationChannels],
+  )
   const canSubmit = validationErrors.length === 0 && !saving
   const activeStepIndex = CREATE_STEPS.findIndex((step) => step.key === activeStep)
+  const priceFrequencyOptions = rentalPriceFrequencyOptions(form.propertyCategory)
 
   useEffect(() => {
     try {
+      if (isEditing) return
       const storedDraft = window.sessionStorage.getItem(RENTAL_CREATE_SESSION_DRAFT_KEY)
       if (!storedDraft) return
       const parsedDraft = JSON.parse(storedDraft)
@@ -316,7 +375,29 @@ export default function RentalListingCreatePage() {
     } catch {
       window.sessionStorage.removeItem(RENTAL_CREATE_SESSION_DRAFT_KEY)
     }
-  }, [])
+  }, [isEditing])
+
+  useEffect(() => {
+    if (!isEditing || !organisationId) return
+    let cancelled = false
+    setSaving(true)
+    setError('')
+    getRentalListingForAgent(editListingId, assignedAgentId, {
+      organisationId,
+      branchId,
+      scopeLevel: rentalScope.scopeLevel,
+    }).then((existingListing) => {
+      if (cancelled) return
+      if (!existingListing) throw new Error('Rental listing not found.')
+      setForm(buildRentalListingEditForm(existingListing))
+      setNotice('Editing this rental in the same guided capture flow used for new listings.')
+    }).catch((loadError) => {
+      if (!cancelled) setError(loadError?.message || 'Unable to load the rental listing for editing.')
+    }).finally(() => {
+      if (!cancelled) setSaving(false)
+    })
+    return () => { cancelled = true }
+  }, [assignedAgentId, branchId, editListingId, isEditing, organisationId, rentalScope.scopeLevel])
 
   useEffect(() => {
     galleryImagesRef.current = form.galleryImages
@@ -372,6 +453,20 @@ export default function RentalListingCreatePage() {
         ? { [portalField]: toggleArrayValue([...(current.selectedFeatures || []), ...(current.amenities || [])], value).includes(value) ? 'yes' : '' }
         : {}),
     }))
+    setError('')
+    setNotice('')
+  }
+
+  function toggleDistributionChannel(channel) {
+    setForm((current) => {
+      const selected = normalizeRentalDistributionChannels(current.selectedSyndicationChannels)
+      return {
+        ...current,
+        selectedSyndicationChannels: selected.includes(channel)
+          ? selected.filter((item) => item !== channel)
+          : [...selected, channel],
+      }
+    })
     setError('')
     setNotice('')
   }
@@ -444,6 +539,11 @@ export default function RentalListingCreatePage() {
   }
 
   function goToNextStep() {
+    const stepErrors = validationErrors.filter((validationError) => stepForValidationError(validationError) === activeStep)
+    if (stepErrors.length) {
+      setError(stepErrors.join(' '))
+      return
+    }
     const next = CREATE_STEPS[activeStepIndex + 1]
     if (next) goToStep(next.key)
   }
@@ -473,6 +573,10 @@ export default function RentalListingCreatePage() {
 
   async function handleSubmit(event) {
     event.preventDefault()
+    if (activeStep !== 'review') {
+      goToNextStep()
+      return
+    }
     if (!canSubmit) {
       setError(validationErrors[0] || 'Complete the required rental listing fields.')
       return
@@ -480,15 +584,13 @@ export default function RentalListingCreatePage() {
     try {
       setSaving(true)
       setError('')
-      const result = await createRentalListingDraft(form, {
-        organisationId,
-        branchId,
-        assignedAgentId,
-        performedBy: assignedAgentId,
-      })
+      const context = { organisationId, branchId, assignedAgentId, performedBy: assignedAgentId }
+      const result = isEditing
+        ? await updateRentalListingDraft(editListingId, form, context)
+        : await createRentalListingDraft(form, context)
       const listingId = result?.listing?.id
       if (listingId) {
-        if (linkedLandlordLead) {
+        if (linkedLandlordLead && !isEditing) {
           try {
             await linkRentalLandlordLeadToListing(linkedLandlordLead, listingId, { organisationId, actor: { id: assignedAgentId, userId: assignedAgentId } })
           } catch (linkError) {
@@ -496,37 +598,40 @@ export default function RentalListingCreatePage() {
             return
           }
         }
-        navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}`, {
-          state: { rentalListingCreatedTitle: buildRentalListingTitle(form) },
+        navigate(`/agent/rentals/listings/${encodeURIComponent(listingId)}/marketing`, {
+          state: {
+            [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form),
+            rentalListingDistributionChannels: selectedDistributionChannels,
+          },
         })
         return
       }
       navigate('/agent/rentals/listings', {
-        state: { rentalListingCreatedTitle: buildRentalListingTitle(form) },
+        state: { [isEditing ? 'rentalListingUpdatedTitle' : 'rentalListingCreatedTitle']: buildRentalListingTitle(form) },
       })
     } catch (saveError) {
-      setError(saveError?.message || 'Unable to create the rental listing draft.')
+      setError(saveError?.message || `Unable to ${isEditing ? 'update' : 'create'} the rental listing draft.`)
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <section className="page-content">
-      <form onSubmit={handleSubmit} className="ui-section-stack">
+    <section className="page-content w-full min-w-0 max-w-full overflow-x-hidden">
+      <form onSubmit={handleSubmit} className="ui-section-stack w-full min-w-0 max-w-full">
         <header className="flex flex-wrap items-start justify-between gap-4 px-1 pt-1">
           <div>
-            <p className="text-sm font-semibold text-[#607891]">Listings <span aria-hidden="true">→</span> New listing (rentals)</p>
-            <h1 className="mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-[#18324b]">New listing</h1>
+            <p className="text-sm font-semibold text-[#607891]">Listings <span aria-hidden="true">→</span> {isEditing ? 'Edit listing' : 'New listing'} (rentals)</p>
+            <h1 className="mt-3 text-[1.8rem] font-semibold tracking-[-0.03em] text-[#18324b]">{isEditing ? 'Edit rental listing' : 'New listing'}</h1>
             <p className="mt-1 text-base text-[#607891]">
-              Capture the rental listing details.
+              {isEditing ? 'Update the rental in the guided multi-step editor.' : 'Capture the rental listing details.'}
             </p>
           </div>
           <button
             type="button"
             className="inline-flex h-12 w-12 items-center justify-center rounded-xl border border-[#dbe6f2] bg-white text-[#607891] transition hover:border-[#9fc5ae] hover:text-[#286b43]"
-            onClick={() => navigate('/agent/rentals/listings')}
-            aria-label="Close new rental listing"
+            onClick={() => navigate(isEditing ? `/agent/rentals/listings/${encodeURIComponent(editListingId)}` : '/agent/rentals/listings')}
+            aria-label={isEditing ? 'Close rental listing editor' : 'Close new rental listing'}
           >
             <X size={21} aria-hidden="true" />
           </button>
@@ -541,15 +646,22 @@ export default function RentalListingCreatePage() {
 
         <RentalCreateProgressNav activeStep={activeStep} onStepClick={goToStep} />
 
-        <div className="grid gap-6">
+        <div className="grid w-full min-w-0 max-w-full gap-6">
           {linkedLandlordLead ? <p className="rounded-[8px] border border-[#cfe8dc] bg-[#f2fbf5] px-4 py-3 text-sm font-semibold text-[#286b43]">Creating this listing for landlord lead {linkedLandlordLead.name}. The listing will be linked after it is created.</p> : null}
           {activeStep === 'property' ? <FormSection
-            eyebrow="Step 2 of 5"
+            eyebrow="Step 2 of 6"
             title="Property"
             description="Add the property details."
           >
             <section>
-              <h3 className="text-sm font-semibold text-[#18324b]">1. Property address</h3>
+              <h3 className="text-sm font-semibold text-[#18324b]">1. Property category</h3>
+              <p className="mt-1 text-sm text-[#607891]">Choose the market this rental belongs to before adding its address and property type.</p>
+              <div className="mt-4 max-w-md">
+                <SelectField label="Property category" name="propertyCategory" value={form.propertyCategory} onChange={updateForm} options={PROPERTY_CATEGORY_OPTIONS} />
+              </div>
+            </section>
+            <section>
+              <h3 className="text-sm font-semibold text-[#18324b]">2. Property address</h3>
               <div className="mt-4">
                 <AddressAutocomplete
                   label="Property address"
@@ -573,18 +685,20 @@ export default function RentalListingCreatePage() {
                   <label className="form-field"><span>Province</span><input {...formField('province', form.province, updateForm)} placeholder="Province" /></label>
                   <label className="form-field"><span>Postal code</span><input {...formField('postalCode', form.postalCode, updateForm)} placeholder="8005" /></label>
                   <SelectField label="Portal address display" name="exactAddressVisibility" value={form.exactAddressVisibility} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.exactAddressVisibility} />
-                  <label className="form-field"><span>Property24 suburb ID</span><input inputMode="numeric" {...formField('property24SuburbId', form.property24SuburbId, updateForm)} placeholder="Optional portal lookup ID" /></label>
                 </div>
               </details>
             </section>
 
             <section className="border-t border-[#e6edf5] pt-6">
-              <h3 className="text-sm font-semibold text-[#18324b]">2. Listing basics</h3>
-              <div className="mt-4"><SelectField label="Property type" name="propertyType" value={form.propertyType} onChange={updateForm} options={PROPERTY_TYPE_OPTIONS} /></div>
+              <h3 className="text-sm font-semibold text-[#18324b]">3. Listing basics</h3>
+              <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <SelectField label="Property type" name="propertyType" value={form.propertyType} onChange={updateForm} options={PROPERTY_TYPE_OPTIONS} />
+                <SelectField label="Retirement accommodation (optional)" name="retirementAccommodation" value={form.retirementAccommodation} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.retirementAccommodation} />
+              </div>
             </section>
 
             <section className="border-t border-[#e6edf5] pt-6">
-              <h3 className="text-sm font-semibold text-[#18324b]">3. Property specifications</h3>
+              <h3 className="text-sm font-semibold text-[#18324b]">4. Property specifications</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                 <PropertyCounter label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} />
                 <PropertyCounter label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} />
@@ -613,7 +727,7 @@ export default function RentalListingCreatePage() {
             </section>
           </FormSection> : null}
 
-          {activeStep === 'landlord' ? <FormSection eyebrow="Step 1 of 5" title="Landlord & Mandate" description="Add the property owner and confirm the rental mandate.">
+          {activeStep === 'landlord' ? <FormSection eyebrow="Step 1 of 6" title="Landlord & Mandate" description="Add the property owner and confirm the rental mandate.">
             <section>
               <h3 className="text-sm font-semibold text-[#18324b]">Landlord type</h3>
               <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -664,11 +778,12 @@ export default function RentalListingCreatePage() {
             </section>
           </FormSection> : null}
 
-          {activeStep === 'terms' ? <FormSection eyebrow="Step 3 of 5" title="Rental Terms" description="Set the rental amount, lease conditions, deposits, fees, and availability.">
+          {activeStep === 'terms' ? <FormSection eyebrow="Step 3 of 6" title="Rental Terms" description="Set the rental amount, lease conditions, deposits, fees, and availability.">
             <section>
               <h3 className="text-sm font-semibold text-[#18324b]">Price & availability</h3>
               <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                <label className="form-field"><span>Monthly rent</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="18500" /></label>
+                <label className="form-field"><span>Rental amount</span><input type="number" min="0" {...formField('monthlyRent', form.monthlyRent, updateForm)} placeholder="18500" /></label>
+                <SelectField label="Rental price frequency" name="rentalPriceFrequency" value={form.rentalPriceFrequency} onChange={updateForm} options={priceFrequencyOptions} />
                 <label className="form-field"><span>Available from</span><input type="date" {...formField('availableFrom', form.availableFrom, updateForm)} /></label>
                 <label className="form-field"><span>Occupation date</span><input type="date" {...formField('occupationDate', form.occupationDate, updateForm)} /></label>
                 <SelectField label="Furnished" name="furnishedStatus" value={form.furnishedStatus} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.furnishedStatus} />
@@ -681,16 +796,18 @@ export default function RentalListingCreatePage() {
                 <label className="form-field"><span>Lease period (months)</span><input type="number" min="1" {...formField('leasePeriodMonths', form.leasePeriodMonths, updateForm)} /></label>
                 <SelectField label="Lease period type" name="leasePeriodType" value={form.leasePeriodType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.leasePeriodType} />
                 <SelectField label="Pets" name="petsPolicy" value={form.petsPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.petsPolicy} />
+                <SelectField label="Rental type" name="rentalMandateType" value={form.rentalMandateType} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.rentalMandateType} />
               </div>
             </section>
 
             <section className="border-t border-[#e6edf5] pt-6">
               <h3 className="text-sm font-semibold text-[#18324b]">Deposits & fees</h3>
-              <p className="mt-1 text-sm text-[#607891]">Use either a deposit amount or a multiplier. The amount is what tenants will see and takes precedence when both are supplied.</p>
+              <p className="mt-1 text-sm text-[#607891]">Choose whether a deposit is required. Where it is, use either an amount or a multiplier; the amount is what tenants will see and takes precedence when both are supplied.</p>
               <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <label className="form-field"><span>Deposit amount</span><input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="37000" /></label>
-                <label className="form-field"><span>Deposit multiplier</span><input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="1.5" /></label>
-                <label className="form-field"><span>Deposit requirements</span><input {...formField('depositRequirement', form.depositRequirement, updateForm)} placeholder="One and a half months deposit" /></label>
+                <SelectField label="Deposit policy" name="depositPolicy" value={form.depositPolicy} onChange={updateForm} options={RENTAL_SELECT_OPTIONS.depositPolicy} />
+                {form.depositPolicy !== 'no_deposit' ? <label className="form-field"><span>Deposit amount</span><input type="number" min="0" {...formField('depositAmount', form.depositAmount, updateForm)} placeholder="37000" /></label> : null}
+                {form.depositPolicy !== 'no_deposit' ? <label className="form-field"><span>Deposit multiplier</span><input type="number" min="0" step="0.5" {...formField('depositMultiplier', form.depositMultiplier, updateForm)} placeholder="1.5" /></label> : null}
+                {form.depositPolicy !== 'no_deposit' ? <label className="form-field"><span>Deposit requirements</span><input {...formField('depositRequirement', form.depositRequirement, updateForm)} placeholder="One and a half months deposit" /></label> : <p className="self-end rounded-xl border border-[#d8eddf] bg-[#f4fbf6] px-4 py-3 text-sm text-[#286b43]">This rental will be marked as having no deposit.</p>}
               </div>
               {suggestedDepositAmount ? (
                 <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-[#d8eddf] bg-[#f4fbf6] px-4 py-3 text-sm text-[#286b43]">
@@ -722,39 +839,61 @@ export default function RentalListingCreatePage() {
             </section>
           </FormSection> : null}
 
-          {activeStep === 'marketing' ? <FormSection eyebrow="Step 4 of 5" title="Marketing" description="Add photos, public listing copy, and the key selling points tenants will see.">
-            <section>
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div><h3 className="text-sm font-semibold text-[#18324b]">Photos</h3><p className="mt-1 text-sm text-[#607891]">{form.galleryImages.length} image{form.galleryImages.length === 1 ? '' : 's'} selected</p></div>
+          {activeStep === 'marketing' ? <FormSection eyebrow="Step 4 of 6" title="Marketing" description="Add photos, public listing copy, and the key selling points tenants will see.">
+            <section className="w-full min-w-0 max-w-full">
+              <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0"><h3 className="text-sm font-semibold text-[#18324b]">Photos</h3><p className="mt-1 text-sm text-[#607891]">{form.galleryImages.length} image{form.galleryImages.length === 1 ? '' : 's'} selected</p></div>
                 <label className="inline-flex cursor-pointer items-center gap-2 rounded-[10px] border border-[#1f7d44] bg-[#1f7d44] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#176338]"><ImagePlus size={16} aria-hidden="true" />Upload images<input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} /></label>
               </div>
-              {form.galleryImages.length ? <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              {form.galleryImages.length ? <div className="mt-4 flex w-full min-w-0 max-w-full gap-4 overflow-x-auto pb-3 snap-x snap-mandatory">
                 {form.galleryImages.map((image, index) => {
                   const isCover = String(form.coverImageId) === String(image.id)
-                  return <div key={image.id} className="overflow-hidden rounded-[12px] border border-[#dbe6f2] bg-white">
-                    <div className="relative aspect-[4/3] bg-[#eef4fa]"><img src={image.url} alt={image.name} className="h-full w-full object-cover" />{isCover ? <span className="absolute left-2 top-2 rounded-full bg-[#286b43] px-2.5 py-1 text-[0.72rem] font-semibold text-white">Cover</span> : null}</div>
+                  return <div key={image.id} className="w-72 max-w-full shrink-0 snap-start overflow-hidden rounded-[12px] border border-[#dbe6f2] bg-white">
+                    <div className="relative aspect-[4/3] max-w-full bg-[#eef4fa]"><img src={image.url} alt={image.name} className="block h-full w-full max-w-full object-cover" />{isCover ? <span className="absolute left-2 top-2 rounded-full bg-[#286b43] px-2.5 py-1 text-[0.72rem] font-semibold text-white">Cover</span> : null}</div>
                     <div className="p-3"><p className="truncate text-sm font-semibold text-[#18324b]">{image.name}</p><div className="mt-3 flex flex-wrap gap-2"><button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${isCover ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#286b43]' : 'border-[#dbe6f2] bg-white text-[#42617f]'}`}>{isCover ? 'Cover' : 'Set cover'}</button><button type="button" aria-label={`Move ${image.name} earlier`} disabled={index === 0} onClick={() => moveGalleryImage(image.id, -1)} className="rounded-lg border border-[#dbe6f2] px-3 py-2 text-xs font-semibold disabled:opacity-40">←</button><button type="button" aria-label={`Move ${image.name} later`} disabled={index === form.galleryImages.length - 1} onClick={() => moveGalleryImage(image.id, 1)} className="rounded-lg border border-[#dbe6f2] px-3 py-2 text-xs font-semibold disabled:opacity-40">→</button><button type="button" aria-label={`Remove ${image.name}`} onClick={() => removeGalleryImage(image.id)} className="rounded-lg border border-[#f1c8c8] px-3 py-2 text-xs font-semibold text-[#b42318]"><Trash2 size={13} aria-hidden="true" /></button></div></div>
                   </div>
                 })}
               </div> : <div className="mt-4 rounded-[12px] border border-dashed border-[#cddaea] bg-white px-4 py-10 text-center"><p className="text-sm font-semibold text-[#18324b]">No images added yet</p><p className="mt-2 text-sm text-[#607891]">Upload gallery images to prepare this rental for marketing.</p></div>}
             </section>
             <section className="border-t border-[#e6edf5] pt-6"><div className="grid gap-4"><label className="form-field"><span>Listing title</span><input {...formField('title', form.title, updateForm)} placeholder="2 bedroom apartment in Green Point" /></label><label className="form-field"><span>Listing description</span><textarea rows={6} {...formField('description', form.description, updateForm)} placeholder="Describe the property, layout, views, lifestyle, and standout rental value." /></label></div></section>
-            <section className="border-t border-[#e6edf5] pt-6"><h3 className="text-sm font-semibold text-[#18324b]">Key selling points</h3><p className="mt-1 text-sm text-[#607891]">Choose the features that can be shared with Property24, Private Property, and the agency website.</p><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{SELLING_POINT_OPTIONS.map(([label, portalField]) => <SellingPointTile key={label} label={label} active={selectedSellingPoints.includes(label)} onClick={() => toggleSellingPoint(label, portalField)} />)}</div></section>
+            <section className="min-w-0 border-t border-[#e6edf5] pt-6"><h3 className="text-sm font-semibold text-[#18324b]">Key selling points</h3><p className="mt-1 text-sm text-[#607891]">Choose the features that can be shared with Property24, Private Property, and the agency website.</p><div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">{SELLING_POINT_OPTIONS.map(([label, portalField]) => <SellingPointTile key={label} label={label} active={selectedSellingPoints.includes(label)} onClick={() => toggleSellingPoint(label, portalField)} />)}</div></section>
             <details className="border-t border-[#e6edf5] pt-6"><summary className="cursor-pointer text-sm font-semibold text-[#1f4f78]">Internal notes</summary><label className="form-field mt-4"><span>Internal notes</span><textarea rows={4} {...formField('internalNotes', form.internalNotes, updateForm)} placeholder="Landlord preferences, tenant profile, follow-ups, and team notes" /></label></details>
+          </FormSection> : null}
+
+          {activeStep === 'syndication' ? <FormSection eyebrow="Step 5 of 6" title="Syndication" description="Choose where this rental should be prepared for publication. It is saved privately first; selected channels can then be checked and published from Marketing.">
+            <section className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#18324b]">Distribution</p>
+                  <p className="mt-1 max-w-3xl text-sm text-[#607891]">Select each portal you want to prepare. Nothing is published until readiness is confirmed after the rental has been saved.</p>
+                </div>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#42617f]">{selectedDistributionChannels.length} selected</span>
+              </div>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {RENTAL_DISTRIBUTION_CHANNELS.map((channel) => {
+                  const selected = selectedDistributionChannels.includes(channel.key)
+                  const needsAttention = channel.key === 'private_property' && form.galleryImages.length < 3
+                    ? 'Private Property requires at least 3 listing photos.'
+                    : channel.key === 'agency_website' && form.galleryImages.length < 1
+                      ? 'Add at least 1 photo before preparing the website listing.'
+                      : ''
+                  return <DistributionChannelCard key={channel.key} channel={channel} selected={selected} needsAttention={needsAttention} onToggle={toggleDistributionChannel} />
+                })}
+              </div>
+            </section>
           </FormSection> : null}
 
           {activeStep === 'review' ? <section className="ui-panel ui-panel-body grid gap-6">
             <div className="flex flex-col gap-4 border-b border-[#e6edf5] pb-5 md:flex-row md:items-start md:justify-between">
-              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step 5 of 5</p><h2 className="text-2xl font-semibold text-[#18324b]">Review rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the capture is complete, then create the rental draft.</p></div>
-              <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationErrors.length ? `${validationErrors.length} items still needed` : 'Ready to create'}</span>
+              <div><p className="text-xs font-semibold uppercase text-[#607891]">Step 6 of 6</p><h2 className="text-2xl font-semibold text-[#18324b]">Review rental listing</h2><p className="mt-1 text-sm text-[#607891]">Check the capture is complete, then {isEditing ? 'save the rental changes.' : 'create the rental draft.'}</p></div>
+              <span className={`rounded-full px-3 py-1 text-xs font-bold ${validationErrors.length ? 'bg-[#fff5e5] text-[#a76a12]' : 'bg-[#eef9f1] text-[#286b43]'}`}>{validationErrors.length ? `${validationErrors.length} items still needed` : isEditing ? 'Ready to save' : 'Ready to create'}</span>
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               <ReviewSummaryCard title="Landlord & mandate" onEdit={() => goToStep('landlord')} details={[{ label: 'Landlord', value: form.landlordName || 'Not added' }, { label: 'Contact', value: form.landlordEmail || form.landlordPhone || 'Not added' }, { label: 'Mandate', value: RENTAL_SELECT_OPTIONS.mandateStatus.find((option) => option.value === form.mandateStatus)?.label || 'Not captured' }]} />
               <ReviewSummaryCard title="Property" onEdit={() => goToStep('property')} details={[{ label: 'Listing', value: buildRentalListingTitle(form) || 'Untitled rental listing' }, { label: 'Address', value: form.propertyAddress || 'Not added' }, { label: 'Type', value: form.propertyType || 'Not captured' }]} />
-              <ReviewSummaryCard title="Rental terms" onEdit={() => goToStep('terms')} details={[{ label: 'Monthly rent', value: form.monthlyRent ? `R ${Number(form.monthlyRent).toLocaleString('en-ZA')}` : 'Not added' }, { label: 'Available', value: form.availableFrom || 'Not added' }, { label: 'Lease', value: form.leasePeriodMonths ? `${form.leasePeriodMonths} months` : 'Not captured' }]} />
+              <ReviewSummaryCard title="Rental terms" onEdit={() => goToStep('terms')} details={[{ label: 'Rental amount', value: form.monthlyRent ? `R ${Number(form.monthlyRent).toLocaleString('en-ZA')}` : 'Not added' }, { label: 'Frequency', value: RENTAL_SELECT_OPTIONS.rentalPriceFrequency.find((option) => option.value === form.rentalPriceFrequency)?.label || 'Not captured' }, { label: 'Available', value: form.availableFrom || 'Not added' }, { label: 'Lease', value: form.leasePeriodMonths ? `${form.leasePeriodMonths} months` : 'Not captured' }]} />
               <ReviewSummaryCard title="Marketing" onEdit={() => goToStep('marketing')} details={[{ label: 'Photos', value: `${form.galleryImages.length} selected` }, { label: 'Description', value: form.description ? 'Added' : 'Not added' }, { label: 'Selling points', value: `${selectedSellingPoints.length} selected` }]} />
             </div>
-            <section className="rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] p-4"><p className="text-sm font-semibold text-[#18324b]">Publication</p><p className="mt-1 text-sm text-[#607891]">This listing remains private after creation. Prepare Property24, Private Property, and agency website publication from the listing workspace.</p></section>
             {validationErrors.length ? <div className="rounded-[12px] border border-[#f1d4a6] bg-[#fffaf0] p-4"><p className="font-semibold text-[#8a5a12]">Complete these required items before creating</p><ul className="mt-3 grid gap-2 text-sm text-[#8a5a12]">{validationErrors.map((item) => { const step = stepForValidationError(item); return <li key={item} className="flex flex-wrap items-center justify-between gap-2"><span>{item}</span>{step !== 'review' ? <button type="button" className="font-semibold underline underline-offset-2" onClick={() => goToStep(step)}>Fix in {CREATE_STEPS.find((entry) => entry.key === step)?.label}</button> : null}</li> })}</ul></div> : null}
           </section> : null}
 
@@ -776,7 +915,7 @@ export default function RentalListingCreatePage() {
                 disabled={activeStep === 'review' ? !canSubmit : false}
               >
                 {activeStep === 'review' && saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : activeStep === 'review' ? <Save size={16} aria-hidden="true" /> : <ChevronRight size={16} aria-hidden="true" />}
-                {activeStep === 'review' ? 'Create Listing' : 'Continue'}
+                {activeStep === 'review' ? (isEditing ? 'Save rental changes' : 'Create rental listing') : 'Continue'}
               </button>
             </div>
           </footer>

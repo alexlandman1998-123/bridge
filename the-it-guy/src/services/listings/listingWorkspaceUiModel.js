@@ -152,7 +152,7 @@ export const RENTAL_LISTING_WORKSPACE_TAB_TARGETS = Object.freeze({
     detailTab: 'marketing',
   }),
   syndication: Object.freeze({
-    detailTab: 'syndication',
+    detailTab: 'marketing',
   }),
   activity: Object.freeze({
     detailTab: 'activity',
@@ -812,7 +812,7 @@ export function resolveRentalListingWorkspaceTabFromDetailTab(detailTab = 'overv
   if (key === 'terms' || key === 'mandate') return 'mandate'
   if (key === 'inspection' || key === 'property') return 'property'
   if (key === 'marketing') return 'marketing'
-  if (key === 'syndication') return 'syndication'
+  if (key === 'syndication') return 'marketing'
   if (key === 'applications' || key === 'activity') return 'activity'
 
   return resolveListingWorkspaceTab(key, LISTING_WORKSPACE_TYPES.rentals)

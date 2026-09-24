@@ -219,6 +219,8 @@ export type SendLeadAcknowledgementPayload = {
   agentBio?: string;
   agent_bio?: string;
   agentAvatarUrl?: string;
+  viewingAvailabilityUrl?: string;
+  viewing_availability_url?: string;
   agent_avatar_url?: string;
   responseExpectation?: string;
   response_expectation?: string;

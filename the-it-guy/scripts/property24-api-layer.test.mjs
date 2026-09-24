@@ -10,11 +10,21 @@ function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 }
 
+function createEmptySupabase() {
+  const query = {
+    select: () => query,
+    eq: () => query,
+    maybeSingle: async () => ({ data: null, error: null }),
+    single: async () => ({ data: null, error: { code: 'PGRST116', message: 'Row not found' } }),
+    then: (resolve, reject) => Promise.resolve({ data: [], error: null }).then(resolve, reject),
+  }
+  return { type: 'supabase', from: () => query }
+}
+
 const baseEnv = {
   PROPERTY24_BASE_URL: 'https://api.exdev.property24-test.com',
   PROPERTY24_BASIC_AUTH_USERNAME: 'user@example.test',
   PROPERTY24_BASIC_AUTH_PASSWORD: 'secret',
-  PROPERTY24_DEFAULT_AGENCY_ID: '31382',
   PROPERTY24_DEFAULT_AGENT_ID: '77959',
   PROPERTY24_DEFAULT_AGENT_SOURCE_REFERENCE: 'ARCH9-AGENT-001',
   PROPERTY24_DEFAULT_SUBURB_ID: '5864',
@@ -30,6 +40,35 @@ const authHeaders = {
   host: 'app.arch9.co.za',
   authorization: 'Bearer test-token',
 }
+
+// Runtime publishing receives this from the organisation-scoped connection,
+// never from PROPERTY24_DEFAULT_AGENCY_ID.
+const resolveOrganisationPublishConfig = async ({ config }) => ({ ...config, agencyId: '31382' })
+
+const productionConfigWithoutSuburb = buildProperty24ApiConfig({
+  env: {
+    ...baseEnv,
+    PROPERTY24_ENVIRONMENT: 'production',
+    PROPERTY24_DEFAULT_SUBURB_ID: '1987',
+  },
+  requestUrl: new URL('https://app.arch9.co.za/api/property24/listings/listing-123/preview'),
+  payload: {},
+  route: { name: 'previewListing', listingId: 'listing-123' },
+})
+assert.equal(productionConfigWithoutSuburb.suburbId, '')
+assert.equal(productionConfigWithoutSuburb.agencyId, '')
+
+const productionConfigWithListingSuburb = buildProperty24ApiConfig({
+  env: {
+    ...baseEnv,
+    PROPERTY24_ENVIRONMENT: 'production',
+    PROPERTY24_DEFAULT_SUBURB_ID: '1987',
+  },
+  requestUrl: new URL('https://app.arch9.co.za/api/property24/listings/listing-123/preview'),
+  payload: { suburbId: '309' },
+  route: { name: 'previewListing', listingId: 'listing-123' },
+})
+assert.equal(productionConfigWithListingSuburb.suburbId, '309')
 
 const fakePreview = {
   canSubmit: true,
@@ -114,8 +153,8 @@ const previewResponse = await createProperty24ApiResponse({
   body: JSON.stringify({ maxImages: 3 }),
   env: baseEnv,
   dependencies: {
-    createSupabase: () => ({ type: 'supabase' }),
-    resolvePublishConfig: async ({ config }) => config,
+    createSupabase: createEmptySupabase,
+    resolvePublishConfig: resolveOrganisationPublishConfig,
     buildSubmitPlan: async (args) => {
       buildSubmitPlanArgs = args
       return fakePreview
@@ -137,8 +176,8 @@ const blockedPublish = await createProperty24ApiResponse({
   headers: authHeaders,
   env: { ...baseEnv, PROPERTY24_SYNDICATION_ENABLED: 'false' },
   dependencies: {
-    createSupabase: () => ({ type: 'supabase' }),
-    resolvePublishConfig: async ({ config }) => config,
+    createSupabase: createEmptySupabase,
+    resolvePublishConfig: resolveOrganisationPublishConfig,
   },
 })
 assert.equal(blockedPublish.status, 400)
@@ -153,9 +192,9 @@ const publishResponse = await createProperty24ApiResponse({
   body: JSON.stringify({ listingNumber: '100314793' }),
   env: baseEnv,
   dependencies: {
-    createSupabase: () => ({ type: 'supabase' }),
+    createSupabase: createEmptySupabase,
     createProperty24: () => ({ type: 'property24' }),
-    resolvePublishConfig: async ({ config }) => config,
+    resolvePublishConfig: resolveOrganisationPublishConfig,
     buildSubmitPlan: async () => fakePreview,
     applyPublish: async (args) => {
       applyPublishArgs = args
@@ -190,7 +229,7 @@ const statusResponse = await createProperty24ApiResponse({
   headers: authHeaders,
   env: baseEnv,
   dependencies: {
-    createSupabase: () => ({ type: 'supabase' }),
+    createSupabase: createEmptySupabase,
     fetchListingStatus: async ({ config }) => ({
       listingNumber: '100314793',
       environment: config.environment,
@@ -210,9 +249,9 @@ const statusUpdateResponse = await createProperty24ApiResponse({
   body: JSON.stringify({ listingNumber: '100314793', status: 'Withdrawn' }),
   env: baseEnv,
   dependencies: {
-    createSupabase: () => ({ type: 'supabase' }),
+    createSupabase: createEmptySupabase,
     createProperty24: () => ({ type: 'property24' }),
-    resolvePublishConfig: async ({ config }) => config,
+    resolvePublishConfig: resolveOrganisationPublishConfig,
     applyStatusUpdate: async (args) => {
       statusUpdateArgs = args
       return {
@@ -234,7 +273,7 @@ const listingLeadsResponse = await createProperty24ApiResponse({
   headers: authHeaders,
   env: baseEnv,
   dependencies: {
-    createSupabase: () => ({ type: 'supabase' }),
+    createSupabase: createEmptySupabase,
     createProperty24: () => ({ type: 'property24' }),
     fetchListingLeads: async ({ config }) => ({
       listingNumber: '100314793',
@@ -272,7 +311,7 @@ const reconciliationResponse = await createProperty24ApiResponse({
   body: JSON.stringify({ includeLeads: true, includePortalChecks: true }),
   env: baseEnv,
   dependencies: {
-    createSupabase: () => ({ type: 'supabase' }),
+    createSupabase: createEmptySupabase,
     createProperty24: () => ({ type: 'property24' }),
     runReconciliation: async ({ config }) => ({
       status: 'OK',

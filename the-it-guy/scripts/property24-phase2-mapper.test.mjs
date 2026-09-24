@@ -60,6 +60,13 @@ const imageWithBytes = [
   },
 ]
 
+const largeGallerySelectedBatch = Array.from({ length: 69 }, (_, index) => ({
+  media_type: 'image',
+  file_url: `https://cdn.example.test/listing/photo-${index + 1}.jpg`,
+  ...(index < 20 ? { bytes: `base64-image-data-${index + 1}`, mimeContentType: 'image/jpeg' } : {}),
+  sort_order: index,
+}))
+
 assert.equal(resolveProperty24ListingType('To Rent'), 'Rental')
 assert.equal(resolveProperty24ListingType('For Sale'), 'Sale')
 assert.equal(resolveProperty24Status('sold'), 'Sold')
@@ -80,6 +87,7 @@ const missing = createProperty24ListingPlan({
 })
 
 for (const blocker of [
+  'missing_property24_agency_id',
   'missing_property24_agent_id',
   'missing_description',
   'missing_expiry_date',
@@ -100,7 +108,7 @@ const previewOnly = createProperty24ListingPlan({
   media: imageUrlOnly,
   agentMapping: baseAgentMapping,
   catalogMapping: baseCatalogMapping,
-  options: { expiryDate: '2026-12-31' },
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
 })
 
 assert.equal(previewOnly.canPreview, true)
@@ -119,6 +127,42 @@ assert.equal(previewOnly.previewPayload.photos[0].sourceUrl, 'https://cdn.exampl
 assert.equal(previewOnly.previewPayload.photos[0].bytesLoaded, false)
 assert.equal(previewOnly.payload, null)
 
+const cappedGalleryReady = createProperty24ListingPlan({
+  listing: baseListing,
+  publication: basePublication,
+  media: largeGallerySelectedBatch,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: {
+    agencyId: 31382,
+    expiryDate: '2026-12-31',
+    expectedPhotoPayloadCount: 20,
+  },
+})
+
+assert.equal(cappedGalleryReady.canSubmit, true)
+assert.deepEqual(cappedGalleryReady.technicalBlockers, [])
+assert.equal(cappedGalleryReady.summary.imageCount, 69)
+assert.equal(cappedGalleryReady.summary.expectedPhotoPayloadCount, 20)
+assert.equal(cappedGalleryReady.summary.photoPayloadCount, 20)
+assert.equal(cappedGalleryReady.payload.photos.length, 20)
+
+const cappedGalleryMissingSelectedBytes = createProperty24ListingPlan({
+  listing: baseListing,
+  publication: basePublication,
+  media: largeGallerySelectedBatch.map((item, index) => index === 19 ? { ...item, bytes: '' } : item),
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: {
+    agencyId: 31382,
+    expiryDate: '2026-12-31',
+    expectedPhotoPayloadCount: 20,
+  },
+})
+
+assert.equal(cappedGalleryMissingSelectedBytes.canSubmit, false)
+assert.deepEqual(cappedGalleryMissingSelectedBytes.technicalBlockers, ['listing_image_bytes_not_loaded_for_property24_submit'])
+
 const sandboxPreviewWithoutAgentId = createProperty24ListingPlan({
   listing: baseListing,
   publication: basePublication,
@@ -126,6 +170,7 @@ const sandboxPreviewWithoutAgentId = createProperty24ListingPlan({
   agentMapping: {},
   catalogMapping: baseCatalogMapping,
   options: {
+    agencyId: 31382,
     expiryDate: '2026-12-31',
     environment: 'exdev',
     sandboxPayloadTestMode: true,
@@ -165,7 +210,7 @@ const submitReady = createProperty24ListingPlan({
   media: imageWithBytes,
   agentMapping: baseAgentMapping,
   catalogMapping: baseCatalogMapping,
-  options: { expiryDate: '2026-12-31' },
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
 })
 
 assert.equal(submitReady.canPreview, true)
@@ -179,6 +224,8 @@ assert.equal(submitReady.payload.isPOA, false)
 assert.equal(submitReady.payload.listingVisibility, 'Public')
 assert.equal(submitReady.payload.propertyInfo.suburbId, 12345)
 assert.equal(submitReady.payload.propertyInfo.propertyTypeId, 4)
+assert.equal(submitReady.payload.propertyInfo.streetNumber, '12')
+assert.equal(submitReady.payload.propertyInfo.streetName, 'Test Road')
 assert.equal(submitReady.payload.propertyInfo.erf.size, 520)
 assert.equal(submitReady.payload.propertyInfo.floorArea.size, 220)
 assert.equal(submitReady.payload.propertyFeatures.bedrooms, 3)
@@ -193,6 +240,27 @@ assert.equal(submitReady.payload.photos.length, 1)
 assert.equal(submitReady.payload.photos[0].bytes, 'base64-image-data')
 assert.equal(submitReady.previewPayload.photos[0].bytesLoaded, true)
 
+const selectedFeaturePlan = createProperty24ListingPlan({
+  listing: {
+    ...baseListing,
+    seller_canonical_facts_json: { property24ShowLocation: true },
+  },
+  publication: {
+    ...basePublication,
+    parking_bays: 16,
+    features: ['flatlet', 'staff_quarters', 'fibre', 'Security'],
+  },
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
+})
+
+assert.equal(selectedFeaturePlan.payload.propertyFeatures.flatlet, true)
+assert.equal(selectedFeaturePlan.payload.propertyFeatures.parking.open, 16)
+assert.equal(selectedFeaturePlan.payload.propertyInfo.showLocation, true)
+assert.match(selectedFeaturePlan.payload.description, /Additional features include staff accommodation, fibre connectivity and Security\./)
+
 const missingResidentialQuality = createProperty24ListingPlan({
   listing: { ...baseListing, title: '' },
   publication: {
@@ -205,7 +273,7 @@ const missingResidentialQuality = createProperty24ListingPlan({
   media: imageWithBytes,
   agentMapping: baseAgentMapping,
   catalogMapping: baseCatalogMapping,
-  options: { expiryDate: '2026-12-31' },
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
 })
 
 assert.equal(missingResidentialQuality.canPreview, true)
@@ -224,7 +292,7 @@ const poaViaPublicationFeature = createProperty24ListingPlan({
   media: imageWithBytes,
   agentMapping: baseAgentMapping,
   catalogMapping: baseCatalogMapping,
-  options: { expiryDate: '2026-12-31' },
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
 })
 
 assert.equal(poaViaPublicationFeature.canPreview, true)
@@ -237,7 +305,7 @@ const updateWithoutPhotoChange = createProperty24ListingPlan({
   media: imageUrlOnly,
   agentMapping: baseAgentMapping,
   catalogMapping: baseCatalogMapping,
-  existingSync: { listingNumber: 987654 },
+  existingSync: { listingNumber: 987654, agencyId: 31382 },
   options: {
     expiryDate: '2026-12-31',
     photosChanged: false,
@@ -259,7 +327,7 @@ const migratedUpdateWithoutExplicitExpiry = createProperty24ListingPlan({
   media: imageUrlOnly,
   agentMapping: baseAgentMapping,
   catalogMapping: baseCatalogMapping,
-  existingSync: { listingNumber: 987654 },
+  existingSync: { listingNumber: 987654, agencyId: 31382 },
   options: { photosChanged: false },
 })
 

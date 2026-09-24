@@ -1,4 +1,4 @@
-import { Archive, ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
+import { Archive, ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, Globe2, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -24,6 +24,8 @@ import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'
 import { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { buildLeadListingLinkPatch } from '../lib/agencyLeadSelection'
 import { assessListingSellerLink, assessSellerLeadPersistence } from '../lib/listingDataIntegrity'
+import { preferSavedPropertyFact, recoverStructuredPropertyFactsFromMarketingCopy } from '../lib/listingMarketingPropertyFactRecovery'
+import { listingPropertySaveErrorMessage, verifyListingPropertyPersistenceCopies } from '../lib/listingPropertySaveVerification'
 import { buildListingSellerLeadPayload } from '../lib/listingSellerLeadPayload'
 import { normalizeOrganisationMembershipRole } from '../lib/organisationAccess'
 import {
@@ -51,7 +53,7 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListingSummaries, getAgentPrivateListings, persistSellerProfileOnboardingFormData, resolvePrivateListingIdForDeletion, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListingSummaries, getAgentPrivateListings, getPrivateListing, persistSellerProfileOnboardingFormData, resolvePrivateListingIdForDeletion, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
 import { reassignListingAgent } from '../services/listingAgentReassignmentService'
 import {
   createAgencyIntroducedDeveloperLead,
@@ -83,6 +85,7 @@ import {
   PROPERTY_STRUCTURE_TYPES,
 } from '../lib/propertyTaxonomy'
 import { buildFinalListingModuleOverview } from '../services/listings/finalListingModuleModel'
+import { getSpecialistSalesListingSchema } from '../services/listings/specialistSalesListingSchema'
 import { setWebsiteListingPublication } from '../services/websiteListingPublicationService'
 import { getSyndicationChannelAvailability, UNAVAILABLE_SYNDICATION_CHANNELS } from '../services/syndicationChannelAvailabilityService'
 
@@ -129,6 +132,11 @@ const QUICK_ADD_MANDATE_STATUS_OPTIONS = [
   { value: 'in_progress', label: 'Busy with seller' },
   { value: 'signed_external_pending_upload', label: 'Signed manually, upload later' },
   { value: 'expired', label: 'Expired' },
+]
+const LISTING_ADDRESS_VISIBILITY_OPTIONS = [
+  { value: 'hide_street_address', label: 'Contact agent for street address' },
+  { value: 'show_exact_address', label: 'Show full street address' },
+  { value: 'complex_only', label: 'Show complex / estate only' },
 ]
 const DIRECT_LISTING_SELLER_TYPE_OPTIONS = SELLER_ENTITY_TYPES
 const DIRECT_LISTING_MARITAL_STATUS_OPTIONS = [
@@ -624,9 +632,9 @@ function getLiveListingChannels(listing = {}) {
   const source = listing?.listingRecord || listing || {}
   const isLive = (value) => ['active', 'live', 'published'].includes(normalizeKey(value))
   const channels = []
-  if (isLive(source.property24Status || source.property24_status)) channels.push({ key: 'property24', label: 'Property24', canExpire: Boolean(source.property24Reference || source.property24_reference) })
-  if (isLive(source.privatePropertyStatus || source.private_property_status)) channels.push({ key: 'private_property', label: 'Private Property', canExpire: true })
-  if (isLive(source.bridgeListingStatus || source.bridge_listing_status || source.publicationStatus)) channels.push({ key: 'arch9', label: 'Arch9 public catalogue', canExpire: true })
+  if (isLive(source.property24Status || source.property24_status)) channels.push({ key: 'property24', label: 'Property24', logoSrc: '/lead-sources/property24.png', canExpire: Boolean(source.property24Reference || source.property24_reference) })
+  if (isLive(source.privatePropertyStatus || source.private_property_status)) channels.push({ key: 'private_property', label: 'Private Property', logoSrc: '/lead-sources/private-property.jpeg', canExpire: true })
+  if (isLive(source.bridgeListingStatus || source.bridge_listing_status || source.publicationStatus)) channels.push({ key: 'arch9', label: 'Website', canExpire: true })
   return channels
 }
 
@@ -1193,6 +1201,11 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     : {}
   const canonicalSeller = canonicalFacts.seller && typeof canonicalFacts.seller === 'object' ? canonicalFacts.seller : {}
   const canonicalProperty = canonicalFacts.property && typeof canonicalFacts.property === 'object' ? canonicalFacts.property : {}
+  const specialistFacts = canonicalProperty.specialistFacts && typeof canonicalProperty.specialistFacts === 'object'
+    ? canonicalProperty.specialistFacts
+    : canonicalFacts.specialistFacts && typeof canonicalFacts.specialistFacts === 'object'
+      ? canonicalFacts.specialistFacts
+      : {}
   const listingPropertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
   const listingMarketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
   const seller = listing?.seller && typeof listing.seller === 'object' ? listing.seller : {}
@@ -1260,6 +1273,19 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     ...normalizeDirectListingFeatureSelections(onboardingFormData.keySellingPoints, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
     ...normalizeDirectListingFeatureSelections(onboardingFormData.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
   ]
+  const recoveredPropertyFacts = recoverStructuredPropertyFactsFromMarketingCopy(
+    listing.listingTitle,
+    listing.title,
+    listing.listingDescription,
+    listingMarketing.description,
+    listing.listingPublicationData?.description,
+    listing.publicationData?.description,
+    listing.description,
+    onboardingFormData.listingDescription,
+    onboardingFormData.propertyDescription,
+    onboardingFormData.propertyNotes,
+    listing.listingPreviewDescription,
+  )
 
   return {
     ...base,
@@ -1314,6 +1340,12 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     propertyType: normalizeText(listing.propertyType || listingPropertyDetails.propertyType || canonicalProperty.propertyType) || base.propertyType,
     propertyStructureType: normalizePropertyStructureType(listing.propertyStructureType || canonicalProperty.propertyStructureType, { fallback: base.propertyStructureType }),
     propertyCategory: normalizePropertyCategory(listing.propertyCategory || canonicalProperty.propertyCategory, { fallback: base.propertyCategory }),
+    exactAddressVisibility: normalizeText(
+      listing.exactAddressVisibility ||
+      listingPropertyDetails.exactAddressVisibility ||
+      onboardingFormData.exactAddressVisibility ||
+      canonicalProperty.exactAddressVisibility,
+    ) || base.exactAddressVisibility,
     listingCategory: normalizeText(listing.listingCategory) || base.listingCategory,
     listingType: normalizeDirectListingKey(listing.listingCategory) === 'rental' ? 'rental' : 'sale',
     estateOrHoa: Boolean(listing.estateOrHoa || canonicalProperty.estateOrHoa || canonicalProperty.estate_or_hoa || listing.estateName || canonicalProperty.estateName),
@@ -1325,12 +1357,24 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     estimatedAskingPrice: normalizeText(listing.estimatedValue || ''),
     listingPrice: normalizeText(listing.askingPrice || listingPropertyDetails.price || ''),
     listingTitle: normalizeText(listing.listingTitle || listing.title),
-    bedrooms: normalizeText(listing.bedrooms || listingPropertyDetails.bedrooms),
-    bathrooms: normalizeText(listing.bathrooms || listingPropertyDetails.bathrooms),
-    garages: normalizeText(listing.garages || listingPropertyDetails.garages),
-    parkingCount: normalizeText(listing.parkingCount || listing.coveredParking || listing.openParking || listingPropertyDetails.parkingBays),
-    erfSize: normalizeText(listing.erfSize || listingPropertyDetails.erfSize),
-    floorSize: normalizeText(listing.floorSize || listingPropertyDetails.floorSize),
+    bedrooms: preferSavedPropertyFact(listing.bedrooms || listingPropertyDetails.bedrooms, recoveredPropertyFacts.bedrooms),
+    bathrooms: preferSavedPropertyFact(listing.bathrooms || listingPropertyDetails.bathrooms, recoveredPropertyFacts.bathrooms),
+    garages: preferSavedPropertyFact(listing.garages || listingPropertyDetails.garages, recoveredPropertyFacts.garages),
+    parkingCount: preferSavedPropertyFact(listing.parkingCount || listing.coveredParking || listing.openParking || listingPropertyDetails.parkingBays, recoveredPropertyFacts.parkingCount),
+    erfSize: preferSavedPropertyFact(listing.erfSize || listingPropertyDetails.erfSize, recoveredPropertyFacts.erfSize),
+    floorSize: preferSavedPropertyFact(listing.floorSize || listingPropertyDetails.floorSize, recoveredPropertyFacts.floorSize),
+    grossLettableArea: normalizeText(specialistFacts.grossLettableArea),
+    erfSize: normalizeText(specialistFacts.erfSize) || preferSavedPropertyFact(listing.erfSize || listingPropertyDetails.erfSize, recoveredPropertyFacts.erfSize),
+    zoning: normalizeText(specialistFacts.zoning),
+    parking: normalizeText(specialistFacts.parking),
+    listingTerms: normalizeText(specialistFacts.listingTerms),
+    warehouseOrFactoryArea: normalizeText(specialistFacts.warehouseOrFactoryArea),
+    yardSize: normalizeText(specialistFacts.yardSize),
+    powerSupply: normalizeText(specialistFacts.powerSupply),
+    loadingAccess: Boolean(specialistFacts.loadingAccess),
+    farmSize: normalizeText(specialistFacts.farmSize),
+    waterSupplyOrRights: normalizeText(specialistFacts.waterSupplyOrRights),
+    agriculturalUse: normalizeText(specialistFacts.agriculturalUse),
     noTransferDuty: Boolean(listing.noTransferDuty || canonicalProperty.no_transfer_duty),
     onAuction: Boolean(listing.onAuction || canonicalProperty.on_auction),
     priceOnApplication: Boolean(listing.priceOnApplication || listing.isPOA || canonicalProperty.price_on_application),
@@ -1635,6 +1679,8 @@ function buildQuickAddDirectListingPersistencePayload(form = {}, context = {}) {
   })
   const sellerOnboardingFormData = {
     ...directListingIntake.sellerOnboardingFormData,
+    propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
+    exactAddressVisibility: normalizeText(form.exactAddressVisibility) || 'hide_street_address',
     propertyNotes: normalizeText(form.listingDescription),
     propertyDescription: normalizeText(form.listingDescription),
     listingDescription: normalizeText(form.listingDescription),
@@ -1880,7 +1926,7 @@ function normalizeDocumentCategoryKey(value) {
 }
 
 function isUuidLike(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || '').trim())
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
 }
 
 function getRemotePrivateListingId(row = {}) {
@@ -2084,6 +2130,24 @@ function buildListingPropertyCanonicalFacts(form = {}) {
   const isSectionalTitle = isSectionalTitleProperty(form)
   const propertyStructureType = normalizePropertyStructureType(form?.propertyStructureType || form?.propertyType, { fallback: 'other' })
   const propertyType = normalizeText(form?.propertyType)
+  const addressValue = buildListingAddressValueFromForm(form)
+  const formattedAddress = normalizeText(addressValue?.formattedAddress || form?.propertyAddress)
+  const propertyAddress = normalizeText(formattedAddress || addressValue?.streetAddress)
+  const askingPrice = Number(normalizeIntegerInput(form?.listingPrice || form?.estimatedAskingPrice)) || 0
+  const specialistFacts = {
+    grossLettableArea: normalizeText(form?.grossLettableArea),
+    zoning: normalizeText(form?.zoning),
+    parking: normalizeText(form?.parking),
+    listingTerms: normalizeText(form?.listingTerms),
+    warehouseOrFactoryArea: normalizeText(form?.warehouseOrFactoryArea),
+    yardSize: normalizeText(form?.yardSize),
+    powerSupply: normalizeText(form?.powerSupply),
+    loadingAccess: Boolean(form?.loadingAccess),
+    farmSize: normalizeText(form?.farmSize),
+    waterSupplyOrRights: normalizeText(form?.waterSupplyOrRights),
+    agriculturalUse: normalizeText(form?.agriculturalUse),
+    erfSize: normalizeText(form?.erfSize),
+  }
   const estateOrHoa = Boolean(form?.estateOrHoa || estateName || propertyStructureType === 'estate')
   return {
     property: {
@@ -2091,6 +2155,19 @@ function buildListingPropertyCanonicalFacts(form = {}) {
       propertyStructureType,
       property_type: propertyType,
       propertyType,
+      propertyCategory: normalizePropertyCategory(form?.propertyCategory, { fallback: 'residential' }),
+      exactAddressVisibility: normalizeText(form?.exactAddressVisibility) || 'hide_street_address',
+      propertyAddress,
+      formattedAddress,
+      streetAddress: normalizeText(addressValue?.streetAddress || propertyAddress),
+      streetNumber: normalizeText(addressValue?.streetNumber),
+      streetName: normalizeText(addressValue?.streetName || addressValue?.route),
+      suburb: normalizeText(addressValue?.suburb),
+      city: normalizeText(addressValue?.city),
+      province: normalizeText(addressValue?.province),
+      postalCode: normalizeText(addressValue?.postalCode),
+      country: normalizeText(addressValue?.country) || 'South Africa',
+      askingPrice,
       sectional_title: isSectionalTitle,
       estate_or_hoa: estateOrHoa,
       hoa: estateOrHoa,
@@ -2111,9 +2188,15 @@ function buildListingPropertyCanonicalFacts(form = {}) {
       sectionalTitleNumber,
       sectional_title_number: sectionalTitleNumber,
       sectionalTitleScheme: sectionalTitleNumber,
+      specialistFacts,
     },
     propertyStructureType,
     propertyType,
+    propertyCategory: normalizePropertyCategory(form?.propertyCategory, { fallback: 'residential' }),
+    exactAddressVisibility: normalizeText(form?.exactAddressVisibility) || 'hide_street_address',
+    propertyAddress,
+    formattedAddress,
+    askingPrice,
     estateOrHoa,
     onAuction: Boolean(form?.onAuction),
     priceOnApplication: Boolean(form?.priceOnApplication),
@@ -2124,6 +2207,7 @@ function buildListingPropertyCanonicalFacts(form = {}) {
     complexName,
     estateName,
     sectionalTitleNumber,
+    specialistFacts,
     property_unit_number: unitNumber,
     property_section_number: sectionNumber,
     property_complex_name: complexName,
@@ -2145,6 +2229,34 @@ function resolveListingTypeLabel(listing = {}) {
   if (mandateType === 'open') return 'Open Mandate'
   if (mandateType === 'exclusive') return 'Exclusive Mandate'
   return 'Private Sale'
+}
+
+// Sales and Rentals share private_listings as their storage table, but they
+// are separate operating queues. Keep the Sales screen from treating a
+// rental's shared record as sale stock. The publication and canonical-facts
+// fallbacks protect older rentals that were created before listing_category
+// was consistently written.
+function isRentalListingRecord(listing = {}) {
+  const category = normalizeDirectListingKey(listing.listingCategory || listing.listing_category || listing.listingType)
+  const publicationType = normalizeDirectListingKey(
+    listing.listingPublicationData?.listingType ||
+      listing.listingPublicationData?.listing_type ||
+      listing.publicationData?.listingType ||
+      listing.publicationData?.listing_type,
+  )
+  const facts = listing.sellerCanonicalFacts && typeof listing.sellerCanonicalFacts === 'object'
+    ? listing.sellerCanonicalFacts
+    : listing.seller_canonical_facts && typeof listing.seller_canonical_facts === 'object'
+      ? listing.seller_canonical_facts
+      : {}
+  const hasRentalFacts = Boolean(facts.rentalInfo || facts.rental_info)
+  const hasRentalFields = Boolean(
+    listing.monthlyRent || listing.monthly_rent || listing.rentAmount || listing.rent_amount ||
+      listing.rentalFrequency || listing.rental_frequency || listing.leasePeriodMonths || listing.lease_period_months ||
+      listing.availableFrom || listing.available_from || listing.property24RentalReference || listing.privatePropertyRentalReference,
+  )
+  const notes = normalizeText(listing.internalListingNotes || listing.internal_listing_notes || listing.notes).toLowerCase()
+  return category.includes('rental') || publicationType === 'rental' || hasRentalFacts || hasRentalFields || notes.includes('arch9_rental_capture_v1')
 }
 
 function getListingOriginLabel(listing = {}) {
@@ -2917,6 +3029,24 @@ function ListingCardImage({ src = '', alt = '' }) {
   )
 }
 
+function ListingLiveChannels({ channels = [] }) {
+  if (!channels.length) return null
+  return (
+    <div className="rounded-[12px] border border-[#d7e7dc] bg-[#f6fbf7] px-3 py-2" aria-label={`Live on ${channels.map((channel) => channel.label).join(', ')}`}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#537064]">Live on</span>
+        {channels.map((channel) => (
+          <span key={channel.key} className="inline-flex items-center gap-1.5 text-[0.75rem] font-semibold text-[#285f3d]">
+            {channel.logoSrc ? <img src={channel.logoSrc} alt="" className="h-4 w-4 rounded-sm object-contain" /> : <Globe2 size={15} aria-hidden="true" />}
+            <span>{channel.label}</span>
+            <CheckCircle2 size={15} className="text-[#23834a]" aria-label="Live" />
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function resolveListingImageUrl(listing = {}) {
   const marketing = listing?.marketing && typeof listing.marketing === 'object' ? listing.marketing : {}
   const propertyDetails = listing?.propertyDetails && typeof listing.propertyDetails === 'object' ? listing.propertyDetails : {}
@@ -3022,6 +3152,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     branchName: '',
     visibility: 'agent',
     propertyCategory: 'residential',
+    exactAddressVisibility: 'hide_street_address',
     listingSource: 'private_listing',
     listingCategory: 'private_sale',
     estimatedAskingPrice: '',
@@ -3035,6 +3166,17 @@ function buildInitialListingLeadForm(profile, workspace) {
     parkingCount: '',
     erfSize: '',
     floorSize: '',
+    grossLettableArea: '',
+    zoning: '',
+    parking: '',
+    listingTerms: '',
+    warehouseOrFactoryArea: '',
+    yardSize: '',
+    powerSupply: '',
+    loadingAccess: false,
+    farmSize: '',
+    waterSupplyOrRights: '',
+    agriculturalUse: '',
     noTransferDuty: false,
     onAuction: false,
     priceOnApplication: false,
@@ -3355,14 +3497,16 @@ function findQuickListingDuplicates({ form = {}, listings = [] } = {}) {
 }
 
 function buildListingAddressValueFromForm(form = {}) {
-  const formattedAddress = normalizeText(form.formattedAddress || form.propertyAddressValue?.formattedAddress || form.propertyAddress)
+  const structuredAddress = composeStructuredListingAddress(form)
+  const formattedAddress = normalizeText(form.formattedAddress || form.propertyAddressValue?.formattedAddress || form.propertyAddress || structuredAddress)
   if (!formattedAddress) return null
+  const manualStreetAddress = [form.streetNumber, form.streetName || form.route].map(normalizeText).filter(Boolean).join(' ')
   return {
     formattedAddress,
     streetNumber: normalizeText(form.streetNumber || form.propertyAddressValue?.streetNumber),
     route: normalizeText(form.streetName || form.route || form.propertyAddressValue?.route),
     streetName: normalizeText(form.streetName || form.route || form.propertyAddressValue?.streetName || form.propertyAddressValue?.route),
-    streetAddress: normalizeText(form.streetAddress || form.propertyAddressValue?.streetAddress || form.propertyAddress) || formattedAddress,
+    streetAddress: normalizeText(form.streetAddress || form.propertyAddressValue?.streetAddress || form.propertyAddress || manualStreetAddress) || formattedAddress,
     suburb: normalizeText(form.suburb || form.propertyAddressValue?.suburb),
     city: normalizeText(form.city || form.propertyAddressValue?.city),
     province: normalizeText(form.province || form.propertyAddressValue?.province),
@@ -3648,6 +3792,12 @@ function AgentListings({ initialTab = null } = {}) {
 
   const [form, setForm] = useState(() => buildInitialListingLeadForm(profile, workspace))
   const [hydratedEditListingId, setHydratedEditListingId] = useState('')
+  const [editListingDataReadyId, setEditListingDataReadyId] = useState('')
+  // The listing grid deliberately refreshes through a lightweight summary
+  // before its full data is available. Keep the editor's detailed record
+  // separate so a background grid refresh can never replace it with that
+  // summary while the publication form is being hydrated.
+  const [detailedEditListing, setDetailedEditListing] = useState(null)
   const editListingId = normalizeText(routeParams.listingId)
   const isCreateListingWorkspace = location.pathname === '/listings/new'
   const isEditListingWorkspace = Boolean(editListingId && location.pathname.startsWith('/listings/') && location.pathname.endsWith('/edit'))
@@ -3665,10 +3815,44 @@ function AgentListings({ initialTab = null } = {}) {
     () => resolveSelectedWorkspaceOrganisationId({ workspace, currentMembership }),
     [currentMembership, workspace],
   )
-  const editListingRecord = useMemo(
+  const gridEditListingRecord = useMemo(
     () => (isEditListingWorkspace ? findListingForEditor(privateListings, editListingId) : null),
     [editListingId, isEditListingWorkspace, privateListings],
   )
+  const editListingRecord = useMemo(() => {
+    if (!isEditListingWorkspace) return null
+    return normalizeText(detailedEditListing?.id) === editListingId
+      ? detailedEditListing
+      : gridEditListingRecord
+  }, [detailedEditListing, editListingId, gridEditListingRecord, isEditListingWorkspace])
+
+  useEffect(() => {
+    if (!isEditListingWorkspace || !editListingId) {
+      setEditListingDataReadyId('')
+      setDetailedEditListing(null)
+      return undefined
+    }
+
+    let active = true
+    setEditListingDataReadyId('')
+    setDetailedEditListing(null)
+    void getPrivateListing(editListingId, { includeRequirementsAndDocuments: false })
+      .then((listing) => {
+        if (!active || !listing) return
+        setDetailedEditListing(listing)
+        setPrivateListings((rows) => mergePrivateListingRows([listing], rows, []))
+      })
+      .catch((listingError) => {
+        console.warn('[Listings] detailed editor hydration failed; using the listing summary', listingError)
+      })
+      .finally(() => {
+        if (active) setEditListingDataReadyId(editListingId)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [editListingId, isEditListingWorkspace])
 
   useEffect(() => {
     setForm((previous) => {
@@ -3942,10 +4126,11 @@ function AgentListings({ initialTab = null } = {}) {
   useEffect(() => {
     if (!isEditListingWorkspace) return
     if (!editListingRecord) return
+    if (editListingDataReadyId !== editListingId) return
     if (hydratedEditListingId === editListingId) return
     setForm(buildListingEditorFormFromListing(editListingRecord, profile, workspace))
     setHydratedEditListingId(editListingId)
-  }, [editListingId, editListingRecord, hydratedEditListingId, isEditListingWorkspace, profile, workspace])
+  }, [editListingDataReadyId, editListingId, editListingRecord, hydratedEditListingId, isEditListingWorkspace, profile, workspace])
 
   useEffect(() => {
     if (isEditListingWorkspace) return
@@ -3955,38 +4140,55 @@ function AgentListings({ initialTab = null } = {}) {
 
   useEffect(() => {
     if (!isListingEditorWorkspace || typeof window === 'undefined') return
-    if (isEditListingWorkspace && !editListingRecord) return
+    // An edit form must always open from the listing's durable record. An old
+    // browser draft can contain the initial empty/default form and previously
+    // overlaid that state onto saved listing details on every revisit.
+    if (isEditListingWorkspace) return
     const stored = window.localStorage.getItem(listingEditorDraftStorageKey)
     if (!stored) return
     try {
       const parsed = JSON.parse(stored)
       if (parsed && typeof parsed === 'object') {
         const restoredDraft = serializeCreateListingDraftForm(parsed)
-        setForm((previous) => ({
-          ...previous,
-          ...restoredDraft,
-          listingType: 'sale',
-          listingCategory: 'private_sale',
-          manualMandateFile: null,
-          supportingDocumentFiles: [],
-          listingImages: Array.isArray(restoredDraft.listingImages) ? restoredDraft.listingImages : [],
-          keySellingPoints: Array.isArray(restoredDraft.keySellingPoints) ? restoredDraft.keySellingPoints : [],
-          multipleOwners: normalizeCreateListingOwnerCards(restoredDraft.multipleOwners, restoredDraft.multipleOwnersText),
-          selectedSyndicationChannels: Array.isArray(restoredDraft.selectedSyndicationChannels) && restoredDraft.selectedSyndicationChannels.length
-            ? restoredDraft.selectedSyndicationChannels
-            : previous.selectedSyndicationChannels,
-        }))
+        setForm((previous) => {
+          const draftImages = Array.isArray(restoredDraft.listingImages) ? restoredDraft.listingImages : []
+          const listingImages = draftImages.length ? draftImages : previous.listingImages
+          const draftCoverImageId = normalizeText(restoredDraft.coverImageId)
+          const coverImageId = draftImages.length && draftImages.some((image) => normalizeText(image.id) === draftCoverImageId)
+            ? draftCoverImageId
+            : previous.coverImageId || normalizeText(listingImages[0]?.id)
+          const draftSellingPoints = Array.isArray(restoredDraft.keySellingPoints) ? restoredDraft.keySellingPoints : []
+
+          return {
+            ...previous,
+            ...restoredDraft,
+            listingType: 'sale',
+            listingCategory: 'private_sale',
+            manualMandateFile: null,
+            supportingDocumentFiles: [],
+            // A browser draft is only a convenience. It must never erase media or
+            // marketing content that was already saved to the listing.
+            listingImages,
+            coverImageId,
+            listingDescription: normalizeText(restoredDraft.listingDescription) || previous.listingDescription,
+            keySellingPoints: draftSellingPoints.length ? draftSellingPoints : previous.keySellingPoints,
+            multipleOwners: normalizeCreateListingOwnerCards(restoredDraft.multipleOwners, restoredDraft.multipleOwnersText),
+            selectedSyndicationChannels: Array.isArray(restoredDraft.selectedSyndicationChannels) && restoredDraft.selectedSyndicationChannels.length
+              ? restoredDraft.selectedSyndicationChannels
+              : previous.selectedSyndicationChannels,
+          }
+        })
       }
     } catch {
       window.localStorage.removeItem(listingEditorDraftStorageKey)
     }
-  }, [editListingRecord, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey])
+  }, [isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey])
 
   useEffect(() => {
     if (!isListingEditorWorkspace || typeof window === 'undefined') return
-    if (isEditListingWorkspace && hydratedEditListingId !== editListingId) return
+    if (isEditListingWorkspace) return
     saveCreateListingDraftToStorage(listingEditorDraftStorageKey, form)
-  }, [editListingId, form, hydratedEditListingId, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey])
+  }, [form, isEditListingWorkspace, isListingEditorWorkspace, listingEditorDraftStorageKey])
 
   useEffect(() => {
     if (isDeveloperWorkspace) {
@@ -4535,14 +4737,17 @@ function AgentListings({ initialTab = null } = {}) {
       setError('Unable to load this listing for editing.')
       return false
     }
+    if (isUuidLike(editListingId) && (!isSupabaseConfigured || !isUuidLike(listingId))) {
+      throw new Error('This production listing could not be connected to the database. Nothing was saved; please retry after the connection is restored.')
+    }
 
     const sellerName = normalizeText(form.sellerName)
     const sellerEmail = normalizeText(form.sellerEmail)
     const sellerPhone = normalizeText(form.sellerPhone)
-    const propertyAddress = normalizeText(form.propertyAddress)
     const propertyAddressValue = buildListingAddressValueFromForm(form)
-    const formattedAddress = normalizeText(propertyAddressValue?.formattedAddress || propertyAddress)
-    const streetAddress = normalizeText(propertyAddressValue?.streetAddress || propertyAddress)
+    const formattedAddress = normalizeText(propertyAddressValue?.formattedAddress || form.propertyAddress)
+    const streetAddress = normalizeText(propertyAddressValue?.streetAddress || form.propertyAddress || formattedAddress)
+    const propertyAddress = normalizeText(formattedAddress || form.propertyAddress || streetAddress)
     const country = normalizeText(propertyAddressValue?.country || form.country) || 'South Africa'
     const postalCode = normalizeText(propertyAddressValue?.postalCode || form.postalCode)
     const googlePlaceId = normalizeText(propertyAddressValue?.googlePlaceId || propertyAddressValue?.placeId || form.googlePlaceId)
@@ -4552,7 +4757,16 @@ function AgentListings({ initialTab = null } = {}) {
     const listingPropertyCanonicalFacts = buildListingPropertyCanonicalFacts(form)
     const propertyType = normalizeText(form.propertyType)
     const listingTitle = normalizeText(form.listingTitle) || [propertyType, normalizeText(form.suburb)].filter(Boolean).join(' - ') || propertyAddress || 'Listing'
-    const askingPrice = Number(form.listingPrice || form.estimatedAskingPrice || 0) || 0
+    const askingPrice = Number(normalizeIntegerInput(form.listingPrice || form.estimatedAskingPrice)) || 0
+    const propertyValidationErrors = []
+    if (!propertyAddress) propertyValidationErrors.push('Property address is required.')
+    if (!normalizeText(form.propertyStructureType)) propertyValidationErrors.push('Ownership scheme is required.')
+    if (!propertyType) propertyValidationErrors.push('Descriptive property type is required.')
+    if (!form.priceOnApplication && askingPrice <= 0) propertyValidationErrors.push('Enter a listing price or select Price on Application.')
+    if (propertyValidationErrors.length) {
+      setCreateListingStep('property')
+      throw new Error(propertyValidationErrors.join(' '))
+    }
     const mandateStatus = getQuickListingMandateStatus(form)
     const mandatePack = buildQuickListingMandatePack(form, mandateStatus)
     const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
@@ -4663,7 +4877,19 @@ function AgentListings({ initialTab = null } = {}) {
     const onboardingPatch = {
       ...directListingPersistence.sellerOnboardingFormData,
       propertyType,
+      propertyCategory: normalizePropertyCategory(form?.propertyCategory, { fallback: 'residential' }),
+      exactAddressVisibility: normalizeText(form?.exactAddressVisibility) || 'hide_street_address',
       propertyStructureType: form.propertyStructureType,
+      propertyAddress,
+      formattedAddress,
+      streetAddress,
+      streetNumber: normalizeText(form.streetNumber),
+      streetName: normalizeText(form.streetName || form.route),
+      suburb: normalizeText(form.suburb),
+      city: normalizeText(form.city),
+      province: normalizeText(form.province),
+      postalCode,
+      country,
       ownershipType: form.sellerType,
       bedrooms: form.bedrooms,
       bathrooms: form.bathrooms,
@@ -4696,20 +4922,18 @@ function AgentListings({ initialTab = null } = {}) {
       const databaseListingPatch = { ...listingPatch }
       delete databaseListingPatch.assignedAgentId
       const savedListing = await updatePrivateListing(listingId, databaseListingPatch, { includeRequirementsAndDocuments: false })
-      if (savedListing?.id) {
-        setPrivateListings((rows) => mergePrivateListingRows([savedListing], rows, deletedListingIds))
-      }
-      await persistSellerProfileOnboardingFormData({
+      const savedOnboarding = await persistSellerProfileOnboardingFormData({
         listingId,
         formData: onboardingPatch,
         status: listing.sellerOnboardingStatus || listing.seller_onboarding_status || 'in_progress',
         sellerType: form.sellerType,
         ownershipStructure: form.sellerType,
-      }).catch((persistenceError) => {
-        console.warn('[Listings] listing editor onboarding form persistence skipped', persistenceError)
-        return null
+        allowProtectedSectionOverride: true,
       })
-      await syncPrivateListingDistributionData(listingId, {
+      if (!savedOnboarding?.id) {
+        throw new Error('Your property details could not be written to the listing record. Your entries are still available here; please try again.')
+      }
+      const distributionSync = await syncPrivateListingDistributionData(listingId, {
         publicationData: {
           title: listingTitle,
           address: formattedAddress || propertyAddress,
@@ -4735,10 +4959,25 @@ function AgentListings({ initialTab = null } = {}) {
           floorplans: listing.marketing?.floorplans || listing.propertyDetails?.floorplans || [],
         },
         externalLinks: distributionLinks,
-      }).catch((syncError) => {
-        console.warn('[Listings] listing editor distribution sync skipped', syncError)
-        return null
       })
+      if (distributionSync?.skipped || !distributionSync?.publication?.listing_id) {
+        throw new Error('Your property details could not be written to the publication record. Your entries are still available here; please try again.')
+      }
+      const verifiedListing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
+      const propertySaveVerification = verifyListingPropertyPersistenceCopies({
+        form: {
+          ...form,
+          propertyAddress,
+          listingPrice: form.priceOnApplication ? '' : String(askingPrice),
+        },
+        listing: verifiedListing,
+        onboarding: savedOnboarding,
+        publication: distributionSync.publication,
+      })
+      if (!propertySaveVerification.ready) {
+        throw new Error(listingPropertySaveErrorMessage(propertySaveVerification))
+      }
+      setPrivateListings((rows) => mergePrivateListingRows([verifiedListing || savedListing], rows, deletedListingIds))
       if (shouldAutoPublishToAgencyWebsite(listingPatch.listingStatus, form.selectedSyndicationChannels)) {
         websitePublication = await setWebsiteListingPublication(listingId, 'publish')
           .then((publication) => ({ attempted: true, publication }))
@@ -6817,7 +7056,7 @@ function AgentListings({ initialTab = null } = {}) {
 
   const privateListingCards = useMemo(() => {
     return privateListings
-      .filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !shouldHideListingRecord(listing))
+      .filter((listing) => !rowMatchesDeletedListing(listing, deletedListingIds) && !shouldHideListingRecord(listing) && !isRentalListingRecord(listing))
       .map((listing) => {
       const statusKey = getPrivateListingStatus(listing)
       const propertyCategory = resolvePropertyCategory(listing)
@@ -6859,6 +7098,10 @@ function AgentListings({ initialTab = null } = {}) {
             filterKey: complianceWarnings.length ? 'warnings' : inventoryStatus.filterKey,
           }
         : inventoryStatus
+      const liveChannels = getLiveListingChannels(listing)
+      const cardInventoryStatus = liveChannels.length && !['sold', 'archived'].includes(resolvedInventoryStatus.key)
+        ? { key: 'live', filterKey: 'live', label: `Live on ${liveChannels.length} portal${liveChannels.length === 1 ? '' : 's'}` }
+        : resolvedInventoryStatus
       const identityKeys = getListingIdentityKeys(listing)
       const quickAddHandoffPlan = getQuickAddHandoffPlanFromListing(listing, quickMetadata)
       const quickAddHandoffActions = normalizeQuickAddHandoffActions(identityKeys[0] || String(listing.id || ''), quickAddHandoffPlan)
@@ -6889,9 +7132,10 @@ function AgentListings({ initialTab = null } = {}) {
         lifecycleGroupLabel: listingStatusGroupLabel(lifecycleGroup),
         lifecycleNextAction,
         lifecycleBlockers,
-        inventoryStatusKey: resolvedInventoryStatus.key,
-        inventoryFilterKey: resolvedInventoryStatus.filterKey,
-        inventoryStatusLabel: resolvedInventoryStatus.label,
+        inventoryStatusKey: cardInventoryStatus.key,
+        inventoryFilterKey: cardInventoryStatus.filterKey,
+        inventoryStatusLabel: cardInventoryStatus.label,
+        liveChannels,
         attentionLine: '',
         quickAddHandoffPlan,
         quickAddHandoffActions,
@@ -7691,7 +7935,20 @@ function AgentListings({ initialTab = null } = {}) {
                   eyebrow={`Step ${listingEditorSteps.findIndex((step) => step.key === 'property') + 1} of ${listingEditorSteps.length}`}
                 />
 
-                <ListingWizardSection title="1. Property address">
+                <ListingWizardSection title="1. Property category">
+                  <p className="text-sm text-[#607891]">Choose the market this sales listing belongs to before adding its address and property type.</p>
+                  <div className="mt-4 max-w-md">
+                    <FormField label="Property category *">
+                      <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
+                        {PROPERTY_CATEGORIES.map((category) => (
+                          <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>
+                        ))}
+                      </Field>
+                    </FormField>
+                  </div>
+                </ListingWizardSection>
+
+                <ListingWizardSection title="2. Property address" divided>
                   <AddressAutocomplete
                     label="Property address"
                     value={buildListingAddressValueFromForm(form)}
@@ -7724,7 +7981,7 @@ function AgentListings({ initialTab = null } = {}) {
                   </div>
                 </ListingWizardSection>
 
-                <ListingWizardSection title="2. Listing basics" divided>
+                <ListingWizardSection title="3. Listing basics" divided>
                   <div className="mt-3 grid gap-4 md:grid-cols-2">
                     <FormField label="Ownership scheme *">
                       <Field as="select" value={form.propertyStructureType} onChange={(event) => updateForm('propertyStructureType', event.target.value)}>
@@ -7741,7 +7998,7 @@ function AgentListings({ initialTab = null } = {}) {
                       </Field>
                     </FormField>
                     <CurrencyInput
-                      label={form.priceOnApplication ? 'Listing price' : 'Listing price *'}
+                      label={form.listingType === 'rental' ? (form.priceOnApplication ? 'Monthly rent' : 'Monthly rent *') : (form.priceOnApplication ? 'Listing price' : 'Listing price *')}
                       value={form.listingPrice}
                       onChange={(value) => updateForm('listingPrice', value)}
                     />
@@ -7760,7 +8017,23 @@ function AgentListings({ initialTab = null } = {}) {
                   </div>
                 </ListingWizardSection>
 
-                <ListingWizardSection title="3. Property specifications" divided>
+                {getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? (
+                  <ListingWizardSection title="4. Specialist property details" description="These details are required for the selected non-residential category before portal publication." divided>
+                    <div className="mt-3 grid gap-4 md:grid-cols-2">
+                      {getSpecialistSalesListingSchema(form.propertyCategory).fields.map((field) => (
+                        field.kind === 'boolean' ? (
+                          <BooleanChoiceField key={field.key} label={field.label} value={Boolean(form[field.key])} yesDescription="Available at this property." noDescription="Not available or not confirmed." onChange={(value) => updateForm(field.key, value)} />
+                        ) : (
+                          <FormField key={field.key} label={`${field.label} *`} className={field.kind === 'terms' ? 'md:col-span-2' : ''}>
+                            <Field as={field.kind === 'terms' ? 'textarea' : undefined} type={field.kind === 'measurement' ? 'number' : undefined} min={field.kind === 'measurement' ? '0' : undefined} step={field.kind === 'measurement' ? '0.1' : undefined} value={form[field.key] || ''} onChange={(event) => updateForm(field.key, event.target.value)} placeholder={field.unit ? `Enter ${field.label.toLowerCase()} in ${field.unit}` : `Enter ${field.label.toLowerCase()}`} />
+                          </FormField>
+                        )
+                      ))}
+                    </div>
+                  </ListingWizardSection>
+                ) : null}
+
+                <ListingWizardSection title={getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? '5. Property specifications' : '4. Property specifications'} divided>
                   <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                     <NumberStepper label="Bedrooms" value={form.bedrooms} onChange={(value) => updateForm('bedrooms', value)} />
                     <NumberStepper label="Bathrooms" value={form.bathrooms} onChange={(value) => updateForm('bathrooms', value)} />
@@ -7775,25 +8048,22 @@ function AgentListings({ initialTab = null } = {}) {
                   </div>
                   {isSectionalTitleProperty(form) ? (
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <FormField label="Unit number">
-                        <Field value={form.unitNumber} onChange={(event) => updateForm('unitNumber', event.target.value)} />
-                      </FormField>
                       <FormField label="Complex / scheme">
                         <Field value={form.complexName} onChange={(event) => updateForm('complexName', event.target.value)} />
                       </FormField>
-                      <FormField label="Section number">
-                        <Field value={form.sectionNumber} onChange={(event) => updateForm('sectionNumber', event.target.value)} />
-                      </FormField>
-                      <FormField label="Sectional title number">
-                        <Field value={form.sectionalTitleNumber} onChange={(event) => updateForm('sectionalTitleNumber', event.target.value)} />
+                      <FormField label="Unit / section number">
+                        <Field value={form.unitNumber || form.sectionNumber} onChange={(event) => {
+                          updateForm('unitNumber', event.target.value)
+                          updateForm('sectionNumber', event.target.value)
+                        }} />
                       </FormField>
                     </div>
                   ) : null}
                 </ListingWizardSection>
 
-                <ListingWizardSection title="4. Sales portal options" description="Capture the publication flags agents expect before syndication." divided>
+                <ListingWizardSection title={`${getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? '6' : '5'}. ${form.listingType === 'rental' ? 'Rental' : 'Sales'} portal options`} description="Capture the publication flags agents expect before syndication." divided>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    {CREATE_LISTING_SALES_FLAG_OPTIONS.map((option) => (
+                    {CREATE_LISTING_SALES_FLAG_OPTIONS.filter((option) => form.listingType !== 'rental' || ['showReducedBanner', 'noTransferDuty'].includes(option.key)).map((option) => (
                       <SelectionCard
                         key={option.key}
                         compact
@@ -8336,10 +8606,6 @@ function AgentListings({ initialTab = null } = {}) {
                     <div className="absolute inset-0 overflow-hidden">
                       <ListingCardImage src={card.imageUrl} alt={card.title} />
                     </div>
-                    <div className="absolute left-3 right-14 top-3 inline-flex max-w-[calc(100%-4.5rem)] items-center gap-2 rounded-full border border-white/25 bg-[#091322]/58 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white shadow-[0_8px_18px_rgba(9,19,34,0.18)] backdrop-blur">
-                      <span className={`h-2 w-2 rounded-full ${inventoryDotClass(card.inventoryStatusKey)}`} />
-                      <span className="truncate">{card.inventoryStatusLabel}</span>
-                    </div>
                     <div className="absolute right-3 top-3 z-10">
                       <button
                         type="button"
@@ -8415,6 +8681,8 @@ function AgentListings({ initialTab = null } = {}) {
                         ))}
                       </div>
                     ) : null}
+
+                    <ListingLiveChannels channels={card.liveChannels} />
 
                     <div className="mt-auto flex min-w-0 items-center gap-3 border-t border-[#eef3f8] pt-3">
                       <ListingAgentAvatar agent={card.assignedAgent} />
@@ -9293,7 +9561,7 @@ function AgentListings({ initialTab = null } = {}) {
                         required
                       />
                       <label className="grid gap-2">
-                        <span className="text-sm font-semibold text-[#2d445e]">Listing price *</span>
+                        <span className="text-sm font-semibold text-[#2d445e]">{form.listingType === 'rental' ? 'Monthly rent *' : 'Listing price *'}</span>
                         <Field type="number" value={form.listingPrice} onChange={(event) => updateForm('listingPrice', event.target.value)} placeholder="2500000" min="0" step="1000" />
                       </label>
                       <label className="grid gap-2">
@@ -9338,8 +9606,16 @@ function AgentListings({ initialTab = null } = {}) {
                         <label className="grid gap-2">
                           <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
                           <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
-                            {PROPERTY_CATEGORIES.filter((category) => ['residential', 'mixed_use', 'vacant_land'].includes(category)).map((category) => (
+                            {PROPERTY_CATEGORIES.map((category) => (
                               <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>
+                            ))}
+                          </Field>
+                        </label>
+                        <label className="grid gap-2">
+                          <span className="text-sm font-semibold text-[#2d445e]">Portal address display</span>
+                          <Field as="select" value={form.exactAddressVisibility} onChange={(event) => updateForm('exactAddressVisibility', event.target.value)}>
+                            {LISTING_ADDRESS_VISIBILITY_OPTIONS.map((option) => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
                             ))}
                           </Field>
                         </label>
@@ -9354,12 +9630,11 @@ function AgentListings({ initialTab = null } = {}) {
                         {isSectionalTitleProperty(form) ? (
                           <>
                             <label className="grid gap-2">
-                              <span className="text-sm font-semibold text-[#2d445e]">Unit number</span>
-                              <Field value={form.unitNumber} onChange={(event) => updateForm('unitNumber', event.target.value)} placeholder="12" />
-                            </label>
-                            <label className="grid gap-2">
-                              <span className="text-sm font-semibold text-[#2d445e]">Section number</span>
-                              <Field value={form.sectionNumber} onChange={(event) => updateForm('sectionNumber', event.target.value)} placeholder="Section 12" />
+                              <span className="text-sm font-semibold text-[#2d445e]">Unit / section number</span>
+                              <Field value={form.unitNumber || form.sectionNumber} onChange={(event) => {
+                                updateForm('unitNumber', event.target.value)
+                                updateForm('sectionNumber', event.target.value)
+                              }} placeholder="12" />
                             </label>
                             <label className="grid gap-2">
                               <span className="text-sm font-semibold text-[#2d445e]">Complex / scheme name</span>
@@ -9738,10 +10013,18 @@ function AgentListings({ initialTab = null } = {}) {
                   <label className="grid gap-2">
                     <span className="text-sm font-semibold text-[#2d445e]">Property category</span>
                     <Field as="select" value={form.propertyCategory} onChange={(event) => updateForm('propertyCategory', event.target.value)}>
-                      {PROPERTY_CATEGORIES.filter((category) => ['residential', 'mixed_use', 'vacant_land'].includes(category)).map((category) => (
+                      {PROPERTY_CATEGORIES.map((category) => (
                         <option key={category} value={category}>
                           {getPropertyCategoryLabel(category)}
                         </option>
+                      ))}
+                    </Field>
+                  </label>
+                  <label className="grid gap-2">
+                    <span className="text-sm font-semibold text-[#2d445e]">Portal address display</span>
+                    <Field as="select" value={form.exactAddressVisibility} onChange={(event) => updateForm('exactAddressVisibility', event.target.value)}>
+                      {LISTING_ADDRESS_VISIBILITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
                       ))}
                     </Field>
                   </label>

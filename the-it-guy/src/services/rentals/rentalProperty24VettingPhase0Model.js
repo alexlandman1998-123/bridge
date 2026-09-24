@@ -4,6 +4,9 @@ import {
 import {
   buildRentalProperty24PublishRequest,
 } from './rentalListingProperty24PublishModel.js'
+import {
+  PROPERTY24_RENTAL_LISTING_SERVICE,
+} from './rentalListingProperty24FieldComparisonModel.js'
 
 export const RENTAL_PROPERTY24_VETTING_PHASE0_VERSION = 'arch9_rental_property24_vetting_phase0_v1'
 
@@ -51,7 +54,7 @@ export const RENTAL_PROPERTY24_VETTING_FIXTURE = Object.freeze({
 const DEMO_STEPS = Object.freeze([
   ['open_fixture', 'Open the complete rental fixture in Rentals > Listings.', 'No external call'],
   ['show_terms', 'Show rent, deposit, availability, mandate, and landlord marketing approval.', 'No external call'],
-  ['check_readiness', 'Run Property24 rental readiness and inspect the Listing Service v53 payload preview.', 'Preview only'],
+  ['check_readiness', `Run Property24 rental readiness and inspect the ${PROPERTY24_RENTAL_LISTING_SERVICE} payload preview.`, 'Preview only'],
   ['show_blocked_example', 'Show an incomplete listing being blocked before a handoff can be prepared.', 'Preview only'],
   ['prepare_handoff', 'Prepare the internal backend publish handoff for the complete fixture.', 'Creates internal audit activity only'],
 ])

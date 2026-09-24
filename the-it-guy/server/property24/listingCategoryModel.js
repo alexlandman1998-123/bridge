@@ -45,14 +45,14 @@ export const PROPERTY24_LISTING_CATEGORY_MODELS = Object.freeze({
     supportedFeatures: ['waterSupplyOrRights', 'agriculturalUse'],
     payloadModel: 'agricultural_pending_property24_schema',
   },
-  [PROPERTY24_LISTING_CATEGORIES.LAND_DEVELOPMENT]: {
+  [PROPERTY24_LISTING_CATEGORIES.LAND]: {
     property24TypeIds: [8],
-    transactionTypes: ['Sale'],
-    pricingModes: { Sale: ['fixed_price', 'poa'] },
-    lifecycle: { Sale: SALE_LIFECYCLE },
+    transactionTypes: ['Sale', 'Rental'],
+    pricingModes: { Sale: ['fixed_price', 'poa'], Rental: ['rental_rate'] },
+    lifecycle: { Sale: SALE_LIFECYCLE, Rental: RENTAL_LIFECYCLE },
     requiredMeasurements: { 8: ['erfSize'] },
-    supportedFeatures: ['zoning', 'developmentRights'],
-    payloadModel: 'land_development_pending_property24_schema',
+    supportedFeatures: ['zoning'],
+    payloadModel: 'vacant_land_pending_property24_v55_payload',
   },
   [PROPERTY24_LISTING_CATEGORIES.UNKNOWN]: {
     property24TypeIds: [],

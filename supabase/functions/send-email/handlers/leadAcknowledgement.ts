@@ -1,14 +1,9 @@
 import type { SendLeadAcknowledgementPayload } from "../types.ts";
 import {
   buildLeadAcknowledgementEmailText,
+  buildLeadAcknowledgementEmailHtml,
   buildLeadAcknowledgementSubject,
 } from "../content/leadAcknowledgement.ts";
-import {
-  renderBridgeCta,
-  renderBridgeEmailLayout,
-  renderBridgeIntroParagraphs,
-  renderBridgeSummaryCard,
-} from "../content/bridgeEmailLayout.ts";
 import {
   formatEmailSender,
   resolveEmailBranding,
@@ -96,6 +91,9 @@ export async function handleLeadAcknowledgementEmail(
     agentAvatarUrl: normalizeText(
       payload.agentAvatarUrl || payload.agent_avatar_url,
     ),
+    viewingAvailabilityUrl: normalizeText(
+      payload.viewingAvailabilityUrl || payload.viewing_availability_url,
+    ),
     responseExpectation: normalizeText(
       payload.responseExpectation || payload.response_expectation,
     ),
@@ -128,45 +126,17 @@ export async function handleLeadAcknowledgementEmail(
   const responseExpectation = content.customResponseText ||
     content.responseExpectation ||
     `${agentFirstName} will review your enquiry and contact you shortly.`;
-  const contentHtml = [
-    renderBridgeIntroParagraphs([
-      "Thank you for your interest in one of our properties. We have received your enquiry and our team will be in touch with you shortly.",
-      "Buying a home is a big decision, and we are here to make the process as smooth and straightforward as possible.",
-      responseExpectation,
-    ]),
-    renderBridgeSummaryCard(
-      [
-        { label: "Agent", value: agentName },
-        { label: "Agent Email", value: content.agentEmail },
-        { label: "Agent Phone", value: content.agentPhone },
-        { label: "Source", value: content.source },
-        { label: "Message", value: content.originalMessage },
-      ],
-      "Enquiry Details",
-    ),
-    content.agentEmail
-      ? renderBridgeCta(
-        `Email ${agentFirstName}`,
-        `mailto:${content.agentEmail}`,
-        {
-          primaryColor: branding.primaryColor,
-        },
-      )
-      : "",
-  ].join("");
-  const html = renderBridgeEmailLayout({
-    preheader: "We have received your property enquiry.",
-    title: "Thanks For Your Enquiry",
-    greeting: `Hi ${content.recipientName || "there"},`,
-    contentHtml,
-    securityBody:
-      "Your enquiry details are shared only with the property team handling your request.",
-    helpBody:
-      "Need help? Reply to this email or contact the listed property practitioner directly.",
+  const html = buildLeadAcknowledgementEmailHtml({
+    ...content,
     organisationName: branding.organisationName,
-    supportEmail: branding.supportEmail,
-    supportPhone: branding.supportPhone,
-    branding,
+    organisationLogoUrl: branding.logoDarkUrl || branding.logoLightUrl || branding.logoUrl || branding.logoIconUrl,
+    organisationTagline: branding.tagline,
+    organisationPhone: branding.supportPhone,
+    organisationEmail: branding.supportEmail,
+    organisationWebsite: branding.website,
+    organisationBrandPrimaryColor: branding.primaryColor,
+    organisationBrandSecondaryColor: branding.secondaryColor,
+    responseExpectation,
   });
   const sender = formatEmailSender(
     centralSender,
