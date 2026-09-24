@@ -76,6 +76,10 @@
   ],
   "rewrites": [
     {
+      "source": "/development/:slug",
+      "destination": "/api/public/development-page?slug=:slug"
+    },
+    {
       "source": "/share/card/:cardSlug",
       "destination": "/api/public/agent-card-share?slug=:cardSlug"
     },
