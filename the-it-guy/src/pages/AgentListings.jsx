@@ -8528,70 +8528,79 @@ function AgentListings({ initialTab = null } = {}) {
       ) : null}
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-[1.02rem] font-semibold text-[#142132]">
               {isDeveloperWorkspace
                 ? 'Listings'
                 : listingsTab === 'developments'
-                ? 'Development Listings'
+                ? 'Current Listings'
                 : activeListingCollectionView === 'archived'
                   ? 'Previous Listings'
                   : activeListingCollectionView === 'review'
                     ? 'Listings for Review'
                     : 'Current Listings'}
             </h2>
-            {isDeveloperWorkspace ? (
-              <Button type="button" variant="secondary" onClick={openQuickAddListingModal} disabled={pilotCreationFreeze.paused} className="mt-3">
-                <Plus size={16} />
-                Add Listing
-              </Button>
-            ) : null}
-            {isDeveloperWorkspace || listingsTab === 'developments' || activeListingCollectionView !== 'current' ? (
+            {isDeveloperWorkspace || (listingsTab !== 'developments' && activeListingCollectionView !== 'current') ? (
               <p className="mt-1 text-sm text-[#607387]">
                 {isDeveloperWorkspace
                   ? 'Publish development stock to portals. Developments create stock; listings publish stock.'
-                  : listingsTab === 'developments'
-                    ? 'Assigned developments, live buyer activity, and structured workspace access.'
-                    : activeListingCollectionView === 'archived'
+                  : activeListingCollectionView === 'archived'
                       ? 'Past listings and historical Property24 imports. These records are retained for reference and are not part of current stock.'
                       : 'Property24 and Private Property imports awaiting review before they become current stock.'}
               </p>
             ) : null}
-            {!isDeveloperWorkspace && listingsTab === 'developments' ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                {!isDeveloperWorkspace ? (
-                  <Button type="button" onClick={() => openDeveloperLeadCaptureModal()} disabled={pilotCreationFreeze.paused || !developmentCards.length}>
-                    <ShieldCheck size={16} />
-                    Submit Buyer Lead
-                  </Button>
-                ) : null}
-                <Button type="button" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
-                  <Plus size={16} />
-                  New Development
-                </Button>
-                {!isDeveloperWorkspace ? (
-                  <Button type="button" variant="secondary" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
-                    <Plus size={16} />
-                    Invite Developer Access
-                  </Button>
-                ) : null}
-                {linkedDevelopmentId ? (
-                  <Button type="button" variant="secondary" onClick={() => navigate('/listings/developments')}>
-                    <X size={16} />
-                    Show All Developments
-                  </Button>
-                ) : null}
-                {isDeveloperWorkspace ? (
-                  <Button type="button" variant="secondary" onClick={() => navigate('/developments')}>
-                    <FolderKanban size={16} />
-                    Development Workspace
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
           </div>
 
+          {isDeveloperWorkspace ? (
+            <Button type="button" variant="secondary" onClick={openQuickAddListingModal} disabled={pilotCreationFreeze.paused}>
+              <Plus size={16} />
+              Add Listing
+            </Button>
+          ) : null}
+          {!isDeveloperWorkspace && listingsTab === 'developments' ? (
+            <Button type="button" onClick={() => window.dispatchEvent(new Event('itg:open-new-development'))}>
+              <Plus size={16} />
+              Add Development
+            </Button>
+          ) : null}
+        </div>
+
+        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          {!isDeveloperWorkspace ? (
+            <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 xl:max-w-[460px] xl:flex-1">
+              {[
+                { key: 'residential', label: 'Residential', count: listingTabCounts.residential || 0 },
+                { key: 'developments', label: 'Developments', count: listingTabCounts.developments || 0 },
+              ].map((tab) => {
+                const active = listingsTab === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() => {
+                      setListingsTab(tab.key)
+                      if (tab.key === 'developments') {
+                        navigate('/listings/developments')
+                      } else {
+                        navigate('/listings')
+                      }
+                    }}
+                    className={`min-w-0 w-full rounded-[12px] border px-2.5 py-2 text-left transition ${
+                      active
+                        ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.2)]'
+                        : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
+                    }`}
+                  >
+                    <span className="block truncate text-[0.84rem] font-semibold leading-5">{tab.label}</span>
+                    <span className={`mt-0.5 block truncate text-[0.7rem] font-medium leading-4 ${active ? 'text-white/82' : 'text-[#7b8ca2]'}`}>
+                      {tab.count} item{tab.count === 1 ? '' : 's'}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : <div className="hidden xl:block xl:flex-1" aria-hidden="true" />}
           <div className="grid w-full min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_200px] xl:max-w-[650px] xl:flex-1">
             <label className="grid min-w-0 gap-2">
               <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
@@ -8624,41 +8633,6 @@ function AgentListings({ initialTab = null } = {}) {
             </label>
           </div>
         </div>
-
-          {!isDeveloperWorkspace ? (
-          <div className="mb-5 grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[460px]">
-            {[
-              { key: 'residential', label: 'Residential', count: listingTabCounts.residential || 0 },
-              { key: 'developments', label: 'Developments', count: listingTabCounts.developments || 0 },
-            ].map((tab) => {
-              const active = listingsTab === tab.key
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => {
-                    setListingsTab(tab.key)
-                    if (tab.key === 'developments') {
-                      navigate('/listings/developments')
-                    } else {
-                      navigate('/listings')
-                    }
-                  }}
-                  className={`min-w-0 w-full rounded-[12px] border px-2.5 py-2 text-left transition ${
-                    active
-                      ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_8px_16px_rgba(31,79,120,0.2)]'
-                      : 'border-[#d8e3ef] bg-white text-[#35546c] hover:border-[#b7c8db]'
-                  }`}
-                >
-                  <span className="block truncate text-[0.84rem] font-semibold leading-5">{tab.label}</span>
-                  <span className={`mt-0.5 block truncate text-[0.7rem] font-medium leading-4 ${active ? 'text-white/82' : 'text-[#7b8ca2]'}`}>
-                    {tab.count} item{tab.count === 1 ? '' : 's'}
-                  </span>
-                </button>
-              )
-            })}
-          </div>
-          ) : null}
         {!isDeveloperWorkspace && listingsTab !== 'developments' ? (
           <div className={`mb-5 grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 ${showImportedReviewTab ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
             {[
