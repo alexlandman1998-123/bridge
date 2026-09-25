@@ -34,3 +34,10 @@ test('invalid or incomplete activity is omitted', () => {
   ] })
   assert.equal(result.history.length, 0)
 })
+
+test('price position stays renderable while listing data is loading', () => {
+  const result = buildListingOverviewPricePosition({ listing: null, draft: null, activityRows: [] })
+  assert.equal(result.askingPrice, 0)
+  assert.deepEqual(result.history, [])
+  assert.equal(result.reductionActive, false)
+})

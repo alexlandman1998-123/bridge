@@ -12,7 +12,7 @@ function activityMetadata(row = {}) {
 }
 
 export function buildListingOverviewPricePosition({ listing = {}, draft = {}, activityRows = [], activityAvailable = true } = {}) {
-  const askingPrice = positivePrice(listing.askingPrice || listing.asking_price) || positivePrice(draft.price)
+  const askingPrice = positivePrice(listing?.askingPrice || listing?.asking_price) || positivePrice(draft?.price)
   const history = (Array.isArray(activityRows) ? activityRows : [])
     .filter((row) => String(row.activity_type || row.activityType || '') === 'listing_price_changed')
     .map((row) => {
