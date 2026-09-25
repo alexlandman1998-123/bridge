@@ -36,6 +36,15 @@ test('publication display distinguishes live, pending, withdrawn and unpublished
   assert.equal(buildListingChannelPublicationDisplay({ ...base, live: false, submitted: true }).statusLabel, 'Submitted')
 })
 
+test('overview stays renderable before any portal update state exists', () => {
+  const display = buildListingChannelPublicationDisplay({
+    key: 'property24', label: 'Property24', publicationState: null, updateState: null,
+  })
+  assert.equal(display.status, 'not_published')
+  assert.equal(display.statusLabel, 'Not published')
+  assert.equal(display.href, '')
+})
+
 test('channel references are displayed without a duplicated Ref label', () => {
   assert.equal(normalizeListingChannelReference('Ref: P24-123'), 'P24-123')
   assert.equal(normalizeListingChannelReference('Reference: PP-456'), 'PP-456')
