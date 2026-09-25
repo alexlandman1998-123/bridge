@@ -61,6 +61,7 @@ import ListingSellerHistoricalNormalizationBanner from '../components/listings/L
 import ListingShowDaysPanel from '../components/listings/ListingShowDaysPanel'
 import ListingMarketingOperationalHealthPanel from '../components/listings/ListingMarketingOperationalHealthPanel'
 import {
+  ListingViewingDetailsModal,
   ListingViewingRequestModal,
 } from '../components/listings/ListingBuyerActionModals'
 import LeadCreateDialog from '../components/leads/LeadCreateDialog'
@@ -78,6 +79,8 @@ import {
 } from '../services/listings/listingPublicationState'
 import { buildListingMarketingOperationalHealth } from '../services/listings/listingMarketingOperationalHealth'
 import {
+  buildListingChannelPublicationDisplay,
+  getListingChannelViewUrl,
   normalizeListingChannelPublicUrl,
   normalizeListingChannelReference,
 } from '../services/listings/listingMarketingChannelPresentation'
@@ -89,14 +92,11 @@ import {
 } from '../services/listings/listingWithdrawalModel'
 import {
   buildListingOverviewPerformance,
-  createEmptyListingOverviewAnalytics,
-  getListingOverviewAnalytics,
+  getListingOverviewViewingStatusLabel,
 } from '../services/listings/listingOverviewPerformanceService'
+import { buildListingOverviewPricePosition } from '../services/listings/listingOverviewPriceModel'
 import {
-  buildSellerEmailDeliveryOverview,
   buildSellerFicaOverview,
-  buildSellerPortalSecurityOverview,
-  resolveSellerLastContact,
 } from '../services/listings/listingSellerOverviewModel'
 import SyndicationReviewModal from '../components/listings/SyndicationReviewModal'
 import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
@@ -160,7 +160,9 @@ import {
 import {
   addAppointmentOutcomeAsync,
   listAppointmentsAsync,
+  updateAppointmentParticipantRsvpAsync,
 } from '../lib/agencyPipelineService'
+import { buildAppointmentRsvpContract } from '../core/appointments/appointmentRsvpContract'
 import {
   listAgencyCrmLeadContacts,
   updateAgencyCrmLeadRecord,
@@ -254,7 +256,6 @@ import {
   getSellerPortalAccessState,
   getSellerPortalSecurityDiagnostics,
   issueSellerPortalInvite,
-  isSellerPortalInviteReadyAfterSignedMandate,
   markPrivateListingDocumentsPendingTransactionPromotion,
   persistSellerProfileOnboardingFormData,
   resetSellerPortalPassword,
@@ -284,6 +285,7 @@ import {
   getSellerDocumentUploadKey,
 } from '../services/listings/listingSellerDocumentUploadModel'
 import {
+  buildListingSellerDocumentProgress,
   buildListingSellerDocumentsSummary,
   resolveListingSellerDocumentActivity,
   resolveListingSellerDocumentActions,
@@ -829,6 +831,7 @@ function mapAppointmentStatusToViewingStatus(status) {
   if (normalized === 'declined') return VIEWING_STATUS.DECLINED
   if (normalized === 'no_show' || normalized === 'no show') return VIEWING_STATUS.NO_SHOW
   if (normalized.includes('alternative') || normalized.includes('reschedule')) return VIEWING_STATUS.RESCHEDULE_REQUESTED
+  if (normalized === 'requested') return VIEWING_STATUS.REQUESTED
   return VIEWING_STATUS.PENDING_APPROVAL
 }
 
@@ -838,6 +841,8 @@ function mapAppointmentParticipantToViewingParticipant(participant = {}) {
     participant_id: participant?.participantId || participant?.participant_id || participant?.userId || participant?.user_id || participant?.email || participant?.name || '',
     role: String(participant?.participantRole || participant?.participant_role || participant?.role || 'participant').trim().toLowerCase(),
     name: participant?.name || participant?.email || 'Participant',
+    email: participant?.email || '',
+    phone: participant?.phone || '',
     response_status:
       rsvpStatus === 'accepted'
         ? VIEWING_RESPONSE_STATUS.ACCEPTED
@@ -852,7 +857,7 @@ function mapAppointmentParticipantToViewingParticipant(participant = {}) {
 
 function mapAppointmentToViewingRecord(appointment = {}) {
   const participants = Array.isArray(appointment?.participants) ? appointment.participants : []
-  const clientParticipant = participants.find((participant) => {
+  const clientParticipant = participants.find((participant) => String(participant?.participantRole || participant?.participant_role || '').trim().toLowerCase().includes('buyer')) || participants.find((participant) => {
     const role = String(participant?.participantRole || participant?.participant_role || '').trim().toLowerCase()
     return role && role !== 'agent' && role !== 'principal'
   }) || participants.find((participant) => participant?.email || participant?.name) || null
@@ -1293,12 +1298,6 @@ function formatPercentValue(value, digits = 1) {
   const number = Number(value || 0)
   if (!Number.isFinite(number)) return '0%'
   return `${number.toFixed(digits)}%`
-}
-
-function formatSignedPercentValue(value, digits = 1) {
-  const number = Number(value || 0)
-  if (!Number.isFinite(number) || number === 0) return '0%'
-  return `${number > 0 ? '+' : ''}${number.toFixed(digits)}%`
 }
 
 function formatOverviewTimestamp(value) {
@@ -2099,45 +2098,6 @@ function getSellerPortalRecoveryStatusLabel(accessState = null) {
   if (status === 'not_requested') return 'Not requested'
   if (recovery.lastRequestedAt) return `Requested ${formatDateTime(recovery.lastRequestedAt)}`
   return accessState?.passwordSet ? 'Available' : 'Not set'
-}
-
-const SELLER_ONBOARDING_EMAIL_COMMUNICATION_TYPES = new Set([
-  'seller_onboarding_link',
-  'seller_onboarding_link_seller',
-  'seller_portal_link_seller',
-  'seller_onboarding_submitted_agent',
-])
-
-function isSellerOnboardingEmailDelivery(row = {}) {
-  const communicationType = normalizeKey(row.communicationType || row.communication_type || row.type || row.notificationType || row.notification_type)
-  const channel = normalizeKey(row.channel || row.deliveryChannel || row.delivery_channel || row.mode || row.notificationMode || row.notification_mode)
-  if (!SELLER_ONBOARDING_EMAIL_COMMUNICATION_TYPES.has(communicationType)) return false
-  return !channel || channel === 'email'
-}
-
-function buildSellerOnboardingEmailDiagnostics(deliveries = []) {
-  const rows = (Array.isArray(deliveries) ? deliveries : [])
-    .filter(isSellerOnboardingEmailDelivery)
-    .sort((left, right) => {
-      const leftTime = new Date(left.createdAt || left.created_at || left.sentAt || left.sent_at || 0).getTime()
-      const rightTime = new Date(right.createdAt || right.created_at || right.sentAt || right.sent_at || 0).getTime()
-      return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
-    })
-  const failedRows = rows.filter((row) => ['failed', 'error', 'bounced'].includes(normalizeKey(row.status || row.deliveryStatus || row.delivery_status)))
-  const sentRows = rows.filter((row) => ['sent', 'delivered', 'queued'].includes(normalizeKey(row.status || row.deliveryStatus || row.delivery_status)))
-  const latestFailure = failedRows[0] || null
-  const latestFailureMessage = latestFailure
-    ? String(latestFailure.errorMessage || latestFailure.error_message || latestFailure.providerError || latestFailure.provider_error || latestFailure.failureReason || latestFailure.failure_reason || 'Email delivery needs attention.').trim()
-    : ''
-
-  return {
-    rows,
-    totalCount: rows.length,
-    sentCount: sentRows.length,
-    failedCount: failedRows.length,
-    pendingCount: Math.max(0, rows.length - sentRows.length - failedRows.length),
-    latestFailureMessage,
-  }
 }
 
 function statusClass(status) {
@@ -2975,8 +2935,6 @@ function getListingMarketStartDate(listing = {}, draft = {}) {
     listing?.marketed_at,
     listing?.listedAt,
     listing?.listed_at,
-    listing?.mandateStartDate,
-    listing?.createdAt,
   )
 }
 
@@ -3679,6 +3637,7 @@ function AgentListingDetail() {
   const [quickListingError, setQuickListingError] = useState('')
   const [listingChannelActivity, setListingChannelActivity] = useState([])
   const [channelActivityUnavailable, setChannelActivityUnavailable] = useState(false)
+  const [overviewPriceHistoryExpanded, setOverviewPriceHistoryExpanded] = useState(false)
   const [syndicationReviewOpen, setSyndicationReviewOpen] = useState(false)
   const [syndicationReviewLoading, setSyndicationReviewLoading] = useState(false)
   const [syndicationReview, setSyndicationReview] = useState(null)
@@ -3694,7 +3653,7 @@ function AgentListingDetail() {
   const [sellerPortalAccessState, setSellerPortalAccessState] = useState(null)
   const [, setSellerPortalAccessLoading] = useState(false)
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
-  const [sellerPortalSecurityDiagnosticsLoading, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
+  const [, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -3737,6 +3696,7 @@ function AgentListingDetail() {
   const [sellerPortalActivationOpen, setSellerPortalActivationOpen] = useState(false)
   const [sellerPortalActivationDraft, setSellerPortalActivationDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
   const [sellerPortalActivationSending, setSellerPortalActivationSending] = useState(false)
+  const [sellerPortalActivationError, setSellerPortalActivationError] = useState('')
   const [sellerContactEditorOpen, setSellerContactEditorOpen] = useState(false)
   const [sellerContactSaving, setSellerContactSaving] = useState(false)
   const [sellerContactDraft, setSellerContactDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
@@ -3825,13 +3785,13 @@ function AgentListingDetail() {
     bondOriginator: 'Arch9 Finance',
   })
   const [viewings, setViewings] = useState([])
-  const [listingOverviewAnalytics, setListingOverviewAnalytics] = useState(() => createEmptyListingOverviewAnalytics())
+  const [viewingsLoading, setViewingsLoading] = useState(false)
+  const [viewingsError, setViewingsError] = useState('')
 
   const markMarketingDraftDirty = useCallback((dirty = true) => {
     marketingDraftDirtyRef.current = Boolean(dirty)
     setMarketingDraftDirty(Boolean(dirty))
   }, [])
-  const [overviewAnalyticsRefreshTick, setOverviewAnalyticsRefreshTick] = useState(0)
   const [overviewLastRefreshedAt, setOverviewLastRefreshedAt] = useState('')
   const [interestedLeadRows, setInterestedLeadRows] = useState([])
   const [sentPropertyRows, setSentPropertyRows] = useState([])
@@ -3861,6 +3821,9 @@ function AgentListingDetail() {
   const [viewingRequestDraft, setViewingRequestDraft] = useState(() => createListingViewingDraft())
   const [viewingRequestSaving, setViewingRequestSaving] = useState(false)
   const [viewingRequestFeedback, setViewingRequestFeedback] = useState({ kind: '', message: '' })
+  const [selectedViewingId, setSelectedViewingId] = useState('')
+  const [viewingResponseSaving, setViewingResponseSaving] = useState(false)
+  const [viewingResponseFeedback, setViewingResponseFeedback] = useState({ kind: '', message: '' })
   const [showDayCaptureOpen, setShowDayCaptureOpen] = useState(false)
   const [showDayCaptureForm, setShowDayCaptureForm] = useState(() => createShowDayCaptureForm())
   const [showDayCaptureSaving, setShowDayCaptureSaving] = useState(false)
@@ -4228,41 +4191,6 @@ function AgentListingDetail() {
     void refreshInterestedLeads()
   }, [refreshInterestedLeads])
 
-  useEffect(() => {
-    if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
-      setListingOverviewAnalytics(createEmptyListingOverviewAnalytics())
-      return undefined
-    }
-
-    let cancelled = false
-    setListingOverviewAnalytics((previous) => ({ ...previous, loading: true, error: '' }))
-    getListingOverviewAnalytics({
-      organisationId: listingOrganisationId,
-      listingId: listingRecord.id,
-      days: 30,
-    })
-      .then((analytics) => {
-        if (!cancelled) {
-          setListingOverviewAnalytics({ ...analytics, loading: false, error: '' })
-          setOverviewLastRefreshedAt(new Date().toISOString())
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          setListingOverviewAnalytics({
-            ...createEmptyListingOverviewAnalytics(),
-            loading: false,
-            error: error?.message || 'Listing analytics are unavailable.',
-          })
-          setOverviewLastRefreshedAt(new Date().toISOString())
-        }
-      })
-
-    return () => {
-      cancelled = true
-    }
-  }, [listingOrganisationId, listingRecord?.id, overviewAnalyticsRefreshTick])
-
   const refreshSentProperties = useCallback(async () => {
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
       setSentPropertyRows([])
@@ -4296,14 +4224,6 @@ function AgentListingDetail() {
   useEffect(() => {
     void refreshSentProperties()
   }, [refreshSentProperties])
-
-  const refreshListingOverview = useCallback(() => {
-    void loadListingData({ showLoading: false })
-    void refreshInterestedLeads()
-    void refreshSentProperties()
-    setOffersRefreshTick((value) => value + 1)
-    setOverviewAnalyticsRefreshTick((value) => value + 1)
-  }, [loadListingData, refreshInterestedLeads, refreshSentProperties])
 
   const refreshSellerNotificationDelivery = useCallback(async () => {
     if (!listingOrganisationId || !sellerLeadId || !listingRecord?.id || !isSupabaseConfigured) {
@@ -4393,6 +4313,8 @@ function AgentListingDetail() {
     if (!listingId) return
     const localRows = isUnsafeFallbackAllowed() ? getViewingRequestsForListing(listingId) : []
     let appointmentRows = []
+    setViewingsLoading(true)
+    setViewingsError('')
     if (listingOrganisationId && isSupabaseConfigured) {
       try {
         const appointments = await listAppointmentsAsync(listingOrganisationId, {
@@ -4400,14 +4322,47 @@ function AgentListingDetail() {
           listingId,
         })
         appointmentRows = (Array.isArray(appointments) ? appointments : [])
-          .filter((appointment) => String(appointment?.listingId || appointment?.listing_id || '') === String(listingId))
+          .filter((appointment) => String(appointment?.listingId || appointment?.listing_id || '') === String(listingId) &&
+            String(appointment?.appointmentType || appointment?.appointment_type || '').trim().toLowerCase().includes('view'))
           .map(mapAppointmentToViewingRecord)
+        if (appointmentRows.length) {
+          const appointmentIds = appointmentRows.map((row) => row.appointment_id).filter(Boolean)
+          const { data: rounds, error: roundsError } = await supabase.from('listing_viewing_rounds')
+            .select('appointment_id,round_number,booking_source,status')
+            .eq('organisation_id', listingOrganisationId)
+            .in('appointment_id', appointmentIds)
+          if (roundsError) console.warn('[AgentListingDetail] viewing round details unavailable.', roundsError)
+          const latestRounds = new Map()
+          for (const round of rounds || []) {
+            const previous = latestRounds.get(round.appointment_id)
+            if (!previous || round.round_number > previous.round_number) latestRounds.set(round.appointment_id, round)
+          }
+          appointmentRows = appointmentRows.map((row) => ({
+            ...row,
+            managed_round_number: latestRounds.get(row.appointment_id)?.round_number || null,
+            booking_source: latestRounds.get(row.appointment_id)?.booking_source || '',
+          }))
+        }
       } catch (error) {
         console.warn('[AgentListingDetail] listing appointments load failed.', error)
+        setViewingsError(error?.message || 'Viewing appointments could not be loaded.')
+        setViewingsLoading(false)
+        return
       }
     }
     setViewings(mergeAppointmentAndLocalViewings(appointmentRows, localRows))
+    setViewingsLoading(false)
   }, [listingId, listingOrganisationId])
+
+  const refreshListingOverview = useCallback(async () => {
+    await Promise.allSettled([
+      loadListingData({ showLoading: false }),
+      refreshInterestedLeads(),
+      refreshListingViewings(),
+      refreshSentProperties(),
+    ])
+    setOverviewLastRefreshedAt(new Date().toISOString())
+  }, [loadListingData, refreshInterestedLeads, refreshListingViewings, refreshSentProperties])
 
   useEffect(() => {
     if (!listingId) return undefined
@@ -4431,11 +4386,6 @@ function AgentListingDetail() {
     propertyShares: sentPropertyRows,
     communicationDeliveries: communicationDeliveryRows,
   }), [canonicalListingOffers, communicationDeliveryRows, interestedLeadRows, sentPropertyRows, viewings])
-  const sellerOnboardingEmailDiagnostics = useMemo(
-    () => buildSellerOnboardingEmailDiagnostics(communicationDeliveryRows),
-    [communicationDeliveryRows],
-  )
-
   useEffect(() => {
     if (!listingRecord) return
     const nextListingId = String(listingRecord.id || listingId || '').trim()
@@ -4845,6 +4795,7 @@ function AgentListingDetail() {
           ? listingRecord.publicationData.amenities
           : []
     const normalizedPrice = Number(String(draft.price ?? '').replace(/[^0-9.-]/g, '')) || 0
+    const previousAskingPrice = Number(listingRecord?.askingPrice || listingRecord?.asking_price || 0) || 0
     const priceOnApplication = normalizeKey(draft.pricePresentation) === 'poa'
     if (!priceOnApplication && normalizedPrice <= 0) {
       const error = new Error('Enter a listing price or choose Price on application before saving or checking Property24.')
@@ -5002,11 +4953,31 @@ function AgentListingDetail() {
       if (verifiedListing?.id) {
         setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(verifiedListing, mergedSavedListing)))
       }
+      let priceHistoryIssue = false
+      if (!options.skipPriceHistory && previousAskingPrice > 0 && normalizedPrice > 0 && previousAskingPrice !== normalizedPrice) {
+        try {
+          const priceActivity = await createPrivateListingActivity({
+            privateListingId: updatedListing.id,
+            activityType: 'listing_price_changed',
+            activityTitle: normalizedPrice < previousAskingPrice ? 'Asking price reduced' : 'Asking price updated',
+            activityDescription: `Asking price changed from ${formatMoneyValue(previousAskingPrice)} to ${formatMoneyValue(normalizedPrice)}.`,
+            performedBy: profile?.id || null,
+            visibility: 'internal',
+            metadata: { action: 'pricing_edit', previousPrice: previousAskingPrice, nextPrice: normalizedPrice },
+          })
+          if (!priceActivity?.id) throw new Error('Price history could not be recorded.')
+          setListingChannelActivity((rows) => [priceActivity, ...rows])
+        } catch (activityError) {
+          console.warn('[AgentListingDetail] pricing history activity failed', activityError)
+          priceHistoryIssue = true
+          setChannelActivityUnavailable(true)
+        }
+      }
       await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(effectiveDraft), { incrementListingCount: false })
       markMarketingDraftDirty(false)
       hydratedMarketingListingIdRef.current = String(mergedSavedListing?.id || updatedListing.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
-      setDetailMessage(options.successMessage || 'Listing details saved.')
+      setDetailMessage(priceHistoryIssue ? 'Listing price saved, but pricing history could not be recorded. Please retry or contact support.' : options.successMessage || 'Listing details saved.')
       return { ok: true, listing: mergedSavedListing, distributionSync }
     } catch (error) {
       console.error('[AgentListingDetail] Supabase listing save failed', error)
@@ -5258,7 +5229,7 @@ function AgentListingDetail() {
     setQuickListingResults([])
     const results = []
     try {
-      const saved = await saveMarketingDraft(nextDraft, { successMessage: '' })
+      const saved = await saveMarketingDraft(nextDraft, { successMessage: '', skipPriceHistory: isPriceChange })
       if (saved?.ok === false || saved?.localOnly) throw saved?.error || new Error('Arch9 could not save this change to the live listing.')
       results.push({ channel: 'Arch9', status: 'saved', detail: isPriceChange ? `${formatMoneyValue(previousPrice)} → ${formatMoneyValue(nextPrice)}` : isSold ? 'Listing marked sold.' : 'Listing marked under offer.' })
       setQuickListingResults([...results])
@@ -9130,7 +9101,6 @@ function AgentListingDetail() {
     const acceptedCount = offerRows.filter((offer) =>
       [OFFER_WORKFLOW_STATUS.ACCEPTED, OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION].includes(normalizeOfferWorkflowStatus(offer?.status)),
     ).length
-    const estimatedViews = leadCount * 6 + activeOffers * 8 + 12
     return {
       pendingOffers,
       activeOffers,
@@ -9142,7 +9112,6 @@ function AgentListingDetail() {
       viewingCount,
       offerLeadCount,
       acceptedCount,
-      estimatedViews,
     }
   }, [listingLeadRows, listingRecord, marketingDraft, offerRows, viewings])
 
@@ -9507,6 +9476,10 @@ function AgentListingDetail() {
   const listingSellerDocumentSummary = useMemo(
     () => buildListingSellerDocumentsSummary(sellerDocumentExperienceItems),
     [sellerDocumentExperienceItems],
+  )
+  const listingSellerDocumentProgress = useMemo(
+    () => buildListingSellerDocumentProgress(listingSellerDocumentSummary, sellerDocumentSource?.requirementState),
+    [listingSellerDocumentSummary, sellerDocumentSource?.requirementState],
   )
   const sellerDocumentDeliveryIndex = useMemo(
     () => buildListingSellerDocumentDeliveryIndex(sellerDocumentDeliveries),
@@ -10291,72 +10264,15 @@ function AgentListingDetail() {
   }, [listingRecord, marketingDraft, sellerFormData])
 
   const listingPerformance = useMemo(() => {
-    const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
     const areaAverageDays = Number(listingRecord?.market?.areaAverageDaysOnMarket || listingRecord?.areaAverageDaysOnMarket || 0)
-    const canonicalPerformance = buildListingOverviewPerformance({
-      analytics: listingOverviewAnalytics,
+    return buildListingOverviewPerformance({
       leads: listingLeadRows,
       viewings,
       daysOnMarket: metrics.daysOnMarket,
       marketStartDate: metrics.marketStartDate,
       areaAverageDays,
     })
-    const qualifiedLeads = listingLeadRows.filter((lead) => {
-      const stage = getLeadStage(lead)
-      return ['qualified', 'viewing', 'offer', 'negotiating', 'converted'].some((token) => stage.includes(token))
-    }).length
-    const convertedLeads = listingLeadRows.filter((lead) => {
-      const stage = getLeadStage(lead)
-      return stage.includes('converted') || stage.includes('sold') || stage.includes('transaction')
-    }).length || metrics.acceptedCount
-    const noShows = viewings.filter((item) => String(item?.status || '').trim().toLowerCase() === VIEWING_STATUS.NO_SHOW).length
-    const averageOffer = metrics.offerAverage || 0
-    const highestOffer = metrics.highestOffer || offerSummary.highest || 0
-    const offerToAskRatio = askingPrice && averageOffer ? (averageOffer / askingPrice) * 100 : askingPrice && highestOffer ? (highestOffer / askingPrice) * 100 : 0
-    const daysDelta = areaAverageDays ? ((areaAverageDays - metrics.daysOnMarket) / areaAverageDays) * 100 : 0
-    return {
-      ...canonicalPerformance,
-      qualifiedLeads,
-      convertedLeads,
-      noShows,
-      offerCount: offerRows.length,
-      highestOffer,
-      averageOffer,
-      offerToAskRatio,
-      daysOnMarket: metrics.daysOnMarket,
-      marketStartDate: metrics.marketStartDate,
-      areaAverageDays,
-      daysPerformance: daysDelta,
-      acceptedSales: metrics.acceptedCount,
-      pendingOffers: metrics.pendingOffers,
-    }
-  }, [listingLeadRows, listingOverviewAnalytics, listingRecord, marketingDraft.price, metrics, offerRows.length, offerSummary.highest, viewings])
-
-  const offerPriceOverview = useMemo(() => {
-    const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
-    const timestampFor = (offer) => {
-      const timestamp = new Date(offer?.offerDate || offer?.submittedAt || offer?.updatedAt || offer?.updated_at || offer?.createdAt || offer?.created_at || 0).getTime()
-      return Number.isFinite(timestamp) ? timestamp : 0
-    }
-    const latestOffer = [...offerRows].sort((left, right) => timestampFor(right) - timestampFor(left))[0] || null
-    const latestOfferAmount = Number(latestOffer?.offerPrice || 0) || 0
-    const highestOffer = listingPerformance.highestOffer || 0
-    const averageOffer = listingPerformance.averageOffer || 0
-    const comparisonBase = Math.max(askingPrice, highestOffer, averageOffer, latestOfferAmount, 1)
-    const differenceToAsking = highestOffer && askingPrice ? highestOffer - askingPrice : 0
-    return {
-      askingPrice,
-      highestOffer,
-      latestOffer: latestOfferAmount,
-      averageOffer,
-      offerCount: listingPerformance.offerCount,
-      differenceToAsking,
-      askingFill: (askingPrice / comparisonBase) * 100,
-      highestFill: (highestOffer / comparisonBase) * 100,
-      averageFill: (averageOffer / comparisonBase) * 100,
-      latestFill: (latestOfferAmount / comparisonBase) * 100,
-    }
-  }, [listingPerformance, listingRecord?.askingPrice, marketingDraft.price, offerRows])
+  }, [listingLeadRows, listingRecord, metrics.daysOnMarket, metrics.marketStartDate, viewings])
 
   const overviewBuyerActivity = useMemo(() => {
     const timestampFor = (value) => {
@@ -10390,41 +10306,33 @@ function AgentListingDetail() {
         timestamp: viewing?.updated_at || viewing?.updatedAt || viewing?.created_at || viewing?.createdAt || viewing?.proposed_date,
       })
     })
-    offerRows.forEach((offer) => {
-      events.push({
-        id: `offer-${offer?.id || offer?.offerId || events.length}`,
-        buyerName: offer?.buyerName || offer?.buyerLeadName || 'Buyer',
-        event: 'Offer submitted',
-        source: offer?.offerPrice ? formatMoneyValue(offer.offerPrice) : '',
-        timestamp: offer?.offerDate || offer?.submittedAt || offer?.updatedAt || offer?.updated_at || offer?.createdAt || offer?.created_at,
-      })
-    })
     return events
       .filter((event) => timestampFor(event.timestamp))
       .sort((left, right) => timestampFor(right.timestamp) - timestampFor(left.timestamp))
       .slice(0, 5)
-  }, [listingLeadRows, offerRows, viewings])
+  }, [listingLeadRows, viewings])
 
   const overviewUpcomingViewings = useMemo(() => {
     const timestampFor = (viewing) => {
       const scheduleValue = [viewing?.proposed_date, viewing?.proposed_time].filter(Boolean).join(' ')
-      const timestamp = new Date(scheduleValue || viewing?.created_at || viewing?.createdAt || 0).getTime()
+      const timestamp = new Date(scheduleValue || 0).getTime()
       return Number.isFinite(timestamp) ? timestamp : 0
     }
     const upcomingStatuses = [
       VIEWING_STATUS.CONFIRMED,
       VIEWING_STATUS.PENDING_APPROVAL,
       VIEWING_STATUS.RESCHEDULE_REQUESTED,
-      VIEWING_STATUS.VIEWING_REQUESTED,
+      VIEWING_STATUS.REQUESTED,
     ]
     return viewings
-      .filter((viewing) => upcomingStatuses.includes(String(viewing?.status || '').trim().toLowerCase()))
+      .filter((viewing) => upcomingStatuses.includes(String(viewing?.status || '').trim().toLowerCase()) && timestampFor(viewing) >= Date.now())
       .map((viewing) => {
         const dateLabel = viewing?.proposed_date ? formatOverviewTimestamp([viewing.proposed_date, viewing.proposed_time].filter(Boolean).join(' ')) : 'Date pending'
         return {
           id: viewing?.viewing_id || viewing?.id || `${viewing?.buyer_name || 'buyer'}-${dateLabel}`,
           buyerName: viewing?.buyer_name || viewing?.buyerName || 'Buyer',
-          status: viewing?.status || VIEWING_STATUS.VIEWING_REQUESTED,
+          status: viewing?.status || VIEWING_STATUS.REQUESTED,
+          participants: viewing?.participants || [],
           dateLabel,
           timestamp: timestampFor(viewing),
         }
@@ -10432,6 +10340,7 @@ function AgentListingDetail() {
       .sort((left, right) => left.timestamp - right.timestamp)
       .slice(0, 4)
   }, [viewings])
+  const selectedViewing = useMemo(() => viewings.find((viewing) => String(viewing?.viewing_id || viewing?.id) === selectedViewingId) || null, [viewings, selectedViewingId])
 
   const sellerPortalLifecycleStatus = useMemo(
     () => resolveSellerPortalLifecycle({
@@ -10441,19 +10350,6 @@ function AgentListingDetail() {
     }),
     [listingRecord, sellerPortalAccessState, sellerPortalSecurityDiagnostics],
   )
-  const sellerPortalMandateEvidenceReady = useMemo(
-    () => Boolean(isSellerPortalInviteReadyAfterSignedMandate(listingRecord, {
-      mandateSigned: mandateWorkspace?.isSigned || mandateWorkspace?.signedDate,
-    })),
-    [listingRecord, mandateWorkspace?.isSigned, mandateWorkspace?.signedDate],
-  )
-  const sellerPortalPhysicalDocsReportedHeld = useMemo(
-    () => Boolean((directListingOperationalSummary.declarations || []).find((row) =>
-      row.key === 'mandate' && row.held === true,
-    )),
-    [directListingOperationalSummary.declarations],
-  )
-
   const sellerFicaOverview = useMemo(() => {
     const ficaField = sellerProfile.sections
       .find((section) => section.key === 'compliance')?.rows
@@ -10464,29 +10360,7 @@ function AgentListingDetail() {
     })
   }, [sellerDocuments, sellerProfile.sections])
 
-  const sellerPortalSecurityOverview = useMemo(() => buildSellerPortalSecurityOverview({
-    loading: sellerPortalSecurityDiagnosticsLoading,
-    portalToken: resolveSellerPortalTokenFromListing(listingRecord),
-    portalStatus: sellerPortalLifecycleStatus,
-    diagnostics: sellerPortalSecurityDiagnostics,
-  }), [listingRecord, sellerPortalLifecycleStatus, sellerPortalSecurityDiagnostics, sellerPortalSecurityDiagnosticsLoading])
-
-  const sellerEmailDeliveryOverview = useMemo(() => buildSellerEmailDeliveryOverview(
-    sellerOnboardingEmailDiagnostics,
-    { loading: sentPropertiesLoading, error: sentPropertiesError },
-  ), [sellerOnboardingEmailDiagnostics, sentPropertiesError, sentPropertiesLoading])
-
   const overviewSellerSnapshot = useMemo(() => {
-    const lastOfferShare = offerRows.find((offer) => offer?.sentToSellerAt || normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.SELLER_REVIEW)
-    const onboarding = listingRecord?.sellerOnboarding || {}
-    const lastSellerContact = resolveSellerLastContact([
-      lastOfferShare?.sentToSellerAt,
-      listingRecord?.sellerReport?.lastSentAt,
-      onboarding.invitationLastSentAt,
-      onboarding.invitationSentAt,
-      onboarding.inviteCreatedAt,
-      ...sellerOnboardingEmailDiagnostics.rows.map((row) => row.sentAt || row.sent_at || row.createdAt || row.created_at),
-    ])
     const portalToken = resolveSellerPortalTokenFromListing(listingRecord)
     const portalActivated = ['activated', 'profile_complete', 'transaction_ready'].includes(normalizeKey(sellerPortalLifecycleStatus))
     const mandateExpired = mandateWorkspace.isExpired
@@ -10497,8 +10371,6 @@ function AgentListingDetail() {
       !portalActivated ? 'Seller Portal' : '',
       !sellerFicaOverview.complete ? 'FICA' : '',
       !mandateWorkspace.isSigned || mandateExpired ? 'Mandate' : '',
-      sellerPortalSecurityOverview.status === 'attention' ? 'Portal security' : '',
-      sellerEmailDeliveryOverview.status === 'attention' ? 'Email delivery' : '',
     ].filter(Boolean)
     return {
       name: resolveSellerNameFromListing(listingRecord) || sellerProfile.name || 'Seller pending',
@@ -10514,59 +10386,80 @@ function AgentListingDetail() {
       mandateStatus: mandateExpired ? 'Expired' : mandateWorkspace.isSigned ? 'Signed' : mandateWorkspace.label || 'Draft',
       mandateStatusKey: mandateExpired ? 'expired' : mandateWorkspace.isSigned ? 'signed' : mandateWorkspace.status,
       mandateExpiry: mandateWorkspace.expiryDate ? formatDate(mandateWorkspace.expiryDate) : 'Not captured',
-      lastContact: lastSellerContact ? formatOverviewTimestamp(lastSellerContact) : 'No recorded seller contact',
       attentionItems,
       ready: attentionItems.length === 0,
     }
-  }, [listingRecord, mandateWorkspace, offerRows, sellerEmailDeliveryOverview.status, sellerFicaOverview, sellerOnboardingEmailDiagnostics.rows, sellerPortalAccessState, sellerPortalLifecycleStatus, sellerPortalSecurityOverview.status, sellerProfile.name])
+  }, [listingRecord, mandateWorkspace, sellerFicaOverview, sellerPortalAccessState, sellerPortalLifecycleStatus, sellerProfile.name])
 
-  const overviewMarketingSnapshot = useMemo(() => {
-    const portalRows = [
-      ['Property24', marketingDraft.property24Status, marketingDraft.property24ListingUrl || marketingDraft.property24Reference],
-      ['Private Property', marketingDraft.privatePropertyStatus, marketingDraft.privatePropertyListingUrl || marketingDraft.privatePropertyReference],
-      ['Arch9', marketingDraft.bridgeListingStatus || marketingDraft.publicationStatus, arch9PublicListingUrl || marketingDraft.bridgeListingPublicUrl],
-    ]
-      .filter(([, status, reference]) => normalizeKey(status) !== 'not_published' || reference)
-      .map(([label, status, reference]) => ({
-        label,
-        value: normalizeKey(status) === 'not_published' && reference ? 'Linked' : formatStatusLabel(status || 'not_published'),
-        status: normalizeKey(status) === 'published' || normalizeKey(status) === 'live' || normalizeKey(status) === 'active' ? 'published' : 'pending',
-        href: /^https?:\/\//i.test(String(reference || '').trim()) ? String(reference).trim() : '',
-      }))
-    return {
-      portalRows,
-      rows: [
-        ...portalRows,
-        { label: 'Photos', value: `${marketingDraft.galleryImages.length} uploaded`, status: marketingDraft.galleryImages.length ? 'complete' : 'pending' },
-        { label: 'Description', value: marketingDraft.description.trim() ? 'Ready' : 'Needs improvement', status: marketingDraft.description.trim() ? 'complete' : 'pending' },
-      ].slice(0, 5),
-    }
-  }, [arch9PublicListingUrl, marketingDraft])
+  const listingWithdrawnForChannels = normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus || listingRecord?.status) === 'withdrawn'
+  const property24OverviewUpdate = channelUpdateStates.Property24?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(property24StatusKey)
+    ? { status: 'needs_attention' }
+    : channelUpdateStates.Property24
+  const privatePropertyOverviewUpdate = channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
+    ? { status: 'needs_attention' }
+    : channelUpdateStates['Private Property']
+  const overviewPublishedChannels = [
+    buildListingChannelPublicationDisplay({
+      key: 'property24', label: 'Property24', live: property24Published,
+      reference: property24Reference,
+      publicUrl: marketingDraft.property24ListingUrl || listingRecord?.property24ListingUrl || listingRecord?.property24_listing_url,
+      publicationState: listingPublicationStates.property24,
+      updateState: property24OverviewUpdate,
+      activityAvailable: !channelActivityUnavailable || !property24HasReference,
+      actionBusy: Boolean(property24Action), withdrawn: listingWithdrawnForChannels,
+      submitted: property24HasReference && !property24Published && !['expired', 'removed', 'withdrawn'].includes(property24StatusKey),
+      issueCount: Math.max(property24ReadinessIssues.length, property24SandboxAgentIdPending || property24HasPreviewBlockers ? 1 : 0),
+    }),
+    buildListingChannelPublicationDisplay({
+      key: 'private_property', label: 'Private Property', live: privatePropertyPortalLive,
+      reference: privatePropertyPortalReference,
+      publicUrl: privatePropertyPortalUrl || listingRecord?.privatePropertyListingUrl || listingRecord?.private_property_listing_url,
+      publicationState: listingPublicationStates.private_property,
+      updateState: privatePropertyOverviewUpdate,
+      activityAvailable: !channelActivityUnavailable || !privatePropertyHasChannel,
+      actionBusy: Boolean(privatePropertyAction), withdrawn: listingWithdrawnForChannels,
+      submitted: Boolean(privatePropertyPortalReference || privatePropertyExternalStatus) && ['submitted', 'draft', 'pending'].includes(privatePropertyExternalStatus || privatePropertyStatusKey),
+      issueCount: Math.max(privatePropertyReadinessIssues.length, privatePropertyHasPreviewBlockers ? 1 : 0),
+    }),
+    buildListingChannelPublicationDisplay({
+      key: 'arch9_catalogue', label: 'Arch9', live: arch9IsPublished,
+      publicUrl: arch9PublicListingUrl,
+      publicationState: listingPublicationStates.arch9_catalogue,
+      withdrawn: listingWithdrawnForChannels,
+    }),
+  ]
 
-  const overviewPricePosition = useMemo(() => {
-    const percentageDifference = offerPriceOverview.differenceToAsking && offerPriceOverview.askingPrice
-      ? (offerPriceOverview.differenceToAsking / offerPriceOverview.askingPrice) * 100
-      : 0
-    return {
-      ...offerPriceOverview,
-      percentageDifference,
-      differenceLabel: offerPriceOverview.offerCount && offerPriceOverview.askingPrice
-        ? `${offerPriceOverview.differenceToAsking > 0 ? '+' : ''}${formatMoneyValue(offerPriceOverview.differenceToAsking)} (${formatSignedPercentValue(percentageDifference)})`
-        : '—',
-    }
-  }, [offerPriceOverview])
+  const overviewPricePosition = useMemo(() => buildListingOverviewPricePosition({
+    listing: listingRecord,
+    draft: marketingDraft,
+    activityRows: listingChannelActivity,
+    activityAvailable: !channelActivityUnavailable,
+  }), [listingRecord, marketingDraft, listingChannelActivity, channelActivityUnavailable])
+  const overviewPropertyFacts = useMemo(() => {
+    const property = listingRecord?.propertyDetails || listingRecord?.property_details || {}
+    const bedrooms = firstDraftValue(property.bedrooms, listingRecord?.bedrooms, marketingDraft.bedrooms)
+    const bathrooms = firstDraftValue(property.bathrooms, listingRecord?.bathrooms, marketingDraft.bathrooms)
+    const floorSize = firstDraftValue(property.floorSize, listingRecord?.floorSize, marketingDraft.floorSize)
+    const erfSize = firstDraftValue(property.erfSize, listingRecord?.erfSize, marketingDraft.erfSize)
+    const parkingBays = firstDraftValue(property.parkingBays, listingRecord?.parkingBays, marketingDraft.parkingBays)
+    return [
+      bedrooms ? `${bedrooms} bed` : '',
+      bathrooms ? `${bathrooms} bath` : '',
+      floorSize ? `${floorSize} m² floor` : '',
+      erfSize ? `${erfSize} m² erf` : '',
+      parkingBays ? `${parkingBays} parking` : '',
+    ].filter(Boolean)
+  }, [listingRecord, marketingDraft])
 
   const overviewReliability = useMemo(() => {
     const issues = [
-      listingOverviewAnalytics.error ? 'View analytics' : '',
       interestedLeadsError ? 'Buyer leads' : '',
-      canonicalOffersError ? 'Offers' : '',
+      viewingsError ? 'Viewings' : '',
       sentPropertiesError ? 'Seller communications' : '',
     ].filter(Boolean)
     const refreshing = Boolean(
-      listingOverviewAnalytics.loading ||
       interestedLeadsLoading ||
-      canonicalOffersLoading ||
+      viewingsLoading ||
       sentPropertiesLoading
     )
     return {
@@ -10579,7 +10472,7 @@ function AgentListingDetail() {
           : 'Overview up to date',
       status: refreshing ? 'pending' : issues.length ? 'attention' : 'complete',
     }
-  }, [canonicalOffersError, canonicalOffersLoading, interestedLeadsError, interestedLeadsLoading, listingOverviewAnalytics.error, listingOverviewAnalytics.loading, sentPropertiesError, sentPropertiesLoading])
+  }, [interestedLeadsError, interestedLeadsLoading, sentPropertiesError, sentPropertiesLoading, viewingsError, viewingsLoading])
 
   const sellerPortalActivationPreview = useMemo(
     () => buildSellerPortalInvitationPreview({
@@ -10594,14 +10487,16 @@ function AgentListingDetail() {
 
   function openSellerPortalActivationModal() {
     const canonicalFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
-    const nameParts = resolveSellerNameFromListing(listingRecord).split(/\s+/).filter(Boolean)
+    const individualSeller = ['individual', 'married', 'foreign_individual'].includes(normalizeKey(listingRecord?.sellerType))
+    const nameParts = toCleanText(canonicalFacts.primaryContactName || (individualSeller ? resolveSellerNameFromListing(listingRecord) : '')).split(/\s+/).filter(Boolean)
     setSellerPortalActivationDraft({
-      firstName: toCleanText(canonicalFacts.firstName || sellerFormData?.sellerFirstName || sellerFormData?.firstName || nameParts[0]),
-      lastName: toCleanText(canonicalFacts.lastName || sellerFormData?.sellerSurname || sellerFormData?.lastName || nameParts.slice(1).join(' ')),
+      firstName: toCleanText(individualSeller ? (canonicalFacts.firstName || sellerFormData?.sellerFirstName || sellerFormData?.firstName || nameParts[0]) : nameParts[0]),
+      lastName: toCleanText(individualSeller ? (canonicalFacts.lastName || sellerFormData?.sellerSurname || sellerFormData?.lastName || nameParts.slice(1).join(' ')) : nameParts.slice(1).join(' ')),
       email: resolveSellerEmailFromListing(listingRecord),
       phone: resolveSellerPhoneFromListing(listingRecord),
     })
     setSellerPortalActivationOpen(true)
+    setSellerPortalActivationError('')
     setDetailError('')
     setDetailMessage('')
   }
@@ -10617,30 +10512,38 @@ function AgentListingDetail() {
     const lastName = toCleanText(sellerPortalActivationDraft.lastName)
     const email = toCleanText(sellerPortalActivationDraft.email).toLowerCase()
     const phone = toCleanText(sellerPortalActivationDraft.phone)
+    if (sellerOwnershipUnidentified) {
+      setSellerPortalActivationError('Confirm the seller entity type in Seller setup before sending an invitation.')
+      return
+    }
+    if (!firstName) {
+      setSellerPortalActivationError('Add the name of the seller representative who should receive this invitation.')
+      return
+    }
     if (!isValidEmail(email)) {
-      setDetailError('Add a valid seller email before sending the Seller Portal invitation.')
+      setSellerPortalActivationError('Add a valid email for the seller representative.')
       return
     }
     if (!isSupabaseConfigured || !isUuidLike(listingRecord.id)) {
-      setDetailError('Seller Portal activation requires a Supabase-backed listing.')
-      return
-    }
-    if (!sellerPortalMandateEvidenceReady) {
-      setDetailError('Upload the signed mandate before activating the Seller Portal.')
+      setSellerPortalActivationError('Seller Portal activation requires a saved listing.')
       return
     }
 
     setSellerPortalActivationSending(true)
+    setSellerPortalActivationError('')
     setDetailError('')
     setDetailMessage('')
     try {
       const sellerCanonicalFacts = {
         ...(listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}),
-        firstName,
-        lastName,
-        sellerName: [firstName, lastName].filter(Boolean).join(' '),
-        name: [firstName, lastName].filter(Boolean).join(' '),
-        fullName: [firstName, lastName].filter(Boolean).join(' '),
+        ...(['individual', 'married', 'foreign_individual'].includes(normalizeKey(listingRecord?.sellerType)) ? {
+          firstName, lastName, sellerName: [firstName, lastName].filter(Boolean).join(' '),
+          name: [firstName, lastName].filter(Boolean).join(' '),
+          fullName: [firstName, lastName].filter(Boolean).join(' '),
+        } : {}),
+        primaryContactName: [firstName, lastName].filter(Boolean).join(' '),
+        primaryContactEmail: email,
+        primaryContactPhone: phone,
         email,
         sellerEmail: email,
         phone,
@@ -10649,8 +10552,6 @@ function AgentListingDetail() {
         sellerPortalActivationContext: {
           source: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
           existingListingShortcut: true,
-          mandateEvidenceRecorded: sellerPortalMandateEvidenceReady,
-          directListingDeclarationMandateHeld: sellerPortalPhysicalDocsReportedHeld,
           capturedAt: new Date().toISOString(),
           capturedBy: profile?.id || profile?.email || '',
         },
@@ -10665,12 +10566,13 @@ function AgentListingDetail() {
         sellerCanonicalFacts,
         sellerCanonicalFactReadiness,
         sellerCanonicalFactsUpdatedAt: new Date().toISOString(),
-      }, { includeRequirementsAndDocuments: false }).catch(() => null)
+      }, { includeRequirementsAndDocuments: false })
 
       const result = await activateSellerPortalForListing({
         listingId: listingRecord.id,
         activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
         sellerContactEmail: email,
+        sellerContactName: [firstName, lastName].filter(Boolean).join(' '),
         sellerContactPhone: phone,
         sellerFirstName: firstName,
         sellerSurname: lastName,
@@ -10683,11 +10585,8 @@ function AgentListingDetail() {
         propertyAddress: listingRecord?.propertyAddress || listingRecord?.formattedAddress || listingRecord?.listingTitle || listingRecord?.title || 'your property',
       })
 
-      if (typeof navigator !== 'undefined' && result?.portalLink) {
-        void navigator.clipboard?.writeText(result.portalLink)
-      }
       setSellerPortalActivationOpen(false)
-      setDetailMessage(`Seller Portal invitation sent to ${email}. Link copied.`)
+      setDetailMessage(`Seller Portal invitation sent to ${email}.`)
       await loadListingData()
       const token = resolveSellerPortalTokenFromListing(listingRecord)
       if (token) {
@@ -10696,7 +10595,7 @@ function AgentListingDetail() {
           .catch(() => null)
       }
     } catch (error) {
-      setDetailError(error?.message || 'Unable to send the Seller Portal invitation.')
+      setSellerPortalActivationError(error?.message || 'Unable to send the Seller Portal invitation.')
     } finally {
       setSellerPortalActivationSending(false)
     }
@@ -11639,7 +11538,10 @@ function AgentListingDetail() {
       lastName: selectedLead?.lastName || selectedLead?.last_name || name.lastName,
       phone: selectedLead?.phone || '',
       email: selectedLead?.email || '',
-      sendToSeller: Boolean(sellerViewingContact.email),
+      sellerName: sellerViewingContact.name,
+      sellerEmail: sellerViewingContact.email,
+      sellerPhone: sellerViewingContact.phone,
+      sendToSeller: true,
     }))
     setViewingRequestFeedback({ kind: '', message: '' })
     setDetailError('')
@@ -11659,6 +11561,12 @@ function AgentListingDetail() {
         proposedDate: previous.proposedDate,
         proposedTime: previous.proposedTime,
         notes: previous.notes,
+        mode: previous.mode,
+        sellerName: previous.sellerName,
+        sellerEmail: previous.sellerEmail,
+        sellerPhone: previous.sellerPhone,
+        bookingConfirmedWithAll: previous.bookingConfirmedWithAll,
+        bookingConfirmationNote: previous.bookingConfirmationNote,
         sendToSeller: previous.sendToSeller,
       }))
       return
@@ -11671,7 +11579,7 @@ function AgentListingDetail() {
       lastName: lead.lastName || lead.last_name || name.lastName,
       phone: lead.phone || '',
       email: lead.email || '',
-      sendToBuyer: Boolean(lead.email),
+      sendToBuyer: true,
     }))
   }
 
@@ -11845,20 +11753,45 @@ function AgentListingDetail() {
         organisationId: listingOrganisationId,
         listing: listingRecord,
         buyer: viewingRequestDraft,
-        seller: sellerViewingContact,
+        seller: { name: viewingRequestDraft.sellerName, email: viewingRequestDraft.sellerEmail, phone: viewingRequestDraft.sellerPhone },
         existingLead,
         actor: listingActor,
       })
       await refreshListingBuyerData()
       setViewingRequestModalOpen(false)
       setViewingRequestDraft(createListingViewingDraft())
-      const recipients = [viewingRequestDraft.sendToBuyer ? 'buyer' : '', viewingRequestDraft.sendToSeller ? 'seller' : ''].filter(Boolean).join(' and ')
-      setDetailMessage(`Viewing request created and sent to the ${recipients}.${result.warning ? ` ${result.warning}` : ''}`)
+      setDetailMessage(`${viewingRequestDraft.mode === 'book' ? 'Viewing booked; confirmation emails queued' : 'Viewing request created for the buyer, seller and agent'}.${result.warning ? ` ${result.warning}` : ''}`)
     } catch (error) {
       console.warn('[AgentListingDetail] canonical viewing request failed', error)
       setViewingRequestFeedback({ kind: 'error', message: error?.message || 'Unable to create the viewing request.' })
     } finally {
       setViewingRequestSaving(false)
+    }
+  }
+
+  async function respondToSelectedViewing(action, proposal = {}) {
+    const agentParticipant = selectedViewing?.participants?.find((participant) => participant.role === 'agent')
+    if (!selectedViewing?.managed_round_number || !agentParticipant?.participant_id) return
+    const contract = buildAppointmentRsvpContract({ action, ...proposal })
+    if (!contract.isValid) {
+      setViewingResponseFeedback({ kind: 'error', message: contract.errors[0]?.message || 'Check the proposed viewing time.' })
+      return
+    }
+    setViewingResponseSaving(true)
+    setViewingResponseFeedback({ kind: '', message: '' })
+    try {
+      await updateAppointmentParticipantRsvpAsync(listingOrganisationId, selectedViewing.appointment_id, agentParticipant.participant_id, {
+        rsvpStatus: contract.value.status,
+        proposedNewTime: contract.value.proposedNewTime,
+        preferredEnd: contract.value.preferredEnd,
+        rsvpComment: contract.value.comment,
+      }, { actor: listingActor })
+      await refreshListingViewings()
+      setViewingResponseFeedback({ kind: 'success', message: action === 'accept' ? 'Your confirmation was recorded.' : 'The new time was proposed to all three parties.' })
+    } catch (error) {
+      setViewingResponseFeedback({ kind: 'error', message: error?.message || 'Could not record your response.' })
+    } finally {
+      setViewingResponseSaving(false)
     }
   }
 
@@ -12427,36 +12360,8 @@ function AgentListingDetail() {
     const property24MonitoringIssue = channelActivityUnavailable && property24HasReference
     const privatePropertyMonitoringIssue = channelActivityUnavailable && privatePropertyHasChannel
     const property24Submitted = property24HasReference && !property24Published && !['expired', 'removed', 'withdrawn'].includes(property24StatusKey)
-    const property24ChannelStatus = property24Action
-      ? 'syncing'
-      : property24IntentionallyInactive ? 'not_published'
-      : property24HasUnpublishedChanges ? 'needs_attention'
-      : property24Update?.status === 'needs_attention' ? 'needs_attention'
-      : property24MonitoringIssue ? 'needs_attention'
-      : property24Update?.status === 'awaiting_verification' ? 'awaiting_verification'
-      : property24Update?.status === 'current' ? 'current'
-      : property24Published
-        ? 'live'
-        : property24Submitted
-          ? 'syncing'
-        : property24IssueCount || property24HasPreviewBlockers || property24SandboxAgentIdPending
-          ? 'needs_attention'
-          : 'not_published'
-    const property24ChannelLabel = property24Action
-      ? 'Syncing'
-      : property24IntentionallyInactive ? 'Withdrawn'
-      : property24HasUnpublishedChanges ? 'Changes not published'
-      : property24Update?.status === 'needs_attention' ? 'Needs attention'
-      : property24MonitoringIssue ? 'Needs attention'
-      : property24Update?.status === 'awaiting_verification' ? 'Awaiting verification'
-      : property24Update?.status === 'current' ? 'Current'
-      : property24Published
-        ? 'Live'
-        : property24Submitted
-          ? 'Submitted'
-        : property24ChannelStatus === 'needs_attention'
-          ? 'Needs attention'
-          : 'Not published'
+    const property24ChannelStatus = overviewPublishedChannels[0].status
+    const property24ChannelLabel = overviewPublishedChannels[0].statusLabel
     const property24ContextTitle = property24IntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
       : property24HasUnpublishedChanges ? `${listingPublicationStates.property24.changeCount} saved Arch9 change${listingPublicationStates.property24.changeCount === 1 ? '' : 's'} not published`
       : property24Update?.status === 'needs_attention' ? property24Update.retriable === false ? 'No confirmed live Property24 listing to update' : 'Latest portal update needs attention'
@@ -12476,36 +12381,8 @@ function AgentListingDetail() {
     const privatePropertyIssueDetail = privatePropertyReadinessIssues[0] || ''
     const privatePropertySubmitted = Boolean(privatePropertyReference || privatePropertyLink?.reference || privatePropertyExternalStatus)
       && ['submitted', 'draft', 'pending'].includes(privatePropertyExternalStatus || privatePropertyStatusKey)
-    const privatePropertyChannelStatus = privatePropertyAction
-      ? 'syncing'
-      : privatePropertyIntentionallyInactive ? 'not_published'
-      : privatePropertyHasUnpublishedChanges ? 'needs_attention'
-      : privatePropertyUpdate?.status === 'needs_attention' ? 'needs_attention'
-      : privatePropertyMonitoringIssue ? 'needs_attention'
-      : privatePropertyUpdate?.status === 'awaiting_verification' ? 'awaiting_verification'
-      : privatePropertyUpdate?.status === 'current' ? 'current'
-      : privatePropertyLive
-        ? 'live'
-        : privatePropertyIssueCount || privatePropertyHasPreviewBlockers
-          ? 'needs_attention'
-          : privatePropertySubmitted
-            ? 'syncing'
-            : 'not_published'
-    const privatePropertyChannelLabel = privatePropertyAction
-      ? 'Syncing'
-      : privatePropertyIntentionallyInactive ? 'Withdrawn'
-      : privatePropertyHasUnpublishedChanges ? 'Changes not published'
-      : privatePropertyUpdate?.status === 'needs_attention' ? 'Needs attention'
-      : privatePropertyMonitoringIssue ? 'Needs attention'
-      : privatePropertyUpdate?.status === 'awaiting_verification' ? 'Awaiting verification'
-      : privatePropertyUpdate?.status === 'current' ? 'Current'
-      : privatePropertyLive
-        ? 'Live'
-        : privatePropertyChannelStatus === 'needs_attention'
-          ? 'Needs attention'
-          : privatePropertySubmitted
-            ? 'Submitted'
-            : 'Not published'
+    const privatePropertyChannelStatus = overviewPublishedChannels[1].status
+    const privatePropertyChannelLabel = overviewPublishedChannels[1].statusLabel
     const privatePropertyContextTitle = privatePropertyIntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
       : privatePropertyHasUnpublishedChanges ? `${listingPublicationStates.private_property.changeCount} saved Arch9 change${listingPublicationStates.private_property.changeCount === 1 ? '' : 's'} not published`
       : privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.retriable === false ? 'No confirmed live Private Property listing to update' : 'Latest portal update needs attention'
@@ -12529,7 +12406,7 @@ function AgentListingDetail() {
         name: 'Property24',
         subtitle: "South Africa's property portal",
         reference: property24Reference,
-        publicUrl: property24Url,
+        publicUrl: getListingChannelViewUrl('property24', property24Url),
         status: property24ChannelStatus,
         statusLabel: property24ChannelLabel,
         contextTitle: property24ContextTitle,
@@ -12598,7 +12475,7 @@ function AgentListingDetail() {
         name: 'Private Property',
         subtitle: 'Property portal',
         reference: privatePropertyReference,
-        publicUrl: privatePropertyUrl,
+        publicUrl: getListingChannelViewUrl('private_property', privatePropertyUrl),
         status: privatePropertyChannelStatus,
         statusLabel: privatePropertyChannelLabel,
         contextTitle: privatePropertyContextTitle,
@@ -12675,13 +12552,13 @@ function AgentListingDetail() {
         {
           key: 'property24', label: 'Property24', connected: property24HasReference,
           live: property24Published, actualStatus: property24StatusKey,
-          reference: property24Reference, publicUrl: property24Url,
+          reference: property24Reference, publicUrl: getListingChannelViewUrl('property24', property24Url),
           publicationState: listingPublicationStates.property24, updateState: property24Update,
         },
         {
           key: 'private_property', label: 'Private Property', connected: privatePropertyHasChannel,
           live: privatePropertyLive, actualStatus: privatePropertyStatusKey,
-          reference: privatePropertyReference, publicUrl: privatePropertyUrl,
+          reference: privatePropertyReference, publicUrl: getListingChannelViewUrl('private_property', privatePropertyUrl),
           publicationState: listingPublicationStates.private_property, updateState: privatePropertyUpdate,
         },
         {
@@ -16186,41 +16063,20 @@ function AgentListingDetail() {
           {sellerWorkspaceTab === 'overview' ? (
             <section className="space-y-6">
               <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
-                <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-5">
+                <div className="grid items-start gap-4 sm:grid-cols-3">
                   {[
                     {
-                      label: 'Views',
-                      value: listingPerformance.analyticsLoading
-                        ? '…'
-                        : listingPerformance.viewsAvailable
-                          ? formatCompactNumber(listingPerformance.totalViews)
-                          : '—',
-                      meta: listingPerformance.analyticsError
-                        ? 'Analytics unavailable'
-                        : listingPerformance.viewChangePercent !== null && listingPerformance.viewChangePercent !== undefined
-                        ? `${formatSignedPercentValue(listingPerformance.viewChangePercent)} vs previous 30 days`
-                        : listingPerformance.viewsAvailable
-                          ? [
-                              listingPerformance.portalViews !== null ? `${formatCompactNumber(listingPerformance.portalViews)} P24` : 'P24 awaiting sync',
-                              listingPerformance.bridgeViews !== null ? `${formatCompactNumber(listingPerformance.bridgeViews)} website` : 'Website unavailable',
-                              listingPerformance.partialViews ? 'PP views unavailable' : '',
-                            ].filter(Boolean).join(' · ')
-                          : 'No verified view analytics yet',
-                      icon: Eye,
+                      label: 'Leads', value: interestedLeadsLoading ? '…' : interestedLeadsError ? '—' : formatCompactNumber(listingPerformance.leadCount), meta: interestedLeadsError ? 'Lead sync unavailable' : `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users,
                     },
                     {
-                      label: 'Leads', value: interestedLeadsLoading ? '…' : interestedLeadsError && !listingPerformance.leadCount ? '—' : formatCompactNumber(listingPerformance.leadCount), meta: interestedLeadsError ? 'Lead sync unavailable' : `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users,
-                    },
-                    {
-                      label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.upcomingViewings)} upcoming`, icon: CalendarDays,
-                    },
-                    {
-                      label: 'Offers', value: canonicalOffersLoading ? '…' : canonicalOffersError && !listingPerformance.offerCount ? '—' : formatCompactNumber(listingPerformance.offerCount), meta: canonicalOffersError ? 'Offer sync unavailable' : `${formatCompactNumber(listingPerformance.pendingOffers)} active`, icon: HandCoins,
+                      label: 'Viewings', value: viewingsLoading ? '…' : viewingsError ? '—' : formatCompactNumber(listingPerformance.scheduledViewings), meta: viewingsError ? 'Viewing data unavailable' : `${formatCompactNumber(listingPerformance.upcomingViewings)} upcoming`, icon: CalendarDays,
                     },
                     {
                       label: 'Days on market',
-                      value: formatCompactNumber(listingPerformance.daysOnMarket),
-                      meta: listingPerformance.areaAverageDays
+                      value: listingPerformance.marketStartDate ? formatCompactNumber(listingPerformance.daysOnMarket) : '—',
+                      meta: !listingPerformance.marketStartDate
+                        ? 'Listing date unavailable'
+                        : listingPerformance.areaAverageDays
                         ? `Area avg. ${formatCompactNumber(listingPerformance.areaAverageDays)}`
                         : `Listed ${formatDate(listingPerformance.marketStartDate)}`,
                       icon: BarChart3,
@@ -16253,7 +16109,7 @@ function AgentListingDetail() {
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
-                      Last 30 days
+                      Listing snapshot
                     </span>
                     <Button type="button" size="sm" variant="secondary" onClick={refreshListingOverview} disabled={overviewReliability.refreshing}>
                       <RefreshCw size={14} className={overviewReliability.refreshing ? 'animate-spin' : ''} />
@@ -16305,26 +16161,29 @@ function AgentListingDetail() {
                   </Button>
                 </article>
 
-                <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
-                  <div className="flex items-center justify-between gap-3">
+                <article className="min-h-[315px] rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
+                  <div className="flex items-center gap-3">
                     <h2 className="text-base font-semibold text-[#142132]">Upcoming Viewings</h2>
-                    <button type="button" onClick={() => openViewingRequestModal()} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
-                      Schedule
-                      <ChevronRight size={14} />
-                    </button>
                   </div>
-                  <div className="mt-4 divide-y divide-[#e7edf5]">
-                    {overviewUpcomingViewings.length ? overviewUpcomingViewings.map((viewing) => (
-                      <div key={viewing.id} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] sm:items-center">
+                  <p className="mt-1 text-xs text-[#607387]">Open a viewing to see buyer, seller and agent responses.</p>
+                  <div className="mt-4 grid gap-2">
+                    {viewingsLoading && !overviewUpcomingViewings.length ? (
+                      <div className="rounded-[14px] border border-[#d8e6f6] bg-[#f3f8fd] px-4 py-6 text-sm font-medium text-[#2c5a89]">Loading viewings…</div>
+                    ) : viewingsError ? (
+                      <div role="alert" className="rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-4 py-4 text-sm text-[#b42318]">
+                        Viewing appointments could not be loaded. This is not a confirmed empty result.
+                        <button type="button" className="ml-2 font-semibold underline underline-offset-2" onClick={() => void refreshListingViewings()}>Try again</button>
+                      </div>
+                    ) : overviewUpcomingViewings.length ? overviewUpcomingViewings.map((viewing) => (
+                      <button key={viewing.id} type="button" onClick={() => { setSelectedViewingId(String(viewing.id)); setViewingResponseFeedback({ kind: '', message: '' }) }} className="grid w-full gap-2 rounded-[13px] border border-[#e1e9f1] bg-[#fbfdff] p-3 text-left transition-colors hover:border-[#8bb9a7] hover:bg-[#f5faf7] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#1c6954] sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto_auto] sm:items-center" aria-label={`View ${viewing.buyerName} viewing details and responses`}>
                         <span className="text-sm font-semibold text-[#607387]">{viewing.dateLabel}</span>
                         <span className="inline-flex min-w-0 items-center gap-2 text-sm font-semibold text-[#22374d]">
                           <UserRound size={14} className="shrink-0 text-[#607387]" />
                           <span className="truncate">{viewing.buyerName}</span>
                         </span>
-                        <span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClass(viewing.status)}`}>
-                          {formatViewingStatusLabel(viewing.status)}
-                        </span>
-                      </div>
+                        <span className="flex items-center gap-2"><span className={`inline-flex w-fit rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${statusClass(viewing.status)}`}>{getListingOverviewViewingStatusLabel(viewing.status)}</span>{viewing.participants.length ? <span className="text-[0.68rem] text-[#607387]">{viewing.participants.filter((participant) => participant.response_status === VIEWING_RESPONSE_STATUS.ACCEPTED).length}/3 confirmed</span> : null}</span>
+                        <ChevronRight size={15} className="hidden text-[#607387] sm:block" />
+                      </button>
                     )) : (
                       <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">
                         No upcoming viewings.
@@ -16338,8 +16197,8 @@ function AgentListingDetail() {
                 </article>
               </section>
 
-              <section className="grid items-start gap-5 lg:grid-cols-[minmax(300px,0.9fr)_minmax(420px,1.2fr)] xl:grid-cols-[minmax(320px,0.95fr)_minmax(420px,1.35fr)_minmax(300px,0.85fr)]">
-                <article className="order-2 rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-1">
+              <section className="grid items-stretch gap-5 lg:grid-cols-2 xl:h-[800px] xl:grid-cols-3" data-testid="listing-overview-three-columns">
+                <article className="order-2 flex min-h-0 flex-col rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-1">
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <h2 className="text-base font-semibold text-[#142132]">Seller</h2>
@@ -16347,6 +16206,7 @@ function AgentListingDetail() {
                     </div>
                     <StatusPill status={overviewSellerSnapshot.ready ? 'complete' : 'attention'} label={overviewSellerSnapshot.ready ? 'Ready' : `${overviewSellerSnapshot.attentionItems.length} to review`} />
                   </div>
+                  <div className="min-h-0 flex-1 xl:overflow-y-auto xl:pr-1">
                   <div className="mt-5 pb-5">
                     <p className="text-[0.78rem] font-semibold text-[#526b82]">Seller details</p>
                     <div className="mt-3 flex min-w-0 items-center gap-3">
@@ -16370,63 +16230,24 @@ function AgentListingDetail() {
                     <OverviewStatusRow label="Mandate expiry" value={overviewSellerSnapshot.mandateExpiry} />
                     </div>
                   </div>
-                  <div className="mt-5 border-t border-[#e7edf5] pt-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-[0.78rem] font-semibold text-[#526b82]">Portal security</h3>
-                      <StatusPill status={sellerPortalSecurityOverview.status} label={sellerPortalSecurityOverview.label} />
-                    </div>
-                    <div className="mt-2">
-                      <OverviewStatusRow label="Failures (24h)" value={sellerPortalSecurityOverview.failures24h ?? '—'} />
-                      <OverviewStatusRow label="Open alerts" value={sellerPortalSecurityOverview.openAlerts ?? '—'} />
-                    </div>
                   </div>
-                  <div className="mt-5 border-t border-[#e7edf5] pt-5" data-testid="seller-onboarding-email-diagnostics">
-                    <h3 className="text-[0.78rem] font-semibold text-[#526b82]">Communication</h3>
-                    <div className="mt-2">
-                      <OverviewStatusRow label="Last contact" value={overviewSellerSnapshot.lastContact} />
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-xs font-semibold text-[#6b7d93]">Seller onboarding email</span>
-                      <StatusPill status={sellerEmailDeliveryOverview.status} label={sellerEmailDeliveryOverview.label} />
-                    </div>
-                    {sellerEmailDeliveryOverview.hasEvidence ? (
-                      <div className="mt-2 text-xs leading-5 text-[#607387]">
-                        <OverviewStatusRow label="Sent / queued" value={sellerOnboardingEmailDiagnostics.sentCount} />
-                        <OverviewStatusRow label="Pending" value={sellerOnboardingEmailDiagnostics.pendingCount} />
-                        <OverviewStatusRow label="Failed" value={sellerOnboardingEmailDiagnostics.failedCount} />
-                        {sellerOnboardingEmailDiagnostics.latestFailureMessage ? <p className="rounded-[10px] border border-[#f6d7d7] bg-[#fff5f5] px-3 py-2 text-[#b42318]">Latest failure: {sellerOnboardingEmailDiagnostics.latestFailureMessage}</p> : null}
-                      </div>
-                    ) : (
-                      <p className={`mt-2 text-xs leading-5 ${sentPropertiesError ? 'text-[#b42318]' : 'text-[#607387]'}`}>
-                        {sentPropertiesError
-                          ? 'Seller email delivery history could not be loaded. Retry the Overview before relying on this status.'
-                          : 'No seller onboarding email delivery has been recorded for this listing.'}
-                      </p>
-                    )}
-                  </div>
-                  <div className="mt-5 border-t border-[#e7edf5] pt-5">
+                  <div className="mt-5 shrink-0 border-t border-[#e7edf5] pt-5">
                     {!overviewSellerSnapshot.portalActivated ? (
-                      <Button type="button" size="sm" className="w-full justify-center" onClick={openSellerPortalActivationModal} disabled={sellerOwnershipUnidentified || sellerPortalActivationSending}>
+                      <Button type="button" size="sm" className="w-full justify-center" onClick={openSellerPortalActivationModal} disabled={sellerPortalActivationSending}>
                         <Send size={14} />
-                        Activate Portal
+                        {sellerOwnershipUnidentified ? 'Set Up Seller Portal' : 'Activate Portal'}
                       </Button>
                     ) : null}
-                    <div className={`${!overviewSellerSnapshot.portalActivated ? 'mt-2' : ''} grid gap-2 sm:grid-cols-2`}>
+                    <div className={`${!overviewSellerSnapshot.portalActivated ? 'mt-2' : ''} grid gap-2`}>
                       <Button type="button" size="sm" variant="secondary" className="justify-center" onClick={() => openSellerWorkspaceSection('seller')}>
                         <UserRound size={14} />
                         Open Seller
                       </Button>
-                      {!sellerFicaOverview.complete ? (
-                        <Button type="button" size="sm" variant="secondary" className="justify-center" onClick={() => openSellerWorkspaceSection('documents')}>
-                          <ShieldCheck size={14} />
-                          Review FICA
-                        </Button>
-                      ) : null}
                     </div>
                   </div>
                 </article>
 
-                <article className="order-1 overflow-hidden rounded-[16px] border border-[#dde4ee] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-2" data-testid="listing-overview-marketing-hero">
+                <article className="order-1 flex min-h-0 flex-col overflow-hidden rounded-[16px] border border-[#dde4ee] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-2" data-testid="listing-overview-marketing-hero">
                   <div className="flex items-center justify-between gap-3 px-5 py-4">
                     <h2 className="text-base font-semibold text-[#142132]">Marketing</h2>
                     <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
@@ -16434,44 +16255,72 @@ function AgentListingDetail() {
                       <ChevronRight size={14} />
                     </button>
                   </div>
-                  <div className="relative aspect-[32/17] border-y border-[#e5edf6] bg-[#eef4fa]">
+                  <div className="relative aspect-[32/17] shrink-0 border-y border-[#e5edf6] bg-[#eef4fa]">
                     {getImageBlock(coverImage?.url || '', marketingDraft.headline || listingIdentity.title)}
                     <span className="absolute bottom-3 left-3 rounded-full border border-white/70 bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#142132] shadow-sm">
                       {marketingDraft.galleryImages.length || 0} image{marketingDraft.galleryImages.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  <div className="p-5">
-                    <p className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#142132]">
-                      {Number(marketingDraft.price || listingRecord?.askingPrice || 0) ? formatMoneyValue(marketingDraft.price || listingRecord?.askingPrice) : 'Price not captured'}
+                  <div className="min-h-0 flex-1 p-5 xl:overflow-y-auto">
+                    <p className="text-[2rem] font-semibold leading-tight tracking-[-0.04em] text-[#142132]">
+                      {overviewPricePosition.askingPrice ? formatMoneyValue(overviewPricePosition.askingPrice) : 'Price not captured'}
                     </p>
+                    {overviewPropertyFacts.length ? (
+                      <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Property facts">
+                        {overviewPropertyFacts.map((fact) => <span key={fact} className="shrink-0 rounded-full border border-[#dce6f2] bg-[#f7fbff] px-2.5 py-1 text-xs font-semibold text-[#35546c]">{fact}</span>)}
+                      </div>
+                    ) : <p className="mt-3 text-xs text-[#607387]">Add property facts in Marketing.</p>}
                     <p className="mt-3 line-clamp-4 text-sm leading-6 text-[#607387]">
                       {String(marketingDraft.description || listingRecord?.description || '').trim() || 'Add a public property description in Marketing to complete this listing preview.'}
                     </p>
                     <div className="mt-5 border-t border-[#e7edf5] pt-4">
                       <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listed on</p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        {overviewMarketingSnapshot.portalRows.length ? overviewMarketingSnapshot.portalRows.map((row) => (
+                        {overviewPublishedChannels.map((row) => (
                           row.href ? (
-                            <a key={row.label} href={row.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                            <a key={row.key} href={row.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]" aria-label={`View ${row.label} listing`}>
                               {row.label}
                               <ExternalLink size={12} />
                             </a>
                           ) : (
-                            <span key={row.label} className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                            <span key={row.key} className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
                               {row.label}
-                              <StatusPill status={row.status} label={row.value} />
+                              <StatusPill status={row.status} label={row.statusLabel} />
                             </span>
                           )
-                        )) : (
-                          <span className="text-xs font-medium text-[#607387]">Not published to a marketing channel yet.</span>
-                        )}
+                        ))}
                       </div>
                     </div>
                   </div>
                 </article>
 
-                <div className="order-3 grid content-start gap-5 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:grid-cols-1">
-                  <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-price-position">
+                <div className="order-3 grid min-h-0 gap-5 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:h-full xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.95fr)_minmax(0,1fr)]">
+                  <article className="min-h-0 rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] xl:overflow-y-auto" data-testid="listing-overview-document-progress">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-base font-semibold text-[#142132]">Document Progress</h2>
+                      <button type="button" onClick={() => openSellerWorkspaceSection('documents')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">Open documents <ChevronRight size={14} /></button>
+                    </div>
+                    {listingSellerDocumentProgress.state === 'setup_needed' ? (
+                      <div className="mt-4 rounded-[12px] border border-[#f0d7a8] bg-[#fffaf0] p-3 text-sm text-[#815919]">
+                        <p className="font-semibold">Seller setup needed</p>
+                        <p className="mt-1 text-xs leading-5">Confirm the seller type before relying on document progress.</p>
+                        <button type="button" onClick={() => openSellerWorkspaceSection('seller')} className="mt-2 text-xs font-semibold underline underline-offset-2">Set up seller</button>
+                      </div>
+                    ) : listingSellerDocumentProgress.state === 'no_requirements' ? (
+                      <p className="mt-4 text-sm text-[#607387]">No confirmed document requirements yet. Check the Documents tab.</p>
+                    ) : (
+                      <div className="mt-4 flex items-center gap-4">
+                        <div className="grid h-20 w-20 shrink-0 place-items-center rounded-full p-[7px]" style={{ background: `conic-gradient(#177556 ${listingSellerDocumentProgress.percent}%, #e5ebf2 ${listingSellerDocumentProgress.percent}% 100%)` }} role="progressbar" aria-label="Seller document completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={listingSellerDocumentProgress.percent}>
+                          <span className="grid h-full w-full place-items-center rounded-full bg-white text-sm font-semibold text-[#142132]">{100 - listingSellerDocumentProgress.percent}% left</span>
+                        </div>
+                        <div>
+                          <p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.complete} of {listingSellerDocumentProgress.total} complete</p>
+                          <p className="mt-1 text-xs text-[#607387]">{listingSellerDocumentProgress.outstanding} still outstanding</p>
+                        </div>
+                      </div>
+                    )}
+                  </article>
+                  <article className="min-h-0 rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] xl:overflow-y-auto" data-testid="listing-overview-price-position">
                     <div className="flex items-center justify-between gap-3">
                       <h2 className="text-base font-semibold text-[#142132]">Price Position</h2>
                       <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
@@ -16479,11 +16328,24 @@ function AgentListingDetail() {
                         <ChevronRight size={14} />
                       </button>
                     </div>
-                    <div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                      <CompactSnapshotRow label="Asking Price" value={overviewPricePosition.askingPrice ? formatMoneyValue(overviewPricePosition.askingPrice) : '—'} />
-                      <CompactSnapshotRow label="Highest Offer" value={overviewPricePosition.highestOffer ? formatMoneyValue(overviewPricePosition.highestOffer) : '—'} />
-                      <CompactSnapshotRow label="Average Offer" value={overviewPricePosition.averageOffer ? formatMoneyValue(overviewPricePosition.averageOffer) : '—'} />
-                      <CompactSnapshotRow label="Difference" value={overviewPricePosition.differenceLabel} />
+                    <p className="mt-5 text-xs font-semibold text-[#607387]">Current asking price</p>
+                    <p className="mt-1 text-[1.8rem] font-semibold tracking-[-0.04em] text-[#142132]">{overviewPricePosition.askingPrice ? formatMoneyValue(overviewPricePosition.askingPrice) : 'Not captured'}</p>
+                    {overviewPricePosition.reductionActive ? <span className="mt-2 inline-flex rounded-full border border-[#d9e9df] bg-[#eff9f2] px-2.5 py-1 text-xs font-semibold text-[#256c45]">Price reduced</span> : null}
+                    <div className="mt-4 border-t border-[#e7edf5] pt-4">
+                      <p className="text-xs font-semibold text-[#607387]">Pricing history</p>
+                      {!overviewPricePosition.historyAvailable ? <p className="mt-2 text-xs text-[#9f5f15]">Pricing history could not be loaded.</p> : overviewPricePosition.history.length ? (
+                        <>
+                          <div className="mt-2 space-y-2">
+                            {(overviewPriceHistoryExpanded ? overviewPricePosition.history : overviewPricePosition.history.slice(0, 1)).map((change) => (
+                              <div key={change.id} className="flex flex-wrap items-center justify-between gap-1 text-xs text-[#425970]">
+                                <span>{formatMoneyValue(change.previousPrice)} → {formatMoneyValue(change.nextPrice)}</span>
+                                <span>{change.recordedAt ? formatDate(change.recordedAt) : change.direction}</span>
+                              </div>
+                            ))}
+                          </div>
+                          {overviewPricePosition.history.length > 1 ? <button type="button" className="mt-3 text-xs font-semibold text-[#1f4f78] underline underline-offset-2" aria-expanded={overviewPriceHistoryExpanded} onClick={() => setOverviewPriceHistoryExpanded((value) => !value)}>{overviewPriceHistoryExpanded ? 'Show latest only' : `View all ${overviewPricePosition.history.length} changes`}</button> : null}
+                        </>
+                      ) : <p className="mt-2 text-xs text-[#607387]">No recorded price changes.</p>}
                     </div>
                   </article>
 
@@ -16492,12 +16354,26 @@ function AgentListingDetail() {
                     listing={listingRecord}
                     agent={overviewListingAgent}
                     listingType="sale"
-                    className="rounded-[16px] p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]"
+                    className="min-h-0 rounded-[16px] p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] xl:overflow-y-auto"
                     onReassigned={async () => {
                       await loadListingData({ showLoading: false })
                       setDetailMessage('Listing agent reassigned successfully.')
                     }}
                   />
+                  <article className="min-h-0 rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] xl:overflow-y-auto" data-testid="listing-overview-published">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-base font-semibold text-[#142132]">Published</h2>
+                      <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">Manage <ChevronRight size={14} /></button>
+                    </div>
+                    <div className="mt-3 divide-y divide-[#e7edf5]">
+                      {overviewPublishedChannels.map((channel) => (
+                        <div key={channel.key} className="flex flex-wrap items-center justify-between gap-2 py-2 text-xs">
+                          <span className="font-semibold text-[#243d56]">{channel.label}</span>
+                          <span className="flex items-center gap-2"><StatusPill status={channel.status} label={channel.statusLabel} />{channel.href ? <a href={channel.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-[#1f4f78]" aria-label={`View ${channel.label} listing`}>View listing <ExternalLink size={12} /></a> : channel.live ? <span className="text-[#9f5f15]">Link needed</span> : null}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </article>
                 </div>
               </section>
             </section>
@@ -17395,17 +17271,10 @@ function AgentListingDetail() {
 
                 <div className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 sm:grid-cols-3">
                   <div className="flex items-center gap-3 rounded-[14px] border border-[#e0e8f0] bg-white px-4 py-3">
-                    <span
-                      className="relative grid h-10 w-10 place-items-center rounded-full border-[4px] border-[#dce5ee] text-[0.68rem] font-bold text-[#1f7d44]"
-                      role="progressbar"
-                      aria-label="Seller document completion"
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-valuenow={listingSellerDocumentSummary.progressPercent}
-                    >
-                      {listingSellerDocumentSummary.progressPercent}%
-                    </span>
-                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentSummary.complete} / {listingSellerDocumentSummary.total}</p><p className="text-xs text-[#607387]">complete</p></div>
+                    {listingSellerDocumentProgress.percent === null ? <span className="grid h-10 w-10 place-items-center rounded-full border-[4px] border-[#dce5ee] text-xs font-bold text-[#607387]">—</span> : (
+                      <span className="relative grid h-10 w-10 place-items-center rounded-full border-[4px] border-[#dce5ee] text-[0.68rem] font-bold text-[#1f7d44]" role="progressbar" aria-label="Seller document completion" aria-valuemin={0} aria-valuemax={100} aria-valuenow={listingSellerDocumentProgress.percent}>{listingSellerDocumentProgress.percent}%</span>
+                    )}
+                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentProgress.state === 'setup_needed' ? 'Setup needed' : `${listingSellerDocumentSummary.complete} / ${listingSellerDocumentSummary.total}`}</p><p className="text-xs text-[#607387]">{listingSellerDocumentProgress.state === 'setup_needed' ? 'Checklist provisional' : 'complete'}</p></div>
                   </div>
                   <div className="flex items-center gap-3 rounded-[14px] border border-[#e0e8f0] bg-white px-4 py-3">
                     <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#fff8ea] text-[#a56b14]"><Send size={18} /></span>
@@ -18215,28 +18084,34 @@ function AgentListingDetail() {
             <Button type="button" variant="secondary" onClick={() => setSellerPortalActivationOpen(false)} disabled={sellerPortalActivationSending}>
               Cancel
             </Button>
-            <Button type="submit" form="seller-portal-activation-form" disabled={sellerPortalActivationSending || !sellerPortalMandateEvidenceReady}>
+            <Button type="submit" form="seller-portal-activation-form" disabled={sellerPortalActivationSending || sellerOwnershipUnidentified}>
               {sellerPortalActivationSending ? 'Sending...' : 'Send Invitation'}
             </Button>
           </div>
         )}
       >
         <form id="seller-portal-activation-form" className="space-y-5" onSubmit={handleActivateSellerPortal}>
+          {sellerOwnershipUnidentified ? <div className="rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#735817]">
+            <p className="font-semibold">First, confirm who owns this property.</p>
+            <p className="mt-1">Set the seller entity type in the Seller tab so the portal requests the right information and documents. A signed mandate is not needed to invite them.</p>
+            <Button type="button" size="sm" variant="secondary" className="mt-3" onClick={() => { setSellerPortalActivationOpen(false); openSellerProfileBuilder('Confirm the seller entity type before sending a portal invitation.') }}>Set up seller</Button>
+          </div> : null}
+          {sellerPortalActivationError ? <p role="alert" className="rounded-[12px] border border-[#f4d4d4] bg-[#fff5f5] px-4 py-3 text-sm text-[#b42318]">{sellerPortalActivationError}</p> : null}
           <section className="grid gap-4 md:grid-cols-2">
             <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-              Seller first name
-              <Field value={sellerPortalActivationDraft.firstName} onChange={(event) => updateSellerPortalActivationDraft('firstName', event.target.value)} placeholder="Jane" />
+              Portal contact first name
+              <Field value={sellerPortalActivationDraft.firstName} onChange={(event) => updateSellerPortalActivationDraft('firstName', event.target.value)} placeholder="Jane" required />
             </label>
             <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-              Seller surname
+              Portal contact surname
               <Field value={sellerPortalActivationDraft.lastName} onChange={(event) => updateSellerPortalActivationDraft('lastName', event.target.value)} placeholder="Smith" />
             </label>
             <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-              Seller email
+              Portal contact email
               <Field type="email" value={sellerPortalActivationDraft.email} onChange={(event) => updateSellerPortalActivationDraft('email', event.target.value)} placeholder="seller@example.com" required />
             </label>
             <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
-              Seller mobile
+              Portal contact mobile
               <Field type="tel" value={sellerPortalActivationDraft.phone} onChange={(event) => updateSellerPortalActivationDraft('phone', event.target.value)} placeholder="082 000 0000" />
             </label>
           </section>
@@ -18248,15 +18123,9 @@ function AgentListingDetail() {
               <CompactSnapshotRow label="Agency" value={profile?.organisationName || profile?.companyName || profile?.agencyName || 'Arch9'} />
               <CompactSnapshotRow label="Assigned agent" value={listingActor.name || 'Agent pending'} />
               <CompactSnapshotRow label="Listing status" value={formatStatusLabel(listingRecord?.listingStatus || listingRecord?.status || 'unknown')} />
-              <CompactSnapshotRow label="Mandate evidence" value={sellerPortalMandateEvidenceReady ? 'Signed mandate uploaded' : 'Upload required'} />
+              <CompactSnapshotRow label="Seller entity" value={sellerOwnershipUnidentified ? 'Set up in Seller tab' : formatStatusLabel(listingRecord?.sellerType || 'Confirmed')} />
             </div>
           </section>
-
-          {!sellerPortalMandateEvidenceReady ? (
-            <div className="rounded-[18px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm font-semibold leading-6 text-[#7a5a17]">
-              Upload the signed mandate to this listing before sending the Seller Portal invitation.
-            </div>
-          ) : null}
 
           <section className="rounded-[18px] border border-[#dbe6f2] bg-white p-4">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6b7d93]">Email preview</p>
@@ -18286,6 +18155,7 @@ function AgentListingDetail() {
         draft={viewingRequestDraft}
         leads={listingLeadRows}
         seller={sellerViewingContact}
+        agent={listingActor}
         saving={viewingRequestSaving}
         feedback={viewingRequestFeedback}
         listingTitle={listingRecord?.listingTitle || ''}
@@ -18293,6 +18163,16 @@ function AgentListingDetail() {
         onLeadSelect={selectViewingBuyerLead}
         onClose={closeViewingRequestModal}
         onSubmit={submitViewingRequest}
+      />
+
+      <ListingViewingDetailsModal
+        open={Boolean(selectedViewing)}
+        viewing={selectedViewing}
+        saving={viewingResponseSaving}
+        feedback={viewingResponseFeedback}
+        agentEmail={listingActor.email}
+        onClose={() => { setSelectedViewingId(''); setViewingResponseFeedback({ kind: '', message: '' }) }}
+        onResponse={respondToSelectedViewing}
       />
 
       <ShowDayLeadCaptureModal

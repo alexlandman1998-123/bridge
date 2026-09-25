@@ -41,7 +41,7 @@ const smokeSteps = [
     route: '/listings',
     actions: [
       'confirm oversight strip is hidden',
-      'confirm Add Listing action remains available',
+      'confirm New sale listing action remains available',
     ],
   },
   {
@@ -273,7 +273,7 @@ async function runLeadSmoke(page, baseUrl) {
 
 async function runListingSmoke(page, baseUrl) {
   await openAsAgent(page, baseUrl, '/listings')
-  await page.getByRole('button', { name: /^Add Listing$/ }).first().waitFor({ state: 'visible', timeout: 15_000 })
+  await page.getByRole('button', { name: /^New sale listing$/ }).first().waitFor({ state: 'visible', timeout: 15_000 })
   assert.equal(await page.getByText('Follow-Up Oversight').count(), 0, 'Follow-Up Oversight strip should not render on listings.')
   assert.equal(await page.getByRole('button', { name: /Copy Chase List/ }).count(), 0, 'Copy Chase List action should not render on listings.')
 }

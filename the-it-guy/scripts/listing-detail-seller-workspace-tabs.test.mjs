@@ -58,7 +58,7 @@ assert.equal(overviewBlock.includes('>Recent Activity<'), false, 'Overview shoul
 assert.equal(overviewBlock.includes('No offers received yet.'), false, 'Price Position should not reference the retired offer workflow.')
 assert.ok(overviewBlock.includes('ListingAgentReassignmentPanel'), 'Overview should show the listing agent and reassignment control below pricing.')
 assert.ok(source.includes('buildListingOverviewPerformance({'), 'Overview should build performance from canonical sources.')
-assert.ok(source.includes('listingPerformance.viewsAvailable'), 'Overview should distinguish unavailable views from a verified zero.')
+assert.equal(overviewBlock.includes("label: 'Views'"), false, 'Overview must not display unsupported view analytics.')
 assert.equal(source.includes('const totalViews = explicitViews || portalViews + bridgeViews || 0'), false, 'Overview should not use legacy listing payload totals.')
 assert.equal(source.includes('leadCount * 6 + syncedActiveOffers.length * 8 + 12'), false, 'Overview should not estimate views from lead and offer counts.')
 assert.ok(source.includes('areaAverageDays,') && !source.includes('Math.max(metrics.daysOnMarket + 15, 30)'), 'Area average days should only render when real data exists.')

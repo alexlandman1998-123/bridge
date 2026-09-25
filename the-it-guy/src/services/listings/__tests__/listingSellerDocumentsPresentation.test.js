@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildListingSellerDocumentProgress,
   buildListingSellerDocumentsSummary,
   resolveListingSellerDocumentActivity,
   resolveListingSellerDocumentActions,
@@ -64,6 +65,17 @@ test('derives summary metrics from live document rows', () => {
     actionRequired: 0,
     progressPercent: 40,
   })
+})
+
+test('document progress does not invent a percentage before requirements are confirmed', () => {
+  const summary = buildListingSellerDocumentsSummary([{ status: 'approved' }, { status: 'requested' }])
+  assert.deepEqual(buildListingSellerDocumentProgress(summary, { provisional: true }), {
+    state: 'setup_needed', percent: null, complete: 1, total: 2, outstanding: null,
+  })
+  assert.deepEqual(buildListingSellerDocumentProgress(summary, { provisional: false }), {
+    state: 'in_progress', percent: 50, complete: 1, total: 2, outstanding: 1,
+  })
+  assert.equal(buildListingSellerDocumentProgress(buildListingSellerDocumentsSummary([])).state, 'no_requirements')
 })
 
 test('shows request before reminder and reserves review actions for supplied files', () => {

@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises'
 const listings = await readFile(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 const canvassing = await readFile(new URL('../src/pages/PipelineCanvassingPage.jsx', import.meta.url), 'utf8')
 
-const listingsSummaryIndex = listings.indexOf('await getAgentPrivateListingSummaries(profile.id, listingScope)')
+const listingsSummaryIndex = listings.indexOf('await getAgentPrivateListingSummaries(profile.id, {')
 const listingsCoreReadyIndex = listings.indexOf('if (showLoading) setLoading(false)', listingsSummaryIndex)
 const listingsDetailIndex = listings.indexOf('getAgentPrivateListings(profile.id, {', listingsSummaryIndex)
 
@@ -20,6 +20,9 @@ assert.match(
   'Listings must not report settled while background hydration is running.',
 )
 assert.match(listings, /contentVisibility: 'auto'/, 'Off-screen listing cards should defer layout and paint work.')
+assert.match(listings, /includeMedia: false/, 'Detailed listing hydration should not fetch every media row on page load.')
+assert.match(listings, /getPrivateListingCoverImageUrls\(pending\.map/, 'Card covers should load for the visible collection.')
+assert.match(listings, /loading=\{priority \? 'eager' : 'lazy'\}/, 'Only the first visible card images should load eagerly.')
 
 const currentWorkspaceIndex = canvassing.indexOf('let orgId = normalizeText(currentWorkspace?.id)')
 const settingsFallbackIndex = canvassing.indexOf('if (!orgId) {', currentWorkspaceIndex)

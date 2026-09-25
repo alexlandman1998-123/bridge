@@ -79,28 +79,21 @@ test('buyer and seller portal Edge Function guards match the intended product', 
   assert.match(files.onboardingSubmitted, /buyer_portal_waiting_for_onboarding_or_otp/)
   assert.match(files.onboardingSubmitted, /buyer_portal_waiting_for_signed_otp/)
 
-  const sellerReadySet = files.sellerOnboarding.match(
-    /SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set\(\[([\s\S]*?)\]\)/,
-  )?.[1] || ''
-  for (const lifecycleStatus of ['active', 'live', 'published', 'sold', 'transaction_created', 'under_offer']) {
-    assert.doesNotMatch(sellerReadySet, new RegExp(`"${lifecycleStatus}"`))
-  }
-  assert.match(files.sellerOnboarding, /listing\.mandate_status/)
-  assert.doesNotMatch(
-    files.sellerOnboarding.match(/function listingHasSignedMandateSignal[\s\S]*?function packetHasSignedMandateSignal/)?.[0] || '',
-    /listing\.listing_status|listing\.status/,
-  )
+  assert.match(files.sellerOnboarding, /verifySellerPortalInviteSetup/)
+  assert.match(files.sellerOnboarding, /seller_type_required/)
+  assert.match(files.sellerOnboarding, /seller_contact_required/)
+  assert.match(files.sellerOnboarding, /seller_email_required/)
 })
 
 test('frontend workspaces still use policy decisions before portal and mandate actions', () => {
   assert.match(files.unitDetail, /resolveBuyerAccessPolicy/)
   assert.match(files.unitDetail, /kingstonsBuyerPortalLinksDisabled = !buyerPortalAccessDecision\.enabled/)
-  assert.match(files.listingDetail, /Upload the signed mandate before activating the Seller Portal\./)
+  assert.match(files.listingDetail, /Confirm the seller entity type in Seller setup before sending an invitation/)
   assert.match(files.agencyPipeline, /actions\.sendMandateSigningLink/)
   assert.match(files.legalWorkspace, /actions\.sendMandateSigningLink/)
 })
 
-test('post-signed-mandate Seller Portal invite remains available after final signed mandate evidence', () => {
+test('post-signed-mandate notification remains available but the invitation guard uses seller setup', () => {
   const portalInviteScope = functionScope(
     files.signerAction,
     'sendSellerPortalInviteAfterMandateSigned',
@@ -109,7 +102,7 @@ test('post-signed-mandate Seller Portal invite remains available after final sig
   assert.match(files.signerAction, /function buildSellerPortalInviteEmailPayload[\s\S]*type: "seller_portal_link"/)
   assert.match(portalInviteScope, /operation: "final_delivery"/)
   assert.match(portalInviteScope, /const emailResult = await invokeSendEmail/)
-  assert.match(files.sellerOnboarding, /seller_portal_invite_requires_signed_mandate/)
+  assert.match(files.sellerOnboarding, /verifySellerPortalInviteSetup/)
 })
 
 test('package exposes Phase 4 and a full client-access verification chain', () => {

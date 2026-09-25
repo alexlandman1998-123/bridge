@@ -1,6 +1,7 @@
 import { resolveTransactionSaleProfile } from '../transactions/transactionSaleProfile.js'
+import { resolveListingSellerAuthorityContract } from '../../lib/sellerPartyAuthorityContract.js'
 
-export const CLIENT_ACCESS_POLICY_VERSION = 'client_access_policy_phase1_v1'
+export const CLIENT_ACCESS_POLICY_VERSION = 'client_access_policy_seller_setup_v2'
 
 export const CLIENT_ACCESS_ROLES = Object.freeze({
   buyer: 'buyer',
@@ -30,6 +31,8 @@ export const CLIENT_ACCESS_REASONS = Object.freeze({
   signedMandateUploadReady: 'signed_mandate_upload_ready',
   signedMandateAlreadyUploaded: 'signed_mandate_already_uploaded',
   sellerEmailRequired: 'seller_email_required',
+  sellerTypeRequired: 'seller_type_required',
+  sellerContactRequired: 'seller_contact_required',
   sellerSignedMandateRequired: 'seller_signed_mandate_required',
   sellerPortalReady: 'seller_portal_ready',
   developerSellerPortalNotApplicable: 'developer_seller_portal_not_applicable',
@@ -46,11 +49,13 @@ export const CLIENT_ACCESS_REASON_MESSAGES = Object.freeze({
   [CLIENT_ACCESS_REASONS.kingstonsManualOtpRequired]: 'Kingstons buyers must upload the signed OTP before buyer portal access is available.',
   [CLIENT_ACCESS_REASONS.kingstonsSignedOtpUploaded]: 'Signed OTP uploaded. Buyer portal link is ready to send.',
   [CLIENT_ACCESS_REASONS.signedOtpAlreadyUploaded]: 'Signed OTP evidence is already uploaded.',
-  [CLIENT_ACCESS_REASONS.signedMandateUploadReady]: 'Upload the signed mandate before activating the Seller Portal.',
+  [CLIENT_ACCESS_REASONS.signedMandateUploadReady]: 'Upload the signed mandate when available; this is separate from Seller Portal access.',
   [CLIENT_ACCESS_REASONS.signedMandateAlreadyUploaded]: 'Signed mandate evidence is already uploaded.',
   [CLIENT_ACCESS_REASONS.sellerEmailRequired]: 'Add a valid seller email before sending the Seller Portal invitation.',
-  [CLIENT_ACCESS_REASONS.sellerSignedMandateRequired]: 'Upload the signed mandate before activating the Seller Portal.',
-  [CLIENT_ACCESS_REASONS.sellerPortalReady]: 'Signed mandate uploaded. Seller Portal invitation is ready to send.',
+  [CLIENT_ACCESS_REASONS.sellerTypeRequired]: 'Confirm the seller entity type before inviting the seller to the portal.',
+  [CLIENT_ACCESS_REASONS.sellerContactRequired]: 'Name the seller representative who should receive the portal invitation.',
+  [CLIENT_ACCESS_REASONS.sellerSignedMandateRequired]: 'The signed mandate is still outstanding, but it does not prevent a Seller Portal invitation.',
+  [CLIENT_ACCESS_REASONS.sellerPortalReady]: 'Seller setup is ready for a portal invitation.',
   [CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable]: 'Developer sale documents are collected through the transaction workspace, not the private seller portal.',
   [CLIENT_ACCESS_REASONS.sellerMandateSigningLinksRetired]: 'Mandate signing links are retired. Upload the signed mandate manually instead.',
 })
@@ -294,15 +299,47 @@ function buyerEmail(context = {}) {
 }
 
 function sellerEmail(context = {}) {
+  const canonical = asObject(context.sellerCanonicalFacts || context.seller_canonical_facts_json)
   return firstText(
+    canonical.primaryContactEmail,
     context.sellerEmail,
     context.seller_email,
+    canonical.sellerEmail,
+    canonical.email,
     context.ownerEmail,
     context.owner_email,
     context.email,
     context.seller?.email,
     context.owner?.email,
   )
+}
+
+function sellerPortalSetup(context = {}) {
+  const canonical = asObject(context.sellerCanonicalFacts || context.seller_canonical_facts_json)
+  const onboarding = asObject(context.sellerOnboarding || context.seller_onboarding)
+  const form = asObject(onboarding.formData || onboarding.form_data || context.sellerOnboardingFormData)
+  const authority = resolveListingSellerAuthorityContract({
+    ...context,
+    sellerType: firstText(context.sellerEntityType, context.sellerLegalType, context.sellerType, context.seller_type),
+    sellerCanonicalFacts: canonical,
+  }, form)
+  const entityType = authority.identified ? authority.profileType : 'unknown'
+  const individualContact = ['individual', 'married', 'foreign_individual'].includes(entityType)
+  const contactName = firstText(
+    context.sellerContactName,
+    canonical.primaryContactName,
+    context.seller?.primaryContactName,
+    context.seller?.contactName,
+    ...(individualContact ? [
+      [canonical.firstName, canonical.lastName].filter(Boolean).join(' '),
+      [form.sellerFirstName || form.firstName, form.sellerSurname || form.lastName].filter(Boolean).join(' '),
+      context.seller?.name,
+      context.sellerName,
+      canonical.sellerName,
+    ] : []),
+  )
+  const email = sellerEmail(context)
+  return { entityType, contactName, email, hasValidEmail: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.toLowerCase()) }
 }
 
 function resolveSellerSaleProfile(context = {}) {
@@ -492,7 +529,7 @@ export function resolveBuyerAccessPolicy(context = {}) {
 
 export function resolveSellerAccessPolicy(context = {}) {
   const hasContext = Boolean(sellerContextId(context))
-  const hasSellerEmail = Boolean(sellerEmail(context))
+  const portalSetup = sellerPortalSetup(context)
   const signedMandateUploaded = hasSignedMandateEvidence(context)
   const saleProfile = resolveSellerSaleProfile(context)
   const isDeveloperSale = saleProfile.isDeveloperSale === true
@@ -502,9 +539,11 @@ export function resolveSellerAccessPolicy(context = {}) {
     activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.transactionRequired, 'Activate seller portal')
   } else if (isDeveloperSale) {
     activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.developerSellerPortalNotApplicable, 'Activate seller portal')
-  } else if (!signedMandateUploaded) {
-    activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.sellerSignedMandateRequired, 'Activate seller portal')
-  } else if (!hasSellerEmail) {
+  } else if (portalSetup.entityType === 'unknown') {
+    activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.sellerTypeRequired, 'Activate seller portal')
+  } else if (!portalSetup.contactName) {
+    activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.sellerContactRequired, 'Activate seller portal')
+  } else if (!portalSetup.hasValidEmail) {
     activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, false, CLIENT_ACCESS_REASONS.sellerEmailRequired, 'Activate seller portal')
   } else {
     activatePortal = action(CLIENT_ACCESS_ACTIONS.activateSellerPortal, true, CLIENT_ACCESS_REASONS.sellerPortalReady, 'Activate seller portal')
@@ -533,6 +572,7 @@ export function resolveSellerAccessPolicy(context = {}) {
     sellerPartyType: saleProfile.sellerPartyType,
     saleChannel: saleProfile.saleChannel,
     signedMandateUploaded,
+    portalSetup,
     actions: Object.freeze({
       uploadSignedMandate,
       activatePortal,

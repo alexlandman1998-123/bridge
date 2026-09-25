@@ -10,7 +10,10 @@ assert.ok(overviewStart > -1 && leadsStart > overviewStart, 'The listing Overvie
 const overview = pageSource.slice(overviewStart, leadsStart)
 
 assert.equal(overview.includes('border-t-[4px]'), false, 'Overview metrics must use the neutral card treatment.')
-assert.match(overview, /listingPerformance\.viewsAvailable/, 'Verified view availability must remain wired into the metric cards.')
+assert.doesNotMatch(overview, /label: 'Views'|label: 'Offers'/, 'Unsupported Views and retired Offers must not appear in Overview metrics.')
+assert.match(overview, /label: 'Leads'/)
+assert.match(overview, /label: 'Viewings'/)
+assert.match(overview, /label: 'Days on market'/)
 assert.match(overview, /data-testid="listing-overview-marketing-hero"/, 'Marketing must render as a property hero.')
 assert.match(overview, /getImageBlock\(coverImage\?\.url/, 'The marketing hero must use the listing cover image.')
 assert.match(overview, /marketingDraft\.description/, 'The marketing hero must show public listing copy.')

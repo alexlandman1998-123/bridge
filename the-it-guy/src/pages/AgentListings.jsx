@@ -1,4 +1,4 @@
-import { Archive, ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, Globe2, HelpCircle, ImagePlus, Link, Loader2, Mail, MessageCircle, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
+import { Archive, ArrowLeft, ArrowRight, Building2, CheckCircle2, Circle, CircleAlert, FileText, FolderKanban, Globe2, HelpCircle, ImagePlus, Loader2, Mail, MoreVertical, Plus, RotateCcw, Search, Share2, ShieldCheck, Sparkles, Trash2, UserRound, UsersRound, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import Button from '../components/ui/Button'
@@ -54,13 +54,14 @@ import {
   getPrivateListingLifecycleState,
   getPrivateListingStatusGroup,
 } from '../lib/privateListingLifecycle'
-import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListingSummaries, getAgentPrivateListings, getPrivateListing, persistSellerProfileOnboardingFormData, resolvePrivateListingIdForDeletion, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
+import { createPrivateListing, createPrivateListingActivity, deletePrivateListing, getAgentPrivateListingSummaries, getAgentPrivateListings, getPrivateListing, getPrivateListingCoverImageUrls, getListingCardImageSource, persistSellerProfileOnboardingFormData, resolvePrivateListingIdForDeletion, syncPrivateListingDistributionData, syncPrivateListingRequirements, updatePrivateListing, uploadPrivateListingDocument, uploadPrivateListingMediaAsset } from '../services/privateListingService'
 import { reassignListingAgent } from '../services/listingAgentReassignmentService'
 import {
   createAgencyIntroducedDeveloperLead,
 } from '../services/developerLeadService'
 import {
   SELLER_PORTAL_ACTIVATION_SOURCES,
+  activateSellerPortalForListing,
 } from '../services/sellerPortalActivationService'
 import { getListingPartnerShareOptions, shareListingWithPartner, unshareListingWithPartner } from '../services/partnerListingSharingService'
 import { createAgentRoutePerformanceBaseline } from '../services/observability/agentRoutePerformanceBaseline'
@@ -1770,15 +1771,47 @@ function buildDeferredQuickAddSellerPortalInvite({
 } = {}) {
   const requested = directListingPersistence.sellerPortalInvite?.requested === true
   if (!requested) return summarizeQuickAddSellerPortalInvite(null, false)
-  // A direct listing can ask for a portal, but it must not receive one until
-  // the seller document signing group is complete. The signing service then
-  // issues a listing-scoped invitation to every required owner/signer.
+  // A requested invite stays visible when basic seller setup is incomplete.
+  // Signing and document completion are deliberately separate.
   return summarizeQuickAddSellerPortalInvite({
-    status: 'pending_signing',
-    activationSource: 'signing_pack_completion',
+    status: 'pending_setup',
+    activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
     sellerEmail: directListingPersistence.sellerPortalInvite?.destinationEmail || form.sellerEmail,
     sellerPhonePresent: Boolean(directListingPersistence.sellerPortalInvite?.destinationPhone || form.sellerPhone),
   }, true)
+}
+
+async function deliverQuickAddSellerPortalInvite({ listingId = '', form = {}, directListingPersistence = {}, agent = {}, organisationId = '' } = {}) {
+  const pending = buildDeferredQuickAddSellerPortalInvite({ form, directListingPersistence })
+  if (!pending.requested || !listingId) return pending
+  const sellerType = normalizeDirectListingKey(directListingPersistence.seller?.sellerLegalType || form.sellerType)
+  const individual = ['individual', 'married', 'foreign_individual'].includes(sellerType)
+  const contactName = individual ? [form.sellerName, form.sellerSurname].map(normalizeText).filter(Boolean).join(' ') : normalizeText(form.sellerContactName)
+  const email = normalizeText(directListingPersistence.sellerPortalInvite?.destinationEmail || form.sellerEmail)
+  if (!sellerType || sellerType === 'unknown' || !contactName || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return pending
+  if (form.sellerPortalDeliveryMethod && form.sellerPortalDeliveryMethod !== 'email') {
+    return { ...pending, status: 'manual_delivery_required', error: 'Open the Seller tab to send or copy the portal link.' }
+  }
+  try {
+    const nameParts = contactName.split(/\s+/).filter(Boolean)
+    const result = await activateSellerPortalForListing({
+      listingId,
+      activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.manualListing,
+      sellerContactName: contactName,
+      sellerFirstName: nameParts[0] || '',
+      sellerSurname: nameParts.slice(1).join(' '),
+      sellerContactEmail: email,
+      sellerContactPhone: normalizeText(form.sellerPhone),
+      performedBy: normalizeText(agent.id),
+      agentName: normalizeText(agent.name),
+      agentEmail: normalizeText(agent.email),
+      organisationId,
+      agencyName: normalizeText(agent.agencyName) || 'Arch9',
+    })
+    return summarizeQuickAddSellerPortalInvite(result, true)
+  } catch (error) {
+    return { ...pending, status: 'failed', error: error?.message || 'Seller portal invitation could not be sent.' }
+  }
 }
 
 function buildLocalQuickAddSellerPortalInvite({
@@ -1791,7 +1824,8 @@ function buildLocalQuickAddSellerPortalInvite({
 function buildQuickAddSellerPortalInviteMessage(inviteSummary = null) {
   if (inviteSummary?.requested !== true) return ''
   if (inviteSummary.sent) return ' Seller portal link sent.'
-  if (inviteSummary.status === 'pending_signing') return ' Seller portal will be sent after every required signer completes the document pack.'
+  if (inviteSummary.status === 'pending_setup') return ' Seller portal invitation needs the entity type and a named contact; complete this in the Seller tab.'
+  if (inviteSummary.status === 'manual_delivery_required') return ' Open the Seller tab to send or copy the portal link.'
   if (inviteSummary.error) return ' Seller portal invite needs a retry.'
   return ' Seller portal invite recorded.'
 }
@@ -3005,17 +3039,35 @@ function ListingAgentAvatar({ agent = {} }) {
   )
 }
 
-function ListingCardImage({ src = '', alt = '' }) {
-  if (src) {
-    return <img src={src} alt={alt} className="h-full w-full object-cover" />
-  }
-
+function ListingCardImage({ src = '', fallbackSrc = '', alt = '', priority = false }) {
+  const [loaded, setLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
+  const [usingFallback, setUsingFallback] = useState(false)
+  const displayedSrc = usingFallback ? fallbackSrc : src
   return (
-    <div className="relative h-full w-full bg-[linear-gradient(140deg,#1f4f78_0%,#4a7da8_55%,#a8c2dc_100%)]">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_22%_22%,rgba(255,255,255,0.24),transparent_52%)]" />
-      <div className="absolute bottom-3 left-3 rounded-full border border-white/35 bg-white/20 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-white">
-        Listing image
-      </div>
+    <div className="relative h-full w-full bg-[#eaf0f6]">
+      {!loaded && displayedSrc && !failed ? <div className="absolute inset-0 animate-pulse bg-[#e1eaf3]" aria-hidden="true" /> : null}
+      {(!displayedSrc || failed) ? <ImagePlus size={24} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[#8da2b5]" aria-hidden="true" /> : null}
+      {displayedSrc && !failed ? (
+        <img
+          src={displayedSrc}
+          alt={alt}
+          width="480"
+          height="264"
+          loading={priority ? 'eager' : 'lazy'}
+          fetchPriority={priority ? 'high' : 'auto'}
+          decoding="async"
+          onLoad={() => setLoaded(true)}
+          onError={() => {
+            if (!usingFallback && fallbackSrc && fallbackSrc !== src) {
+              setUsingFallback(true)
+            } else {
+              setFailed(true)
+            }
+          }}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        />
+      ) : null}
     </div>
   )
 }
@@ -3753,6 +3805,8 @@ function AgentListings({ initialTab = null } = {}) {
     sortBy: 'newest',
   })
   const [listingCollectionView, setListingCollectionView] = useState('current')
+  const [cardCoverImageUrls, setCardCoverImageUrls] = useState({})
+  const requestedCardCoverRevisionsRef = useRef(new Set())
   const [quickAddDuplicateMatches, setQuickAddDuplicateMatches] = useState([])
   const [quickAddDuplicateOverride, setQuickAddDuplicateOverride] = useState(false)
   const [quickAddDuplicateAction, setQuickAddDuplicateAction] = useState('')
@@ -3967,7 +4021,7 @@ function AgentListings({ initialTab = null } = {}) {
           ? getAgentPrivateListings(profile.id, {
               ...hydratedListingScope,
               assignedAgentEmail: profile?.email || '',
-              includeMedia: true,
+              includeMedia: false,
               includeArchivedImports: true,
               includeArchivedListings: true,
             }).catch((listingError) => {
@@ -5495,9 +5549,12 @@ function AgentListings({ initialTab = null } = {}) {
           return null
         })
         directListingRequirementSync = await syncQuickAddDirectListingRequirements(listingMatch.id, 'direct_listing_intake_merged')
-        directListingSellerPortalInvite = buildDeferredQuickAddSellerPortalInvite({
+        directListingSellerPortalInvite = await deliverQuickAddSellerPortalInvite({
+          listingId: listingMatch.id,
           form,
           directListingPersistence,
+          agent: { id: profile?.id, name: profile?.fullName || resolvedAssignedAgentName, email: profile?.email || resolvedAssignedAgentEmail, agencyName: profile?.organisationName || profile?.companyName || profile?.agencyName },
+          organisationId: selectedWorkspaceOrganisationId || organisationId,
         })
         await createPrivateListingActivity({
           privateListingId: listingMatch.id,
@@ -6215,10 +6272,13 @@ function AgentListings({ initialTab = null } = {}) {
           directListingPersistence.seller?.sellerLegalType && directListingPersistence.seller.sellerLegalType !== 'unknown'
             ? syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created')
             : Promise.resolve({ synced: false, awaitingSellerSetup: true, totalRequirements: 0, missingRequirements: 0 }),
-          Promise.resolve(buildDeferredQuickAddSellerPortalInvite({
+          deliverQuickAddSellerPortalInvite({
+            listingId: created.listing.id,
             form,
             directListingPersistence,
-          })),
+            agent: { id: profile?.id, name: profile?.fullName || resolvedAssignedAgentName, email: profile?.email || resolvedAssignedAgentEmail, agencyName: profile?.organisationName || profile?.companyName || profile?.agencyName },
+            organisationId: listingOrganisationId,
+          }),
           websitePublicationPromise,
         ])
         if (documentUploadResult) {
@@ -7187,6 +7247,18 @@ function AgentListings({ initialTab = null } = {}) {
     })
   }, [deletedListingIds, organisationUsers, privateListings])
 
+  const hasImportedReview = privateListingCards.some((card) => card.collectionView === 'review')
+  const activeListingCollectionView = listingCollectionView === 'review' && !loading && !supportingDataLoading && !hasImportedReview
+    ? 'current'
+    : listingCollectionView
+  const showImportedReviewTab = hasImportedReview || (listingCollectionView === 'review' && (loading || supportingDataLoading))
+
+  useEffect(() => {
+    if (!loading && !supportingDataLoading && !hasImportedReview) {
+      setListingCollectionView((current) => current === 'review' ? 'current' : current)
+    }
+  }, [hasImportedReview, loading, supportingDataLoading])
+
   const residentialListingCards = useMemo(() => {
     const query = String(filters.search || '').trim().toLowerCase()
     if (isDeveloperWorkspace) {
@@ -7203,13 +7275,42 @@ function AgentListings({ initialTab = null } = {}) {
 
     return sortListingCards(privateListingCards.filter((card) => {
       const categoryMatch = targetCategories.has(String(card.propertyCategory || 'residential').toLowerCase())
-      const collectionMatch = card.collectionView === listingCollectionView
+      const collectionMatch = card.collectionView === activeListingCollectionView
       const searchMatch = query
         ? [card.title, card.addressLabel, card.suburb, card.typeLabel, card.agentName, card.originLabel, ...(card.followUpQueue || []).map((item) => item.label)].join(' ').toLowerCase().includes(query)
         : true
       return categoryMatch && collectionMatch && searchMatch
     }), filters.sortBy)
-  }, [filters.search, filters.sortBy, isDeveloperWorkspace, listingCollectionView, listingsTab, privateListingCards])
+  }, [activeListingCollectionView, filters.search, filters.sortBy, isDeveloperWorkspace, listingsTab, privateListingCards])
+
+  const visibleCardCoverRequests = useMemo(() => residentialListingCards
+    .map((card) => ({
+      id: getRemotePrivateListingId(card.listingRecord),
+      revision: String(card.updatedAt || ''),
+    }))
+    .filter((card) => card.id), [residentialListingCards])
+
+  useEffect(() => {
+    const pending = visibleCardCoverRequests.filter(({ id, revision }) => {
+      const key = `${id}:${revision}`
+      if (requestedCardCoverRevisionsRef.current.has(key)) return false
+      requestedCardCoverRevisionsRef.current.add(key)
+      return true
+    })
+    if (!pending.length) return
+
+    getPrivateListingCoverImageUrls(pending.map(({ id }) => id))
+      .then((urls) => {
+        setCardCoverImageUrls((previous) => ({
+          ...previous,
+          ...Object.fromEntries(pending.map(({ id }) => [id, urls[id] || ''])),
+        }))
+      })
+      .catch((coverError) => {
+        pending.forEach(({ id, revision }) => requestedCardCoverRevisionsRef.current.delete(`${id}:${revision}`))
+        console.warn('[Listings] Cover images could not be loaded.', coverError)
+      })
+  }, [visibleCardCoverRequests])
 
   const developmentCards = useMemo(() => {
     const grouped = new Map()
@@ -8317,62 +8418,18 @@ function AgentListings({ initialTab = null } = {}) {
         />
       ) : null}
 
-      <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
+      {pilotCreationFreeze.paused || error || workflowMessage || quickAddSuccess ? (
+      <section className="space-y-3 rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         {pilotCreationFreeze.paused ? (
-          <div className="mb-4 rounded-[14px] border border-[#f2cf8d] bg-[#fff8e8] px-4 py-3 text-sm text-[#805d12]" role="status">
+          <div className="rounded-[14px] border border-[#f2cf8d] bg-[#fff8e8] px-4 py-3 text-sm text-[#805d12]" role="status">
             <p className="font-semibold">Controlled pilot hold — new listings and transactions are paused.</p>
             <p className="mt-1">Existing records remain available to review. Do not create new live records until the release gate is cleared.</p>
           </div>
         ) : null}
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
-          <div className="grid flex-1 gap-3 md:grid-cols-[minmax(260px,1fr)_220px] xl:max-w-[720px]">
-            <label className="grid gap-2">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
-              <div className="flex h-[44px] items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3">
-                <Search size={15} className="text-[#7b8ca2]" />
-                <input
-                  value={filters.search}
-                  onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
-                  className="w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
-                  placeholder={
-                    isDeveloperWorkspace
-                      ? 'Search development, unit, portal status...'
-                      : listingsTab !== 'developments'
-                      ? 'Search property, suburb, listing type...'
-                      : 'Search developments, locations, activity...'
-                  }
-                />
-              </div>
-            </label>
-            <label className="grid gap-2">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sort by</span>
-              <Field
-                as="select"
-                value={filters.sortBy}
-                onChange={(event) => setFilters((prev) => ({ ...prev, sortBy: event.target.value }))}
-                className="h-[44px] rounded-[14px]"
-              >
-                {LISTING_SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </Field>
-            </label>
-          </div>
-
-          {isDeveloperWorkspace || listingsTab !== 'developments' ? (
-            <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-              <Button type="button" variant="secondary" onClick={openQuickAddListingModal} disabled={pilotCreationFreeze.paused}>
-                <Plus size={16} />
-                Add Listing
-              </Button>
-            </div>
-          ) : null}
-        </div>
-
-        {error ? <p className="mt-3 rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
-        {workflowMessage ? <p className="mt-3 rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-2 text-sm text-[#1f7d44]">{workflowMessage}</p> : null}
+        {error ? <p className="rounded-[14px] border border-[#f6d4d4] bg-[#fff5f5] px-4 py-2 text-sm text-[#b42318]">{error}</p> : null}
+        {workflowMessage ? <p className="rounded-[14px] border border-[#d8ecdf] bg-[#eefbf3] px-4 py-2 text-sm text-[#1f7d44]">{workflowMessage}</p> : null}
         {quickAddSuccess ? (
-          <div className="mt-3 rounded-[18px] border border-[#d8ecdf] bg-[#f3fbf6] p-4">
+          <div className="rounded-[18px] border border-[#d8ecdf] bg-[#f3fbf6] p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <p className="text-sm font-semibold text-[#1f7d44]">{quickAddSuccess.propertySaveIssue ? 'Listing created, but property details need attention.' : 'Listing created successfully. What would you like to do next?'}</p>
@@ -8468,34 +8525,39 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
         ) : null}
       </section>
+      ) : null}
 
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
-        <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
+        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="min-w-0">
             <h2 className="text-[1.02rem] font-semibold text-[#142132]">
               {isDeveloperWorkspace
                 ? 'Listings'
                 : listingsTab === 'developments'
                 ? 'Development Listings'
-                : listingCollectionView === 'archived'
-                  ? 'Archived Listings'
-                  : listingCollectionView === 'review'
+                : activeListingCollectionView === 'archived'
+                  ? 'Previous Listings'
+                  : activeListingCollectionView === 'review'
                     ? 'Listings for Review'
                     : 'Current Listings'}
             </h2>
-            <p className="mt-1 text-sm text-[#607387]">
-              {isDeveloperWorkspace
-                ? 'Publish development stock to portals. Developments create stock; listings publish stock.'
-                : listingsTab === 'developments'
-                ? isDeveloperWorkspace
-                  ? 'Development listings, portal syndication readiness, and buyer activity linked back to source developments.'
-                  : 'Assigned developments, live buyer activity, and structured workspace access.'
-                : listingCollectionView === 'archived'
-                  ? 'Archived listings and historical Property24 imports. These records are retained for reference and are not part of current stock.'
-                  : listingCollectionView === 'review'
-                    ? 'Property24 and Private Property imports awaiting review before they become current stock.'
-                    : 'Agent-owned listings, including drafts, seller onboarding, offers, and deal preparation.'}
-            </p>
+            {isDeveloperWorkspace ? (
+              <Button type="button" variant="secondary" onClick={openQuickAddListingModal} disabled={pilotCreationFreeze.paused} className="mt-3">
+                <Plus size={16} />
+                Add Listing
+              </Button>
+            ) : null}
+            {isDeveloperWorkspace || listingsTab === 'developments' || activeListingCollectionView !== 'current' ? (
+              <p className="mt-1 text-sm text-[#607387]">
+                {isDeveloperWorkspace
+                  ? 'Publish development stock to portals. Developments create stock; listings publish stock.'
+                  : listingsTab === 'developments'
+                    ? 'Assigned developments, live buyer activity, and structured workspace access.'
+                    : activeListingCollectionView === 'archived'
+                      ? 'Past listings and historical Property24 imports. These records are retained for reference and are not part of current stock.'
+                      : 'Property24 and Private Property imports awaiting review before they become current stock.'}
+              </p>
+            ) : null}
             {!isDeveloperWorkspace && listingsTab === 'developments' ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {!isDeveloperWorkspace ? (
@@ -8530,8 +8592,41 @@ function AgentListings({ initialTab = null } = {}) {
             ) : null}
           </div>
 
+          <div className="grid w-full min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_200px] xl:max-w-[650px] xl:flex-1">
+            <label className="grid min-w-0 gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Search</span>
+              <div className="flex h-[44px] items-center gap-2 rounded-[14px] border border-[#dce6f2] bg-white px-3">
+                <Search size={15} className="shrink-0 text-[#7b8ca2]" aria-hidden="true" />
+                <input
+                  value={filters.search}
+                  onChange={(event) => setFilters((prev) => ({ ...prev, search: event.target.value }))}
+                  className="min-w-0 w-full border-0 bg-transparent p-0 text-sm text-[#142132] outline-none"
+                  placeholder={isDeveloperWorkspace
+                    ? 'Search development, unit, portal status...'
+                    : listingsTab === 'developments'
+                      ? 'Search developments, locations, activity...'
+                      : 'Search property, suburb, listing type...'}
+                />
+              </div>
+            </label>
+            <label className="grid gap-2">
+              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Sort by</span>
+              <Field
+                as="select"
+                value={filters.sortBy}
+                onChange={(event) => setFilters((prev) => ({ ...prev, sortBy: event.target.value }))}
+                className="h-[44px] rounded-[14px]"
+              >
+                {LISTING_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </Field>
+            </label>
+          </div>
+        </div>
+
           {!isDeveloperWorkspace ? (
-          <div className="grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[460px]">
+          <div className="mb-5 grid w-full grid-cols-2 gap-1.5 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:max-w-[460px]">
             {[
               { key: 'residential', label: 'Residential', count: listingTabCounts.residential || 0 },
               { key: 'developments', label: 'Developments', count: listingTabCounts.developments || 0 },
@@ -8564,16 +8659,16 @@ function AgentListings({ initialTab = null } = {}) {
             })}
           </div>
           ) : null}
-        </div>
-
         {!isDeveloperWorkspace && listingsTab !== 'developments' ? (
-          <div className="mb-5 grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 sm:grid-cols-3">
+          <div className={`mb-5 grid gap-2 rounded-[18px] border border-[#dbe6f2] bg-[#f5f9fd] p-1.5 ${showImportedReviewTab ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
             {[
               { key: 'current', label: 'Current', count: listingTabCounts.residential || 0, description: 'Working stock, drafts, and live listings' },
-              { key: 'archived', label: 'Archive', count: listingTabCounts.archived || 0, description: 'Archived listings and historical imports' },
-              { key: 'review', label: 'Imported Review', count: listingTabCounts.review || 0, description: 'Property24 and Private Property imports' },
+              { key: 'archived', label: 'Previous Listings', count: listingTabCounts.archived || 0, description: 'Past listings and historical imports' },
+              ...(showImportedReviewTab
+                ? [{ key: 'review', label: 'Imported Review', count: listingTabCounts.review || 0, description: 'Property24 and Private Property imports' }]
+                : []),
             ].map((view) => {
-              const active = listingCollectionView === view.key
+              const active = activeListingCollectionView === view.key
               return (
                 <button
                   key={view.key}
@@ -8603,7 +8698,7 @@ function AgentListings({ initialTab = null } = {}) {
         {!loading && (isDeveloperWorkspace || listingsTab !== 'developments') ? (
           residentialListingCards.length ? (
             <div className="grid items-stretch gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {residentialListingCards.map((card) => (
+              {residentialListingCards.map((card, index) => (
                 <article
                   key={card.id}
                   style={{ contentVisibility: 'auto', containIntrinsicSize: '0 430px' }}
@@ -8612,7 +8707,12 @@ function AgentListings({ initialTab = null } = {}) {
                 >
                   <div className="relative h-[132px] w-full overflow-visible border-b border-[#e5edf6]">
                     <div className="absolute inset-0 overflow-hidden">
-                      <ListingCardImage src={card.imageUrl} alt={card.title} />
+                      <ListingCardImage
+                        key={cardCoverImageUrls[getRemotePrivateListingId(card.listingRecord)] || card.imageUrl || 'placeholder'}
+                        {...getListingCardImageSource(cardCoverImageUrls[getRemotePrivateListingId(card.listingRecord)] || card.imageUrl)}
+                        alt={card.title}
+                        priority={index < 4}
+                      />
                     </div>
                     <div className="absolute right-3 top-3 z-10">
                       <button
@@ -9767,7 +9867,7 @@ function AgentListings({ initialTab = null } = {}) {
                     </p>
                   </QuickAddSection>
 
-                  <QuickAddSection number="7" title="Send Seller Portal" copy="Available after the signed mandate upload is saved.">
+                  <QuickAddSection number="7" title="Send Seller Portal" copy="A confirmed seller type, contact name and email are needed. The mandate can be uploaded later.">
                     <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
                       <div className="flex items-start gap-4">
                         <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#e6f7ec] text-[#1f8a4c]">
@@ -9789,9 +9889,7 @@ function AgentListings({ initialTab = null } = {}) {
                         <p className="mb-2 text-xs font-bold text-[#2d445e]">Send link via</p>
                         <div className="flex flex-wrap gap-2">
                           {[
-                            { key: 'email', label: 'Email', icon: Mail },
-                            { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
-                            { key: 'copy_link', label: 'Copy link', icon: Link },
+                            { key: 'email', label: 'Email after creation', icon: Mail },
                           ].map((method) => {
                             const Icon = method.icon
                             const active = form.sellerPortalInviteRequested && form.sellerPortalDeliveryMethod === method.key
@@ -9810,8 +9908,9 @@ function AgentListings({ initialTab = null } = {}) {
                           })}
                         </div>
                         <p className="mt-3 text-xs font-semibold text-[#2d445e]">
-                          Status: {form.sellerPortalInviteRequested ? 'Ready to send after creation' : 'Not sent'}
+                          Status: {form.sellerPortalInviteRequested ? 'Will send after creation if seller setup is complete' : 'Not sent'}
                         </p>
+                        <p className="mt-1 text-xs text-[#60758c]">To share a link another way, use the Seller tab after creating the listing.</p>
                       </div>
                     </div>
                   </QuickAddSection>

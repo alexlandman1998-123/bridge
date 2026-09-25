@@ -70,7 +70,7 @@ export async function createListingBuyerLead({ organisationId = '', listing = {}
 }
 
 export async function createListingViewingRequest({ organisationId = '', listing = {}, buyer = {}, seller = {}, existingLead = null, actor = {} } = {}) {
-  const errors = validateListingViewingDraft(buyer, seller)
+  const errors = validateListingViewingDraft(buyer, seller, { agent: actor })
   if (errors.length) throw new Error(errors[0])
   if (!listingBuyerActionId(organisationId) || !getListingBuyerActionListingId(listing)) {
     throw new Error('A saved listing and organisation are required before requesting a viewing.')

@@ -274,7 +274,7 @@ export async function handleAppointmentEmail(
     apiKey: resendApiKey,
     from: sender,
     to,
-    bcc: normalizeText(payload.agentEmail || payload.organizerEmail),
+    bcc: payload.bccAgent === false ? undefined : normalizeText(payload.agentEmail || payload.organizerEmail),
     subject,
     html,
     text,
@@ -283,6 +283,7 @@ export async function handleAppointmentEmail(
       payload.replyTo || payload.organizerEmail || payload.agentEmail ||
         branding.replyTo,
     ) || undefined,
+    idempotencyKey: normalizeText(payload.idempotencyKey) || undefined,
   });
 
   if (!emailResult.ok) {

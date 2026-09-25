@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
   buildListingOverviewPerformance,
+  getListingOverviewViewingStatusLabel,
+  LISTING_OVERVIEW_DISPLAY_SOURCES,
+  LISTING_OVERVIEW_STATUS_CONTRACT,
   normalizeListingOverviewAnalytics,
 } from '../src/services/listings/listingOverviewPerformanceService.js'
 
@@ -21,7 +24,7 @@ const performance = buildListingOverviewPerformance({
     { id: 'lead-2', createdAt: '2026-09-01T10:00:00.000Z' },
   ],
   viewings: [
-    { id: 'viewing-1', status: 'confirmed', buyerLeadId: 'lead-1' },
+    { id: 'viewing-1', status: 'confirmed', buyerLeadId: 'lead-1', proposed_date: '2026-09-25', proposed_time: '14:00' },
     { id: 'viewing-2', status: 'completed', buyerLeadId: 'lead-2' },
     { id: 'viewing-3', status: 'cancelled', buyerLeadId: 'lead-2' },
   ],
@@ -40,6 +43,17 @@ assert.equal(performance.completedViewings, 1)
 assert.equal(performance.upcomingViewings, 1)
 assert.equal(performance.viewingConversionRate, 100)
 assert.equal(performance.daysOnMarket, 14)
+assert.deepEqual(Object.keys(LISTING_OVERVIEW_DISPLAY_SOURCES), [
+  'leads', 'viewings', 'daysOnMarket', 'buyerActivity', 'seller', 'marketing', 'pricePosition', 'documentProgress', 'published', 'listingAgent',
+])
+assert.equal(getListingOverviewViewingStatusLabel('pending_approval'), 'Awaiting responses')
+assert.equal(getListingOverviewViewingStatusLabel('reschedule_requested'), 'New time proposed')
+assert.equal(getListingOverviewViewingStatusLabel('unrecognised'), 'Status unavailable')
+assert.deepEqual(LISTING_OVERVIEW_STATUS_CONTRACT.documentProgress, ['setup_needed', 'incomplete', 'ready_for_review', 'complete', 'unavailable'])
+assert.equal(buildListingOverviewPerformance({
+  now: new Date('2026-09-24T12:00:00.000Z'),
+  viewings: [{ status: 'requested', proposed_date: '2026-09-22', proposed_time: '14:00' }],
+}).upcomingViewings, 0, 'past pending requests must not count as upcoming')
 
 const unavailable = buildListingOverviewPerformance({
   analytics: {},

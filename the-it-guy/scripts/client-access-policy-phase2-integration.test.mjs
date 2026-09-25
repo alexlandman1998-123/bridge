@@ -31,28 +31,31 @@ test('Unit workspace buyer portal and onboarding actions use the canonical buyer
   assert.match(files.unitDetail, /setError\(buyerOnboardingAccessDecisionReason\)/)
 })
 
-test('Seller portal activation service blocks non-lead invites until signed mandate evidence is uploaded', () => {
+test('Seller portal activation service checks seller setup without a mandate invitation gate', () => {
   assert.match(files.sellerActivation, /resolveSellerAccessPolicy/)
-  assert.match(files.sellerActivation, /getPrivateListing\(listingId, \{ includeRequirementsAndDocuments: true \}\)/)
+  assert.match(files.sellerActivation, /getPrivateListing\(listingId, \{ includeRequirementsAndDocuments: false \}\)/)
   assert.match(files.sellerActivation, /source !== SELLER_PORTAL_ACTIVATION_SOURCES\.sellerLead/)
   assert.match(files.sellerActivation, /sellerAccessPolicy\.actions\.activatePortal/)
+  assert.match(files.sellerActivation, /sellerContactName/)
+  assert.doesNotMatch(files.sellerActivation, /Upload the signed mandate before activating the Seller Portal/)
   assert.match(files.sellerActivation, /error\.policyDecision = activationDecision/)
 })
 
-test('Private listing readiness delegates signed mandate evidence to the canonical policy', () => {
+test('Post-mandate document notification still uses signed-mandate evidence separately', () => {
   assert.match(files.privateListing, /hasSignedMandateEvidence/)
   assert.doesNotMatch(files.privateListing, /SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS/)
   assert.match(files.privateListing, /return hasSignedMandateEvidence\(/)
 })
 
-test('Existing listing Seller Portal modal no longer has a physical-documents-held bypass', () => {
+test('Existing listing Seller Portal modal asks for setup, not a signed mandate', () => {
   assert.doesNotMatch(files.listingDetail, /physicalDocumentsHeld/)
-  assert.match(files.listingDetail, /Upload the signed mandate before activating the Seller Portal\./)
-  assert.match(files.listingDetail, /disabled=\{sellerPortalActivationSending \|\| !sellerPortalMandateEvidenceReady\}/)
+  assert.match(files.listingDetail, /Set up seller/)
+  assert.match(files.listingDetail, /disabled=\{sellerPortalActivationSending \|\| sellerOwnershipUnidentified\}/)
+  assert.doesNotMatch(files.listingDetail, /sellerPortalMandateEvidenceReady/)
 })
 
-test('Quick Add copy no longer presents mandate signing as a seller portal task', () => {
-  assert.match(files.listings, /Available after the signed mandate upload is saved\./)
+test('Quick Add presents seller setup instead of signed mandate as the invite prerequisite', () => {
+  assert.match(files.listings, /A confirmed seller type, contact name and email are needed/)
   assert.match(files.listings, /Track the uploaded mandate status/)
   assert.doesNotMatch(files.listings, /Complete\/sign mandate where applicable/)
 })

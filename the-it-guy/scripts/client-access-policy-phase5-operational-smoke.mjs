@@ -16,8 +16,8 @@ const TEXT_EXPECTATIONS = Object.freeze([
   {
     id: 'seller.portal.gate',
     file: 'sellerOnboarding',
-    pattern: /seller_portal_invite_requires_signed_mandate/,
-    description: 'Seller Portal delivery requires signed mandate evidence.',
+    pattern: /verifySellerPortalInviteSetup[\s\S]*seller_type_required[\s\S]*seller_contact_required[\s\S]*seller_email_required/,
+    description: 'Seller Portal delivery requires confirmed seller type, named contact and valid email.',
   },
   {
     id: 'seller.signing.sender.retired',

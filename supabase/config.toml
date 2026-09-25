@@ -84,6 +84,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/marketing-event-worker/index.ts"
 
+[functions.listing-viewing-notification-worker]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/listing-viewing-notification-worker/index.ts"
+
 [functions.send-mandate-signing-email]
 enabled = false
 verify_jwt = true

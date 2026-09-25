@@ -84,20 +84,20 @@ test('Kingstons buyer portal becomes available only after signed OTP evidence ex
   assert.equal(policy.actions.uploadSignedOtp.reason, CLIENT_ACCESS_REASONS.signedOtpAlreadyUploaded)
 })
 
-test('seller portal activation is blocked until the signed mandate is uploaded', () => {
+test('seller portal activation requires a confirmed seller type before invitation', () => {
   const policy = resolveSellerAccessPolicy({
     listingId: 'listing-1',
     sellerEmail: 'seller@example.com',
   })
 
   assert.equal(policy.actions.activatePortal.enabled, false)
-  assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerSignedMandateRequired)
+  assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerTypeRequired)
   assert.equal(policy.actions.uploadSignedMandate.enabled, true)
   assert.equal(policy.actions.sendMandateSigningLink.enabled, false)
   assert.equal(policy.actions.sendMandateSigningLink.reason, CLIENT_ACCESS_REASONS.sellerMandateSigningLinksRetired)
 })
 
-test('generic mandate upload is not enough to activate the seller portal', () => {
+test('a generic mandate upload does not substitute for seller setup', () => {
   const policy = resolveSellerAccessPolicy({
     listingId: 'listing-1b',
     sellerEmail: 'seller@example.com',
@@ -113,10 +113,10 @@ test('generic mandate upload is not enough to activate the seller portal', () =>
 
   assert.equal(policy.signedMandateUploaded, false)
   assert.equal(policy.actions.activatePortal.enabled, false)
-  assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerSignedMandateRequired)
+  assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerTypeRequired)
 })
 
-test('final signed mandate artifact evidence activates the seller portal policy', () => {
+test('final signed mandate evidence alone does not substitute for seller setup', () => {
   const policy = resolveSellerAccessPolicy({
     listingId: 'listing-1c',
     sellerEmail: 'seller@example.com',
@@ -126,28 +126,46 @@ test('final signed mandate artifact evidence activates the seller portal policy'
   })
 
   assert.equal(policy.signedMandateUploaded, true)
-  assert.equal(policy.actions.activatePortal.enabled, true)
-  assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerPortalReady)
+  assert.equal(policy.actions.activatePortal.enabled, false)
+  assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerTypeRequired)
 })
 
-test('seller portal activation is ready after signed mandate upload and seller email', () => {
+test('seller portal activation is ready with basic seller setup before mandate upload', () => {
   const policy = resolveSellerAccessPolicy({
     listingId: 'listing-2',
+    sellerType: 'company',
+    sellerContactName: 'Jane Director',
     sellerEmail: 'seller@example.com',
-    mandateStatus: 'signed_uploaded',
   })
 
   assert.equal(hasSignedMandateEvidence({ mandateStatus: 'signed_uploaded' }), true)
-  assert.equal(policy.signedMandateUploaded, true)
+  assert.equal(policy.signedMandateUploaded, false)
   assert.equal(policy.actions.activatePortal.enabled, true)
   assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerPortalReady)
-  assert.equal(policy.actions.uploadSignedMandate.enabled, false)
+  assert.equal(policy.actions.uploadSignedMandate.enabled, true)
 })
 
-test('seller portal still requires a seller email after signed mandate upload', () => {
+test('company legal name is not treated as its portal contact', () => {
+  const policy = resolveSellerAccessPolicy({ listingId: 'listing-company', sellerType: 'company', sellerName: 'Example Pty Ltd', sellerEmail: 'director@example.com' })
+  assert.equal(policy.actions.activatePortal.enabled, false)
+  assert.equal(policy.actions.activatePortal.reason, CLIENT_ACCESS_REASONS.sellerContactRequired)
+})
+
+test('confirmed individual with a named contact can be invited before signing', () => {
+  const policy = resolveSellerAccessPolicy({
+    listingId: 'listing-individual', sellerType: 'individual', sellerEmail: 'owner@example.com',
+    sellerCanonicalFacts: { seller: { legal_type: 'individual' }, firstName: 'Jane', lastName: 'Owner' },
+  })
+  assert.equal(policy.actions.activatePortal.enabled, true)
+  assert.equal(policy.signedMandateUploaded, false)
+})
+
+test('seller portal still requires a valid seller email with a confirmed contact', () => {
   const policy = resolveSellerAccessPolicy({
     listingId: 'listing-3',
-    signedMandateUploaded: true,
+    sellerType: 'trust',
+    sellerContactName: 'Jane Trustee',
+    sellerEmail: 'not-an-email',
   })
 
   assert.equal(policy.actions.activatePortal.enabled, false)
@@ -182,8 +200,9 @@ test('combined policy exposes buyer and seller decisions from one canonical entr
     },
     seller: {
       listingId: 'listing-4',
+      sellerType: 'company',
+      sellerContactName: 'Jane Director',
       sellerEmail: 'seller@example.com',
-      mandateStatus: 'signed_uploaded',
     },
   })
 

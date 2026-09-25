@@ -21,10 +21,9 @@ function assertNotContains(source, needle, label) {
   }
 }
 
-assertContains(listingDetailSource, 'getListingOverviewAnalytics({', 'verified overview analytics load')
 assertContains(listingDetailSource, 'buildListingOverviewPerformance({', 'canonical overview performance builder')
-assertContains(listingDetailSource, "listingPerformance.viewsAvailable", 'honest unavailable views state')
-assertContains(listingDetailSource, "'PP views unavailable'", 'Private Property analytics limitation')
+assertNotContains(listingDetailSource, 'getListingOverviewAnalytics({', 'unsupported Overview view analytics load')
+assertNotContains(listingDetailSource, "label: 'Views'", 'unsupported Overview view metric')
 assertNotContains(listingDetailSource, 'function openListingPerformanceEditor', 'listing performance editor opener')
 assertNotContains(listingDetailSource, 'Edit Listing Performance', 'listing performance edit modal')
 assertNotContains(listingDetailSource, 'Edit Stats', 'listing performance edit button')

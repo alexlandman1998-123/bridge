@@ -20,19 +20,6 @@ function test(name, fn) {
   }
 }
 
-function extractFunction(source, name) {
-  const start = source.indexOf(`function ${name}`)
-  assert.ok(start >= 0, `${name} should be present`)
-  const nextFunction = source.indexOf('\nfunction ', start + 1)
-  return source.slice(start, nextFunction > start ? nextFunction : undefined)
-}
-
-function extractConstSet(source, name) {
-  const match = source.match(new RegExp(`const ${name} = new Set\\(\\[([\\s\\S]*?)\\]\\)`))
-  assert.ok(match, `${name} should be present`)
-  return match[1]
-}
-
 test('buyer portal direct emails are guarded by onboarding or signed OTP readiness', () => {
   assert.match(files.onboardingSubmitted, /TRANSACTION_PORTAL_READINESS_SELECT/)
   assert.match(files.onboardingSubmitted, /onboarding_status, onboarding_completed_at, external_onboarding_submitted_at/)
@@ -49,20 +36,14 @@ test('Kingstons buyer portal direct emails require signed OTP evidence', () => {
   assert.match(files.onboardingSubmitted, /Upload the signed OTP before sending the buyer portal link for Kingstons\./)
 })
 
-test('seller portal direct emails no longer treat listing lifecycle status as signed mandate evidence', () => {
-  const readySet = extractConstSet(files.sellerOnboarding, 'SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS')
-  for (const retiredStatus of ['active', 'live', 'published', 'sold', 'transaction_created', 'under_offer']) {
-    assert.doesNotMatch(readySet, new RegExp(`"${retiredStatus}"`), `${retiredStatus} must not unlock the Seller Portal`)
-  }
-  for (const signedStatus of ['completed', 'fully_signed', 'mandate_signed', 'signed', 'signed_uploaded', 'uploaded_signed']) {
-    assert.match(readySet, new RegExp(`"${signedStatus}"`), `${signedStatus} should remain signed mandate evidence`)
-  }
-
-  const listingSignal = extractFunction(files.sellerOnboarding, 'listingHasSignedMandateSignal')
-  assert.match(listingSignal, /listing\.mandate_status/)
-  assert.doesNotMatch(listingSignal, /listing\.listing_status/)
-  assert.doesNotMatch(listingSignal, /listing\.status/)
-  assert.match(files.sellerOnboarding, /Upload the signed mandate before sending the Seller Portal invitation\./)
+test('seller portal direct emails require confirmed seller setup, independently of mandate status', () => {
+  assert.match(files.sellerOnboarding, /async function verifySellerPortalInviteSetup/)
+  assert.match(files.sellerOnboarding, /seller_type, seller_canonical_facts_json/)
+  assert.match(files.sellerOnboarding, /seller_type, form_data/)
+  assert.match(files.sellerOnboarding, /seller_type_required/)
+  assert.match(files.sellerOnboarding, /seller_contact_required/)
+  assert.match(files.sellerOnboarding, /seller_email_required/)
+  assert.doesNotMatch(files.sellerOnboarding, /seller_portal_invite_requires_signed_mandate/)
 })
 
 test('seller mandate signing links are retired at controlled sender and job-runner entry points', () => {

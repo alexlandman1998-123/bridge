@@ -88,6 +88,21 @@ export function buildListingSellerDocumentsSummary(documents = []) {
   }
 }
 
+export function buildListingSellerDocumentProgress(summary = {}, requirementState = {}) {
+  const provisional = requirementState?.provisional === true
+  const total = Number(summary?.total || 0)
+  const complete = Number(summary?.complete || 0)
+  if (provisional) return { state: 'setup_needed', percent: null, complete, total, outstanding: null }
+  if (total <= 0) return { state: 'no_requirements', percent: null, complete: 0, total: 0, outstanding: 0 }
+  return {
+    state: complete >= total ? 'complete' : 'in_progress',
+    percent: Math.round((complete / total) * 100),
+    complete,
+    total,
+    outstanding: Math.max(0, total - complete),
+  }
+}
+
 export function resolveListingSellerDocumentActions(document = {}) {
   const status = resolveListingSellerDocumentStatus(document).key
   const linkedDocument = document?.linkedDocument || document?.upload || null

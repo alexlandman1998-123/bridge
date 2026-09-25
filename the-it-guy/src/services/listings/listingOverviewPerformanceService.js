@@ -9,6 +9,41 @@ const UPCOMING_VIEWING_STATUSES = new Set([
 ])
 const EXCLUDED_VIEWING_STATUSES = new Set(['cancelled', 'declined', 'rejected'])
 
+// The Overview is a summary of these existing records, not a second source of truth.
+// Keep this contract beside the count builder so later UI/workflow phases reuse it.
+export const LISTING_OVERVIEW_DISPLAY_SOURCES = Object.freeze({
+  leads: 'listing-linked buyer leads',
+  viewings: 'listing-linked appointments and their participants',
+  daysOnMarket: 'saved listing date or verified publication/market-start timestamp',
+  buyerActivity: 'listing-linked buyer leads and viewings',
+  seller: 'canonical seller profile, onboarding, mandate and portal state',
+  marketing: 'saved listing marketing draft and distribution links',
+  pricePosition: 'saved listing asking price',
+  documentProgress: 'canonical seller document requirement summary',
+  published: 'saved distribution channel publication states and URLs',
+  listingAgent: 'assigned listing agent and organisation profile',
+})
+
+export const LISTING_OVERVIEW_STATUS_CONTRACT = Object.freeze({
+  viewing: Object.freeze({
+    viewing_requested: 'Awaiting responses',
+    pending_approval: 'Awaiting responses',
+    reschedule_requested: 'New time proposed',
+    confirmed: 'Confirmed',
+    declined: 'Declined',
+    cancelled: 'Cancelled',
+    completed: 'Completed',
+  }),
+  sellerSetup: Object.freeze(['setup_needed', 'invited', 'activated', 'attention']),
+  documentProgress: Object.freeze(['setup_needed', 'incomplete', 'ready_for_review', 'complete', 'unavailable']),
+  pricing: Object.freeze(['not_captured', 'current', 'reduced']),
+  publication: Object.freeze(['not_published', 'submitting', 'published', 'needs_attention', 'unknown']),
+})
+
+export function getListingOverviewViewingStatusLabel(status = '') {
+  return LISTING_OVERVIEW_STATUS_CONTRACT.viewing[text(status).toLowerCase()] || 'Status unavailable'
+}
+
 function text(value = '') {
   return String(value || '').trim()
 }
@@ -79,6 +114,14 @@ function viewingStatus(viewing = {}) {
   return text(viewing.status).toLowerCase().replace(/[^a-z0-9]+/g, '_')
 }
 
+function viewingTime(viewing = {}) {
+  const date = text(viewing.proposed_date || viewing.proposedDate || viewing.date || viewing.appointmentDate)
+  const time = text(viewing.proposed_time || viewing.proposedTime || viewing.startTime || viewing.start_time)
+  if (!date || !time) return 0
+  const parsed = new Date(`${date}T${time}`).getTime()
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function uniqueLeadRows(leads = []) {
   const unique = new Map()
   leads.forEach((lead, index) => {
@@ -125,7 +168,7 @@ export function buildListingOverviewPerformance({
   const newThisWeek = leadRows.filter((lead) => timestamp(lead.createdAt || lead.created_at || lead.updatedAt || lead.updated_at) >= sevenDaysAgo).length
   const activeViewings = viewingRows.filter((viewing) => !EXCLUDED_VIEWING_STATUSES.has(viewingStatus(viewing)))
   const completedViewings = viewingRows.filter((viewing) => viewingStatus(viewing) === 'completed').length
-  const upcomingViewings = viewingRows.filter((viewing) => UPCOMING_VIEWING_STATUSES.has(viewingStatus(viewing))).length
+  const upcomingViewings = viewingRows.filter((viewing) => UPCOMING_VIEWING_STATUSES.has(viewingStatus(viewing)) && viewingTime(viewing) >= now.getTime()).length
   const uniqueViewingLeadIds = new Set(activeViewings
     .map((viewing) => text(viewing.buyer_lead_id || viewing.buyerLeadId))
     .filter(Boolean))

@@ -45,6 +45,7 @@ function getAgentName(agent = {}) {
   return normalizeText(
     agent.fullName ||
     agent.full_name ||
+    agent.name ||
     [agent.firstName || agent.first_name, agent.lastName || agent.last_name].filter(Boolean).join(' ') ||
     agent.email,
   )
@@ -86,7 +87,7 @@ export default function ListingAgentReassignmentPanel({
   const currentAgentName = normalizeText(listing.assignedAgentName || listing.assigned_agent_name || listing.assignedAgent || getAgentName(agent) || 'Unassigned')
   const currentAgentEmail = normalizeText(listing.assignedAgentEmail || listing.assigned_agent_email || agent.email).toLowerCase()
   const currentAgentPhone = normalizeText(listing.assignedAgentPhone || listing.assigned_agent_phone || agent.phone || agent.phoneNumber || agent.mobile)
-  const currentAgentAvatarUrl = getAgentAvatarUrl(agent) || normalizeText(listing.assignedAgentAvatarUrl || listing.assigned_agent_avatar_url)
+  const suppliedAgentAvatarUrl = getAgentAvatarUrl(agent) || normalizeText(listing.assignedAgentAvatarUrl || listing.assigned_agent_avatar_url)
   const property24Live = isLiveProperty24Listing(listing)
   const [open, setOpen] = useState(false)
   const [agents, setAgents] = useState([])
@@ -95,6 +96,15 @@ export default function ListingAgentReassignmentPanel({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+
+  useEffect(() => {
+    if (suppliedAgentAvatarUrl || (!currentAgentId && !currentAgentEmail)) return undefined
+    let active = true
+    listOrganisationUsers()
+      .then((rows) => { if (active) setAgents(Array.isArray(rows) ? rows : []) })
+      .catch(() => null)
+    return () => { active = false }
+  }, [currentAgentId, currentAgentEmail, suppliedAgentAvatarUrl])
 
   useEffect(() => {
     setSelectedAgentId(currentAgentId)
@@ -106,6 +116,11 @@ export default function ListingAgentReassignmentPanel({
       .sort((left, right) => getAgentName(left).localeCompare(getAgentName(right))),
     [agents],
   )
+  const directoryCurrentAgent = agents.find((row) =>
+    (currentAgentId && getAgentUserId(row) === currentAgentId) ||
+    (currentAgentEmail && normalizeText(row.email).toLowerCase() === currentAgentEmail),
+  ) || null
+  const currentAgentAvatarUrl = suppliedAgentAvatarUrl || getAgentAvatarUrl(directoryCurrentAgent || {})
   const selectedAgent = availableAgents.find((agent) => getAgentUserId(agent) === selectedAgentId) || null
   const canSave = Boolean(selectedAgentId && selectedAgentId !== currentAgentId && !saving)
 

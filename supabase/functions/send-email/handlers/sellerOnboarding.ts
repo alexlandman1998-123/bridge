@@ -26,29 +26,6 @@ import {
 import { normalizeText } from "../utils/text.ts";
 
 const SELLER_ONBOARDING_RESEND_TIMEOUT_MS = 45_000;
-const SELLER_PORTAL_INVITE_BLOCKED_BEFORE_MANDATE_SIGNED_EVENT =
-  "seller_portal_invite_blocked_before_mandate_signed";
-const SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS = new Set([
-  "completed",
-  "finalised",
-  "finalized",
-  "fully_signed",
-  "mandate_signed",
-  "signed",
-  "signed_uploaded",
-  "uploaded_signed",
-]);
-const SELLER_PORTAL_INVITE_SIGNED_MANDATE_PACKET_STATUS_KEYS = new Set([
-  "complete",
-  "completed",
-  "finalised",
-  "finalized",
-  "fully_signed",
-  "mandate_signed",
-  "signed",
-  "signed_uploaded",
-  "uploaded_signed",
-]);
 
 function toRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -63,223 +40,61 @@ function normalizeStatusKey(value: unknown) {
   );
 }
 
-function listingHasSignedMandateSignal(
-  listing: Record<string, unknown> | null,
-) {
-  if (!listing) return false;
-  return [
-    listing.mandate_status,
-  ].some((value) =>
-    SELLER_PORTAL_INVITE_READY_AFTER_MANDATE_SIGNED_STATUS_KEYS.has(
-      normalizeStatusKey(value),
-    )
-  );
-}
-
-function packetHasSignedMandateSignal(
-  packet: Record<string, unknown> | null,
-  versions: Record<string, unknown>[] = [],
-) {
-  if (
-    packet && [
-      packet.status,
-      packet.state,
-      packet.packet_status,
-    ].some((value) =>
-      SELLER_PORTAL_INVITE_SIGNED_MANDATE_PACKET_STATUS_KEYS.has(
-        normalizeStatusKey(value),
-      )
-    )
-  ) {
-    return true;
-  }
-
-  return versions.some((version) =>
-    Boolean(
-      normalizeText(version.final_signed_file_path) ||
-        normalizeText(version.final_signed_file_url) ||
-        normalizeText(version.final_signed_document_id) ||
-        normalizeText(version.finalised_at) ||
-        normalizeText(version.finalized_at),
-    )
-  );
-}
-
-async function listingLinkedPacketHasSignedMandateSignal(
-  supabase: any,
-  listing: Record<string, unknown>,
-) {
-  const packetId = normalizeText(listing.mandate_packet_id);
-  if (!packetId) return false;
-
-  const packetQuery = await supabase
-    .from("document_packets")
-    .select("id, status")
-    .eq("id", packetId)
-    .maybeSingle();
-  if (packetQuery.error) {
-    console.error(
-      "[seller_onboarding] seller portal invite packet guard lookup failed",
-      packetQuery.error,
-    );
-    return false;
-  }
-
-  const versionsQuery = await supabase
-    .from("document_packet_versions")
-    .select(
-      "id, packet_id, final_signed_file_path, final_signed_file_url, final_signed_document_id, finalised_at",
-    )
-    .eq("packet_id", packetId)
-    .order("version_number", { ascending: false })
-    .limit(3);
-  if (versionsQuery.error) {
-    console.error(
-      "[seller_onboarding] seller portal invite packet version guard lookup failed",
-      versionsQuery.error,
-    );
-    return packetHasSignedMandateSignal(packetQuery.data || null, []);
-  }
-
-  return packetHasSignedMandateSignal(
-    packetQuery.data || null,
-    (versionsQuery.data || []) as Record<string, unknown>[],
-  );
-}
-
-async function appendSellerPortalInviteGuardBlockedEvent(
-  supabase: any,
-  {
-    listing,
-    listingId,
-    code,
-    message,
-  }: {
-    listing: Record<string, unknown> | null;
-    listingId: string;
-    code: string;
-    message: string;
-  },
-) {
-  const packetId = normalizeText(listing?.mandate_packet_id);
-  const organisationId = normalizeText(listing?.organisation_id);
-  if (!supabase || !packetId || !organisationId) return;
-
-  const nowIso = new Date().toISOString();
-  const eventPayload = {
-    activity_type: SELLER_PORTAL_INVITE_BLOCKED_BEFORE_MANDATE_SIGNED_EVENT,
-    document_packet_id: packetId,
-    document_packet_version_id: null,
-    actor_role: "system",
-    visibility: "internal",
-    triggerSource: "send_email_seller_portal_guard",
-    triggerReason: "mandate_not_signed",
-    listingId: normalizeText(listing?.id) || listingId || null,
-    listing_id: normalizeText(listing?.id) || listingId || null,
-    mandateStatus: normalizeText(listing?.mandate_status) || null,
-    listingStatus: normalizeText(listing?.listing_status) || null,
-    status: normalizeText(listing?.status) || null,
-    code,
-    blockedAt: nowIso,
-    message,
-    created_at: nowIso,
-    metadata: {},
-  };
-
-  const insert = await supabase.from("document_packet_events").insert({
-    packet_id: packetId,
-    organisation_id: organisationId,
-    version_id: null,
-    event_type: SELLER_PORTAL_INVITE_BLOCKED_BEFORE_MANDATE_SIGNED_EVENT,
-    event_payload_json: eventPayload,
-    created_by: null,
-    created_at: nowIso,
-  });
-  if (insert.error) {
-    console.error(
-      "[seller_onboarding] seller portal invite blocked event insert failed",
-      insert.error,
-    );
-  }
-}
-
-async function verifySellerPortalInviteAfterSignedMandate(
-  supabase: any,
+async function verifySellerPortalInviteSetup(
+  supabase: Parameters<typeof ensureCanonicalClientInvite>[0] | null,
   listingId: string,
+  recipientEmail: string,
 ) {
-  if (!supabase) {
-    return {
-      ok: false,
-      status: 500,
-      error:
-        "Supabase service role is required before sending seller portal password setup links.",
-      code: "seller_portal_invite_guard_unavailable",
-    };
-  }
-  if (!listingId) {
-    return {
-      ok: false,
-      status: 400,
-      error:
-        "Listing id is required before sending seller portal password setup links.",
-      code: "seller_portal_invite_listing_required",
-    };
-  }
+  if (!supabase) return { ok: false, status: 500, error: "Seller Portal setup could not be checked. Please try again.", code: "seller_portal_setup_unavailable" };
+  if (!listingId) return { ok: false, status: 400, error: "A listing is required before sending the Seller Portal invitation.", code: "seller_portal_listing_required" };
 
-  const query = await supabase
-    .from("private_listings")
-    .select(
-      "id, organisation_id, mandate_status, listing_status, mandate_packet_id",
-    )
-    .eq("id", listingId)
-    .maybeSingle();
-
+  const query = await supabase.from("private_listings")
+    .select("id, organisation_id, seller_type, seller_canonical_facts_json")
+    .eq("id", listingId).maybeSingle();
   if (query.error) {
-    console.error(
-      "[seller_onboarding] seller portal invite mandate guard failed",
-      query.error,
-    );
-    return {
-      ok: false,
-      status: 500,
-      error: query.error.message ||
-        "Unable to verify signed mandate before sending seller portal link.",
-      code: "seller_portal_invite_guard_failed",
-    };
+    console.error("[seller_onboarding] seller portal setup check failed", query.error);
+    return { ok: false, status: 500, error: "Unable to check seller setup before sending the portal link.", code: "seller_portal_setup_check_failed" };
+  }
+  const listing = query.data;
+  if (!listing) return { ok: false, status: 404, error: "Listing not found.", code: "seller_portal_listing_not_found" };
+
+  const onboardingQuery = await supabase.from("private_listing_seller_onboarding")
+    .select("seller_type, form_data")
+    .eq("private_listing_id", listingId).maybeSingle();
+  if (onboardingQuery.error) {
+    console.error("[seller_onboarding] seller portal onboarding lookup failed", onboardingQuery.error);
+    return { ok: false, status: 500, error: "Unable to check seller setup before sending the portal link.", code: "seller_portal_setup_check_failed" };
+  }
+  const facts = toRecord(listing.seller_canonical_facts_json);
+  const seller = toRecord(facts.seller);
+  const form = toRecord(onboardingQuery.data?.form_data);
+  const explicitType = normalizeStatusKey(
+    seller.sellerLegalType || seller.legal_type || facts.sellerLegalType ||
+    facts.sellerType || form.sellerType || onboardingQuery.data?.seller_type ||
+    (normalizeStatusKey(listing.seller_type) === "individual" ? "" : listing.seller_type),
+  );
+  if (!explicitType || ["unknown", "not_captured", "not_identified"].includes(explicitType)) {
+    return { ok: false, status: 409, error: "Confirm the seller entity type before sending a Seller Portal invitation.", code: "seller_type_required" };
   }
 
-  const listing = query.data || null;
-  const hasSignedMandateSignal = listingHasSignedMandateSignal(listing) ||
-    (listing
-      ? await listingLinkedPacketHasSignedMandateSignal(supabase, listing)
-      : false);
-
-  if (!hasSignedMandateSignal) {
-    const code = "seller_portal_invite_requires_signed_mandate";
-    const error =
-      "Upload the signed mandate before sending the Seller Portal invitation.";
-    await appendSellerPortalInviteGuardBlockedEvent(supabase, {
-      listing,
-      listingId,
-      code,
-      message: error,
-    });
-    console.warn("[client-access-policy] seller portal invite blocked", {
-      code,
-      listingId,
-      listingFound: Boolean(listing),
-    });
-    return {
-      ok: false,
-      status: 409,
-      error,
-      code,
-    };
+  const individualContact = ["individual", "married", "foreign_individual"].includes(explicitType);
+  const contactName = normalizeText(facts.primaryContactName) ||
+    (individualContact
+      ? [facts.firstName, facts.lastName].map(normalizeText).filter(Boolean).join(" ") ||
+        [form.sellerFirstName || form.firstName, form.sellerSurname || form.lastName].map(normalizeText).filter(Boolean).join(" ") ||
+        normalizeText(facts.sellerName || form.sellerName)
+      : "");
+  if (!contactName) {
+    return { ok: false, status: 409, error: "Name the seller representative before sending the portal invitation.", code: "seller_contact_required" };
   }
-
+  const savedEmail = normalizeText(
+    facts.primaryContactEmail || facts.sellerEmail || facts.email || form.sellerEmail || form.email,
+  ).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(savedEmail) || savedEmail !== normalizeText(recipientEmail).toLowerCase()) {
+    return { ok: false, status: 409, error: "Confirm the seller representative’s email on the listing before sending the invitation.", code: "seller_email_required" };
+  }
   return { ok: true };
 }
-
 function extractSellerPortalToken(link: string) {
   const normalized = normalizeText(link);
   if (!normalized) return "";
@@ -514,9 +329,10 @@ export async function handleSellerOnboardingEmail(
     : null;
   const listingId = normalizeText(payload.listingId);
   if (portalDocumentsMode) {
-    const guard = await verifySellerPortalInviteAfterSignedMandate(
+    const guard = await verifySellerPortalInviteSetup(
       supabase,
       listingId,
+      to,
     );
     if (!guard.ok) {
       return jsonResponse(guard.status || 500, {
@@ -532,7 +348,7 @@ export async function handleSellerOnboardingEmail(
       clientRole: "seller",
       legacyPortalLink: legacyOnboardingLink,
       metadata: {
-        source: "seller_portal_documents_ready",
+        source: "seller_portal_invitation",
         organisation_id: organisationId || null,
         listing_id: listingId || null,
         lead_id: normalizeText(payload.leadId) || null,

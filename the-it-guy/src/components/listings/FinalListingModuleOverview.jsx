@@ -1,4 +1,4 @@
-import { ArrowRight, Home, KeyRound, Plus, RefreshCw } from 'lucide-react'
+import { ArrowRight, Home, Plus } from 'lucide-react'
 
 function joinClassNames(...values) {
   return values.filter(Boolean).join(' ')
@@ -36,38 +36,15 @@ function ModuleLaneButton({ lane, onNavigate }) {
 export default function FinalListingModuleOverview({ overview, onNavigate }) {
   if (!overview) return null
 
-  const portalToneClass = overview.portalSummary?.tone === 'success'
-    ? 'border-[#cbe8d8] bg-[#f1fbf5] text-[#167247]'
-    : 'border-[#dce6f2] bg-[#f8fbff] text-[#42617f]'
-
   return (
     <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe6f2] bg-[#f8fbff] text-[#1f4f78]">
+          <Home size={18} aria-hidden="true" />
+        </span>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] border border-[#dbe6f2] bg-[#f8fbff] text-[#1f4f78]">
-              <Home size={18} aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <h1 className="truncate text-[1.25rem] font-semibold text-[#142132]">Listings</h1>
-              <p className="mt-0.5 text-sm text-[#607387]">Sales and rentals use separate capture flows with shared portal readiness.</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={joinClassNames('inline-flex min-h-10 items-center gap-2 rounded-[12px] border px-3 text-sm font-semibold', portalToneClass)}>
-            <KeyRound size={15} aria-hidden="true" />
-            {overview.portalSummary?.label || 'Portal setup pending'}
-          </span>
-          <button
-            type="button"
-            onClick={() => onNavigate?.(overview.actions?.property24Settings)}
-            className="inline-flex min-h-10 items-center justify-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3 text-sm font-semibold text-[#22374d] transition hover:border-[#b9cade] hover:bg-[#fbfdff]"
-          >
-            <RefreshCw size={15} aria-hidden="true" />
-            Portal setup
-          </button>
+          <h1 className="truncate text-[1.25rem] font-semibold text-[#142132]">Listings</h1>
+          <p className="mt-0.5 text-sm text-[#607387]">Manage sale and rental listings.</p>
         </div>
       </div>
 

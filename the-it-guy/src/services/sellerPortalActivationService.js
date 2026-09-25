@@ -142,6 +142,7 @@ export async function activateSellerPortalForListing({
   listingId = '',
   activationSource = SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
   sellerContactEmail = '',
+  sellerContactName = '',
   sellerContactPhone = '',
   sellerFirstName = '',
   sellerSurname = '',
@@ -155,7 +156,7 @@ export async function activateSellerPortalForListing({
   ttlHours = 72,
 } = {}) {
   const source = normalizeKey(activationSource) || SELLER_PORTAL_ACTIVATION_SOURCES.existingListing
-  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: true })
+  const listing = await getPrivateListing(listingId, { includeRequirementsAndDocuments: false })
   if (!listing?.id) throw new Error('Private listing not found.')
 
   if (source !== SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead) {
@@ -170,15 +171,11 @@ export async function activateSellerPortalForListing({
       ...listing,
       listingId: listing.id,
       sellerEmail: preflightSellerEmail,
-      documents: listing.documents || [],
-      documentLibraryRows: listing.documents || [],
-      mandateStatus: listing.mandateStatus || listing.mandate_status,
-      mandate: listing.mandate,
-      mandatePacket: listing.mandatePacket || listing.mandate_packet,
+      sellerContactName: pickFirstText(sellerContactName, [sellerFirstName, sellerSurname].filter(Boolean).join(' ')),
     })
     const activationDecision = sellerAccessPolicy.actions.activatePortal
     if (!activationDecision.enabled) {
-      const error = new Error(getClientAccessPolicyMessage(activationDecision.reason, 'Upload the signed mandate before activating the Seller Portal.'))
+      const error = new Error(getClientAccessPolicyMessage(activationDecision.reason, 'Complete the basic seller setup before inviting them to the portal.'))
       error.code = activationDecision.reason
       error.policyVersion = sellerAccessPolicy.version
       error.policyDecision = activationDecision
@@ -218,6 +215,7 @@ export async function activateSellerPortalForListing({
   if (!portalLink) throw new Error('Seller Portal invitation link could not be created.')
 
   const sellerName = pickFirstText(
+    sellerContactName,
     [sellerFirstName, sellerSurname].filter(Boolean).join(' '),
     onboarding?.sellerName,
     onboarding?.onboarding?.form_data?.sellerName,

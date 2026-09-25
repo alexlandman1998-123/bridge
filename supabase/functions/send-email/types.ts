@@ -1544,6 +1544,8 @@ export type SendAppointmentEmailPayload = {
     | "appointment_reminder"
     | "appointment_documents_required";
   to: string;
+  idempotencyKey?: string;
+  bccAgent?: boolean;
   appointmentId?: string;
   participantId?: string;
   rsvpToken?: string;

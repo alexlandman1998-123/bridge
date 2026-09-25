@@ -2614,11 +2614,35 @@ export async function createAppointmentAsync(organisationId, payload = {}, { act
   }
   if (insertResult.error) throw insertResult.error
 
-  await replaceAppointmentParticipantsInSupabase({
-    organisationId: scopedOrganisationId,
-    appointmentId: appointment.appointmentId,
-    participants: defaultParticipants,
-  })
+  try {
+    await replaceAppointmentParticipantsInSupabase({
+      organisationId: scopedOrganisationId,
+      appointmentId: appointment.appointmentId,
+      participants: defaultParticipants,
+    })
+
+    if (payload?.listingViewingMode === 'three_party_request' || payload?.listingViewingMode === 'three_party_book') {
+      const booked = payload.listingViewingMode === 'three_party_book'
+      const initialized = await supabase.rpc(
+        booked ? 'book_listing_viewing_by_agent' : 'initialize_listing_viewing_request',
+        {
+          p_organisation_id: scopedOrganisationId,
+          p_appointment_id: appointment.appointmentId,
+          ...(booked ? { p_confirmation_note: normalizeText(payload.bookingConfirmationNote) } : {}),
+        },
+      )
+      if (initialized.error) throw initialized.error
+    }
+  } catch (setupError) {
+    if (payload?.listingViewingMode === 'three_party_request' || payload?.listingViewingMode === 'three_party_book') {
+      // A partially created request must not fall back to a two-party booking.
+      const cleanup = await supabase.from('appointments').delete()
+        .eq('organisation_id', scopedOrganisationId)
+        .eq('appointment_id', appointment.appointmentId)
+      if (cleanup.error) console.warn('[appointments] incomplete listing viewing cleanup failed', cleanup.error)
+    }
+    throw setupError
+  }
 
   if (normalizeText(appointment.leadId)) {
     try {
@@ -2755,6 +2779,21 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
   const current = await fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
   if (!current) return null
   const previousStatus = normalizeLowerText(current?.status)
+  let managedListingViewing = false
+  if (normalizeLowerText(current?.appointmentType).includes('view') && normalizeText(current?.listingId)) {
+    const managedLookup = await supabase.from('appointments')
+      .select('listing_viewing_round_number')
+      .eq('organisation_id', scopedOrganisationId)
+      .eq('appointment_id', scopedAppointmentId)
+      .maybeSingle()
+    if (managedLookup.error && !isMissingColumnError(managedLookup.error, 'listing_viewing_round_number')) {
+      throw managedLookup.error
+    }
+    managedListingViewing = managedLookup.data?.listing_viewing_round_number != null
+  }
+  if (managedListingViewing && Array.isArray(updater?.participants)) {
+    throw new Error('Viewing participants must be changed through the three-party viewing workflow.')
+  }
 
   const merged = normalizeAppointmentRecord(
     {
@@ -2771,6 +2810,9 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
     normalizeText(current?.startTime) !== normalizeText(merged?.startTime) ||
     normalizeText(current?.endTime) !== normalizeText(merged?.endTime) ||
     normalizeText(current?.dateTime) !== normalizeText(merged?.dateTime)
+  if (managedListingViewing && appointmentTimingChanged) {
+    throw new Error('Propose a new viewing time so the buyer, seller and agent can all approve it.')
+  }
   const scheduleChanged =
     appointmentTimingChanged ||
     normalizeText(current?.location) !== normalizeText(merged?.location) ||
@@ -2913,7 +2955,11 @@ export async function updateAppointmentAsync(organisationId, appointmentId, upda
   }
   let notificationResults = []
   let notificationError = null
-  if (!suppressNotifications) {
+  if (managedListingViewing && ['cancelled', 'declined', 'completed'].includes(normalizeLowerText(updatedRecord?.status))) {
+    await runAppointmentNotificationTask('managed_viewing_cancel_reminders', () =>
+      cancelAppointmentReminders(updatedRecord.appointmentId))
+  }
+  if (!suppressNotifications && !managedListingViewing) {
     const taskResults = await runAppointmentNotificationTask('appointment_updated', async () => {
       const currentStatus = normalizeLowerText(updatedRecord?.status)
       const shouldForceInviteResend =
@@ -3036,6 +3082,42 @@ export async function updateAppointmentParticipantRsvpAsync(
     throw new Error('Appointment scheduling requires the database connection.')
   }
   if (!scopedOrganisationId || !scopedAppointmentId || !scopedParticipantId) return null
+
+  const managedViewing = await supabase.from('appointments')
+    .select('listing_viewing_round_number')
+    .eq('organisation_id', scopedOrganisationId)
+    .eq('appointment_id', scopedAppointmentId)
+    .maybeSingle()
+  if (managedViewing.error && !isMissingColumnError(managedViewing.error, 'listing_viewing_round_number')) {
+    throw managedViewing.error
+  }
+  if (managedViewing.data?.listing_viewing_round_number != null) {
+    const participant = await supabase.from('appointment_participants')
+      .select('rsvp_token, participant_role, email')
+      .eq('organisation_id', scopedOrganisationId)
+      .eq('appointment_id', scopedAppointmentId)
+      .eq('participant_id', scopedParticipantId)
+      .maybeSingle()
+    if (participant.error) throw participant.error
+    if (!participant.data?.rsvp_token) throw new Error('This viewing invitation is no longer active.')
+    if (normalizeLowerText(participant.data.participant_role) !== 'agent'
+      || normalizeLowerText(participant.data.email) !== normalizeLowerText(actor?.email)) {
+      throw new Error('Only the assigned agent can respond to their viewing invitation here.')
+    }
+    const response = await supabase.rpc('submit_appointment_rsvp', {
+      p_token: participant.data.rsvp_token,
+      p_rsvp_status: mapLegacyRsvpStatus(payload?.rsvpStatus),
+      p_proposed_new_time: payload?.proposedNewTime || null,
+      p_preferred_end: payload?.preferredEnd || null,
+      p_rsvp_comment: normalizeText(payload?.rsvpComment) || null,
+    })
+    if (response.error) throw response.error
+    if (!Array.isArray(response.data) || response.data.length === 0) {
+      throw new Error('This viewing invitation has expired or is no longer active.')
+    }
+    emitAgencyCrmUpdated()
+    return fetchAppointmentByIdFromSupabase(scopedOrganisationId, scopedAppointmentId)
+  }
 
   const participantUpdate = {
     rsvp_status: mapLegacyRsvpStatus(payload?.rsvpStatus),

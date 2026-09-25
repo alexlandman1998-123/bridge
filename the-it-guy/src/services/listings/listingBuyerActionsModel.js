@@ -44,7 +44,8 @@ export function getListingBuyerActionPropertyAddress(listing = {}) {
 }
 
 function listingLabel(listing = {}) {
-  return listingBuyerActionText(listing.listingTitle || listing.title || listing.propertyAddress || listing.addressLine1 || 'Listing')
+  return getListingBuyerActionPropertyAddress(listing)
+    || listingBuyerActionText(listing.listingTitle || listing.title || 'Listing')
 }
 
 export function getListingBuyerActionLeadId(lead = {}) {
@@ -62,6 +63,8 @@ export function createListingBuyerLeadDraft(overrides = {}) {
 export function createListingViewingDraft(overrides = {}) {
   return {
     buyerLeadId: '', firstName: '', lastName: '', phone: '', email: '', proposedDate: '', proposedTime: '', notes: '',
+    mode: 'request', sellerName: '', sellerEmail: '', sellerPhone: '',
+    bookingConfirmedWithAll: false, bookingConfirmationNote: '',
     sendToBuyer: true, sendToSeller: true, ...overrides,
   }
 }
@@ -76,17 +79,32 @@ export function validateListingBuyerLeadDraft(draft = {}) {
   return errors
 }
 
-export function validateListingViewingDraft(draft = {}, seller = {}, { now = Date.now() } = {}) {
+export function validateListingViewingDraft(draft = {}, seller = {}, { now = Date.now(), agent = {} } = {}) {
   const errors = validateListingBuyerLeadDraft({ ...draft, leadSource: draft.leadSource || 'Manual Entry' })
+  const mode = listingBuyerActionText(draft.mode || 'request')
+  if (!['request', 'book'].includes(mode)) errors.push('Choose Request Viewing or Book Viewing.')
   if (!listingBuyerActionText(draft.proposedDate)) errors.push('Choose the proposed viewing date.')
   if (!listingBuyerActionText(draft.proposedTime)) errors.push('Choose the proposed viewing time.')
   if (draft.proposedDate && draft.proposedTime) {
-    const proposed = new Date(`${draft.proposedDate}T${draft.proposedTime}`)
+    // Listing viewings are always entered in South African local time, not the browser's timezone.
+    const proposed = new Date(`${draft.proposedDate}T${draft.proposedTime}:00+02:00`)
     if (Number.isNaN(proposed.getTime()) || proposed.getTime() <= Number(now)) errors.push('Choose a viewing time in the future.')
   }
-  if (!draft.sendToBuyer && !draft.sendToSeller) errors.push('Choose at least one RSVP recipient.')
-  if (draft.sendToBuyer && !validEmail(draft.email)) errors.push('A valid buyer email is required to send the buyer RSVP.')
-  if (draft.sendToSeller && !validEmail(seller.email)) errors.push('Add the seller email on the Seller tab before sending the seller RSVP.')
+  if (draft.sendToBuyer === false || draft.sendToSeller === false) errors.push('Buyer, seller and agent must all receive the viewing request.')
+  if (!validEmail(draft.email)) errors.push('A valid buyer email is required to send the buyer RSVP.')
+  if (!listingBuyerActionText(seller.name)) errors.push('Add the designated seller name for this viewing.')
+  if (!validEmail(seller.email)) errors.push('Add the designated seller email before requesting a viewing.')
+  if (!listingBuyerActionText(seller.phone)) errors.push('Add the designated seller phone number for this viewing.')
+  if (agent.email !== undefined && !validEmail(agent.email)) errors.push('Add the assigned agent email before requesting a viewing.')
+  const recipientEmails = [draft.email, seller.email, agent.email].map(listingBuyerActionEmail).filter(Boolean)
+  if (recipientEmails.length === 3 && new Set(recipientEmails).size !== 3) {
+    errors.push('Buyer, seller and agent need separate email addresses to approve independently.')
+  }
+  if (mode === 'book') {
+    if (draft.bookingConfirmedWithAll !== true) errors.push('Confirm that buyer, seller and agent have all agreed to this viewing.')
+    const note = listingBuyerActionText(draft.bookingConfirmationNote)
+    if (note.length < 10 || note.length > 1000) errors.push('Record how all three parties confirmed the viewing (10–1000 characters).')
+  }
   return [...new Set(errors)]
 }
 
@@ -121,24 +139,27 @@ export function buildListingBuyerLeadPayload({ listing = {}, buyer = {}, actor =
 export function buildListingViewingAppointmentPayload({ listing = {}, buyer = {}, seller = {}, lead = {}, actor = {} } = {}) {
   const assignedAgent = buildListingBuyerActorSnapshot(actor)
   const participants = []
-  if (buyer.sendToBuyer !== false) participants.push({
+  participants.push({
     name: [listingBuyerActionText(buyer.firstName), listingBuyerActionText(buyer.lastName)].filter(Boolean).join(' '),
     email: listingBuyerActionEmail(buyer.email), phone: listingBuyerActionText(buyer.phone), participantRole: 'Buyer', isRequired: true, rsvpStatus: 'Pending',
   })
-  if (buyer.sendToSeller !== false) participants.push({
+  participants.push({
     name: listingBuyerActionText(seller.name) || 'Seller', email: listingBuyerActionEmail(seller.email),
     phone: listingBuyerActionText(seller.phone), participantRole: 'Seller', isRequired: true, rsvpStatus: 'Pending',
   })
-  participants.push({ name: assignedAgent.name, email: assignedAgent.email, participantRole: 'Agent', isRequired: false, rsvpStatus: 'Accepted' })
+  participants.push({ name: assignedAgent.name, email: assignedAgent.email, participantRole: 'Agent', isRequired: true, rsvpStatus: 'Pending' })
   return {
     appointmentType: 'viewing', title: `Viewing: ${listingLabel(listing)}`,
     date: listingBuyerActionText(buyer.proposedDate), startTime: listingBuyerActionText(buyer.proposedTime), timezone: 'Africa/Johannesburg',
     locationType: 'physical_address',
-    location: listingBuyerActionText(listing.propertyAddress || listing.addressLine1 || listing.formattedAddress || listingLabel(listing)),
+    location: listingLabel(listing),
     status: 'requested', leadId: getListingBuyerActionLeadId(lead), contactId: getListingBuyerActionContactId(lead) || null,
     listingId: getListingBuyerActionListingId(listing), relatedEntityType: 'lead', relatedEntityId: getListingBuyerActionLeadId(lead),
     notes: listingBuyerActionText(buyer.notes), participants, assignedAgent,
-    sendInviteEmails: participants.some((participant) => participant.participantRole !== 'Agent' && participant.email),
+    listingViewingMode: buyer.mode === 'book' ? 'three_party_book' : 'three_party_request',
+    bookingConfirmationNote: buyer.mode === 'book' ? listingBuyerActionText(buyer.bookingConfirmationNote) : '',
+    // The round notification worker owns all three invites and subsequent emails.
+    sendInviteEmails: false,
     attachCalendarInvite: true, notifyCreatorOnRsvp: true,
   }
 }

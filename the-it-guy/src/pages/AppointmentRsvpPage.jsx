@@ -119,20 +119,26 @@ export default function AppointmentRsvpPage() {
       const recordedStatus = normalizeText(response.rsvp_status) || selectedStatus
       setResultStatus(recordedStatus)
       setParticipant((previous) => previous ? { ...previous, rsvp_status: recordedStatus } : previous)
-      void sendBuyerRsvpHandoffAfterSellerAccept({
-        token,
-        participant,
-        rsvpStatus: recordedStatus,
-      }).catch((handoffError) => {
-        console.warn('[appointment-rsvp] seller-to-buyer handoff failed', handoffError)
-      })
-      void sendViewingConfirmationAfterBuyerAccept({
-        token,
-        participant,
-        rsvpStatus: recordedStatus,
-      }).catch((completionError) => {
-        console.warn('[appointment-rsvp] buyer RSVP completion failed', completionError)
-      })
+      const managed = await supabase.rpc('is_managed_listing_viewing_rsvp', { p_token: token })
+      if (managed.error && managed.error.code !== 'PGRST202') {
+        console.warn('[appointment-rsvp] viewing notification ownership check failed', managed.error)
+      }
+      if ((!managed.error && managed.data !== true) || managed.error?.code === 'PGRST202') {
+        void sendBuyerRsvpHandoffAfterSellerAccept({
+          token,
+          participant,
+          rsvpStatus: recordedStatus,
+        }).catch((handoffError) => {
+          console.warn('[appointment-rsvp] seller-to-buyer handoff failed', handoffError)
+        })
+        void sendViewingConfirmationAfterBuyerAccept({
+          token,
+          participant,
+          rsvpStatus: recordedStatus,
+        }).catch((completionError) => {
+          console.warn('[appointment-rsvp] buyer RSVP completion failed', completionError)
+        })
+      }
     } catch (submitError) {
       setError(submitError?.message || 'Unable to record your RSVP right now.')
     } finally {

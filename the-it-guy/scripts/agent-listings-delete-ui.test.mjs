@@ -202,9 +202,9 @@ assert(
 assert(
   source.includes("function isArchivedListingRecord(row = {})") &&
     source.includes("return 'archived'") &&
-    source.includes("{ key: 'archived', label: 'Archive'") &&
+    source.includes("{ key: 'archived', label: 'Previous Listings'") &&
     source.includes("setListingCollectionView('archived')"),
-  'archived listings should be placed in the Archive collection immediately after archival.',
+  'archived listings should be placed in Previous Listings immediately after archival.',
 )
 
 assert(

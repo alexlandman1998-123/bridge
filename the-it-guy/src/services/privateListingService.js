@@ -836,6 +836,71 @@ async function fetchMediaRowsForListings(client, listingIds = []) {
   return mediaByListingId
 }
 
+export async function getPrivateListingCoverImageUrls(listingIds = [], { client = requireClient() } = {}) {
+  const ids = [...new Set((Array.isArray(listingIds) ? listingIds : []).map(normalizeUuid).filter(Boolean))]
+  if (!ids.length) return {}
+
+  const coverQuery = await client
+    .from('listing_media')
+    .select('listing_id, media_type, file_url, is_cover, sort_order')
+    .in('listing_id', ids)
+    .eq('media_type', 'image')
+    .eq('is_cover', true)
+    .order('sort_order', { ascending: true })
+  if (coverQuery.error) {
+    if (
+      isMissingTableError(coverQuery.error, 'listing_media') ||
+      isMissingSchemaError(coverQuery.error) ||
+      isPermissionDeniedError(coverQuery.error)
+    ) return {}
+    throw coverQuery.error
+  }
+
+  const coverUrls = {}
+  for (const row of coverQuery.data || []) {
+    const listingId = normalizeText(row?.listing_id)
+    if (listingId && !coverUrls[listingId]) coverUrls[listingId] = normalizeText(row?.file_url)
+  }
+
+  const missingIds = ids.filter((id) => !coverUrls[id])
+  const fallbackBatches = []
+  for (let index = 0; index < missingIds.length; index += 10) {
+    fallbackBatches.push(fetchMediaRowsForListings(client, missingIds.slice(index, index + 10)))
+  }
+  const fallbackMaps = await Promise.all(fallbackBatches)
+  for (const mediaByListingId of fallbackMaps) {
+    for (const [listingId, rows] of mediaByListingId) {
+      coverUrls[listingId] = normalizeListingMediaRows(rows)[0]?.url || ''
+    }
+  }
+
+  return coverUrls
+}
+
+// Only public Arch9 listing media can be resized without changing access rules.
+// External portal images and signed/private URLs retain their original URL.
+export function getListingCardImageSource(originalUrl = '', { client = supabase } = {}) {
+  const url = normalizeText(originalUrl)
+  if (!url) return { src: '', fallbackSrc: '' }
+  try {
+    const parsed = new URL(url)
+    const storageOrigin = client?.supabaseUrl ? new URL(client.supabaseUrl).origin : ''
+    const publicPrefix = '/storage/v1/object/public/listing-media/'
+    if (!storageOrigin || parsed.origin !== storageOrigin || !parsed.pathname.startsWith(publicPrefix) || parsed.search) {
+      return { src: url, fallbackSrc: '' }
+    }
+    const storagePath = decodeURIComponent(parsed.pathname.slice(publicPrefix.length))
+    const transformed = client.storage.from('listing-media').getPublicUrl(storagePath, {
+      transform: { width: 480, height: 264, resize: 'cover', quality: 72 },
+    }).data.publicUrl
+    return transformed && transformed !== url
+      ? { src: transformed, fallbackSrc: url }
+      : { src: url, fallbackSrc: '' }
+  } catch {
+    return { src: url, fallbackSrc: '' }
+  }
+}
+
 function attachDistributionMediaToListing(listing = null, rows = []) {
   if (!listing) return listing
   const galleryImages = normalizeListingMediaRows(rows)
