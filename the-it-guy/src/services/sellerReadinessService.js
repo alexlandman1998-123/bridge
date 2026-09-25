@@ -94,8 +94,7 @@ function onboardingSubmissionStillBlocking(journey = {}) {
 
 function documentComplete(document = {}) {
   const status = normalizeKey(document?.status || document?.documentStatus || document?.document_status)
-  return Boolean(document?.url || document?.fileUrl || document?.file_url || document?.signedUrl || document?.storage_path || document?.file_path) ||
-    ['uploaded', 'approved', 'verified', 'accepted', 'complete', 'completed', 'signed'].includes(status)
+  return ['approved', 'verified', 'accepted', 'complete', 'completed', 'signed'].includes(status)
 }
 
 function requirementIsVisibleToSeller(requirement = {}) {
@@ -182,8 +181,8 @@ function requirementComplete(requirement = {}, documents = []) {
   const status = normalizeSellerDocumentRequirementStatus(
     requirement?.status || requirement?.requiredDocumentStatus || requirement?.required_document_status,
   )
-  if (['uploaded', 'under_review', 'approved', 'completed'].includes(status)) return true
-  if (requirement?.complete || requirement?.isUploaded || requirement?.uploadedDocument || requirement?.uploaded_document || requirement?.uploadedDocumentId || requirement?.uploaded_document_id) {
+  if (['approved', 'completed'].includes(status)) return true
+  if (requirement?.complete === true && ['approved', 'completed'].includes(status)) {
     return true
   }
   return documents.some((document) => documentMatchesSellerRequirement(document, requirement) && documentComplete(document))
@@ -371,12 +370,16 @@ export function getNextSellerAction(args = {}) {
   if (stageKey === 'listing_live' || stageKey === 'documents_submitted') return action('monitor_performance', 'Monitor Performance')
 
   if (blocking?.id === 'missing_property_address') return action('capture_property_address', 'Capture Property Address', true, '', { blocker: blocking })
+  if (journey.mandateStatus === 'sent' || journey.mandateStatus === 'draft') {
+    return action('record_hard_copy_mandate', 'Upload Signed Mandate', true, '', {
+      blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || blocking,
+    })
+  }
   if (blocking?.id === 'required_documents_missing') return action('open_documents', 'Open Documents', true, '', { blocker: blocking })
   if (blocking?.category === 'listing_live') return action(blocking.actionId || 'complete_listing', blocking.actionId === 'activate_listing' ? 'Activate Listing' : 'Complete Listing', true, '', { blocker: blocking })
   if (journey.listingLive) return action('monitor_performance', 'Monitor Performance')
   if (journey.listingCreated) return action('activate_listing', 'Activate Listing', canActivateListing({ ...args, journey }), blockers.find((item) => item.category === 'listing_live')?.label || '', { blocker: blockers.find((item) => item.category === 'listing_live') || null })
   if (journey.mandateStatus === 'signed') return action('create_listing', 'Create Listing', canCreateListing({ ...args, journey }), blocking?.label || '', { blocker: blocking })
-  if (journey.mandateStatus === 'sent' || journey.mandateStatus === 'draft') return action('record_hard_copy_mandate', 'Upload Signed Mandate', true, '', { blocker: blockers.find((item) => item.id === 'mandate_signature_outstanding') || null })
   if (!onboardingSent(journey)) return action('send_seller_onboarding', 'Send Seller Onboarding')
   if (!onboardingSubmitted(journey) && !hasProgressedPastOnboarding(journey)) return action('copy_seller_onboarding_link', 'Copy Seller Onboarding Link')
   if (onboardingSubmitted(journey)) return action('review_seller_onboarding', 'Review Seller Onboarding')

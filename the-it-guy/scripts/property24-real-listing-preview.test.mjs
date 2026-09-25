@@ -125,6 +125,7 @@ const client = createFakeClient({
         listingDescription: 'Mandate form data should hydrate the Property24 description.',
         mandateStartDate: '2026-08-26',
         mandateEndDate: '2027-02-26',
+        featureFacts: { solar_panels: true },
       },
       updated_at: '2026-08-26T09:05:00.000Z',
     },
@@ -149,6 +150,7 @@ assert.equal(bundle.media.length, 1)
 const onboardingHydratedBundle = await fetchArch9ListingForProperty24Preview({ client, listingId: 'arch9-listing-onboarding' })
 assert.equal(onboardingHydratedBundle.listing.listingPreviewDescription, 'Mandate form data should hydrate the Property24 description.')
 assert.equal(onboardingHydratedBundle.listing.mandateEndDate, '2027-02-26')
+assert.deepEqual(onboardingHydratedBundle.listing.featureFacts, { solar_panels: true })
 
 const candidates = await fetchRecentArch9ListingsForProperty24Preview({ client, limit: 5 })
 assert.equal(candidates.length, 2)
@@ -188,6 +190,7 @@ assert.equal(report.safety.listingPublished, false)
 
 const onboardingHydratedReport = createProperty24Arch9ListingPreview({
   ...onboardingHydratedBundle,
+  media: bundle.media,
   agentMapping: {
     property24AgentId: 77959,
     sourceReference: 'ARCH9-AGENT-001',
@@ -205,6 +208,8 @@ assert.equal(onboardingHydratedReport.summary.expiryDate, '2027-02-26T00:00:00.0
 assert.equal(onboardingHydratedReport.summary.descriptionPresent, true)
 assert.equal(onboardingHydratedReport.dataBlockers.includes('missing_expiry_date'), false)
 assert.equal(onboardingHydratedReport.dataBlockers.includes('missing_description'), false)
+assert.ok(onboardingHydratedReport.previewPayload, JSON.stringify(onboardingHydratedReport.dataBlockers))
+assert.match(onboardingHydratedReport.previewPayload.description, /Solar panels/)
 
 const loaded = await loadProperty24ImageBytesForPreview({
   media: bundle.media,

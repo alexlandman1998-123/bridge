@@ -172,7 +172,7 @@ export function buildSellerDocumentRequestPlan({
   reason = 'requirements_synced',
 } = {}) {
   const listingId = normalizeText(listing.id || listing.private_listing_id || listing.privateListingId)
-  const sellerEmail = normalizeText(
+  const defaultSellerEmail = normalizeText(
     listing.sellerContactEmail ||
       listing.seller_contact_email ||
       listing.seller?.email ||
@@ -220,6 +220,23 @@ export function buildSellerDocumentRequestPlan({
       suppressed.push({ requirement, key, reason: 'agent_managed_portal_request', portalRequest })
       continue
     }
+    const recipientEmail = normalizeText(
+      portalRequest.recipientEmail ||
+      portalRequest.recipient_email ||
+      portalRequest.sellerEmail ||
+      portalRequest.seller_email ||
+      requirement.recipientEmail ||
+      requirement.recipient_email ||
+      requirement.responsiblePartyEmail ||
+      requirement.responsible_party_email ||
+      defaultSellerEmail,
+    ).toLowerCase()
+    const recipientName = normalizeText(
+      portalRequest.recipientName || portalRequest.recipient_name || requirement.recipientName || requirement.recipient_name,
+    )
+    const participantId = normalizeText(
+      portalRequest.participantId || portalRequest.participant_id || requirement.participantId || requirement.participant_id || requirement.sellerParticipantId || requirement.seller_participant_id,
+    )
     const portalDeliveryChannels = toArray(
       portalRequest.requestDeliveryChannels ||
         portalRequest.request_delivery_channels ||
@@ -237,13 +254,15 @@ export function buildSellerDocumentRequestPlan({
       requestStage: normalizeText(portalRequest.requestStage || portalRequest.request_stage) || resolveRequestStage(requirement),
       requestPriority: isReupload ? 'blocker' : normalizeText(portalRequest.requestPriority || portalRequest.request_priority) || resolveRequestPriority(requirement),
       requestDueDate: normalizeText(requirement.request_due_date || requirement.requestDueDate) || dueDate,
-      requestDeliveryChannels: portalDeliveryChannels.length ? portalDeliveryChannels : ['in_app', ...(sellerEmail ? ['email'] : [])],
+      requestDeliveryChannels: portalDeliveryChannels.length ? portalDeliveryChannels : ['in_app', ...(recipientEmail ? ['email'] : [])],
       requestDedupeKey,
       requestSource: normalizeText(portalRequest.requestSource || portalRequest.request_source) || 'seller_document_request_orchestrator',
       requestedAt: normalizeText(requirement.requested_at || requirement.requestedAt) || requestedAt,
       requestRevision,
       reason: isReupload ? 'rejected_document_reupload_required' : reason,
-      sellerEmail: sellerEmail || null,
+      sellerEmail: recipientEmail || null,
+      recipientName: recipientName || null,
+      participantId: participantId || null,
       isReupload,
       portalRequest,
     }
@@ -284,6 +303,8 @@ function requestUpdatePayload(item = {}) {
     last_request_reason: item.reason,
     request_metadata: {
       seller_email: item.sellerEmail,
+      recipient_name: item.recipientName,
+      participant_id: item.participantId,
       orchestration_version: 'seller_document_request_orchestration_v1',
       issued_automatically: true,
       ...(Object.keys(toRecord(item.portalRequest)).length ? { portalRequest: item.portalRequest } : {}),

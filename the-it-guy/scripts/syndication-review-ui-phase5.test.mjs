@@ -53,6 +53,8 @@ for (const expected of [
   'Property24',
   'Check Private Property readiness',
   'Check Property24 readiness',
+  'Feature delivery:',
+  'Description only',
 ]) {
   assert.ok(modalSource.includes(expected), `Expected review modal content: ${expected}`)
 }

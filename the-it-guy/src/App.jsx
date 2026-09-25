@@ -335,6 +335,7 @@ const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflow
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
 const ClientPortal = lazy(() => import('./pages/ClientPortal'))
+const SellerCollaborationPortal = lazy(() => import('./pages/SellerCollaborationPortal'))
 const BondApplicationPortal = lazy(() => import('./pages/BondApplicationPortal'))
 const ProspectBuyerDemo = lazy(() => import('./pages/ProspectBuyerDemo'))
 const ClientProfile = lazy(() => import('./pages/ClientProfile'))
@@ -4113,6 +4114,8 @@ function AppRoutes() {
           <Route path="/bond-application/:accessToken" element={<TokenRouteGate paramKey="accessToken" title="Invalid bond application access link"><AppErrorBoundary scope="bond-application-access-route" title="Bond application failed to load"><BondApplicationPortal /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/client/onboarding/:token" element={<ClientOnboarding />} />
           <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
+          <Route path="/seller/collaboration/invite/:invitationToken" element={<AppErrorBoundary scope="seller-collaboration-portal" title="Seller collaboration failed to load"><SellerCollaborationPortal /></AppErrorBoundary>} />
+          <Route path="/seller/collaboration/member/:participantId" element={<AppErrorBoundary scope="seller-collaboration-portal" title="Seller collaboration failed to load"><SellerCollaborationPortal /></AppErrorBoundary>} />
           <Route path="/mandate-sign/:token" element={<AppErrorBoundary scope="listing-mandate-signing" title="Mandate signing failed to load"><ListingMandateSigning /></AppErrorBoundary>} />
           <Route path="/mobile/buyer-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-buyer-onboarding" title="Mobile buyer onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="buyer" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/mobile/seller-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-seller-onboarding" title="Mobile seller onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="seller" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />

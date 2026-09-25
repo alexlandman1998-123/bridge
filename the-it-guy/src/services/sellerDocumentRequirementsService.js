@@ -192,17 +192,17 @@ export function normalizeSellerDocumentRequirementStatus(status = '') {
 export function getSellerDocumentStatusLabel(status = '') {
   const normalized = normalizeSellerDocumentRequirementStatus(status)
   const labels = {
-    required: 'Outstanding',
-    requested: 'Requested',
-    uploaded: 'Uploaded',
-    under_review: 'Under Review',
-    rejected: 'Rejected',
-    approved: 'Approved',
-    completed: 'Completed',
-    not_applicable: 'Not Applicable',
+    required: 'Not requested',
+    requested: 'Awaiting seller',
+    uploaded: 'Ready for review',
+    under_review: 'Under review',
+    rejected: 'Action required',
+    approved: 'Complete',
+    completed: 'Complete',
+    not_applicable: 'Not applicable',
     cancelled: 'Cancelled',
   }
-  return labels[normalized] || normalizeText(status).replace(/_/g, ' ') || 'Outstanding'
+  return labels[normalized] || normalizeText(status).replace(/_/g, ' ') || 'Not requested'
 }
 
 export function getSellerOnboardingFormData(listing = {}) {
@@ -2122,7 +2122,7 @@ export const SELLER_DOCUMENT_STATUS_BUCKETS = Object.freeze({
   required: 'outstanding',
   requested: 'outstanding',
   rejected: 'rejected',
-  uploaded: 'uploaded',
+  uploaded: 'ready_for_review',
   under_review: 'under_review',
   approved: 'approved',
   completed: 'approved',
@@ -2657,6 +2657,82 @@ function getStatusBucket(status = '') {
   return SELLER_DOCUMENT_STATUS_BUCKETS[normalized] || 'outstanding'
 }
 
+const SELLER_REQUIREMENT_TRIGGER_LABELS = Object.freeze({
+  gas_compliance_certificate: 'Gas installation captured',
+  solar_compliance_documents: 'Solar or inverter installation captured',
+  electric_fence_certificate: 'Electric fence captured',
+  borehole_certificate: 'Borehole or alternative water source captured',
+  alteration_approvals: 'Recent alterations captured',
+  approved_building_plans: 'Approved plans required or unavailable',
+  occupation_certificate: 'Alteration or occupation approval captured',
+  water_installation_certificate: 'Cape Town transfer requirement',
+  beetle_certificate: 'Regional or contractual beetle requirement captured',
+  plumbing_certificate: 'Municipal or contractual plumbing requirement captured',
+  seller_tax_residency_declaration: 'Foreign or non-resident seller captured',
+  non_resident_tax_documents: 'Non-resident seller captured',
+  vat_registration_certificate: 'VAT-registered seller captured',
+  going_concern_supporting_documents: 'Going-concern sale captured',
+})
+
+const BOND_REQUIREMENT_KEYS = new Set([
+  'bond_statement',
+  'bond_bank_details',
+  'bond_cancellation_attorney_details',
+  'settlement_figure',
+])
+const SECTIONAL_REQUIREMENT_KEYS = new Set([
+  'levy_statement',
+  'body_corporate_details',
+  'body_corporate_rules',
+  'body_corporate_insurance_schedule',
+])
+const OCCUPANCY_REQUIREMENT_KEYS = new Set([
+  'lease_agreement',
+  'tenant_details',
+  'rental_schedule',
+  'deposit_details',
+  'notice_period_details',
+])
+
+function buildSellerRequirementProvenance(row = {}, requirement = null) {
+  const generatedFrom = requirement?.generated_from && typeof requirement.generated_from === 'object'
+    ? requirement.generated_from
+    : requirement?.generatedFrom && typeof requirement.generatedFrom === 'object'
+      ? requirement.generatedFrom
+      : {}
+  const requirementKey = normalizeKey(row?.key || row?.requirementKey || requirement?.requirement_key)
+  const capturedFacts = []
+  const addFact = (key, label, value) => {
+    const normalizedValue = normalizeText(value)
+    if (!normalizedValue || capturedFacts.some((fact) => fact.key === key)) return
+    capturedFacts.push({ key, label, value: normalizedValue })
+  }
+
+  if ((Array.isArray(generatedFrom.documentTriggers) ? generatedFrom.documentTriggers : []).map(normalizeKey).includes(requirementKey)) {
+    addFact(requirementKey, 'Trigger', SELLER_REQUIREMENT_TRIGGER_LABELS[requirementKey] || formatRequirementTriggerLabel(requirementKey))
+  }
+  if (BOND_REQUIREMENT_KEYS.has(requirementKey)) addFact('bond_status', 'Captured fact', generatedFrom.bondStatus)
+  if (SECTIONAL_REQUIREMENT_KEYS.has(requirementKey)) addFact('property_structure_type', 'Captured fact', generatedFrom.propertyStructureType)
+  if (OCCUPANCY_REQUIREMENT_KEYS.has(requirementKey)) addFact('occupancy_status', 'Captured fact', generatedFrom.occupancyStatus)
+
+  const group = normalizeKey(requirement?.requirement_group || requirement?.group || row?.group)
+  if (['seller_identity', 'seller_authority', 'company', 'trust', 'deceased_estate', 'power_of_attorney', 'marital'].includes(group)) {
+    addFact('seller_branch', 'Seller structure', generatedFrom.sellerBranch || generatedFrom.sellerType)
+  }
+
+  return {
+    generatedFrom,
+    capturedFacts,
+    triggerSummary: capturedFacts.map((fact) => `${fact.label}: ${formatRequirementTriggerLabel(fact.value)}`).join(' · '),
+  }
+}
+
+function formatRequirementTriggerLabel(value = '') {
+  return normalizeText(value)
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (character) => character.toUpperCase())
+}
+
 function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
   const requirement = row?.original?.requirement || null
   const document = row?.original?.document || null
@@ -2681,7 +2757,9 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
   const statusBucket = getStatusBucket(status)
   const required = row?.required !== false
   const applicable = row?.applicable !== false && !['not_applicable', 'cancelled'].includes(status)
-  const complete = applicable && ['uploaded', 'under_review', 'approved', 'completed'].includes(status)
+  // Receiving a file is not the same as completing the requirement. Only an
+  // accepted terminal state may contribute to completion/readiness metrics.
+  const complete = applicable && ['approved', 'completed'].includes(status)
   const contextId = normalizeText(listing?.id || listing?.private_listing_id || requirement?.private_listing_id || document?.private_listing_id)
   const key = normalizeText(row?.key || row?.requirementKey || row?.requirement_key || row?.id || row?.title || row?.label) || `seller-document-${index}`
   const uploadUrl = row?.documentUrl || row?.url || resolveDocumentUrl(document || {})
@@ -2697,6 +2775,7 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
   const canDownload = documentContract.representation.downloadable
   const downloadReason = normalizeText(document?.downloadReason || document?.download_reason)
   const isGeneratedDraft = document?.isGeneratedDraft === true || document?.is_generated_draft === true
+  const provenance = buildSellerRequirementProvenance(row, requirement)
 
   return {
     id: normalizeText(row?.id) || `${contextId || 'seller'}:${key}`,
@@ -2708,6 +2787,12 @@ function buildSellerDocumentContractRow(row = {}, index = 0, listing = {}) {
     label: row?.label || row?.title || 'Seller document',
     description: row?.description || '',
     whyNeeded: row?.whyNeeded || '',
+    generatedFrom: provenance.generatedFrom,
+    generated_from: provenance.generatedFrom,
+    capturedFacts: provenance.capturedFacts,
+    captured_facts: provenance.capturedFacts,
+    triggerSummary: provenance.triggerSummary,
+    trigger_summary: provenance.triggerSummary,
     category: row?.category || 'property',
     group: normalizeText(requirement?.requirement_group || requirement?.group || document?.category || document?.document_category || row?.category),
     status,
@@ -2795,6 +2880,7 @@ export function buildSellerDocumentSourceSummary(rows = []) {
     if (row.blocking) summary.blocking += 1
     if (row.hasUpload) summary.uploaded += 1
     if (row.statusBucket === 'outstanding') summary.outstanding += 1
+    else if (row.statusBucket === 'ready_for_review') summary.readyForReview += 1
     else if (row.statusBucket === 'under_review') summary.underReview += 1
     else if (row.statusBucket === 'approved') summary.approved += 1
     else if (row.statusBucket === 'rejected') summary.rejected += 1
@@ -2808,6 +2894,7 @@ export function buildSellerDocumentSourceSummary(rows = []) {
     blocking: 0,
     uploaded: 0,
     outstanding: 0,
+    readyForReview: 0,
     underReview: 0,
     approved: 0,
     rejected: 0,
@@ -2849,6 +2936,21 @@ export function buildSellerDocumentSourceOfTruth({
     onboardingReady: resolvedSellerSubject.onboardingReady === true,
     requiredSetupFields: Array.isArray(resolvedSellerSubject.requiredSetupFields) ? resolvedSellerSubject.requiredSetupFields : [],
   }
+  const requirementState = resolvedSellerSubject.kind === 'unknown'
+    ? {
+        status: 'provisional',
+        provisional: true,
+        reason: 'seller_structure_unconfirmed',
+        message: 'Confirm the seller type and ownership structure before treating this as the final document checklist.',
+        requiredSetupFields: sellerSubjectContext.requiredSetupFields,
+      }
+    : {
+        status: 'confirmed',
+        provisional: false,
+        reason: '',
+        message: '',
+        requiredSetupFields: sellerSubjectContext.requiredSetupFields,
+      }
   const kingstonsSellerPack = isKingstonsSellerDocumentContext(listing)
     ? getKingstonsSellerPackRecord(listing)
     : {}
@@ -2922,6 +3024,7 @@ export function buildSellerDocumentSourceOfTruth({
     rows,
     signingStatus,
     sellerSubject: sellerSubjectContext,
+    requirementState,
     summary: buildSellerDocumentSourceSummary(rows),
     requirementPack: kingstonsRequirementPack,
   }

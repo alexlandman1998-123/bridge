@@ -5,6 +5,7 @@ import {
   normalizePersonCollectionForSellerProfile,
 } from './sellerProfileCaptureModel.js'
 import { normalizeSellerEntityType } from './sellerEntityModel.js'
+import { resolveListingSellerAuthorityContract } from './sellerPartyAuthorityContract.js'
 import {
   LISTING_SELLER_REQUIREMENT_RETIREMENT_VERSION as SELLER_REQUIREMENT_RETIREMENT_VERSION,
   getSellerRequirementProfile,
@@ -105,6 +106,7 @@ function normalizeBranch(value, fallback = 'individual') {
   const key = normalizeKey(value)
   if (!key) return fallback
   const sharedEntityType = normalizeSellerEntityType(key, '')
+  if (sharedEntityType === 'close_corporation') return 'company'
   if (sharedEntityType && sharedEntityType !== 'unknown') return sharedEntityType
   if (BRANCH_VALUES.has(key)) return key
   if (['company', 'close_corporation', 'cc', 'pty_ltd', 'corporate'].includes(key)) return 'company'
@@ -154,47 +156,8 @@ function getCanonicalFacts(listing = {}) {
 }
 
 export function isListingSellerOwnershipUnidentified(listing = {}) {
-  const facts = getCanonicalFacts(listing)
-  const seller = facts.seller && typeof facts.seller === 'object' ? facts.seller : {}
   const form = getListingSellerFormData(listing)
-  const importSource = normalizeKey(pickFirst(
-    listing?.stockSource,
-    listing?.stock_source,
-    listing?.importSource,
-    listing?.import_source,
-  ))
-  const isProperty24Migration = importSource === 'property24_migration_import' || Boolean(facts?.property24Import)
-  const directListingSource = normalizeKey(pickFirst(
-    facts?.source,
-    facts?.metadata?.source,
-    listing?.directListingIntake?.source,
-    listing?.direct_listing_intake?.source,
-  ))
-  const isDirectListing = directListingSource === 'direct_listing_intake'
-  if (!isProperty24Migration && !isDirectListing) return false
-
-  // Early direct listings stored a default "individual" merely because a
-  // contact was supplied. Only a saved Seller Profile Builder capture proves
-  // that ownership was deliberately identified.
-  const sellerProfileCaptured = normalizeKey(pickFirst(
-    form.sellerProfileCaptureSource,
-    form.seller_profile_capture_source,
-    seller.seller_profile_capture_source,
-  )) === LISTING_SELLER_PROFILE_CAPTURE_SOURCE
-  const ownerModel = pickFirst(
-    form.ownerStructureType,
-    form.owner_structure_type,
-    form.sellerLegalType,
-    form.seller_legal_type,
-    form.ownershipType,
-    form.sellerType,
-    seller.owner_structure_type,
-    seller.legal_type,
-    listing?.sellerType,
-  )
-  const normalizedOwnerModel = normalizeBranch(ownerModel, '')
-  if (isDirectListing && !sellerProfileCaptured && (!normalizedOwnerModel || normalizedOwnerModel === 'individual')) return true
-  return !normalizedOwnerModel
+  return !resolveListingSellerAuthorityContract(listing, form).identified
 }
 
 export function resolveListingSellerProfileBranch(form = {}, listing = {}) {
@@ -216,8 +179,8 @@ export function resolveListingSellerProfileBranch(form = {}, listing = {}) {
   if (entity === 'foreign' && structure === 'company') return 'foreign_company'
   if (entity === 'foreign' && structure === 'trust') return 'foreign_trust'
   if (entity === 'foreign') return normalizeBranch(structure, 'foreign_individual')
-  if (isListingSellerOwnershipUnidentified(listing)) return ''
-  if (!normalizeKey(source)) return 'individual'
+  if (!resolveListingSellerAuthorityContract(listing, form).identified) return ''
+  if (!normalizeKey(source)) return ''
   return normalizeBranch(source, '')
 }
 

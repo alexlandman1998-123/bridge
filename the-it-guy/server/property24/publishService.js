@@ -27,6 +27,17 @@ function firstText(...values) {
   return ''
 }
 
+export function resolveProperty24PublicUrl(response = {}, fallback = '') {
+  const candidate = firstText(response.listingUrl, response.ListingUrl, response.publicUrl, response.PublicUrl, response.url, response.Url, fallback)
+  try {
+    const parsed = new URL(candidate)
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.hostname !== 'property24.com' && !parsed.hostname.endsWith('.property24.com'))) return ''
+    return parsed.toString()
+  } catch {
+    return ''
+  }
+}
+
 function normalizeIntegerText(value) {
   const numeric = Number(value)
   return Number.isFinite(numeric) && numeric > 0 ? String(Math.round(numeric)) : ''
@@ -357,6 +368,7 @@ export async function buildProperty24ListingSubmitPlan({
   propertyTypeId,
   expiryDate,
   listingNumber,
+  status,
   storageBaseUrl = '',
   maxImages = 20,
   photosChanged = true,
@@ -406,6 +418,7 @@ export async function buildProperty24ListingSubmitPlan({
       sandboxPayloadTestMode,
       expiryDate,
       listingNumber,
+      status,
       photosChanged,
       includeSubmitPayload: true,
       requirePhotoBytes: loadImageBytes,
@@ -586,7 +599,7 @@ export async function applyProperty24ListingPublish({
       payloadSummary: preview.summary,
       payloadHash: config.payloadHash,
       imagePayloadHash: config.imagePayloadHash,
-      property24ListingUrl: config.property24ListingUrl,
+      property24ListingUrl: resolveProperty24PublicUrl(result.data, config.property24ListingUrl),
       allowPublishWithoutMandate,
       publishWithoutMandateReason,
     })
@@ -596,6 +609,7 @@ export async function applyProperty24ListingPublish({
       listingNumber: syncRecord.sync.listing_number,
       property24Status: syncRecord.listing.property24_status,
       property24Reference: syncRecord.listing.property24_reference,
+      property24ListingUrl: syncRecord.listing.property24_listing_url || null,
       ...(syncRecord.syncWarning ? { syncWarning: syncRecord.syncWarning } : {}),
       ...(syncRecord.statusUpdateWarning ? { statusUpdateWarning: syncRecord.statusUpdateWarning } : {}),
       ...(syncRecord.externalLinkWarning ? { externalLinkWarning: syncRecord.externalLinkWarning } : {}),

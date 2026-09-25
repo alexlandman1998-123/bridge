@@ -142,6 +142,9 @@ function normalizeLead(row = {}, contact = null) {
     status: normalizeText(row?.status || row?.stage) || 'Unknown',
     stage: normalizeText(row?.stage || row?.status) || 'Unknown',
     assignedAgent: normalizeText(row?.assignedAgentName || row?.assignedAgentEmail || row?.assignedAgentId || row?.assigned_agent_id) || 'Unassigned',
+    firstContactedAt: row?.firstContactedAt || row?.first_contacted_at || null,
+    lastContactedAt: row?.lastContactedAt || row?.last_contacted_at || row?.contactedAt || row?.contacted_at || null,
+    lastContactedByName: normalizeText(row?.lastContactedByName || row?.last_contacted_by_name || row?.assignedAgentName || row?.assigned_agent_name),
     createdAt: row?.createdAt || row?.created_at || null,
     raw: row,
   }

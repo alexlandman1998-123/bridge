@@ -21,8 +21,8 @@ function toText(value, fallback = '') {
 
 function isClientVisible(document = {}) {
   const visibility = String(document?.visibility || document?.document_visibility || document?.visibility_scope || '').trim().toLowerCase()
-  if (visibility === 'internal' || visibility === 'internal_only') return false
-  if (document?.clientVisible === false) return false
+  if (['internal', 'internal_only', 'agent_only', 'manager_only', 'compliance_only', 'shared_role_players', 'role_player_only', 'professional_shared'].includes(visibility)) return false
+  if (document?.clientVisible === false || document?.client_visible === false) return false
   return true
 }
 

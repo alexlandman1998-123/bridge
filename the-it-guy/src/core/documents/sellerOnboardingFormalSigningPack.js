@@ -10,9 +10,10 @@ export function normalizeSellerOnboardingFormalSigningSelection(selection = {}) 
   }
 }
 
-export function validateSellerOnboardingFormalSigningSelection(selection = {}) {
+export function validateSellerOnboardingFormalSigningSelection(selection = {}, { mandateReplacement = false } = {}) {
   const normalized = normalizeSellerOnboardingFormalSigningSelection(selection)
-  const missing = SELLER_ONBOARDING_FORMAL_SIGNING_DOCUMENTS.filter((key) => !normalized[key])
+  const requiredDocuments = mandateReplacement ? ['mandate'] : SELLER_ONBOARDING_FORMAL_SIGNING_DOCUMENTS
+  const missing = requiredDocuments.filter((key) => !normalized[key])
   return {
     contract: SELLER_ONBOARDING_FORMAL_SIGNING_PACK_CONTRACT,
     valid: missing.length === 0,

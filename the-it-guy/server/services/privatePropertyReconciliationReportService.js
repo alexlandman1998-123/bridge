@@ -14,7 +14,42 @@ function expectedStatus(sync = {}, listing = {}) {
   return liveListing(listing) || sync.is_on_portal ? 'active' : 'submitted'
 }
 
-export async function createPrivatePropertyReconciliationReport({ client, organisationId = '', secrets = process.env, createPrivateProperty = createPrivatePropertyClient, limit = 100 } = {}) {
+export function createPrivatePropertyInventoryReview({ activeListings = [], syncs = [], localListings = [] } = {}) {
+  const linkedIds = new Set(syncs.map((sync) => normalizePrivatePropertyText(sync.property_id)).filter(Boolean))
+  const byReference = new Map()
+  for (const listing of localListings) {
+    for (const value of [listing.id, listing.listing_reference, listing.private_property_reference, listing.privatePropertyReference]) {
+      const reference = key(value)
+      if (!reference) continue
+      const matches = byReference.get(reference) || new Map()
+      matches.set(listing.id, listing)
+      byReference.set(reference, matches)
+    }
+  }
+  const unmatched = activeListings
+    .filter((remote) => normalizePrivatePropertyText(remote.uniqueId) && !linkedIds.has(normalizePrivatePropertyText(remote.uniqueId)))
+    .map((remote) => {
+      const matchedListings = new Map()
+      for (const reference of [remote.uniqueId, remote.privatePropertyRef]) {
+        for (const listing of (byReference.get(key(reference)) || new Map()).values()) matchedListings.set(listing.id, listing)
+      }
+      const matches = [...matchedListings.values()]
+      return {
+        propertyId: remote.uniqueId,
+        privatePropertyRef: remote.privatePropertyRef || null,
+        listingType: remote.listingType || null,
+        candidate: matches.length === 1 ? { listingId: matches[0].id, title: matches[0].title || null, listingReference: matches[0].listing_reference || null } : null,
+        reason: matches.length === 1 ? 'Exact unique reference match; review before linking.' : matches.length > 1 ? 'Reference matches multiple Arch9 listings.' : 'No exact Arch9 reference match; review before importing.',
+      }
+    })
+  return {
+    mode: 'REVIEW_ONLY',
+    summary: { unmatchedCount: unmatched.length, candidateCount: unmatched.filter((item) => item.candidate).length },
+    unmatched,
+  }
+}
+
+export async function createPrivatePropertyReconciliationReport({ client, organisationId = '', secrets = process.env, createPrivateProperty = createPrivatePropertyClient, limit = 1000 } = {}) {
   if (!client) throw new Error('Supabase client is required.')
   const orgId = normalizePrivatePropertyText(organisationId)
   if (!orgId) throw new Error('organisationId is required.')
@@ -27,12 +62,14 @@ export async function createPrivatePropertyReconciliationReport({ client, organi
   for (const result of [configsResult, listingsResult, leadsResult, showdaysResult]) if (result.error && result.error.code !== '42P01') throw result.error
   const listings = listingsResult.data || []
   const ids = listings.map((row) => row.id).filter(Boolean)
-  const syncResult = ids.length ? await client.from('private_property_listing_syncs').select('*').eq('environment', 'production').in('private_listing_id', ids) : { data: [], error: null }
+  const configurations = (configsResult.data || []).filter(activeConfig)
+  const branchGuids = [...new Set(configurations.map((config) => normalizePrivatePropertyText(config.branch_guid)).filter(Boolean))]
+  const syncResult = branchGuids.length ? await client.from('private_property_listing_syncs').select('*').eq('environment', 'production').in('branch_guid', branchGuids).limit(limit) : { data: [], error: null }
   if (syncResult.error) throw syncResult.error
   const listingById = new Map(listings.map((row) => [row.id, row]))
   const syncs = syncResult.data || []
-  const configurations = (configsResult.data || []).filter(activeConfig)
-  const checks = []; const discrepancies = []
+  const checks = []; const discrepancies = []; const unmatchedPortalListings = []
+  const inventoryMayBeTruncated = listings.length >= limit || syncs.length >= limit
   for (const config of configurations) {
     const credentials = await resolvePrivatePropertyCredentials({ client, config, secrets })
     if (credentials.missingSecrets.length) { checks.push({ configId: config.id, status: 'BLOCKED', blockers: credentials.missingSecrets.map((name) => `missing_runtime_secret:${name}`) }); continue }
@@ -40,6 +77,9 @@ export async function createPrivatePropertyReconciliationReport({ client, organi
     const scoped = syncs.filter((sync) => sync.branch_guid === config.branch_guid)
     let active = []
     try { active = parsePrivatePropertyActiveListings((await portal.getActiveListings({ branchGuid: config.branch_guid })).data) } catch (error) { checks.push({ configId: config.id, status: 'FAILED', error: error.message || 'Unable to read active PP listings.' }); continue }
+    const inventoryReview = createPrivatePropertyInventoryReview({ activeListings: active, syncs: scoped, localListings: listings })
+    unmatchedPortalListings.push(...inventoryReview.unmatched.map((item) => ({ ...item, branchGuid: config.branch_guid, configId: config.id })))
+    for (const item of inventoryReview.unmatched) discrepancies.push({ type: 'unlinked_active_portal_listing', branchGuid: config.branch_guid, ...item })
     const activeIds = new Set(active.map((item) => normalizePrivatePropertyText(item.uniqueId)).filter(Boolean))
     for (const sync of scoped) {
       const listing = listingById.get(sync.private_listing_id) || {}
@@ -53,10 +93,10 @@ export async function createPrivatePropertyReconciliationReport({ client, organi
       const expected = expectedStatus(sync, listing)
       if (remoteStatus !== expected || (remoteStatus === 'active') !== Boolean(sync.is_on_portal)) discrepancies.push({ type: 'listing_state_drift', listingId: sync.private_listing_id, listingTitle: listing.title || null, propertyId: sync.property_id, expectedStatus: expected, localStatus: sync.external_status, remoteStatus, localIsOnPortal: Boolean(sync.is_on_portal), remoteIsOnPortal: remoteStatus === 'active' })
     }
-    checks.push({ configId: config.id, branchGuid: config.branch_guid, status: 'COMPLETE', checkedListings: scoped.length, activeRemoteListings: active.length })
+    checks.push({ configId: config.id, branchGuid: config.branch_guid, status: 'COMPLETE', checkedListings: scoped.length, activeRemoteListings: active.length, unlinkedActiveListings: inventoryReview.summary.unmatchedCount })
   }
   const leadEvents = leadsResult.data || []; const showdays = (showdaysResult.data || []).filter((row) => ids.includes(row.private_listing_id))
   const leadSummary = { received: leadEvents.length, processed: leadEvents.filter((row) => row.status === 'processed').length, failed: leadEvents.filter((row) => row.status === 'failed').length, duplicates: leadEvents.filter((row) => row.status === 'duplicate').length }
   const showdaySummary = { synced: showdays.filter((row) => row.last_synced_at).length, failed: showdays.filter((row) => row.last_error).length, active: showdays.filter((row) => row.active).length }
-  return { version: PRIVATE_PROPERTY_RECONCILIATION_REPORT_SERVICE_VERSION, phase: 'private-property-phase5-reconciliation-analytics', generatedAt: new Date().toISOString(), organisationId: orgId, mode: 'READ_ONLY', safety: { privatePropertyApiCalled: checks.some((item) => item.status === 'COMPLETE'), databaseWritten: false, listingsCreated: false, listingsEdited: false }, status: discrepancies.length || checks.some((item) => item.status !== 'COMPLETE') || leadSummary.failed || showdaySummary.failed ? 'ATTENTION_REQUIRED' : 'COMPLETE', summary: { configuredProductionBranches: configurations.length, localSyncCount: syncs.length, discrepancyCount: discrepancies.length, leadIntake: leadSummary, showdays: showdaySummary }, checks, discrepancies }
+  return { version: PRIVATE_PROPERTY_RECONCILIATION_REPORT_SERVICE_VERSION, phase: 'private-property-phase5-reconciliation-analytics', generatedAt: new Date().toISOString(), organisationId: orgId, mode: 'READ_ONLY', safety: { privatePropertyApiCalled: checks.some((item) => item.status === 'COMPLETE'), databaseWritten: false, listingsCreated: false, listingsEdited: false }, status: !configurations.length || discrepancies.length || inventoryMayBeTruncated || checks.some((item) => item.status !== 'COMPLETE') || leadSummary.failed || showdaySummary.failed ? 'ATTENTION_REQUIRED' : 'COMPLETE', summary: { configuredProductionBranches: configurations.length, localSyncCount: syncs.length, localInventoryMayBeTruncated: inventoryMayBeTruncated, unlinkedActivePortalListings: unmatchedPortalListings.length, discrepancyCount: discrepancies.length, leadIntake: leadSummary, showdays: showdaySummary }, checks, discrepancies, unmatchedPortalListings }
 }

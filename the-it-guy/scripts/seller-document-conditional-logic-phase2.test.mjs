@@ -3,7 +3,6 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import {
-  buildSellerDocumentRequirementRows,
   buildSellerDocumentSourceOfTruth,
   getSellerRequiredDocuments,
 } from '../src/services/sellerDocumentRequirementsService.js'
@@ -231,8 +230,8 @@ function assertRowsAreProperty(rows = [], keys = []) {
   assert.ok(gasRow)
   assert.equal(gasRow.category, 'property')
   assert.equal(gasRow.status, 'uploaded')
-  assert.equal(gasRow.statusBucket, 'uploaded')
-  assert.equal(gasRow.complete, true)
+  assert.equal(gasRow.statusBucket, 'ready_for_review')
+  assert.equal(gasRow.complete, false)
   assert.equal(gasRow.hasUpload, true)
   assert.equal(gasRow.blocking, false)
   assert.equal(gasRow.uploadedBy, 'agent-user-1')
@@ -240,7 +239,7 @@ function assertRowsAreProperty(rows = [], keys = []) {
 }
 
 {
-  const rows = buildSellerDocumentRequirementRows({
+  const source = buildSellerDocumentSourceOfTruth({
     listing: {
       ...baseListing,
       documents: [{
@@ -260,7 +259,7 @@ function assertRowsAreProperty(rows = [], keys = []) {
       },
     },
   })
-  const electricFence = rowByKey(rows, 'electric_fence_certificate')
+  const electricFence = rowByKey(source.rows, 'electric_fence_certificate')
   assert.ok(electricFence)
   assert.equal(electricFence.category, 'property')
   assert.equal(electricFence.status, 'uploaded')

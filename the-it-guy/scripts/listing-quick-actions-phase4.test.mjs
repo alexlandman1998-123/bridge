@@ -1,0 +1,40 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { isQuickListingPortalUpdateAccepted } from '../src/services/listings/listingQuickActionDelivery.js'
+
+assert.equal(isQuickListingPortalUpdateAccepted('Property24', 'price_reduction', { status: 'SUBMITTED' }), true)
+assert.equal(isQuickListingPortalUpdateAccepted('Property24', 'price_reduction', { status: 'READY_TO_APPLY' }), false)
+assert.equal(isQuickListingPortalUpdateAccepted('Property24', 'sold', { status: 'FAILED' }), false)
+assert.equal(isQuickListingPortalUpdateAccepted('Private Property', 'price_reduction', { status: 'SUBMITTED' }), true)
+assert.equal(isQuickListingPortalUpdateAccepted('Private Property', 'sold', { update: { status: 'UPDATED' } }), true)
+assert.equal(isQuickListingPortalUpdateAccepted('Private Property', 'sold', { status: 'SUBMITTED' }), false)
+
+const listingPage = readFileSync(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+const privatePropertyStatus = readFileSync(new URL('../server/services/privatePropertyListingStatusUpdateService.js', import.meta.url), 'utf8')
+
+assert.match(listingPage, /data-testid="listing-quick-actions"/)
+assert.match(listingPage, /openQuickListingAction\('under_offer'\)/)
+assert.match(listingPage, /openQuickListingAction\('sold'\)/)
+assert.match(listingPage, /openQuickListingAction\('price_reduction'\)/)
+assert.ok(listingPage.indexOf('Selling Points') < listingPage.indexOf('{renderListingQuickActions()}', listingPage.indexOf('Selling Points')))
+assert.match(listingPage, /isActive: \['active', 'under_offer'\]/)
+assert.match(listingPage, /status: action === 'sold' \? 'Sold' : 'Pending'/)
+assert.match(listingPage, /photosChanged: false/)
+assert.match(listingPage, /\? 'Pending' : 'ReducedPrice'/)
+assert.match(listingPage, /propertyStatus: action === 'sold' \? 'Sold' : 'PendingOffer'/)
+assert.match(listingPage, /activityType: isPriceChange \? 'listing_price_changed' : isSold \? 'listing_sold' : 'listing_under_offer'/)
+assert.match(listingPage, /previousPrice, nextPrice/)
+assert.match(listingPage, /results\.push\(\{ channel, status: 'failed'/)
+assert.match(listingPage, /isQuickListingPortalUpdateAccepted\(channel, quickListingAction, response\)/)
+const applyActionSource = listingPage.slice(listingPage.indexOf('async function applyQuickListingAction()'), listingPage.indexOf('async function verifyArch9PublicListing('))
+assert.ok(applyActionSource.indexOf('await saveMarketingDraft(nextDraft') < applyActionSource.indexOf('await sendQuickListingPortalUpdate(channel, quickListingAction)'))
+assert.ok(applyActionSource.indexOf("activityType: 'listing_portal_update_started'") < applyActionSource.indexOf('await sendQuickListingPortalUpdate(channel, quickListingAction)'))
+assert.match(listingPage, /Retry failed portals/)
+assert.match(listingPage, /nextPrice >= previousPrice/)
+assert.match(listingPage, /!isPriceChange && !isSold && normalizeKey\(marketingDraft\.listingStatus\) === 'under_offer'/)
+assert.match(listingPage, /showReducedBanner: false/)
+assert.match(listingPage, /portal support not confirmed/)
+assert.match(listingPage, /draft\.showReducedBanner \? \['reduced_banner'\] : \[\]/)
+assert.match(privatePropertyStatus, /propertyStatus,/)
+
+console.log('Listing quick actions phase 4 contract passed')

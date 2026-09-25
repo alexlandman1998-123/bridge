@@ -6,6 +6,7 @@ function SellerDocumentReviewActions({
   busyAction = '',
   onReview = null,
   onReminder = null,
+  compact = false,
 }) {
   const [rejecting, setRejecting] = useState(false)
   const [rejectionReason, setRejectionReason] = useState('')
@@ -13,8 +14,14 @@ function SellerDocumentReviewActions({
   const documentId = String(document?.id || '').trim()
   const requirementId = String(item?.requirementId || item?.requirement_id || item?.id || '').trim()
   const status = String(item?.status || '').trim().toLowerCase()
+  const lifecycleStatus = String(item?.lifecycleStatus || item?.lifecycle_status || '').trim().toLowerCase()
   const canReview = Boolean(documentId && ['uploaded', 'under_review'].includes(status) && typeof onReview === 'function')
-  const canRemind = Boolean(item?.actionRequired && requirementId && typeof onReminder === 'function')
+  const canRemind = Boolean(
+    item?.actionRequired &&
+    requirementId &&
+    (['requested', 'rejected', 'expired', 'correction_requested'].includes(status) || ['awaiting_seller', 'action_required'].includes(lifecycleStatus)) &&
+    typeof onReminder === 'function',
+  )
   const actionKey = (action) => `${item?.key || item?.id}:${action}`
   const isBusy = Boolean(busyAction)
 
@@ -30,7 +37,7 @@ function SellerDocumentReviewActions({
   if (!canReview && !canRemind) return null
 
   return (
-    <div className="mt-4 border-t border-[#e2eaf3] pt-4">
+    <div className={compact ? '' : 'mt-4 border-t border-[#e2eaf3] pt-4'}>
       {rejecting ? (
         <div className="rounded-[14px] border border-[#f1d0cd] bg-[#fff8f7] p-3">
           <label htmlFor={`seller-document-rejection-${item?.key || item?.id}`} className="text-xs font-semibold text-[#7f312b]">

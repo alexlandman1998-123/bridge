@@ -28,31 +28,31 @@ function getStatusPresentation(status = '') {
   const normalized = normalizeDocumentStatus(status)
   if (normalized === 'rejected') {
     return {
-      label: 'Rejected',
+      label: 'Action required',
       classes: 'border-[#f3c2c2] bg-[#fff1f1] text-[#b42318]',
     }
   }
   if (normalized === 'required' || normalized === 'requested') {
     return {
-      label: 'Outstanding',
+      label: normalized === 'requested' ? 'Awaiting seller' : 'Not requested',
       classes: 'border-[#f4c7c3] bg-[#fff3f1] text-[#c24138]',
     }
   }
   if (normalized === 'uploaded') {
     return {
-      label: 'Uploaded',
+      label: 'Ready for review',
       classes: 'border-[#cfe0f4] bg-[#eff6ff] text-[#1d5fa7]',
     }
   }
   if (normalized === 'under_review') {
     return {
-      label: 'Under Review',
+      label: 'Under review',
       classes: 'border-[#f1d5a5] bg-[#fff7e8] text-[#b66a11]',
     }
   }
   if (normalized === 'approved' || normalized === 'completed') {
     return {
-      label: 'Approved',
+      label: 'Complete',
       classes: 'border-[#cfe8d8] bg-[#eefbf3] text-[#1f7a46]',
     }
   }

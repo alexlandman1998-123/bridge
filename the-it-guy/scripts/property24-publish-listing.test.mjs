@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import { createProperty24Client } from '../server/property24/client.js'
+import { resolveProperty24PublicUrl } from '../server/property24/publishService.js'
+
+assert.equal(resolveProperty24PublicUrl({ listingUrl: 'https://www.property24.com/for-sale/example/123456' }), 'https://www.property24.com/for-sale/example/123456')
+assert.equal(resolveProperty24PublicUrl({ listingUrl: 'https://property24.com.evil.example/123456' }), '')
 
 function read(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
@@ -68,6 +72,11 @@ assert.match(publishServiceSource, /redactedPayload/)
 assert.match(publishServiceSource, /includeSubmitPayload:\s*true/)
 assert.match(publishServiceSource, /saveListing/)
 assert.match(publishServiceSource, /recordProperty24ListingSync/)
+assert.match(publishServiceSource, /listingNumber,\s*status,\s*photosChanged/)
+
+const apiSource = read('server/property24/api.js')
+assert.match(apiSource, /status: resolvedConfig\.status,\s*storageBaseUrl: resolvedConfig\.supabaseUrl/)
+assert.match(apiSource, /loadImageBytes: !\(resolvedConfig\.listingNumber && resolvedConfig\.photosChanged === false\)/)
 
 const packageJson = JSON.parse(read('package.json'))
 assert.equal(packageJson.scripts['property24:publish-listing'], 'node scripts/property24-publish-listing.mjs')

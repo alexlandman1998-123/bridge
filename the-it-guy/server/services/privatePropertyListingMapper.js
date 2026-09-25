@@ -8,6 +8,7 @@ import {
   resolveListingAddressVisibility,
 } from './listingPortalFeatureNormalizer.js'
 import { buildListingAddressFingerprint } from './listingPortalAddressProtectionService.js'
+import { resolveListingFeature } from '../../src/services/listings/listingFeatureCatalog.js'
 
 export function normalizePrivatePropertyListingKey(value = '') {
   return normalizePrivatePropertyText(value)
@@ -232,7 +233,7 @@ function resolvePropertyId(listing = {}, publication = {}, options = {}) {
   )
 }
 
-function resolveDescription(listing = {}, publication = {}) {
+function resolveDescription(listing = {}, publication = {}, category = 'Residential') {
   const description = firstText(
     publication.description,
     publication.public_description,
@@ -243,7 +244,17 @@ function resolveDescription(listing = {}, publication = {}) {
   const features = normalizeListingPortalFeatures({ listing, publication })
   return appendPortalDescriptionFeatures(description, [
     ...(features.fibre ? ['fibre connectivity'] : []),
-    ...features.additionalLabels,
+    ...[
+      ['flatlet', features.flatlet, 'Flatlet'],
+      ['staff_quarters', features.staffQuarters, 'Staff quarters'],
+      ['pool', features.pool, 'Pool'],
+      ['garden', features.garden, 'Garden'],
+      ['pet_friendly', features.petFriendly, 'Pet friendly'],
+    ].filter(([key, value]) => value === true && !supportsPrivatePropertyFeature(key, category)).map(([, , label]) => label),
+    ...features.additionalLabels.filter((label) => {
+      const feature = resolveListingFeature(label.split(':')[0])
+      return !feature || !PRIVATE_PROPERTY_FEATURE_ATTRIBUTES[feature.key] || !supportsPrivatePropertyFeature(feature.key, category)
+    }),
   ])
 }
 
@@ -413,8 +424,39 @@ function addAttribute(attributes, attributeType, value) {
 }
 
 function yesNo(value, fallback = '') {
+  if (value === true) return 'Yes'
+  if (value === false) return 'No'
   if (value === null || value === undefined || normalizePrivatePropertyText(value) === '') return fallback
   return normalizeBoolean(value, false) ? 'Yes' : 'No'
+}
+
+// Agency Feed Service Rev 4.7, Appendix A. Spellings are feed identifiers.
+export const PRIVATE_PROPERTY_FEATURE_ATTRIBUTES = Object.freeze({
+  en_suite: 'EnSuite', lounges: 'Lounges', dining_areas: 'DiningAreas',
+  carports: 'Carports', storeys: 'Storeys', roof_type: 'RoofType', finishes: 'Finishes',
+  study: 'Study', staff_quarters: 'StaffQuarters', pool: 'Pool', flatlet: 'Flatlet',
+  water_included: 'WaterIncluded', electricity_included: 'ElectrictyIncluded',
+  satellite: 'Satelite', tv: 'TV', air_conditioning: 'Aircon', alarm: 'Alarm',
+  scenic_view: 'ScenicView', sea_view: 'SeaView', walk_in_closet: 'WalkInCloset',
+  built_in_cupboards: 'BuiltInCupboards', wheelchair_accessible: 'HandicapAvailable',
+  balcony: 'Balcony', deck: 'Deck', access_gate: 'AccessGate',
+  security_post: 'SecurityPost', tennis_court: 'TennisCourt', squash_court: 'SquashCourt',
+  clubhouse: 'Clubhouse', gym: 'Gym', golf: 'Golf', jacuzzi: 'Jacuzzi',
+  patio: 'Patio', storage: 'Storage', fence: 'Fence', laundry: 'Laundry',
+  kitchen: 'Kitchen', lapa: 'Lapa', electric_fence: 'Electric Fencing',
+  built_in_braai: 'Built-in-Braai', fireplace: 'Fireplace',
+  garden_cottage: 'Garden Cottage', jetty_berth: 'Jetty Berth',
+  scullery: 'Scullery', pantry: 'Pantry', guest_toilet: 'Guest Toilet',
+  entrance_hall: 'Entrance hall', borehole: 'Borehole',
+  irrigation_system: 'Irrigation System', paving: 'Paving',
+  intercom: 'Intercom', family_tv_room: 'Family/TV Room', garden: 'Garden',
+  pet_friendly: 'PetsAllowed',
+})
+
+export function supportsPrivatePropertyFeature(key, category) {
+  if (key === 'borehole') return category === 'Farms'
+  if (['roof_type', 'finishes', 'garden'].includes(key)) return category === 'Residential'
+  return category === 'Residential' || category === 'Farms'
 }
 
 function resolveHomeType(value = '') {
@@ -513,9 +555,11 @@ function buildAttributes({ listing = {}, publication = {}, category = 'Residenti
   const specialistFacts = resolveSpecialistFacts(listing, publication, options)
   const specialistCategory = resolvePrivatePropertySpecialistCategory(listing, publication, options)
 
-  if (category === 'Residential') {
+  if (['Residential', 'Farms', 'Commercial'].includes(category)) {
     addAttribute(attributes, 'Bedrooms', features.bedrooms)
     addAttribute(attributes, 'Bathrooms', features.bathrooms)
+  }
+  if (category === 'Residential' || category === 'Farms') {
     addAttribute(attributes, 'HomeType', resolveHomeType(propertyType))
   }
 
@@ -553,16 +597,27 @@ function buildAttributes({ listing = {}, publication = {}, category = 'Residenti
     specialistCategory === 'agricultural' ? specialistFacts.farmSize : null,
     specialistCategory === 'land' ? specialistFacts.erfSize : null,
   ))
-  addAttribute(attributes, 'Garages', features.garages)
-  addAttribute(attributes, 'Parking', firstNumber(features.parkingBays, specialistCategory === 'commercial' ? specialistFacts.parking : null))
+  if (category === 'Residential' || category === 'Farms') addAttribute(attributes, 'Garages', features.garages)
+  if (category === 'Residential' || category === 'Commercial') addAttribute(attributes, 'Parking', firstNumber(features.parkingBays, specialistCategory === 'commercial' ? specialistFacts.parking : null))
   addAttribute(attributes, 'Rates', firstNumber(publication.rates_taxes, publication.ratesTaxes, listing.rates_taxes, listing.ratesTaxes))
   addAttribute(attributes, 'Levies', firstNumber(publication.levies, listing.levies))
-  addAttribute(attributes, 'Flatlet', yesNo(features.flatlet))
-  addAttribute(attributes, 'StaffQuarters', yesNo(features.staffQuarters))
-  addAttribute(attributes, 'Pool', yesNo(features.pool))
-  addAttribute(attributes, 'Garden', yesNo(features.garden))
-  addAttribute(attributes, 'PetsAllowed', yesNo(publication.pets_allowed ?? publication.petsAllowed ?? listing.pets_allowed ?? listing.petsAllowed))
-  addAttribute(attributes, 'Furnished', yesNo(publication.furnished ?? publication.furnishedStatus ?? listing.furnished ?? listing.furnishedStatus))
+  if (category === 'Residential' || category === 'Farms') {
+    addAttribute(attributes, 'Furnished', yesNo(publication.furnished ?? publication.furnishedStatus ?? listing.furnished ?? listing.furnishedStatus))
+    for (const [key, attribute] of Object.entries(PRIVATE_PROPERTY_FEATURE_ATTRIBUTES)) {
+      if (!supportsPrivatePropertyFeature(key, category)) continue
+      // P24 captures a count of studies; PP's Rev 4.7 Study attribute is
+      // Yes/No. Derive presence only when the agent has not answered Study.
+      const value = key === 'study' && features.featureFacts.study == null && Number.isFinite(features.featureFacts.studies)
+        ? features.featureFacts.studies > 0
+        : features.featureFacts[key]
+      if (value !== null && value !== undefined) {
+        addAttribute(attributes, attribute, typeof value === 'boolean' ? yesNo(value) : value)
+      } else {
+        const legacy = { flatlet: features.flatlet, staff_quarters: features.staffQuarters, pool: features.pool, garden: features.garden, pet_friendly: features.petFriendly }[key]
+        if (legacy !== undefined) addAttribute(attributes, attribute, yesNo(legacy))
+      }
+    }
+  }
 
   return attributes
 }
@@ -689,7 +744,7 @@ export function createPrivatePropertyListingPlan({
   )
   const specialistFacts = resolveSpecialistFacts(listing, publication, options)
   const specialistCategory = resolvePrivatePropertySpecialistCategory(listing, publication, options)
-  const description = appendSpecialistDescription(resolveDescription(listing, publication), specialistFacts, specialistCategory)
+  const description = appendSpecialistDescription(resolveDescription(listing, publication, category), specialistFacts, specialistCategory)
   const headline = resolveHeadline(listing, publication)
   const listingDate = resolveListingDate(listing, publication, options)
   const availableFrom = resolveAvailableFrom(listing, publication, options) || listingDate

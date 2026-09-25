@@ -35,6 +35,8 @@ export function buildSellerSigningPlan({ sellerType = '', form = {} } = {}) {
     recipients = [person({ name: form.authorisedTrusteeName, email: form.authorisedTrusteeEmail, role: 'Authorised trustee' })]
   } else if (type === 'deceased_estate') {
     recipients = [person({ name: form.executorName, email: form.executorEmail, role: 'Executor' })]
+  } else if (type === 'power_of_attorney') {
+    recipients = [person({ name: form.powerOfAttorneyName, email: form.powerOfAttorneyEmail, role: 'Authorised representative' })]
   } else {
     recipients = [person({ name: form.sellerName || form.fullName || [form.sellerFirstName, form.sellerSurname].filter(Boolean).join(' '), email: form.sellerEmail || form.email, role: 'Seller' })]
   }

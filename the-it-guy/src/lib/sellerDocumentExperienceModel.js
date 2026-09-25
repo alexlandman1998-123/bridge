@@ -98,26 +98,37 @@ function statusBucket(status = '') {
   return 'outstanding'
 }
 
+function lifecycleStatus(status = '') {
+  if (status === 'required') return 'not_requested'
+  if (status === 'requested' || ['sent_for_signature', 'awaiting_remaining_signatures', 'awaiting_signed_hard_copy'].includes(status)) return 'awaiting_seller'
+  if (['uploaded', 'awaiting_agent_review', 'ready_to_send'].includes(status)) return 'ready_for_review'
+  if (status === 'under_review') return 'under_review'
+  if (['rejected', 'expired', 'correction_requested'].includes(status)) return 'action_required'
+  if (SATISFIED_STATUSES.has(status)) return 'complete'
+  if (EXCLUDED_STATUSES.has(status)) return 'not_applicable'
+  return 'not_requested'
+}
+
 function statusLabel(status = '') {
   const labels = {
-    required: 'Upload required',
-    requested: 'Upload requested',
-    expired: 'Updated document required',
-    rejected: 'Correction required',
-    uploaded: 'Received — awaiting review',
+    required: 'Not requested',
+    requested: 'Awaiting seller',
+    expired: 'Action required',
+    rejected: 'Action required',
+    uploaded: 'Ready for review',
     under_review: 'Under review',
-    approved: 'Approved',
-    completed: 'Approved',
-    verified: 'Verified',
-    signed: 'Signed and accepted',
-    awaiting_agent_review: 'Awaiting agent review',
-    ready_to_send: 'Ready to send',
-    sent_for_signature: 'Sent for signature',
-    awaiting_remaining_signatures: 'Awaiting remaining signatures',
-    awaiting_signed_hard_copy: 'Awaiting signed hard copy',
-    correction_requested: 'Correction requested',
+    approved: 'Complete',
+    completed: 'Complete',
+    verified: 'Complete',
+    signed: 'Complete',
+    awaiting_agent_review: 'Ready for review',
+    ready_to_send: 'Ready for review',
+    sent_for_signature: 'Awaiting seller',
+    awaiting_remaining_signatures: 'Awaiting seller',
+    awaiting_signed_hard_copy: 'Awaiting seller',
+    correction_requested: 'Action required',
   }
-  return labels[status] || 'Upload required'
+  return labels[status] || 'Not requested'
 }
 
 function handoffFor(requirement = {}, document = {}, bucket = '') {
@@ -173,6 +184,7 @@ function buildItem(requirement = {}, documents = [], now = new Date(), audience 
     ? requirementStatus
     : documentStatus || requirementStatus
   const bucket = statusBucket(status)
+  const lifecycle = lifecycleStatus(status)
   const dueDate = firstDate(requirement.dueDate, requirement.due_date, requirement.requestDueAt, requirement.request_due_at)
   const overdue = Boolean(dueDate && dueDate.getTime() < now.getTime() && ['outstanding', 'rejected'].includes(bucket))
   const stage = getStage(requirement)
@@ -193,6 +205,8 @@ function buildItem(requirement = {}, documents = [], now = new Date(), audience 
     status,
     statusBucket: bucket,
     statusLabel: statusLabel(status),
+    lifecycleStatus: lifecycle,
+    lifecycleLabel: statusLabel(status),
     required,
     applicable,
     dueDate: dueDate?.toISOString() || '',
@@ -205,7 +219,8 @@ function buildItem(requirement = {}, documents = [], now = new Date(), audience 
     hasUploadedDocument: Boolean(document || requirement.hasUpload || requirement.hasUploadedDocument || requirement.uploaded),
     actionRequired: required && applicable && ['outstanding', 'rejected'].includes(bucket),
     reviewRequired: required && applicable && bucket === 'received',
-    satisfied: required && applicable && bucket === 'approved',
+    satisfied: required && applicable && lifecycle === 'complete',
+    complete: required && applicable && lifecycle === 'complete',
     message: audience === 'agent' ? agentMessage(messageInput) : sellerMessage(messageInput),
     handoff,
   }
@@ -234,6 +249,18 @@ export function buildSellerDocumentExperienceModel({
   const approved = counts.approved
   const received = counts.received
   const actionRequired = counts.outstanding + counts.rejected
+  const lifecycleCounts = items.reduce((summary, item) => {
+    summary[item.lifecycleStatus] = (summary[item.lifecycleStatus] || 0) + 1
+    return summary
+  }, {
+    not_requested: 0,
+    awaiting_seller: 0,
+    ready_for_review: 0,
+    under_review: 0,
+    action_required: 0,
+    complete: 0,
+    not_applicable: 0,
+  })
   const stages = STAGE_CONFIG.map((stage) => {
     const stageItems = items.filter((item) => item.stageKey === stage.key)
     return {
@@ -256,8 +283,13 @@ export function buildSellerDocumentExperienceModel({
     summary: {
       total,
       approved,
+      complete: lifecycleCounts.complete,
       received,
       actionRequired,
+      notRequested: lifecycleCounts.not_requested,
+      awaitingSeller: lifecycleCounts.awaiting_seller,
+      readyForReview: lifecycleCounts.ready_for_review,
+      underReview: lifecycleCounts.under_review,
       rejected: counts.rejected,
       overdue: counts.overdue,
       assurancePercent: total ? Math.round((approved / total) * 100) : 0,

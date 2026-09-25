@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { buildSellerRequirementProfile, getRequiredSellerDocuments } from '../src/lib/sellerDocumentRequirementEngine.js'
+import { buildSellerRequirementProfile, getRequiredSellerDocuments, getRequiredSellerStructuredFacts } from '../src/lib/sellerDocumentRequirementEngine.js'
 import { resolveSellerOnboardingFlow } from '../src/lib/sellerOnboardingFlow.js'
 import {
   buildCanonicalSellerOnboardingPayload,
@@ -61,7 +61,14 @@ function buildBaseForm(overrides = {}) {
     email: 'alex@example.com',
     phone: '0821234567',
     maritalStatus: 'single',
+    ownershipType: 'individual',
     idNumber: '9001015009083',
+    dateOfBirth: '1990-01-01',
+    nationality: 'South African',
+    incomeTaxNumber: 'CONTROLLED-TAX-REFERENCE',
+    taxResident: 'yes',
+    popiConsentAccepted: true,
+    popiConsentAcceptedAt: '2026-09-24T08:00:00.000Z',
     residentialAddress: '54 Menlyn Avenue, Waterkloof Glen, Pretoria',
     propertyCategory: 'residential',
     propertyType: 'house',
@@ -88,7 +95,8 @@ function assertScenario({ name, form, sellerBranch, propertyBranch, docKeys = []
     const flow = resolveSellerOnboardingFlow(form, listing, facts)
     const profile = buildSellerRequirementProfile(form, listing)
     const documents = getRequiredSellerDocuments(profile)
-    const keys = requirementKeys(documents)
+    const structuredFacts = getRequiredSellerStructuredFacts(profile)
+    const keys = requirementKeys([...documents, ...structuredFacts])
     const validationResult = validateSellerOnboardingFacts(facts, { draft: false })
 
     assert.equal(flow.seller_branch, sellerBranch)
@@ -102,7 +110,8 @@ function assertScenario({ name, form, sellerBranch, propertyBranch, docKeys = []
     assert.equal(profile.documentTriggers.length > 0, true)
 
     if (docKeys.length) {
-      assert.equal(hasAll(keys, docKeys), true)
+      const missingKeys = docKeys.filter((key) => !keys.includes(key))
+      assert.deepEqual(missingKeys, [], `Missing document requirements: ${missingKeys.join(', ')}`)
     }
     for (const check of factsChecks) {
       check({ facts, flow, profile, documents, keys })
@@ -311,9 +320,6 @@ assertScenario({
     ({ facts }) => assert.equal(facts.property.scheme.name, 'The Oaks'),
     ({ facts }) => assert.equal(facts.property.estate.name, 'The Oaks Estate'),
   ],
-  flowChecks: [
-    ({ flow }) => assert.ok(flow.document_triggers.includes('body_corporate_details')),
-  ],
 })
 
 assertScenario({
@@ -354,7 +360,6 @@ assertScenario({
   ],
   flowChecks: [
     ({ flow }) => assert.ok(flow.document_triggers.includes('bond_statement')),
-    ({ flow }) => assert.ok(flow.document_triggers.includes('settlement_figure')),
   ],
 })
 

@@ -36,6 +36,7 @@ export function parsePrivatePropertyActiveListings(xml = '') {
     listingType: extractPrivatePropertyXmlTag(block, 'ListingType'),
     privatePropertyRef: extractPrivatePropertyXmlTag(block, 'PrivatePropertyRef'),
     uniqueId: extractPrivatePropertyXmlTag(block, 'UniqueId'),
+    listingUrl: extractPrivatePropertyXmlTag(block, 'ListingUrl') || extractPrivatePropertyXmlTag(block, 'PublicUrl'),
   }))
 }
 
@@ -247,6 +248,7 @@ export async function runPrivatePropertyPostSubmitMonitor({
         environment: normalizedEnvironment,
         listingType,
         privatePropertyRef,
+        privatePropertyListingUrl: activeMatch?.listingUrl || '',
         privatePropertyStatus,
         externalStatus,
         isOnPortal: Boolean(activeMatch || externalStatus === 'active'),

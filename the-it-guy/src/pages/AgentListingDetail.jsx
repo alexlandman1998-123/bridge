@@ -1,6 +1,5 @@
 import {
   ArrowLeft,
-  Archive,
   BarChart3,
   Building2,
   CalendarDays,
@@ -44,11 +43,64 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { getProperty24ListingStatusOptions } from './settings/property24SettingsModel'
+import {
+  LISTING_FEATURE_CATALOG,
+  mergeListingFeatureSelections,
+  normalizeListingFeatureFacts,
+  resolveListingFeature,
+  serializeListingFeatureFacts,
+  setListingFeatureFact,
+} from '../services/listings/listingFeatureCatalog'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
 import ListingAgentReassignmentPanel from '../components/listings/ListingAgentReassignmentPanel'
+import ListingFeatureFields from '../components/listings/ListingFeatureFields'
+import ListingSellerInformationEditor from '../components/listings/ListingSellerInformationEditor'
+import ListingSellerCollaborationPanel from '../components/listings/ListingSellerCollaborationPanel'
+import ListingSellerHistoricalNormalizationBanner from '../components/listings/ListingSellerHistoricalNormalizationBanner'
+import ListingShowDaysPanel from '../components/listings/ListingShowDaysPanel'
+import ListingMarketingOperationalHealthPanel from '../components/listings/ListingMarketingOperationalHealthPanel'
+import {
+  ListingViewingRequestModal,
+} from '../components/listings/ListingBuyerActionModals'
+import LeadCreateDialog from '../components/leads/LeadCreateDialog'
+import { deriveListingChannelUpdateStates } from '../services/listings/listingChannelUpdateState'
+import { isQuickListingPortalUpdateAccepted } from '../services/listings/listingQuickActionDelivery'
+import {
+  getPendingListingMediaUploads,
+  resolveMarketingDraftList,
+  resolveMarketingDraftText,
+} from '../services/listings/listingMarketingDraftSafety'
+import {
+  buildListingPublicationSnapshot,
+  deriveListingPublicationStates,
+  getListingPublicationChannelKey,
+} from '../services/listings/listingPublicationState'
+import { buildListingMarketingOperationalHealth } from '../services/listings/listingMarketingOperationalHealth'
+import {
+  normalizeListingChannelPublicUrl,
+  normalizeListingChannelReference,
+} from '../services/listings/listingMarketingChannelPresentation'
+import { buildListingShowDaySnapshot } from '../services/listings/listingShowDayModel'
+import {
+  applyListingWithdrawalResults,
+  buildListingWithdrawalPlan,
+  listingWithdrawalIsComplete,
+} from '../services/listings/listingWithdrawalModel'
+import {
+  buildListingOverviewPerformance,
+  createEmptyListingOverviewAnalytics,
+  getListingOverviewAnalytics,
+} from '../services/listings/listingOverviewPerformanceService'
+import {
+  buildSellerEmailDeliveryOverview,
+  buildSellerFicaOverview,
+  buildSellerPortalSecurityOverview,
+  resolveSellerLastContact,
+} from '../services/listings/listingSellerOverviewModel'
 import SyndicationReviewModal from '../components/listings/SyndicationReviewModal'
 import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
+import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../services/websiteListingPublicationService'
 import {
   ListingWorkspacePortalActionPanel,
   ListingWorkspacePortalChecklist,
@@ -106,13 +158,11 @@ import {
   getSellerRequirementProfile,
 } from '../lib/privateListingRequirementEngine'
 import {
-  createAppointmentAsync,
+  addAppointmentOutcomeAsync,
   listAppointmentsAsync,
 } from '../lib/agencyPipelineService'
 import {
-  fetchAgencyCrmLeadWorkspace,
   listAgencyCrmLeadContacts,
-  updateAgencyCrmContactRecord,
   updateAgencyCrmLeadRecord,
 } from '../lib/agencyCrmRepository'
 import {
@@ -159,12 +209,8 @@ import {
 } from '../services/listingPostCreateProgress'
 import { getListingPostCreateTask } from '../services/listingPostCreateTaskService'
 import {
-  completeViewingRequest,
   formatViewingStatusLabel,
   getViewingRequestsForListing,
-  rescheduleViewingRequest,
-  saveViewingFeedback,
-  updateViewingParticipantResponse,
   VIEWING_RESPONSE_STATUS,
   VIEWING_STATUS,
 } from '../lib/viewingWorkflow'
@@ -202,6 +248,7 @@ import { listTransactionPartnerConnectionOptions } from '../services/partnerNetw
 import {
   getPrivateListing,
   createPrivateListingActivity,
+  getPrivateListingActivity,
   createPrivateListingDocumentDownloadUrl,
   deletePrivateListing,
   getSellerPortalAccessState,
@@ -220,6 +267,38 @@ import {
 } from '../services/privateListingService'
 import { repairSellerDocumentTransactionContinuity } from '../services/sellerDocumentTransactionContinuityService'
 import { listListingLeadInterests } from '../services/leadListingInterestService'
+import {
+  createListingBuyerLead,
+  createListingBuyerLeadDraft,
+  createListingViewingDraft,
+  createListingViewingRequest,
+  getListingBuyerActionPropertyAddress,
+} from '../services/listings/listingBuyerActionsService'
+import { buildListingLeadMetrics, isBookedListingViewing } from '../services/listings/listingLeadMetrics'
+import { clampListingLeadPage, escapeListingLeadCsvValue, filterListingLeadRows } from '../services/listings/listingLeadListModel'
+import { saveListingSellerCanonicalUpdate } from '../services/listings/listingSellerCanonicalUpdateService'
+import { buildListingSellerSetupState } from '../services/listings/listingSellerSetupState'
+import { buildListingSellerInformationModel } from '../services/listings/listingSellerInformationModel'
+import {
+  buildSellerDocumentUploadQueue,
+  getSellerDocumentUploadKey,
+} from '../services/listings/listingSellerDocumentUploadModel'
+import {
+  buildListingSellerDocumentsSummary,
+  resolveListingSellerDocumentActivity,
+  resolveListingSellerDocumentActions,
+  resolveListingSellerDocumentStatus,
+} from '../services/listings/listingSellerDocumentsPresentation'
+import {
+  buildListingSellerDocumentDeliveryIndex,
+  listListingSellerDocumentDeliveries,
+  retryListingSellerDocumentDelivery,
+} from '../services/listings/listingSellerDocumentCollaborationService'
+import {
+  buildListingMandateReplacementWorkflow,
+  createListingMandateTermsRevision,
+} from '../services/listings/listingMandateReplacementModel'
+import { AGENCY_CRM_UPDATED_EVENT, getAgencyCrmUpdateDetail } from '../lib/agencyCrmUpdateBus'
 import { listListingPropertyShares } from '../services/leadPropertySharingService'
 import {
   buildDefaultLeadCommunicationPreferences,
@@ -253,6 +332,7 @@ import {
   reviseSellerOnboardingAttorneyRecommendation,
 } from '../core/documents/sellerOnboardingAttorneyRecommendation'
 import { reviewSellerDocument, sendSellerDocumentManualReminder } from '../services/sellerDocumentReviewWorkflowService'
+import { issueSellerDocumentRequests } from '../services/sellerDocumentRequestOrchestrationService'
 import {
   getSellerBasePackAliases,
   SELLER_BASE_PACK_KEYS,
@@ -403,22 +483,6 @@ const SELLER_PROFILE_SECTION_FIELDS = [
 
 const SELLER_PROFILE_SECTION_BY_KEY = new Map(SELLER_PROFILE_SECTION_FIELDS.map((section) => [section.key, section]))
 
-const LISTING_PERFORMANCE_OVERRIDE_FIELDS = [
-  { key: 'totalViews', label: 'Views', helper: 'Total buyer views across all channels.' },
-  { key: 'portalViews', label: 'Portal views', helper: 'Property portal views shown to the seller.' },
-  { key: 'bridgeViews', label: 'Arch9 views', helper: 'Arch9 / agency website views.' },
-  { key: 'leadCount', label: 'Leads', helper: 'Total buyer leads received.' },
-  { key: 'newThisWeek', label: 'New this week', helper: 'New leads received in the last seven days.' },
-  { key: 'scheduledViewings', label: 'Viewings', helper: 'Booked or requested viewings.' },
-  { key: 'completedViewings', label: 'Completed viewings', helper: 'Viewings already completed.' },
-  { key: 'offerCount', label: 'Offers', helper: 'Total offers received.' },
-  { key: 'pendingOffers', label: 'Active / pending offers', helper: 'Offers still active or pending.' },
-  { key: 'daysOnMarket', label: 'Days on market', helper: 'Current days marketed.' },
-  { key: 'areaAverageDays', label: 'Area average days', helper: 'Local benchmark shown with days on market.' },
-]
-
-const LISTING_PERFORMANCE_OVERRIDE_KEYS = new Set(LISTING_PERFORMANCE_OVERRIDE_FIELDS.map((field) => field.key))
-
 function getSellerWorkspaceTabFromSearch(search = '') {
   const requestedTab = new URLSearchParams(String(search || '')).get('tab')
   const normalizedTab = requestedTab === 'offers' ? 'leads' : requestedTab === 'listing' ? 'marketing' : requestedTab
@@ -476,30 +540,7 @@ const BOND_ORIGINATOR_OPTIONS = [
 
 const PROPERTY_TYPE_OPTIONS = ['House', 'Apartment', 'Townhouse', 'Cluster', 'Land', 'Farm', 'Commercial', 'Industrial', 'Mixed-use']
 const LISTING_STATUS_OPTIONS = ['mandate_signed', 'active', 'under_offer', 'sold', 'withdrawn']
-const FEATURE_OPTIONS = [
-  'Pool',
-  'Garden',
-  'Security',
-  'Electric Fence',
-  'Solar',
-  'Backup Power',
-  'Backup Water',
-  'Borehole',
-  'Fibre',
-  'Pet Friendly',
-  'Study',
-  'Staff Quarters',
-  'Entertainment Area',
-  'Built-in Braai',
-  'Fireplace',
-  'Air Conditioning',
-  'Open-plan Living',
-  'Balcony',
-  'Sea View',
-  'Mountain View',
-  'Flatlet',
-  'New Development',
-]
+const FEATURE_OPTIONS = LISTING_FEATURE_CATALOG.filter((feature) => feature.type === 'boolean').map((feature) => feature.label)
 const LISTING_TYPE_OPTIONS = ['Sale', 'Rental']
 const ADDRESS_VISIBILITY_OPTIONS = [
   { value: 'hide_street_address', label: 'Contact agent for street address' },
@@ -539,7 +580,7 @@ function toTitleCaseLabel(value = '') {
 function normalizeListingFeatureLabel(value = '') {
   const key = normalizeKey(value)
   if (!key || LISTING_SYSTEM_PUBLICATION_FEATURE_KEYS.has(key)) return ''
-  return LISTING_FEATURE_LABEL_BY_KEY.get(key) || toTitleCaseLabel(value)
+  return resolveListingFeature(value)?.label || LISTING_FEATURE_LABEL_BY_KEY.get(key) || toTitleCaseLabel(value)
 }
 
 function normalizeListingFeatureSelections(...sources) {
@@ -913,9 +954,11 @@ function normalizeExternalListingLinks(items = []) {
 function buildListingSnapshotFormData(draft = {}) {
   const priceOnApplication = normalizeKey(draft.pricePresentation) === 'poa'
   const selectedFeatures = normalizeListingFeatureSelections(draft.selectedFeatures)
-  const publicationFeatures = priceOnApplication
-    ? [...selectedFeatures, 'price_on_application']
-    : selectedFeatures.filter((feature) => normalizeKey(feature) !== 'price_on_application')
+  const publicationFeatures = [
+    ...selectedFeatures,
+    ...(priceOnApplication ? ['price_on_application'] : []),
+    ...(draft.showReducedBanner ? ['reduced_banner'] : []),
+  ]
   return {
     propertyAddress: String(draft.addressLine1 || '').trim(),
     formattedAddress: String(draft.formattedAddress || '').trim(),
@@ -956,6 +999,9 @@ function buildListingSnapshotFormData(draft = {}) {
     availableFrom: formatDateInputValue(draft.availableFrom),
     features: publicationFeatures,
     keySellingPoints: publicationFeatures,
+    featureFacts: serializeListingFeatureFacts(normalizeListingFeatureFacts(draft.featureFacts, selectedFeatures)),
+    showReducedBanner: Boolean(draft.showReducedBanner),
+    show_reduced_banner: Boolean(draft.showReducedBanner),
     amenities: Array.isArray(draft.amenities) ? draft.amenities : [],
     petFriendly: Boolean(draft.petFriendly),
     fibreReady: Boolean(draft.fibreReady),
@@ -964,7 +1010,7 @@ function buildListingSnapshotFormData(draft = {}) {
     propertyNotes: String(draft.description || '').trim(),
     propertyDescription: String(draft.description || '').trim(),
     listingDescription: String(draft.description || '').trim(),
-    listingPreviewDescription: String(draft.listingPreviewDescription || draft.description || '').trim(),
+    listingPreviewDescription: String(draft.listingPreviewDescription ?? '').trim(),
     internalNotes: String(draft.notes || '').trim(),
     publicationStatus: String(draft.publicationStatus || 'Draft').trim(),
     imageGallery: normalizeMediaItems(draft.galleryImages),
@@ -1309,41 +1355,9 @@ function isRemoteListingMissingError(error) {
   const message = String(error?.message || error || '').toLowerCase()
   return code === 'PGRST116' ||
     message.includes('private listing not found') ||
+    message.includes('listing was not found') ||
     message.includes('no rows') ||
     message.includes('0 rows')
-}
-
-function normalizeListingPerformanceOverrides(source = {}) {
-  if (!source || typeof source !== 'object') return {}
-  return Object.entries(source).reduce((accumulator, [key, value]) => {
-    if (!LISTING_PERFORMANCE_OVERRIDE_KEYS.has(key)) return accumulator
-    if (value === '' || value === null || value === undefined) return accumulator
-    const number = Number(value)
-    if (!Number.isFinite(number)) return accumulator
-    accumulator[key] = Math.max(0, Math.round(number))
-    return accumulator
-  }, {})
-}
-
-function getListingPerformanceOverrides(listing = {}) {
-  const formData = getListingSellerFormData(listing)
-  return normalizeListingPerformanceOverrides(
-    formData.listingPerformanceOverrides ||
-      formData.listingPerformance ||
-      listing?.listingPerformanceOverrides ||
-      listing?.listingPerformance ||
-      {},
-  )
-}
-
-function applyListingPerformanceOverrides(basePerformance = {}, overrides = {}) {
-  const normalizedOverrides = normalizeListingPerformanceOverrides(overrides)
-  return {
-    ...basePerformance,
-    ...normalizedOverrides,
-    hasOverrides: Object.keys(normalizedOverrides).length > 0,
-    overrides: normalizedOverrides,
-  }
 }
 
 function getSellerDocumentSourceLabel(row = {}) {
@@ -1451,6 +1465,9 @@ function mapSellerDocumentSourceRowForListing(row = {}) {
     promotion_error: promotionError,
     promotionAttemptedAt,
     promotion_attempted_at: promotionAttemptedAt,
+    whyNeeded: row.whyNeeded || row.description || '',
+    capturedFacts: Array.isArray(row.capturedFacts) ? row.capturedFacts : [],
+    triggerSummary: normalizeText(row.triggerSummary || row.trigger_summary),
     sourceLabel: getSellerDocumentSourceLabel(row),
   }
 }
@@ -1595,21 +1612,21 @@ const LISTING_DOCUMENT_GROUP_CONFIG = [
   },
   {
     key: 'fica',
-    label: 'FICA Documents',
+    label: 'FICA',
     description: 'Seller identity, address, marital, company, trust, and authority checks.',
     icon: ShieldCheck,
     toneClasses: 'bg-[#ecfaf1] text-[#1f7d44] border-[#d8eddf]',
   },
   {
     key: 'sales',
-    label: 'Sales Documents',
+    label: 'Sale',
     description: 'Mandates, OTPs, seller instructions, and sale-related paperwork.',
     icon: HandCoins,
     toneClasses: 'bg-[#fff8ea] text-[#8a5b16] border-[#f2dfbf]',
   },
   {
     key: 'requests',
-    label: 'Additional Requests',
+    label: 'Requests',
     description: 'Ad hoc requests and any requirement that does not fit the standard packs.',
     icon: FileText,
     toneClasses: 'bg-[#f8fbfd] text-[#607387] border-[#dbe6f2]',
@@ -1668,17 +1685,8 @@ function groupListingDocumentsForDisplay(documents = []) {
 }
 
 function isListingDocumentComplete(document = {}) {
-  if (document?.isGeneratedDraft || document?.is_generated_draft) {
-    return normalizeKey(document?.status) === 'completed'
-  }
-  return Boolean(
-    document?.uploaded ||
-      document?.hasUpload ||
-      document?.url ||
-      document?.filePath ||
-      document?.generatedHtml ||
-      document?.generated_html,
-  )
+  if (document?.satisfied === true || document?.complete === true) return true
+  return ['approved', 'completed', 'verified', 'signed'].includes(normalizeKey(document?.status))
 }
 
 function getSellerDocumentSlaPresentation(reviewSla = null) {
@@ -1693,6 +1701,17 @@ function getSellerDocumentSlaPresentation(reviewSla = null) {
   if (state === 'breached') return { label: 'Review SLA breached', classes: 'border-[#f0c8c4] bg-[#fff7f6] text-[#963d35]' }
   if (state === 'due_soon') return { label: 'Review due within 24 hours', classes: 'border-[#f3d9b0] bg-[#fff9ee] text-[#8f5c18]' }
   return { label: 'Review within SLA', classes: 'border-[#d6e4f5] bg-[#f4f9ff] text-[#315b7d]' }
+}
+
+function getSellerDocumentDeliveryPresentation(delivery = null) {
+  if (!delivery) return null
+  const status = normalizeKey(delivery.status)
+  if (status === 'failed') return { label: 'Delivery failed', classes: 'text-[#a13b35]', detail: delivery.error || 'The message provider did not accept this delivery.' }
+  if (status === 'delivered') return { label: 'Message delivered', classes: 'text-[#1f7d44]', detail: '' }
+  if (status === 'sent') return { label: 'Message sent', classes: 'text-[#1f7d44]', detail: '' }
+  if (status === 'processing') return { label: 'Sending message', classes: 'text-[#2f6fb3]', detail: '' }
+  if (status === 'queued' || status === 'prepared') return { label: 'Message queued', classes: 'text-[#607387]', detail: '' }
+  return { label: toTitleCaseLabel(status || 'Unknown'), classes: 'text-[#607387]', detail: '' }
 }
 
 function resolveSellerEmailFromListing(listing = {}) {
@@ -2265,8 +2284,8 @@ function CompactSnapshotRow({ label, value }) {
 
 function OverviewStatusRow({ label, value, status = '' }) {
   return (
-    <div className="flex min-h-[34px] items-center justify-between gap-3 border-b border-[#edf2f7] py-1.5 last:border-b-0">
-      <span className="text-xs font-semibold text-[#6b7d93]">{label}</span>
+    <div className="flex min-h-11 items-center justify-between gap-3 border-b border-[#edf2f7] py-2 last:border-b-0">
+      <span className="text-[0.8rem] font-medium text-[#5f7389]">{label}</span>
       {status ? <StatusPill status={status} label={value} /> : <span className="text-right text-xs font-semibold text-[#142132]">{value}</span>}
     </div>
   )
@@ -2274,15 +2293,18 @@ function OverviewStatusRow({ label, value, status = '' }) {
 
 function StatusPill({ status = '', label = '' }) {
   const normalized = String(status || label || '').trim().toLowerCase()
-  const done = ['done', 'complete', 'completed', 'uploaded', 'signed', 'published', 'active', 'activated', 'profile_complete', 'live', 'verified'].includes(normalized)
-  const pending = ['pending', 'in_progress', 'in progress', 'under_review', 'sent', 'invitation_sent', 'invitation_pending', 'draft', 'requested'].includes(normalized)
+  const done = ['done', 'complete', 'completed', 'approved', 'signed', 'published', 'active', 'activated', 'profile_complete', 'live', 'verified'].includes(normalized)
+  const pending = ['pending', 'in_progress', 'in progress', 'uploaded', 'ready_for_review', 'under_review', 'sent', 'invitation_sent', 'invitation_pending', 'draft', 'requested'].includes(normalized)
+  const danger = ['rejected', 'action_required', 'failed', 'error'].includes(normalized)
   const className = done
     ? 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'
-    : pending
-      ? 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
-      : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'
+    : danger
+      ? 'border-[#f3c2c2] bg-[#fff1f1] text-[#b42318]'
+      : pending
+        ? 'border-[#d8e6f6] bg-[#f3f8fd] text-[#2c5a89]'
+        : 'border-[#f5dbb0] bg-[#fff8ec] text-[#9a5b13]'
   return (
-    <span className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold ${className}`}>
+    <span className={`inline-flex h-7 shrink-0 items-center rounded-full border px-2.5 text-xs font-medium ${className}`}>
       {label || (done ? 'Done' : pending ? 'Pending' : 'Missing')}
     </span>
   )
@@ -2340,19 +2362,23 @@ function DistributionChannel({
   name,
   subtitle = '',
   reference = '',
+  publicUrl = '',
   status = 'pending',
   statusLabel = '',
   contextTitle = '',
   contextDetail = '',
   lastSynced = '',
+  savedAt = '',
+  publicationState = null,
+  onReviewChanges = null,
   primaryAction = null,
   secondaryAction = null,
   menuActions = [],
 }) {
   const Icon = icon
   const statusKey = normalizeKey(status || statusLabel)
-  const live = ['live', 'published', 'active', 'done', 'complete'].includes(statusKey)
-  const syncing = ['syncing', 'updating', 'publishing', 'loading'].includes(statusKey)
+  const live = ['live', 'published', 'active', 'done', 'complete', 'current'].includes(statusKey)
+  const syncing = ['syncing', 'updating', 'publishing', 'loading', 'awaiting_verification'].includes(statusKey)
   const attention = ['needs_attention', 'attention', 'warning', 'blocked', 'missing', 'failed', 'error'].includes(statusKey)
   const dotClass = live ? 'bg-[#1f9d64]' : attention ? 'bg-[#d99321]' : syncing ? 'bg-[#2f6fb3]' : 'border border-[#aebdca] bg-white'
   const statusTextClass = live
@@ -2363,35 +2389,56 @@ function DistributionChannel({
         ? 'text-[#2f6fb3]'
         : 'text-[#526a82]'
   const manageActions = [primaryAction, secondaryAction, ...menuActions].filter(Boolean)
+  const displayReference = normalizeListingChannelReference(reference)
+  const safePublicUrl = normalizeListingChannelPublicUrl(publicUrl || publicationState?.publicUrl)
   return (
-    <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(250px,1fr)_minmax(170px,0.7fr)_minmax(130px,170px)_auto] lg:items-center">
+    <div className="grid gap-4 border-b border-[#edf2f7] px-4 py-4 last:border-b-0 lg:grid-cols-[minmax(210px,1fr)_minmax(145px,0.7fr)_minmax(170px,0.8fr)_minmax(150px,0.75fr)_auto] lg:items-center">
       <div className="flex min-w-0 items-center gap-3">
         <PlatformLogo src={logoSrc} icon={Icon} label={name} />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold leading-5 text-[#142132]">{name}</p>
           {subtitle ? <p className="truncate text-xs leading-5 text-[#607387]">{subtitle}</p> : null}
-          {reference ? (
-            <span className="mt-1 inline-flex max-w-full rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]">
-              <span className="truncate">{reference}</span>
-            </span>
-          ) : null}
           {contextTitle ? <p className="mt-1 text-xs font-semibold leading-5 text-[#8a5b13]">{contextTitle}</p> : null}
           {contextDetail ? <p className="mt-0.5 text-xs leading-5 text-[#607387]">{contextDetail}</p> : null}
         </div>
+      </div>
+      <div className="min-w-0">
+        <p className="text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa] lg:hidden">Reference</p>
+        <p className="mt-1 truncate text-sm font-semibold text-[#243d56] lg:mt-0" title={displayReference || 'Not assigned'}>{displayReference || 'Not assigned'}</p>
+        {safePublicUrl ? (
+          <a href={safePublicUrl} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78] transition hover:text-[#143a5b] hover:underline">
+            View listing
+            <ExternalLink size={12} />
+          </a>
+        ) : (
+          <p className="mt-1 text-xs font-medium text-[#8a98a8]">Listing link unavailable</p>
+        )}
       </div>
       <div className="min-w-0 md:justify-self-start">
         <p className={`inline-flex items-center gap-2 text-sm font-semibold ${statusTextClass}`}>
           <span className={`h-2 w-2 rounded-full ${dotClass}`} />
           {statusLabel || formatStatusLabel(status)}
         </p>
+        {publicationState?.changeCount ? (
+          <button type="button" onClick={onReviewChanges} className="mt-1 inline-flex items-center gap-1 rounded-full border border-[#f1dfb8] bg-[#fff8e8] px-2 py-1 text-[0.68rem] font-semibold text-[#8a641d]">
+            <CircleAlert size={11} />
+            {publicationState.changeCount} unpublished change{publicationState.changeCount === 1 ? '' : 's'}
+          </button>
+        ) : publicationState?.stage === 'verified' ? (
+          <p className="mt-1 text-[0.68rem] font-semibold text-[#1f7d44]">Matches verified snapshot</p>
+        ) : publicationState?.stage === 'legacy_live' ? (
+          <p className="mt-1 text-[0.68rem] font-semibold text-[#607387]">Snapshot starts on next update</p>
+        ) : null}
       </div>
       <div className="min-w-0">
-        {lastSynced ? (
-          <>
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa]">Last synced</p>
-            <p className="mt-0.5 text-xs font-semibold text-[#607387]">{lastSynced}</p>
-          </>
-        ) : null}
+        <div className="grid gap-1 text-[0.68rem] text-[#607387]">
+          {savedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Arch9 saved</span> · {savedAt}</p> : null}
+          {publicationState?.submittedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Submitted</span> · {formatRelativeTime(publicationState.submittedAt)}</p> : null}
+          {publicationState?.acceptedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Accepted</span> · {formatRelativeTime(publicationState.acceptedAt)}</p> : null}
+          {publicationState?.verifiedAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Verified</span> · {formatRelativeTime(publicationState.verifiedAt)}</p> : null}
+          {publicationState?.withdrawnAt ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Withdrawn</span> · {formatRelativeTime(publicationState.withdrawnAt)}</p> : null}
+          {!savedAt && !publicationState?.submittedAt && lastSynced ? <p><span className="font-semibold uppercase tracking-[0.06em] text-[#8294aa]">Last synced</span> · {lastSynced}</p> : null}
+        </div>
       </div>
       <div className="flex justify-start lg:justify-end">
         {manageActions.length ? (
@@ -2957,6 +3004,8 @@ function getLeadCreatedAt(lead = {}) {
 
 function getLeadContactedAt(lead = {}) {
   return firstDraftValue(
+    lead?.firstContactedAt,
+    lead?.first_contacted_at,
     lead?.lastContactedAt,
     lead?.last_contacted_at,
     lead?.contactedAt,
@@ -3231,7 +3280,7 @@ function buildPropertyDraft(listingRecord) {
   const rawListingStatus = String(propertyDetails?.listingStatus || listingRecord?.status || 'active').trim().toLowerCase()
   const normalizedListingStatus = rawListingStatus === 'listing_active' ? 'active' : rawListingStatus
 
-  const selectedFeatures = normalizeListingFeatureSelections(
+  let selectedFeatures = normalizeListingFeatureSelections(
     propertyDetails?.selectedFeatures,
     propertyDetails?.features,
     listingRecord?.keySellingPoints,
@@ -3243,11 +3292,20 @@ function buildPropertyDraft(listingRecord) {
     marketing?.selectedFeatures,
     marketing?.features,
   )
-  const amenities = Array.isArray(propertyDetails?.amenities)
+  const showReducedBanner = onboardingFormData.showReducedBanner === true || onboardingFormData.show_reduced_banner === true ||
+    [propertyDetails?.selectedFeatures, propertyDetails?.features, listingRecord?.keySellingPoints, listingRecord?.features, listingRecord?.listingPublicationData?.features, listingRecord?.publicationData?.features, onboardingFormData.features]
+      .some((source) => Array.isArray(source) && source.some((feature) => normalizeKey(feature) === 'reduced_banner'))
+  let amenities = Array.isArray(propertyDetails?.amenities)
     ? propertyDetails.amenities
     : Array.isArray(onboardingFormData.amenities)
       ? onboardingFormData.amenities
       : []
+  const featureFacts = normalizeListingFeatureFacts(onboardingFormData.featureFacts || propertyDetails?.featureFacts, [...selectedFeatures, ...amenities])
+  selectedFeatures = mergeListingFeatureSelections(selectedFeatures, featureFacts, { format: 'label' })
+  amenities = amenities.filter((item) => {
+    const feature = resolveListingFeature(item)
+    return !feature || featureFacts[feature.key] !== false && featureFacts[feature.key] !== null
+  })
   const externalLinks = normalizeExternalListingLinks(
     propertyDetails?.externalLinks ||
       marketing?.externalLinks ||
@@ -3306,6 +3364,8 @@ function buildPropertyDraft(listingRecord) {
     rentalPricePeriod: String(firstDraftValue(propertyDetails?.rentalPricePeriod, onboardingFormData.rentalPricePeriod, 'PerMonth')).trim(),
     availableFrom: formatDateInputValue(firstDraftValue(propertyDetails?.availableFrom, onboardingFormData.availableFrom)),
     selectedFeatures,
+    featureFacts,
+    showReducedBanner,
     amenities,
     petFriendly: Boolean(firstDraftValue(propertyDetails?.petFriendly, onboardingFormData.petFriendly, selectedFeatures.includes('Pet Friendly'))),
     fibreReady: Boolean(firstDraftValue(propertyDetails?.fibreReady, onboardingFormData.fibreReady, selectedFeatures.includes('Fibre'))),
@@ -3378,6 +3438,8 @@ function buildLightweightMarketingDraft(draft = {}) {
     availableFrom: formatDateInputValue(safeDraft.availableFrom),
     furnished: Boolean(safeDraft.furnished),
     selectedFeatures: Array.isArray(safeDraft.selectedFeatures) ? safeDraft.selectedFeatures.map(String).filter(Boolean) : [],
+    featureFacts: normalizeListingFeatureFacts(safeDraft.featureFacts, safeDraft.selectedFeatures),
+    showReducedBanner: Boolean(safeDraft.showReducedBanner),
     amenities: Array.isArray(safeDraft.amenities) ? safeDraft.amenities.map(String).filter(Boolean) : [],
     videoLink: String(safeDraft.videoLink || '').trim(),
     virtualTourLink: String(safeDraft.virtualTourLink || '').trim(),
@@ -3403,7 +3465,8 @@ function hasMeaningfulMarketingDraft(draft = {}) {
     String(draft.description || '').trim() ||
       String(draft.listingPreviewDescription || '').trim() ||
       (Array.isArray(draft.selectedFeatures) && draft.selectedFeatures.length) ||
-      (Array.isArray(draft.amenities) && draft.amenities.length),
+      (Array.isArray(draft.amenities) && draft.amenities.length) ||
+      (draft.featureFacts && Object.keys(draft.featureFacts).length > 0),
   )
 }
 
@@ -3593,7 +3656,9 @@ function AgentListingDetail() {
   const [deletingListing, setDeletingListing] = useState(false)
   const [deleteListingDialogOpen, setDeleteListingDialogOpen] = useState(false)
   const [deleteListingDialogError, setDeleteListingDialogError] = useState('')
-  const [archiveListingDialogOpen, setArchiveListingDialogOpen] = useState(false)
+  const [withdrawListingDialogOpen, setWithdrawListingDialogOpen] = useState(false)
+  const [listingWithdrawalResults, setListingWithdrawalResults] = useState([])
+  const [listingWithdrawalComplete, setListingWithdrawalComplete] = useState(false)
   const [gallerySaving, setGallerySaving] = useState(false)
   const [publicationSaving, setPublicationSaving] = useState(false)
   const [arch9LiveChecking, setArch9LiveChecking] = useState(false)
@@ -3606,19 +3671,30 @@ function AgentListingDetail() {
   const [privatePropertyPreview, setPrivatePropertyPreview] = useState(null)
   const [privatePropertyStatusCheck, setPrivatePropertyStatusCheck] = useState(null)
   const [privatePropertyManageOpen, setPrivatePropertyManageOpen] = useState(false)
+  const [quickListingAction, setQuickListingAction] = useState('')
+  const [quickListingPrice, setQuickListingPrice] = useState('')
+  const [quickListingBusy, setQuickListingBusy] = useState(false)
+  const [quickListingResults, setQuickListingResults] = useState([])
+  const [quickListingResultAction, setQuickListingResultAction] = useState('')
+  const [quickListingError, setQuickListingError] = useState('')
+  const [listingChannelActivity, setListingChannelActivity] = useState([])
+  const [channelActivityUnavailable, setChannelActivityUnavailable] = useState(false)
   const [syndicationReviewOpen, setSyndicationReviewOpen] = useState(false)
   const [syndicationReviewLoading, setSyndicationReviewLoading] = useState(false)
   const [syndicationReview, setSyndicationReview] = useState(null)
   const [syndicationReviewAcknowledgements, setSyndicationReviewAcknowledgements] = useState({})
   const [openingSellerDocumentKey, setOpeningSellerDocumentKey] = useState('')
   const [sellerDocumentWorkflowAction, setSellerDocumentWorkflowAction] = useState('')
+  const [sellerDocumentDeliveries, setSellerDocumentDeliveries] = useState([])
+  const [sellerDocumentDeliveriesLoading, setSellerDocumentDeliveriesLoading] = useState(false)
+  const [sellerDocumentDeliveriesError, setSellerDocumentDeliveriesError] = useState('')
   const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
   const [sellerPortalAccessState, setSellerPortalAccessState] = useState(null)
   const [, setSellerPortalAccessLoading] = useState(false)
   const [sellerPortalSecurityDiagnostics, setSellerPortalSecurityDiagnostics] = useState(null)
-  const [, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
+  const [sellerPortalSecurityDiagnosticsLoading, setSellerPortalSecurityDiagnosticsLoading] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -3665,21 +3741,20 @@ function AgentListingDetail() {
   const [sellerContactSaving, setSellerContactSaving] = useState(false)
   const [sellerContactDraft, setSellerContactDraft] = useState({ firstName: '', lastName: '', email: '', phone: '' })
   const [sellerProfileBuilderOpen, setSellerProfileBuilderOpen] = useState(false)
+  const [sellerInformationEditorOpen, setSellerInformationEditorOpen] = useState(false)
   const [sellerProfileBuilderSaving, setSellerProfileBuilderSaving] = useState(false)
   const [sellerProfileBuilderDraft, setSellerProfileBuilderDraft] = useState(() => createListingSellerProfileBuilderDraft())
   const [sellerProfileBuilderStep, setSellerProfileBuilderStep] = useState(1)
   const [sellerProfileBuilderReturnToDocuments, setSellerProfileBuilderReturnToDocuments] = useState(false)
-  const sellerSetupPromptedListingIdRef = useRef('')
   const [sellerSectionEditorKey, setSellerSectionEditorKey] = useState('')
   const [sellerSectionDraft, setSellerSectionDraft] = useState({})
   const [sellerSectionSaving, setSellerSectionSaving] = useState(false)
   const [sellerSectionReturnToDocuments, setSellerSectionReturnToDocuments] = useState(false)
   const [sellerDocumentUploadKey, setSellerDocumentUploadKey] = useState('')
+  const [sellerDocumentUploadModalOpen, setSellerDocumentUploadModalOpen] = useState(false)
+  const [sellerDocumentUploadProgress, setSellerDocumentUploadProgress] = useState({})
   const [buyerOtpUploadKey, setBuyerOtpUploadKey] = useState('')
   const [sellerPackHandoffAction, setSellerPackHandoffAction] = useState('')
-  const [listingPerformanceEditorOpen, setListingPerformanceEditorOpen] = useState(false)
-  const [listingPerformanceDraft, setListingPerformanceDraft] = useState({})
-  const [listingPerformanceSaving, setListingPerformanceSaving] = useState(false)
   const [followUpActionId, setFollowUpActionId] = useState('')
   const [sellerOnboardingSendOpen, setSellerOnboardingSendOpen] = useState(false)
   const [onboardingMandateChoice, setOnboardingMandateChoice] = useState('')
@@ -3700,6 +3775,9 @@ function AgentListingDetail() {
   const [sellerDocumentReplacementGroupId, setSellerDocumentReplacementGroupId] = useState('')
   const [sellerDocumentReplacementReason, setSellerDocumentReplacementReason] = useState('')
   const [sellerDocumentCorrectionRequestActivityId, setSellerDocumentCorrectionRequestActivityId] = useState('')
+  const [mandateReplacementOpen, setMandateReplacementOpen] = useState(false)
+  const [mandateReplacementReason, setMandateReplacementReason] = useState('')
+  const [mandateReplacementIntent, setMandateReplacementIntent] = useState(false)
   const [sellerMandateSignatureRoute, setSellerMandateSignatureRoute] = useState('digital_pack')
   const [sellerDocumentSigningSessions, setSellerDocumentSigningSessions] = useState([])
   const [sellerPortalInvitationStatus, setSellerPortalInvitationStatus] = useState([])
@@ -3716,9 +3794,13 @@ function AgentListingDetail() {
   const [sellerReviewDeliveryModeByOfferId, setSellerReviewDeliveryModeByOfferId] = useState({})
   const [marketingDraft, setMarketingDraft] = useState(() => buildPropertyDraft(null))
   const marketingDraftDirtyRef = useRef(false)
+  const [marketingDraftDirty, setMarketingDraftDirty] = useState(false)
+  const [marketingSaving, setMarketingSaving] = useState(false)
   const hydratedMarketingListingIdRef = useRef('')
   const [readinessChecklistOpen, setReadinessChecklistOpen] = useState(false)
+  const [publicationChangesOpen, setPublicationChangesOpen] = useState(false)
   const [agencyWebsitePublication, setAgencyWebsitePublication] = useState(null)
+  const [marketingHealthRefreshing, setMarketingHealthRefreshing] = useState(false)
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
@@ -3743,6 +3825,14 @@ function AgentListingDetail() {
     bondOriginator: 'Arch9 Finance',
   })
   const [viewings, setViewings] = useState([])
+  const [listingOverviewAnalytics, setListingOverviewAnalytics] = useState(() => createEmptyListingOverviewAnalytics())
+
+  const markMarketingDraftDirty = useCallback((dirty = true) => {
+    marketingDraftDirtyRef.current = Boolean(dirty)
+    setMarketingDraftDirty(Boolean(dirty))
+  }, [])
+  const [overviewAnalyticsRefreshTick, setOverviewAnalyticsRefreshTick] = useState(0)
+  const [overviewLastRefreshedAt, setOverviewLastRefreshedAt] = useState('')
   const [interestedLeadRows, setInterestedLeadRows] = useState([])
   const [sentPropertyRows, setSentPropertyRows] = useState([])
   const [communicationDeliveryRows, setCommunicationDeliveryRows] = useState([])
@@ -3763,15 +3853,14 @@ function AgentListingDetail() {
   const [suggestedLeadsError, setSuggestedLeadsError] = useState('')
   const [suggestionActionId, setSuggestionActionId] = useState('')
   const [suggestionActionMessage, setSuggestionActionMessage] = useState('')
-  const [showViewingForm, setShowViewingForm] = useState(false)
-  const [viewingForm, setViewingForm] = useState({
-    buyerLeadId: '',
-    proposedDate: '',
-    proposedTime: '',
-    alternativeTimeA: '',
-    alternativeTimeB: '',
-    notes: '',
-  })
+  const [buyerLeadModalOpen, setBuyerLeadModalOpen] = useState(false)
+  const [buyerLeadDraft, setBuyerLeadDraft] = useState(() => createListingBuyerLeadDraft())
+  const [buyerLeadSaving, setBuyerLeadSaving] = useState(false)
+  const [buyerLeadFeedback, setBuyerLeadFeedback] = useState({ kind: '', message: '' })
+  const [viewingRequestModalOpen, setViewingRequestModalOpen] = useState(false)
+  const [viewingRequestDraft, setViewingRequestDraft] = useState(() => createListingViewingDraft())
+  const [viewingRequestSaving, setViewingRequestSaving] = useState(false)
+  const [viewingRequestFeedback, setViewingRequestFeedback] = useState({ kind: '', message: '' })
   const [showDayCaptureOpen, setShowDayCaptureOpen] = useState(false)
   const [showDayCaptureForm, setShowDayCaptureForm] = useState(() => createShowDayCaptureForm())
   const [showDayCaptureSaving, setShowDayCaptureSaving] = useState(false)
@@ -3797,6 +3886,8 @@ function AgentListingDetail() {
     setDetailError('')
     if (!listingId) {
       setPrivateListings([])
+      setListingChannelActivity([])
+      setChannelActivityUnavailable(false)
       setDetailError('This listing link is invalid. Return to Listings and open the record again.')
       if (showLoading) setLoading(false)
       return
@@ -3810,7 +3901,14 @@ function AgentListingDetail() {
     let nextListings = runtimeListings
     if (isSupabaseConfigured && listingId && !listingId.startsWith('development-')) {
       try {
-        const dbListing = await getPrivateListing(listingId)
+        const [dbListing, channelActivity] = await Promise.all([
+          getPrivateListing(listingId),
+          getPrivateListingActivity(listingId, { requireAvailable: true })
+            .then((rows) => ({ rows, available: true }))
+            .catch(() => ({ rows: [], available: false })),
+        ])
+        setListingChannelActivity(channelActivity.rows)
+        setChannelActivityUnavailable(!channelActivity.available)
         const returnedListingId = getPrivateListingRecordId(dbListing)
         if (dbListing && returnedListingId !== listingId) {
           setDetailError('This listing returned an invalid record. Refresh Listings and open it again; no changes were made.')
@@ -3819,11 +3917,16 @@ function AgentListingDetail() {
         }
       } catch (error) {
         console.error('[AgentListingDetail] Supabase listing load failed', error)
+        setChannelActivityUnavailable(true)
         setDetailError(error?.message || 'Unable to load this listing from Supabase.')
       }
     }
 
     setPrivateListings(sanitizePrivateListingRows(nextListings))
+    if (!isSupabaseConfigured) {
+      setListingChannelActivity([])
+      setChannelActivityUnavailable(false)
+    }
     if (showLoading) setLoading(false)
   }, [listingId])
 
@@ -3962,6 +4065,51 @@ function AgentListingDetail() {
     profile?.id,
     profile?.lastName,
   ])
+  const overviewListingAgent = useMemo(() => {
+    const assignedId = String(listingRecord?.assignedAgentId || listingRecord?.assigned_agent_id || listingRecord?.agentId || '').trim()
+    const assignedEmail = String(listingRecord?.assignedAgentEmail || listingRecord?.assigned_agent_email || '').trim().toLowerCase()
+    const profileId = String(profile?.id || profile?.userId || profile?.user_id || '').trim()
+    const profileEmail = String(profile?.email || '').trim().toLowerCase()
+    const profileMatchesAssignment = Boolean(
+      (assignedId && profileId && assignedId === profileId) ||
+      (assignedEmail && profileEmail && assignedEmail === profileEmail) ||
+      (!assignedId && !assignedEmail),
+    )
+    const matchedProfile = profileMatchesAssignment ? profile : {}
+    return {
+      id: assignedId || String(matchedProfile?.id || '').trim(),
+      name: String(
+        listingRecord?.assignedAgentName ||
+        listingRecord?.assigned_agent_name ||
+        listingRecord?.assignedAgent ||
+        matchedProfile?.fullName ||
+        matchedProfile?.full_name ||
+        [matchedProfile?.firstName, matchedProfile?.lastName].filter(Boolean).join(' ') ||
+        assignedEmail ||
+        'Unassigned',
+      ).trim(),
+      email: assignedEmail || profileEmail,
+      phone: String(
+        listingRecord?.assignedAgentPhone ||
+        listingRecord?.assigned_agent_phone ||
+        matchedProfile?.phone ||
+        matchedProfile?.phoneNumber ||
+        matchedProfile?.mobile ||
+        '',
+      ).trim(),
+      avatarUrl: String(
+        listingRecord?.assignedAgentAvatarUrl ||
+        listingRecord?.assigned_agent_avatar_url ||
+        matchedProfile?.avatarUrl ||
+        matchedProfile?.avatar_url ||
+        matchedProfile?.profilePhotoUrl ||
+        matchedProfile?.profile_photo_url ||
+        matchedProfile?.photoUrl ||
+        matchedProfile?.photo_url ||
+        '',
+      ).trim(),
+    }
+  }, [listingRecord, profile])
   const listingHasKingstonsSellerProcess = useMemo(
     () => hasKingstonsListingSignal({ listingRecord, listingOrganisationId, profile }),
     [listingOrganisationId, listingRecord, profile],
@@ -4080,6 +4228,41 @@ function AgentListingDetail() {
     void refreshInterestedLeads()
   }, [refreshInterestedLeads])
 
+  useEffect(() => {
+    if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
+      setListingOverviewAnalytics(createEmptyListingOverviewAnalytics())
+      return undefined
+    }
+
+    let cancelled = false
+    setListingOverviewAnalytics((previous) => ({ ...previous, loading: true, error: '' }))
+    getListingOverviewAnalytics({
+      organisationId: listingOrganisationId,
+      listingId: listingRecord.id,
+      days: 30,
+    })
+      .then((analytics) => {
+        if (!cancelled) {
+          setListingOverviewAnalytics({ ...analytics, loading: false, error: '' })
+          setOverviewLastRefreshedAt(new Date().toISOString())
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setListingOverviewAnalytics({
+            ...createEmptyListingOverviewAnalytics(),
+            loading: false,
+            error: error?.message || 'Listing analytics are unavailable.',
+          })
+          setOverviewLastRefreshedAt(new Date().toISOString())
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [listingOrganisationId, listingRecord?.id, overviewAnalyticsRefreshTick])
+
   const refreshSentProperties = useCallback(async () => {
     if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
       setSentPropertyRows([])
@@ -4113,6 +4296,14 @@ function AgentListingDetail() {
   useEffect(() => {
     void refreshSentProperties()
   }, [refreshSentProperties])
+
+  const refreshListingOverview = useCallback(() => {
+    void loadListingData({ showLoading: false })
+    void refreshInterestedLeads()
+    void refreshSentProperties()
+    setOffersRefreshTick((value) => value + 1)
+    setOverviewAnalyticsRefreshTick((value) => value + 1)
+  }, [loadListingData, refreshInterestedLeads, refreshSentProperties])
 
   const refreshSellerNotificationDelivery = useCallback(async () => {
     if (!listingOrganisationId || !sellerLeadId || !listingRecord?.id || !isSupabaseConfigured) {
@@ -4258,12 +4449,22 @@ function AgentListingDetail() {
       isStoredMarketingDraftNewerThanListing(storedDraft, listingRecord)
     setMarketingDraft(shouldRestoreStoredDraft ? { ...nextDraft, ...storedDraft } : nextDraft)
     hydratedMarketingListingIdRef.current = nextListingId
-    marketingDraftDirtyRef.current = shouldRestoreStoredDraft
+    markMarketingDraftDirty(shouldRestoreStoredDraft)
     setRolePlayersDraft({
       attorney: String(listingRecord?.rolePlayers?.attorney || 'Arch9 Conveyancing').trim(),
       bondOriginator: String(listingRecord?.rolePlayers?.bondOriginator || 'Arch9 Finance').trim(),
     })
-  }, [listingId, listingRecord])
+  }, [listingId, listingRecord, markMarketingDraftDirty])
+
+  useEffect(() => {
+    if (!marketingDraftDirty) return undefined
+    const handleBeforeUnload = (event) => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [marketingDraftDirty])
 
   useEffect(() => {
     if (!isSupabaseConfigured) return undefined
@@ -4284,22 +4485,33 @@ function AgentListingDetail() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!listingOrganisationId || !isSupabaseConfigured) return undefined
-    let cancelled = false
-    listAgencyCrmLeadContacts(listingOrganisationId, { includeLocalFallback: false })
-      .then((snapshot) => {
-        if (!cancelled) {
-          setPipelineLeads(mapAgencyLeadSelectionRows(snapshot))
-        }
-      })
-      .catch((error) => {
-        console.warn('[AgentListingDetail] CRM lead selector load failed', error)
-      })
-    return () => {
-      cancelled = true
+  const refreshListingPipelineLeads = useCallback(async () => {
+    if (!listingOrganisationId || !isSupabaseConfigured) return
+    try {
+      const snapshot = await listAgencyCrmLeadContacts(listingOrganisationId, { includeLocalFallback: false })
+      setPipelineLeads(mapAgencyLeadSelectionRows(snapshot))
+    } catch (error) {
+      console.warn('[AgentListingDetail] CRM lead selector load failed', error)
     }
   }, [listingOrganisationId])
+
+  useEffect(() => {
+    void refreshListingPipelineLeads()
+  }, [refreshListingPipelineLeads])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !listingOrganisationId) return undefined
+    const refreshListingLeads = (event) => {
+      const detail = getAgencyCrmUpdateDetail(event)
+      if (detail.organisationId && detail.organisationId !== listingOrganisationId) return
+      void Promise.all([
+        refreshListingPipelineLeads(),
+        refreshInterestedLeads(),
+      ])
+    }
+    window.addEventListener(AGENCY_CRM_UPDATED_EVENT, refreshListingLeads)
+    return () => window.removeEventListener(AGENCY_CRM_UPDATED_EVENT, refreshListingLeads)
+  }, [listingOrganisationId, refreshInterestedLeads, refreshListingPipelineLeads])
 
   function patchListing(updater) {
     if (!listingRecord) return null
@@ -4380,7 +4592,7 @@ function AgentListingDetail() {
             status: nextDraft.publicationStatus === 'Published' ? 'active' : nextDraft.listingStatus || row?.status || 'active',
             description: nextDraft.description.trim(),
             listingDescription: nextDraft.description.trim(),
-            listingPreviewDescription: String(nextDraft.listingPreviewDescription || nextDraft.description || '').trim(),
+            listingPreviewDescription: String(nextDraft.listingPreviewDescription ?? '').trim(),
             keySellingPoints: nextDraft.selectedFeatures,
             selectedFeatures: nextDraft.selectedFeatures,
             features: nextDraft.selectedFeatures,
@@ -4459,13 +4671,14 @@ function AgentListingDetail() {
         rentalPricePeriod: nextDraft.rentalPricePeriod,
         availableFrom: formatDateInputValue(nextDraft.availableFrom),
         selectedFeatures: nextDraft.selectedFeatures,
+        featureFacts: normalizeListingFeatureFacts(nextDraft.featureFacts, nextDraft.selectedFeatures),
         amenities: nextDraft.amenities,
         petFriendly: nextDraft.petFriendly,
         fibreReady: nextDraft.fibreReady,
         furnished: nextDraft.furnished,
         securityFeatures: nextDraft.securityFeatures,
         description: nextDraft.description.trim(),
-        listingPreviewDescription: String(nextDraft.listingPreviewDescription || nextDraft.description || '').trim(),
+        listingPreviewDescription: String(nextDraft.listingPreviewDescription ?? '').trim(),
         notes: nextDraft.notes.trim(),
         floorplans: nextDraft.floorplans,
         coverImageId: nextDraft.coverImageId,
@@ -4554,6 +4767,22 @@ function AgentListingDetail() {
       formData: buildListingSnapshotFormData(nextDraft),
       status: listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status || 'in_progress',
       allowProtectedSectionOverride: true,
+      explicitClearFields: [
+        'features',
+        'keySellingPoints',
+        'amenities',
+        'propertyNotes',
+        'propertyDescription',
+        'listingDescription',
+        'listingPreviewDescription',
+        'internalNotes',
+        'imageGallery',
+        'coverImageId',
+        'floorplans',
+        'videoLink',
+        'virtualTourLink',
+        'externalListingLinks',
+      ],
     })
     if (!savedOnboarding?.id) {
       throw new Error('The property details could not be written to the seller-onboarding record.')
@@ -4587,7 +4816,6 @@ function AgentListingDetail() {
     const normalizedExternalLinks = normalizeExternalListingLinks(draft.externalLinks)
     const property24ExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('property24')) || null
     const privatePropertyExternalLink = normalizedExternalLinks.find((link) => String(link.platform || '').trim().toLowerCase().includes('private')) || null
-    const draftDescription = String(draft.description || '').trim()
     const existingDescription = String(
       listingRecord?.description ||
         listingRecord?.listingDescription ||
@@ -4597,7 +4825,7 @@ function AgentListingDetail() {
         listingRecord?.publicationData?.description ||
         '',
     ).trim()
-    const effectiveDescription = draftDescription || existingDescription
+    const effectiveDescription = resolveMarketingDraftText(draft, 'description', existingDescription)
     const draftFeatures = normalizeListingFeatureSelections(draft.selectedFeatures)
     const existingFeatures = normalizeListingFeatureSelections(
       listingRecord?.keySellingPoints,
@@ -4609,7 +4837,6 @@ function AgentListingDetail() {
       listingRecord?.listingPublicationData?.features,
       listingRecord?.publicationData?.features,
     )
-    const draftAmenities = Array.isArray(draft.amenities) ? draft.amenities.map(String).filter(Boolean) : []
     const existingAmenities = Array.isArray(listingRecord?.propertyDetails?.amenities)
       ? listingRecord.propertyDetails.amenities
       : Array.isArray(listingRecord?.listingPublicationData?.amenities)
@@ -4624,16 +4851,22 @@ function AgentListingDetail() {
       setDetailError(error.message)
       return { ok: false, error }
     }
-    const effectiveFeatures = priceOnApplication
-      ? [...(draftFeatures.length ? draftFeatures : existingFeatures), 'price_on_application']
-      : (draftFeatures.length ? draftFeatures : existingFeatures).filter((feature) => normalizeKey(feature) !== 'price_on_application')
+    const effectiveFeatures = [
+      ...((draftFeatures.length || Object.hasOwn(draft, 'featureFacts')) ? draftFeatures : existingFeatures),
+      ...(priceOnApplication ? ['price_on_application'] : []),
+      ...(draft.showReducedBanner ? ['reduced_banner'] : []),
+    ]
     let effectiveDraft = {
       ...draft,
       description: effectiveDescription,
       price: normalizedPrice ? String(normalizedPrice) : '',
-      listingPreviewDescription: String(draft.listingPreviewDescription || listingRecord?.listingPreviewDescription || listingRecord?.propertyDetails?.listingPreviewDescription || effectiveDescription || '').trim(),
+      listingPreviewDescription: resolveMarketingDraftText(
+        draft,
+        'listingPreviewDescription',
+        listingRecord?.listingPreviewDescription || listingRecord?.propertyDetails?.listingPreviewDescription || effectiveDescription,
+      ),
       selectedFeatures: effectiveFeatures,
-      amenities: draftAmenities.length ? draftAmenities : existingAmenities,
+      amenities: resolveMarketingDraftList(draft, 'amenities', existingAmenities),
     }
     let updatedListing = null
     try {
@@ -4644,7 +4877,7 @@ function AgentListingDetail() {
       return { ok: false, error }
     }
     if (!updatedListing?.id || !isSupabaseConfigured) {
-      marketingDraftDirtyRef.current = false
+      markMarketingDraftDirty(false)
       hydratedMarketingListingIdRef.current = String(updatedListing?.id || listingRecord?.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage('Listing details saved locally.')
@@ -4672,7 +4905,7 @@ function AgentListingDetail() {
         latitude: effectiveDraft.latitude ?? null,
         longitude: effectiveDraft.longitude ?? null,
         googlePlaceId: effectiveDraft.googlePlaceId.trim(),
-        isActive: String(effectiveDraft.listingStatus || '').trim().toLowerCase() === 'active',
+        isActive: ['active', 'under_offer'].includes(String(effectiveDraft.listingStatus || '').trim().toLowerCase()),
         property24ListingUrl: effectiveDraft.property24ListingUrl.trim() || property24ExternalLink?.url || '',
         property24Reference: effectiveDraft.property24Reference.trim(),
         property24Status: effectiveDraft.property24Status || property24ExternalLink?.status || 'not_published',
@@ -4681,7 +4914,7 @@ function AgentListingDetail() {
         privatePropertyStatus: effectiveDraft.privatePropertyStatus || privatePropertyExternalLink?.status || 'not_published',
         bridgeListingStatus: effectiveDraft.bridgeListingStatus,
         bridgeListingPublicUrl: effectiveDraft.bridgeListingPublicUrl.trim(),
-        listingPreviewDescription: String(effectiveDraft.listingPreviewDescription || effectiveDraft.description || '').trim(),
+        listingPreviewDescription: String(effectiveDraft.listingPreviewDescription ?? '').trim(),
         internalListingNotes: effectiveDraft.notes.trim(),
       }
       if (options.listingVisibility) listingPatch.listingVisibility = options.listingVisibility
@@ -4770,7 +5003,7 @@ function AgentListingDetail() {
         setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(verifiedListing, mergedSavedListing)))
       }
       await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(effectiveDraft), { incrementListingCount: false })
-      marketingDraftDirtyRef.current = false
+      markMarketingDraftDirty(false)
       hydratedMarketingListingIdRef.current = String(mergedSavedListing?.id || updatedListing.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage(options.successMessage || 'Listing details saved.')
@@ -4779,6 +5012,315 @@ function AgentListingDetail() {
       console.error('[AgentListingDetail] Supabase listing save failed', error)
       setDetailError(error?.message || 'Saved locally, but Supabase could not be updated.')
       return { ok: false, error }
+    }
+  }
+
+  function ensureMarketingMediaReady(draft = marketingDraft, actionLabel = 'publishing') {
+    const pendingMedia = getPendingListingMediaUploads(draft)
+    if (!pendingMedia.length) return true
+    setDetailMessage('')
+    setDetailError(`Retry the ${pendingMedia.length} failed media upload${pendingMedia.length === 1 ? '' : 's'} before ${actionLabel}. Local previews cannot be published.`)
+    return false
+  }
+
+  async function saveMarketingChanges() {
+    if (marketingSaving) return null
+    setMarketingSaving(true)
+    try {
+      return await saveMarketingDraft(marketingDraft, { successMessage: 'Marketing changes saved in Arch9.' })
+    } finally {
+      setMarketingSaving(false)
+    }
+  }
+
+  async function recordListingPublicationStage(channel, stage, draft = marketingDraft, metadata = {}) {
+    if (!listingRecord?.id) throw new Error('Save this listing before recording channel publication progress.')
+    const now = new Date().toISOString()
+    const normalizedStage = ['submitted', 'accepted', 'verified', 'failed'].includes(stage) ? stage : 'submitted'
+    const activity = await createPrivateListingActivity({
+      privateListingId: listingRecord.id,
+      activityType: `listing_channel_publication_${normalizedStage}`,
+      activityTitle: `${channel} publication ${normalizedStage}`,
+      activityDescription: normalizedStage === 'failed'
+        ? `${channel} publication needs attention.`
+        : `${channel} publication reached ${normalizedStage}.`,
+      performedBy: profile?.id || null,
+      visibility: 'internal',
+      metadata: {
+        channel,
+        action: metadata.action || 'publish',
+        snapshot: buildListingPublicationSnapshot(draft),
+        [`${normalizedStage}At`]: now,
+        ...metadata,
+      },
+    })
+    if (!activity?.id) throw new Error(`Arch9 could not record the ${channel} ${normalizedStage} state.`)
+    return activity
+  }
+
+  function openQuickListingAction(action) {
+    setQuickListingAction(action)
+    setQuickListingResultAction(action)
+    setQuickListingPrice(String(listingRecord?.askingPrice || listingRecord?.asking_price || marketingDraft.price || ''))
+    setQuickListingResults([])
+    setQuickListingError('')
+  }
+
+  async function sendQuickListingPortalUpdate(channel, action) {
+    if (channel === 'Property24') return action === 'price_reduction'
+      ? callProperty24ListingAction('publish', {
+          ...getProperty24ActionContext(), listingNumber: property24Reference, photosChanged: false,
+          status: normalizeKey(listingRecord?.listingStatus || listingRecord?.listing_status) === 'under_offer' ? 'Pending' : 'ReducedPrice',
+        }, { fallbackMessage: 'Property24 price update failed.' })
+      : callProperty24ListingAction('status-update', { status: action === 'sold' ? 'Sold' : 'Pending', listingNumber: property24Reference }, { fallbackMessage: 'Property24 status update failed.' })
+    return action === 'price_reduction'
+      ? callPrivatePropertyListingAction('publish', { confirm: `PRIVATE_PROPERTY_PUBLISH:${listingRecord.id}:production` }, { fallbackMessage: 'Private Property price update failed.' })
+      : callPrivatePropertyListingAction('status-update', { propertyStatus: action === 'sold' ? 'Sold' : 'PendingOffer' }, { fallbackMessage: 'Private Property status update failed.' })
+  }
+
+  async function retryFailedQuickListingChannels() {
+    const failed = quickListingResults.filter((result) => result.status === 'failed' && ['Property24', 'Private Property'].includes(result.channel))
+    if (!failed.length) return
+    setQuickListingBusy(true)
+    setQuickListingError('')
+    const nextResults = [...quickListingResults]
+    try {
+      const started = await createPrivateListingActivity({
+        privateListingId: listingRecord.id,
+        activityType: 'listing_portal_update_started',
+        activityTitle: 'Portal retry started',
+        visibility: 'internal',
+        metadata: { action: quickListingAction, channelResults: failed.map((item) => ({ channel: item.channel, status: 'pending' })) },
+      })
+      if (!started?.id) throw new Error('The retry could not be monitored, so no portal update was sent.')
+      for (const item of failed) {
+        const index = nextResults.findIndex((result) => result.channel === item.channel)
+        try {
+          await recordListingPublicationStage(item.channel, 'submitted', marketingDraft, { action: quickListingAction })
+          const response = await sendQuickListingPortalUpdate(item.channel, quickListingAction)
+          if (!isQuickListingPortalUpdateAccepted(item.channel, quickListingAction, response)) throw new Error(`${item.channel} did not accept the update.`)
+          await recordListingPublicationStage(item.channel, 'accepted', marketingDraft, { action: quickListingAction })
+          nextResults[index] = { channel: item.channel, status: 'sent', detail: 'Update accepted on retry; refresh portal status to confirm the live page.' }
+        } catch (error) {
+          await recordListingPublicationStage(item.channel, 'failed', marketingDraft, { action: quickListingAction, error: error?.message || 'Portal update failed.' }).catch(() => null)
+          nextResults[index] = { channel: item.channel, status: 'failed', detail: error?.message || 'Portal update still needs attention.' }
+        }
+        setQuickListingResults([...nextResults])
+      }
+      await createPrivateListingActivity({
+        privateListingId: listingRecord.id,
+        activityType: 'listing_portal_update_retried',
+        activityTitle: 'Listing portal update retried',
+        visibility: 'internal',
+        metadata: { action: quickListingAction, channelResults: nextResults.filter((result) => failed.some((item) => item.channel === result.channel)) },
+      }).catch(() => null)
+      await loadListingData({ showLoading: false })
+    } catch (error) {
+      setQuickListingError(error?.message || 'The retry could not be monitored. No portal update was sent.')
+    } finally {
+      setQuickListingBusy(false)
+    }
+  }
+
+  async function retryListingChannelUpdate(channel, action) {
+    if (!['Property24', 'Private Property'].includes(channel) || !['under_offer', 'sold', 'price_reduction'].includes(action) || !listingRecord?.id) return
+    setQuickListingBusy(true)
+    setQuickListingResultAction(action)
+    setDetailError('')
+    try {
+      const started = await createPrivateListingActivity({
+        privateListingId: listingRecord.id,
+        activityType: 'listing_portal_update_started',
+        activityTitle: `${channel} retry started`,
+        visibility: 'internal',
+        metadata: { action, channelResults: [{ channel, status: 'pending' }] },
+      })
+      if (!started?.id) throw new Error('The retry could not be monitored.')
+    } catch (error) {
+      setDetailError(`${error?.message || 'Monitoring is unavailable.'} No portal update was sent.`)
+      setQuickListingBusy(false)
+      return
+    }
+    let result
+    try {
+      await recordListingPublicationStage(channel, 'submitted', marketingDraft, { action })
+      const response = await sendQuickListingPortalUpdate(channel, action)
+      if (!isQuickListingPortalUpdateAccepted(channel, action, response)) throw new Error(`${channel} did not accept the update.`)
+      await recordListingPublicationStage(channel, 'accepted', marketingDraft, { action })
+      result = { channel, status: 'sent', detail: 'Update accepted on retry; verify the public page.' }
+    } catch (error) {
+      await recordListingPublicationStage(channel, 'failed', marketingDraft, { action, error: error?.message || 'Portal update failed.' }).catch(() => null)
+      result = { channel, status: 'failed', detail: error?.message || 'Portal update failed again.' }
+    }
+    try {
+      const activity = await createPrivateListingActivity({
+        privateListingId: listingRecord.id,
+        activityType: 'listing_portal_update_retried',
+        activityTitle: `${channel} listing update retried`,
+        visibility: 'internal',
+        metadata: { action, channelResults: [result] },
+      })
+      if (!activity?.id) throw new Error('Activity record was not created.')
+    } catch {
+      result = { channel, status: 'failed', detail: `${channel} responded, but Arch9 could not save the retry record. Verify the portal manually.` }
+    }
+    setQuickListingResults([result])
+    await loadListingData({ showLoading: false })
+    setDetailMessage(result.status === 'sent' ? `${channel} accepted the retry. Verify its public page before marking it current.` : '')
+    if (result.status === 'failed') setDetailError(result.detail)
+    setQuickListingBusy(false)
+  }
+
+  async function confirmListingChannelCurrent(channel, action, publicUrl) {
+    if (!listingRecord?.id || channelUpdateStates[channel]?.status !== 'awaiting_verification' || !action) return
+    const expectedHost = channel === 'Property24' ? 'property24.com' : 'privateproperty.co.za'
+    let parsed
+    try { parsed = new URL(String(publicUrl || '')) } catch { parsed = null }
+    if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.hostname !== expectedHost && !parsed.hostname.endsWith(`.${expectedHost}`))) {
+      setDetailError(`Add the confirmed ${channel} public listing URL before marking this channel current.`)
+      return
+    }
+    if (!window.confirm(`Have you opened the ${channel} public page and confirmed this ${action.replace(/_/g, ' ')} update is visible?`)) return
+    try {
+      const publicationKey = getListingPublicationChannelKey(channel)
+      const acceptedSnapshot = deriveListingPublicationStates(
+        listingChannelActivity,
+        buildListingPublicationSnapshot(marketingDraft),
+      )[publicationKey]?.publishedSnapshot
+      const activity = await createPrivateListingActivity({
+        privateListingId: listingRecord.id,
+        activityType: 'listing_portal_update_verified',
+        activityTitle: `${channel} public listing update verified`,
+        visibility: 'internal',
+        metadata: {
+          action,
+          channel,
+          publicUrl: parsed.toString(),
+          verifiedAt: new Date().toISOString(),
+          snapshot: acceptedSnapshot || buildListingPublicationSnapshot(marketingDraft),
+        },
+      })
+      if (!activity?.id) throw new Error('Verification could not be saved.')
+      setQuickListingResults((previous) => previous.filter((item) => item.channel !== channel))
+      await loadListingData({ showLoading: false })
+      setDetailError('')
+      setDetailMessage(`${channel} marked current after public-page verification.`)
+    } catch (error) {
+      setDetailError(error?.message || 'Verification could not be saved. This channel is still awaiting verification.')
+    }
+  }
+
+  async function applyQuickListingAction() {
+    if (!listingRecord?.id || !isSupabaseConfigured) {
+      setQuickListingError('Sign in and save this listing before changing its public status or price.')
+      return
+    }
+    if (marketingDraftDirtyRef.current) {
+      setQuickListingError('Save your other listing edits first, then run this action so they are not sent to the portals unexpectedly.')
+      return
+    }
+    const isPriceChange = quickListingAction === 'price_reduction'
+    const isSold = quickListingAction === 'sold'
+    const currentListingStatus = normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus)
+    if (['sold', 'withdrawn'].includes(currentListingStatus) || (isSold && !['active', 'under_offer'].includes(currentListingStatus)) || (!isPriceChange && !isSold && currentListingStatus !== 'active')) {
+      setQuickListingError(isPriceChange ? 'Sold or withdrawn listings cannot be reduced.' : isSold ? 'Only an active or under-offer listing can be marked sold.' : 'Only an active listing can be marked under offer.')
+      return
+    }
+    if (normalizeKey(marketingDraft.listingType || listingRecord?.listingType) === 'rental') {
+      setQuickListingError('These quick actions are for sale listings. Use the rental listing workflow for a rental.')
+      return
+    }
+    const previousPrice = Number(listingRecord?.askingPrice || listingRecord?.asking_price || marketingDraft.price || 0)
+    const nextPrice = Number(String(quickListingPrice).replace(/[^0-9.]/g, ''))
+    if (isPriceChange && (!Number.isFinite(nextPrice) || nextPrice <= 0 || nextPrice >= previousPrice || normalizeKey(marketingDraft.pricePresentation) === 'poa')) {
+      setQuickListingError('Enter a lower positive asking price. Price-on-application listings need their price presentation changed in Property first.')
+      return
+    }
+    if (!isPriceChange && !isSold && normalizeKey(marketingDraft.listingStatus) === 'under_offer') {
+      setQuickListingError('This listing is already under offer.')
+      return
+    }
+    const sendProperty24 = property24Published && Boolean(property24Reference)
+    const sendPrivateProperty = ['published', 'live', 'active'].includes(privatePropertyStatusKey)
+    if (isPriceChange && sendPrivateProperty && !await requireSyndicationReviewBeforePublish('privateProperty')) {
+      setQuickListingError('Review the Private Property channel, then confirm this price change again.')
+      return
+    }
+    const nextDraft = isPriceChange
+      ? {
+          ...marketingDraft,
+          price: String(nextPrice),
+          showReducedBanner: false,
+        }
+      : { ...marketingDraft, listingStatus: isSold ? 'sold' : 'under_offer' }
+    setQuickListingBusy(true)
+    setQuickListingError('')
+    setQuickListingResults([])
+    const results = []
+    try {
+      const saved = await saveMarketingDraft(nextDraft, { successMessage: '' })
+      if (saved?.ok === false || saved?.localOnly) throw saved?.error || new Error('Arch9 could not save this change to the live listing.')
+      results.push({ channel: 'Arch9', status: 'saved', detail: isPriceChange ? `${formatMoneyValue(previousPrice)} → ${formatMoneyValue(nextPrice)}` : isSold ? 'Listing marked sold.' : 'Listing marked under offer.' })
+      setQuickListingResults([...results])
+      if (sendProperty24 || sendPrivateProperty) {
+        const started = await createPrivateListingActivity({
+          privateListingId: listingRecord.id,
+          activityType: 'listing_portal_update_started',
+          activityTitle: 'Portal listing update started',
+          visibility: 'internal',
+          metadata: {
+            action: quickListingAction,
+            channelResults: [
+              ...(sendProperty24 ? [{ channel: 'Property24', status: 'pending' }] : []),
+              ...(sendPrivateProperty ? [{ channel: 'Private Property', status: 'pending' }] : []),
+            ],
+          },
+        })
+        if (!started?.id) throw new Error('Arch9 saved the change, but could not start portal monitoring. No portal update was sent.')
+      }
+      for (const [channel, enabled] of [
+        ['Property24', sendProperty24],
+        ['Private Property', sendPrivateProperty],
+      ]) {
+        if (!enabled) {
+          results.push({ channel, status: 'not_connected', detail: 'No confirmed live listing to update.' })
+          setQuickListingResults([...results])
+          continue
+        }
+        try {
+          await recordListingPublicationStage(channel, 'submitted', nextDraft, { action: quickListingAction })
+          const response = await sendQuickListingPortalUpdate(channel, quickListingAction)
+          if (!isQuickListingPortalUpdateAccepted(channel, quickListingAction, response)) throw new Error(`${channel} did not accept the update.`)
+          await recordListingPublicationStage(channel, 'accepted', nextDraft, { action: quickListingAction })
+          results.push({ channel, status: 'sent', detail: `${isPriceChange ? channel === 'Property24' && currentListingStatus === 'under_offer' ? 'Lower price with Pending status' : 'Price reduction' : isSold ? 'Sold status' : 'Under-offer status'} accepted; refresh portal status to confirm the live page.` })
+        } catch (error) {
+          await recordListingPublicationStage(channel, 'failed', nextDraft, { action: quickListingAction, error: error?.message || 'Portal update failed.' }).catch(() => null)
+          results.push({ channel, status: 'failed', detail: error?.message || 'Portal update failed. Retry from the channel controls.' })
+        }
+        setQuickListingResults([...results])
+      }
+      try {
+        const activity = await createPrivateListingActivity({
+          privateListingId: listingRecord.id,
+          activityType: isPriceChange ? 'listing_price_changed' : isSold ? 'listing_sold' : 'listing_under_offer',
+          activityTitle: isPriceChange ? 'Asking price reduced' : isSold ? 'Listing marked sold' : 'Listing marked under offer',
+          activityDescription: isPriceChange ? `Asking price reduced from ${formatMoneyValue(previousPrice)} to ${formatMoneyValue(nextPrice)}.` : isSold ? 'Agent marked the listing sold.' : 'Agent marked the listing under offer.',
+          performedBy: profile?.id || null,
+          visibility: 'internal',
+          metadata: { action: quickListingAction, ...(isPriceChange ? { previousPrice, nextPrice, portalReducedBanner: 'unsupported' } : {}), channelResults: results },
+        })
+        if (!activity?.id) throw new Error('Activity record was not created.')
+      } catch {
+        results.push({ channel: 'Activity', status: 'failed', detail: 'The listing changed, but its audit entry could not be recorded.' })
+        setQuickListingResults([...results])
+      }
+      await loadListingData({ showLoading: false })
+      setDetailMessage(results.some((item) => item.status === 'failed') ? 'Arch9 saved the change, but at least one follow-up needs attention.' : 'Listing change saved. Check each channel result below.')
+      window.dispatchEvent(new Event('itg:listings-updated'))
+    } catch (error) {
+      setQuickListingError(error?.message || 'The listing could not be updated.')
+    } finally {
+      setQuickListingBusy(false)
     }
   }
 
@@ -4838,6 +5380,7 @@ function AgentListingDetail() {
   }
 
   async function publishToArch9Buy() {
+    if (!ensureMarketingMediaReady(marketingDraft, 'publishing to the public catalogue')) return
     const blockers = getArch9PublicationBlockers(marketingDraft, coverImage)
     if (blockers.length) {
       setDetailMessage('')
@@ -4859,18 +5402,31 @@ function AgentListingDetail() {
 
     setPublicationSaving(true)
     setMarketingDraft(nextDraft)
+    let publicationTracked = false
     try {
+      await recordListingPublicationStage('Arch9 public catalogue', 'submitted', nextDraft, { action: 'publish', publicUrl })
+      publicationTracked = true
       const saveResult = await saveMarketingDraft(nextDraft, {
         listingVisibility: 'active_market',
         successMessage: 'Listing published to the public catalogue.',
       })
+      if (saveResult?.ok === false) throw saveResult.error || new Error('The public catalogue listing could not be saved.')
+      await recordListingPublicationStage('Arch9 public catalogue', 'accepted', nextDraft, { action: 'publish', publicUrl })
       if (saveResult?.ok && !saveResult.localOnly) {
         const liveResult = await verifyArch9PublicListing(publicUrl, { silent: true })
         if (liveResult.status === 'live') {
+          await recordListingPublicationStage('Arch9 public catalogue', 'verified', nextDraft, { action: 'publish', publicUrl })
           setDetailError('')
           setDetailMessage('Listing published and confirmed live on the public catalogue.')
         }
       }
+      await loadListingData({ showLoading: false })
+    } catch (error) {
+      if (publicationTracked) {
+        await recordListingPublicationStage('Arch9 public catalogue', 'failed', nextDraft, { action: 'publish', publicUrl, error: error?.message || 'Publication failed.' }).catch(() => null)
+      }
+      setDetailMessage('')
+      setDetailError(error?.message || 'The public catalogue listing could not be published.')
     } finally {
       setPublicationSaving(false)
     }
@@ -4900,68 +5456,208 @@ function AgentListingDetail() {
     }
   }
 
-  function getArchiveListingLiveChannels() {
-    const privatePropertyIsLive = ['published', 'live', 'active'].includes(privatePropertyStatusKey)
-    return [
-      property24Published ? 'Property24' : '',
-      privatePropertyIsLive ? 'Private Property' : '',
-      arch9IsPublished ? 'Arch9 public catalogue' : '',
-    ].filter(Boolean)
+  function getListingWithdrawalPlan() {
+    return buildListingWithdrawalPlan({
+      property24Live: property24Published,
+      property24Reference,
+      privatePropertyLive: ['published', 'live', 'active'].includes(privatePropertyStatusKey),
+      agencyWebsiteLive: agencyWebsitePublication?.status === 'published' &&
+        agencyWebsitePublication?.websiteStatus === 'published' &&
+        agencyWebsitePublication?.projectionStatus === 'Published',
+      arch9Live: arch9IsPublished,
+    })
   }
 
-  function requestArchiveListing() {
-    setArchiveListingDialogOpen(true)
+  function requestWithdrawListing() {
+    setListingWithdrawalResults(getListingWithdrawalPlan())
+    setListingWithdrawalComplete(false)
+    setWithdrawListingDialogOpen(true)
   }
 
-  function closeArchiveListingDialog() {
+  function closeWithdrawListingDialog() {
     if (publicationSaving) return
-    setArchiveListingDialogOpen(false)
+    setWithdrawListingDialogOpen(false)
   }
 
-  async function archiveListingFromMarketing() {
-    const privatePropertyIsLive = ['published', 'live', 'active'].includes(privatePropertyStatusKey)
-    const liveChannels = getArchiveListingLiveChannels()
+  async function persistListingWithdrawalState(nextDraft, complete) {
+    const savedListing = await updatePrivateListing(listingRecord.id, {
+      listingStatus: nextDraft.listingStatus,
+      ...(complete ? { listingVisibility: 'archived', isActive: false } : {}),
+      property24Reference: nextDraft.property24Reference,
+      property24Status: nextDraft.property24Status,
+      privatePropertyReference: nextDraft.privatePropertyReference,
+      privatePropertyStatus: nextDraft.privatePropertyStatus,
+      bridgeListingStatus: nextDraft.bridgeListingStatus,
+      bridgeListingPublicUrl: nextDraft.bridgeListingPublicUrl,
+    }, { includeRequirementsAndDocuments: false })
+    const distributionSync = await syncPrivateListingDistributionData(listingRecord.id, {
+      publicationData: {
+        title: nextDraft.headline,
+        address: nextDraft.addressLine1,
+        suburb: nextDraft.suburb,
+        province: nextDraft.province,
+        propertyType: nextDraft.propertyType,
+        listingType: nextDraft.listingType,
+        askingPrice: Number(nextDraft.price || 0),
+        bedrooms: nextDraft.bedrooms,
+        bathrooms: nextDraft.bathrooms,
+        garages: nextDraft.garages,
+        parkingBays: nextDraft.parkingBays,
+        floorSize: nextDraft.floorSize,
+        erfSize: nextDraft.erfSize,
+        ratesTaxes: nextDraft.ratesTaxesNotApplicable ? null : nextDraft.ratesTaxes,
+        levies: nextDraft.leviesNotApplicable ? null : nextDraft.levies,
+        description: nextDraft.description,
+        features: nextDraft.selectedFeatures,
+        amenities: nextDraft.amenities,
+        status: 'Draft',
+      },
+      media: {
+        coverImageId: nextDraft.coverImageId,
+        galleryImages: nextDraft.galleryImages,
+        floorplans: nextDraft.floorplans,
+        videoLink: nextDraft.videoLink,
+        virtualTourLink: nextDraft.virtualTourLink,
+      },
+      externalLinks: nextDraft.externalLinks,
+    })
+    if (!distributionSync?.publication?.listing_id) throw new Error('Arch9 could not confirm that the public catalogue projection was withdrawn.')
+    setMarketingDraft(nextDraft)
+    markMarketingDraftDirty(false)
+    clearStoredMarketingDraft(listingRecord.id)
+    if (savedListing?.id) setPrivateListings((rows) => upsertListingRecord(rows, mergeListingRecord(savedListing, listingRecord)))
+    return { savedListing, distributionSync }
+  }
 
+  async function recordListingWithdrawalChannelResults(results = []) {
+    if (!listingRecord?.id) return
+    const recordedAt = new Date().toISOString()
+    await Promise.all(results
+      .filter((result) => result?.active && ['succeeded', 'failed'].includes(result.status))
+      .map((result) => createPrivateListingActivity({
+        privateListingId: listingRecord.id,
+        activityType: result.status === 'succeeded'
+          ? 'listing_channel_withdrawal_succeeded'
+          : 'listing_channel_withdrawal_failed',
+        activityTitle: `${result.label} withdrawal ${result.status === 'succeeded' ? 'confirmed' : 'failed'}`,
+        activityDescription: result.detail || `${result.label} withdrawal ${result.status}.`,
+        performedBy: profile?.id || null,
+        visibility: 'internal',
+        metadata: {
+          channel: result.label,
+          action: 'withdraw',
+          reference: result.key === 'property24'
+            ? property24Reference
+            : result.key === 'private_property'
+              ? marketingDraft.privatePropertyReference
+              : result.key === 'agency_website'
+                ? agencyWebsitePublication?.websiteSiteId || ''
+                : listingRecord.id,
+          detail: result.detail || '',
+          ...(result.status === 'succeeded'
+            ? { withdrawnAt: recordedAt }
+            : { failedAt: recordedAt, error: result.detail || `${result.label} withdrawal failed.` }),
+        },
+      }).catch(() => null)))
+  }
+
+  async function withdrawListingFromMarketing() {
+    const previousResults = new Map(listingWithdrawalResults.map((result) => [result.key, result]))
+    let results = getListingWithdrawalPlan().map((result) => {
+      const previous = previousResults.get(result.key)
+      return previous?.status === 'succeeded'
+        ? { ...result, status: 'succeeded', detail: previous.detail }
+        : result
+    })
+    const updateResult = (key, patch) => {
+      results = results.map((result) => result.key === key ? { ...result, ...patch } : result)
+      setListingWithdrawalResults([...results])
+    }
+    const attemptedChannelKeys = new Set()
+
+    setListingWithdrawalResults(results)
+    setListingWithdrawalComplete(false)
     setPublicationSaving(true)
     setDetailError('')
-    setDetailMessage('Expiring live listings and archiving...')
+    setDetailMessage('Withdrawing the listing from its public channels...')
+
+    for (const channel of results) {
+      if (!channel.active || channel.status === 'succeeded' || channel.key === 'arch9_catalogue') continue
+      attemptedChannelKeys.add(channel.key)
+      if (channel.blockedReason) {
+        updateResult(channel.key, { status: 'failed', detail: channel.blockedReason })
+        continue
+      }
+      updateResult(channel.key, { status: 'running', detail: 'Withdrawal in progress' })
+      try {
+        if (channel.key === 'property24') {
+          await callProperty24ListingAction('withdraw', { listingNumber: property24Reference }, { fallbackMessage: 'Property24 withdrawal failed.' })
+          updateResult(channel.key, { status: 'succeeded', detail: 'Removed from Property24' })
+        } else if (channel.key === 'private_property') {
+          await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property withdrawal failed.' })
+          updateResult(channel.key, { status: 'succeeded', detail: 'Set inactive on Private Property' })
+        } else if (channel.key === 'agency_website') {
+          const publication = await setWebsiteListingPublication(listingRecord.id, 'unpublish')
+          setAgencyWebsitePublication(publication)
+          updateResult(channel.key, { status: 'succeeded', detail: 'Removed from the agency website' })
+        }
+      } catch (error) {
+        updateResult(channel.key, { status: 'failed', detail: error?.message || `${channel.label} withdrawal failed.` })
+      }
+    }
+
+    if (results.some((result) => result.key === 'arch9_catalogue' && result.active && result.status !== 'succeeded')) {
+      attemptedChannelKeys.add('arch9_catalogue')
+      updateResult('arch9_catalogue', { status: 'running', detail: 'Removing the public catalogue projection' })
+      updateResult('arch9_catalogue', { status: 'succeeded', detail: 'Removed from the Arch9 public catalogue' })
+    }
+
+    const completeBeforeSave = listingWithdrawalIsComplete(results)
+    const nextDraft = applyListingWithdrawalResults(marketingDraft, results, { complete: completeBeforeSave })
     try {
-      if (property24Published && property24Reference) {
-        await callProperty24ListingAction('status-update', { status: 'Expired', listingNumber: property24Reference }, { fallbackMessage: 'Property24 expiry failed. The listing was not archived.' })
-      }
-      if (privatePropertyIsLive) {
-        await callPrivatePropertyListingAction('status-update', { propertyStatus: 'Inactive' }, { fallbackMessage: 'Private Property expiry failed. The listing was not archived.' })
-      }
-      const nextDraft = {
-        ...marketingDraft,
-        listingStatus: 'withdrawn',
-        publicationStatus: 'Draft',
-        bridgeListingStatus: 'paused',
-        ...(property24Published ? { property24Status: 'expired' } : {}),
-        ...(privatePropertyIsLive ? { privatePropertyStatus: 'inactive' } : {}),
-      }
-      const result = await saveMarketingDraft(nextDraft, { listingVisibility: 'archived', successMessage: '' })
-      if (result?.ok === false) throw result.error || new Error('Unable to archive the listing.')
+      await persistListingWithdrawalState(nextDraft, completeBeforeSave)
+      await recordListingWithdrawalChannelResults(results.filter((result) => attemptedChannelKeys.has(result.key)))
       await createPrivateListingActivity({
         privateListingId: listingRecord.id,
-        activityType: 'listing_archived',
-        activityTitle: 'Listing archived',
-        activityDescription: 'Listing archived after supported public placements were expired.',
+        activityType: completeBeforeSave ? 'listing_withdrawn' : 'listing_withdrawal_incomplete',
+        activityTitle: completeBeforeSave ? 'Listing withdrawn' : 'Listing withdrawal needs attention',
+        activityDescription: completeBeforeSave
+          ? 'The listing was removed from all confirmed live marketing channels.'
+          : 'One or more marketing channels could not confirm withdrawal. Successful channel removals were retained for retry.',
         visibility: 'internal',
-        metadata: { liveChannels },
-      }).catch(() => {})
-      setDetailMessage('Listing expired on its live channels and archived.')
+        metadata: { channelResults: results },
+      }).catch(() => null)
+      setListingWithdrawalComplete(completeBeforeSave)
+      await loadListingData({ showLoading: false })
       window.dispatchEvent(new Event('itg:listings-updated'))
-      navigate('/listings', { replace: true, state: { message: 'Listing archived.' } })
+      if (completeBeforeSave) {
+        setDetailMessage('Listing withdrawn from every confirmed live channel.')
+      } else {
+        const failedChannels = results.filter((result) => result.status === 'failed').map((result) => result.label)
+        setDetailMessage('')
+        setDetailError(`Withdrawal needs attention on: ${failedChannels.join(', ')}. Successful removals were saved; retry the remaining channels.`)
+      }
     } catch (error) {
+      const arch9Result = results.find((result) => result.key === 'arch9_catalogue')
+      updateResult('arch9_catalogue', {
+        status: 'failed',
+        detail: error?.message || 'Arch9 could not save the withdrawal state.',
+        active: arch9Result?.active ?? true,
+      })
+      await recordListingWithdrawalChannelResults(results.filter((result) => attemptedChannelKeys.has(result.key)))
+      setListingWithdrawalComplete(false)
       setDetailMessage('')
-      setDetailError(error?.message || 'Unable to archive the listing.')
+      setDetailError(error?.message || 'Arch9 could not save the withdrawal state. Portal results remain visible for retry.')
     } finally {
       setPublicationSaving(false)
     }
   }
 
   async function prepareAgencyWebsiteListing() {
+    const pendingMedia = getPendingListingMediaUploads(marketingDraft)
+    if (pendingMedia.length) {
+      throw new Error(`Retry the ${pendingMedia.length} failed media upload${pendingMedia.length === 1 ? '' : 's'} before publishing to the agency website.`)
+    }
     const blockers = getArch9PublicationBlockers(marketingDraft, coverImage)
     if (blockers.length) throw new Error(`Before publishing to the agency website: ${blockers.join(' ')}`)
 
@@ -4981,7 +5677,18 @@ function AgentListingDetail() {
     if (saveResult?.distributionSync?.skipped) {
       throw saveResult.distributionSync.error || new Error('The listing saved, but its public projection could not be synchronized. Retry before publishing to the website.')
     }
-    return saveResult
+    return { ...saveResult, publicationDraft: nextDraft }
+  }
+
+  async function handleAgencyWebsitePublicationAction({ stage, action, publication, draft }) {
+    const publicUrl = String(publication?.publicUrl || publication?.url || '').trim()
+    await recordListingPublicationStage('Agency Website', stage, draft || marketingDraft, {
+      action,
+      publicUrl,
+      reference: publication?.websiteSiteId || '',
+      ...(stage === 'failed' ? { error: publication?.error || 'Website publication failed.' } : {}),
+    })
+    await loadListingData({ showLoading: false })
   }
 
   async function callProperty24ListingAction(action, body = {}, options = {}) {
@@ -5087,6 +5794,7 @@ function AgentListingDetail() {
   }
 
   async function publishProperty24Listing() {
+    if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Property24')) return null
     const expiryError = getProperty24ExpiryDateError(marketingDraft.property24ExpiryDate)
     if (expiryError) {
       setDetailMessage('')
@@ -5096,30 +5804,53 @@ function AgentListingDetail() {
     setProperty24Action('publish')
     setDetailError('')
     setDetailMessage('Publishing to Property24...')
+    let publicationTracked = false
     try {
       const saveResult = await saveMarketingDraft(marketingDraft, {
         successMessage: '',
       })
       if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Property24.')
+      await recordListingPublicationStage('Property24', 'submitted', marketingDraft, {
+        action: property24Reference ? 'update' : 'publish',
+        reference: property24Reference,
+      })
+      publicationTracked = true
       const payload = await callProperty24ListingAction('publish', getProperty24ActionContext(), { fallbackMessage: 'Property24 publish failed.' })
       setProperty24Preview(payload)
       const listingNumber = getProperty24ListingNumberFromResponse(payload)
+      const confirmedStatus = payload?.report?.databaseWrite?.property24Status || 'draft'
       const nextDraft = {
         ...marketingDraft,
         property24Reference: listingNumber || marketingDraft.property24Reference,
-        property24Status: 'published',
+        property24Status: confirmedStatus,
+        property24ListingUrl: payload?.report?.databaseWrite?.property24ListingUrl || marketingDraft.property24ListingUrl,
       }
       setMarketingDraft(nextDraft)
       const statusSave = await saveMarketingDraft(nextDraft, { successMessage: '' })
       if (statusSave?.ok === false) {
         throw statusSave.error || new Error('Property24 accepted the listing, but Arch9 could not save its publication status. Please retry from this listing.')
       }
+      await recordListingPublicationStage('Property24', 'accepted', nextDraft, {
+        action: property24Reference ? 'update' : 'publish',
+        reference: listingNumber || property24Reference,
+        publicUrl: nextDraft.property24ListingUrl,
+      })
       await loadListingData()
       openSellerWorkspaceSection('marketing')
       setDetailError('')
-      setDetailMessage(listingNumber ? `Published to Property24. Listing number ${listingNumber}.` : 'Published to Property24.')
+      setDetailMessage(confirmedStatus === 'published'
+        ? `Property24 confirms this listing is live${listingNumber ? ` (number ${listingNumber})` : ''}.`
+        : `Submitted to Property24${listingNumber ? ` (number ${listingNumber})` : ''}. Refresh status to confirm when it is live.`)
       return payload
     } catch (error) {
+      if (publicationTracked) {
+        await recordListingPublicationStage('Property24', 'failed', marketingDraft, {
+          action: property24Reference ? 'update' : 'publish',
+          reference: property24Reference,
+          error: error?.message || 'Property24 publication failed.',
+        }).catch(() => null)
+        await loadListingData({ showLoading: false })
+      }
       setDetailMessage('')
       setDetailError(error?.message || 'Property24 publish failed.')
       return null
@@ -5249,17 +5980,24 @@ function AgentListingDetail() {
   }
 
   async function publishPrivatePropertyListing() {
+    if (!ensureMarketingMediaReady(marketingDraft, 'publishing to Private Property')) return null
     if (!await requireSyndicationReviewBeforePublish('privateProperty')) return null
     const confirmation = `PRIVATE_PROPERTY_PUBLISH:${listingRecord?.id || ''}:production`
     if (!window.confirm('Submit this exact Arch9 listing to Private Property production? Private Property will begin processing the listing after submission.')) return null
     setPrivatePropertyAction('publish')
     setDetailError('')
     setDetailMessage('Submitting to Private Property...')
+    let publicationTracked = false
     try {
       const saveResult = await saveMarketingDraft(marketingDraft, {
         successMessage: '',
       })
       if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before publishing to Private Property.')
+      await recordListingPublicationStage('Private Property', 'submitted', marketingDraft, {
+        action: privatePropertyHasChannel ? 'update' : 'publish',
+        reference: marketingDraft.privatePropertyReference,
+      })
+      publicationTracked = true
       const payload = await callPrivatePropertyListingAction('publish', { confirm: confirmation }, { fallbackMessage: 'Private Property publish failed.' })
       setPrivatePropertyPreview(payload)
       const privatePropertyReference = getPrivatePropertyReferenceFromResponse(payload)
@@ -5274,6 +6012,11 @@ function AgentListingDetail() {
       if (statusSave?.ok === false) {
         throw statusSave.error || new Error('Private Property accepted the listing, but Arch9 could not save its submission status. Please retry from this listing.')
       }
+      await recordListingPublicationStage('Private Property', 'accepted', nextDraft, {
+        action: privatePropertyHasChannel ? 'update' : 'publish',
+        reference: privatePropertyReference || marketingDraft.privatePropertyReference,
+        publicUrl: nextDraft.privatePropertyListingUrl,
+      })
       await loadListingData()
       openSellerWorkspaceSection('marketing')
       setDetailError('')
@@ -5282,6 +6025,14 @@ function AgentListingDetail() {
         : 'Submitted to Private Property. Poll status until the listing activates.')
       return payload
     } catch (error) {
+      if (publicationTracked) {
+        await recordListingPublicationStage('Private Property', 'failed', marketingDraft, {
+          action: privatePropertyHasChannel ? 'update' : 'publish',
+          reference: marketingDraft.privatePropertyReference,
+          error: error?.message || 'Private Property publication failed.',
+        }).catch(() => null)
+        await loadListingData({ showLoading: false })
+      }
       setDetailMessage('')
       setDetailError(error?.message || 'Private Property publish failed.')
       return null
@@ -5375,6 +6126,54 @@ function AgentListingDetail() {
     } finally {
       setProperty24Action('')
     }
+  }
+
+  async function refreshMarketingOperationalHealth() {
+    if (marketingHealthRefreshing) return
+    setMarketingHealthRefreshing(true)
+    setDetailError('')
+    setDetailMessage('Refreshing marketing channel health...')
+    try {
+      const checks = []
+      if (property24HasReference) checks.push(refreshProperty24ListingStatus())
+      if (privatePropertyHasChannel) checks.push(refreshPrivatePropertyListingStatus())
+      if (agencyWebsitePublication?.websiteSiteId) {
+        checks.push(getWebsiteListingPublicationStatus(listingRecord.id).then((publication) => {
+          setAgencyWebsitePublication(publication)
+          return publication
+        }).catch(() => null))
+      }
+      const results = await Promise.all(checks)
+      await loadListingData({ showLoading: false })
+      const failureCount = results.filter((result) => !result).length
+      if (failureCount) {
+        setDetailMessage('')
+        setDetailError(`${failureCount} marketing channel health check${failureCount === 1 ? '' : 's'} could not be confirmed. Review the operational health findings and retry.`)
+      } else {
+        setDetailError('')
+        setDetailMessage(checks.length ? 'Marketing channel health refreshed.' : 'No connected marketing channels need a live status check yet.')
+      }
+    } finally {
+      setMarketingHealthRefreshing(false)
+    }
+  }
+
+  async function saveConfirmedPortalLink(portal) {
+    const isProperty24 = portal === 'property24'
+    const field = isProperty24 ? 'property24ListingUrl' : 'privatePropertyListingUrl'
+    const value = String(marketingDraft[field] || '').trim()
+    let parsed
+    try { parsed = new URL(value) } catch { parsed = null }
+    const expectedHost = isProperty24 ? 'property24.com' : 'privateproperty.co.za'
+    if (!parsed || parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.hostname !== expectedHost && !parsed.hostname.endsWith(`.${expectedHost}`))) {
+      setDetailError(`Enter the exact HTTPS ${isProperty24 ? 'Property24' : 'Private Property'} listing URL before saving.`)
+      return null
+    }
+    const result = await saveMarketingDraft({ ...marketingDraft, [field]: parsed.toString() }, { successMessage: '' })
+    if (result?.ok === false) return null
+    await loadListingData({ showLoading: false })
+    setDetailMessage(`${isProperty24 ? 'Property24' : 'Private Property'} link saved. Open the public page from Listing Channels and verify the latest update.`)
+    return result
   }
 
   async function updateProperty24ListingStatus() {
@@ -6089,6 +6888,7 @@ function AgentListingDetail() {
     try {
       const result = await reviewSellerDocument({ document, action, reason })
       await loadListingData()
+      await loadSellerDocumentDeliveries()
       const title = item?.title || item?.label || 'Seller document'
       const message = action === 'approve'
         ? `${title} approved. Assurance and transaction handoff will update automatically.`
@@ -6113,6 +6913,7 @@ function AgentListingDetail() {
     try {
       const result = await sendSellerDocumentManualReminder({ requirementId })
       await loadListingData()
+      await loadSellerDocumentDeliveries()
       setDetailMessage(
         result?.idempotent
           ? 'A reminder for this document was already queued today; no duplicate was sent.'
@@ -6122,6 +6923,95 @@ function AgentListingDetail() {
     } catch (error) {
       setDetailError(error?.message || 'Unable to send the seller document reminder.')
       return false
+    } finally {
+      setSellerDocumentWorkflowAction('')
+    }
+  }
+
+  async function handleSellerDocumentRequest(item) {
+    const actionKey = `${item?.key || item?.id}:request`
+    setDetailError('')
+    setDetailMessage('')
+    setSellerDocumentWorkflowAction(actionKey)
+    try {
+      const result = await issueSellerDocumentRequests({
+        client: supabase,
+        listing: listingRecord,
+        requirements: [item],
+        documents: Array.isArray(listingRecord?.documents) ? listingRecord.documents : [],
+        reason: 'manual_agent_request',
+      })
+      if (result.failed?.length) {
+        throw result.failed[0].error || new Error('Unable to request this seller document.')
+      }
+      if (!result.applied?.length && !result.existing?.length) {
+        const reason = result.suppressed?.[0]?.reason
+        throw new Error(reason === 'document_already_supplied'
+          ? 'This document has already been supplied and should be reviewed instead.'
+          : 'This document cannot be requested from the seller in its current state.')
+      }
+      await loadListingData()
+      await loadSellerDocumentDeliveries()
+      setDetailMessage(
+        result.existing?.length
+          ? `${item?.title || item?.label || 'Seller document'} has already been requested.`
+          : `${item?.title || item?.label || 'Seller document'} requested from the seller.`,
+      )
+      return true
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to request this seller document.')
+      return false
+    } finally {
+      setSellerDocumentWorkflowAction('')
+    }
+  }
+
+  async function handleSellerDocumentGroupRequest(group) {
+    const requestableDocuments = (Array.isArray(group?.documents) ? group.documents : [])
+      .filter((document) => resolveListingSellerDocumentActions(document).canRequest)
+    if (!requestableDocuments.length) return
+
+    const actionKey = `${group.key}:request-group`
+    setDetailError('')
+    setDetailMessage('')
+    setSellerDocumentWorkflowAction(actionKey)
+    try {
+      const result = await issueSellerDocumentRequests({
+        client: supabase,
+        listing: listingRecord,
+        requirements: requestableDocuments,
+        documents: Array.isArray(listingRecord?.documents) ? listingRecord.documents : [],
+        reason: 'manual_agent_group_request',
+      })
+      if (result.failed?.length) throw result.failed[0].error || new Error('Unable to request all outstanding seller documents.')
+      const requestedCount = (result.applied?.length || 0) + (result.existing?.length || 0)
+      if (!requestedCount) throw new Error('There are no seller-managed documents in this group that can be requested.')
+      await loadListingData()
+      await loadSellerDocumentDeliveries()
+      setDetailMessage(
+        result.applied?.length
+          ? `${result.applied.length} outstanding ${group.label.toLowerCase()} document${result.applied.length === 1 ? '' : 's'} requested from the responsible seller participant.`
+          : 'These documents have already been requested; no duplicate requests were created.',
+      )
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to request the outstanding seller documents.')
+    } finally {
+      setSellerDocumentWorkflowAction('')
+    }
+  }
+
+  async function handleRetrySellerDocumentDelivery(delivery) {
+    if (!listingRecord?.id || !delivery?.id) return
+    const actionKey = `${delivery.id}:retry-delivery`
+    setDetailError('')
+    setDetailMessage('')
+    setSellerDocumentWorkflowAction(actionKey)
+    try {
+      await retryListingSellerDocumentDelivery({ listingId: listingRecord.id, eventId: delivery.id })
+      await loadSellerDocumentDeliveries()
+      setDetailMessage('The failed seller document message has been queued for another delivery attempt.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to retry this seller document message.')
     } finally {
       setSellerDocumentWorkflowAction('')
     }
@@ -6142,21 +7032,37 @@ function AgentListingDetail() {
     }
   }
 
+  function confirmMarketingNavigation() {
+    if (!marketingDraftDirtyRef.current) return true
+    return window.confirm('You have unsaved marketing changes. Leave without saving them? Your browser draft will be kept for recovery.')
+  }
+
+  function navigateFromListing(path) {
+    if (!confirmMarketingNavigation()) return
+    navigate(path)
+  }
+
   function openPropertyDetailsFromMarketing() {
     const targetListingId = encodeURIComponent(String(listingRecord?.id || listingId || '').trim())
     if (!targetListingId) {
       setDetailError('Unable to open the listing editor because this listing is missing an id.')
       return
     }
+    if (!confirmMarketingNavigation()) return
     navigate(`/listings/${targetListingId}/edit?step=property&scope=listing-publication`)
   }
 
   function openDetailTab(tab) {
+    if (tab === 'documents') {
+      openSellerWorkspaceSection('documents')
+      return
+    }
     setPropertyDetailsReturnTarget('')
     setActiveTab(tab)
   }
 
   function openSalesListingWorkspaceTab(tab) {
+    if (tab !== activeSalesWorkspaceTab && !confirmMarketingNavigation()) return
     const target = resolveSalesListingWorkspaceTarget(tab)
     setPropertyDetailsReturnTarget('')
     setDetailError('')
@@ -6195,7 +7101,6 @@ function AgentListingDetail() {
 
   function handleExportListingLeads() {
     const headers = ['Lead', 'Phone', 'Email', 'Source', 'Status', 'Contacted', 'Viewing', 'Offer', 'Date Added']
-    const escapeCsv = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`
     const rows = filteredListingLeadRows.map((lead) => {
       const viewing = lead.viewing
         ? [formatDate(lead.viewing.proposed_date), lead.viewing.proposed_time, formatViewingStatusLabel(lead.viewing.status)].filter(Boolean).join(' ')
@@ -6213,11 +7118,20 @@ function AgentListingDetail() {
         viewing,
         offer,
         formatDate(lead.createdAt),
-      ].map(escapeCsv).join(',')
+      ].map(escapeListingLeadCsvValue).join(',')
     })
-    const csv = [headers.map(escapeCsv).join(','), ...rows].join('\n')
+    const csv = [headers.map(escapeListingLeadCsvValue).join(','), ...rows].join('\r\n')
     const fileName = `${sanitizeFileName(listingIdentity.title || 'listing')}-leads.csv`
     downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), fileName)
+  }
+
+  function clearListingLeadFilters() {
+    setListingLeadSearch('')
+    setListingLeadStatusFilter('all')
+    setListingLeadSourceFilter('all')
+    setListingLeadActivityFilter('all')
+    setListingLeadDateFilter('all')
+    setListingLeadPage(1)
   }
 
   function handleContactListingLead(lead = {}) {
@@ -6239,7 +7153,7 @@ function AgentListingDetail() {
     if (!confirmed) {
       const savedChoice = sellerFormData?.digitalMandateRequested ?? sellerFormData?.digital_mandate_requested
       const savedAttorneyRecommendation = readSellerOnboardingAttorneyRecommendation(sellerFormData)
-      setOnboardingMandateChoice(savedChoice === true || String(savedChoice).toLowerCase() === 'true' ? 'yes' : savedChoice === false || String(savedChoice).toLowerCase() === 'false' ? 'no' : '')
+      setOnboardingMandateChoice(sellerOwnershipUnidentified ? 'no' : savedChoice === true || String(savedChoice).toLowerCase() === 'true' ? 'yes' : savedChoice === false || String(savedChoice).toLowerCase() === 'false' ? 'no' : '')
       setPreferredTransferAttorneyOptionId(String(savedAttorneyRecommendation.partnerOptionId || '').trim())
       setPreferredTransferAttorneyChoiceTouched(false)
       setSellerOnboardingSendOpen(true)
@@ -6252,6 +7166,10 @@ function AgentListingDetail() {
       return
     }
     const digitalMandateRequested = onboardingMandateChoice === 'yes'
+    if (sellerOwnershipUnidentified && digitalMandateRequested) {
+      setDetailError('Confirm the legal owner before adding a digital mandate. You can still send basic seller onboarding now.')
+      return
+    }
     const existingAttorneyRecommendation = readSellerOnboardingAttorneyRecommendation(sellerFormData)
     const selectedPreferredTransferAttorney = preferredTransferAttorneyOptions.find((option) => String(option?.id || '') === preferredTransferAttorneyOptionId) || null
     let preferredTransferAttorneyRecommendation = existingAttorneyRecommendation
@@ -6317,9 +7235,9 @@ function AgentListingDetail() {
       const localLink = token ? buildSellerOnboardingLink(token) : ''
       const response = isSupabaseConfigured && isUuidLike(listingRecord.id)
         ? await sendSellerOnboarding(listingRecord.id, {
-            sellerType: sellerFormData?.sellerType || listingRecord?.sellerType || listingRecord?.seller?.sellerType || null,
-            ownershipStructure: sellerFormData?.ownershipStructure || sellerFormData?.ownershipType || null,
-            maritalRegime: sellerFormData?.maritalRegime || sellerFormData?.maritalStatus || null,
+            sellerType: sellerOwnershipUnidentified ? null : sellerFormData?.sellerType || listingRecord?.sellerType || listingRecord?.seller?.sellerType || null,
+            ownershipStructure: sellerOwnershipUnidentified ? null : sellerFormData?.ownershipStructure || sellerFormData?.ownershipType || null,
+            maritalRegime: sellerOwnershipUnidentified ? null : sellerFormData?.maritalRegime || sellerFormData?.maritalStatus || null,
             sellerContactEmail: sellerEmail,
             sellerContactPhone: sellerPhone,
             mandateSetup: {
@@ -6627,13 +7545,44 @@ function AgentListingDetail() {
     setDetailMessage('')
     setPrimaryDocumentContactEmail(getSellerSigningPlan().recipients[0]?.email || '')
     const activeGroup = sellerDocumentSigningSessions.find((session) => session?.status === 'active' && session?.signing_group_id)?.signing_group_id || ''
+    const hasRequestedGroup = Boolean(correctionRequest?.metadata && Object.prototype.hasOwnProperty.call(correctionRequest.metadata, 'signingGroupId'))
     const requestedGroup = String(correctionRequest?.metadata?.signingGroupId || '')
-    setSellerDocumentReplacementGroupId(requestedGroup || activeGroup)
+    setSellerDocumentReplacementGroupId(hasRequestedGroup ? requestedGroup : activeGroup)
     setSellerDocumentReplacementReason(String(correctionRequest?.metadata?.issue || ''))
+    setMandateReplacementIntent(Boolean(correctionRequest?.metadata?.mandateReplacementIntent))
     setSellerDocumentCorrectionRequestActivityId(String(correctionRequest?.id || ''))
     setSellerMandateSignatureRoute('digital_pack')
     setSellerDocumentSendStep(2)
     setSellerDocumentSendOpen(true)
+  }
+
+  function openMandateReplacementReview() {
+    const defaultReason = mandateReplacementWorkflow.changedFieldLabels.length
+      ? `Mandate updated: ${mandateReplacementWorkflow.changedFieldLabels.join(', ')}`
+      : 'Mandate terms updated by the listing agent'
+    setMandateReplacementReason(defaultReason)
+    setDetailError('')
+    setDetailMessage('')
+    setMandateReplacementOpen(true)
+  }
+
+  function continueMandateReplacementReview() {
+    const reason = String(mandateReplacementReason || '').trim()
+    if (reason.length < 5) {
+      setDetailError('Add a short reason for regenerating the mandate.')
+      return
+    }
+    setMandateReplacementOpen(false)
+    openSellerDocumentSend(
+      { disclosure: false, fica: false, mandate: true },
+      {
+        metadata: {
+          signingGroupId: mandateReplacementWorkflow.sourceSigningGroupId,
+          issue: reason,
+          mandateReplacementIntent: true,
+        },
+      },
+    )
   }
 
   async function saveSellerOnboardingReview(status) {
@@ -6800,7 +7749,7 @@ function AgentListingDetail() {
       return
     }
     const { documents } = getSellerSigningDocumentOptions()
-    const formalSelection = validateSellerOnboardingFormalSigningSelection(sellerDocumentSendSelection)
+    const formalSelection = validateSellerOnboardingFormalSigningSelection(sellerDocumentSendSelection, { mandateReplacement: mandateReplacementIntent })
     if (!formalSelection.valid) {
       setDetailError(`Include ${formalSelection.missing.join(' and ')} in the post-review signing pack.`)
       return
@@ -6827,8 +7776,12 @@ function AgentListingDetail() {
       setDetailError('Add a valid email for every required signer before preparing a document link.')
       return
     }
-    if (sellerDocumentReplacementGroupId && sellerDocumentReplacementReason.trim().length < 5) {
+    if ((sellerDocumentReplacementGroupId || mandateReplacementIntent) && sellerDocumentReplacementReason.trim().length < 5) {
       setDetailError('Give a short reason before replacing an active seller signing pack.')
+      return
+    }
+    if (mandateReplacementIntent && sellerMandateSignatureRoute !== 'digital_pack') {
+      setDetailError('Send mandate replacements digitally so Arch9 can preserve the signed source and activate the new version only after every required signature.')
       return
     }
     if (sellerDocumentCorrectionRequestActivityId && sellerMandateSignatureRoute === 'manual_upload') {
@@ -6839,11 +7792,12 @@ function AgentListingDetail() {
     const mandateType = marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType || 'sole'
     try {
       setSellerDocumentSendSaving(true)
+      let commissionSaveResult = null
       if (sellerDocumentSendSelection.mandate) {
-        const commissionSaved = await saveCommissionDraft()
-        if (!commissionSaved) return
+        commissionSaveResult = await saveCommissionDraft()
+        if (!commissionSaveResult) return
       }
-      const existingForm = getListingSellerFormData(listingRecord)
+      const existingForm = commissionSaveResult?.formData || getListingSellerFormData(listingRecord)
       const onboardingReview = readSellerOnboardingReview(existingForm.sellerOnboardingReview || existingForm.seller_onboarding_review)
       if (onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested) {
         throw new Error('The seller onboarding is awaiting correction. Review the resubmitted onboarding before preparing another signing pack.')
@@ -6920,6 +7874,13 @@ function AgentListingDetail() {
           email: proposedTransferAttorney.email || '',
           phone: proposedTransferAttorney.phone || '',
         } : null,
+        mandateReplacementRequest: mandateReplacementIntent ? {
+          status: 'prepared',
+          reason: sellerDocumentReplacementReason.trim(),
+          supersededSigningGroupId: sellerDocumentReplacementGroupId || '',
+          requestedAt: new Date().toISOString(),
+          requestedBy: String(listingActor?.id || profile?.id || ''),
+        } : existingForm.mandateReplacementRequest || null,
       }
       const listingPatch = { mandateType }
       await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
@@ -6947,7 +7908,7 @@ function AgentListingDetail() {
         signers: signingPlan.recipients,
         primaryDocumentContactEmail: primarySigner.email,
         supersededSigningGroupId: sellerDocumentReplacementGroupId || undefined,
-        replacementReason: sellerDocumentReplacementGroupId ? sellerDocumentReplacementReason.trim() : undefined,
+        replacementReason: mandateReplacementIntent ? sellerDocumentReplacementReason.trim() : undefined,
         correctionRequestActivityId: sellerDocumentCorrectionRequestActivityId || undefined,
         agentName: String(listingActor?.name || profile?.fullName || profile?.email || 'Agent').trim(),
         selectedDocuments: selected,
@@ -7003,8 +7964,9 @@ function AgentListingDetail() {
       setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
       setLastSellerDocumentSigningLinks(Object.fromEntries((Array.isArray(response?.data?.signingLinks) ? response.data.signingLinks : []).map((item) => [String(item?.signerEmail || '').toLowerCase(), String(item?.signingLink || '')]).filter(([key, value]) => key && value)))
       setSellerDocumentSendOpen(false)
+      setMandateReplacementIntent(false)
       setSellerDocumentCorrectionRequestActivityId('')
-      setDetailMessage(formalPackDispatch.isAmendment
+      setDetailMessage(formalPackDispatch.isAmendment || mandateReplacementIntent
         ? `Amendment signing pack prepared for ${signingPlan.recipients.length} required signer${signingPlan.recipients.length === 1 ? '' : 's'}. The original signed pack remains unchanged as audit evidence.${formalPackDispatch.delivery === 'failed' ? ' No email delivery was confirmed; copy the new link below to share it safely.' : formalPackDispatch.delivery === 'partial' ? ` ${formalPackDispatch.deliveredRecipientCount} of ${formalPackDispatch.recipientCount} signing links were delivered.` : ''}`
         : formalPackDispatch.delivery === 'failed'
         ? 'The signing pack was prepared, but no delivery was confirmed. Copy the new link below to share it safely with the seller.'
@@ -7981,7 +8943,9 @@ function AgentListingDetail() {
           contactedAt,
           contactedBy,
           viewing,
+          viewings: viewingRows,
           viewingCount: viewingRows.length,
+          bookedViewingCount: viewingRows.filter(isBookedListingViewing).length,
           offer,
           offerCount: offerRowsForLead.length,
           createdAt: lead.createdAt || getLeadCreatedAt(lead),
@@ -7992,61 +8956,41 @@ function AgentListingDetail() {
   }, [interestedLeadRows, listingLeads, offerRows, sentPropertyRows, viewings])
 
   const listingLeadSummary = useMemo(() => {
-    const total = listingLeadRows.length
-    const percent = (value) => total ? `${Math.round((value / total) * 100)}% of total` : '0% of total'
-    const now = Date.now()
-    const sevenDays = 7 * 24 * 60 * 60 * 1000
-    const newThisWeek = listingLeadRows.filter((lead) => {
-      const timestamp = new Date(lead.createdAt || 0).getTime()
-      return Number.isFinite(timestamp) && now - timestamp <= sevenDays
-    }).length
-    const contacted = listingLeadRows.filter((lead) => lead.contactedAt || ['contacted', 'viewing', 'offer', 'converted'].includes(lead.statusGroup)).length
-    const viewingsBooked = listingLeadRows.filter((lead) => lead.viewingCount > 0).length
-    const offers = listingLeadRows.filter((lead) => lead.offerCount > 0 || lead.statusGroup === 'offer' || lead.statusGroup === 'converted').length
-    const converted = listingLeadRows.filter((lead) => lead.statusGroup === 'converted' || [OFFER_WORKFLOW_STATUS.ACCEPTED, OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION].includes(normalizeOfferWorkflowStatus(lead.offer?.status))).length
-    return {
-      total,
-      newThisWeek,
-      contacted,
-      viewingsBooked,
-      offers,
-      converted,
-      percent,
-    }
+    return buildListingLeadMetrics(listingLeadRows)
   }, [listingLeadRows])
 
   const listingLeadSourceOptions = useMemo(() => {
     return ['all', ...Array.from(new Set(listingLeadRows.map((lead) => lead.sourceLabel).filter(Boolean))).sort()]
   }, [listingLeadRows])
 
+  const activeListingLeadFilterCount = [
+    listingLeadStatusFilter,
+    listingLeadSourceFilter,
+    listingLeadActivityFilter,
+    listingLeadDateFilter,
+  ].filter((value) => value !== 'all').length + (listingLeadSearch.trim() ? 1 : 0)
+
   const filteredListingLeadRows = useMemo(() => {
-    const query = listingLeadSearch.trim().toLowerCase()
-    const now = Date.now()
-    const dayMs = 24 * 60 * 60 * 1000
-    return listingLeadRows.filter((lead) => {
-      if (query && !lead.searchText.includes(query)) return false
-      if (listingLeadStatusFilter !== 'all' && lead.statusGroup !== listingLeadStatusFilter) return false
-      if (listingLeadSourceFilter !== 'all' && lead.sourceLabel !== listingLeadSourceFilter) return false
-      if (listingLeadActivityFilter === 'has_viewing' && !lead.viewingCount) return false
-      if (listingLeadActivityFilter === 'has_offer' && !lead.offerCount) return false
-      if (listingLeadActivityFilter === 'needs_follow_up' && (lead.contactedAt || lead.statusGroup !== 'new')) return false
-      if (listingLeadDateFilter !== 'all') {
-        const created = new Date(lead.createdAt || 0).getTime()
-        if (!Number.isFinite(created)) return false
-        const range = listingLeadDateFilter === 'today' ? dayMs : listingLeadDateFilter === '7_days' ? 7 * dayMs : 30 * dayMs
-        if (now - created > range) return false
-      }
-      return true
+    return filterListingLeadRows(listingLeadRows, {
+      search: listingLeadSearch,
+      status: listingLeadStatusFilter,
+      source: listingLeadSourceFilter,
+      activity: listingLeadActivityFilter,
+      date: listingLeadDateFilter,
     })
   }, [listingLeadActivityFilter, listingLeadDateFilter, listingLeadRows, listingLeadSearch, listingLeadSourceFilter, listingLeadStatusFilter])
 
   const listingLeadPageSize = 10
-  const listingLeadPageCount = Math.max(1, Math.ceil(filteredListingLeadRows.length / listingLeadPageSize))
+  const { pageCount: listingLeadPageCount } = clampListingLeadPage(listingLeadPage, filteredListingLeadRows.length, listingLeadPageSize)
   const visibleListingLeadRows = filteredListingLeadRows.slice((listingLeadPage - 1) * listingLeadPageSize, listingLeadPage * listingLeadPageSize)
 
   useEffect(() => {
     setListingLeadPage(1)
   }, [listingLeadActivityFilter, listingLeadDateFilter, listingLeadSearch, listingLeadSourceFilter, listingLeadStatusFilter])
+
+  useEffect(() => {
+    setListingLeadPage((page) => clampListingLeadPage(page, filteredListingLeadRows.length, listingLeadPageSize).page)
+  }, [filteredListingLeadRows.length])
   const selectedBuyerOfferLead = useMemo(
     () => buyerOfferLeads.find((lead) => String(lead?.id || '') === String(offerInviteDraft.buyerLeadId || '')) || null,
     [buyerOfferLeads, offerInviteDraft.buyerLeadId],
@@ -8180,9 +9124,9 @@ function AgentListingDetail() {
     const marketStartDate = getListingMarketStartDate(listingRecord, marketingDraft)
     const daysOnMarket = getDaysOnMarket(marketStartDate)
     const offerAverage = getOfferAverage(offerRows)
-    const leadCount = listingLeads.length
+    const leadCount = listingLeadRows.length
     const viewingCount = viewings.filter((item) => [VIEWING_STATUS.CONFIRMED, VIEWING_STATUS.COMPLETED, VIEWING_STATUS.PENDING_APPROVAL, VIEWING_STATUS.RESCHEDULE_REQUESTED].includes(String(item?.status || '').trim().toLowerCase())).length
-    const offerLeadCount = listingLeads.filter((lead) => getLeadStage(lead).includes('offer') || getLeadStage(lead).includes('negotiating')).length
+    const offerLeadCount = listingLeadRows.filter((lead) => getLeadStage(lead).includes('offer') || getLeadStage(lead).includes('negotiating')).length
     const acceptedCount = offerRows.filter((offer) =>
       [OFFER_WORKFLOW_STATUS.ACCEPTED, OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION].includes(normalizeOfferWorkflowStatus(offer?.status)),
     ).length
@@ -8200,7 +9144,7 @@ function AgentListingDetail() {
       acceptedCount,
       estimatedViews,
     }
-  }, [listingLeads, listingRecord, marketingDraft, offerRows, viewings])
+  }, [listingLeadRows, listingRecord, marketingDraft, offerRows, viewings])
 
   const sourceBreakdown = useMemo(() => {
     const counts = new Map([
@@ -8209,7 +9153,7 @@ function AgentListingDetail() {
       ['Direct / Manual', 0],
     ])
 
-    for (const lead of listingLeads) {
+    for (const lead of listingLeadRows) {
       const source = String(lead?.source || '').trim().toLowerCase()
       if (source === 'property24') {
         counts.set('Property24', counts.get('Property24') + 1)
@@ -8232,7 +9176,7 @@ function AgentListingDetail() {
       color: colors[label],
       share: total ? Math.round((value / total) * 100) : 0,
     }))
-  }, [listingLeads])
+  }, [listingLeadRows])
 
   const pricingInsight = useMemo(() => {
     const asking = Number(listingRecord?.askingPrice || 0)
@@ -8498,6 +9442,10 @@ function AgentListingDetail() {
     })),
     [sellerDocumentExperience.items, sellerDocumentSlaById],
   )
+  const sellerDocumentUploadQueue = useMemo(
+    () => buildSellerDocumentUploadQueue(sellerDocumentExperienceItems, sellerDocumentUploadProgress),
+    [sellerDocumentExperienceItems, sellerDocumentUploadProgress],
+  )
   const sellerPackTransactionRows = useMemo(
     () => SELLER_PACK_TRANSACTION_REQUIREMENT_KEYS.map((requirementKey) => {
       const document = sellerDocumentExperienceItems.find((item) =>
@@ -8556,6 +9504,36 @@ function AgentListingDetail() {
     () => listingDocumentGroups.find((group) => group.key === activeListingDocumentTab) || listingDocumentGroups[0] || null,
     [activeListingDocumentTab, listingDocumentGroups],
   )
+  const listingSellerDocumentSummary = useMemo(
+    () => buildListingSellerDocumentsSummary(sellerDocumentExperienceItems),
+    [sellerDocumentExperienceItems],
+  )
+  const sellerDocumentDeliveryIndex = useMemo(
+    () => buildListingSellerDocumentDeliveryIndex(sellerDocumentDeliveries),
+    [sellerDocumentDeliveries],
+  )
+  const loadSellerDocumentDeliveries = useCallback(async () => {
+    const listingId = String(listingRecord?.id || '').trim()
+    if (!listingId || !isSupabaseConfigured || !isUuidLike(listingId)) {
+      setSellerDocumentDeliveries([])
+      setSellerDocumentDeliveriesError('')
+      return
+    }
+    setSellerDocumentDeliveriesLoading(true)
+    setSellerDocumentDeliveriesError('')
+    try {
+      const rows = await listListingSellerDocumentDeliveries({ listingId })
+      setSellerDocumentDeliveries(rows)
+    } catch (error) {
+      setSellerDocumentDeliveriesError(error?.message || 'Unable to load seller document delivery status.')
+    } finally {
+      setSellerDocumentDeliveriesLoading(false)
+    }
+  }, [listingRecord?.id])
+  useEffect(() => {
+    if (sellerWorkspaceTab !== 'documents' && activeTab !== 'documents') return
+    void loadSellerDocumentDeliveries()
+  }, [activeTab, loadSellerDocumentDeliveries, sellerWorkspaceTab])
   useEffect(() => {
     if (!listingDocumentGroups.length) return
     const currentGroup = listingDocumentGroups.find((group) => group.key === activeListingDocumentTab)
@@ -8612,8 +9590,13 @@ function AgentListingDetail() {
       : null,
     [listingRecord, sellerProfileBuilderDraft],
   )
-  const sellerOwnershipUnidentified = useMemo(
-    () => isListingSellerOwnershipUnidentified(listingRecord),
+  const sellerSetupState = useMemo(
+    () => buildListingSellerSetupState(listingRecord || {}),
+    [listingRecord],
+  )
+  const sellerOwnershipUnidentified = sellerSetupState.requiresSetup
+  const sellerInformationModel = useMemo(
+    () => buildListingSellerInformationModel(listingRecord || {}),
     [listingRecord],
   )
 
@@ -8725,6 +9708,29 @@ function AgentListingDetail() {
     }
   }, [listingRecord, mandateWorkspace.expiryDate, marketingDraft.addressLine1, marketingDraft.listingDate, marketingDraft.price, sellerFormData, sellerOwnershipUnidentified])
 
+  const sellerViewingContact = useMemo(() => ({
+    name: firstDraftValue(
+      resolveSellerNameFromListing(listingRecord),
+      sellerFormData?.sellerName,
+      sellerFormData?.fullName,
+      [sellerFormData?.sellerFirstName || sellerFormData?.firstName, sellerFormData?.sellerSurname || sellerFormData?.lastName].filter(Boolean).join(' '),
+    ),
+    email: firstDraftValue(
+      resolveSellerEmailFromListing(listingRecord),
+      sellerFormData?.sellerEmail,
+      sellerFormData?.email,
+      sellerFormData?.contactEmail,
+      listingRecord?.seller?.email,
+    ),
+    phone: firstDraftValue(
+      sellerFormData?.sellerPhone,
+      sellerFormData?.phone,
+      sellerFormData?.contactNumber,
+      sellerFormData?.mobile,
+      listingRecord?.seller?.phone,
+    ),
+  }), [listingRecord, sellerFormData])
+
   const nextBestAction = useMemo(
     () =>
       getNextBestAction({
@@ -8798,6 +9804,27 @@ function AgentListingDetail() {
       lastUpdatedSource: lastUpdated ? `Updated ${formatDate(lastUpdated)}` : 'No captured source',
     }
   }, [listingRecord, marketingDraft.price, sellerFormData])
+
+  const mandateReplacementWorkflow = useMemo(() => {
+    const commercialRevisions = Array.isArray(sellerFormData?.mandateCommercialTermsRevisions)
+      ? sellerFormData.mandateCommercialTermsRevisions
+      : Array.isArray(sellerFormData?.mandate_commercial_terms_revisions)
+        ? sellerFormData.mandate_commercial_terms_revisions
+        : []
+    const mandateRevisions = Array.isArray(sellerFormData?.mandateTermsRevisions)
+      ? sellerFormData.mandateTermsRevisions
+      : Array.isArray(sellerFormData?.mandate_terms_revisions)
+        ? sellerFormData.mandate_terms_revisions
+        : []
+    return buildListingMandateReplacementWorkflow({
+      sessions: sellerDocumentSigningSessions,
+      replacements: sellerSigningReplacements,
+      revisions: [...commercialRevisions, ...mandateRevisions],
+      refreshRequired: commissionWorkspace.mandateRefreshRequired,
+      amendmentRequired: commissionWorkspace.mandateAmendmentRequired,
+      signedMandateDate: mandateWorkspace.signedDate,
+    })
+  }, [commissionWorkspace.mandateAmendmentRequired, commissionWorkspace.mandateRefreshRequired, mandateWorkspace.signedDate, sellerDocumentSigningSessions, sellerFormData, sellerSigningReplacements])
 
   const listingMandateStartSummary = useMemo(() => {
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
@@ -8959,6 +9986,10 @@ function AgentListingDetail() {
   const coverImage = useMemo(() => {
     return marketingDraft.galleryImages.find((image) => String(image?.id) === String(marketingDraft.coverImageId)) || marketingDraft.galleryImages[0] || null
   }, [marketingDraft.coverImageId, marketingDraft.galleryImages])
+  const listingShowDaySnapshot = useMemo(
+    () => buildListingShowDaySnapshot(listingRecord, marketingDraft, overviewListingAgent),
+    [listingRecord, marketingDraft, overviewListingAgent],
+  )
   const arch9PublicListingUrl = useMemo(
     () => buildArch9PublicListingUrl(marketingDraft, listingRecord),
     [listingRecord, marketingDraft],
@@ -8970,6 +10001,10 @@ function AgentListingDetail() {
   const arch9CanPublish = arch9PublicationBlockers.length === 0
   const arch9IsPublished = normalizeKey(marketingDraft.publicationStatus) === 'published' && normalizeKey(marketingDraft.bridgeListingStatus) === 'published'
   const property24StatusKey = normalizeKey(marketingDraft.property24Status || listingRecord?.property24Status || listingRecord?.property24_status)
+  const channelUpdateStates = useMemo(
+    () => deriveListingChannelUpdateStates(listingChannelActivity, quickListingResults, quickListingResultAction),
+    [listingChannelActivity, quickListingResults, quickListingResultAction],
+  )
   const property24Reference = String(marketingDraft.property24Reference || listingRecord?.property24Reference || listingRecord?.property24_reference || '').trim()
   const property24ExpiryDate = formatDateInputValue(marketingDraft.property24ExpiryDate)
   const property24ExpiryError = property24ExpiryDate ? getProperty24ExpiryDateError(property24ExpiryDate) : ''
@@ -9007,6 +10042,58 @@ function AgentListingDetail() {
     privatePropertyPreviewCounts.technicalBlockers > 0 ||
     privatePropertyPreviewCounts.readinessBlockers > 0
   const privatePropertyExternalStatus = normalizeKey(privatePropertyStatusCheck?.monitor?.externalStatus || privatePropertyStatusCheck?.report?.externalStatus || '')
+  const currentPublicationSnapshot = useMemo(
+    () => buildListingPublicationSnapshot(marketingDraft),
+    [marketingDraft],
+  )
+  const listingPublicationStates = useMemo(() => deriveListingPublicationStates(
+    listingChannelActivity,
+    currentPublicationSnapshot,
+    {
+      property24: {
+        live: property24Published,
+        publicUrl: marketingDraft.property24ListingUrl || listingRecord?.property24ListingUrl || listingRecord?.property24_listing_url,
+        reference: property24Reference,
+      },
+      private_property: {
+        live: ['published', 'live', 'active'].includes(privatePropertyStatusKey),
+        publicUrl: marketingDraft.privatePropertyListingUrl || listingRecord?.privatePropertyListingUrl || listingRecord?.private_property_listing_url || privatePropertyLink?.url,
+        reference: marketingDraft.privatePropertyReference || privatePropertyLink?.reference,
+      },
+      arch9_catalogue: {
+        live: arch9IsPublished,
+        publicUrl: arch9PublicListingUrl,
+        reference: listingRecord?.arch9Reference,
+      },
+      agency_website: {
+        live: agencyWebsitePublication?.status === 'published' && agencyWebsitePublication?.projectionStatus === 'Published',
+        reference: agencyWebsitePublication?.websiteSiteId,
+      },
+    },
+  ), [
+    agencyWebsitePublication,
+    arch9IsPublished,
+    arch9PublicListingUrl,
+    currentPublicationSnapshot,
+    listingChannelActivity,
+    listingRecord,
+    marketingDraft.privatePropertyListingUrl,
+    marketingDraft.privatePropertyReference,
+    marketingDraft.property24ListingUrl,
+    privatePropertyLink,
+    privatePropertyStatusKey,
+    property24Published,
+    property24Reference,
+  ])
+  const unpublishedMarketingChanges = useMemo(() => {
+    const byKey = new Map()
+    Object.values(listingPublicationStates).forEach((state) => {
+      state.changes.forEach((change) => {
+        if (!byKey.has(change.key)) byKey.set(change.key, change)
+      })
+    })
+    return [...byKey.values()]
+  }, [listingPublicationStates])
   const privatePropertyLastSyncedAt = firstDraftValue(
     getPrivatePropertyStatusCheckedAt(privatePropertyStatusCheck),
     listingRecord?.privatePropertyLastSyncedAt,
@@ -9205,50 +10292,32 @@ function AgentListingDetail() {
 
   const listingPerformance = useMemo(() => {
     const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
-    const analytics = listingRecord?.analytics || listingRecord?.listingAnalytics || {}
-    const overrides = getListingPerformanceOverrides(listingRecord)
-    const portalViews = Number(analytics?.portalViews || analytics?.property24Views || analytics?.privatePropertyViews || 0)
-    const bridgeViews = Number(analytics?.bridgeViews || analytics?.websiteViews || 0)
-    const explicitViews = Number(analytics?.totalViews || analytics?.views || 0)
-    const totalViews = explicitViews || portalViews + bridgeViews || 0
-    const priorViews = Number(analytics?.previousPeriodViews || analytics?.previous30DayViews || analytics?.priorViews || 0)
-    const viewChangePercent = priorViews ? ((totalViews - priorViews) / priorViews) * 100 : null
-    const now = Date.now()
-    const sevenDays = 1000 * 60 * 60 * 24 * 7
-    const newThisWeek = listingLeads.filter((lead) => {
-      const timestamp = new Date(lead?.createdAt || lead?.created_at || lead?.updatedAt || lead?.updated_at || 0).getTime()
-      return Number.isFinite(timestamp) && now - timestamp <= sevenDays
-    }).length
-    const qualifiedLeads = listingLeads.filter((lead) => {
+    const areaAverageDays = Number(listingRecord?.market?.areaAverageDaysOnMarket || listingRecord?.areaAverageDaysOnMarket || 0)
+    const canonicalPerformance = buildListingOverviewPerformance({
+      analytics: listingOverviewAnalytics,
+      leads: listingLeadRows,
+      viewings,
+      daysOnMarket: metrics.daysOnMarket,
+      marketStartDate: metrics.marketStartDate,
+      areaAverageDays,
+    })
+    const qualifiedLeads = listingLeadRows.filter((lead) => {
       const stage = getLeadStage(lead)
       return ['qualified', 'viewing', 'offer', 'negotiating', 'converted'].some((token) => stage.includes(token))
     }).length
-    const convertedLeads = listingLeads.filter((lead) => {
+    const convertedLeads = listingLeadRows.filter((lead) => {
       const stage = getLeadStage(lead)
       return stage.includes('converted') || stage.includes('sold') || stage.includes('transaction')
     }).length || metrics.acceptedCount
-    const scheduledViewings = viewings.filter((item) => ![VIEWING_STATUS.CANCELLED, VIEWING_STATUS.DECLINED].includes(String(item?.status || '').trim().toLowerCase())).length
-    const completedViewings = viewings.filter((item) => String(item?.status || '').trim().toLowerCase() === VIEWING_STATUS.COMPLETED).length
-    const upcomingViewings = viewings.filter((item) => [VIEWING_STATUS.CONFIRMED, VIEWING_STATUS.PENDING_APPROVAL, VIEWING_STATUS.RESCHEDULE_REQUESTED, VIEWING_STATUS.VIEWING_REQUESTED].includes(String(item?.status || '').trim().toLowerCase())).length
     const noShows = viewings.filter((item) => String(item?.status || '').trim().toLowerCase() === VIEWING_STATUS.NO_SHOW).length
     const averageOffer = metrics.offerAverage || 0
     const highestOffer = metrics.highestOffer || offerSummary.highest || 0
     const offerToAskRatio = askingPrice && averageOffer ? (averageOffer / askingPrice) * 100 : askingPrice && highestOffer ? (highestOffer / askingPrice) * 100 : 0
-    const areaAverageDays = Number(analytics?.areaAverageDaysOnMarket || listingRecord?.market?.areaAverageDaysOnMarket || listingRecord?.areaAverageDaysOnMarket || 0)
     const daysDelta = areaAverageDays ? ((areaAverageDays - metrics.daysOnMarket) / areaAverageDays) * 100 : 0
-    const basePerformance = {
-      totalViews,
-      portalViews,
-      bridgeViews,
-      priorViews,
-      viewChangePercent,
-      leadCount: metrics.leadCount,
-      newThisWeek,
+    return {
+      ...canonicalPerformance,
       qualifiedLeads,
       convertedLeads,
-      scheduledViewings,
-      completedViewings,
-      upcomingViewings,
       noShows,
       offerCount: offerRows.length,
       highestOffer,
@@ -9261,8 +10330,7 @@ function AgentListingDetail() {
       acceptedSales: metrics.acceptedCount,
       pendingOffers: metrics.pendingOffers,
     }
-    return applyListingPerformanceOverrides(basePerformance, overrides)
-  }, [listingLeads, listingRecord, marketingDraft.price, metrics, offerRows.length, offerSummary.highest, viewings])
+  }, [listingLeadRows, listingOverviewAnalytics, listingRecord, marketingDraft.price, metrics, offerRows.length, offerSummary.highest, viewings])
 
   const offerPriceOverview = useMemo(() => {
     const askingPrice = Number(marketingDraft.price || listingRecord?.askingPrice || 0) || 0
@@ -9296,7 +10364,7 @@ function AgentListingDetail() {
       return Number.isFinite(timestamp) ? timestamp : 0
     }
     const events = []
-    listingLeads.forEach((lead) => {
+    listingLeadRows.forEach((lead) => {
       events.push({
         id: `lead-${lead?.id || lead?.leadId || events.length}`,
         buyerName: lead?.name || lead?.buyerName || lead?.contactName || 'Buyer lead',
@@ -9335,7 +10403,7 @@ function AgentListingDetail() {
       .filter((event) => timestampFor(event.timestamp))
       .sort((left, right) => timestampFor(right.timestamp) - timestampFor(left.timestamp))
       .slice(0, 5)
-  }, [listingLeads, offerRows, viewings])
+  }, [listingLeadRows, offerRows, viewings])
 
   const overviewUpcomingViewings = useMemo(() => {
     const timestampFor = (viewing) => {
@@ -9386,33 +10454,71 @@ function AgentListingDetail() {
     [directListingOperationalSummary.declarations],
   )
 
-  const overviewSellerSnapshot = useMemo(() => {
-    const lastOfferShare = offerRows.find((offer) => offer?.sentToSellerAt || normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.SELLER_REVIEW)
-    const lastSellerContact = firstDraftValue(
-      lastOfferShare?.sentToSellerAt,
-      listingRecord?.sellerReport?.lastSentAt,
-      listingRecord?.sellerOnboarding?.updatedAt,
-      mandateWorkspace.signedDate,
-      listingRecord?.updatedAt,
-    )
+  const sellerFicaOverview = useMemo(() => {
     const ficaField = sellerProfile.sections
       .find((section) => section.key === 'compliance')?.rows
       .find((row) => row.key === 'ficaStatus')
-    const ficaComplete = sellerDocuments.length
-      ? sellerDocuments.every((document) => ['approved', 'complete', 'completed', 'uploaded', 'verified'].includes(normalizeKey(document.status)))
-      : isSellerProfileFilled(ficaField?.rawValue)
+    return buildSellerFicaOverview({
+      documents: sellerDocuments,
+      profileValue: ficaField?.rawValue,
+    })
+  }, [sellerDocuments, sellerProfile.sections])
+
+  const sellerPortalSecurityOverview = useMemo(() => buildSellerPortalSecurityOverview({
+    loading: sellerPortalSecurityDiagnosticsLoading,
+    portalToken: resolveSellerPortalTokenFromListing(listingRecord),
+    portalStatus: sellerPortalLifecycleStatus,
+    diagnostics: sellerPortalSecurityDiagnostics,
+  }), [listingRecord, sellerPortalLifecycleStatus, sellerPortalSecurityDiagnostics, sellerPortalSecurityDiagnosticsLoading])
+
+  const sellerEmailDeliveryOverview = useMemo(() => buildSellerEmailDeliveryOverview(
+    sellerOnboardingEmailDiagnostics,
+    { loading: sentPropertiesLoading, error: sentPropertiesError },
+  ), [sellerOnboardingEmailDiagnostics, sentPropertiesError, sentPropertiesLoading])
+
+  const overviewSellerSnapshot = useMemo(() => {
+    const lastOfferShare = offerRows.find((offer) => offer?.sentToSellerAt || normalizeOfferWorkflowStatus(offer?.status) === OFFER_WORKFLOW_STATUS.SELLER_REVIEW)
+    const onboarding = listingRecord?.sellerOnboarding || {}
+    const lastSellerContact = resolveSellerLastContact([
+      lastOfferShare?.sentToSellerAt,
+      listingRecord?.sellerReport?.lastSentAt,
+      onboarding.invitationLastSentAt,
+      onboarding.invitationSentAt,
+      onboarding.inviteCreatedAt,
+      ...sellerOnboardingEmailDiagnostics.rows.map((row) => row.sentAt || row.sent_at || row.createdAt || row.created_at),
+    ])
+    const portalToken = resolveSellerPortalTokenFromListing(listingRecord)
+    const portalActivated = ['activated', 'profile_complete', 'transaction_ready'].includes(normalizeKey(sellerPortalLifecycleStatus))
+    const mandateExpired = mandateWorkspace.isExpired
+    const sellerEmail = resolveSellerEmailFromListing(listingRecord)
+    const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
+    const attentionItems = [
+      !sellerEmail && !sellerPhone ? 'Seller contact details' : '',
+      !portalActivated ? 'Seller Portal' : '',
+      !sellerFicaOverview.complete ? 'FICA' : '',
+      !mandateWorkspace.isSigned || mandateExpired ? 'Mandate' : '',
+      sellerPortalSecurityOverview.status === 'attention' ? 'Portal security' : '',
+      sellerEmailDeliveryOverview.status === 'attention' ? 'Email delivery' : '',
+    ].filter(Boolean)
     return {
       name: resolveSellerNameFromListing(listingRecord) || sellerProfile.name || 'Seller pending',
+      email: sellerEmail,
+      phone: sellerPhone,
       portalStatus: getSellerPortalStatusLabel(sellerPortalLifecycleStatus),
       portalStatusKey: sellerPortalLifecycleStatus,
-      ficaStatus: ficaComplete ? 'Complete' : ficaField?.value && ficaField.value !== 'Not captured' ? ficaField.value : 'Outstanding',
-      ficaStatusKey: ficaComplete ? 'complete' : 'pending',
-      mandateStatus: mandateWorkspace.isSigned ? 'Signed' : mandateWorkspace.label || 'Draft',
-      mandateStatusKey: mandateWorkspace.isSigned ? 'signed' : mandateWorkspace.status,
+      portalActivated,
+      portalToken,
+      recoveryStatus: !portalToken && !portalActivated ? 'Not available' : getSellerPortalRecoveryStatusLabel(sellerPortalAccessState),
+      ficaStatus: sellerFicaOverview.label,
+      ficaStatusKey: sellerFicaOverview.status,
+      mandateStatus: mandateExpired ? 'Expired' : mandateWorkspace.isSigned ? 'Signed' : mandateWorkspace.label || 'Draft',
+      mandateStatusKey: mandateExpired ? 'expired' : mandateWorkspace.isSigned ? 'signed' : mandateWorkspace.status,
       mandateExpiry: mandateWorkspace.expiryDate ? formatDate(mandateWorkspace.expiryDate) : 'Not captured',
-      lastContact: lastSellerContact ? formatOverviewTimestamp(lastSellerContact) : 'No recent contact',
+      lastContact: lastSellerContact ? formatOverviewTimestamp(lastSellerContact) : 'No recorded seller contact',
+      attentionItems,
+      ready: attentionItems.length === 0,
     }
-  }, [listingRecord, mandateWorkspace, offerRows, sellerDocuments, sellerPortalLifecycleStatus, sellerProfile])
+  }, [listingRecord, mandateWorkspace, offerRows, sellerEmailDeliveryOverview.status, sellerFicaOverview, sellerOnboardingEmailDiagnostics.rows, sellerPortalAccessState, sellerPortalLifecycleStatus, sellerPortalSecurityOverview.status, sellerProfile.name])
 
   const overviewMarketingSnapshot = useMemo(() => {
     const portalRows = [
@@ -9425,6 +10531,7 @@ function AgentListingDetail() {
         label,
         value: normalizeKey(status) === 'not_published' && reference ? 'Linked' : formatStatusLabel(status || 'not_published'),
         status: normalizeKey(status) === 'published' || normalizeKey(status) === 'live' || normalizeKey(status) === 'active' ? 'published' : 'pending',
+        href: /^https?:\/\//i.test(String(reference || '').trim()) ? String(reference).trim() : '',
       }))
     return {
       portalRows,
@@ -9435,13 +10542,6 @@ function AgentListingDetail() {
       ].slice(0, 5),
     }
   }, [arch9PublicListingUrl, marketingDraft])
-
-  const overviewRecentActivity = useMemo(() => {
-    return [...activityItems, ...mandateActivityItems]
-      .filter((item) => item?.timestamp)
-      .sort((left, right) => new Date(right.timestamp || 0) - new Date(left.timestamp || 0))
-      .slice(0, 5)
-  }, [activityItems, mandateActivityItems])
 
   const overviewPricePosition = useMemo(() => {
     const percentageDifference = offerPriceOverview.differenceToAsking && offerPriceOverview.askingPrice
@@ -9455,6 +10555,31 @@ function AgentListingDetail() {
         : '—',
     }
   }, [offerPriceOverview])
+
+  const overviewReliability = useMemo(() => {
+    const issues = [
+      listingOverviewAnalytics.error ? 'View analytics' : '',
+      interestedLeadsError ? 'Buyer leads' : '',
+      canonicalOffersError ? 'Offers' : '',
+      sentPropertiesError ? 'Seller communications' : '',
+    ].filter(Boolean)
+    const refreshing = Boolean(
+      listingOverviewAnalytics.loading ||
+      interestedLeadsLoading ||
+      canonicalOffersLoading ||
+      sentPropertiesLoading
+    )
+    return {
+      issues,
+      refreshing,
+      label: refreshing
+        ? 'Refreshing overview'
+        : issues.length
+          ? `${issues.length} data source${issues.length === 1 ? '' : 's'} unavailable`
+          : 'Overview up to date',
+      status: refreshing ? 'pending' : issues.length ? 'attention' : 'complete',
+    }
+  }, [canonicalOffersError, canonicalOffersLoading, interestedLeadsError, interestedLeadsLoading, listingOverviewAnalytics.error, listingOverviewAnalytics.loading, sentPropertiesError, sentPropertiesLoading])
 
   const sellerPortalActivationPreview = useMemo(
     () => buildSellerPortalInvitationPreview({
@@ -9600,6 +10725,14 @@ function AgentListingDetail() {
     setDetailMessage(message)
   }
 
+  function openSellerInformationEditor() {
+    setSellerProfileBuilderDraft(createListingSellerProfileBuilderDraft(listingRecord || {}))
+    setSellerInformationEditorOpen(true)
+    setSellerContactEditorOpen(false)
+    setDetailError('')
+    setDetailMessage('')
+  }
+
   function returnToSellerDocumentSend() {
     setSellerProfileBuilderOpen(false)
     setSellerProfileBuilderReturnToDocuments(false)
@@ -9620,15 +10753,6 @@ function AgentListingDetail() {
     setSellerProfileBuilderStep((step) => Math.min(3, step + 1))
   }
 
-  useEffect(() => {
-    const facts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
-    const source = toCleanText(facts?.source || facts?.metadata?.source).toLowerCase()
-    if (!listingRecord?.id || source !== 'direct_listing_intake' || !sellerOwnershipUnidentified) return
-    if (sellerSetupPromptedListingIdRef.current === listingRecord.id) return
-    sellerSetupPromptedListingIdRef.current = listingRecord.id
-    openSellerProfileBuilder('Set up the seller when you are ready. No seller documents will be requested until these basics are saved.')
-  }, [listingRecord, sellerOwnershipUnidentified])
-
   function handleNextBestAction(action = {}) {
     const key = action?.key || ''
     if (key === 'complete_seller_facts') {
@@ -9637,14 +10761,14 @@ function AgentListingDetail() {
       return
     }
     if (key === 'review_offers') {
-      setActiveTab('offers')
+      openSellerWorkspaceSection('leads')
       return
     }
     if (key === 'open_documents') {
-      setActiveTab('documents')
+      openSellerWorkspaceSection('documents')
       return
     }
-    setActiveTab('pipeline')
+    openSellerWorkspaceSection('leads')
   }
 
   function openAgentAssistedSellerOnboarding() {
@@ -9654,6 +10778,15 @@ function AgentListingDetail() {
       return
     }
     navigate(`/seller/onboarding/${encodeURIComponent(token)}?completion_mode=agent_assisted&source=agent_workspace`)
+  }
+
+  function continueSellerOnboardingFromWorkspace() {
+    const token = String(listingRecord?.sellerOnboarding?.token || listingRecord?.sellerOnboardingToken || '').trim()
+    if (token) {
+      openAgentAssistedSellerOnboarding()
+      return
+    }
+    void handleSendSellerOnboardingFollowUp()
   }
 
   function updateSellerProfileBuilderDraft(key, value) {
@@ -9672,7 +10805,7 @@ function AgentListingDetail() {
     setSellerProfileBuilderDraft((previous) => removeListingSellerProfileDraftPerson(previous, key, index))
   }
 
-  async function handleSaveSellerProfileBuilder(event) {
+  async function handleSaveSellerProfileBuilder(event, { informationEditor = false } = {}) {
     event.preventDefault()
     if (!listingRecord?.id) return
     const validationErrors = validateListingSellerProfileBuilderDraft(sellerProfileBuilderDraft)
@@ -9682,52 +10815,14 @@ function AgentListingDetail() {
     }
 
     const now = new Date().toISOString()
-    const existingFormData = getListingSellerFormData(listingRecord)
     const requirementProjection = buildListingSellerProfileRequirementProjection(sellerProfileBuilderDraft, listingRecord, {
       draft: true,
     })
     const { formPatch, canonicalSellerFacts } = requirementProjection
-    const nextFormData = {
-      ...existingFormData,
+    const canonicalFormPatch = {
       ...formPatch,
       sellerProfileCapturedAt: now,
     }
-    const fullName = toCleanText(formPatch.fullName || formPatch.sellerName || formPatch.deceasedEstateName || formPatch.otherEntityName || resolveSellerNameFromListing(listingRecord))
-    const email = toCleanText(formPatch.email || formPatch.sellerEmail || resolveSellerEmailFromListing(listingRecord)).toLowerCase()
-    const phone = toCleanText(formPatch.phone || formPatch.sellerPhone || resolveSellerPhoneFromListing(listingRecord))
-    const currentFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
-    const sellerCanonicalFacts = Object.keys(canonicalSellerFacts || {}).length
-      ? canonicalSellerFacts
-      : {
-          ...currentFacts,
-          ...formPatch,
-        }
-    const sellerCanonicalFactReadiness = {
-      ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
-      sellerName: Boolean(fullName || formPatch.companyName || formPatch.trustName),
-      sellerEmail: Boolean(email),
-      sellerPhone: Boolean(phone),
-      idNumber: Boolean(formPatch.idNumber || formPatch.sellerIdNumber || formPatch.companyRegistrationNumber || formPatch.trustRegistrationNumber),
-      propertyAddress: Boolean(formPatch.propertyAddress || formPatch.addressLine1),
-      ownerStructureType: Boolean(formPatch.ownerStructureType),
-    }
-    const listingPatch = {
-      sellerName: fullName || formPatch.companyName || formPatch.trustName || formPatch.deceasedEstateName || formPatch.otherEntityName || listingRecord?.sellerName,
-      sellerEmail: email,
-      sellerPhone: phone,
-      sellerType: formPatch.sellerType || listingRecord?.sellerType || 'individual',
-      sellerCanonicalFacts,
-      sellerCanonicalFactReadiness,
-      sellerCanonicalFactsUpdatedAt: now,
-      propertyAddress: formPatch.propertyAddress || listingRecord?.propertyAddress,
-      addressLine1: formPatch.propertyAddress || listingRecord?.addressLine1,
-      askingPrice: formPatch.askingPrice || listingRecord?.askingPrice,
-      mandateType: formPatch.mandateType || listingRecord?.mandateType,
-      mandateStartDate: formPatch.mandateStartDate || listingRecord?.mandateStartDate,
-      expiryDate: formPatch.expiryDate || listingRecord?.expiryDate,
-    }
-    const nextOnboardingStatus = listingRecord?.sellerOnboardingStatus || listingRecord?.seller_onboarding_status || listingRecord?.sellerOnboarding?.status || 'in_progress'
-    const normalizedOnboardingStatus = nextOnboardingStatus === 'not_started' ? 'in_progress' : nextOnboardingStatus
     const projectedDocumentRequirements = requirementProjection.allRequirementRows.map((requirement) => ({
       ...requirement,
       key: requirement.key || requirement.requirement_key,
@@ -9742,66 +10837,25 @@ function AgentListingDetail() {
         required: requirement.required ?? requirement.is_required !== false,
       }))
       .filter((requirement) => requirement.key || requirement.label)
-    const applySellerProfileSnapshot = ({ syncedListing = null, syncedRequirements = null } = {}) => {
-      const remoteRequirements = normalizeDocumentRequirements(syncedRequirements)
-      const remoteListingRequirements = normalizeDocumentRequirements(syncedListing?.documentRequirements)
-      const documentRequirements = remoteRequirements.length
-        ? remoteRequirements
-        : remoteListingRequirements.length
-          ? remoteListingRequirements
-          : projectedDocumentRequirements
-      return patchListing((row) => ({
-        ...row,
-        ...listingPatch,
-      seller: {
-          ...(row?.seller || {}),
-          ...formPatch,
-          name: listingPatch.sellerName,
-          email,
-          phone,
-        },
-        sellerOnboardingStatus: normalizedOnboardingStatus,
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          status: normalizedOnboardingStatus,
-          formData: nextFormData,
-          form_data: nextFormData,
-          updatedAt: now,
-        },
-        documentRequirements,
-        requiredDocuments: documentRequirements.map((requirement) => ({
-          key: requirement.key || requirement.requirement_key,
-          label: requirement.label || requirement.requirement_name,
-          status: requirement.status || 'required',
-          fileName: requirement.fileName || requirement.file_name || '',
-        })),
-        updatedAt: now,
-      }))
-    }
-
     setSellerProfileBuilderSaving(true)
     setDetailError('')
     setDetailMessage('')
     try {
       let remoteListingMissing = false
+      let result = null
       if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
         try {
-          const remoteListing = await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
-          const onboardingResult = await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
-            status: normalizedOnboardingStatus,
-            sellerType: formPatch.sellerType || 'individual',
-            ownershipStructure: formPatch.ownershipType || formPatch.ownerStructureType,
-            maritalRegime: formPatch.maritalRegime || formPatch.maritalStatus,
+          result = await saveListingSellerCanonicalUpdate({
+            listing: listingRecord,
+            formPatch: canonicalFormPatch,
+            suppliedCanonicalFacts: canonicalSellerFacts,
+            mutationType: 'seller_profile_capture',
+            source: 'agent_listing_seller_profile_builder',
+            organisationId: listingOrganisationId,
+            remote: true,
+            requireIdentifiedSeller: true,
             syncRequirements: true,
-            requireRequirementSync: true,
             requirementSyncReason: 'listing_seller_profile_capture',
-          })
-          if (!Array.isArray(onboardingResult?.syncedRequirements) || !onboardingResult.syncedRequirements.length) {
-            throw new Error('Seller document requirements could not be refreshed. Your profile was saved, but the document list was left unchanged.')
-          }
-          applySellerProfileSnapshot({
-            syncedListing: onboardingResult?.syncedListing || remoteListing,
-            syncedRequirements: onboardingResult?.syncedRequirements,
           })
         } catch (remoteError) {
           if (!isRemoteListingMissingError(remoteError)) throw remoteError
@@ -9810,16 +10864,44 @@ function AgentListingDetail() {
         }
       }
       if (!isSupabaseConfigured || !isUuidLike(listingRecord.id) || remoteListingMissing) {
-        // Local-only and imported listings have no shared database row yet;
-        // retain the generated rows as their local persisted requirement set.
-        applySellerProfileSnapshot({ syncedRequirements: projectedDocumentRequirements })
+        result = await saveListingSellerCanonicalUpdate({
+          listing: listingRecord,
+          formPatch: canonicalFormPatch,
+          suppliedCanonicalFacts: canonicalSellerFacts,
+          mutationType: 'seller_profile_capture',
+          source: 'agent_listing_seller_profile_builder',
+          organisationId: listingOrganisationId,
+          remote: false,
+          requireIdentifiedSeller: true,
+        })
       }
+      const remoteRequirements = normalizeDocumentRequirements(result?.syncedRequirements)
+      const listingRequirements = normalizeDocumentRequirements(result?.listing?.documentRequirements)
+      const documentRequirements = remoteRequirements.length
+        ? remoteRequirements
+        : listingRequirements.length
+          ? listingRequirements
+          : projectedDocumentRequirements
+      patchListing(() => ({
+        ...result.listing,
+        documentRequirements,
+        requiredDocuments: documentRequirements.map((requirement) => ({
+          key: requirement.key || requirement.requirement_key,
+          label: requirement.label || requirement.requirement_name,
+          status: requirement.status || 'required',
+          fileName: requirement.fileName || requirement.file_name || '',
+        })),
+      }))
       const returnToDocuments = sellerProfileBuilderReturnToDocuments
       setSellerProfileBuilderOpen(false)
+      setSellerInformationEditorOpen(false)
       setSellerProfileBuilderReturnToDocuments(false)
-      setDetailMessage(remoteListingMissing
+      const crmWarning = result?.warnings?.[0]?.message
+      setDetailMessage(crmWarning || (remoteListingMissing
         ? 'Seller profile captured locally. Document requirements have been recalculated for this imported listing.'
-        : 'Seller profile captured. Document requirements have been recalculated from the saved seller model.')
+        : informationEditor
+          ? 'Seller information updated. The saved ownership model and document requirements are now in sync.'
+          : 'Seller profile captured. Document requirements have been recalculated from the saved seller model.'))
       if (returnToDocuments) {
         setSellerDocumentSendStep(1)
         setSellerDocumentSendOpen(true)
@@ -9840,6 +10922,10 @@ function AgentListingDetail() {
     void handleSaveSellerProfileBuilder(event)
   }
 
+  function handleSellerInformationEditorSubmit(event) {
+    void handleSaveSellerProfileBuilder(event, { informationEditor: true })
+  }
+
   async function handleSaveSellerContact(event) {
     event.preventDefault()
     if (!listingRecord?.id) return
@@ -9853,33 +10939,13 @@ function AgentListingDetail() {
     }
 
     const fullName = [firstName, lastName].filter(Boolean).join(' ')
-    const now = new Date().toISOString()
-    const currentFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
-    const sellerCanonicalFacts = {
-      ...currentFacts,
-      firstName,
-      lastName,
-      sellerName: fullName,
-      name: fullName,
-      fullName,
-      email,
-      sellerEmail: email,
-      phone,
-      sellerPhone: phone,
-      mobile: phone,
-    }
-    const sellerCanonicalFactReadiness = {
-      ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
-      sellerName: Boolean(fullName),
-      sellerEmail: Boolean(email),
-      sellerPhone: Boolean(phone),
-    }
 
     setSellerContactSaving(true)
     setDetailError('')
     setDetailMessage('')
     try {
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
+      const remote = isSupabaseConfigured && isUuidLike(listingRecord.id)
+      if (remote) {
         const sellerOnboardingIntegrity = assessSellerOnboardingIntegrity({
           organisationId: listingOrganisationId,
           listing: listingRecord,
@@ -9887,12 +10953,10 @@ function AgentListingDetail() {
         if (!sellerOnboardingIntegrity.ok) {
           throw new Error(sellerOnboardingIntegrity.message)
         }
-        await updatePrivateListing(listingRecord.id, {
-          sellerCanonicalFacts,
-          sellerCanonicalFactReadiness,
-          sellerCanonicalFactsUpdatedAt: now,
-        }, { includeRequirementsAndDocuments: false })
-        await updatePrivateListingOnboardingFormData(listingRecord.id, {
+      }
+      const result = await saveListingSellerCanonicalUpdate({
+        listing: listingRecord,
+        formPatch: {
           sellerFirstName: firstName,
           firstName,
           sellerSurname: lastName,
@@ -9903,61 +10967,16 @@ function AgentListingDetail() {
           email,
           sellerPhone: phone,
           phone,
-        }, {
-          status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started',
-          sellerType: listingRecord?.sellerType || 'individual',
-          syncRequirements: false,
-        })
-
-        const sellerLeadId = toCleanText(listingRecord?.sellerLeadId || listingRecord?.originatingCrmLeadId)
-        if (listingOrganisationId && sellerLeadId) {
-          const workspace = await fetchAgencyCrmLeadWorkspace(listingOrganisationId, sellerLeadId)
-          const contact = workspace?.contacts?.[0]
-          if (contact?.contactId) {
-            await updateAgencyCrmContactRecord(listingOrganisationId, contact.contactId, {
-              firstName,
-              lastName,
-              email,
-              phone,
-              contactType: 'Seller',
-            })
-          }
-        }
-      }
-
-      patchListing((row) => ({
-        ...row,
-        sellerName: fullName,
-        sellerEmail: email,
-        sellerPhone: phone,
-        sellerCanonicalFacts,
-        sellerCanonicalFactReadiness,
-        seller: {
-          ...(row?.seller || {}),
-          name: fullName,
-          email,
-          phone,
         },
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          formData: {
-            ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object') ? row.sellerOnboarding.formData : {}),
-            sellerFirstName: firstName,
-            firstName,
-            sellerSurname: lastName,
-            lastName,
-            sellerName: fullName,
-            fullName,
-            sellerEmail: email,
-            email,
-            sellerPhone: phone,
-            phone,
-          },
-        },
-        updatedAt: now,
-      }))
+        mutationType: 'seller_contact_edit',
+        source: 'agent_listing_seller_contact_editor',
+        organisationId: listingOrganisationId,
+        remote,
+        syncRequirements: false,
+      })
+      patchListing(() => result.listing)
       setSellerContactEditorOpen(false)
-      setDetailMessage('Seller contact saved. You can now send the seller onboarding link.')
+      setDetailMessage(result.warnings?.[0]?.message || 'Seller contact saved. You can now send the seller onboarding link.')
     } catch (error) {
       setDetailError(error?.message || 'Unable to save seller contact details.')
     } finally {
@@ -10080,9 +11099,48 @@ function AgentListingDetail() {
       return
     }
 
-    const now = new Date().toISOString()
     const existingFormData = getListingSellerFormData(listingRecord)
     const nextFormData = { ...existingFormData, ...formPatch }
+    let nextCommissionDraft = null
+    const existingMandateRevisions = Array.isArray(existingFormData.mandateTermsRevisions)
+      ? existingFormData.mandateTermsRevisions
+      : Array.isArray(existingFormData.mandate_terms_revisions)
+        ? existingFormData.mandate_terms_revisions
+        : []
+    const currentMandateTerms = {
+      mandateType: listingRecord?.mandateType || listingRecord?.mandate?.type || existingFormData.mandateType,
+      askingPrice: listingRecord?.askingPrice || existingFormData.askingPrice,
+      mandateStartDate: listingRecord?.mandateStartDate || existingFormData.mandateStartDate,
+      expiryDate: listingRecord?.expiryDate || listingRecord?.mandateEndDate || existingFormData.expiryDate,
+      commissionBasis: commissionWorkspace.basis,
+      commissionPercentage: commissionWorkspace.percentage,
+      commissionAmount: commissionWorkspace.amount,
+      vatHandling: commissionWorkspace.vatHandling === 'Not captured' ? '' : commissionWorkspace.vatHandling,
+      mandateTerms: commissionWorkspace.mandateTerms,
+      specialConditions: existingFormData.specialConditions || existingFormData.special_conditions,
+      sellerNotes: existingFormData.sellerNotes || existingFormData.seller_notes || existingFormData.notes,
+    }
+    const recordMandateRevision = () => {
+      const mandateRevision = createListingMandateTermsRevision({
+        previous: currentMandateTerms,
+        next: { ...currentMandateTerms, ...nextFormData },
+        revisions: existingMandateRevisions,
+        actor: String(profile?.id || profile?.email || 'agent').trim(),
+        recordedAt: new Date().toISOString(),
+      })
+      if (!mandateRevision.changed) return
+      const nextRevisions = [...existingMandateRevisions, mandateRevision].slice(-20)
+      Object.assign(nextFormData, {
+        mandateTermsRevision: mandateRevision,
+        mandate_terms_revision: mandateRevision,
+        mandateTermsRevisions: nextRevisions,
+        mandate_terms_revisions: nextRevisions,
+        mandateDocumentRefreshRequired: true,
+        mandate_document_refresh_required: true,
+        mandateAmendmentRequired: Boolean(mandateWorkspace?.isSigned || mandateWorkspace?.signedDate),
+        mandate_amendment_required: Boolean(mandateWorkspace?.isSigned || mandateWorkspace?.signedDate),
+      })
+    }
     // The Seller > Mandate editor and the Commission workspace are two views
     // of the same structured commercial terms.
     if (sellerSectionEditorKey === 'mandate_details') {
@@ -10096,77 +11154,29 @@ function AgentListingDetail() {
         vatHandling: toCleanText(formPatch.vatHandling),
         mandateTerms: toCleanText(formPatch.mandateTerms), mandateCommissionTerms: toCleanText(formPatch.mandateTerms),
       })
-      setCommissionDraft((previous) => ({ ...previous, basis, percentage, amount, vatHandling: toCleanText(formPatch.vatHandling), mandateTerms: toCleanText(formPatch.mandateTerms) }))
+      recordMandateRevision()
+      nextCommissionDraft = { basis, percentage, amount, vatHandling: toCleanText(formPatch.vatHandling), mandateTerms: toCleanText(formPatch.mandateTerms) }
     }
-    const fullName = toCleanText(nextFormData.fullName || nextFormData.sellerName || resolveSellerNameFromListing(listingRecord))
-    const email = toCleanText(nextFormData.email || nextFormData.sellerEmail || resolveSellerEmailFromListing(listingRecord)).toLowerCase()
-    const phone = toCleanText(nextFormData.phone || nextFormData.sellerPhone || resolveSellerPhoneFromListing(listingRecord))
-    const currentFacts = listingRecord?.sellerCanonicalFacts || listingRecord?.seller_canonical_facts_json || {}
-    const sellerCanonicalFacts = {
-      ...currentFacts,
-      ...nextFormData,
-      sellerName: fullName,
-      fullName,
-      name: fullName,
-      email,
-      sellerEmail: email,
-      phone,
-      sellerPhone: phone,
-      mobile: phone,
-    }
-    const sellerCanonicalFactReadiness = {
-      ...(listingRecord?.sellerCanonicalFactReadiness || listingRecord?.seller_canonical_fact_readiness_json || {}),
-      sellerName: Boolean(fullName),
-      sellerEmail: Boolean(email),
-      sellerPhone: Boolean(phone),
-      idNumber: Boolean(nextFormData.idNumber || nextFormData.sellerIdNumber),
-      propertyAddress: Boolean(nextFormData.propertyAddress || nextFormData.addressLine1),
-    }
-    const listingPatch = {
-      sellerName: fullName,
-      sellerEmail: email,
-      sellerPhone: phone,
-      sellerType: nextFormData.sellerType || listingRecord?.sellerType || 'individual',
-      sellerCanonicalFacts,
-      sellerCanonicalFactReadiness,
-      sellerCanonicalFactsUpdatedAt: now,
-      propertyAddress: nextFormData.propertyAddress || listingRecord?.propertyAddress,
-      addressLine1: nextFormData.propertyAddress || listingRecord?.addressLine1,
-      askingPrice: nextFormData.askingPrice || listingRecord?.askingPrice,
-      mandateType: nextFormData.mandateType || listingRecord?.mandateType,
-      mandateStartDate: nextFormData.mandateStartDate || listingRecord?.mandateStartDate,
-      expiryDate: nextFormData.expiryDate || listingRecord?.expiryDate,
-      mandateEndDate: nextFormData.expiryDate || listingRecord?.mandateEndDate,
-    }
-
+    if (sellerSectionEditorKey === 'notes') recordMandateRevision()
     setSellerSectionSaving(true)
     setDetailError('')
     setDetailMessage('')
     try {
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        await updatePrivateListing(listingRecord.id, listingPatch, { includeRequirementsAndDocuments: false })
-        await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
-          status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started',
-          sellerType: nextFormData.sellerType || listingRecord?.sellerType || 'individual',
-          ownershipStructure: nextFormData.ownerStructureType || nextFormData.ownershipType,
-          maritalRegime: nextFormData.maritalRegime || nextFormData.maritalStatus,
-          syncRequirements: true,
-          requirementSyncReason: 'agent_seller_profile_edit',
-        })
-      }
+      const result = await saveListingSellerCanonicalUpdate({
+        listing: listingRecord,
+        formPatch: nextFormData,
+        mutationType: sellerSectionEditorKey === 'mandate_details' ? 'seller_mandate_edit' : `seller_${sellerSectionEditorKey}_edit`,
+        source: 'agent_listing_seller_section_editor',
+        organisationId: listingOrganisationId,
+        remote: isSupabaseConfigured && isUuidLike(listingRecord.id),
+        syncRequirements: true,
+        requirementSyncReason: 'agent_seller_profile_edit',
+      })
 
-      patchListing((row) => ({
-        ...row,
-        ...listingPatch,
-        seller: {
-          ...(row?.seller || {}),
-          ...formPatch,
-          name: fullName,
-          email,
-          phone,
-        },
+      patchListing(() => ({
+        ...result.listing,
         commission: sellerSectionEditorKey === 'mandate_details' ? {
-          ...(row?.commission || {}),
+          ...(result.listing?.commission || {}),
           basis: nextFormData.commissionBasis,
           commission_basis: nextFormData.commissionBasis,
           percentage: Number(nextFormData.commissionPercentage || 0) || 0,
@@ -10177,22 +11187,16 @@ function AgentListingDetail() {
           vat_handling: nextFormData.vatHandling || '',
           mandateTerms: nextFormData.mandateTerms || '',
           mandate_terms: nextFormData.mandateTerms || '',
-        } : row?.commission,
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          formData: nextFormData,
-          updatedAt: now,
-        },
-        updatedAt: now,
+        } : result.listing?.commission,
       }))
+      if (nextCommissionDraft) {
+        setCommissionDraft((previous) => ({ ...previous, ...nextCommissionDraft }))
+      }
       const returnToDocuments = sellerSectionReturnToDocuments
       setSellerSectionEditorKey('')
       setSellerSectionDraft({})
       setSellerSectionReturnToDocuments(false)
-      setDetailMessage(`${SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey)?.title || 'Seller details'} saved.`)
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        await loadListingData()
-      }
+      setDetailMessage(result.warnings?.[0]?.message || `${SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey)?.title || 'Seller details'} saved.`)
       if (returnToDocuments) {
         setSellerDocumentSendStep(1)
         setSellerDocumentSendOpen(true)
@@ -10213,8 +11217,12 @@ function AgentListingDetail() {
       return
     }
 
-    const uploadKey = doc.key || doc.id || doc.label || file.name
+    const uploadKey = getSellerDocumentUploadKey(doc) || file.name
     setSellerDocumentUploadKey(uploadKey)
+    setSellerDocumentUploadProgress((current) => ({
+      ...current,
+      [uploadKey]: { status: 'uploading', fileName: file.name || 'Document', error: '' },
+    }))
     setDetailError('')
     setDetailMessage('')
     try {
@@ -10245,9 +11253,28 @@ function AgentListingDetail() {
           },
         ],
       }))
-      setDetailMessage(`${file.name || 'Document'} uploaded to the seller document centre.`)
+      setSellerDocumentUploadProgress((current) => ({
+        ...current,
+        [uploadKey]: {
+          status: 'complete',
+          fileName: file.name || 'Document',
+          error: '',
+          warning: uploadedDocument?.persistence?.warnings?.join(' ') || '',
+        },
+      }))
+      const persistenceWarnings = Array.isArray(uploadedDocument?.persistence?.warnings)
+        ? uploadedDocument.persistence.warnings.filter(Boolean)
+        : []
+      setDetailMessage(persistenceWarnings.length
+        ? `${file.name || 'Document'} was uploaded and saved. ${persistenceWarnings.join(' ')}`
+        : `${file.name || 'Document'} uploaded and verified in the seller document centre.`)
       await loadListingData()
+      await loadSellerDocumentDeliveries()
     } catch (error) {
+      setSellerDocumentUploadProgress((current) => ({
+        ...current,
+        [uploadKey]: { status: 'error', fileName: file.name || 'Document', error: error?.message || 'Upload failed.' },
+      }))
       setDetailError(error?.message || 'Unable to upload seller document.')
     } finally {
       setSellerDocumentUploadKey('')
@@ -10392,75 +11419,6 @@ function AgentListingDetail() {
     }
   }
 
-  function openListingPerformanceEditor() {
-    const draft = LISTING_PERFORMANCE_OVERRIDE_FIELDS.reduce((accumulator, field) => {
-      accumulator[field.key] = listingPerformance[field.key] === undefined || listingPerformance[field.key] === null
-        ? ''
-        : String(listingPerformance[field.key])
-      return accumulator
-    }, {})
-    setListingPerformanceDraft(draft)
-    setListingPerformanceEditorOpen(true)
-    setDetailError('')
-    setDetailMessage('')
-  }
-
-  function updateListingPerformanceDraft(key, value) {
-    setListingPerformanceDraft((previous) => ({ ...previous, [key]: value }))
-  }
-
-  async function handleSaveListingPerformance(event) {
-    event.preventDefault()
-    if (!listingRecord?.id) return
-    const overrides = normalizeListingPerformanceOverrides(listingPerformanceDraft)
-    const now = new Date().toISOString()
-    const existingFormData = getListingSellerFormData(listingRecord)
-    const nextFormData = {
-      ...existingFormData,
-      listingPerformanceOverrides: overrides,
-      listingPerformance: overrides,
-      listingPerformanceUpdatedAt: now,
-    }
-
-    setListingPerformanceSaving(true)
-    setDetailError('')
-    setDetailMessage('')
-    try {
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        await updatePrivateListingOnboardingFormData(listingRecord.id, nextFormData, {
-          status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'not_started',
-          sellerType: nextFormData.sellerType || listingRecord?.sellerType || 'individual',
-          syncRequirements: false,
-        })
-      }
-
-      patchListing((row) => ({
-        ...row,
-        listingPerformanceOverrides: overrides,
-        listingPerformance: overrides,
-        sellerOnboarding: {
-          ...(row?.sellerOnboarding || {}),
-          formData: {
-            ...(row?.sellerOnboarding?.formData || {}),
-            ...nextFormData,
-          },
-          updatedAt: now,
-        },
-        updatedAt: now,
-      }))
-      setListingPerformanceEditorOpen(false)
-      setListingPerformanceDraft({})
-      setDetailMessage('Listing performance stats saved for the seller portal.')
-      if (isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        await loadListingData()
-      }
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to save listing performance stats.')
-    } finally {
-      setListingPerformanceSaving(false)
-    }
-  }
-
   function handleDownloadSellerProfilePdf() {
     const agencyName = String(profile?.organisationName || profile?.companyName || profile?.agencyName || 'Arch9').trim()
     const summary = [
@@ -10483,7 +11441,7 @@ function AgentListingDetail() {
   }
 
   function updateMarketingDraft(key, value) {
-    marketingDraftDirtyRef.current = true
+    markMarketingDraftDirty()
     setMarketingDraft((previous) => {
       if (key !== 'description') {
         const invalidatesProperty24Location = ['addressLine1', 'formattedAddress', 'streetAddress', 'suburb', 'city', 'province', 'country', 'postalCode'].includes(key) &&
@@ -10611,12 +11569,14 @@ function AgentListingDetail() {
       updatedAt: now,
     }))
     try {
+      let savedFormData = localListing?.sellerOnboarding?.formData || formPatch
       if (isSupabaseConfigured && localListing?.id) {
         const savedOnboarding = await updatePrivateListingOnboardingFormData(localListing.id, {
           ...((localListing?.sellerOnboarding?.formData && typeof localListing.sellerOnboarding.formData === 'object') ? localListing.sellerOnboarding.formData : {}),
           ...formPatch,
         })
         if (savedOnboarding?.form_data) {
+          savedFormData = savedOnboarding.form_data
           setPrivateListings((rows) => upsertListingRecord(rows, {
             ...localListing,
             sellerOnboarding: {
@@ -10632,7 +11592,7 @@ function AgentListingDetail() {
           ? 'Commercial terms saved. The signed mandate is unchanged; prepare an amendment for seller signature.'
           : 'Commercial terms saved. Refresh the mandate draft before it is signed.'
         : 'Commission details saved and synced across the seller profile.')
-      return true
+      return { formData: savedFormData, revision }
     } catch (error) {
       setDetailError(error?.message || 'Commission details saved locally, but Supabase could not be updated.')
       return false
@@ -10641,8 +11601,111 @@ function AgentListingDetail() {
     }
   }
 
-  function updateViewingForm(key, value) {
-    setViewingForm((previous) => ({ ...previous, [key]: value }))
+  function updateBuyerLeadDraft(key, value) {
+    setBuyerLeadDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function updateViewingRequestDraft(key, value) {
+    setViewingRequestDraft((previous) => ({ ...previous, [key]: value }))
+  }
+
+  function splitBuyerName(value = '') {
+    const parts = String(value || '').trim().split(/\s+/).filter(Boolean)
+    return {
+      firstName: parts.shift() || '',
+      lastName: parts.join(' '),
+    }
+  }
+
+  function openBuyerLeadModal() {
+    setBuyerLeadDraft(createListingBuyerLeadDraft())
+    setBuyerLeadFeedback({ kind: '', message: '' })
+    setDetailError('')
+    setBuyerLeadModalOpen(true)
+  }
+
+  function closeBuyerLeadModal() {
+    if (buyerLeadSaving) return
+    setBuyerLeadModalOpen(false)
+    setBuyerLeadFeedback({ kind: '', message: '' })
+  }
+
+  function openViewingRequestModal(lead = null) {
+    const selectedLead = lead && typeof lead === 'object' ? lead : null
+    const name = splitBuyerName(selectedLead?.name)
+    setViewingRequestDraft(createListingViewingDraft({
+      buyerLeadId: selectedLead?.leadId || selectedLead?.id || '',
+      firstName: selectedLead?.firstName || selectedLead?.first_name || name.firstName,
+      lastName: selectedLead?.lastName || selectedLead?.last_name || name.lastName,
+      phone: selectedLead?.phone || '',
+      email: selectedLead?.email || '',
+      sendToSeller: Boolean(sellerViewingContact.email),
+    }))
+    setViewingRequestFeedback({ kind: '', message: '' })
+    setDetailError('')
+    setViewingRequestModalOpen(true)
+  }
+
+  function closeViewingRequestModal() {
+    if (viewingRequestSaving) return
+    setViewingRequestModalOpen(false)
+    setViewingRequestFeedback({ kind: '', message: '' })
+  }
+
+  function selectViewingBuyerLead(leadId) {
+    const lead = listingLeadRows.find((row) => String(row?.leadId || row?.id || '') === String(leadId || ''))
+    if (!lead) {
+      setViewingRequestDraft((previous) => createListingViewingDraft({
+        proposedDate: previous.proposedDate,
+        proposedTime: previous.proposedTime,
+        notes: previous.notes,
+        sendToSeller: previous.sendToSeller,
+      }))
+      return
+    }
+    const name = splitBuyerName(lead.name)
+    setViewingRequestDraft((previous) => ({
+      ...previous,
+      buyerLeadId: lead.leadId || lead.id || '',
+      firstName: lead.firstName || lead.first_name || name.firstName,
+      lastName: lead.lastName || lead.last_name || name.lastName,
+      phone: lead.phone || '',
+      email: lead.email || '',
+      sendToBuyer: Boolean(lead.email),
+    }))
+  }
+
+  async function refreshListingBuyerData() {
+    await Promise.all([
+      refreshInterestedLeads(),
+      refreshListingViewings(),
+      refreshListingPipelineLeads(),
+    ])
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('itg:agency-crm-updated'))
+  }
+
+  async function submitBuyerLead(form = buyerLeadDraft) {
+    if (buyerLeadSaving) return
+    const buyer = { ...buyerLeadDraft, ...form }
+    setBuyerLeadSaving(true)
+    setBuyerLeadFeedback({ kind: '', message: '' })
+    setDetailError('')
+    try {
+      const result = await createListingBuyerLead({
+        organisationId: listingOrganisationId,
+        listing: listingRecord,
+        buyer,
+        actor: listingActor,
+      })
+      await refreshListingBuyerData()
+      setBuyerLeadModalOpen(false)
+      setBuyerLeadDraft(createListingBuyerLeadDraft())
+      setDetailMessage(`Buyer lead ${[buyer.firstName, buyer.lastName].filter(Boolean).join(' ')} created and linked to this listing.${result.warning ? ` ${result.warning}` : ''}`)
+    } catch (error) {
+      setBuyerLeadFeedback({ kind: 'error', message: error?.message || 'Unable to create the buyer lead.' })
+    } finally {
+      setBuyerLeadSaving(false)
+    }
   }
 
   function openShowDayCaptureModal() {
@@ -10767,123 +11830,92 @@ function AgentListingDetail() {
 
   async function submitViewingRequest(event) {
     event.preventDefault()
-    if (!listingRecord || !viewingForm.buyerLeadId || !viewingForm.proposedDate || !viewingForm.proposedTime) return
-    const lead = listingLeads.find((item) => String(item?.id || '') === String(viewingForm.buyerLeadId))
-    const fallbackViewingPayload = {
-      listingId: listingRecord.id,
-      listingType: 'private_listing',
-      listingTitle: listingRecord.listingTitle,
-      buyerLeadId: lead?.id || '',
-      buyerName: lead?.name || 'Buyer',
-      createdBy: 'agent',
-      createdByRole: 'agent',
-      proposedDate: viewingForm.proposedDate,
-      proposedTime: viewingForm.proposedTime,
-      alternativeTimes: [viewingForm.alternativeTimeA, viewingForm.alternativeTimeB].filter(Boolean),
-      notes: viewingForm.notes.trim(),
-      location: [listingRecord.listingTitle, listingRecord.suburb, listingRecord.city].filter(Boolean).join(', '),
-      agentName: 'Agent',
-      sellerName: listingRecord?.seller?.name || 'Seller',
+    if (viewingRequestSaving) return
+    const existingLead = listingLeadRows.find((lead) => String(lead?.leadId || lead?.id || '') === String(viewingRequestDraft.buyerLeadId || '')) ||
+      pipelineLeads.find((lead) => {
+        const sameEmail = viewingRequestDraft.email && String(lead?.email || '').trim().toLowerCase() === String(viewingRequestDraft.email).trim().toLowerCase()
+        const samePhone = viewingRequestDraft.phone && String(lead?.phone || '').replace(/\D/g, '') === String(viewingRequestDraft.phone).replace(/\D/g, '')
+        return sameEmail || samePhone
+      }) || null
+    setViewingRequestSaving(true)
+    setViewingRequestFeedback({ kind: '', message: '' })
+    setDetailError('')
+    try {
+      const result = await createListingViewingRequest({
+        organisationId: listingOrganisationId,
+        listing: listingRecord,
+        buyer: viewingRequestDraft,
+        seller: sellerViewingContact,
+        existingLead,
+        actor: listingActor,
+      })
+      await refreshListingBuyerData()
+      setViewingRequestModalOpen(false)
+      setViewingRequestDraft(createListingViewingDraft())
+      const recipients = [viewingRequestDraft.sendToBuyer ? 'buyer' : '', viewingRequestDraft.sendToSeller ? 'seller' : ''].filter(Boolean).join(' and ')
+      setDetailMessage(`Viewing request created and sent to the ${recipients}.${result.warning ? ` ${result.warning}` : ''}`)
+    } catch (error) {
+      console.warn('[AgentListingDetail] canonical viewing request failed', error)
+      setViewingRequestFeedback({ kind: 'error', message: error?.message || 'Unable to create the viewing request.' })
+    } finally {
+      setViewingRequestSaving(false)
     }
-    let createdInAppointments = false
-    if (listingOrganisationId && isSupabaseConfigured) {
-      try {
-        const participantSeed = []
-        const buyerEmail = String(lead?.email || lead?.buyerEmail || '').trim().toLowerCase()
-        if (buyerEmail) {
-          participantSeed.push({
-            name: lead?.name || buyerEmail,
-            email: buyerEmail,
-            phone: lead?.phone || '',
-            participantRole: 'Buyer',
-            isRequired: true,
-            rsvpStatus: 'Pending',
-          })
-        }
-        const sellerEmail = String(listingRecord?.seller?.email || '').trim().toLowerCase()
-        if (sellerEmail) {
-          participantSeed.push({
-            name: listingRecord?.seller?.name || sellerEmail,
-            email: sellerEmail,
-            phone: listingRecord?.seller?.phone || '',
-            participantRole: 'Seller',
-            isRequired: false,
-            rsvpStatus: 'Pending',
-          })
-        }
-        const currentAgent = {
-          id: String(profile?.id || '').trim(),
-          name: String(profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || profile?.email || 'Agent').trim(),
-          email: String(profile?.email || '').trim().toLowerCase(),
-        }
-        await createAppointmentAsync(
-          listingOrganisationId,
-          {
-            appointmentType: 'viewing',
-            title: `Viewing: ${listingRecord.listingTitle || 'Listing'}`,
-            date: viewingForm.proposedDate,
-            startTime: viewingForm.proposedTime,
-            timezone: 'Africa/Johannesburg',
-            locationType: 'physical_address',
-            location: fallbackViewingPayload.location,
-            status: 'requested',
-            leadId: lead?.leadId || lead?.id || null,
-            contactId: lead?.contactId || null,
-            listingId: listingRecord.id,
-            relatedEntityType: lead?.leadId || lead?.id ? 'lead' : 'listing',
-            relatedEntityId: lead?.leadId || lead?.id || null,
-            notes: viewingForm.notes.trim(),
-            participants: participantSeed,
-            assignedAgent: currentAgent,
-            sendInviteEmails: participantSeed.some((participant) => participant.email),
-            attachCalendarInvite: true,
-          },
-          {
-            actor: currentAgent,
-          },
-        )
-        createdInAppointments = true
-      } catch (error) {
-        console.warn('[AgentListingDetail] appointment module viewing create failed', error)
-        setDetailError(error?.message || 'Viewing could not be created in the canonical appointment system.')
-      }
-    }
-    if (!createdInAppointments) {
-      setDetailError('Viewing scheduling now requires the canonical appointment system. Please try again when the workspace database is available.')
-      return
-    }
-    setViewingForm({
-      buyerLeadId: '',
-      proposedDate: '',
-      proposedTime: '',
-      alternativeTimeA: '',
-      alternativeTimeB: '',
-      notes: '',
-    })
-    setShowViewingForm(false)
-    await refreshListingViewings()
   }
 
-  function saveFeedback(viewingId) {
+  async function completeListingViewing(viewingId) {
+    if (!listingOrganisationId || !viewingId) return
+    try {
+      await addAppointmentOutcomeAsync(listingOrganisationId, viewingId, {
+        status: 'completed',
+        outcomeSummary: 'Viewing completed from the listing workspace.',
+      }, { actor: listingActor })
+      await refreshListingViewings()
+      setDetailMessage('Viewing marked completed.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to complete this viewing.')
+    }
+  }
+
+  async function saveFeedback(viewingId) {
     const draft = feedbackDrafts[viewingId]
     if (!draft?.interestLevel) return
-    saveViewingFeedback(viewingId, draft)
-    setFeedbackDrafts((previous) => {
-      const next = { ...previous }
-      delete next[viewingId]
-      return next
-    })
+    try {
+      await addAppointmentOutcomeAsync(listingOrganisationId, viewingId, {
+        status: 'completed',
+        outcomeSummary: draft.interestLevel,
+        clientFeedback: draft.feedbackNotes,
+        agentNotes: draft.feedbackNotes,
+        nextStep: draft.nextAction,
+      }, { actor: listingActor })
+      setFeedbackDrafts((previous) => {
+        const next = { ...previous }
+        delete next[viewingId]
+        return next
+      })
+      await refreshListingViewings()
+      setDetailMessage('Viewing feedback saved.')
+    } catch (error) {
+      setDetailError(error?.message || 'Unable to save viewing feedback.')
+    }
   }
 
   function toggleFeature(feature) {
-    marketingDraftDirtyRef.current = true
+    markMarketingDraftDirty()
     setMarketingDraft((previous) => {
       const exists = previous.selectedFeatures.includes(feature)
+      const definition = resolveListingFeature(feature)
+      const featureFacts = definition
+        ? setListingFeatureFact(normalizeListingFeatureFacts(previous.featureFacts, [...previous.selectedFeatures, ...previous.amenities]), definition.key, !exists)
+        : previous.featureFacts
       const nextDraft = {
         ...previous,
-        selectedFeatures: exists
-          ? previous.selectedFeatures.filter((item) => item !== feature)
-          : [...previous.selectedFeatures, feature],
+        featureFacts,
+        selectedFeatures: definition
+          ? mergeListingFeatureSelections(previous.selectedFeatures, featureFacts, { format: 'label' })
+          : exists ? previous.selectedFeatures.filter((item) => item !== feature) : [...previous.selectedFeatures, feature],
+        amenities: exists && definition
+          ? (previous.amenities || []).filter((item) => resolveListingFeature(item)?.key !== definition.key)
+          : previous.amenities,
       }
       writeStoredMarketingDraft(listingId, nextDraft)
       return nextDraft
@@ -10891,12 +11923,20 @@ function AgentListingDetail() {
   }
 
   function toggleAmenity(amenity) {
-    marketingDraftDirtyRef.current = true
+    markMarketingDraftDirty()
     setMarketingDraft((previous) => {
       const current = Array.isArray(previous.amenities) ? previous.amenities : []
       const exists = current.includes(amenity)
+      const definition = resolveListingFeature(amenity)
+      const featureFacts = definition
+        ? setListingFeatureFact(normalizeListingFeatureFacts(previous.featureFacts, [...previous.selectedFeatures, ...current]), definition.key, !exists)
+        : previous.featureFacts
       const nextDraft = {
         ...previous,
+        featureFacts,
+        selectedFeatures: definition
+          ? mergeListingFeatureSelections(previous.selectedFeatures, featureFacts, { format: 'label' })
+          : previous.selectedFeatures,
         amenities: exists
           ? current.filter((item) => item !== amenity)
           : [...current, amenity],
@@ -10906,10 +11946,22 @@ function AgentListingDetail() {
     })
   }
 
+  function updateListingFeatureFact(key, value) {
+    markMarketingDraftDirty()
+    setMarketingDraft((previous) => {
+      const featureFacts = setListingFeatureFact(normalizeListingFeatureFacts(previous.featureFacts, [...previous.selectedFeatures, ...previous.amenities]), key, value)
+      const selectedFeatures = mergeListingFeatureSelections(previous.selectedFeatures, featureFacts, { format: 'label' })
+      const amenities = (Array.isArray(previous.amenities) ? previous.amenities : []).filter((item) => resolveListingFeature(item)?.key !== key || featureFacts[key] === true)
+      const nextDraft = { ...previous, featureFacts, selectedFeatures, amenities }
+      writeStoredMarketingDraft(listingId, nextDraft)
+      return nextDraft
+    })
+  }
+
   async function applyMarketingDraftAndPersist(updater, { message = '', showSaving = false } = {}) {
     const nextDraft = typeof updater === 'function' ? updater(marketingDraft) : updater
     if (!nextDraft) return null
-    marketingDraftDirtyRef.current = true
+    markMarketingDraftDirty()
     writeStoredMarketingDraft(listingId, nextDraft)
     if (showSaving) setGallerySaving(true)
     setDetailMessage('')
@@ -10966,7 +12018,7 @@ function AgentListingDetail() {
         galleryImages: [...marketingDraft.galleryImages, ...uploads],
         coverImageId: marketingDraft.coverImageId || uploads[0]?.id || '',
       }
-      marketingDraftDirtyRef.current = true
+      markMarketingDraftDirty()
       writeStoredMarketingDraft(listingId, nextDraft)
       setMarketingDraft(nextDraft)
       await persistListingSnapshot(nextDraft, {
@@ -11031,7 +12083,7 @@ function AgentListingDetail() {
       const uploads = await Promise.all(files.map((file, index) => buildUploadedAsset(file, 'floorplans', index)))
       const hadFallback = uploads.some((asset) => asset.uploadWarning)
       const nextDraft = { ...marketingDraft, floorplans: [...marketingDraft.floorplans, ...uploads] }
-      marketingDraftDirtyRef.current = true
+      markMarketingDraftDirty()
       writeStoredMarketingDraft(listingId, nextDraft)
       setMarketingDraft(nextDraft)
       await persistListingSnapshot(nextDraft, {
@@ -11047,7 +12099,7 @@ function AgentListingDetail() {
   }
 
   function updateFloorplanLabel(id, label) {
-    marketingDraftDirtyRef.current = true
+    markMarketingDraftDirty()
     setMarketingDraft((previous) => {
       const nextDraft = {
         ...previous,
@@ -11059,7 +12111,7 @@ function AgentListingDetail() {
   }
 
   function removeFloorplan(id) {
-    marketingDraftDirtyRef.current = true
+    markMarketingDraftDirty()
     setMarketingDraft((previous) => {
       const nextDraft = {
         ...previous,
@@ -11137,6 +12189,12 @@ function AgentListingDetail() {
             <InfoTile icon={Link2} label="Property24 reference" value={property24Reference || 'Not assigned'} />
             <InfoTile icon={RefreshCw} label="Last synced" value={formatRelativeTime(property24LastSyncedAt)} />
           </section>
+
+          {(property24Published || channelUpdateStates.Property24?.status === 'awaiting_verification') && !listingRecord?.property24ListingUrl && !listingRecord?.property24_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
+            <p className="text-sm font-semibold text-[#8a5b13]">Live listing URL not yet confirmed</p>
+            <p className="mt-1 text-xs text-[#8a5b13]">Paste the exact URL from the public portal page so you can verify the latest update. Arch9 will not invent one from the reference.</p>
+            <div className="mt-3 flex flex-wrap gap-2"><Field value={marketingDraft.property24ListingUrl} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, property24ListingUrl: event.target.value }))} placeholder="https://www.property24.com/for-sale/..." className="min-w-[280px] flex-1" /><Button type="button" size="sm" onClick={() => void saveConfirmedPortalLink('property24')}>Save live link</Button></div>
+          </section> : null}
 
           <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
             <p className="text-sm font-semibold text-[#142132]">Listing data status</p>
@@ -11300,6 +12358,12 @@ function AgentListingDetail() {
             <InfoTile icon={CircleAlert} label="Issues found" value={previewComplete ? privatePropertyReadinessIssues.length : 'Not checked'} status={hasIssues ? 'missing' : previewComplete ? 'complete' : 'pending'} />
           </section>
 
+          {(privatePropertyLiveValue || channelUpdateStates['Private Property']?.status === 'awaiting_verification') && !listingRecord?.privatePropertyListingUrl && !listingRecord?.private_property_listing_url ? <section className="rounded-[18px] border border-[#f0d6a8] bg-[#fff9ed] p-4">
+            <p className="text-sm font-semibold text-[#8a5b13]">Live listing URL not yet confirmed</p>
+            <p className="mt-1 text-xs text-[#8a5b13]">Paste the exact URL from the public portal page so you can verify the latest update.</p>
+            <div className="mt-3 flex flex-wrap gap-2"><Field value={marketingDraft.privatePropertyListingUrl} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, privatePropertyListingUrl: event.target.value }))} placeholder="https://www.privateproperty.co.za/for-sale/..." className="min-w-[280px] flex-1" /><Button type="button" size="sm" onClick={() => void saveConfirmedPortalLink('private_property')}>Save live link</Button></div>
+          </section> : null}
+
           <section className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
             <div className="flex items-center gap-2 text-[#142132]">
               <CircleAlert size={18} className={hasIssues ? 'text-[#b54708]' : 'text-[#2f8f6b]'} />
@@ -11322,41 +12386,104 @@ function AgentListingDetail() {
     )
   }
 
+  function renderListingQuickActions() {
+    const currentStatus = normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus || listingRecord?.status)
+    const isSale = normalizeKey(marketingDraft.listingType || listingRecord?.listingType || listingRecord?.listing_type || 'sale') !== 'rental'
+    return <section data-testid="listing-quick-actions" className="rounded-[20px] border border-[#d7e5f1] bg-[#f8fbff] p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div><h2 className="text-sm font-semibold text-[#142132]">Quick listing actions</h2><p className="mt-1 text-xs leading-5 text-[#607387]">Save in Arch9, then update confirmed live Property24 and Private Property listings. Each portal reports its own result.</p></div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('under_offer')} disabled={quickListingBusy || !isSale || currentStatus !== 'active'}>Under offer</Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('sold')} disabled={quickListingBusy || !isSale || !['active', 'under_offer'].includes(currentStatus)}>Sold</Button>
+          <Button type="button" size="sm" variant="secondary" onClick={() => openQuickListingAction('price_reduction')} disabled={quickListingBusy || !isSale || ['sold', 'withdrawn'].includes(currentStatus)}>Reduce price</Button>
+        </div>
+      </div>
+    </section>
+  }
+
   function renderMarketingConsole() {
-    const privatePropertyUrl = marketingDraft.privatePropertyListingUrl || privatePropertyLink?.url || ''
+    const property24Url = marketingDraft.property24ListingUrl || listingRecord?.property24ListingUrl || listingRecord?.property24_listing_url || ''
+    const privatePropertyUrl = marketingDraft.privatePropertyListingUrl || listingRecord?.privatePropertyListingUrl || listingRecord?.private_property_listing_url || privatePropertyLink?.url || ''
     const privatePropertyReference = marketingDraft.privatePropertyReference || privatePropertyLink?.reference || ''
     const privatePropertyDistributionStatus = privatePropertyStatusKey || normalizeKey(privatePropertyLink?.status || 'not_published')
     const privatePropertyLive = ['published', 'live', 'active'].includes(privatePropertyDistributionStatus)
+    const listingWithdrawn = normalizeKey(marketingDraft.listingStatus || listingRecord?.listingStatus || listingRecord?.status) === 'withdrawn'
+    const property24IntentionallyInactive = listingWithdrawn && ['expired', 'inactive', 'removed', 'withdrawn'].includes(property24StatusKey)
+    const privatePropertyIntentionallyInactive = listingWithdrawn && ['expired', 'inactive', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
     const property24IssueCount = property24SandboxAgentIdPending
       ? Math.max(1, property24ReadinessIssues.length)
       : property24ReadinessIssues.length
     const property24IssueDetail = property24ReadinessIssues[0] || (property24SandboxAgentIdPending ? 'Property24 agent ID needs confirmation' : '')
+    const property24BaseUpdate = !property24IntentionallyInactive && channelUpdateStates.Property24?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(property24StatusKey)
+      ? { status: 'needs_attention', retriable: false, detail: 'The portal now reports this listing as inactive. Review its channel status before treating it as current.' }
+      : channelUpdateStates.Property24
+    const property24Update = property24BaseUpdate
+    const property24HasUnpublishedChanges = listingPublicationStates.property24.changeCount > 0
+    const privatePropertyBaseUpdate = !privatePropertyIntentionallyInactive && channelUpdateStates['Private Property']?.status === 'current' && ['expired', 'removed', 'withdrawn'].includes(privatePropertyStatusKey)
+      ? { status: 'needs_attention', retriable: false, detail: 'The portal now reports this listing as inactive. Review its channel status before treating it as current.' }
+      : channelUpdateStates['Private Property']
+    const privatePropertyUpdate = privatePropertyBaseUpdate
+    const privatePropertyHasUnpublishedChanges = listingPublicationStates.private_property.changeCount > 0
+    const property24MonitoringIssue = channelActivityUnavailable && property24HasReference
+    const privatePropertyMonitoringIssue = channelActivityUnavailable && privatePropertyHasChannel
+    const property24Submitted = property24HasReference && !property24Published && !['expired', 'removed', 'withdrawn'].includes(property24StatusKey)
     const property24ChannelStatus = property24Action
       ? 'syncing'
+      : property24IntentionallyInactive ? 'not_published'
+      : property24HasUnpublishedChanges ? 'needs_attention'
+      : property24Update?.status === 'needs_attention' ? 'needs_attention'
+      : property24MonitoringIssue ? 'needs_attention'
+      : property24Update?.status === 'awaiting_verification' ? 'awaiting_verification'
+      : property24Update?.status === 'current' ? 'current'
       : property24Published
         ? 'live'
+        : property24Submitted
+          ? 'syncing'
         : property24IssueCount || property24HasPreviewBlockers || property24SandboxAgentIdPending
           ? 'needs_attention'
           : 'not_published'
     const property24ChannelLabel = property24Action
       ? 'Syncing'
+      : property24IntentionallyInactive ? 'Withdrawn'
+      : property24HasUnpublishedChanges ? 'Changes not published'
+      : property24Update?.status === 'needs_attention' ? 'Needs attention'
+      : property24MonitoringIssue ? 'Needs attention'
+      : property24Update?.status === 'awaiting_verification' ? 'Awaiting verification'
+      : property24Update?.status === 'current' ? 'Current'
       : property24Published
         ? 'Live'
+        : property24Submitted
+          ? 'Submitted'
         : property24ChannelStatus === 'needs_attention'
           ? 'Needs attention'
           : 'Not published'
-    const property24ContextTitle = property24IssueCount
-      ? `${property24IssueCount} issue${property24IssueCount === 1 ? '' : 's'} preventing publication`
+    const property24ContextTitle = property24IntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
+      : property24HasUnpublishedChanges ? `${listingPublicationStates.property24.changeCount} saved Arch9 change${listingPublicationStates.property24.changeCount === 1 ? '' : 's'} not published`
+      : property24Update?.status === 'needs_attention' ? property24Update.retriable === false ? 'No confirmed live Property24 listing to update' : 'Latest portal update needs attention'
+      : property24MonitoringIssue ? 'Update history unavailable; channel currency cannot be confirmed'
+      : property24Update?.status === 'awaiting_verification' ? 'Update accepted; check the public page'
+      : property24Update?.status === 'current' ? 'Latest update verified on the public page'
       : property24Published
-        ? 'Published and up to date'
+        ? property24Url ? 'Live listing confirmed' : 'Live; add the public URL to enable View Live Listing'
+        : property24Submitted
+          ? 'Submitted; refresh status to confirm portal visibility'
+        : property24IssueCount
+          ? `${property24IssueCount} issue${property24IssueCount === 1 ? '' : 's'} preventing publication`
         : property24CanSubmit === true
           ? 'Ready to publish'
           : 'Run readiness check before publishing'
     const privatePropertyIssueCount = privatePropertyReadinessIssues.length
     const privatePropertyIssueDetail = privatePropertyReadinessIssues[0] || ''
-    const privatePropertySubmitted = ['submitted', 'draft', 'pending'].includes(privatePropertyExternalStatus || privatePropertyStatusKey)
+    const privatePropertySubmitted = Boolean(privatePropertyReference || privatePropertyLink?.reference || privatePropertyExternalStatus)
+      && ['submitted', 'draft', 'pending'].includes(privatePropertyExternalStatus || privatePropertyStatusKey)
     const privatePropertyChannelStatus = privatePropertyAction
       ? 'syncing'
+      : privatePropertyIntentionallyInactive ? 'not_published'
+      : privatePropertyHasUnpublishedChanges ? 'needs_attention'
+      : privatePropertyUpdate?.status === 'needs_attention' ? 'needs_attention'
+      : privatePropertyMonitoringIssue ? 'needs_attention'
+      : privatePropertyUpdate?.status === 'awaiting_verification' ? 'awaiting_verification'
+      : privatePropertyUpdate?.status === 'current' ? 'current'
       : privatePropertyLive
         ? 'live'
         : privatePropertyIssueCount || privatePropertyHasPreviewBlockers
@@ -11366,6 +12493,12 @@ function AgentListingDetail() {
             : 'not_published'
     const privatePropertyChannelLabel = privatePropertyAction
       ? 'Syncing'
+      : privatePropertyIntentionallyInactive ? 'Withdrawn'
+      : privatePropertyHasUnpublishedChanges ? 'Changes not published'
+      : privatePropertyUpdate?.status === 'needs_attention' ? 'Needs attention'
+      : privatePropertyMonitoringIssue ? 'Needs attention'
+      : privatePropertyUpdate?.status === 'awaiting_verification' ? 'Awaiting verification'
+      : privatePropertyUpdate?.status === 'current' ? 'Current'
       : privatePropertyLive
         ? 'Live'
         : privatePropertyChannelStatus === 'needs_attention'
@@ -11373,12 +12506,18 @@ function AgentListingDetail() {
           : privatePropertySubmitted
             ? 'Submitted'
             : 'Not published'
-    const privatePropertyContextTitle = privatePropertyIssueCount
-      ? `${privatePropertyIssueCount} issue${privatePropertyIssueCount === 1 ? '' : 's'} preventing publication`
+    const privatePropertyContextTitle = privatePropertyIntentionallyInactive ? 'Removed through the Arch9 withdrawal workflow'
+      : privatePropertyHasUnpublishedChanges ? `${listingPublicationStates.private_property.changeCount} saved Arch9 change${listingPublicationStates.private_property.changeCount === 1 ? '' : 's'} not published`
+      : privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.retriable === false ? 'No confirmed live Private Property listing to update' : 'Latest portal update needs attention'
+      : privatePropertyMonitoringIssue ? 'Update history unavailable; channel currency cannot be confirmed'
+      : privatePropertyUpdate?.status === 'awaiting_verification' ? 'Update accepted; check the public page'
+      : privatePropertyUpdate?.status === 'current' ? 'Latest update verified on the public page'
       : privatePropertyLive
-        ? 'Published and up to date'
+        ? privatePropertyUrl ? 'Live listing confirmed' : 'Live; add the public URL to enable View Live Listing'
         : privatePropertySubmitted
           ? 'Submitted, waiting for activation'
+        : privatePropertyIssueCount
+          ? `${privatePropertyIssueCount} issue${privatePropertyIssueCount === 1 ? '' : 's'} preventing publication`
           : privatePropertyCanSubmit === true
             ? 'Ready to publish'
             : 'Run readiness check before publishing'
@@ -11389,22 +12528,33 @@ function AgentListingDetail() {
         logoSrc: '/lead-sources/property24.png',
         name: 'Property24',
         subtitle: "South Africa's property portal",
-        reference: property24Reference ? `Ref: ${property24Reference}` : '',
+        reference: property24Reference,
+        publicUrl: property24Url,
         status: property24ChannelStatus,
         statusLabel: property24ChannelLabel,
         contextTitle: property24ContextTitle,
-        contextDetail: property24IssueDetail,
+        contextDetail: property24Update?.status === 'needs_attention' ? property24Update.detail : property24MonitoringIssue ? 'Refresh monitoring or contact support before treating this channel as current.' : property24Update?.detail || property24IssueDetail,
         lastSynced: property24LastSyncedAt ? formatRelativeTime(property24LastSyncedAt) : '',
+        publicationState: listingPublicationStates.property24,
         primaryAction: property24Action ? (
           <Button type="button" size="sm" variant="secondary" disabled>
             <Loader2 size={15} className="animate-spin" />
             Syncing...
           </Button>
-        ) : property24Published && marketingDraft.property24ListingUrl ? (
-          <a href={marketingDraft.property24ListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
-            <Eye size={15} />
-            View Live Listing
-          </a>
+        ) : property24MonitoringIssue ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => void loadListingData({ showLoading: false })}><RefreshCw size={15} />Refresh monitoring</Button>
+        ) : property24Update?.status === 'needs_attention' ? (
+          property24Update.retriable === false
+            ? <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}><CircleAlert size={15} />Review channel</Button>
+            : <Button type="button" size="sm" variant="secondary" onClick={() => void retryListingChannelUpdate('Property24', property24Update.action)} disabled={quickListingBusy}><RefreshCw size={15} />Retry update</Button>
+        ) : property24Update?.status === 'awaiting_verification' && !property24Url ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}><Link2 size={15} />Add live link</Button>
+        ) : (property24Published || property24Update?.status === 'awaiting_verification' || property24Update?.status === 'current') && property24Url ? (
+          null
+        ) : property24Published ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)}><Link2 size={15} />Add live link</Button>
+        ) : property24Submitted ? (
+          <Button type="button" size="sm" variant="secondary" onClick={refreshProperty24ListingStatus}><RefreshCw size={15} />Refresh status</Button>
         ) : property24ChannelStatus === 'needs_attention' || property24CanSubmit !== true ? (
           <Button type="button" size="sm" variant="secondary" onClick={() => {
             setProperty24ManageOpen(true)
@@ -11419,7 +12569,9 @@ function AgentListingDetail() {
             Publish
           </Button>
         ),
-        secondaryAction: property24Published || property24CanSubmit === true ? (
+        secondaryAction: property24Update?.status === 'awaiting_verification' && property24Url ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => void confirmListingChannelCurrent('Property24', property24Update.action, property24Url)}>Confirm current</Button>
+        ) : property24Published || property24CanSubmit === true ? (
           <Button type="button" size="sm" variant="secondary" onClick={() => setProperty24ManageOpen(true)} disabled={Boolean(property24Action)}>
             Manage
           </Button>
@@ -11445,22 +12597,33 @@ function AgentListingDetail() {
         logoSrc: '/lead-sources/private-property.jpeg',
         name: 'Private Property',
         subtitle: 'Property portal',
-        reference: privatePropertyReference ? `Ref: ${privatePropertyReference}` : '',
+        reference: privatePropertyReference,
+        publicUrl: privatePropertyUrl,
         status: privatePropertyChannelStatus,
         statusLabel: privatePropertyChannelLabel,
         contextTitle: privatePropertyContextTitle,
-        contextDetail: privatePropertyIssueDetail,
+        contextDetail: privatePropertyUpdate?.status === 'needs_attention' ? privatePropertyUpdate.detail : privatePropertyMonitoringIssue ? 'Refresh monitoring or contact support before treating this channel as current.' : privatePropertyUpdate?.detail || privatePropertyIssueDetail,
         lastSynced: privatePropertyLastSyncedAt ? formatRelativeTime(privatePropertyLastSyncedAt) : '',
+        publicationState: listingPublicationStates.private_property,
         primaryAction: privatePropertyAction ? (
           <Button type="button" size="sm" variant="secondary" disabled>
             <Loader2 size={15} className="animate-spin" />
             Syncing...
           </Button>
-        ) : privatePropertyLive && privatePropertyUrl ? (
-          <a href={privatePropertyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#35546c] hover:bg-[#f7fbff]">
-            <Eye size={15} />
-            View Live Listing
-          </a>
+        ) : privatePropertyMonitoringIssue ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => void loadListingData({ showLoading: false })}><RefreshCw size={15} />Refresh monitoring</Button>
+        ) : privatePropertyUpdate?.status === 'needs_attention' ? (
+          privatePropertyUpdate.retriable === false
+            ? <Button type="button" size="sm" variant="secondary" onClick={reviewPrivatePropertyIssues}><CircleAlert size={15} />Review channel</Button>
+            : <Button type="button" size="sm" variant="secondary" onClick={() => void retryListingChannelUpdate('Private Property', privatePropertyUpdate.action)} disabled={quickListingBusy}><RefreshCw size={15} />Retry update</Button>
+        ) : privatePropertyUpdate?.status === 'awaiting_verification' && !privatePropertyUrl ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setPrivatePropertyManageOpen(true)}><Link2 size={15} />Add live link</Button>
+        ) : (privatePropertyLive || privatePropertyUpdate?.status === 'awaiting_verification' || privatePropertyUpdate?.status === 'current') && privatePropertyUrl ? (
+          null
+        ) : privatePropertyLive ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => setPrivatePropertyManageOpen(true)}><Link2 size={15} />Add live link</Button>
+        ) : privatePropertySubmitted ? (
+          <Button type="button" size="sm" variant="secondary" onClick={refreshPrivatePropertyListingStatus}><RefreshCw size={15} />Refresh status</Button>
         ) : privatePropertyChannelStatus === 'needs_attention' ? (
           <Button type="button" size="sm" variant="secondary" onClick={reviewPrivatePropertyIssues} disabled={Boolean(privatePropertyAction)}>
             <CircleAlert size={15} />
@@ -11472,7 +12635,9 @@ function AgentListingDetail() {
             Publish
           </Button>
         ),
-        secondaryAction: privatePropertySubmitted || privatePropertyLive ? (
+        secondaryAction: privatePropertyUpdate?.status === 'awaiting_verification' && privatePropertyUrl ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => void confirmListingChannelCurrent('Private Property', privatePropertyUpdate.action, privatePropertyUrl)}>Confirm current</Button>
+        ) : privatePropertySubmitted || privatePropertyLive ? (
           <Button type="button" size="sm" variant="secondary" onClick={refreshPrivatePropertyListingStatus} disabled={Boolean(privatePropertyAction)}>
             {privatePropertyAction === 'status' ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             Status
@@ -11503,31 +12668,52 @@ function AgentListingDetail() {
     const agencyWebsiteLive = agencyWebsitePublication?.status === 'published' &&
       agencyWebsitePublication?.websiteStatus === 'published' &&
       agencyWebsitePublication?.projectionStatus === 'Published'
+    const marketingOperationalHealth = buildListingMarketingOperationalHealth({
+      listingStatus: marketingDraft.listingStatus || listingRecord?.listingStatus || listingRecord?.status,
+      activityAvailable: !channelActivityUnavailable,
+      channels: [
+        {
+          key: 'property24', label: 'Property24', connected: property24HasReference,
+          live: property24Published, actualStatus: property24StatusKey,
+          reference: property24Reference, publicUrl: property24Url,
+          publicationState: listingPublicationStates.property24, updateState: property24Update,
+        },
+        {
+          key: 'private_property', label: 'Private Property', connected: privatePropertyHasChannel,
+          live: privatePropertyLive, actualStatus: privatePropertyStatusKey,
+          reference: privatePropertyReference, publicUrl: privatePropertyUrl,
+          publicationState: listingPublicationStates.private_property, updateState: privatePropertyUpdate,
+        },
+        {
+          key: 'agency_website', label: 'Agency Website', connected: agencyWebsiteConnected,
+          live: agencyWebsiteLive, actualStatus: agencyWebsitePublication?.status,
+          reference: agencyWebsitePublication?.websiteSiteId,
+          publicUrl: agencyWebsitePublication?.hostname ? `https://${agencyWebsitePublication.hostname}` : '',
+          publicationState: listingPublicationStates.agency_website,
+        },
+        {
+          key: 'arch9_catalogue', label: 'Arch9 public catalogue', connected: arch9IsPublished,
+          live: arch9IsPublished, actualStatus: marketingDraft.publicationStatus,
+          reference: listingRecord?.arch9Reference || listingRecord?.listingReference || listingRecord?.listingCode,
+          publicUrl: marketingDraft.bridgeListingPublicUrl,
+          requiresReference: false,
+          publicationState: listingPublicationStates.arch9_catalogue,
+        },
+      ],
+    })
     const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length + (agencyWebsiteLive ? 1 : 0)
     const marketingChannelCount = channelRows.length + (agencyWebsiteConnected ? 1 : 0)
     const channelCountLabel = marketingChannelCount ? `${marketingLiveChannelCount} / ${marketingChannelCount}` : String(marketingLiveChannelCount)
     const remainingReadinessCount = incompleteReadinessItems.length
+    const pendingMediaUploads = getPendingListingMediaUploads(marketingDraft)
 
     return (
       <section className="space-y-5">
-        <div className="flex flex-wrap justify-end gap-2">
-          <a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#2d445e] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]">
-            <Eye size={15} />
-            Preview Listing
-          </a>
-          <Button type="button" variant="secondary" onClick={openSyndicationReview} disabled={syndicationReviewLoading}>
-            {syndicationReviewLoading ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
-            Review channels
-          </Button>
-          <Button type="button" onClick={() => saveMarketingDraft(marketingDraft, { successMessage: 'Marketing changes saved in Arch9.' })}>
-            <Send size={15} />
-            Save Changes
-          </Button>
-        </div>
         <section className="overflow-hidden rounded-[22px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-          <div className="grid sm:grid-cols-3">
+          <div className="grid sm:grid-cols-2 xl:grid-cols-4">
             <MarketingSummaryItem icon={CheckCircle2} value={`${listingReadinessPercent}%`} label="Listing readiness" actionLabel="View checklist" onAction={() => setReadinessChecklistOpen(true)} tone={listingReadinessPercent >= 80 ? 'success' : 'attention'} />
             <MarketingSummaryItem icon={ExternalLink} value={channelCountLabel} label="Channels live" actionLabel="View channels" onAction={() => document.getElementById('listing-distribution-channels')?.scrollIntoView({ behavior: 'smooth', block: 'start' })} tone={marketingLiveChannelCount ? 'success' : 'default'} />
+            <MarketingSummaryItem icon={CircleAlert} value={unpublishedMarketingChanges.length || '0'} label="Unpublished changes" actionLabel="Review changes" onAction={() => setPublicationChangesOpen(true)} tone={unpublishedMarketingChanges.length ? 'attention' : 'success'} />
             <MarketingSummaryItem icon={RefreshCw} value={formatRelativeTime(marketingLastSyncedAt)} label="Last synced" tone="default" />
           </div>
           {remainingReadinessCount ? (
@@ -11577,7 +12763,7 @@ function AgentListingDetail() {
                       <Plus size={13} />
                       Add
                     </summary>
-                    <div className="absolute left-0 z-30 mt-2 grid w-[280px] gap-3 rounded-[16px] border border-[#dbe6f2] bg-white p-3 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
+                    <div className="absolute left-0 z-30 mt-2 grid max-h-[360px] w-[280px] gap-3 overflow-y-auto rounded-[16px] border border-[#dbe6f2] bg-white p-3 shadow-[0_18px_34px_rgba(15,23,42,0.14)]">
                       <div className="flex flex-wrap gap-2">
                         {[...FEATURE_OPTIONS, ...AMENITY_OPTIONS].map((item) => {
                           const active = marketingDraft.selectedFeatures.includes(item) || marketingDraft.amenities.includes(item)
@@ -11593,6 +12779,7 @@ function AgentListingDetail() {
                   </details>
                 </div>
               </div>
+              {renderListingQuickActions()}
             </div>
           </article>
 
@@ -11608,18 +12795,25 @@ function AgentListingDetail() {
                 <input type="file" accept="image/*" multiple className="hidden" onChange={handleGalleryUpload} disabled={gallerySaving} />
               </label>
             </div>
+            {pendingMediaUploads.length ? (
+              <div role="alert" className="mt-4 rounded-[14px] border border-[#f1c6c2] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#a13b35]">
+                {pendingMediaUploads.length} media upload{pendingMediaUploads.length === 1 ? '' : 's'} need{pendingMediaUploads.length === 1 ? 's' : ''} to be retried. These local previews will not be sent to a public channel.
+              </div>
+            ) : null}
             <div className="mt-5 overflow-x-auto pb-2">
               <div className="flex min-w-max gap-3">
                 {marketingDraft.galleryImages.length ? marketingDraft.galleryImages.map((image, index) => {
                   const isCover = String(image.id) === String(marketingDraft.coverImageId)
+                  const imageUploadPending = Boolean(image.uploadWarning) || !String(image.url || image.signedUrl || image.publicUrl || '').trim() || isDataUrl(image.url)
                   const tileClass = index === 0
                     ? 'w-[440px] max-w-[68vw]'
                     : 'w-[170px]'
                   return (
-                    <div key={image.id} className={`shrink-0 overflow-hidden rounded-[14px] border bg-white ${tileClass} ${isCover ? 'border-[#1f4f78]' : 'border-[#dce6f2]'}`}>
+                    <div key={image.id} className={`shrink-0 overflow-hidden rounded-[14px] border bg-white ${tileClass} ${imageUploadPending ? 'border-[#d56a62] ring-2 ring-[#f8dddd]' : isCover ? 'border-[#1f4f78]' : 'border-[#dce6f2]'}`}>
                       <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="relative block h-[184px] w-full overflow-hidden bg-[#eef4fa] disabled:cursor-default">
                         {getImageBlock(image.url, image.name)}
                         {isCover ? <span className="absolute left-2 top-2 rounded-full bg-[#123955] px-2 py-1 text-[0.62rem] font-semibold text-white">Cover</span> : null}
+                        {imageUploadPending ? <span className="absolute bottom-2 left-2 rounded-full bg-[#a13b35] px-2 py-1 text-[0.62rem] font-semibold text-white">Upload failed</span> : null}
                       </button>
                       <div className="flex h-11 items-center justify-between gap-2 border-t border-[#edf2f7] px-2">
                         <button type="button" onClick={() => setCoverImage(image.id)} disabled={isCover || gallerySaving} className="truncate rounded px-1.5 py-1 text-xs font-semibold text-[#1f4f78] disabled:text-[#9aa9b8]">Cover</button>
@@ -11676,8 +12870,8 @@ function AgentListingDetail() {
               {marketingDraft.floorplans.length ? (
                 <div className="grid gap-2 md:col-span-2">
                   {marketingDraft.floorplans.map((plan) => (
-                    <div key={plan.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-[#dce6f2] bg-[#fbfdff] px-3 py-2">
-                      <span className="truncate text-sm font-semibold text-[#243d56]">{plan.label || plan.name}</span>
+                    <div key={plan.id} className={`flex items-center justify-between gap-3 rounded-[14px] border px-3 py-2 ${plan.uploadWarning || !String(plan.url || plan.signedUrl || plan.publicUrl || '').trim() || isDataUrl(plan.url) ? 'border-[#d56a62] bg-[#fff5f5]' : 'border-[#dce6f2] bg-[#fbfdff]'}`}>
+                      <span className={`truncate text-sm font-semibold ${plan.uploadWarning || !String(plan.url || plan.signedUrl || plan.publicUrl || '').trim() || isDataUrl(plan.url) ? 'text-[#a13b35]' : 'text-[#243d56]'}`}>{plan.label || plan.name}{plan.uploadWarning || !String(plan.url || plan.signedUrl || plan.publicUrl || '').trim() || isDataUrl(plan.url) ? ' · Upload failed' : ''}</span>
                       <button type="button" onClick={() => removeFloorplan(plan.id)} className="text-[#6b7d93] hover:text-[#142132]" aria-label={`Remove ${plan.label || plan.name}`}>
                         <Trash2 size={15} />
                       </button>
@@ -11697,6 +12891,14 @@ function AgentListingDetail() {
             </div>
           </div>
 
+          <div className="hidden grid-cols-[minmax(210px,1fr)_minmax(145px,0.7fr)_minmax(170px,0.8fr)_minmax(150px,0.75fr)_auto] gap-4 border-b border-[#edf2f7] bg-[#fbfdff] px-4 py-2.5 text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-[#8294aa] lg:grid">
+            <span>Channel</span>
+            <span>Reference & public link</span>
+            <span>Status</span>
+            <span>Publication activity</span>
+            <span className="text-right">Actions</span>
+          </div>
+
           {channelRows.map((channel) => (
             <DistributionChannel
               key={channel.key}
@@ -11705,11 +12907,15 @@ function AgentListingDetail() {
               name={channel.name}
               subtitle={channel.subtitle}
               reference={channel.reference}
+              publicUrl={channel.publicUrl}
               status={channel.status}
               statusLabel={channel.statusLabel}
               contextTitle={channel.contextTitle}
               contextDetail={channel.contextDetail}
               lastSynced={channel.lastSynced}
+              savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
+              publicationState={channel.publicationState}
+              onReviewChanges={() => setPublicationChangesOpen(true)}
               primaryAction={channel.primaryAction}
               secondaryAction={channel.secondaryAction}
               menuActions={channel.menuActions || []}
@@ -11720,22 +12926,147 @@ function AgentListingDetail() {
             variant="channel"
             listingId={listingRecord?.id}
             listingTitle={marketingDraft.headline || listingRecord?.listingTitle || listingRecord?.title}
+            listingReference={listingRecord?.arch9Reference || listingRecord?.listingReference || listingRecord?.listingCode || ''}
             preparationBlockers={arch9PublicationBlockers}
             onPrepare={prepareAgencyWebsiteListing}
             onStatusChange={setAgencyWebsitePublication}
+            onPublicationAction={handleAgencyWebsitePublicationAction}
+            publicationState={listingPublicationStates.agency_website}
+            onReviewChanges={() => setPublicationChangesOpen(true)}
+            savedAt={formatRelativeTime(listingRecord?.updatedAt || listingRecord?.updated_at)}
           />
         </article>
 
+        <ListingMarketingOperationalHealthPanel
+          report={marketingOperationalHealth}
+          onRefresh={() => void refreshMarketingOperationalHealth()}
+          refreshing={marketingHealthRefreshing}
+          onReviewChanges={() => setPublicationChangesOpen(true)}
+        />
+
+        <ListingShowDaysPanel
+          organisationId={listingOrganisationId}
+          listing={listingShowDaySnapshot}
+          publicListingReady={Boolean(arch9IsPublished || property24Published || privatePropertyPortalLive || agencyWebsiteLive)}
+        />
+
+        <div className="flex flex-col gap-4 rounded-[18px] border border-[#d8e3ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] lg:flex-row lg:items-center lg:justify-between">
+          <div className="min-w-0">
+            <p className={`inline-flex items-center gap-2 text-sm font-semibold ${marketingDraftDirty ? 'text-[#9a5b13]' : 'text-[#1f7d44]'}`}>
+              <span className={`h-2.5 w-2.5 rounded-full ${marketingDraftDirty ? 'bg-[#d99321]' : 'bg-[#1f9d64]'}`} />
+              {marketingDraftDirty ? 'Unsaved marketing changes' : 'Marketing changes saved'}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-[#607387]">
+              {pendingMediaUploads.length
+                ? 'Resolve failed media uploads before publishing to any public channel.'
+                : 'Save the Arch9 record before reviewing or updating publication channels.'}
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
+            <a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#2d445e] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]">
+              <Eye size={15} />
+              Preview listing
+            </a>
+            <Button type="button" variant="secondary" onClick={() => setPublicationChangesOpen(true)}>
+              <CircleAlert size={15} />
+              Review {unpublishedMarketingChanges.length ? `${unpublishedMarketingChanges.length} changes` : 'publication state'}
+            </Button>
+            <Button type="button" variant="secondary" onClick={openSyndicationReview} disabled={syndicationReviewLoading || marketingSaving}>
+              {syndicationReviewLoading ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
+              Review channels
+            </Button>
+            <Button type="button" onClick={() => void saveMarketingChanges()} disabled={marketingSaving || gallerySaving}>
+              {marketingSaving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+              {marketingSaving ? 'Saving…' : 'Save changes'}
+            </Button>
+          </div>
+        </div>
+
         <div className="flex flex-col gap-3 rounded-[18px] border border-[#ead8b8] bg-[#fffaf0] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-[#624417]">Finished marketing this listing?</p>
-            <p className="mt-1 text-sm text-[#80632f]">Check every live channel, expire the supported placements, then archive the listing from active operations.</p>
+            <p className="text-sm font-semibold text-[#624417]">Need to remove this listing from the market?</p>
+            <p className="mt-1 text-sm text-[#80632f]">Withdraw it from Property24, Private Property, the agency website and Arch9 in one controlled action.</p>
           </div>
-          <Button type="button" variant="secondary" onClick={requestArchiveListing} disabled={publicationSaving} className="border-[#d8b87f] text-[#7a4e12] hover:bg-[#fff3dc]">
-            {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <Archive size={15} />}
-            Archive listing
+          <Button type="button" variant="secondary" onClick={requestWithdrawListing} disabled={publicationSaving || normalizeKey(marketingDraft.listingStatus) === 'withdrawn'} className="border-[#d8b87f] text-[#7a4e12] hover:bg-[#fff3dc]">
+            {publicationSaving ? <Loader2 size={15} className="animate-spin" /> : <X size={15} />}
+            {normalizeKey(marketingDraft.listingStatus) === 'withdrawn' ? 'Listing withdrawn' : 'Withdraw listing'}
           </Button>
         </div>
+
+        <Modal
+          open={publicationChangesOpen}
+          onClose={() => setPublicationChangesOpen(false)}
+          title="Publication changes"
+          subtitle="Compare the current Arch9 record with the last snapshot accepted by each channel."
+          className="max-w-5xl"
+          footer={(
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button type="button" variant="secondary" onClick={() => setPublicationChangesOpen(false)}>Close</Button>
+              <Button type="button" variant="secondary" onClick={() => { setPublicationChangesOpen(false); void openSyndicationReview() }} disabled={syndicationReviewLoading}>
+                <ShieldCheck size={15} />
+                Open channel review
+              </Button>
+              <Button type="button" onClick={() => void saveMarketingChanges()} disabled={marketingSaving || gallerySaving}>
+                {marketingSaving ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                Save Arch9 changes
+              </Button>
+            </div>
+          )}
+        >
+          <div className="grid gap-4">
+            {Object.values(listingPublicationStates).map((state) => {
+              const lifecycleLabel = {
+                not_published: 'Not published',
+                legacy_live: 'Live · snapshot unavailable',
+                submitted: 'Submitted',
+                accepted: 'Accepted · verification pending',
+                verified: 'Verified',
+                failed: 'Needs attention',
+                withdrawn: 'Withdrawn',
+                withdrawal_failed: 'Withdrawal needs attention',
+              }[state.stage] || formatStatusLabel(state.stage)
+              return (
+                <section key={state.key} className="overflow-hidden rounded-[16px] border border-[#dce6f2] bg-white">
+                  <div className="flex flex-col gap-3 border-b border-[#edf2f7] bg-[#fbfdff] px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h4 className="text-sm font-semibold text-[#142132]">{state.label}</h4>
+                      <p className="mt-1 text-xs font-semibold text-[#607387]">{lifecycleLabel}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[0.7rem] text-[#607387]">
+                      {state.submittedAt ? <span>Submitted {formatRelativeTime(state.submittedAt)}</span> : null}
+                      {state.acceptedAt ? <span>Accepted {formatRelativeTime(state.acceptedAt)}</span> : null}
+                      {state.verifiedAt ? <span>Verified {formatRelativeTime(state.verifiedAt)}</span> : null}
+                      {state.withdrawnAt ? <span>Withdrawn {formatRelativeTime(state.withdrawnAt)}</span> : null}
+                    </div>
+                  </div>
+                  {state.failureDetail ? <p role="alert" className="border-b border-[#f1c6c2] bg-[#fff5f5] px-4 py-3 text-sm font-semibold text-[#a13b35]">{state.failureDetail}</p> : null}
+                  {state.publishedSnapshot ? (
+                    state.changes.length ? (
+                      <div className="divide-y divide-[#edf2f7]">
+                        {state.changes.map((change) => (
+                          <div key={change.key} className="grid gap-2 px-4 py-3 text-sm md:grid-cols-[150px_minmax(0,1fr)_24px_minmax(0,1fr)] md:items-start">
+                            <div><p className="font-semibold text-[#243d56]">{change.label}</p><p className="text-[0.68rem] uppercase tracking-[0.08em] text-[#8294aa]">{change.group}</p></div>
+                            <p className="break-words rounded-[10px] bg-[#f6f8fb] px-3 py-2 text-[#607387]">{change.previousValue}</p>
+                            <ChevronRight size={15} className="mt-2 hidden text-[#8294aa] md:block" />
+                            <p className="break-words rounded-[10px] bg-[#fff8e8] px-3 py-2 font-semibold text-[#8a641d]">{change.currentValue}</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="px-4 py-4 text-sm font-semibold text-[#1f7d44]">The current Arch9 content matches this channel’s accepted snapshot.</p>
+                    )
+                  ) : (
+                    <p className="px-4 py-4 text-sm leading-6 text-[#607387]">
+                      {state.stage === 'legacy_live'
+                        ? 'This listing predates snapshot tracking. Arch9 will establish the comparison baseline the next time this channel accepts an update.'
+                        : 'No accepted publication snapshot exists for this channel yet.'}
+                    </p>
+                  )}
+                </section>
+              )
+            })}
+          </div>
+        </Modal>
 
         <Modal
           open={readinessChecklistOpen}
@@ -11788,7 +13119,7 @@ function AgentListingDetail() {
       <section className="rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
         <p className="text-sm text-[#6b7d93]">{detailError || 'Listing not found.'}</p>
         <div className="mt-4">
-          <Button variant="secondary" onClick={() => navigate('/listings')}>
+          <Button variant="secondary" onClick={() => navigateFromListing('/listings')}>
             Back to Listings
           </Button>
         </div>
@@ -11802,20 +13133,23 @@ function AgentListingDetail() {
         open={sellerOnboardingSendOpen}
         onClose={() => !followUpActionId && setSellerOnboardingSendOpen(false)}
         title="Prepare seller onboarding"
-        subtitle="Choose whether the seller should receive a separate digital mandate. These terms remain editable in the Commission tab until a mandate is signed."
+        subtitle={sellerOwnershipUnidentified
+          ? 'Send basic onboarding so the seller can confirm the legal owner. Mandate and compliance requirements stay blocked until that choice is saved.'
+          : 'Choose whether the seller should receive a separate digital mandate. These terms remain editable in the Commission tab until a mandate is signed.'}
         size="md"
       >
         <div className="space-y-5">
           <fieldset className="grid gap-3">
             <legend className="text-sm font-semibold text-[#2d445e]">Should the seller sign the mandate digitally?</legend>
-            <label className="flex items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-4 py-3 text-sm font-medium text-[#243d56]">
-              <input type="radio" name="digital-mandate-choice" value="yes" checked={onboardingMandateChoice === 'yes'} onChange={(event) => setOnboardingMandateChoice(event.target.value)} />
+            <label className={`flex items-center gap-3 rounded-[14px] border border-[#dce6f2] px-4 py-3 text-sm font-medium ${sellerOwnershipUnidentified ? 'bg-[#f5f7fa] text-[#8292a5]' : 'bg-white text-[#243d56]'}`}>
+              <input type="radio" name="digital-mandate-choice" value="yes" disabled={sellerOwnershipUnidentified} checked={onboardingMandateChoice === 'yes'} onChange={(event) => setOnboardingMandateChoice(event.target.value)} />
               Yes — prepare a separate digital mandate after onboarding
             </label>
             <label className="flex items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-4 py-3 text-sm font-medium text-[#243d56]">
               <input type="radio" name="digital-mandate-choice" value="no" checked={onboardingMandateChoice === 'no'} onChange={(event) => setOnboardingMandateChoice(event.target.value)} />
               No — send basic onboarding only
             </label>
+            {sellerOwnershipUnidentified ? <p className="text-xs leading-5 text-[#8a641d]">Digital mandate setup unlocks after the seller ownership model and signing authority are confirmed.</p> : null}
           </fieldset>
           {onboardingMandateChoice === 'yes' ? (
             <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 md:grid-cols-2">
@@ -11971,14 +13305,116 @@ function AgentListingDetail() {
         </div>
       </Modal>
       <Modal
-        open={sellerDocumentSendOpen}
-        onClose={sellerDocumentSendSaving ? undefined : () => setSellerDocumentSendOpen(false)}
-        title="Review and send FICA + mandate"
-        subtitle="Check the submitted seller details, set the commercial terms, then send digitally or prepare physical copies."
+        open={sellerDocumentUploadModalOpen}
+        onClose={sellerDocumentUploadKey ? undefined : () => setSellerDocumentUploadModalOpen(false)}
+        title="Upload seller documents"
+        subtitle="Add each outstanding document to the canonical seller record. Uploaded files also remain available to the listing and transaction workspaces."
+        className="max-w-2xl"
+        footer={(
+          <div className="flex justify-end">
+            <Button type="button" variant="secondary" disabled={Boolean(sellerDocumentUploadKey)} onClick={() => setSellerDocumentUploadModalOpen(false)}>Done</Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <section className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4">
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <p className="font-semibold text-[#243d56]">Required-document progress</p>
+              <span className="font-semibold text-[#315879]">{sellerDocumentUploadQueue.requiredComplete} of {sellerDocumentUploadQueue.requiredTotal}</span>
+            </div>
+            <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-[#dfe9f3]" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={sellerDocumentUploadQueue.percent}>
+              <div className="h-full rounded-full bg-[#168452] transition-[width] duration-300" style={{ width: `${sellerDocumentUploadQueue.percent}%` }} />
+            </div>
+            <p className="mt-2 text-xs leading-5 text-[#607387]">{sellerDocumentUploadQueue.uploading ? 'Uploading and saving the selected document…' : sellerDocumentUploadQueue.complete ? 'All required seller documents are complete.' : `${sellerDocumentUploadQueue.outstandingRequired} required document${sellerDocumentUploadQueue.outstandingRequired === 1 ? '' : 's'} still outstanding.`}</p>
+          </section>
+
+          {sellerDocumentUploadQueue.outstanding.length ? (
+            <div className="divide-y divide-[#edf2f7] rounded-[16px] border border-[#dce6f2] bg-white px-4">
+              {sellerDocumentUploadQueue.outstanding.map((document) => (
+                <div key={document.uploadKey} className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="break-words text-sm font-semibold text-[#243d56]">{document.label || document.documentName || 'Seller document'}</p>
+                      <span className={`rounded-full px-2 py-0.5 text-[0.68rem] font-semibold ${document.required !== false ? 'bg-[#fff3dd] text-[#8a641d]' : 'bg-[#eef3f8] text-[#607387]'}`}>{document.required !== false ? 'Required' : 'Optional'}</span>
+                    </div>
+                    {document.uploadStatus === 'uploading' ? <p className="mt-1 text-xs font-semibold text-[#315879]">Uploading {document.uploadFileName}…</p> : null}
+                    {document.uploadStatus === 'error' ? <p className="mt-1 text-xs font-semibold text-[#b42318]">{document.uploadError}</p> : <p className="mt-1 text-xs leading-5 text-[#607387]">{document.description || document.sourceLabel || 'Select the matching document from your computer.'}</p>}
+                  </div>
+                  <label className={`inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
+                    {document.uploadStatus === 'uploading' ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                    {document.uploadStatus === 'error' ? 'Try again' : 'Upload'}
+                    <input type="file" className="hidden" disabled={Boolean(sellerDocumentUploadKey)} onChange={(event) => void handleSellerDocumentUpload(document, event)} />
+                  </label>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[16px] border border-[#c9e8d5] bg-[#f0faf3] p-5 text-center text-sm text-[#176842]">
+              <CheckCircle2 size={22} className="mx-auto" />
+              <p className="mt-2 font-semibold">No outstanding seller documents</p>
+              <p className="mt-1 text-xs leading-5">Every currently applicable document has been uploaded.</p>
+            </div>
+          )}
+        </div>
+      </Modal>
+      <Modal
+        open={mandateReplacementOpen}
+        onClose={() => setMandateReplacementOpen(false)}
+        title={mandateReplacementWorkflow.isAmendment ? 'Replace the signed mandate' : 'Regenerate the mandate'}
+        subtitle="Confirm what changed before preparing a new signing pack."
         className="max-w-xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => setSellerDocumentSendOpen(false)}>Cancel</Button>
+            <Button type="button" variant="secondary" onClick={() => setMandateReplacementOpen(false)}>Cancel</Button>
+            <Button type="button" onClick={continueMandateReplacementReview}>
+              <RefreshCw size={16} />
+              Review and send replacement
+            </Button>
+          </div>
+        )}
+      >
+        <div className="space-y-4">
+          <div className="rounded-[16px] border border-[#f0ddbf] bg-[#fffaf1] p-4 text-sm leading-6 text-[#7a4b10]">
+            <p className="font-semibold">The existing signed mandate will not be overwritten.</p>
+            <p className="mt-1">Arch9 will preserve it as audit evidence. The regenerated mandate becomes the current version only after every required seller has signed the new pack.</p>
+          </div>
+          <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
+            <p className="text-sm font-semibold text-[#243d56]">Changes included</p>
+            {mandateReplacementWorkflow.changedFieldLabels.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {mandateReplacementWorkflow.changedFieldLabels.map((label) => <span key={label} className="rounded-full bg-[#edf4fb] px-2.5 py-1 text-xs font-semibold text-[#315879]">{label}</span>)}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm leading-5 text-[#607387]">The latest saved mandate details and commercial terms will be used.</p>
+            )}
+          </section>
+          {!mandateReplacementWorkflow.sourceSigningGroupId && mandateReplacementWorkflow.isAmendment ? (
+            <div className="rounded-[16px] border border-[#d8e7f7] bg-[#f7fbff] p-4 text-sm leading-6 text-[#315879]">
+              The current signed mandate predates digital pack tracking. It will remain in Documents, while the new pack starts a fresh digital signing record.
+            </div>
+          ) : null}
+          <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
+            Reason for regeneration
+            <textarea
+              rows={3}
+              value={mandateReplacementReason}
+              onChange={(event) => setMandateReplacementReason(event.target.value)}
+              placeholder="Explain why the mandate is being regenerated."
+              className="rounded-xl border border-[#dce6f2] bg-white px-3 py-2 font-normal"
+            />
+            <span className="text-xs font-normal leading-5 text-[#607387]">This reason is recorded against the replacement signing pack.</span>
+          </label>
+        </div>
+      </Modal>
+      <Modal
+        open={sellerDocumentSendOpen}
+        onClose={sellerDocumentSendSaving ? undefined : () => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}
+        title={mandateReplacementIntent ? 'Review and send replacement mandate' : 'Review and send FICA + mandate'}
+        subtitle={mandateReplacementIntent ? 'Confirm the new mandate and required signers before replacing the current version.' : 'Check the submitted seller details, set the commercial terms, then send digitally or prepare physical copies.'}
+        className="max-w-xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" disabled={sellerDocumentSendSaving} onClick={() => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}>Cancel</Button>
             <Button type="button" disabled={sellerDocumentSendSaving} onClick={() => void saveSellerDocumentSendSelection()}>
               {sellerDocumentSendSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
               {sellerDocumentSendSaving ? 'Preparing...' : sellerMandateSignatureRoute === 'manual_upload' ? 'Approve and prepare physical copies' : 'Approve and send signing pack'}
@@ -11987,7 +13423,11 @@ function AgentListingDetail() {
         )}
       >
         <div className="space-y-4">
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">This action records your approval of the submitted onboarding and freezes the FICA declaration and mandate using the terms below.</div>
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
+            {mandateReplacementIntent
+              ? 'This creates a traceable replacement pack. The previous signed mandate remains preserved and the new mandate only becomes current after every required signer completes it.'
+              : 'This action records your approval of the submitted onboarding and freezes the selected documents using the terms below.'}
+          </div>
           {(() => {
             const onboardingReview = readSellerOnboardingReview(getListingSellerFormData(listingRecord).sellerOnboardingReview || getListingSellerFormData(listingRecord).seller_onboarding_review)
             const approved = onboardingReview.status === SELLER_ONBOARDING_REVIEW_STATUS.approved
@@ -12005,14 +13445,14 @@ function AgentListingDetail() {
               {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerProfileBuilderReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerProfileBuilder('Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerSectionReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
             </div>
           })()}
-          {sellerDocumentSendStep === 1 ? <><fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">Mandate signature route</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send digital signing pack</span><span className="mt-1 block text-[#607387]">Send the selected frozen documents for each required seller to review and sign.</span></span></label><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Arrange physical FICA and mandate signing</span><span className="mt-1 block text-[#607387]">Prepare printable copies for wet-ink signatures. Each signed copy must then be uploaded and recorded.</span></span></label></fieldset>{sellerMandateSignatureRoute === 'digital_pack' ? <div className="space-y-3">{getSellerSigningDocumentOptions().documents.filter((document) => ['fica', 'mandate'].includes(document.key)).map((document) => (
+          {sellerDocumentSendStep === 1 ? <><fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">Mandate signature route</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send digital signing pack</span><span className="mt-1 block text-[#607387]">Send the selected frozen documents for each required seller to review and sign.</span></span></label>{!mandateReplacementIntent ? <label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Arrange physical FICA and mandate signing</span><span className="mt-1 block text-[#607387]">Prepare printable copies for wet-ink signatures. Each signed copy must then be uploaded and recorded.</span></span></label> : null}</fieldset>{sellerMandateSignatureRoute === 'digital_pack' ? <div className="space-y-3">{getSellerSigningDocumentOptions().documents.filter((document) => ['fica', 'mandate'].includes(document.key)).map((document) => (
             <label key={document.key} className={`flex items-start gap-3 rounded-[16px] border p-4 ${document.ready ? 'cursor-pointer border-[#dce6f2] bg-white transition hover:border-[#b7c8db]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
               <input type="checkbox" className="mt-1 h-4 w-4" disabled={!document.ready} checked={Boolean(sellerDocumentSendSelection[document.key] && document.ready)} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
               <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className={`mt-1 block text-sm leading-5 ${document.ready ? 'text-[#607387]' : 'text-[#7a5a17]'}`}>{document.ready ? `${document.copy} The seller will review the onboarding information already captured.` : document.missing[0]}</span></span>
             </label>
           ))}</div> : <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]">No digital link will be sent. Once you confirm this step, Documents will contain printable FICA and mandate copies. Download them for wet-ink signing, then upload the signed FICA declaration and mandate separately.</div>}</> : <div className="space-y-4">
-          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">How should the sellers sign?</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route-summary" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send a digital signing pack</span><span className="mt-1 block text-[#607387]">The seller receives FICA and mandate documents by secure signing link.</span></span></label><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route-summary" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Prepare physical copies</span><span className="mt-1 block text-[#607387]">Download printable FICA and mandate copies, then upload the wet-ink signed documents.</span></span></label></fieldset>
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-5 text-[#47637d]"><p className="font-semibold text-[#243d56]">Documents included</p><p className="mt-1">Seller FICA Declaration and Seller Mandate are both required for this signing stage.</p></div>
+          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">How should the sellers sign?</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route-summary" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send a digital signing pack</span><span className="mt-1 block text-[#607387]">The seller receives the selected documents by secure signing link.</span></span></label>{!mandateReplacementIntent ? <label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route-summary" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Prepare physical copies</span><span className="mt-1 block text-[#607387]">Download printable FICA and mandate copies, then upload the wet-ink signed documents.</span></span></label> : null}</fieldset>
+          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-5 text-[#47637d]"><p className="font-semibold text-[#243d56]">Documents included</p><p className="mt-1">{[sellerDocumentSendSelection.fica ? 'Seller FICA Declaration' : '', sellerDocumentSendSelection.mandate ? 'Seller Mandate' : ''].filter(Boolean).join(' and ') || 'Select at least one document'}.</p></div>
           <fieldset className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2"><legend className="px-1 font-semibold text-[#243d56]">Mandate commercial terms</legend><div><p className="font-semibold text-[#243d56]">Mandate type</p><Field as="select" value={marketingDraft.mandateType || listingRecord?.mandateType || 'sole'} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, mandateType: event.target.value }))}><option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option></Field></div><fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission basis</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis-summary" checked={commissionDraft.basis !== 'fixed'} onChange={() => updateCommissionDraft('basis', 'percentage')} /> Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis-summary" checked={commissionDraft.basis === 'fixed'} onChange={() => updateCommissionDraft('basis', 'fixed')} /> Fixed Rand amount</label></div></fieldset><label className="grid gap-1.5 font-semibold text-[#243d56]">{commissionDraft.basis === 'fixed' ? 'Fixed commission amount (R)' : 'Commission percentage'}<Field type="number" min="0" step="0.01" value={commissionDraft.basis === 'fixed' ? commissionDraft.amount : commissionDraft.percentage} onChange={(event) => updateCommissionDraft(commissionDraft.basis === 'fixed' ? 'amount' : 'percentage', event.target.value)} placeholder={commissionDraft.basis === 'fixed' ? '50000' : '5'} /></label><label className="grid gap-1.5 font-semibold text-[#243d56]">VAT treatment<Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}><option value="">Select VAT treatment</option><option value="no">No VAT</option><option value="exclusive">VAT exclusive</option><option value="inclusive">VAT inclusive</option></Field></label></fieldset>
           <div className="grid gap-3 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-sm sm:grid-cols-2">
             <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Seller</span><span className="font-semibold text-[#243d56]">{resolveSellerNameFromListing(listingRecord) || 'Not captured'}</span></div>
@@ -12124,15 +13564,32 @@ function AgentListingDetail() {
         onRetrySellerPortal={handleRetryPostCreateSellerPortal}
         retryingSellerPortal={retryingPostCreateSellerPortal}
       />
-      <ListingAgentReassignmentPanel
-        listingId={listingRecord.id}
-        listing={listingRecord}
-        listingType="sale"
-        onReassigned={async () => {
-          await loadListingData()
-          setDetailMessage('Listing agent reassigned successfully.')
-        }}
-      />
+      <Modal
+        open={sellerInformationEditorOpen}
+        onClose={sellerProfileBuilderSaving ? undefined : () => setSellerInformationEditorOpen(false)}
+        title="Edit seller information"
+        subtitle="Update the saved seller, contact and ownership details directly. You do not need to repeat seller onboarding."
+        className="max-w-4xl"
+        footer={(
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button type="button" variant="secondary" onClick={() => setSellerInformationEditorOpen(false)} disabled={sellerProfileBuilderSaving}>Cancel</Button>
+            <Button type="submit" form="listing-seller-information-editor-form" disabled={sellerProfileBuilderSaving}>
+              {sellerProfileBuilderSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+              {sellerProfileBuilderSaving ? 'Saving...' : 'Save seller information'}
+            </Button>
+          </div>
+        )}
+      >
+        <ListingSellerInformationEditor
+          draft={sellerProfileBuilderDraft}
+          saving={sellerProfileBuilderSaving}
+          onChange={updateSellerProfileBuilderDraft}
+          onAddPerson={addSellerProfileBuilderPerson}
+          onUpdatePerson={updateSellerProfileBuilderPerson}
+          onRemovePerson={removeSellerProfileBuilderPerson}
+          onSubmit={handleSellerInformationEditorSubmit}
+        />
+      </Modal>
       <Modal
         open={sellerProfileBuilderOpen}
         onClose={sellerProfileBuilderSaving ? undefined : () => { setSellerProfileBuilderOpen(false); setSellerProfileBuilderReturnToDocuments(false) }}
@@ -12620,39 +14077,6 @@ function AgentListingDetail() {
           </form>
         ) : null}
       </Modal>
-      <Modal
-        open={listingPerformanceEditorOpen}
-        onClose={listingPerformanceSaving ? undefined : () => setListingPerformanceEditorOpen(false)}
-        title="Edit Listing Performance"
-        subtitle="Override the seller-facing listing stats shown on this overview and in the seller portal."
-        className="max-w-3xl"
-        footer={
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end">
-            <Button type="button" variant="secondary" onClick={() => setListingPerformanceEditorOpen(false)} disabled={listingPerformanceSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" form="listing-performance-edit-form" disabled={listingPerformanceSaving}>
-              {listingPerformanceSaving ? 'Saving...' : 'Save Stats'}
-            </Button>
-          </div>
-        }
-      >
-        <form id="listing-performance-edit-form" className="grid gap-4 sm:grid-cols-2" onSubmit={handleSaveListingPerformance}>
-          {LISTING_PERFORMANCE_OVERRIDE_FIELDS.map((field) => (
-            <label key={field.key} className="grid gap-1.5">
-              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.1em] text-[#6f839a]">{field.label}</span>
-              <Field
-                type="number"
-                min="0"
-                step="1"
-                value={listingPerformanceDraft[field.key] || ''}
-                onChange={(event) => updateListingPerformanceDraft(field.key, event.target.value)}
-              />
-              <span className="text-xs leading-5 text-[#74879d]">{field.helper}</span>
-            </label>
-          ))}
-        </form>
-      </Modal>
       {activeTab !== 'seller' ? (
         <>
           <section className="overflow-hidden rounded-[24px] border border-[#dde4ee] bg-white shadow-[0_12px_28px_rgba(15,23,42,0.06)]">
@@ -12665,7 +14089,7 @@ function AgentListingDetail() {
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => navigate('/listings')}
+                      onClick={() => navigateFromListing('/listings')}
                       className="inline-flex items-center gap-1 rounded-full border border-[#dbe6f2] bg-white px-2.5 py-1 text-[0.74rem] font-semibold text-[#35546c]"
                     >
                       <ArrowLeft size={13} />
@@ -12782,6 +14206,7 @@ function AgentListingDetail() {
 
       {activeTab === 'overview' ? (
         <section className="space-y-5">
+          {renderListingQuickActions()}
           <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
             <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div className="min-w-0">
@@ -12798,8 +14223,9 @@ function AgentListingDetail() {
                 <span className="inline-flex rounded-full border border-[#dbe6f2] bg-white px-3 py-1 text-[0.74rem] font-semibold text-[#35546c]">
                   {marketingDraft.source || 'Direct / manual'}
                 </span>
-                <Button size="sm" onClick={() => { setActiveTab('pipeline'); setShowViewingForm(true) }}>
-                  Request / Schedule Viewing
+                <Button size="sm" onClick={() => openViewingRequestModal()}>
+                  <CalendarDays size={14} />
+                  Schedule Viewing
                 </Button>
               </div>
             </div>
@@ -12837,7 +14263,7 @@ function AgentListingDetail() {
               </div>
               {directListingOutstandingPostCreateActions.length ? (
                 <div className="mt-4 flex justify-end">
-                  <Button type="button" variant="secondary" onClick={() => setActiveTab('documents')}>
+                  <Button type="button" variant="secondary" onClick={() => openSellerWorkspaceSection('documents')}>
                     Open document workspace
                   </Button>
                 </div>
@@ -13197,25 +14623,7 @@ function AgentListingDetail() {
             </HubCard>
 
             <HubCard icon={CheckCircle2} title="Features & Amenities" copy="Public-facing feature chips for Arch9 Listings and external portal copy." complete={sectionStatusByKey.features?.complete}>
-              <div className="mt-5 flex flex-wrap gap-2">
-                {FEATURE_OPTIONS.map((feature) => {
-                  const active = marketingDraft.selectedFeatures.includes(feature)
-                  return (
-                    <button
-                      key={feature}
-                      type="button"
-                      onClick={() => toggleFeature(feature)}
-                      className={`rounded-full border px-3.5 py-2 text-sm font-semibold transition ${
-                        active
-                          ? 'border-[#1f4f78] bg-[#1f4f78] text-white shadow-[0_10px_18px_rgba(31,79,120,0.14)]'
-                          : 'border-[#dbe6f2] bg-white text-[#47627c] hover:border-[#b7c8db] hover:bg-[#f7fbff]'
-                      }`}
-                    >
-                      {feature}
-                    </button>
-                  )
-                })}
-              </div>
+              <div className="mt-5"><ListingFeatureFields facts={normalizeListingFeatureFacts(marketingDraft.featureFacts, [...marketingDraft.selectedFeatures, ...marketingDraft.amenities])} listingType={marketingDraft.listingType} onChange={updateListingFeatureFact} /></div>
             </HubCard>
 
             <HubCard icon={FileText} title="Property Description" copy="Separate public listing copy from internal-only notes so publishing stays safe." complete={sectionStatusByKey.description?.complete}>
@@ -13492,7 +14900,7 @@ function AgentListingDetail() {
                     label="Address"
                     value={buildAddressAutocompleteValueFromDraft(marketingDraft)}
                     onChange={(nextAddress) => {
-                      marketingDraftDirtyRef.current = true
+                      markMarketingDraftDirty()
                       setMarketingDraft((previous) => {
                         const nextDraft = {
                           ...mergeAddressIntoMarketingDraft(previous, nextAddress),
@@ -13609,25 +15017,7 @@ function AgentListingDetail() {
                   {sectionStatuses.find((item) => item.key === 'features')?.complete ? 'Complete' : 'Missing info'}
                 </span>
               </div>
-              <div className="mt-5 flex flex-wrap gap-3">
-                {FEATURE_OPTIONS.map((feature) => {
-                  const active = marketingDraft.selectedFeatures.includes(feature)
-                  return (
-                    <button
-                      key={feature}
-                      type="button"
-                      onClick={() => toggleFeature(feature)}
-                      className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                        active
-                          ? 'border-[#1f4f78] bg-[#2b5577] text-white shadow-[0_10px_18px_rgba(31,79,120,0.18)]'
-                          : 'border-[#dbe6f2] bg-white text-[#47627c] hover:border-[#b7c8db]'
-                      }`}
-                    >
-                      {feature}
-                    </button>
-                  )
-                })}
-              </div>
+              <div className="mt-5"><ListingFeatureFields facts={normalizeListingFeatureFacts(marketingDraft.featureFacts, [...marketingDraft.selectedFeatures, ...marketingDraft.amenities])} listingType={marketingDraft.listingType} onChange={updateListingFeatureFact} /></div>
             </section>
 
             <section className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
@@ -14011,48 +15401,12 @@ function AgentListingDetail() {
                   <UserRound size={15} />
                   Capture Show Day Lead
                 </Button>
-                <Button onClick={() => setShowViewingForm((current) => !current)}>
+                <Button onClick={() => openViewingRequestModal()}>
                   <Plus size={15} />
-                  {showViewingForm ? 'Hide Viewing Form' : 'Request / Schedule Viewing'}
+                  Request / Schedule Viewing
                 </Button>
               </div>
             </div>
-
-            {showViewingForm ? (
-              <form className="mt-5 rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4" onSubmit={submitViewingRequest}>
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  <label className="grid gap-2 xl:col-span-3">
-                    <span className="text-sm font-semibold text-[#2d445e]">Buyer Lead</span>
-                    <Field as="select" value={viewingForm.buyerLeadId} onChange={(event) => updateViewingForm('buyerLeadId', event.target.value)}>
-                      <option value="">Select buyer lead</option>
-                      {listingLeads.map((lead) => (
-                        <option key={lead.id} value={lead.id}>{lead.name}</option>
-                      ))}
-                    </Field>
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Proposed Date</span>
-                    <Field type="date" value={viewingForm.proposedDate} onChange={(event) => updateViewingForm('proposedDate', event.target.value)} />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Proposed Time</span>
-                    <Field type="time" value={viewingForm.proposedTime} onChange={(event) => updateViewingForm('proposedTime', event.target.value)} />
-                  </label>
-                  <label className="grid gap-2">
-                    <span className="text-sm font-semibold text-[#2d445e]">Alternative Time 1</span>
-                    <Field type="datetime-local" value={viewingForm.alternativeTimeA} onChange={(event) => updateViewingForm('alternativeTimeA', event.target.value)} />
-                  </label>
-                  <label className="grid gap-2 xl:col-span-3">
-                    <span className="text-sm font-semibold text-[#2d445e]">Notes</span>
-                    <Field as="textarea" rows={3} value={viewingForm.notes} onChange={(event) => updateViewingForm('notes', event.target.value)} placeholder="Access notes, parking, or preferred alternatives." />
-                  </label>
-                </div>
-                <div className="mt-4 flex justify-end gap-2">
-                  <Button type="button" variant="secondary" onClick={() => setShowViewingForm(false)}>Cancel</Button>
-                  <Button type="submit">Create Viewing Request</Button>
-                </div>
-              </form>
-            ) : null}
 
             <div className="mt-5 space-y-5">
               {[
@@ -14087,24 +15441,14 @@ function AgentListingDetail() {
                               <p className="mt-1 text-sm font-medium text-[#22374d]">{participant.name}</p>
                               <p className="mt-1 text-xs text-[#607387]">{formatViewingStatusLabel(participant.response_status)}</p>
                               {group.key !== 'completed' ? (
-                                <div className="mt-2 flex flex-wrap gap-1">
-                                  <button type="button" className="rounded-full border border-[#dce6f2] px-2 py-1 text-[0.68rem] font-semibold text-[#35546c]" onClick={() => updateViewingParticipantResponse(viewing.viewing_id, participant.role, VIEWING_RESPONSE_STATUS.ACCEPTED)}>
-                                    Accept
-                                  </button>
-                                  <button type="button" className="rounded-full border border-[#dce6f2] px-2 py-1 text-[0.68rem] font-semibold text-[#35546c]" onClick={() => updateViewingParticipantResponse(viewing.viewing_id, participant.role, VIEWING_RESPONSE_STATUS.DECLINED)}>
-                                    Decline
-                                  </button>
-                                  <button type="button" className="rounded-full border border-[#dce6f2] px-2 py-1 text-[0.68rem] font-semibold text-[#35546c]" onClick={() => rescheduleViewingRequest(viewing.viewing_id, { proposedByRole: participant.role, proposedDate: viewing.proposed_date, proposedTime: viewing.proposed_time, notes: `Reschedule requested by ${participant.role}.` })}>
-                                    Propose New Time
-                                  </button>
-                                </div>
+                                <p className="mt-2 text-[0.68rem] font-medium leading-4 text-[#7b8ca2]">Responds through their secure RSVP link.</p>
                               ) : null}
                             </div>
                           ))}
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {String(viewing.status || '').toLowerCase() === VIEWING_STATUS.CONFIRMED ? (
-                            <Button size="sm" type="button" onClick={() => completeViewingRequest(viewing.viewing_id)}>Mark Completed</Button>
+                            <Button size="sm" type="button" onClick={() => void completeListingViewing(viewing.viewing_id)}>Mark Completed</Button>
                           ) : null}
                         </div>
                         {String(viewing.status || '').toLowerCase() === VIEWING_STATUS.COMPLETED ? (
@@ -14840,36 +16184,38 @@ function AgentListingDetail() {
           </nav>
 
           {sellerWorkspaceTab === 'overview' ? (
-            <section className="space-y-5">
-              <article className="rounded-[28px] border border-[#e1e9f1] bg-white p-5 shadow-[0_14px_32px_rgba(15,23,42,0.055)] sm:p-7">
-                <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <section className="space-y-6">
+              <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
+                <div className="grid items-start gap-4 sm:grid-cols-2 lg:grid-cols-5">
                   {[
                     {
                       label: 'Views',
-                      value: formatCompactNumber(listingPerformance.totalViews),
-                      meta: listingPerformance.viewChangePercent !== null && listingPerformance.viewChangePercent !== undefined
+                      value: listingPerformance.analyticsLoading
+                        ? '…'
+                        : listingPerformance.viewsAvailable
+                          ? formatCompactNumber(listingPerformance.totalViews)
+                          : '—',
+                      meta: listingPerformance.analyticsError
+                        ? 'Analytics unavailable'
+                        : listingPerformance.viewChangePercent !== null && listingPerformance.viewChangePercent !== undefined
                         ? `${formatSignedPercentValue(listingPerformance.viewChangePercent)} vs previous 30 days`
-                        : listingPerformance.portalViews || listingPerformance.bridgeViews
-                          ? `${formatCompactNumber(listingPerformance.portalViews)} portal / ${formatCompactNumber(listingPerformance.bridgeViews)} Arch9`
-                          : 'No analytics yet',
+                        : listingPerformance.viewsAvailable
+                          ? [
+                              listingPerformance.portalViews !== null ? `${formatCompactNumber(listingPerformance.portalViews)} P24` : 'P24 awaiting sync',
+                              listingPerformance.bridgeViews !== null ? `${formatCompactNumber(listingPerformance.bridgeViews)} website` : 'Website unavailable',
+                              listingPerformance.partialViews ? 'PP views unavailable' : '',
+                            ].filter(Boolean).join(' · ')
+                          : 'No verified view analytics yet',
                       icon: Eye,
-                      tone: {
-                        border: 'border-t-[#76c6fb]',
-                        icon: 'bg-[#e8f4ff] text-[#2363a0]',
-                        chip: 'bg-[#edf5ff] text-[#57718f]',
-                      },
                     },
                     {
-                      label: 'Leads', value: formatCompactNumber(listingPerformance.leadCount), meta: `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users,
-                      tone: { border: 'border-t-[#38d39f]', icon: 'bg-[#e4fbf3] text-[#0b9270]', chip: 'bg-[#e6faf3] text-[#168664]' },
+                      label: 'Leads', value: interestedLeadsLoading ? '…' : interestedLeadsError && !listingPerformance.leadCount ? '—' : formatCompactNumber(listingPerformance.leadCount), meta: interestedLeadsError ? 'Lead sync unavailable' : `${formatCompactNumber(listingPerformance.newThisWeek)} new this week`, icon: Users,
                     },
                     {
                       label: 'Viewings', value: formatCompactNumber(listingPerformance.scheduledViewings), meta: `${formatCompactNumber(listingPerformance.upcomingViewings)} upcoming`, icon: CalendarDays,
-                      tone: { border: 'border-t-[#6e91ff]', icon: 'bg-[#edf1ff] text-[#365caf]', chip: 'bg-[#edf1ff] text-[#365caf]' },
                     },
                     {
-                      label: 'Offers', value: formatCompactNumber(listingPerformance.offerCount), meta: `${formatCompactNumber(listingPerformance.pendingOffers)} active`, icon: HandCoins,
-                      tone: { border: 'border-t-[#f9b528]', icon: 'bg-[#fff3d9] text-[#aa7416]', chip: 'bg-[#fff6e5] text-[#94651b]' },
+                      label: 'Offers', value: canonicalOffersLoading ? '…' : canonicalOffersError && !listingPerformance.offerCount ? '—' : formatCompactNumber(listingPerformance.offerCount), meta: canonicalOffersError ? 'Offer sync unavailable' : `${formatCompactNumber(listingPerformance.pendingOffers)} active`, icon: HandCoins,
                     },
                     {
                       label: 'Days on market',
@@ -14878,41 +16224,47 @@ function AgentListingDetail() {
                         ? `Area avg. ${formatCompactNumber(listingPerformance.areaAverageDays)}`
                         : `Listed ${formatDate(listingPerformance.marketStartDate)}`,
                       icon: BarChart3,
-                      tone: { border: 'border-t-[#9baabd]', icon: 'bg-[#f2f5f8] text-[#526b83]', chip: 'bg-[#f3f6f8] text-[#60758c]' },
                     },
                   ].map((card) => {
                     const Icon = card.icon
                     return (
-                      <div key={card.label} className={`flex h-full min-h-[184px] flex-col justify-between rounded-[16px] border border-[#e0e9f2] border-t-[4px] bg-gradient-to-br from-white to-[#fbfdff] p-4 ${card.tone.border}`}>
+                      <div key={card.label} className="flex min-h-[138px] flex-col justify-between rounded-[14px] border border-[#e0e9f2] bg-white p-4">
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-[0.82rem] font-semibold text-[#637996]">{card.label}</p>
-                          <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-[11px] ${card.tone.icon}`}>
+                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-[#dce6f2] bg-[#f7fbff] text-[#42617f]">
                             <Icon size={17} />
                           </span>
                         </div>
-                        <p className="mt-4 text-[2.35rem] font-semibold leading-none tracking-[-0.05em] text-[#10243a]">{card.value}</p>
-                        <span className={`mt-4 inline-flex w-fit rounded-[10px] px-2.5 py-1.5 text-xs font-semibold ${card.tone.chip}`}>{card.meta}</span>
+                        <p className="mt-4 text-[2rem] font-semibold leading-none tracking-[-0.04em] text-[#10243a]">{card.value}</p>
+                        <p className="mt-4 text-xs font-medium leading-5 text-[#607387]">{card.meta}</p>
                       </div>
                     )
                   })}
                 </div>
 
-                <div className="mt-4 flex flex-wrap items-center justify-end gap-2">
-                  {listingPerformance.hasOverrides ? (
-                    <span className="mr-auto text-xs font-semibold text-[#1f7d44]">Manual seller-facing stats are active.</span>
-                  ) : null}
-                  <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
-                    Last 30 days
-                  </span>
-                  <Button type="button" size="sm" variant="secondary" onClick={openListingPerformanceEditor}>
-                    <Pencil size={14} />
-                    Edit Stats
-                  </Button>
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3" aria-live="polite">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <StatusPill status={overviewReliability.status} label={overviewReliability.label} />
+                    {overviewReliability.issues.length ? (
+                      <span className="text-xs font-medium text-[#8a5a16]">Check: {overviewReliability.issues.join(', ')}</span>
+                    ) : overviewLastRefreshedAt ? (
+                      <span className="text-xs font-medium text-[#607387]">Updated {formatOverviewTimestamp(overviewLastRefreshedAt)}</span>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex min-h-9 items-center rounded-lg border border-[#dbe6f2] bg-[#f7fbff] px-3 text-xs font-semibold text-[#35546c]">
+                      Last 30 days
+                    </span>
+                    <Button type="button" size="sm" variant="secondary" onClick={refreshListingOverview} disabled={overviewReliability.refreshing}>
+                      <RefreshCw size={14} className={overviewReliability.refreshing ? 'animate-spin' : ''} />
+                      {overviewReliability.refreshing ? 'Refreshing' : 'Refresh'}
+                    </Button>
+                  </div>
                 </div>
               </article>
 
-              <section className="grid items-stretch gap-5 xl:grid-cols-2">
-                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <section className="grid items-start gap-5 xl:grid-cols-2">
+                <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-[#142132]">Latest Buyer Activity</h2>
                     <button type="button" onClick={() => openSellerWorkspaceSection('leads')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
@@ -14920,8 +16272,17 @@ function AgentListingDetail() {
                       <ChevronRight size={14} />
                     </button>
                   </div>
-                  <div className="mt-4 flex-1 space-y-3">
-                    {overviewBuyerActivity.length ? overviewBuyerActivity.map((item) => (
+                  <div className="mt-4 space-y-3">
+                    {interestedLeadsLoading && !overviewBuyerActivity.length ? (
+                      <div className="rounded-[14px] border border-[#d8e6f6] bg-[#f3f8fd] px-4 py-6 text-sm font-medium text-[#2c5a89]">
+                        Loading buyer activity…
+                      </div>
+                    ) : interestedLeadsError && !overviewBuyerActivity.length ? (
+                      <div className="rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-4 py-4 text-sm text-[#b42318]">
+                        <p>Buyer activity could not be loaded. This is not a confirmed empty result.</p>
+                        <button type="button" className="mt-2 font-semibold underline underline-offset-2" onClick={() => void refreshInterestedLeads()}>Try again</button>
+                      </div>
+                    ) : overviewBuyerActivity.length ? overviewBuyerActivity.map((item) => (
                       <div key={item.id} className="flex items-center gap-3">
                         <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#eef5fb] text-[0.72rem] font-semibold text-[#1f4f78]">
                           {getInitials(item.buyerName)}
@@ -14938,21 +16299,21 @@ function AgentListingDetail() {
                       </div>
                     )}
                   </div>
-                  <Button type="button" size="sm" variant="secondary" className="mt-4" onClick={openShowDayCaptureModal}>
+                  <Button type="button" size="sm" variant="secondary" className="mt-4" onClick={openBuyerLeadModal}>
                     <Plus size={14} />
-                    Add Lead
+                    Add Buyer Lead
                   </Button>
                 </article>
 
-                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-[#142132]">Upcoming Viewings</h2>
-                    <button type="button" onClick={() => setActiveTab('pipeline')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
-                      View all
+                    <button type="button" onClick={() => openViewingRequestModal()} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                      Schedule
                       <ChevronRight size={14} />
                     </button>
                   </div>
-                  <div className="mt-4 flex-1 divide-y divide-[#e7edf5]">
+                  <div className="mt-4 divide-y divide-[#e7edf5]">
                     {overviewUpcomingViewings.length ? overviewUpcomingViewings.map((viewing) => (
                       <div key={viewing.id} className="grid gap-2 py-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)_auto] sm:items-center">
                         <span className="text-sm font-semibold text-[#607387]">{viewing.dateLabel}</span>
@@ -14970,153 +16331,175 @@ function AgentListingDetail() {
                       </div>
                     )}
                   </div>
-                  <Button type="button" size="sm" variant="secondary" className="mt-4" onClick={() => { setActiveTab('pipeline'); setShowViewingForm(true) }}>
+                  <Button type="button" size="sm" variant="secondary" className="mt-4" onClick={() => openViewingRequestModal()}>
                     <CalendarDays size={14} />
-                    {overviewUpcomingViewings.length ? 'Open Viewing Planner' : 'Schedule Viewing'}
+                    Schedule Viewing
                   </Button>
                 </article>
               </section>
 
-              <section className="grid items-stretch gap-5 xl:grid-cols-3">
-                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+              <section className="grid items-start gap-5 lg:grid-cols-[minmax(300px,0.9fr)_minmax(420px,1.2fr)] xl:grid-cols-[minmax(320px,0.95fr)_minmax(420px,1.35fr)_minmax(300px,0.85fr)]">
+                <article className="order-2 rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-1">
                   <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-base font-semibold text-[#142132]">Seller</h2>
-                    <button type="button" onClick={() => openSellerWorkspaceSection('seller')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
-                      Open seller
-                      <ChevronRight size={14} />
-                    </button>
+                    <div>
+                      <h2 className="text-base font-semibold text-[#142132]">Seller</h2>
+                      <p className="mt-1 text-xs text-[#607387]">Canonical seller, compliance and portal status.</p>
+                    </div>
+                    <StatusPill status={overviewSellerSnapshot.ready ? 'complete' : 'attention'} label={overviewSellerSnapshot.ready ? 'Ready' : `${overviewSellerSnapshot.attentionItems.length} to review`} />
                   </div>
-                  <p className="mt-4 text-sm font-semibold text-[#142132]">{overviewSellerSnapshot.name}</p>
-                  <div className="mt-3 space-y-2">
+                  <div className="mt-5 pb-5">
+                    <p className="text-[0.78rem] font-semibold text-[#526b82]">Seller details</p>
+                    <div className="mt-3 flex min-w-0 items-center gap-3">
+                      <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-[#dbe6f2] bg-[#eef4fa] text-sm font-semibold text-[#42617f]">
+                        {getInitials(overviewSellerSnapshot.name)}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-[#142132]">{overviewSellerSnapshot.name}</p>
+                        <p className="mt-1 truncate text-xs text-[#607387]">{overviewSellerSnapshot.email || 'Email not captured'}</p>
+                        <p className="mt-1 text-xs text-[#607387]">{overviewSellerSnapshot.phone || 'Phone not captured'}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="border-t border-[#e7edf5] pt-5">
+                    <h3 className="text-[0.78rem] font-semibold text-[#526b82]">Seller setup</h3>
+                    <div className="mt-2">
                     <OverviewStatusRow label="Seller Portal" value={overviewSellerSnapshot.portalStatus} status={overviewSellerSnapshot.portalStatusKey} />
-                    <OverviewStatusRow label="Recovery" value={getSellerPortalRecoveryStatusLabel(sellerPortalAccessState)} />
+                    <OverviewStatusRow label="Recovery" value={overviewSellerSnapshot.recoveryStatus} />
                     <OverviewStatusRow label="FICA" value={overviewSellerSnapshot.ficaStatus} status={overviewSellerSnapshot.ficaStatusKey} />
                     <OverviewStatusRow label="Mandate" value={overviewSellerSnapshot.mandateStatus} status={overviewSellerSnapshot.mandateStatusKey} />
                     <OverviewStatusRow label="Mandate expiry" value={overviewSellerSnapshot.mandateExpiry} />
-                    <OverviewStatusRow label="Last contact" value={overviewSellerSnapshot.lastContact} />
-                  </div>
-                  <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-[#142132]">Portal Security</h3>
-                      <StatusPill
-                        status={sellerPortalSecurityDiagnostics?.health || sellerPortalLifecycleStatus}
-                        label={formatStatusLabel(sellerPortalSecurityDiagnostics?.health || sellerPortalLifecycleStatus || 'unavailable')}
-                      />
-                    </div>
-                    <div className="mt-3 grid gap-2 text-xs leading-5 text-[#607387]">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-semibold text-[#6b7d93]">Failures (24h)</span>
-                        <span className="font-semibold text-[#142132]">
-                          {Number(
-                            sellerPortalSecurityDiagnostics?.authentication?.failedEvents24h ??
-                              sellerPortalSecurityDiagnostics?.failedEvents24h ??
-                              sellerPortalSecurityDiagnostics?.authentication?.failedLoginCount ??
-                              0,
-                          )}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="font-semibold text-[#6b7d93]">Open alerts</span>
-                        <span className="font-semibold text-[#142132]">
-                          {`${sellerPortalSecurityDiagnostics?.openAlerts?.length || 0} open security alert${(sellerPortalSecurityDiagnostics?.openAlerts?.length || 0) === 1 ? '' : 's'}`}
-                        </span>
-                      </div>
                     </div>
                   </div>
-                  <div className="mt-4 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4" data-testid="seller-onboarding-email-diagnostics">
+                  <div className="mt-5 border-t border-[#e7edf5] pt-5">
                     <div className="flex items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-[#142132]">Seller Onboarding Email Diagnostics</h3>
-                      <span className={`rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold ${sellerOnboardingEmailDiagnostics.failedCount ? 'border-[#f6d7d7] bg-[#fff5f5] text-[#b42318]' : 'border-[#d8eddf] bg-[#ecfaf1] text-[#1f7d44]'}`}>
-                        {sellerOnboardingEmailDiagnostics.failedCount ? 'Attention' : 'Healthy'}
-                      </span>
+                      <h3 className="text-[0.78rem] font-semibold text-[#526b82]">Portal security</h3>
+                      <StatusPill status={sellerPortalSecurityOverview.status} label={sellerPortalSecurityOverview.label} />
                     </div>
-                    {sellerOnboardingEmailDiagnostics.totalCount ? (
-                      <div className="mt-3 grid gap-2 text-xs leading-5 text-[#607387]">
-                        <div className="flex items-center justify-between gap-3"><span>Sent / queued</span><strong className="text-[#142132]">{sellerOnboardingEmailDiagnostics.sentCount}</strong></div>
-                        <div className="flex items-center justify-between gap-3"><span>Pending</span><strong className="text-[#142132]">{sellerOnboardingEmailDiagnostics.pendingCount}</strong></div>
-                        <div className="flex items-center justify-between gap-3"><span>Failed</span><strong className="text-[#142132]">{sellerOnboardingEmailDiagnostics.failedCount}</strong></div>
+                    <div className="mt-2">
+                      <OverviewStatusRow label="Failures (24h)" value={sellerPortalSecurityOverview.failures24h ?? '—'} />
+                      <OverviewStatusRow label="Open alerts" value={sellerPortalSecurityOverview.openAlerts ?? '—'} />
+                    </div>
+                  </div>
+                  <div className="mt-5 border-t border-[#e7edf5] pt-5" data-testid="seller-onboarding-email-diagnostics">
+                    <h3 className="text-[0.78rem] font-semibold text-[#526b82]">Communication</h3>
+                    <div className="mt-2">
+                      <OverviewStatusRow label="Last contact" value={overviewSellerSnapshot.lastContact} />
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs font-semibold text-[#6b7d93]">Seller onboarding email</span>
+                      <StatusPill status={sellerEmailDeliveryOverview.status} label={sellerEmailDeliveryOverview.label} />
+                    </div>
+                    {sellerEmailDeliveryOverview.hasEvidence ? (
+                      <div className="mt-2 text-xs leading-5 text-[#607387]">
+                        <OverviewStatusRow label="Sent / queued" value={sellerOnboardingEmailDiagnostics.sentCount} />
+                        <OverviewStatusRow label="Pending" value={sellerOnboardingEmailDiagnostics.pendingCount} />
+                        <OverviewStatusRow label="Failed" value={sellerOnboardingEmailDiagnostics.failedCount} />
                         {sellerOnboardingEmailDiagnostics.latestFailureMessage ? <p className="rounded-[10px] border border-[#f6d7d7] bg-[#fff5f5] px-3 py-2 text-[#b42318]">Latest failure: {sellerOnboardingEmailDiagnostics.latestFailureMessage}</p> : null}
                       </div>
                     ) : (
-                      <p className="mt-3 text-xs leading-5 text-[#607387]">No seller onboarding email delivery rows have been logged for this listing yet.</p>
+                      <p className={`mt-2 text-xs leading-5 ${sentPropertiesError ? 'text-[#b42318]' : 'text-[#607387]'}`}>
+                        {sentPropertiesError
+                          ? 'Seller email delivery history could not be loaded. Retry the Overview before relying on this status.'
+                          : 'No seller onboarding email delivery has been recorded for this listing.'}
+                      </p>
                     )}
+                  </div>
+                  <div className="mt-5 border-t border-[#e7edf5] pt-5">
+                    {!overviewSellerSnapshot.portalActivated ? (
+                      <Button type="button" size="sm" className="w-full justify-center" onClick={openSellerPortalActivationModal} disabled={sellerOwnershipUnidentified || sellerPortalActivationSending}>
+                        <Send size={14} />
+                        Activate Portal
+                      </Button>
+                    ) : null}
+                    <div className={`${!overviewSellerSnapshot.portalActivated ? 'mt-2' : ''} grid gap-2 sm:grid-cols-2`}>
+                      <Button type="button" size="sm" variant="secondary" className="justify-center" onClick={() => openSellerWorkspaceSection('seller')}>
+                        <UserRound size={14} />
+                        Open Seller
+                      </Button>
+                      {!sellerFicaOverview.complete ? (
+                        <Button type="button" size="sm" variant="secondary" className="justify-center" onClick={() => openSellerWorkspaceSection('documents')}>
+                          <ShieldCheck size={14} />
+                          Review FICA
+                        </Button>
+                      ) : null}
+                    </div>
                   </div>
                 </article>
 
-                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-                  <div className="flex items-center justify-between gap-3">
+                <article className="order-1 overflow-hidden rounded-[16px] border border-[#dde4ee] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-2" data-testid="listing-overview-marketing-hero">
+                  <div className="flex items-center justify-between gap-3 px-5 py-4">
                     <h2 className="text-base font-semibold text-[#142132]">Marketing</h2>
                     <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
                       Open marketing
                       <ChevronRight size={14} />
                     </button>
                   </div>
-                  <div className="mt-4 space-y-2">
-                    {overviewMarketingSnapshot.rows.length ? overviewMarketingSnapshot.rows.map((row) => (
-                      <div key={row.label} className="flex min-h-[34px] items-center justify-between gap-3 border-b border-[#edf2f7] py-1.5 last:border-b-0">
-                        <span className="text-xs font-semibold text-[#6b7d93]">{row.label}</span>
-                        <StatusPill status={row.status} label={row.value} />
-                      </div>
-                    )) : (
-                      <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">
-                        This listing has not been published to any marketing portals yet.
-                      </div>
-                    )}
+                  <div className="relative aspect-[32/17] border-y border-[#e5edf6] bg-[#eef4fa]">
+                    {getImageBlock(coverImage?.url || '', marketingDraft.headline || listingIdentity.title)}
+                    <span className="absolute bottom-3 left-3 rounded-full border border-white/70 bg-white/95 px-3 py-1.5 text-xs font-semibold text-[#142132] shadow-sm">
+                      {marketingDraft.galleryImages.length || 0} image{marketingDraft.galleryImages.length === 1 ? '' : 's'}
+                    </span>
                   </div>
-                </article>
-
-                <article className="flex h-full flex-col rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <h2 className="text-base font-semibold text-[#142132]">Price Position</h2>
-                    <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
-                      Edit pricing
-                      <ChevronRight size={14} />
-                    </button>
-                  </div>
-                  <div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2">
-                    <CompactSnapshotRow label="Asking Price" value={overviewPricePosition.askingPrice ? formatMoneyValue(overviewPricePosition.askingPrice) : '—'} />
-                    <CompactSnapshotRow label="Highest Offer" value={overviewPricePosition.highestOffer ? formatMoneyValue(overviewPricePosition.highestOffer) : '—'} />
-                    <CompactSnapshotRow label="Average Offer" value={overviewPricePosition.averageOffer ? formatMoneyValue(overviewPricePosition.averageOffer) : '—'} />
-                    <CompactSnapshotRow label="Difference" value={overviewPricePosition.differenceLabel} />
-                  </div>
-                  {!overviewPricePosition.offerCount ? (
-                    <p className="mt-4 rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-3 text-sm text-[#607387]">
-                      No offers received yet.
+                  <div className="p-5">
+                    <p className="text-[1.55rem] font-semibold tracking-[-0.03em] text-[#142132]">
+                      {Number(marketingDraft.price || listingRecord?.askingPrice || 0) ? formatMoneyValue(marketingDraft.price || listingRecord?.askingPrice) : 'Price not captured'}
                     </p>
-                  ) : null}
-                </article>
-              </section>
-
-              <article className="rounded-[20px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-base font-semibold text-[#142132]">Recent Activity</h2>
-                  <button type="button" onClick={() => openSellerWorkspaceSection('activity')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
-                    View all activity
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                  {overviewRecentActivity.length ? overviewRecentActivity.map((item, index) => {
-                    const Icon = item.icon || FolderKanban
-                    return (
-                      <div key={`${item.title}-${index}`} className="flex min-h-[82px] items-start gap-3 rounded-[14px] border border-[#e1e9f2] bg-[#fbfdff] p-3">
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-[10px] bg-[#eef5fb] text-[#1f4f78]">
-                          <Icon size={15} />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="line-clamp-1 text-xs font-semibold text-[#22374d]">{item.title}</p>
-                          <p className="mt-1 line-clamp-2 text-xs text-[#607387]">{item.copy}</p>
-                          <p className="mt-1 text-[0.68rem] font-semibold text-[#7b8ca2]">{formatOverviewTimestamp(item.timestamp)}</p>
-                        </div>
+                    <p className="mt-3 line-clamp-4 text-sm leading-6 text-[#607387]">
+                      {String(marketingDraft.description || listingRecord?.description || '').trim() || 'Add a public property description in Marketing to complete this listing preview.'}
+                    </p>
+                    <div className="mt-5 border-t border-[#e7edf5] pt-4">
+                      <p className="text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Listed on</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {overviewMarketingSnapshot.portalRows.length ? overviewMarketingSnapshot.portalRows.map((row) => (
+                          row.href ? (
+                            <a key={row.label} href={row.href} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                              {row.label}
+                              <ExternalLink size={12} />
+                            </a>
+                          ) : (
+                            <span key={row.label} className="inline-flex items-center gap-2 rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-3 py-1.5 text-xs font-semibold text-[#35546c]">
+                              {row.label}
+                              <StatusPill status={row.status} label={row.value} />
+                            </span>
+                          )
+                        )) : (
+                          <span className="text-xs font-medium text-[#607387]">Not published to a marketing channel yet.</span>
+                        )}
                       </div>
-                    )
-                  }) : (
-                    <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387] md:col-span-2 xl:col-span-5">
-                      No recent listing activity.
                     </div>
-                  )}
+                  </div>
+                </article>
+
+                <div className="order-3 grid content-start gap-5 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:grid-cols-1">
+                  <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-price-position">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-base font-semibold text-[#142132]">Price Position</h2>
+                      <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
+                        Edit pricing
+                        <ChevronRight size={14} />
+                      </button>
+                    </div>
+                    <div className="mt-4 grid gap-x-5 gap-y-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                      <CompactSnapshotRow label="Asking Price" value={overviewPricePosition.askingPrice ? formatMoneyValue(overviewPricePosition.askingPrice) : '—'} />
+                      <CompactSnapshotRow label="Highest Offer" value={overviewPricePosition.highestOffer ? formatMoneyValue(overviewPricePosition.highestOffer) : '—'} />
+                      <CompactSnapshotRow label="Average Offer" value={overviewPricePosition.averageOffer ? formatMoneyValue(overviewPricePosition.averageOffer) : '—'} />
+                      <CompactSnapshotRow label="Difference" value={overviewPricePosition.differenceLabel} />
+                    </div>
+                  </article>
+
+                  <ListingAgentReassignmentPanel
+                    listingId={listingRecord.id}
+                    listing={listingRecord}
+                    agent={overviewListingAgent}
+                    listingType="sale"
+                    className="rounded-[16px] p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]"
+                    onReassigned={async () => {
+                      await loadListingData({ showLoading: false })
+                      setDetailMessage('Listing agent reassigned successfully.')
+                    }}
+                  />
                 </div>
-              </article>
+              </section>
             </section>
           ) : null}
 
@@ -15129,46 +16512,51 @@ function AgentListingDetail() {
                     <p className="mt-1 text-sm text-[#607387]">All enquiries and leads that came in through this property.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => setListingLeadFiltersOpen((current) => !current)}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      aria-expanded={listingLeadFiltersOpen}
+                      aria-controls="listing-lead-filters"
+                      onClick={() => setListingLeadFiltersOpen((current) => !current)}
+                    >
                       <SlidersHorizontal size={14} />
-                      Filters
+                      Filters{activeListingLeadFilterCount ? ` (${activeListingLeadFilterCount})` : ''}
                     </Button>
                     <Button type="button" size="sm" variant="secondary" onClick={handleExportListingLeads} disabled={!filteredListingLeadRows.length}>
                       <Download size={14} />
                       Export
                     </Button>
-                    <Button type="button" size="sm" onClick={openShowDayCaptureModal}>
+                    <Button type="button" size="sm" onClick={openBuyerLeadModal}>
                       <Plus size={14} />
-                      Add Lead
+                      Add Buyer Lead
                     </Button>
                   </div>
                 </div>
 
                 {(interestedLeadsError || canonicalOffersError) ? (
-                  <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
+                  <div role="alert" className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">
                     {interestedLeadsError || canonicalOffersError}
                   </div>
                 ) : null}
                 {(interestedLeadsLoading || canonicalOffersLoading) ? (
-                  <div className="mt-4 rounded-[14px] border border-[#d8e6f6] bg-[#f3f8fd] px-3 py-2 text-sm font-semibold text-[#2c5a89]">
+                  <div role="status" aria-live="polite" className="mt-4 rounded-[14px] border border-[#d8e6f6] bg-[#f3f8fd] px-3 py-2 text-sm font-semibold text-[#2c5a89]">
                     Loading listing leads...
                   </div>
                 ) : null}
 
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Listing lead metrics">
                   {[
                     { label: 'Total leads', value: listingLeadSummary.total, meta: 'All time', icon: Users },
                     { label: 'New this week', value: listingLeadSummary.newThisWeek, meta: 'Last 7 days', icon: UserRound },
                     { label: 'Contacted', value: listingLeadSummary.contacted, meta: listingLeadSummary.percent(listingLeadSummary.contacted), icon: MessageSquare },
                     { label: 'Viewings booked', value: listingLeadSummary.viewingsBooked, meta: listingLeadSummary.percent(listingLeadSummary.viewingsBooked), icon: CalendarDays },
-                    { label: 'Offers', value: listingLeadSummary.offers, meta: listingLeadSummary.percent(listingLeadSummary.offers), icon: HandCoins },
-                    { label: 'Converted', value: listingLeadSummary.converted, meta: 'Leads to transaction', icon: CheckCircle2 },
                   ].map((card) => {
                     const Icon = card.icon
                     return (
                       <article key={card.label} className="flex min-h-[116px] flex-col justify-between rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4">
                         <div className="flex items-start gap-3">
-                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
+                          <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] bg-[#eef5fb] text-[#1f4f78]">
                             <Icon size={16} />
                           </span>
                           <p className="pt-1 text-sm font-semibold text-[#607387]">{card.label}</p>
@@ -15185,16 +16573,17 @@ function AgentListingDetail() {
                     <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8ca2]" />
                     <Field
                       className="pl-9"
+                      aria-label="Search listing leads"
                       value={listingLeadSearch}
                       onChange={(event) => setListingLeadSearch(event.target.value)}
                       placeholder="Search lead, phone, or email"
                     />
                   </label>
-                  <span className="text-sm font-semibold text-[#607387]">{filteredListingLeadRows.length} shown</span>
+                  <span aria-live="polite" className="text-sm font-semibold text-[#607387]">{filteredListingLeadRows.length} shown</span>
                 </div>
 
                 {listingLeadFiltersOpen ? (
-                  <div className="mt-4 grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4 md:grid-cols-2 xl:grid-cols-4">
+                  <div id="listing-lead-filters" className="mt-4 grid gap-3 rounded-[16px] border border-[#dce6f2] bg-[#fbfdff] p-4 md:grid-cols-2 xl:grid-cols-4">
                     <label className="grid gap-2 text-sm font-semibold text-[#2d445e]">
                       Status
                       <Field as="select" value={listingLeadStatusFilter} onChange={(event) => setListingLeadStatusFilter(event.target.value)}>
@@ -15233,6 +16622,11 @@ function AgentListingDetail() {
                         <option value="30_days">Last 30 days</option>
                       </Field>
                     </label>
+                    {activeListingLeadFilterCount ? (
+                      <div className="flex justify-end md:col-span-2 xl:col-span-4">
+                        <Button type="button" size="sm" variant="secondary" onClick={clearListingLeadFilters}>Clear filters</Button>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
               </article>
@@ -15242,6 +16636,7 @@ function AgentListingDetail() {
                   <>
                     <div className="hidden overflow-x-auto lg:block">
                       <table className="w-full min-w-[1120px] table-fixed text-left text-sm">
+                        <caption className="sr-only">Leads linked to this property</caption>
                         <thead className="bg-[#f8fbfd] text-[0.66rem] uppercase tracking-[0.1em] text-[#7b8ca2]">
                           <tr className="border-b border-[#e5edf6]">
                             <th className="w-[18%] px-5 py-3">Lead</th>
@@ -15317,11 +16712,11 @@ function AgentListingDetail() {
                                       <button type="button" onClick={() => lead.leadId && navigate(`/pipeline/leads/${lead.leadId}`)} disabled={!lead.leadId} className="flex min-h-9 w-full items-center rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] hover:bg-[#f7fbff] disabled:opacity-50">
                                         Open lead
                                       </button>
-                                      <button type="button" onClick={() => { setActiveTab('pipeline'); setShowViewingForm(true) }} className="flex min-h-9 w-full items-center rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] hover:bg-[#f7fbff]">
+                                      <button type="button" onClick={() => openViewingRequestModal(lead)} className="flex min-h-9 w-full items-center rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] hover:bg-[#f7fbff]">
                                         Schedule viewing
                                       </button>
                                       <button type="button" onClick={() => setActiveTab('offers')} className="flex min-h-9 w-full items-center rounded-[10px] px-3 text-left text-xs font-semibold text-[#243d56] hover:bg-[#f7fbff]">
-                                        Open offers
+                                        View offer history
                                       </button>
                                     </div>
                                   </details>
@@ -15330,7 +16725,7 @@ function AgentListingDetail() {
                             </tr>
                           )) : (
                             <tr>
-                              <td colSpan={8} className="px-5 py-10 text-center text-sm text-[#607387]">No leads match the current filters.</td>
+                              <td colSpan={8} className="px-5 py-10 text-center text-sm text-[#607387]"><span role="status">No leads match the current filters.</span></td>
                             </tr>
                           )}
                         </tbody>
@@ -15348,7 +16743,7 @@ function AgentListingDetail() {
                                 <p className="mt-1 truncate text-xs text-[#607387]">{lead.phone || lead.email || 'Contact pending'}</p>
                               </div>
                             </div>
-                            <button type="button" onClick={() => handleContactListingLead(lead)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78]">
+                            <button type="button" onClick={() => handleContactListingLead(lead)} className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-[#dbe6f2] bg-white text-[#1f4f78]" aria-label={`Contact ${lead.name}`} title="Contact lead">
                               <MessageSquare size={15} />
                             </button>
                           </div>
@@ -15362,7 +16757,7 @@ function AgentListingDetail() {
                           </div>
                         </article>
                       )) : (
-                        <div className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#607387]">No leads match the current filters.</div>
+                        <div role="status" className="rounded-[16px] border border-dashed border-[#d3deea] bg-[#fbfcfe] p-5 text-sm text-[#607387]">No leads match the current filters.</div>
                       )}
                     </div>
 
@@ -15371,12 +16766,12 @@ function AgentListingDetail() {
                         Showing {filteredListingLeadRows.length ? ((listingLeadPage - 1) * listingLeadPageSize) + 1 : 0} to {Math.min(listingLeadPage * listingLeadPageSize, filteredListingLeadRows.length)} of {filteredListingLeadRows.length} leads
                       </p>
                       <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => setListingLeadPage((page) => Math.max(1, page - 1))} disabled={listingLeadPage <= 1} className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#1f4f78] disabled:opacity-40">
+                        <button type="button" aria-label="Previous leads page" onClick={() => setListingLeadPage((page) => Math.max(1, page - 1))} disabled={listingLeadPage <= 1} className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#1f4f78] disabled:opacity-40">
                           <ChevronLeft size={15} />
                         </button>
-                        <span className="inline-flex h-9 min-w-9 items-center justify-center rounded-lg border border-[#b8d8cc] bg-[#f2fbf7] px-3 text-sm font-semibold text-[#1f7d44]">{listingLeadPage}</span>
+                        <span aria-current="page" className="inline-flex h-9 min-w-9 items-center justify-center rounded-lg border border-[#b8d8cc] bg-[#f2fbf7] px-3 text-sm font-semibold text-[#1f7d44]">{listingLeadPage}</span>
                         <span className="text-sm font-semibold text-[#7b8ca2]">of {listingLeadPageCount}</span>
-                        <button type="button" onClick={() => setListingLeadPage((page) => Math.min(listingLeadPageCount, page + 1))} disabled={listingLeadPage >= listingLeadPageCount} className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#1f4f78] disabled:opacity-40">
+                        <button type="button" aria-label="Next leads page" onClick={() => setListingLeadPage((page) => Math.min(listingLeadPageCount, page + 1))} disabled={listingLeadPage >= listingLeadPageCount} className="grid h-9 w-9 place-items-center rounded-lg border border-[#dbe6f2] bg-white text-[#1f4f78] disabled:opacity-40">
                           <ChevronRight size={15} />
                         </button>
                       </div>
@@ -15389,9 +16784,9 @@ function AgentListingDetail() {
                     </div>
                     <h3 className="mt-4 text-lg font-semibold text-[#142132]">No leads yet</h3>
                     <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[#607387]">Buyer enquiries for this listing will appear here as they come in.</p>
-                    <Button type="button" className="mt-5" onClick={openShowDayCaptureModal}>
+                    <Button type="button" className="mt-5" onClick={openBuyerLeadModal}>
                       <Plus size={14} />
-                      Add Lead
+                      Add Buyer Lead
                     </Button>
                   </div>
                 )}
@@ -15445,37 +16840,7 @@ function AgentListingDetail() {
               },
             ]
             const onboardingCompleteCount = onboardingItems.filter((item) => item.complete).length
-            const sellerInformationGroups = [
-              {
-                title: 'Personal',
-                rows: [
-                  ['Full name', rowValue('seller_details', 'fullName')],
-                  ['ID / Registration', rowValue('seller_details', 'idNumber')],
-                  ['Seller type', rowValue('seller_details', 'sellerType')],
-                  ['Marital status', rowValue('seller_details', 'maritalStatus')],
-                ],
-              },
-              {
-                title: 'Contact',
-                rows: [
-                  ['Email', rowValue('contact_details', 'email')],
-                  ['Mobile', rowValue('contact_details', 'phone')],
-                  ['Alternative contact', rowValue('contact_details', 'alternativeContact')],
-                  ['Preferred contact', rowValue('contact_details', 'preferredContactMethod')],
-                ],
-              },
-              {
-                title: 'Property & Ownership',
-                rows: [
-                  ['Property address', rowValue('property_ownership', 'propertyAddress')],
-                  ['Ownership type', rowValue('property_ownership', 'ownershipType')],
-                  ['Title deed number', rowValue('property_ownership', 'titleDeedNumber')],
-                  ['Bond holder', rowValue('property_ownership', 'bondHolder')],
-                  ['Outstanding bond', rowValue('property_ownership', 'outstandingBond')],
-                  ['Co-owner details', rowValue('property_ownership', 'coOwnerDetails')],
-                ],
-              },
-            ]
+            const sellerInformationGroups = sellerInformationModel.groups
             const mandateRows = [
               ['Mandate type', rowValue('mandate_details', 'mandateType')],
               ['Asking price', rowValue('mandate_details', 'askingPrice')],
@@ -15532,32 +16897,94 @@ function AgentListingDetail() {
             }
             if (sellerOwnershipUnidentified) {
               return (
-                <section className="grid min-h-[520px] place-items-center rounded-[24px] border border-[#dde4ee] bg-white p-6 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                  <div className="max-w-xl text-center">
-                    <span className="mx-auto grid h-14 w-14 place-items-center rounded-[18px] bg-[#ecfaf1] text-[#1f7d44]">
-                      <UserRound size={24} />
-                    </span>
-                    <h2 className="mt-5 text-xl font-semibold tracking-[-0.02em] text-[#142132]">Set up the seller first</h2>
-                    <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[#607387]">
-                      We only have a contact person for this listing. Choose how you want to capture the owner so Arch9 can request the right documents and generate the right mandate.
-                    </p>
-                    <div className="mt-6 flex flex-col justify-center gap-3 sm:flex-row">
-                      <Button type="button" onClick={() => openSellerProfileBuilder('Capture the ownership and bond basics before documents or mandate generation.') }>
+                <section className="space-y-4" data-testid="listing-seller-setup-required">
+                  <ListingSellerHistoricalNormalizationBanner
+                    listingId={listingRecord?.id || listingId}
+                    onReview={() => openSellerProfileBuilder('Review the historical seller record, resolve any conflicts, and confirm the legal owner before requirements change.')}
+                  />
+                  <article className="rounded-[22px] border border-[#f2dfbd] bg-[#fffaf0] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[15px] bg-[#fff0cf] text-[#8a641d]"><CircleAlert size={21} /></span>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{sellerSetupState.title}</h2>
+                            <span className="rounded-full border border-[#ead7ad] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a641d]">{sellerSetupState.source.label}</span>
+                          </div>
+                          <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#607387]">{sellerSetupState.explanation}</p>
+                        </div>
+                      </div>
+                      <Button type="button" size="sm" onClick={() => openSellerProfileBuilder(sellerSetupState.requiresReview ? 'Review the imported contact, then confirm the actual legal owner.' : 'Choose the legal owner so Arch9 can build the correct seller workspace.') }>
                         <UserRound size={15} />
-                        Capture owner details
-                      </Button>
-                      <Button type="button" variant="secondary" onClick={() => handleSendSellerOnboardingFollowUp()}>
-                        <Send size={15} />
-                        Send seller onboarding
+                        {sellerSetupState.requiresReview ? 'Review and set up seller' : 'Set up seller'}
                       </Button>
                     </div>
-                    <p className="mt-5 text-xs leading-5 text-[#8292a5]">No seller documents or mandate will be created until one of these paths provides the required owner context.</p>
+                  </article>
+
+                  <div className="grid items-stretch gap-4 xl:grid-cols-3">
+                    <article className="flex min-h-[430px] flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div><p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#8294aa]">Column 1</p><h3 className="mt-1 text-base font-semibold text-[#142132]">Seller information</h3></div>
+                        <UserRound size={19} className="text-[#52708d]" />
+                      </div>
+                      <div className="mt-5 space-y-3">
+                        {[
+                          ['Known contact', sellerSetupState.contact.name],
+                          ['Email', sellerSetupState.contact.email],
+                          ['Phone', sellerSetupState.contact.phone],
+                          ['Property', sellerProfile.propertyAddress],
+                        ].map(([label, value]) => (
+                          <div key={label} className="border-b border-[#edf2f7] pb-3 last:border-0">
+                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aad]">{label}</p>
+                            <p className="mt-1 break-words text-sm font-semibold text-[#2d445e]">{presentSellerWorkspaceValue(value)}</p>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="mt-auto rounded-[15px] border border-[#dbe6f2] bg-[#f7fbff] p-3 text-xs leading-5 text-[#607387]">Contact details are not treated as proof of ownership. Select Individual, Multiple owners, Company, Trust, Deceased estate or another supported structure.</div>
+                      <Button type="button" className="mt-4 w-full justify-center" onClick={() => openSellerProfileBuilder('Confirm who legally owns the property. Existing contact details will be preserved.')}>Capture owner details</Button>
+                    </article>
+
+                    <div className="grid min-h-[430px] grid-rows-2 gap-4">
+                      <article className="flex flex-col rounded-[22px] border border-[#e3e8ef] bg-[#f8fafc] p-5">
+                        <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-[#142132]">Mandate</h3><FileText size={18} className="text-[#9aa8b7]" /></div>
+                        <p className="mt-3 text-sm leading-6 text-[#607387]">{sellerSetupState.blockers.mandate}</p>
+                        <span className="mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-[#edf1f5] px-3 py-1.5 text-xs font-semibold text-[#66788b]"><CircleAlert size={13} /> Blocked until seller setup</span>
+                      </article>
+                      <article className="flex flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                        <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-[#142132]">Seller onboarding</h3><Send size={18} className="text-[#52708d]" /></div>
+                        <p className="mt-3 text-sm leading-6 text-[#607387]">Send basic onboarding now and let the seller identify the ownership structure. No mandate or document pack is assumed.</p>
+                        <Button type="button" size="sm" variant="secondary" className="mt-auto w-full justify-center" onClick={() => handleSendSellerOnboardingFollowUp()}>
+                          <Send size={15} /> Send seller onboarding
+                        </Button>
+                      </article>
+                    </div>
+
+                    <div className="grid min-h-[430px] grid-rows-2 gap-4">
+                      <article className="flex flex-col rounded-[22px] border border-[#e3e8ef] bg-[#f8fafc] p-5">
+                        <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-[#142132]">Documents and compliance</h3><ShieldCheck size={18} className="text-[#9aa8b7]" /></div>
+                        <p className="mt-3 text-sm leading-6 text-[#607387]">{sellerSetupState.blockers.documents}</p>
+                        <span className="mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-[#edf1f5] px-3 py-1.5 text-xs font-semibold text-[#66788b]"><CircleAlert size={13} /> No assumed checklist</span>
+                      </article>
+                      <article className="flex flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
+                        <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-[#142132]">Notes and special conditions</h3><MessageSquare size={18} className="text-[#52708d]" /></div>
+                        <div className="mt-3 max-h-24 space-y-2 overflow-y-auto pr-1">
+                          {notesRows.some(([, value]) => String(value || '').trim())
+                            ? notesRows.filter(([, value]) => String(value || '').trim()).map(([label, value]) => <p key={label} className="text-sm leading-5 text-[#607387]"><span className="font-semibold text-[#2d445e]">{label}:</span> {value}</p>)
+                            : <p className="text-sm leading-6 text-[#8292a5]">No notes or special conditions captured yet.</p>}
+                        </div>
+                        <Button type="button" size="sm" variant="secondary" className="mt-auto w-full justify-center" onClick={() => openSellerSectionEditor(getSection('notes'))}><Pencil size={14} /> Edit notes</Button>
+                      </article>
+                    </div>
                   </div>
                 </section>
               )
             }
             return (
               <section className="space-y-5">
+                <ListingSellerHistoricalNormalizationBanner
+                  listingId={listingRecord?.id || listingId}
+                  onReview={() => openSellerProfileBuilder('Review the historical seller record and confirm the legal owner before requirements change.')}
+                />
                 <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                   <div className="flex flex-col gap-6 xl:flex-row xl:items-center xl:justify-between">
                     <div className="flex min-w-0 items-start gap-4">
@@ -15567,7 +16994,7 @@ function AgentListingDetail() {
                       <div className="min-w-0">
                         <button
                           type="button"
-                          onClick={() => navigate('/listings')}
+                          onClick={() => navigateFromListing('/listings')}
                           className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-[#5f7894] hover:text-[#1f4f78]"
                         >
                           <ArrowLeft size={13} />
@@ -15598,9 +17025,9 @@ function AgentListingDetail() {
                       </div>
                     </div>
                     <div className="flex flex-wrap gap-2 lg:justify-end">
-                      <Button size="sm" onClick={() => openSellerProfileBuilder(sellerOwnershipUnidentified ? 'Choose who owns this property before collecting documents.' : 'Complete the seller profile from the listing workspace.')}>
+                      <Button size="sm" onClick={continueSellerOnboardingFromWorkspace}>
                         <UserRound size={15} />
-                        {sellerOwnershipUnidentified ? 'Capture Owner Details' : 'Continue Seller Onboarding'}
+                        Continue Seller Onboarding
                       </Button>
                       <Button size="sm" onClick={openSellerPortalActivationModal} disabled={sellerOwnershipUnidentified || sellerPortalActivationSending || resendingSellerPortalLink || sellerPortalAccessState?.linkActive === false}>
                         <Link2 size={15} />
@@ -15655,6 +17082,8 @@ function AgentListingDetail() {
                     <div className="mt-4 rounded-[14px] border border-[#dce6f2] bg-white p-3"><p className="text-sm font-semibold text-[#243d56]">Outstanding portal documents</p>{portalTasks.length ? <div className="mt-2 flex flex-wrap gap-2">{portalTasks.map((task) => <span key={task.key} className="rounded-full border border-[#dbe6f2] bg-[#f7fbff] px-2.5 py-1 text-xs font-semibold text-[#35546c]">{task.title || task.key}</span>)}</div> : <p className="mt-1 text-sm text-[#607387]">No outstanding seller-visible document tasks.</p>}</div>
                   </article>
                 ) : null}
+
+                <ListingSellerCollaborationPanel listing={listingRecord} onChanged={() => loadListingData({ showLoading: false })} />
 
                 {sellerContactEditorOpen ? (
                   <form className="rounded-[24px] border border-[#bcd5ea] bg-[#f7fbff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.045)]" onSubmit={handleSaveSellerContact}>
@@ -15712,8 +17141,8 @@ function AgentListingDetail() {
                   </form>
                 ) : null}
 
-                <section className="grid items-stretch gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,0.7fr)_minmax(0,0.7fr)]">
-                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                <section className="grid items-stretch gap-5 xl:h-[760px] xl:grid-cols-3" data-testid="configured-seller-workspace-columns">
+                  <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
                         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
@@ -15721,7 +17150,7 @@ function AgentListingDetail() {
                         </span>
                         <h3 className="min-w-0 break-words text-base font-semibold text-[#142132]">Seller Information</h3>
                       </div>
-                      <Button type="button" size="sm" variant="secondary" onClick={() => openSellerProfileBuilder('Update seller information from the listing workspace.')}>
+                      <Button type="button" size="sm" variant="secondary" onClick={openSellerInformationEditor}>
                         <Pencil size={14} />
                         Edit
                       </Button>
@@ -15731,10 +17160,10 @@ function AgentListingDetail() {
                         <div key={group.title}>
                           <h4 className="text-xs font-semibold text-[#243d56]">{group.title}</h4>
                           <div className="mt-2 divide-y divide-[#edf2f7]">
-                            {group.rows.map(([label, value]) => (
-                              <div key={`${group.title}-${label}`} className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] gap-3 py-2">
-                                <span className="text-xs font-semibold text-[#6b7d93]">{label}</span>
-                                <span className="break-words text-right text-sm font-semibold leading-5 text-[#243d56]">{value}</span>
+                            {group.rows.map((row) => (
+                              <div key={`${group.key}-${row.key}`} className="grid grid-cols-[minmax(0,0.85fr)_minmax(0,1fr)] gap-3 py-2">
+                                <span className="text-xs font-semibold text-[#6b7d93]">{row.label}</span>
+                                <span className="break-words text-right text-sm font-semibold leading-5 text-[#243d56]">{presentSellerWorkspaceValue(row.value)}</span>
                               </div>
                             ))}
                           </div>
@@ -15743,7 +17172,8 @@ function AgentListingDetail() {
                     </div>
                   </article>
 
-                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <div className="grid min-h-0 grid-rows-2 gap-5">
+                  <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
                         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
@@ -15797,6 +17227,21 @@ function AgentListingDetail() {
                         )}
                       </div>
                     </div>
+                    {mandateReplacementWorkflow.requiresAction ? (
+                      <div className={`mt-4 rounded-[16px] border p-3 ${mandateReplacementWorkflow.isAmendment ? 'border-[#f0ddbf] bg-[#fffaf1]' : 'border-[#d8e7f7] bg-[#f7fbff]'}`}>
+                        <p className={`text-sm font-semibold ${mandateReplacementWorkflow.isAmendment ? 'text-[#7a4b10]' : 'text-[#315879]'}`}>{mandateReplacementWorkflow.title}</p>
+                        <p className="mt-1 text-xs leading-5 text-[#607387]">{mandateReplacementWorkflow.isAmendment ? 'The signed version stays intact until all required sellers sign the replacement.' : 'Prepare a new draft from the latest saved mandate details.'}</p>
+                        <Button type="button" size="sm" className="mt-3" onClick={openMandateReplacementReview}>
+                          <RefreshCw size={14} />
+                          {mandateReplacementWorkflow.isAmendment ? 'Regenerate and send for signature' : 'Regenerate mandate'}
+                        </Button>
+                      </div>
+                    ) : mandateReplacementWorkflow.status === 'replacement_pending' ? (
+                      <div className="mt-4 rounded-[16px] border border-[#d8e7f7] bg-[#f7fbff] p-3 text-sm text-[#315879]">
+                        <p className="font-semibold">Replacement mandate awaiting signatures</p>
+                        <p className="mt-1 text-xs leading-5 text-[#607387]">The existing signed mandate remains the current version until every required signer completes the replacement pack.</p>
+                      </div>
+                    ) : null}
                     {sellerAttorneyInstructionReadiness.status !== 'not_applicable' ? (
                       <div className="mt-4 rounded-[16px] border border-[#d9e7f3] bg-[#f7fbff] p-3">
                         <div className="flex items-start gap-2.5">
@@ -15817,7 +17262,7 @@ function AgentListingDetail() {
                     ) : null}
                   </article>
 
-                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex items-start gap-3">
                       <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
                         <ShieldCheck size={18} />
@@ -15842,14 +17287,14 @@ function AgentListingDetail() {
                         </div>
                       ))}
                     </div>
-                    <Button type="button" size="sm" className="mt-6 w-full justify-center" onClick={() => openSellerProfileBuilder(sellerOwnershipUnidentified ? 'Choose who owns this property before collecting documents.' : 'Continue the seller onboarding from the listing workspace.')}>
-                      {sellerOwnershipUnidentified ? 'Capture Owner Details' : 'Continue Onboarding'}
+                    <Button type="button" size="sm" className="mt-6 w-full justify-center" onClick={continueSellerOnboardingFromWorkspace}>
+                      Continue Onboarding
                     </Button>
                   </article>
-                </section>
+                  </div>
 
-                <section className="grid items-start gap-5 xl:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)]">
-                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <div className="grid min-h-0 grid-rows-2 gap-5">
+                  <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
                         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
@@ -15880,13 +17325,13 @@ function AgentListingDetail() {
                         </div>
                       )}
                     </div>
-                    <Button type="button" size="sm" variant="secondary" className="mt-5" onClick={() => openSellerWorkspaceSection('documents')}>
+                    <Button type="button" size="sm" variant="secondary" className="mt-5" onClick={() => setSellerDocumentUploadModalOpen(true)}>
                       <Upload size={14} />
                       Upload Documents
                     </Button>
                   </article>
 
-                  <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <article className="min-h-0 overflow-y-auto rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
                         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#ecfaf1] text-[#1f7d44]">
@@ -15907,7 +17352,9 @@ function AgentListingDetail() {
                         </div>
                       ))}
                     </div>
+                    <p className="mt-4 rounded-[14px] border border-[#d8e7f7] bg-[#f7fbff] px-3 py-2 text-xs leading-5 text-[#315879]">Special conditions and saved seller notes are included in the next generated mandate. Editing them after signature starts the mandate replacement workflow.</p>
                   </article>
+                  </div>
                 </section>
               </section>
             )
@@ -15917,59 +17364,146 @@ function AgentListingDetail() {
 
           {sellerWorkspaceTab === 'documents' ? (
             <section className="space-y-5">
-              <article className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              {sellerDocumentSource?.requirementState?.provisional ? (
+                <div className="flex items-start gap-3 rounded-[18px] border border-[#f0d7a8] bg-[#fffaf0] px-4 py-3 text-[#815919]" role="status">
+                  <CircleAlert size={18} className="mt-0.5 shrink-0" />
                   <div>
-                    <h3 className="text-base font-semibold text-[#142132]">Seller Document Centre</h3>
-                    <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">
-                      Documents are grouped the same way the seller sees them in the portal, so FICA, property records, sale documents, and requests are easy to review.
-                    </p>
+                    <p className="text-sm font-semibold">Provisional document checklist</p>
+                    <p className="mt-1 text-xs leading-5">{sellerDocumentSource.requirementState.message}</p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#607387]">
-                      {sellerDocumentTrackerRows.length} total
+                </div>
+              ) : null}
+              <article className="rounded-[18px] border border-[#dde4ee] bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+                <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[14px] bg-[#eef5fb] text-[#1f4f78]">
+                      <FileText size={20} />
                     </span>
+                    <div>
+                      <h2 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-[#142132]">Seller Documents</h2>
+                      <p className="mt-1 text-sm leading-6 text-[#607387]">Collect, review and request documents required for this listing.</p>
+                    </div>
+                  </div>
+                  <div className="max-w-sm lg:text-right">
                     <Button type="button" size="sm" onClick={openSellerDocumentSend}>
                       <Send size={14} />
-                      Review and send FICA + mandate
+                      Review &amp; send FICA + mandate
                     </Button>
+                    <p className="mt-2 text-xs leading-5 text-[#74879d]">Generate the seller FICA pack and request outstanding documents.</p>
                   </div>
                 </div>
-                <div className="mt-5 overflow-x-auto">
-                  <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2" aria-label="Listing document categories">
-                    {listingDocumentGroups.map((group) => {
-                      const isActive = activeListingDocumentGroup?.key === group.key
-                      const completeCount = group.documents.filter(isListingDocumentComplete).length
-                      return (
-                        <button
-                          key={group.key}
-                          type="button"
-                          onClick={() => setActiveListingDocumentTab(group.key)}
-                          className={`inline-flex min-h-[44px] min-w-[180px] items-center justify-center rounded-[14px] px-4 py-2 text-sm font-semibold transition ${
-                            isActive
-                              ? 'border border-[#d1deeb] bg-white text-[#142132] shadow-[0_10px_22px_rgba(15,23,42,0.08)]'
-                              : 'border border-transparent text-[#5f7086] hover:border-[#d8e4ef] hover:bg-white hover:text-[#142132]'
-                          }`}
-                        >
-                          <span className="truncate">{group.label}</span>
-                          <span className="ml-2 inline-flex min-w-[32px] items-center justify-center rounded-full border border-[#dce6f0] bg-white px-1.5 py-0.5 text-[0.68rem] font-semibold text-[#5f7086]">
-                            {completeCount}/{group.documents.length}
-                          </span>
-                        </button>
-                      )
-                    })}
-                  </nav>
+
+                <div className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 sm:grid-cols-3">
+                  <div className="flex items-center gap-3 rounded-[14px] border border-[#e0e8f0] bg-white px-4 py-3">
+                    <span
+                      className="relative grid h-10 w-10 place-items-center rounded-full border-[4px] border-[#dce5ee] text-[0.68rem] font-bold text-[#1f7d44]"
+                      role="progressbar"
+                      aria-label="Seller document completion"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={listingSellerDocumentSummary.progressPercent}
+                    >
+                      {listingSellerDocumentSummary.progressPercent}%
+                    </span>
+                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentSummary.complete} / {listingSellerDocumentSummary.total}</p><p className="text-xs text-[#607387]">complete</p></div>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-[14px] border border-[#e0e8f0] bg-white px-4 py-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#fff8ea] text-[#a56b14]"><Send size={18} /></span>
+                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentSummary.awaitingSeller}</p><p className="text-xs text-[#607387]">awaiting seller</p></div>
+                  </div>
+                  <div className="flex items-center gap-3 rounded-[14px] border border-[#e0e8f0] bg-white px-4 py-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-[12px] bg-[#eef6ff] text-[#2f628d]"><Eye size={18} /></span>
+                    <div><p className="text-lg font-semibold text-[#142132]">{listingSellerDocumentSummary.readyForReview}</p><p className="text-xs text-[#607387]">ready for review</p></div>
+                  </div>
                 </div>
+
+                <nav className="flex gap-7 overflow-x-auto border-t border-[#edf2f7] px-5" aria-label="Listing document categories" role="tablist">
+                  {listingDocumentGroups.map((group, groupIndex) => {
+                    const isActive = activeListingDocumentGroup?.key === group.key
+                    const completeCount = group.documents.filter(isListingDocumentComplete).length
+                    return (
+                      <button
+                        key={group.key}
+                        id={`listing-document-tab-${group.key}`}
+                        type="button"
+                        role="tab"
+                        aria-selected={isActive}
+                        aria-controls={`listing-document-panel-${group.key}`}
+                        tabIndex={isActive ? 0 : -1}
+                        onClick={() => setActiveListingDocumentTab(group.key)}
+                        onKeyDown={(event) => {
+                          const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0
+                          const targetIndex = event.key === 'Home'
+                            ? 0
+                            : event.key === 'End'
+                              ? listingDocumentGroups.length - 1
+                              : direction
+                                ? (groupIndex + direction + listingDocumentGroups.length) % listingDocumentGroups.length
+                                : -1
+                          if (targetIndex < 0) return
+                          event.preventDefault()
+                          const targetGroup = listingDocumentGroups[targetIndex]
+                          setActiveListingDocumentTab(targetGroup.key)
+                          window.requestAnimationFrame(() => document.getElementById(`listing-document-tab-${targetGroup.key}`)?.focus())
+                        }}
+                        className={`relative inline-flex min-h-[52px] shrink-0 items-center gap-2 text-sm font-semibold transition ${isActive ? 'text-[#173f63]' : 'text-[#607387] hover:text-[#243d56]'}`}
+                      >
+                        {group.key === 'sales' ? 'Sale' : group.key === 'requests' ? 'Requests' : group.label.replace(' Documents', '')}
+                        <span className="rounded-full bg-[#f1f5f8] px-2 py-0.5 text-[0.7rem] text-[#607387]">{completeCount}/{group.documents.length}</span>
+                        {isActive ? <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-[#2f6f9f]" /> : null}
+                      </button>
+                    )
+                  })}
+                </nav>
               </article>
+
+              {detailError && /document|upload|requirement|checklist/i.test(detailError) ? (
+                <div role="alert" className="flex items-start gap-3 rounded-[16px] border border-[#efcbc8] bg-[#fff7f6] px-4 py-3 text-[#963d35]">
+                  <CircleAlert size={17} className="mt-0.5 shrink-0" />
+                  <div>
+                    <p className="text-sm font-semibold">Documents need attention</p>
+                    <p className="mt-1 text-xs leading-5">{detailError}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {sellerDocumentDeliveriesError ? (
+                <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-[16px] border border-[#efcbc8] bg-[#fff7f6] px-4 py-3 text-[#963d35]">
+                  <div className="flex items-start gap-3">
+                    <CircleAlert size={17} className="mt-0.5 shrink-0" />
+                    <div><p className="text-sm font-semibold">Message status unavailable</p><p className="mt-1 text-xs leading-5">{sellerDocumentDeliveriesError}</p></div>
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => void loadSellerDocumentDeliveries()} disabled={sellerDocumentDeliveriesLoading}>
+                    {sellerDocumentDeliveriesLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    Retry status check
+                  </Button>
+                </div>
+              ) : null}
+
+              {sellerDocumentDeliveriesLoading ? <p role="status" className="text-xs font-semibold text-[#607387]">Checking document message delivery…</p> : null}
+
+              {sellerDocumentWorkflowAction || sellerDocumentUploadKey || openingSellerDocumentKey ? (
+                <p role="status" aria-live="polite" className="sr-only">
+                  Updating the seller document workflow. Please wait.
+                </p>
+              ) : null}
 
               {activeListingDocumentGroup ? (() => {
                 const group = activeListingDocumentGroup
                 const GroupIcon = group.icon
                 const completeCount = group.documents.filter(isListingDocumentComplete).length
+                const requestableCount = group.documents.filter((document) => resolveListingSellerDocumentActions(document).canRequest).length
                 return (
-                  <article key={group.key} className="rounded-[24px] border border-[#dde4ee] bg-white p-5 shadow-[0_12px_28px_rgba(15,23,42,0.055)]">
+                  <article
+                    key={group.key}
+                    id={`listing-document-panel-${group.key}`}
+                    role="tabpanel"
+                    aria-labelledby={`listing-document-tab-${group.key}`}
+                    tabIndex={0}
+                    className="overflow-hidden rounded-[18px] border border-[#dde4ee] bg-white shadow-[0_8px_22px_rgba(15,23,42,0.035)] outline-none focus-visible:ring-2 focus-visible:ring-[#2f6f9f]"
+                  >
                     <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
+                      <div className="flex min-w-0 items-start gap-3 px-5 py-4">
                         <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-[15px] border ${group.toneClasses}`}>
                           <GroupIcon size={19} />
                         </span>
@@ -15978,49 +17512,72 @@ function AgentListingDetail() {
                           <p className="mt-1 text-sm leading-6 text-[#607387]">{group.description}</p>
                         </div>
                       </div>
-                      <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#607387]">
-                        {completeCount} of {group.documents.length} complete
-                      </span>
+                      <div className="mr-5 mt-4 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center rounded-full border border-[#dbe6f2] bg-[#f8fbfd] px-3 py-1.5 text-xs font-semibold text-[#607387]">
+                          {completeCount} of {group.documents.length} complete
+                        </span>
+                        {requestableCount ? (
+                          <Button type="button" size="sm" variant="secondary" onClick={() => void handleSellerDocumentGroupRequest(group)} disabled={Boolean(sellerDocumentWorkflowAction)}>
+                            {sellerDocumentWorkflowAction === `${group.key}:request-group` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                            Request {requestableCount} outstanding
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
 
                     {group.documents.length ? (
-                      <div className="mt-5 grid gap-3 lg:grid-cols-2">
-                        {group.documents.map((doc) => (
-                          <div key={doc.key} className="rounded-[18px] border border-[#e1e9f2] bg-[#fbfdff] p-4">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="border-t border-[#e8eef4]">
+                        <div className="hidden grid-cols-[minmax(0,1.45fr)_minmax(150px,0.8fr)_minmax(145px,0.65fr)_minmax(260px,1fr)] gap-4 bg-[#f7f9fb] px-5 py-2.5 text-[0.7rem] font-semibold uppercase tracking-[0.06em] text-[#74879d] lg:grid">
+                          <span>Document</span><span>Source</span><span>Status</span><span className="text-right">Actions</span>
+                        </div>
+                        {group.documents.map((doc) => {
+                          const status = resolveListingSellerDocumentStatus(doc)
+                          const actions = resolveListingSellerDocumentActions(doc)
+                          const activity = resolveListingSellerDocumentActivity(doc)
+                          const delivery = sellerDocumentDeliveryIndex.forDocument(doc)
+                          const deliveryPresentation = getSellerDocumentDeliveryPresentation(delivery)
+                          return (
+                          <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 lg:min-h-[72px] lg:grid-cols-[minmax(0,1.45fr)_minmax(150px,0.8fr)_minmax(145px,0.65fr)_minmax(260px,1fr)] lg:items-center lg:gap-4">
+                            <div className="flex min-w-0 items-start gap-3">
+                              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] bg-[#eef5fb] text-[#2f628d]"><FileText size={16} /></span>
                               <div className="min-w-0">
                                 <p className="break-words text-sm font-semibold leading-5 text-[#243d56]">{doc.label}</p>
-                                <p className="mt-1 text-xs leading-5 text-[#74879d]">
-                                  {doc.required ? 'Required seller document' : 'Optional seller document'}
-                                </p>
+                                <p className="mt-0.5 text-xs leading-5 text-[#74879d]">{doc.required ? 'Required seller document' : 'Optional seller document'}</p>
+                                {doc.reviewSla ? (() => {
+                                  const sla = getSellerDocumentSlaPresentation(doc.reviewSla)
+                                  return sla ? <p className={`mt-1 text-[0.7rem] font-semibold ${sla.classes.includes('963d35') ? 'text-[#963d35]' : 'text-[#607387]'}`}>{sla.label}</p> : null
+                                })() : null}
                               </div>
-                              <StatusPill status={doc.status} label={doc.statusLabel || formatStatusLabel(doc.status)} />
                             </div>
-                            <div className="mt-4 grid gap-2 text-xs leading-5 text-[#607387] sm:grid-cols-2">
-                              <p>
-                                <span className="font-semibold text-[#425970]">Source:</span>{' '}
-                                {doc.sourceLabel || (doc.uploaded ? 'Seller portal / linked document' : 'Requirement checklist')}
-                              </p>
-                              <p>
-                                <span className="font-semibold text-[#425970]">Uploaded:</span>{' '}
-                                {doc.uploadedOn ? formatDate(doc.uploadedOn) : 'Not uploaded'}
-                              </p>
-                              {doc.fileName ? (
-                                <p className="min-w-0 sm:col-span-2">
-                                  <span className="font-semibold text-[#425970]">File:</span>{' '}
-                                  <span className="break-words">{doc.fileName}</span>
-                                </p>
+                            <div className="text-xs leading-5 text-[#607387]">
+                              <p><span className="font-semibold text-[#425970] lg:hidden">Source: </span>{doc.sourceLabel || (doc.uploaded ? 'Seller portal / linked document' : 'Requirement checklist')}</p>
+                              {deliveryPresentation ? (
+                                <div className="mt-1.5">
+                                  <p className={`font-semibold ${deliveryPresentation.classes}`}>{deliveryPresentation.label}{delivery.recipientEmail ? ` · ${delivery.recipientEmail}` : ''}</p>
+                                  {deliveryPresentation.detail ? <p className="mt-0.5 break-words text-[0.7rem] text-[#963d35]">{deliveryPresentation.detail}</p> : null}
+                                </div>
                               ) : null}
                             </div>
-                            {doc.reviewSla ? (() => {
-                              const sla = getSellerDocumentSlaPresentation(doc.reviewSla)
-                              return sla ? (
-                                <div className={`mt-3 rounded-[12px] border px-3 py-2 text-xs font-semibold ${sla.classes}`} role={doc.reviewSla.blocking ? 'alert' : 'status'}>
-                                  {sla.label}{doc.reviewSla.reviewDueAt ? ` · Due ${formatDate(doc.reviewSla.reviewDueAt)}` : ''}
-                                </div>
-                              ) : null
-                            })() : null}
-                            <div className="mt-4 flex flex-wrap justify-end gap-2">
+                            <div>
+                              <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${status.classes}`}>{status.label}</span>
+                              <p className="mt-1.5 text-[0.7rem] font-semibold text-[#425970]">Next: {activity.nextActorLabel}</p>
+                              <p className="mt-0.5 text-[0.7rem] leading-4 text-[#74879d]">
+                                {activity.lastEventLabel}{activity.lastEventAt ? ` · ${formatDate(activity.lastEventAt)}` : ''}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                              {actions.canRequest ? (
+                                <Button type="button" size="sm" onClick={() => void handleSellerDocumentRequest(doc)} disabled={Boolean(sellerDocumentWorkflowAction)}>
+                                  {sellerDocumentWorkflowAction === `${doc.key || doc.id}:request` ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                                  Request
+                                </Button>
+                              ) : null}
+                              {delivery?.retryable ? (
+                                <Button type="button" size="sm" variant="secondary" onClick={() => void handleRetrySellerDocumentDelivery(delivery)} disabled={Boolean(sellerDocumentWorkflowAction)}>
+                                  {sellerDocumentWorkflowAction === `${delivery.id}:retry-delivery` ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                                  Retry message
+                                </Button>
+                              ) : null}
                               {documentMatchesSellerPackTransactionKey(doc, SELLER_BASE_PACK_KEYS.SIGNED_MANDATE) && !isListingDocumentComplete(doc) ? (
                                 (commissionDraft.basis === 'fixed' ? Number(commissionDraft.amount) > 0 : Number(commissionDraft.percentage) > 0) && String(commissionDraft.vatHandling || '').trim() ? (
                                   <Button type="button" size="sm" onClick={() => void sendListingMandateSigningLink()} disabled={followUpActionId === 'send_mandate_signing_link'}>
@@ -16029,19 +17586,21 @@ function AgentListingDetail() {
                                   </Button>
                                 ) : null
                               ) : null}
-                              {doc.canUpload !== false ? (
+                              {actions.canUpload ? (
                                 <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                                   {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
-                                  {doc.uploaded ? 'Replace' : 'Upload'}
+                                  {actions.uploadLabel}
                                   <input
                                     type="file"
                                     className="hidden"
+                                    aria-label={`${actions.uploadLabel} ${doc.label}`}
+                                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/jpeg,image/png"
                                     disabled={Boolean(sellerDocumentUploadKey)}
                                     onChange={(event) => void handleSellerDocumentUpload(doc, event)}
                                   />
                                 </label>
                               ) : null}
-                              {doc.canDownload !== false && (doc.url || doc.filePath || doc.generatedHtml || (doc.packetId && doc.packetVersionId)) ? (
+                              {actions.canOpen ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSellerDocument(doc)}
@@ -16049,35 +17608,58 @@ function AgentListingDetail() {
                                   className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition hover:border-[#b7c8db] hover:bg-[#f7fbff] disabled:cursor-not-allowed disabled:opacity-60"
                                 >
                                   {openingSellerDocumentKey === doc.key ? <Loader2 size={14} className="animate-spin" /> : <ExternalLink size={14} />}
-                                  Download
+                                  View
                                 </button>
-                              ) : doc.downloadReason ? (
-                                <span className="inline-flex min-h-9 items-center rounded-lg border border-dashed border-[#dbe6f2] px-3 text-xs font-semibold text-[#607387]">
-                                  {doc.downloadReason}
-                                </span>
-                              ) : (
-                                <span className="inline-flex min-h-9 items-center rounded-lg border border-dashed border-[#dbe6f2] px-3 text-xs font-semibold text-[#9aa9b8]">
-                                  Awaiting upload
-                                </span>
-                              )}
+                              ) : null}
+                              <SellerDocumentReviewActions
+                                item={doc}
+                                busyAction={sellerDocumentWorkflowAction}
+                                onReview={handleSellerDocumentReview}
+                                onReminder={handleSellerDocumentReminder}
+                                compact
+                              />
                             </div>
-                            <SellerDocumentReviewActions
-                              item={doc}
-                              busyAction={sellerDocumentWorkflowAction}
-                              onReview={handleSellerDocumentReview}
-                              onReminder={handleSellerDocumentReminder}
-                            />
                           </div>
-                        ))}
+                          )
+                        })}
                       </div>
                     ) : (
-                      <div className="mt-5 rounded-[18px] border border-dashed border-[#d8e2ee] bg-[#fbfdff] px-4 py-5 text-sm leading-6 text-[#607387]">
+                      <div className="border-t border-[#edf2f7] px-5 py-8 text-sm leading-6 text-[#607387]">
                         No documents in this group yet.
                       </div>
                     )}
                   </article>
                 )
               })() : null}
+
+              <article className="rounded-[18px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_22px_rgba(15,23,42,0.035)]" data-testid="listing-document-transaction-continuity">
+                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-semibold text-[#142132]">Transaction continuity</h3>
+                      <StatusPill status={sellerPackTransactionSummary.status} label={sellerPackTransactionSummary.label} />
+                    </div>
+                    <p className="mt-1 max-w-3xl text-sm leading-6 text-[#607387]">Approved listing documents remain canonical and are promoted into the transaction file when a transaction is created. A failed handoff stays visible and can be retried without re-uploading the document.</p>
+                  </div>
+                  <Button type="button" size="sm" variant="secondary" onClick={() => void handleRepairSellerPackTransactionHandoff()} disabled={sellerPackHandoffAction === 'repair'}>
+                    {sellerPackHandoffAction === 'repair' ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                    {sellerPackTransactionSummary.attention || sellerPackTransactionSummary.queued || sellerPackTransactionSummary.uploadedOnly ? 'Retry handoff' : 'Check handoff'}
+                  </Button>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-4">
+                  <div className="rounded-[14px] border border-[#e0e8f0] bg-[#f8fbfd] px-3 py-2"><p className="text-lg font-semibold text-[#142132]">{sellerPackTransactionSummary.promoted}</p><p className="text-xs text-[#607387]">promoted</p></div>
+                  <div className="rounded-[14px] border border-[#e0e8f0] bg-[#f8fbfd] px-3 py-2"><p className="text-lg font-semibold text-[#142132]">{sellerPackTransactionSummary.queued}</p><p className="text-xs text-[#607387]">queued</p></div>
+                  <div className="rounded-[14px] border border-[#e0e8f0] bg-[#f8fbfd] px-3 py-2"><p className="text-lg font-semibold text-[#142132]">{sellerPackTransactionSummary.attention}</p><p className="text-xs text-[#607387]">needs attention</p></div>
+                  <div className="rounded-[14px] border border-[#e0e8f0] bg-[#f8fbfd] px-3 py-2"><p className="text-lg font-semibold text-[#142132]">{sellerPackTransactionSummary.missing + sellerPackTransactionSummary.uploadedOnly}</p><p className="text-xs text-[#607387]">not ready</p></div>
+                </div>
+                {sellerPackTransactionRows.some((row) => row.handoff.status === 'attention') ? (
+                  <div className="mt-4 space-y-2">
+                    {sellerPackTransactionRows.filter((row) => row.handoff.status === 'attention').map((row) => (
+                      <p key={row.key} className="rounded-[12px] border border-[#efcbc8] bg-[#fff7f6] px-3 py-2 text-xs leading-5 text-[#963d35]">{row.label}: {row.handoff.detail || 'Transaction handoff needs attention.'}</p>
+                    ))}
+                  </div>
+                ) : null}
+              </article>
             </section>
           ) : null}
 
@@ -16097,15 +17679,21 @@ function AgentListingDetail() {
                 </div>
               </div>
 
-              {commissionWorkspace.mandateRefreshRequired ? (
-                <div className={`mt-5 rounded-[16px] border px-4 py-3 text-sm leading-6 ${commissionWorkspace.mandateAmendmentRequired ? 'border-[#f0ddbf] bg-[#fffaf1] text-[#7a4b10]' : 'border-[#d8e7f7] bg-[#f7fbff] text-[#315879]'}`}>
-                  <p className="font-semibold">{commissionWorkspace.mandateAmendmentRequired ? 'Signed mandate needs an amendment' : 'Mandate draft needs a refresh'}</p>
+              {mandateReplacementWorkflow.requiresAction ? (
+                <div className={`mt-5 rounded-[16px] border px-4 py-3 text-sm leading-6 ${mandateReplacementWorkflow.isAmendment ? 'border-[#f0ddbf] bg-[#fffaf1] text-[#7a4b10]' : 'border-[#d8e7f7] bg-[#f7fbff] text-[#315879]'}`}>
+                  <p className="font-semibold">{mandateReplacementWorkflow.title}</p>
                   <p className="mt-1">
-                    {commissionWorkspace.mandateAmendmentRequired
-                      ? 'Commercial terms changed after signing. The signed document remains unchanged; prepare and sign an amendment before relying on the new terms.'
+                    {mandateReplacementWorkflow.isAmendment
+                      ? 'Mandate terms changed after signing. The signed document remains unchanged until every required seller signs the replacement.'
                       : 'Commercial terms changed after onboarding. Use the latest saved terms when preparing the separate mandate document.'}
                   </p>
+                  <Button type="button" size="sm" className="mt-3" onClick={openMandateReplacementReview}>
+                    <RefreshCw size={14} />
+                    {mandateReplacementWorkflow.isAmendment ? 'Regenerate and send for signature' : 'Regenerate mandate'}
+                  </Button>
                 </div>
+              ) : mandateReplacementWorkflow.status === 'replacement_pending' ? (
+                <div className="mt-5 rounded-[16px] border border-[#d8e7f7] bg-[#f7fbff] px-4 py-3 text-sm leading-6 text-[#315879]"><p className="font-semibold">Replacement mandate awaiting signatures</p><p className="mt-1">The previous signed mandate remains current until all required signatures are complete.</p></div>
               ) : null}
 
               <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -16217,6 +17805,23 @@ function AgentListingDetail() {
 
       {activeTab === 'documents' ? (
         <section className="space-y-5">
+          {sellerDocumentSource?.requirementState?.provisional ? (
+            <section data-testid="listing-seller-document-provisional-state" className="flex items-start justify-between gap-4 rounded-[20px] border border-[#f0d7a8] bg-[#fffaf0] p-4 text-[#815919]" role="status">
+              <div className="flex items-start gap-3">
+                <CircleAlert size={19} className="mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold">Provisional document checklist</p>
+                  <p className="mt-1 text-sm leading-6">{sellerDocumentSource.requirementState.message}</p>
+                  {sellerDocumentSource.requirementState.requiredSetupFields?.length ? (
+                    <p className="mt-1 text-xs leading-5">Still needed: {sellerDocumentSource.requirementState.requiredSetupFields.join(', ')}.</p>
+                  ) : null}
+                </div>
+              </div>
+              <Button type="button" size="sm" variant="secondary" onClick={() => openSellerProfileBuilder('Confirm the seller structure before generating the final document checklist.')}>
+                Confirm seller structure
+              </Button>
+            </section>
+          ) : null}
           {sellerDocumentRequirementModel ? (
             <section data-testid="listing-seller-document-model-summary" className="rounded-[24px] border border-[#dbe6f2] bg-[#f7fbff] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -16397,6 +18002,10 @@ function AgentListingDetail() {
                           {doc.requirement_description ? (
                             <p className="mt-1 text-xs text-[#6b7d93]">{doc.requirement_description}</p>
                           ) : null}
+                          {doc.whyNeeded && doc.whyNeeded !== doc.requirement_description ? (
+                            <p className="mt-1 text-xs text-[#6b7d93]">{doc.whyNeeded}</p>
+                          ) : null}
+                          {doc.triggerSummary ? <p className="mt-1 text-xs font-semibold text-[#47637d]">{doc.triggerSummary}</p> : null}
                           {doc.message ? <p className="mt-1 text-xs font-medium text-[#47637d]">{doc.message}</p> : null}
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             {doc.stageLabel ? <span className="rounded-full border border-[#dbe5ef] bg-white px-2 py-0.5 text-[0.68rem] font-semibold text-[#607387]">{doc.stageLabel}</span> : null}
@@ -16490,6 +18099,21 @@ function AgentListingDetail() {
       />
 
       <Modal
+        open={Boolean(quickListingAction)}
+        onClose={quickListingBusy ? undefined : () => setQuickListingAction('')}
+        title={quickListingAction === 'price_reduction' ? 'Reduce asking price' : quickListingAction === 'sold' ? 'Mark listing sold' : 'Mark listing under offer'}
+        subtitle="Arch9 saves first. Only confirmed live portal listings receive an update; each result is shown separately."
+        className="max-w-lg"
+        footer={<div className="flex flex-wrap justify-end gap-2"><Button type="button" variant="secondary" onClick={() => setQuickListingAction('')} disabled={quickListingBusy}>Close</Button>{quickListingResults.some((result) => result.status === 'failed' && ['Property24', 'Private Property'].includes(result.channel)) ? <Button type="button" variant="secondary" onClick={() => void retryFailedQuickListingChannels()} disabled={quickListingBusy}>{quickListingBusy ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}Retry failed portals</Button> : null}{!quickListingResults.length ? <Button type="button" onClick={() => void applyQuickListingAction()} disabled={quickListingBusy}>{quickListingBusy ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}{quickListingAction === 'price_reduction' ? 'Save reduced price' : quickListingAction === 'sold' ? 'Confirm sold' : 'Confirm under offer'}</Button> : null}</div>}
+      >
+        <div className="space-y-4 text-sm text-[#43566d]">
+          {quickListingAction === 'price_reduction' ? <><p>Current asking price: {formatMoneyValue(Number(listingRecord?.askingPrice || listingRecord?.asking_price || marketingDraft.price || 0))}</p><label className="grid gap-2 font-semibold text-[#243d56]">New lower asking price (R)<Field type="number" min="1" step="1" inputMode="numeric" value={quickListingPrice} onChange={(event) => setQuickListingPrice(event.target.value)} disabled={quickListingBusy || quickListingResults.length > 0} /></label><p>Old and new prices will be recorded in listing activity.</p><label className="flex items-start gap-2 text-sm text-[#607387]"><input type="checkbox" disabled checked={false} readOnly />Add a reduced-price banner on the portals <span className="font-semibold">(unavailable: portal support not confirmed)</span></label><p>Property24 will receive its ReducedPrice status for an active listing; a listing already under offer keeps Pending. Private Property receives the lower price. A reduced-price banner is not guaranteed on either portal.</p></> : quickListingAction === 'sold' ? <p>Arch9 will mark this listing sold. Confirmed live Property24 and Private Property listings will receive Sold status. This is a final listing status; check each portal result afterward.</p> : <p>The listing will remain visible in Arch9 as under offer. Property24 will receive “Pending” and Private Property will receive “PendingOffer” if those listings are confirmed live.</p>}
+          {quickListingError ? <p role="alert" className="rounded-lg border border-[#f1c6c2] bg-[#fff5f5] p-3 font-semibold text-[#a13b35]">{quickListingError}</p> : null}
+          {quickListingResults.length ? <div className="space-y-2" aria-live="polite">{quickListingResults.map((result) => <div key={result.channel} className="rounded-lg border border-[#e0e8f0] bg-[#f8fbff] p-3"><strong className="text-[#142132]">{result.channel}: {result.status === 'saved' ? 'Saved' : result.status === 'sent' ? 'Accepted' : result.status === 'failed' ? 'Needs attention' : 'Not sent'}</strong><p className="mt-1">{result.detail}</p></div>)}<p className="text-xs">An accepted portal update is not proof the public page has changed. Use Refresh status in Listing Channels to confirm it.</p></div> : null}
+        </div>
+      </Modal>
+
+      <Modal
         open={deleteListingDialogOpen}
         onClose={deletingListing ? undefined : closeDeleteListingDialog}
         title="Delete listing?"
@@ -16523,28 +18147,61 @@ function AgentListingDetail() {
       </Modal>
 
       <Modal
-        open={archiveListingDialogOpen}
-        onClose={publicationSaving ? undefined : closeArchiveListingDialog}
-        title="Expire and archive listing?"
-        subtitle={`Remove “${listingRecord?.listingTitle || 'this listing'}” from active marketing.`}
-        className="max-w-lg"
+        open={withdrawListingDialogOpen}
+        onClose={publicationSaving ? undefined : closeWithdrawListingDialog}
+        title={listingWithdrawalComplete ? 'Listing withdrawn' : 'Withdraw listing?'}
+        subtitle={`Remove “${listingRecord?.listingTitle || 'this listing'}” from every confirmed public channel.`}
+        className="max-w-2xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button type="button" variant="secondary" onClick={closeArchiveListingDialog} disabled={publicationSaving} autoFocus>
-              Cancel
+            <Button type="button" variant="secondary" onClick={closeWithdrawListingDialog} disabled={publicationSaving} autoFocus>
+              {listingWithdrawalComplete ? 'Close' : 'Cancel'}
             </Button>
-            <Button type="button" onClick={() => void archiveListingFromMarketing()} disabled={publicationSaving} className="bg-[#7a4e12] hover:bg-[#624417]">
-              {publicationSaving ? <Loader2 size={16} className="animate-spin" /> : <Archive size={16} />}
-              {publicationSaving ? 'Expiring...' : 'Expire and archive'}
-            </Button>
+            {listingWithdrawalComplete ? (
+              <Button type="button" onClick={() => navigate('/listings', { replace: true, state: { message: 'Listing withdrawn.' } })}>Return to listings</Button>
+            ) : (
+              <Button type="button" onClick={() => void withdrawListingFromMarketing()} disabled={publicationSaving} className="bg-[#7a4e12] hover:bg-[#624417]">
+                {publicationSaving ? <Loader2 size={16} className="animate-spin" /> : <X size={16} />}
+                {publicationSaving
+                  ? 'Withdrawing...'
+                  : listingWithdrawalResults.some((result) => result.status === 'failed')
+                    ? 'Retry remaining channels'
+                    : 'Withdraw from all channels'}
+              </Button>
+            )}
           </div>
         )}
       >
         <div className="rounded-[16px] border border-[#ead8b8] bg-[#fffaf0] p-4 text-sm leading-6 text-[#624417]">
-          {getArchiveListingLiveChannels().length
-            ? `This listing is live on: ${getArchiveListingLiveChannels().join(', ')}.`
-            : 'No live channels were detected.'}
-          {' '}Property24 and Private Property will be set inactive, and the Arch9 public catalogue listing will be paused. The listing will then be archived from active operations.
+          This removes the public advertisements without deleting the listing, seller record, documents or activity history. The listing is marked withdrawn only after every live channel confirms removal.
+        </div>
+        <div className="mt-4 divide-y divide-[#edf2f7] overflow-hidden rounded-[16px] border border-[#dce6f2] bg-white">
+          {(listingWithdrawalResults.length ? listingWithdrawalResults : getListingWithdrawalPlan()).map((result) => {
+            const resultTone = result.status === 'succeeded'
+              ? 'text-[#1f7d44]'
+              : result.status === 'failed'
+                ? 'text-[#a13b35]'
+                : result.status === 'running'
+                  ? 'text-[#2f6fb3]'
+                  : 'text-[#607387]'
+            return (
+              <div key={result.key} className="flex items-start justify-between gap-4 px-4 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-[#142132]">{result.label}</p>
+                  <p className={`mt-1 text-xs font-medium ${resultTone}`}>{result.detail}</p>
+                </div>
+                <span className={`mt-0.5 shrink-0 ${resultTone}`}>
+                  {result.status === 'running'
+                    ? <Loader2 size={16} className="animate-spin" />
+                    : result.status === 'succeeded'
+                      ? <CheckCircle2 size={16} />
+                      : result.status === 'failed'
+                        ? <CircleAlert size={16} />
+                        : <span className="block h-3 w-3 rounded-full border border-current" />}
+                </span>
+              </div>
+            )
+          })}
         </div>
       </Modal>
 
@@ -16608,6 +18265,35 @@ function AgentListingDetail() {
           </section>
         </form>
       </Modal>
+
+      <LeadCreateDialog
+        open={buyerLeadModalOpen}
+        category="buyer"
+        draft={buyerLeadDraft}
+        sourceField="leadSource"
+        propertyLabel={getListingBuyerActionPropertyAddress(listingRecord) || listingRecord?.listingTitle || ''}
+        lockProperty
+        showAgentAssignment={false}
+        saving={buyerLeadSaving}
+        feedback={buyerLeadFeedback}
+        onChange={updateBuyerLeadDraft}
+        onClose={closeBuyerLeadModal}
+        onSave={(form) => void submitBuyerLead(form)}
+      />
+
+      <ListingViewingRequestModal
+        open={viewingRequestModalOpen}
+        draft={viewingRequestDraft}
+        leads={listingLeadRows}
+        seller={sellerViewingContact}
+        saving={viewingRequestSaving}
+        feedback={viewingRequestFeedback}
+        listingTitle={listingRecord?.listingTitle || ''}
+        onChange={updateViewingRequestDraft}
+        onLeadSelect={selectViewingBuyerLead}
+        onClose={closeViewingRequestModal}
+        onSubmit={submitViewingRequest}
+      />
 
       <ShowDayLeadCaptureModal
         open={showDayCaptureOpen}

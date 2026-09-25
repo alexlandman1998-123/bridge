@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import {
   buildSellerRequirementProfile,
   getRequiredSellerDocuments,
+  getRequiredSellerStructuredFacts,
 } from '../src/lib/sellerDocumentRequirementEngine.js'
 import { transformSellerOnboardingToFacts } from '../src/services/documents/sellerOnboardingFactTransformer.js'
 import { buildSellerDocumentRequestPlan } from '../src/services/sellerDocumentRequestOrchestrationService.js'
@@ -43,6 +44,7 @@ function requirementsFor(overrides = {}) {
     profile,
     facts: transformSellerOnboardingToFacts(form, listing),
     requirements: getRequiredSellerDocuments(profile),
+    structuredFacts: getRequiredSellerStructuredFacts(profile),
   }
 }
 
@@ -89,30 +91,35 @@ function byKey(rows, key) {
 }
 
 {
-  const { requirements } = requirementsFor({
+  const { requirements, structuredFacts } = requirementsFor({
     propertyType: 'apartment',
     propertyStructureType: 'sectional_title',
     sectionalTitle: true,
     schemeName: 'Example Scheme',
   })
-  for (const key of ['levy_statement', 'body_corporate_details', 'body_corporate_rules', 'body_corporate_insurance_schedule']) {
+  for (const key of ['levy_statement', 'body_corporate_rules', 'body_corporate_insurance_schedule']) {
     assert.ok(byKey(requirements, key), `sectional-title matrix must include ${key}`)
   }
+  assert.equal(byKey(requirements, 'body_corporate_details'), undefined, 'structured body-corporate details must not become an upload request')
+  assert.ok(byKey(structuredFacts, 'body_corporate_details'), 'body-corporate details must remain a guided captured fact')
   assert.equal(byKey(requirements, 'body_corporate_rules').is_required, false)
 }
 
 {
-  const { requirements } = requirementsFor({
+  const { requirements, structuredFacts } = requirementsFor({
     occupancyStatus: 'tenant_occupied',
     leaseExists: true,
     tenantName: 'Tenant Example',
     rentalDeposit: 20000,
     noticePeriodDetails: 'Two calendar months',
   })
-  for (const key of ['lease_agreement', 'tenant_details', 'rental_schedule', 'deposit_details', 'notice_period_details']) {
+  for (const key of ['lease_agreement', 'rental_schedule']) {
     assert.ok(byKey(requirements, key), `tenant matrix must include ${key}`)
   }
-  assert.equal(byKey(requirements, 'deposit_details').is_required, false)
+  for (const key of ['tenant_details', 'deposit_details', 'notice_period_details']) {
+    assert.equal(byKey(requirements, key), undefined, `${key} must not become an upload request`)
+    assert.ok(byKey(structuredFacts, key), `${key} must remain a guided captured fact`)
+  }
 }
 
 {

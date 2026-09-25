@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { buildSellerDocumentExperienceModel } from '../src/lib/sellerDocumentExperienceModel.js'
-import { getSellerRequiredDocuments } from '../src/services/sellerDocumentRequirementsService.js'
+import {
+  buildSellerDocumentSourceSummary,
+  getSellerRequiredDocuments,
+} from '../src/services/sellerDocumentRequirementsService.js'
 
 const requirements = [
   {
@@ -48,7 +51,14 @@ assert.equal(uploadedOnly.summary.reviewRequired, 1)
 assert.equal(uploadedOnly.summary.actionRequired, 2)
 assert.equal(uploadedOnly.summary.rejected, 1)
 assert.equal(uploadedOnly.summary.overdue, 0, 'a received file is not overdue while awaiting review')
-assert.equal(uploadedOnly.items.find((item) => item.key === 'rates_account').statusLabel, 'Received — awaiting review')
+assert.equal(uploadedOnly.items.find((item) => item.key === 'rates_account').statusLabel, 'Ready for review')
+assert.equal(uploadedOnly.items.find((item) => item.key === 'rates_account').lifecycleStatus, 'ready_for_review')
+assert.equal(uploadedOnly.items.find((item) => item.key === 'rates_account').complete, false)
+assert.equal(uploadedOnly.items.find((item) => item.key === 'seller_identity_document').lifecycleStatus, 'action_required')
+assert.equal(uploadedOnly.items.find((item) => item.key === 'seller_identity_document').actionRequired, true)
+assert.equal(uploadedOnly.summary.complete, 0)
+assert.equal(uploadedOnly.summary.awaitingSeller, 1)
+assert.equal(uploadedOnly.summary.readyForReview, 1)
 assert.match(uploadedOnly.items.find((item) => item.key === 'seller_identity_document').message, /cropped/)
 assert.equal(uploadedOnly.stages[0].key, 'mandate_ready')
 
@@ -70,6 +80,18 @@ const approved = buildSellerDocumentExperienceModel({
 assert.equal(approved.summary.ready, true)
 assert.equal(approved.summary.assurancePercent, 100)
 assert.equal(approved.summary.actionRequired, 0)
+assert.equal(approved.summary.complete, 3)
+
+const canonicalSummary = buildSellerDocumentSourceSummary([
+  { applicable: true, required: true, complete: false, hasUpload: true, statusBucket: 'ready_for_review', category: 'fica' },
+  { applicable: true, required: true, complete: false, hasUpload: true, statusBucket: 'under_review', category: 'property' },
+  { applicable: true, required: true, complete: true, hasUpload: true, statusBucket: 'approved', category: 'sales' },
+])
+assert.equal(canonicalSummary.complete, 1, 'received and under-review files must not count as complete')
+assert.equal(canonicalSummary.completeRequired, 1)
+assert.equal(canonicalSummary.readyForReview, 1)
+assert.equal(canonicalSummary.underReview, 1)
+assert.equal(canonicalSummary.approved, 1)
 
 const handoff = buildSellerDocumentExperienceModel({
   requirements: [{

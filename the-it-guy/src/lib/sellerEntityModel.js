@@ -1,4 +1,4 @@
-export const SELLER_ENTITY_MODEL_VERSION = 'seller_entity_model_phase1_v1'
+export const SELLER_ENTITY_MODEL_VERSION = 'seller_entity_model_phase1_v2'
 
 export const SELLER_ENTITY_TYPES = Object.freeze([
   { value: 'unknown', label: 'Not identified yet', description: 'Capture the selling entity before preparing seller documents.' },
@@ -10,6 +10,8 @@ export const SELLER_ENTITY_TYPES = Object.freeze([
   { value: 'deceased_estate', label: 'Deceased estate', description: 'Estate represented by an executor.' },
   { value: 'other', label: 'Other entity', description: 'Another legal entity or developer.' },
   { value: 'foreign_individual', label: 'Foreign owner', description: 'Non-resident individual owner.' },
+  { value: 'foreign_company', label: 'Foreign company', description: 'Company registered outside South Africa.' },
+  { value: 'foreign_trust', label: 'Foreign trust', description: 'Trust registered outside South Africa.' },
 ])
 
 const aliases = Object.freeze({
@@ -20,6 +22,7 @@ const aliases = Object.freeze({
   close_corporation: 'close_corporation', cc: 'close_corporation',
   trust: 'trust', deceased_estate: 'deceased_estate', estate: 'deceased_estate',
   other: 'other', developer: 'other', foreign: 'foreign_individual', foreign_individual: 'foreign_individual',
+  foreign_company: 'foreign_company', foreign_trust: 'foreign_trust',
 })
 
 function key(value) {

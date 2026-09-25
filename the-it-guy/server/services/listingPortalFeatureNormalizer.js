@@ -1,3 +1,9 @@
+import {
+  LISTING_FEATURE_CATALOG,
+  normalizeListingFeatureFacts,
+  resolveListingFeature,
+} from '../../src/services/listings/listingFeatureCatalog.js'
+
 function text(value = '') {
   return String(value ?? '').trim()
 }
@@ -56,6 +62,17 @@ const FEATURE_DEFINITIONS = Object.freeze({
   garden: { label: 'Garden', aliases: ['garden'] },
   pool: { label: 'Pool', aliases: ['pool', 'swimming_pool'] },
   fibre: { label: 'Fibre', aliases: ['fibre', 'fiber', 'fibre_ready', 'fiber_ready', 'fibre_connectivity', 'fibre_internet'] },
+  petFriendly: { label: 'Pet friendly', aliases: ['pet_friendly', 'pets_allowed', 'pet_friendly_property'] },
+})
+
+const DESCRIPTION_FEATURE_LABELS = Object.freeze({
+  solar: 'Solar power',
+  solar_installation: 'Solar power',
+  solar_backup: 'Solar power',
+  solar_and_inverter: 'Solar power',
+  backup_power: 'Backup power',
+  backup_water: 'Backup water',
+  electric_fence: 'Electric fencing',
 })
 
 const NON_DESCRIPTIVE_FEATURE_KEYS = new Set([
@@ -110,6 +127,7 @@ function explicitFeatureValue(key, listing, publication, portalFeatures, propert
     garden: [publication.garden, listing.garden, listing.propertyDetails?.garden, portalFeatures.garden],
     pool: [publication.pool, listing.pool, listing.propertyDetails?.pool, portalFeatures.pool],
     fibre: [publication.fibre, publication.fibreInternet, publication.fibre_internet, listing.fibre, listing.fibreReady, listing.fibreInternet, portalFeatures.fibreInternet],
+    petFriendly: [publication.petsAllowed, publication.pets_allowed, listing.petsAllowed, listing.pets_allowed, portalFeatures.petsAllowed],
   }
   for (const value of candidates[key] || []) {
     const normalized = key === 'staffQuarters' && Number(value) > 0 ? true : boolean(value)
@@ -137,11 +155,18 @@ export function normalizeListingPortalFeatures({ listing = {}, publication = {} 
     propertyProfile.selectedFeatures,
     propertyProfile.amenities,
   )
+  const featureFacts = normalizeListingFeatureFacts(
+    publication.featureFacts || publication.feature_facts || listing.featureFacts || listing.feature_facts || listing.sellerOnboarding?.formData?.featureFacts || {},
+    labels,
+  )
   const selectedKeys = labels.map(normalizeListingFeatureKey)
   const flags = {}
   for (const [key, definition] of Object.entries(FEATURE_DEFINITIONS)) {
     const explicit = explicitFeatureValue(key, listing, publication, portalFeatures, propertyProfile)
-    flags[key] = explicit === null
+    const catalogKey = { staffQuarters: 'staff_quarters', petFriendly: 'pet_friendly' }[key] || key
+    flags[key] = Object.hasOwn(featureFacts, catalogKey)
+      ? featureFacts[catalogKey]
+      : explicit === null
       ? (selectedFeature(selectedKeys, definition) ? true : null)
       : explicit
   }
@@ -149,10 +174,21 @@ export function normalizeListingPortalFeatures({ listing = {}, publication = {} 
   const flagLabels = DESCRIPTIVE_PORTAL_FLAGS
     .filter(([key]) => boolean(portalFeatures[key]) === true || boolean(propertyProfile[key]) === true || boolean(listing[key]) === true || boolean(publication[key]) === true)
     .map(([, label]) => label)
-  const additionalLabels = [...labels, ...flagLabels].filter((label) => {
-    const key = normalizeListingFeatureKey(label)
-    return !knownAliases.has(key) && !NON_DESCRIPTIVE_FEATURE_KEYS.has(key)
+  const typedLabels = LISTING_FEATURE_CATALOG
+    .filter((feature) => feature.type === 'boolean' && featureFacts[feature.key] === true && !labels.some((label) => resolveListingFeature(label)?.key === feature.key))
+    .map((feature) => feature.label)
+  const typedDetailLabels = LISTING_FEATURE_CATALOG.flatMap((feature) => {
+    const value = featureFacts[feature.key]
+    if (feature.type === 'count' && Number.isFinite(value) && value > 0) return [`${feature.label}: ${value}`]
+    if (feature.type === 'choice' && value) return [`${feature.label}: ${value}`]
+    return []
   })
+  const additionalLabels = [...labels, ...flagLabels, ...typedLabels].filter((label) => {
+    const key = normalizeListingFeatureKey(label)
+    const feature = resolveListingFeature(label)
+    if (feature && featureFacts[feature.key] !== undefined && featureFacts[feature.key] !== true) return false
+    return !knownAliases.has(key) && !NON_DESCRIPTIVE_FEATURE_KEYS.has(key)
+  }).map((label) => DESCRIPTION_FEATURE_LABELS[normalizeListingFeatureKey(label)] || label).concat(typedDetailLabels)
 
   return {
     bedrooms: number(publication.bedrooms, listing.bedrooms, listing.propertyDetails?.bedrooms, propertyProfile.bedrooms),
@@ -160,6 +196,7 @@ export function normalizeListingPortalFeatures({ listing = {}, publication = {} 
     garages: number(publication.garages, listing.garages, listing.propertyDetails?.garages, propertyProfile.garages),
     parkingBays: number(publication.parking_bays, publication.parkingBays, listing.parking_bays, listing.parkingBays, listing.propertyDetails?.parkingBays, propertyProfile.parkingBays),
     ...flags,
+    featureFacts,
     selectedLabels: labels,
     additionalLabels: [...new Map(additionalLabels.map((label) => [normalizeListingFeatureKey(label), label])).values()],
   }

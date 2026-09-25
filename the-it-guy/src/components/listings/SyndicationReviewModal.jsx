@@ -21,6 +21,8 @@ function ChannelReview({ title, channel, onContinue, continueLabel }) {
   const mapped = Object.entries(channel?.mappedOutcome || {}).filter(([, value]) => value !== null && value !== undefined && value !== '')
   const blockers = Array.isArray(channel?.blockers) ? channel.blockers : []
   const warnings = Array.isArray(channel?.warnings) ? channel.warnings : []
+  const featureDelivery = Array.isArray(channel?.featureDelivery) ? channel.featureDelivery : []
+  const descriptionOnlyCount = featureDelivery.filter((item) => item.delivery === 'description_only').length
   const ready = channel?.dataReady === true
 
   return (
@@ -42,6 +44,23 @@ function ChannelReview({ title, channel, onContinue, continueLabel }) {
             </div>
           ))}
         </dl>
+      ) : null}
+
+      {featureDelivery.length ? (
+        <details className="mt-4 rounded-lg border border-[#dbe6f2] bg-white p-3">
+          <summary className="cursor-pointer text-sm font-semibold text-[#243d56]">
+            Feature delivery: {featureDelivery.length - descriptionOnlyCount} native, {descriptionOnlyCount} description only
+          </summary>
+          <p className="mt-2 text-xs leading-5 text-[#607387]">Native means Arch9 prepares a structured feed field, not that the portal has accepted or displayed it. Description-only features may not appear as portal checkboxes or filters.</p>
+          <ul className="mt-3 max-h-64 space-y-1 overflow-y-auto text-xs">
+            {featureDelivery.map((item) => <li key={item.key} className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 border-b border-[#e8eff6] py-1.5 last:border-b-0">
+              <span className="font-medium text-[#243d56]">{item.label}: {item.value}</span>
+              <span className={item.delivery === 'native' ? 'text-[#197849]' : 'font-semibold text-[#8a5b13]'}>
+                {item.delivery === 'native' ? `Native · ${item.field}` : 'Description only'}
+              </span>
+            </li>)}
+          </ul>
+        </details>
       ) : null}
 
       {blockers.length ? (

@@ -98,7 +98,7 @@ const featureParityPreview = createProperty24RentalListingPlan({
   },
 })
 assert.equal(featureParityPreview.previewPayload.propertyFeatures.flatlet, true)
-assert.equal(featureParityPreview.previewPayload.propertyFeatures.parking.open, 16)
+assert.equal(featureParityPreview.previewPayload.propertyFeatures.parking.parkingSpaces, 16)
 assert.equal(featureParityPreview.previewPayload.propertyInfo.showLocation, false)
 assert.match(featureParityPreview.previewPayload.description, /Additional features include staff accommodation, fibre connectivity, Security and Alarm\./)
 

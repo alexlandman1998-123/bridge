@@ -3,7 +3,7 @@ import {
   SELLER_DOCUMENT_ARTIFACT_STAGES,
   SELLER_DOCUMENT_REPRESENTATION_KINDS,
 } from '../../lib/sellerBasePackContract.js'
-import { getCrossModuleDocumentDefinition, resolveCrossModuleDocumentKey } from './crossModuleDocumentKeyMapService.js'
+import { getCrossModuleDocumentDefinition, resolveCrossModuleDocumentReference } from './crossModuleDocumentKeyMapService.js'
 import { resolveCanonicalDocumentRequestPresentation } from './canonicalDocumentRequestPresentationService.js'
 
 function text(value) {
@@ -150,7 +150,16 @@ export function projectCanonicalSellerDocumentRows(rows = []) {
 
     const suppliedKey = documentKey(row)
     const contractKey = key(documentContract.targetRequirementKey)
-    const canonicalKey = resolveCrossModuleDocumentKey(contractKey || suppliedKey) || contractKey || suppliedKey
+    // Generic legacy keys such as `id_document` and `proof_of_address` exist in
+    // both buyer and seller journeys. Resolve them with an explicit seller
+    // context so a seller requirement can never be projected into a buyer key.
+    const documentReference = resolveCrossModuleDocumentReference(contractKey || suppliedKey, {
+      ownerRole: 'seller',
+      role: 'seller',
+      appliesTo: row.appliesTo || row.applies_to || row.original?.requirement?.applies_to || 'seller',
+      groupKey: row.group || row.requirement_group || row.original?.requirement?.requirement_group || 'seller',
+    })
+    const canonicalKey = documentReference.canonicalDocumentKey || contractKey || suppliedKey
     if (!canonicalKey) continue
     const definition = getCrossModuleDocumentDefinition(canonicalKey)
     if (definition?.kind === 'structured_fact') continue

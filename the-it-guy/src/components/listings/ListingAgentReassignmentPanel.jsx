@@ -50,6 +50,24 @@ function getAgentName(agent = {}) {
   )
 }
 
+function getAgentAvatarUrl(agent = {}) {
+  return normalizeText(
+    agent.avatarUrl ||
+    agent.avatar_url ||
+    agent.profilePhotoUrl ||
+    agent.profile_photo_url ||
+    agent.photoUrl ||
+    agent.photo_url ||
+    agent.picture,
+  )
+}
+
+function getAgentInitials(agent = {}) {
+  const value = getAgentName(agent) || normalizeText(agent.email) || 'Agent'
+  const parts = value.includes('@') ? value.split('@')[0].split(/[._\s-]+/) : value.split(/\s+/)
+  return parts.filter(Boolean).slice(0, 2).map((part) => part.charAt(0).toUpperCase()).join('') || 'A'
+}
+
 function isLiveProperty24Listing(listing = {}) {
   const reference = normalizeText(listing.property24Reference || listing.property24_reference)
   const status = normalizeKey(listing.property24Status || listing.property24_status)
@@ -59,12 +77,16 @@ function isLiveProperty24Listing(listing = {}) {
 export default function ListingAgentReassignmentPanel({
   listingId,
   listing = {},
+  agent = {},
   listingType = 'sale',
   onReassigned,
   className = '',
 } = {}) {
   const currentAgentId = normalizeText(listing.assignedAgentId || listing.assigned_agent_id || listing.agentId)
-  const currentAgentName = normalizeText(listing.assignedAgentName || listing.assigned_agent_name || listing.assignedAgent || 'Unassigned')
+  const currentAgentName = normalizeText(listing.assignedAgentName || listing.assigned_agent_name || listing.assignedAgent || getAgentName(agent) || 'Unassigned')
+  const currentAgentEmail = normalizeText(listing.assignedAgentEmail || listing.assigned_agent_email || agent.email).toLowerCase()
+  const currentAgentPhone = normalizeText(listing.assignedAgentPhone || listing.assigned_agent_phone || agent.phone || agent.phoneNumber || agent.mobile)
+  const currentAgentAvatarUrl = getAgentAvatarUrl(agent) || normalizeText(listing.assignedAgentAvatarUrl || listing.assigned_agent_avatar_url)
   const property24Live = isLiveProperty24Listing(listing)
   const [open, setOpen] = useState(false)
   const [agents, setAgents] = useState([])
@@ -140,15 +162,15 @@ export default function ListingAgentReassignmentPanel({
     <section className={`rounded-[12px] border border-[#dbe6f2] bg-white p-4 shadow-sm ${className}`.trim()} data-testid="listing-agent-reassignment">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 items-start gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] border border-[#dbe6f2] bg-[#f8fafc] text-[#42617f]">
-            <UserRound size={18} aria-hidden="true" />
+          <span className="inline-flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#dbe6f2] bg-[#eef4fa] text-sm font-semibold text-[#42617f]">
+            {currentAgentAvatarUrl ? <img src={currentAgentAvatarUrl} alt="" className="h-full w-full object-cover" /> : getAgentInitials({ name: currentAgentName, email: currentAgentEmail })}
           </span>
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase text-[#607891]">Listing agent</p>
             <p className="mt-1 truncate text-sm font-semibold text-[#18324b]">{currentAgentName}</p>
-            <p className="mt-1 text-xs leading-5 text-[#607891]">
-              Phone, email, and profile photo come from this agent’s Arch9 profile.
-            </p>
+            {currentAgentEmail ? <p className="mt-1 truncate text-xs text-[#607891]">{currentAgentEmail}</p> : null}
+            {currentAgentPhone ? <p className="mt-1 text-xs text-[#607891]">{currentAgentPhone}</p> : null}
+            {!currentAgentEmail && !currentAgentPhone ? <p className="mt-1 text-xs leading-5 text-[#607891]">Contact details are not available on this listing.</p> : null}
           </div>
         </div>
         <button type="button" className="ui-pill-button" onClick={open ? closePanel : openPanel} disabled={saving}>

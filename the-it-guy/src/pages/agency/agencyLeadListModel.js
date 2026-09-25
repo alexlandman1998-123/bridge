@@ -1,4 +1,5 @@
 import { inferLeadCategoryFromRecord } from '../../lib/leadCategory'
+import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection'
 import { BUYER_LEAD_LIST_STAGES, resolveAgencyLeadListLifecycle } from './agencyLeadListLifecycle'
 
 export const LEAD_LIST_PAGE_SIZE = 25
@@ -118,15 +119,7 @@ function getLeadName(lead = {}, contact = {}) {
 }
 
 function getPropertyPresentation(lead = {}) {
-  const title = normalizeText(
-    lead?.sellerPropertyAddress ||
-    lead?.enquiredPropertyTitle ||
-    lead?.enquiredPropertyAddress ||
-    lead?.formattedAddress ||
-    lead?.streetAddress ||
-    lead?.propertyInterest ||
-    lead?.areaInterest,
-  )
+  const title = resolveLeadPropertyAddress(lead)
   const subtitle = [lead?.suburb, lead?.city, lead?.province].map(normalizeText).filter(Boolean).join(', ')
   return {
     title: title || 'No property address yet',

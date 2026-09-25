@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { buildDirectListingIntakePayload } from '../src/lib/directListingIntakeModel.js'
+import { SELLER_ENTITY_TYPES } from '../src/lib/sellerEntityModel.js'
 
 const agentListingsSource = readFileSync(new URL('../src/pages/AgentListings.jsx', import.meta.url), 'utf8')
 
@@ -51,18 +52,21 @@ test('Sales new listing Step 2 exposes portal-critical property fields', () => {
     'New Development',
     'On Auction',
     'Price on Application',
-    'Show Reduced Banner on Listing',
     'No Transfer Duty',
     'Section number',
     'Sectional title number',
   ]) {
     assert.match(agentListingsSource, new RegExp(copy.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${copy} should be visible in new listing capture`)
   }
+  assert.doesNotMatch(agentListingsSource, /label: 'Show Reduced Banner on Listing'/)
+  assert.match(agentListingsSource, /Reduced-price portal banners are unavailable/)
 })
 
 test('Quick Add exposes the required global seller ownership options', () => {
+  assert.match(agentListingsSource, /DIRECT_LISTING_SELLER_TYPE_OPTIONS = SELLER_ENTITY_TYPES/)
+  const availableTypes = new Set(SELLER_ENTITY_TYPES.map((option) => option.value))
   for (const sellerType of ['individual', 'multiple_owners', 'company', 'trust', 'foreign_individual']) {
-    assert.match(agentListingsSource, new RegExp(`value: '${sellerType}'`), `${sellerType} option missing`)
+    assert.ok(availableTypes.has(sellerType), `${sellerType} option missing`)
   }
 })
 

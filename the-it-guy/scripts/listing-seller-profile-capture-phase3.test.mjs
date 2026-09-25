@@ -18,6 +18,7 @@ async function test(name, fn) {
 
 await test('AgentListingDetail surfaces seller document impact in the builder and Documents tab', async () => {
   const source = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
+  const persistenceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 
   assert.ok(source.includes('sellerProfileRequirementPreview'), 'Builder modal should compute a live requirement preview.')
   assert.ok(source.includes('listing-seller-profile-requirement-preview'), 'Builder modal should render the document impact preview.')
@@ -25,8 +26,8 @@ await test('AgentListingDetail surfaces seller document impact in the builder an
   assert.ok(source.includes('listing-seller-document-model-summary'), 'Documents tab should render seller model summary.')
   assert.ok(source.includes('const projectedDocumentRequirements = requirementProjection.allRequirementRows.map'), 'Local-only listings should retain their generated requirement rows.')
   assert.ok(source.includes("requirementSyncReason: 'listing_seller_profile_capture'"), 'Remote save should still trigger requirement sync.')
-  assert.ok(source.includes('requireRequirementSync: true'), 'A saved seller profile must not silently continue with stale document requirements.')
-  assert.ok(source.includes('Seller document requirements could not be refreshed'), 'The seller profile save should surface requirement-sync failures instead of showing a projected-only document list.')
+  assert.ok(persistenceSource.includes('SELLER_REQUIREMENT_SYNC_FAILED'), 'A saved seller profile must not silently continue with stale document requirements.')
+  assert.ok(persistenceSource.includes('document requirements could not be refreshed'), 'The seller profile save should surface requirement-sync failures instead of showing a projected-only document list.')
   assert.ok(source.includes("{ title: 'Sales Documents', icon: HandCoins, rows: salesDocuments }"), 'The top-level Documents tab should include the Sales Documents group.')
   assert.ok(source.includes("{ title: 'FICA Documents', icon: ShieldCheck, rows: sellerDocuments }"), 'The top-level Documents tab should label seller compliance rows as FICA Documents.')
 })

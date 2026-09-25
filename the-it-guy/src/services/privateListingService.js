@@ -74,6 +74,7 @@ import {
   resolveExactSellerRequirement,
 } from './sellerDocumentSatisfactionAssuranceService.js'
 import { normalizeSellerPortalActivationTermsConfig } from '../lib/sellerPortalActivationTerms.js'
+import { buildPrivateListingDocumentPersistenceReceipt } from './listings/listingSellerDocumentPersistenceModel.js'
 
 const LISTING_STATUSES = PRIVATE_LISTING_LIFECYCLE.STATUSES
 
@@ -2165,9 +2166,11 @@ async function insertPrivateListingDocumentRow(client, payload = {}) {
     const inserted = await client
       .from('private_listing_documents')
       .insert(nextPayload)
+      .select('*')
+      .single()
 
     if (!inserted.error) {
-      return { data: nextPayload, error: null, removedColumns: [...removedColumns] }
+      return { data: inserted.data || nextPayload, error: null, removedColumns: [...removedColumns] }
     }
 
     const missingColumn = getMissingPrivateListingDocumentInsertColumn(inserted.error, nextPayload)
@@ -5855,6 +5858,76 @@ export async function updatePrivateListingOnboardingFormData(listingId, formData
   }
 }
 
+export async function savePrivateListingSellerCanonicalUpdate(update = {}, options = {}) {
+  const client = requireClient()
+  const listingId = normalizeUuid(update.listingId)
+  const mutationId = normalizeUuid(update.mutationId)
+  if (!listingId) throw new Error('Listing id is required.')
+  if (!mutationId) throw new Error('A valid seller update id is required.')
+
+  const result = await client.rpc('save_private_listing_seller_canonical_update', {
+    p_listing_id: listingId,
+    p_form_data: update.nextFormData && typeof update.nextFormData === 'object' ? update.nextFormData : {},
+    p_canonical_facts: update.canonicalFacts && typeof update.canonicalFacts === 'object' ? update.canonicalFacts : {},
+    p_canonical_readiness: update.readiness && typeof update.readiness === 'object' ? update.readiness : {},
+    p_listing_patch: update.listingPatch && typeof update.listingPatch === 'object' ? update.listingPatch : {},
+    p_onboarding_status: normalizeNullableText(update.onboardingStatus) || 'not_started',
+    p_seller_type: normalizeNullableText(update.sellerType),
+    p_ownership_structure: normalizeNullableText(update.ownershipStructure),
+    p_marital_regime: normalizeNullableText(update.maritalRegime),
+    p_mutation_id: mutationId,
+    p_mutation_type: normalizeNullableText(update.mutationType) || 'seller_edit',
+    p_source: normalizeNullableText(update.source) || 'agent_listing_workspace',
+    p_changed_fields: Array.isArray(update.changedFields) ? update.changedFields.map(normalizeText).filter(Boolean) : [],
+    p_expected_updated_at: normalizeNullableText(update.expectedUpdatedAt),
+  })
+
+  if (result.error) {
+    if (isMissingRpcError(result.error, 'save_private_listing_seller_canonical_update')) {
+      throw new Error('Canonical seller saving is not available in this environment yet. Apply the listing seller canonical update migration before editing seller details.')
+    }
+    if (normalizeText(result.error.code) === '40001' || normalizeText(result.error.message).toLowerCase().includes('changed after you opened')) {
+      const conflict = new Error('This seller record changed after you opened it. Reload the listing and review the latest details before saving.')
+      conflict.code = 'SELLER_UPDATE_CONFLICT'
+      conflict.recoverable = true
+      throw conflict
+    }
+    throw result.error
+  }
+
+  let requirementSyncResult = null
+  if (update.requirementsAffected && options.syncRequirements !== false) {
+    try {
+      requirementSyncResult = await syncPrivateListingRequirements(listingId, {
+        emitActivity: false,
+        reason: options.requirementSyncReason || `seller_canonical_update:${normalizeKey(update.mutationType || 'seller_edit')}`,
+      })
+    } catch (error) {
+      const syncError = new Error('Seller details were saved, but the document requirements could not be refreshed. Retry the seller save before sending documents.')
+      syncError.code = 'SELLER_REQUIREMENT_SYNC_FAILED'
+      syncError.committed = true
+      syncError.recoverable = true
+      syncError.mutationId = mutationId
+      syncError.cause = error
+      syncError.listing = await getPrivateListingById(listingId, {
+        includeRequirementsAndDocuments: true,
+      }).catch(() => null)
+      throw syncError
+    }
+  }
+
+  const listing = requirementSyncResult?.listing || await getPrivateListingById(listingId, {
+    includeRequirementsAndDocuments: options.includeRequirementsAndDocuments !== false,
+  })
+
+  return {
+    receipt: result.data || {},
+    listing,
+    requirementSyncResult,
+    syncedRequirements: requirementSyncResult?.requirements || listing?.documentRequirements || [],
+  }
+}
+
 export async function syncPrivateListingDistributionData(listingId, payload = {}) {
   const client = requireClient()
   const normalizedId = normalizeUuid(listingId)
@@ -6480,9 +6553,12 @@ export async function createPrivateListingActivity(payload = {}) {
   return insert.data
 }
 
-export async function getPrivateListingActivity(listingId) {
+export async function getPrivateListingActivity(listingId, { requireAvailable = false } = {}) {
   const client = requireClient()
-  if (hasMissingTableCache('private_listing_activity')) return []
+  if (hasMissingTableCache('private_listing_activity')) {
+    if (requireAvailable) throw new Error('Listing activity history is unavailable.')
+    return []
+  }
   const normalizedId = normalizeUuid(listingId)
   if (!normalizedId) throw new Error('Listing id is required.')
   const query = await client
@@ -6493,6 +6569,7 @@ export async function getPrivateListingActivity(listingId) {
   if (query.error) {
     if (isMissingTableError(query.error, 'private_listing_activity')) {
       rememberMissingTable('private_listing_activity')
+      if (requireAvailable) throw new Error('Listing activity history is unavailable.')
       return []
     }
     throw query.error
@@ -8755,6 +8832,24 @@ export async function uploadSellerClientPortalDocument({
     return null
   })
 
+  const portalPersistenceWarnings = []
+  if (normalizeText(documentRequestId) && !documentRequestUpdate) {
+    portalPersistenceWarnings.push('Document saved, but the originating request needs to be refreshed.')
+  }
+  const persistence = buildPrivateListingDocumentPersistenceReceipt({
+    documentRow,
+    storagePath: filePath,
+    requirementStatusUpdated: Boolean(matchedRequirement),
+    requirementStatusApplicable: Boolean(matchedRequirement),
+    promotion: {
+      pending_transaction_promotion: pendingTransactionPromotion,
+      promotion_status: documentRow?.promotion_status || (pendingTransactionPromotion ? 'pending_transaction' : 'linked'),
+      promotion_error: documentRow?.promotion_error || '',
+    },
+    promotionAttempted: true,
+    warnings: portalPersistenceWarnings,
+  })
+
   return {
     id: documentRow?.id || filePath,
     name: documentRow?.document_name || safeOriginalName,
@@ -8781,6 +8876,7 @@ export async function uploadSellerClientPortalDocument({
     promotionRevision: documentRow?.promotion_revision || 0,
     sharedDocument: promotedSharedDocument,
     documentRequestUpdate,
+    persistence,
   }
 }
 
@@ -8792,6 +8888,7 @@ export const __privateListingServiceTestUtils = Object.freeze({
   resolveSellerCompletionAssignedAgentId,
   normalizeDocumentRows,
   privateListingDocumentSelectVariants: PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
+  buildPrivateListingDocumentPersistenceReceipt,
 })
 
 export async function uploadPrivateListingDocument(listingId, file, {
@@ -8878,33 +8975,64 @@ export async function uploadPrivateListingDocument(listingId, file, {
     throw inserted.error
   }
   const documentRow = normalizeDocumentRows(inserted.data ? [{ ...insertPayload, ...inserted.data }] : [insertPayload])[0] || null
+  if (!documentRow?.id || !normalizeText(documentRow?.storage_path || filePath)) {
+    try {
+      await removePrivateListingDocumentObject(client, filePath, uploadedBucket)
+    } catch (cleanupError) {
+      console.warn('[Private Listings] Failed to remove an unverified storage object.', {
+        listingId: normalizedListingId,
+        filePath,
+        cleanupError,
+      })
+    }
+    throw new Error('The document upload could not be verified after saving. Please retry.')
+  }
   // A listing document is only useful across the transaction workspaces when
   // it is also projected into the shared `documents` record.  Seller-portal
   // uploads already use this promoter; agent uploads must use the same path.
   // The promoter records a pending state when the listing does not have a
   // transaction yet and the transaction trigger promotes it once one exists.
   let promotion = null
+  const persistenceWarnings = []
   if (documentRow?.id) {
     const promotionResult = await client.rpc('bridge_promote_private_listing_document_row', {
       p_private_listing_document_id: documentRow.id,
     })
     if (promotionResult.error) {
-      const promotionError = new Error('Document uploaded, but it could not be linked to the shared transaction record.')
-      promotionError.code = 'private_listing_document_promotion_failed'
-      promotionError.cause = promotionResult.error
-      throw promotionError
+      persistenceWarnings.push('Document saved, but transaction handoff needs attention.')
+      promotion = {
+        error: promotionResult.error?.message || 'Transaction handoff failed.',
+        promotion_status: 'attention',
+      }
+      await markPrivateListingDocumentsPendingTransactionPromotion(normalizedListingId, {
+        documentIds: [documentRow.id],
+        requirementKeys: [matchedRequirement?.requirement_key || normalizedRequirementKey].filter(Boolean),
+        source: 'agent_listing_upload_promotion_retry',
+      }).catch((error) => {
+        console.warn('[Private Listings] Failed to queue a persisted document for later transaction promotion.', error)
+        return null
+      })
+    } else {
+      promotion = promotionResult.data && typeof promotionResult.data === 'object'
+        ? promotionResult.data
+        : null
     }
-    promotion = promotionResult.data && typeof promotionResult.data === 'object'
-      ? promotionResult.data
-      : null
   }
   const linkedRequirementId = documentRow?.requirement_id || matchedRequirement?.id || normalizedRequirementId || null
 
+  let requirementStatusUpdated = false
   if (linkedRequirementId) {
-    await updatePrivateListingRequirementStatus(linkedRequirementId, uploadedStatus === 'completed' ? 'completed' : 'uploaded').catch((error) => {
+    requirementStatusUpdated = Boolean(await updatePrivateListingRequirementStatus(
+      linkedRequirementId,
+      uploadedStatus === 'completed' ? 'completed' : 'uploaded',
+    ).catch((error) => {
       console.warn('[Private Listings] requirement status update skipped after listing document upload', error)
-      return null
-    })
+      persistenceWarnings.push('Document saved, but its checklist status needs to be refreshed.')
+      return false
+    }))
+    if (!requirementStatusUpdated && !persistenceWarnings.some((warning) => warning.includes('checklist status'))) {
+      persistenceWarnings.push('Document saved, but its checklist status needs to be refreshed.')
+    }
   }
 
   if (mandateUpload) {
@@ -8954,6 +9082,16 @@ export async function uploadPrivateListingDocument(listingId, file, {
     return false
   })
 
+  const persistence = buildPrivateListingDocumentPersistenceReceipt({
+    documentRow,
+    storagePath: filePath,
+    requirementStatusUpdated,
+    requirementStatusApplicable: Boolean(linkedRequirementId),
+    promotion,
+    promotionAttempted: Boolean(documentRow?.id),
+    warnings: persistenceWarnings,
+  })
+
   return {
     id: documentRow?.id || filePath,
     document_name: documentRow?.document_name || insertPayload.document_name,
@@ -8977,6 +9115,7 @@ export async function uploadPrivateListingDocument(listingId, file, {
     pendingTransactionPromotion: Boolean(promotion?.pending_transaction_promotion),
     promotionStatus: normalizeText(promotion?.promotion_status || promotion?.reason || ''),
     promotionError: normalizeText(promotion?.error || ''),
+    persistence,
   }
 }
 

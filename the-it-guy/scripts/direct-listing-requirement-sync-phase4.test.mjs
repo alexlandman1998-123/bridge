@@ -35,8 +35,9 @@ test('Quick Add local fallback derives requirement rows from the seller document
 })
 
 test('requirement sync stays downstream of form-data persistence and not-started onboarding', () => {
-  const createPersistenceIndex = agentListingsSource.indexOf("direct listing intake form data persistence skipped after quick add create")
-  const createSyncIndex = agentListingsSource.indexOf("direct_listing_intake_created")
+  const createFlow = agentListingsSource.slice(agentListingsSource.indexOf('createdListingId = created.listing.id'))
+  const createPersistenceIndex = createFlow.indexOf('const savedOnboarding = await persistSellerProfileOnboardingFormData(')
+  const createSyncIndex = createFlow.indexOf("syncQuickAddDirectListingRequirements(created.listing.id, 'direct_listing_intake_created')")
   const mergePersistenceIndex = agentListingsSource.indexOf("direct listing intake form data persistence skipped during merge")
   const mergeSyncIndex = agentListingsSource.indexOf("direct_listing_intake_merged")
 

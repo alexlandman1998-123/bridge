@@ -12,6 +12,16 @@ function normalizeStatusKey(value = '') {
   return normalizePrivatePropertyText(value).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
 }
 
+export function normalizePrivatePropertyPublicUrl(value = '') {
+  try {
+    const parsed = new URL(normalizePrivatePropertyText(value))
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password || (parsed.hostname !== 'privateproperty.co.za' && !parsed.hostname.endsWith('.privateproperty.co.za'))) return ''
+    return parsed.toString()
+  } catch {
+    return ''
+  }
+}
+
 function normalizeExternalStatus(value = '', fallback = 'submitted') {
   const status = normalizeStatusKey(value)
   if (['submitted', 'active', 'inactive', 'failed', 'removed', 'paused', 'unknown'].includes(status)) return status
@@ -193,10 +203,11 @@ export async function recordPrivatePropertyListingSync({
   }
   if (syncError) throw syncError
 
+  const publicListingUrl = normalizePrivatePropertyPublicUrl(privatePropertyListingUrl)
   const listingPatch = {
     private_property_status: arch9Status,
     ...(normalizePrivatePropertyText(privatePropertyRef) ? { private_property_reference: normalizePrivatePropertyText(privatePropertyRef) } : {}),
-    ...(normalizePrivatePropertyText(privatePropertyListingUrl) ? { private_property_listing_url: normalizePrivatePropertyText(privatePropertyListingUrl) } : {}),
+    ...(publicListingUrl ? { private_property_listing_url: publicListingUrl } : {}),
   }
   const { data: listing, error: listingError } = await client
     .from('private_listings')
@@ -210,7 +221,7 @@ export async function recordPrivatePropertyListingSync({
   const { externalLink, externalLinkWarning } = await upsertExternalLink({
     client,
     privateListingId,
-    url: privatePropertyListingUrl,
+    url: publicListingUrl,
     status: arch9Status,
     now,
   })

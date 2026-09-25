@@ -25,14 +25,11 @@ assert.ok(sellerStart > leadsStart, 'Seller workspace Seller render block should
 
 const overviewBlock = source.slice(overviewStart, leadsStart)
 const overviewSections = [
-  'Performance',
-  'Buyer Interest Funnel',
   'Latest Buyer Activity',
   'Upcoming Viewings',
   'Seller',
   'Marketing',
   'Price Position',
-  'Recent Activity',
 ]
 let previousIndex = -1
 for (const heading of overviewSections) {
@@ -43,8 +40,6 @@ for (const heading of overviewSections) {
 
 for (const removedOverviewCopy of [
   'Listing Follow-Ups',
-  'Portal Security',
-  'Seller Onboarding Email Diagnostics',
   'Key Information',
   'Offer vs Asking Price',
   'Upload signed seller pack',
@@ -59,8 +54,13 @@ for (const removedOverviewCopy of [
 assert.ok(overviewBlock.includes("openSellerWorkspaceSection('leads')"), 'Overview buyer activity CTA should open Leads.')
 assert.ok(overviewBlock.includes("openSellerWorkspaceSection('seller')"), 'Overview seller snapshot CTA should open Seller.')
 assert.ok(overviewBlock.includes("openSellerWorkspaceSection('marketing')"), 'Overview marketing/pricing CTAs should open Marketing.')
-assert.ok(overviewBlock.includes("openSellerWorkspaceSection('activity')"), 'Overview recent activity CTA should open Activity.')
-assert.ok(source.includes('const totalViews = explicitViews || portalViews + bridgeViews || 0'), 'Overview views should not use estimated/demo view counts.')
+assert.equal(overviewBlock.includes('>Recent Activity<'), false, 'Overview should not repeat the retired recent activity block.')
+assert.equal(overviewBlock.includes('No offers received yet.'), false, 'Price Position should not reference the retired offer workflow.')
+assert.ok(overviewBlock.includes('ListingAgentReassignmentPanel'), 'Overview should show the listing agent and reassignment control below pricing.')
+assert.ok(source.includes('buildListingOverviewPerformance({'), 'Overview should build performance from canonical sources.')
+assert.ok(source.includes('listingPerformance.viewsAvailable'), 'Overview should distinguish unavailable views from a verified zero.')
+assert.equal(source.includes('const totalViews = explicitViews || portalViews + bridgeViews || 0'), false, 'Overview should not use legacy listing payload totals.')
+assert.equal(source.includes('leadCount * 6 + syncedActiveOffers.length * 8 + 12'), false, 'Overview should not estimate views from lead and offer counts.')
 assert.ok(source.includes('areaAverageDays,') && !source.includes('Math.max(metrics.daysOnMarket + 15, 30)'), 'Area average days should only render when real data exists.')
 
 const sellerPortalLifecycleStatusIndex = source.indexOf('const sellerPortalLifecycleStatus = useMemo')
@@ -109,7 +109,8 @@ for (const removedLeadsCopy of [
 
 assert.ok(source.includes('const listingLeadRows = useMemo'), 'Leads tab should derive listing-specific lead rows.')
 assert.ok(leadsBlock.includes('handleExportListingLeads'), 'Leads tab should expose listing lead export.')
-assert.ok(leadsBlock.includes('openShowDayCaptureModal'), 'Leads tab should use the existing add-lead capture workflow.')
+assert.ok(leadsBlock.includes('openBuyerLeadModal'), 'Leads tab should use canonical buyer lead capture.')
+assert.equal(leadsBlock.includes('openShowDayCaptureModal'), false, 'Generic Leads actions should not use show-day capture.')
 assert.ok(leadsBlock.includes('listingLeadRows.length'), 'Leads tab should render from listing-specific lead rows.')
 
 console.log('Listing detail seller workspace tabs, overview, and leads guard passed.')

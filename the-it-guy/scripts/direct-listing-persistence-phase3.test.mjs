@@ -29,7 +29,9 @@ test('Quick Add persists direct listing form data through the seller onboarding 
 test('Quick Add create and merge paths persist direct listing intake form data', () => {
   const persistenceCallCount = (agentListingsSource.match(/persistSellerProfileOnboardingFormData\(/g) || []).length
   assert.ok(persistenceCallCount >= 2, 'expected persistence calls for create and merge paths')
-  assert.match(agentListingsSource, /direct listing intake form data persistence skipped after quick add create/)
+  assert.match(agentListingsSource, /if \(!savedOnboarding\?\.id\) throw new Error\('Seller and property details were not saved\.'\)/)
+  assert.match(agentListingsSource, /verifyListingPropertyPersistenceCopies\(\{\s*\n\s*form:/)
+  assert.match(agentListingsSource, /propertySaveIssue/)
   assert.match(agentListingsSource, /direct listing intake form data persistence skipped during merge/)
 })
 
@@ -70,7 +72,8 @@ test('listing description is persisted and rehydrated through shared aliases', (
   assert.match(agentListingsSource, /listingMarketing\.description/)
   assert.match(agentListingsSource, /onboardingFormData\.listingDescription/)
   assert.match(agentListingsSource, /onboardingFormData\.propertyDescription/)
-  assert.match(agentListingsSource, /const hasPortalDescription = Boolean\(normalizeText\(form\.listingDescription \|\| form\.notes\)\)/)
+  assert.match(agentListingsSource, /const hasPortalDescription = Boolean\(normalizeText\(form\.listingDescription\)\)/)
+  assert.match(agentListingsSource, /const description = normalizeText\(form\.listingDescription\)/)
   assert.match(agentListingsSource, /const saved = await performUpdateExistingListing\(\{\s*\n\s*navigateAfterSave: false,\s*\n\s*reloadAfterSave: false,\s*\n\s*emitListingsUpdated: false,/)
   assert.match(agentListingsSource, /if \(!saved\) \{\s*\n\s*setIsListingSaving\(false\)\s*\n\s*return\s*\n\s*\}/)
   assert.match(agentListingDetailSource, /onboardingFormData\.listingDescription/)
@@ -126,6 +129,8 @@ test('listing editor verifies durable property details before navigating away', 
       propertyType: 'House',
       propertyStructureType: 'full_title',
       listingPrice: '2500000',
+      ratesTaxes: '1300',
+      levies: '400',
     },
     listing: {
       addressLine1: '18 Test Avenue',
@@ -139,15 +144,29 @@ test('listing editor verifies durable property details before navigating away', 
         propertyType: 'House',
         propertyStructureType: 'full_title',
         askingPrice: 2500000,
+        ratesTaxes: '1300',
+        levies: '400',
       },
     },
     publication: {
       address: '18 Test Avenue',
       property_type: 'House',
       asking_price: 2500000,
+      rates_taxes: 1300,
+      levies: 400,
     },
   })
   assert.equal(durableCopies.ready, true)
+
+  const missingPortalFees = verifyListingPropertyPersistenceCopies({
+    form: { ratesTaxes: '1300', levies: '400' },
+    onboarding: { form_data: { ratesTaxes: '1300', levies: '400' } },
+    publication: { rates_taxes: null, levies: null },
+  })
+  assert.deepEqual(missingPortalFees.mismatches.map((item) => item.label), [
+    'rates and taxes (publication)',
+    'levies (publication)',
+  ])
 
   const staleOnboardingCopy = verifyListingPropertyPersistenceCopies({
     form: { propertyAddress: '18 Test Avenue', propertyType: 'House', propertyStructureType: 'full_title', listingPrice: '2500000' },

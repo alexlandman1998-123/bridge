@@ -5,7 +5,7 @@ import {
 
 export const PROPERTY24_LISTING_CATEGORY_MODEL_VERSION = 'arch9_property24_listing_category_model_v1'
 
-const SALE_LIFECYCLE = Object.freeze(['NewListing', 'Active', 'Pending', 'Sold', 'Withdrawn', 'Expired', 'Cancelled', 'BackOnMarket'])
+const SALE_LIFECYCLE = Object.freeze(['NewListing', 'Active', 'ReducedPrice', 'Pending', 'Sold', 'Withdrawn', 'Expired', 'Cancelled', 'BackOnMarket'])
 const RENTAL_LIFECYCLE = Object.freeze(['NewListing', 'Active', 'Pending', 'Rented', 'Withdrawn', 'Expired', 'Cancelled', 'BackOnMarket'])
 
 export const PROPERTY24_LISTING_CATEGORY_MODELS = Object.freeze({

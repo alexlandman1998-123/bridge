@@ -15,15 +15,25 @@ test('replaces company requirements with trust requirements when the submitted s
   }
   const companyRows = syncSellerDocumentRequirements(companyListing, []).upsertRows
   assert.equal(companyRows.some((row) => row.requirement_key === 'company_resolution_to_sell'), true)
+  const existingRows = companyRows.map((row) => row.requirement_key === 'rates_account'
+    ? { ...row, id: 'rates-account-1', status: 'uploaded' }
+    : row.requirement_key === 'company_resolution_to_sell'
+      ? { ...row, id: 'company-resolution-1', status: 'approved' }
+      : row)
 
   const trustListing = {
     ...companyListing,
     sellerOnboarding: { formData: { ownershipType: 'trust', trustName: 'Seller Family Trust' } },
   }
-  const synced = syncSellerDocumentRequirements(trustListing, companyRows)
+  const synced = syncSellerDocumentRequirements(trustListing, existingRows)
 
   assert.equal(synced.upsertRows.some((row) => row.requirement_key === 'trust_resolution_to_sell'), true)
-  assert.equal(synced.markNotApplicableRows.some((row) => row.requirement_key === 'company_resolution_to_sell'), true)
+  assert.equal(synced.upsertRows.find((row) => row.requirement_key === 'rates_account')?.status, 'uploaded')
+  assert.equal(synced.upsertRows.find((row) => row.requirement_key === 'rates_account')?.id, 'rates-account-1')
+  const retiredCompanyResolution = synced.markNotApplicableRows.find((row) => row.requirement_key === 'company_resolution_to_sell')
+  assert.equal(retiredCompanyResolution?.status, 'not_applicable')
+  assert.equal(retiredCompanyResolution?.id, 'company-resolution-1')
+  assert.equal(retiredCompanyResolution?.generated_from?.retirement_reason, 'seller_requirement_model_changed')
 })
 
 test('keeps data-capture requirements out of the upload checklist and exposes their capture surface', () => {

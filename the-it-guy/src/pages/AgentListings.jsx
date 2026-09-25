@@ -5,6 +5,7 @@ import Button from '../components/ui/Button'
 import Field from '../components/ui/Field'
 import SectionHeader from '../components/ui/SectionHeader'
 import FinalListingModuleOverview from '../components/listings/FinalListingModuleOverview'
+import ListingFeatureFields from '../components/listings/ListingFeatureFields'
 import AddressAutocomplete from '../components/location/AddressAutocomplete'
 import { getTransactionScopeForRow } from '../core/transactions/transactionScope'
 import {
@@ -86,6 +87,12 @@ import {
 } from '../lib/propertyTaxonomy'
 import { buildFinalListingModuleOverview } from '../services/listings/finalListingModuleModel'
 import { getSpecialistSalesListingSchema } from '../services/listings/specialistSalesListingSchema'
+import {
+  mergeListingFeatureSelections,
+  normalizeListingFeatureFacts,
+  serializeListingFeatureFacts,
+  setListingFeatureFact,
+} from '../services/listings/listingFeatureCatalog'
 import { setWebsiteListingPublication } from '../services/websiteListingPublicationService'
 import { getSyndicationChannelAvailability, UNAVAILABLE_SYNDICATION_CHANNELS } from '../services/syndicationChannelAvailabilityService'
 
@@ -269,35 +276,10 @@ const CREATE_LISTING_DESCRIPTIVE_PROPERTY_TYPES = [
 const CREATE_LISTING_SALES_FLAG_OPTIONS = [
   { key: 'onAuction', label: 'On Auction', description: 'Market this listing as an auction listing.' },
   { key: 'priceOnApplication', label: 'Price on Application', description: 'Allow publishing without showing a public price where supported.' },
-  { key: 'showReducedBanner', label: 'Show Reduced Banner on Listing', description: 'Flag this as reduced when the portal supports it.' },
   { key: 'noTransferDuty', label: 'No Transfer Duty', description: 'Show no-transfer-duty messaging where supported.' },
 ]
 
-const CREATE_LISTING_SELLING_POINT_OPTIONS = [
-  { value: 'pool', label: 'Pool' },
-  { value: 'garden', label: 'Garden' },
-  { value: 'security', label: 'Security' },
-  { value: 'electric_fence', label: 'Electric fence' },
-  { value: 'solar', label: 'Solar' },
-  { value: 'backup_power', label: 'Backup power' },
-  { value: 'backup_water', label: 'Backup water' },
-  { value: 'borehole', label: 'Borehole' },
-  { value: 'fibre', label: 'Fibre' },
-  { value: 'pet_friendly', label: 'Pet friendly' },
-  { value: 'study', label: 'Study' },
-  { value: 'staff_quarters', label: 'Staff quarters' },
-  { value: 'entertainment_area', label: 'Entertainment area' },
-  { value: 'built_in_braai', label: 'Built-in braai' },
-  { value: 'fireplace', label: 'Fireplace' },
-  { value: 'air_conditioning', label: 'Air conditioning' },
-  { value: 'open_plan_living', label: 'Open-plan living' },
-  { value: 'balcony', label: 'Balcony' },
-  { value: 'sea_view', label: 'Sea view' },
-  { value: 'mountain_view', label: 'Mountain view' },
-  { value: 'flatlet', label: 'Flatlet' },
-  { value: 'new_development', label: 'New development' },
-]
-const CREATE_LISTING_SELLING_POINT_VALUE_SET = new Set(CREATE_LISTING_SELLING_POINT_OPTIONS.map((option) => option.value))
+const CREATE_LISTING_SYSTEM_FEATURE_KEYS = new Set(['estate_or_hoa', 'sectional_title', 'on_auction', 'price_on_application', 'reduced_banner', 'no_transfer_duty'])
 
 const QUICK_ADD_HELP_STEPS = [
   'Listing Status',
@@ -1003,7 +985,7 @@ function buildQuickListingPublicationFeatures(form = {}, keySellingPoints = []) 
 }
 
 function buildCreateListingPortalStatuses(form = {}, availability = UNAVAILABLE_SYNDICATION_CHANNELS, availabilityLoading = false) {
-  const hasDescription = Boolean(normalizeText(form.listingDescription || form.notes))
+  const hasDescription = Boolean(normalizeText(form.listingDescription))
   const hasImages = Array.isArray(form.listingImages) && form.listingImages.length > 0
   const property24Missing = [
     !normalizeText(form.propertyAddress) ? 'Address' : '',
@@ -1065,7 +1047,12 @@ async function buildQuickListingImageDrafts(files = []) {
 async function uploadQuickListingImages(listingId = '', images = []) {
   const uploaded = await Promise.all((Array.isArray(images) ? images : []).map(async (image, index) => {
     const file = typeof File !== 'undefined' && image?.file instanceof File ? image.file : null
-    if (!file) return image
+    if (!file) {
+      if (isUnstorableCreateListingImageUrl(image?.url)) {
+        throw new Error(`Image ${image?.name || index + 1} must be selected again before the listing can be saved.`)
+      }
+      return image
+    }
     try {
       const asset = await uploadPrivateListingMediaAsset(file, { listingId, type: 'gallery' })
       return {
@@ -1080,8 +1067,7 @@ async function uploadQuickListingImages(listingId = '', images = []) {
         size: asset.size || image.size || 0,
       }
     } catch (error) {
-      console.warn('[Listings] quick listing image upload failed; keeping local preview', error)
-      return image
+      throw new Error(`Image ${image.name || index + 1} could not be uploaded: ${error?.message || 'upload failed'}`)
     }
   }))
 
@@ -1100,7 +1086,7 @@ async function uploadQuickListingImages(listingId = '', images = []) {
 
 async function syncQuickListingDistributionData(listingId = '', form = {}, context = {}) {
   const uploadedImages = await uploadQuickListingImages(listingId, form.listingImages)
-  const description = normalizeText(form.listingDescription || form.notes)
+  const description = normalizeText(form.listingDescription)
   const keySellingPoints = Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : []
   const publicationFeatures = buildQuickListingPublicationFeatures(form, keySellingPoints)
   return syncPrivateListingDistributionData(listingId, {
@@ -1118,6 +1104,8 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
       parkingBays: Number(form.parkingCount || 0) || null,
       floorSize: Number(form.floorSize || 0) || null,
       erfSize: Number(form.erfSize || 0) || null,
+      ratesTaxes: normalizeText(form.ratesTaxes) === '' ? null : Number(form.ratesTaxes),
+      levies: normalizeText(form.levies) === '' ? null : Number(form.levies),
       description,
       features: publicationFeatures,
       amenities: [],
@@ -1130,9 +1118,6 @@ async function syncQuickListingDistributionData(listingId = '', form = {}, conte
     externalLinks: normalizeText(form.externalListingLink)
       ? [{ platform: 'External', url: normalizeText(form.externalListingLink), status: 'Draft', visibleToSeller: false }]
       : [],
-  }).catch((syncError) => {
-    console.warn('[Listings] quick listing distribution sync skipped', syncError)
-    return { skipped: true, reason: syncError?.message || 'distribution_sync_failed' }
   })
 }
 
@@ -1248,9 +1233,9 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     .filter((image) => image.url || image.signedUrl || image.publicUrl)
   const externalLinks = Array.isArray(listing.externalLinks) ? listing.externalLinks : Array.isArray(listing.listingExternalLinks) ? listing.listingExternalLinks : []
   const selectedSyndicationChannels = new Set(['arch9_seller_experience'])
-  if (normalizeText(listing.property24ListingUrl || listing.property24Reference || listing.property24Status)) selectedSyndicationChannels.add('property24')
-  if (normalizeText(listing.privatePropertyListingUrl || listing.privatePropertyReference || listing.privatePropertyStatus)) selectedSyndicationChannels.add('private_property')
-  if (normalizeText(listing.bridgeListingPublicUrl || listing.bridgeListingStatus)) selectedSyndicationChannels.add('agency_website')
+  if (normalizeText(listing.property24ListingUrl || listing.property24Reference) || !['', 'not_published'].includes(normalizeDirectListingKey(listing.property24Status))) selectedSyndicationChannels.add('property24')
+  if (normalizeText(listing.privatePropertyListingUrl || listing.privatePropertyReference) || !['', 'not_published'].includes(normalizeDirectListingKey(listing.privatePropertyStatus))) selectedSyndicationChannels.add('private_property')
+  if (normalizeText(listing.bridgeListingPublicUrl) || !['', 'not_published'].includes(normalizeDirectListingKey(listing.bridgeListingStatus))) selectedSyndicationChannels.add('agency_website')
   externalLinks.forEach((link) => {
     const platform = normalizeDirectListingKey(link?.platform)
     if (platform.includes('property24')) selectedSyndicationChannels.add('property24')
@@ -1262,17 +1247,18 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
   const mandateStatus = normalizeDirectListingKey(listing.mandateStatus || listing.mandate_status || onboardingFormData.mandateStatus)
   const hasSignedMandate = ['signed', 'signed_uploaded', 'signed_external_pending_upload'].includes(mandateStatus)
   const listingFeatureSelections = [
-    ...normalizeDirectListingFeatureSelections(listing.keySellingPoints, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(listing.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(listingMarketing.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(listingMarketing.selectedFeatures, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(listing.listingPublicationData?.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(listing.publicationData?.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(listingPropertyDetails.selectedFeatures, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(listingPropertyDetails.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(onboardingFormData.keySellingPoints, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
-    ...normalizeDirectListingFeatureSelections(onboardingFormData.features, { allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET }),
+    ...normalizeDirectListingFeatureSelections(listing.keySellingPoints),
+    ...normalizeDirectListingFeatureSelections(listing.features),
+    ...normalizeDirectListingFeatureSelections(listingMarketing.features),
+    ...normalizeDirectListingFeatureSelections(listingMarketing.selectedFeatures),
+    ...normalizeDirectListingFeatureSelections(listing.listingPublicationData?.features),
+    ...normalizeDirectListingFeatureSelections(listing.publicationData?.features),
+    ...normalizeDirectListingFeatureSelections(listingPropertyDetails.selectedFeatures),
+    ...normalizeDirectListingFeatureSelections(listingPropertyDetails.features),
+    ...normalizeDirectListingFeatureSelections(onboardingFormData.keySellingPoints),
+    ...normalizeDirectListingFeatureSelections(onboardingFormData.features),
   ]
+  const featureFacts = normalizeListingFeatureFacts(onboardingFormData.featureFacts || listingPropertyDetails.featureFacts, listingFeatureSelections)
   const recoveredPropertyFacts = recoverStructuredPropertyFactsFromMarketingCopy(
     listing.listingTitle,
     listing.title,
@@ -1361,8 +1347,9 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
     bathrooms: preferSavedPropertyFact(listing.bathrooms || listingPropertyDetails.bathrooms, recoveredPropertyFacts.bathrooms),
     garages: preferSavedPropertyFact(listing.garages || listingPropertyDetails.garages, recoveredPropertyFacts.garages),
     parkingCount: preferSavedPropertyFact(listing.parkingCount || listing.coveredParking || listing.openParking || listingPropertyDetails.parkingBays, recoveredPropertyFacts.parkingCount),
-    erfSize: preferSavedPropertyFact(listing.erfSize || listingPropertyDetails.erfSize, recoveredPropertyFacts.erfSize),
     floorSize: preferSavedPropertyFact(listing.floorSize || listingPropertyDetails.floorSize, recoveredPropertyFacts.floorSize),
+    ratesTaxes: normalizeText(listing.ratesTaxes ?? listingPropertyDetails.ratesTaxes ?? onboardingFormData.ratesTaxes ?? listing.listingPublicationData?.ratesTaxes ?? listing.publicationData?.ratesTaxes),
+    levies: normalizeText(listing.levies ?? listingPropertyDetails.levies ?? onboardingFormData.levies ?? listing.listingPublicationData?.levies ?? listing.publicationData?.levies),
     grossLettableArea: normalizeText(specialistFacts.grossLettableArea),
     erfSize: normalizeText(specialistFacts.erfSize) || preferSavedPropertyFact(listing.erfSize || listingPropertyDetails.erfSize, recoveredPropertyFacts.erfSize),
     zoning: normalizeText(specialistFacts.zoning),
@@ -1395,7 +1382,8 @@ function buildListingEditorFormFromListing(listing = {}, profile = {}, workspace
         onboardingFormData.propertyNotes ||
         listing.listingPreviewDescription,
     ),
-    keySellingPoints: Array.from(new Set(listingFeatureSelections)),
+    keySellingPoints: mergeListingFeatureSelections(listingFeatureSelections, featureFacts),
+    featureFacts,
     listingImages: galleryImages,
     coverImageId: normalizeText(listing.coverImageId || galleryImages[0]?.id),
     selectedSyndicationChannels: Array.from(selectedSyndicationChannels),
@@ -1502,7 +1490,7 @@ function normalizeDirectListingKey(value) {
     .replace(/^_+|_+$/g, '')
 }
 
-function normalizeDirectListingFeatureSelections(value, { allowedValues = null } = {}) {
+function normalizeDirectListingFeatureSelections(value) {
   const values = []
   const pushValue = (item) => {
     if (Array.isArray(item)) {
@@ -1518,7 +1506,7 @@ function normalizeDirectListingFeatureSelections(value, { allowedValues = null }
       .map(normalizeDirectListingKey)
       .filter(Boolean)
       .forEach((key) => {
-        if (!allowedValues || allowedValues.has(key)) values.push(key)
+        if (!CREATE_LISTING_SYSTEM_FEATURE_KEYS.has(key)) values.push(key)
       })
   }
 
@@ -1674,9 +1662,7 @@ function buildQuickAddDirectListingPersistencePayload(form = {}, context = {}) {
     capturedBy: context.capturedBy || '',
     capturedAt,
   })
-  const keySellingPoints = normalizeDirectListingFeatureSelections(form.keySellingPoints, {
-    allowedValues: CREATE_LISTING_SELLING_POINT_VALUE_SET,
-  })
+  const keySellingPoints = normalizeDirectListingFeatureSelections(form.keySellingPoints)
   const sellerOnboardingFormData = {
     ...directListingIntake.sellerOnboardingFormData,
     propertyCategory: normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' }),
@@ -1684,9 +1670,12 @@ function buildQuickAddDirectListingPersistencePayload(form = {}, context = {}) {
     propertyNotes: normalizeText(form.listingDescription),
     propertyDescription: normalizeText(form.listingDescription),
     listingDescription: normalizeText(form.listingDescription),
-    listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+    listingPreviewDescription: normalizeText(form.listingDescription),
+    ratesTaxes: normalizeText(form.ratesTaxes),
+    levies: normalizeText(form.levies),
     features: buildQuickListingPublicationFeatures(form, keySellingPoints),
     keySellingPoints,
+    featureFacts: serializeListingFeatureFacts(normalizeListingFeatureFacts(form.featureFacts, keySellingPoints)),
     directListingIntake: {
       ...(directListingIntake.sellerOnboardingFormData?.directListingIntake || {}),
       capturedAt,
@@ -2168,6 +2157,8 @@ function buildListingPropertyCanonicalFacts(form = {}) {
       postalCode: normalizeText(addressValue?.postalCode),
       country: normalizeText(addressValue?.country) || 'South Africa',
       askingPrice,
+      ratesTaxes: normalizeText(form?.ratesTaxes),
+      levies: normalizeText(form?.levies),
       sectional_title: isSectionalTitle,
       estate_or_hoa: estateOrHoa,
       hoa: estateOrHoa,
@@ -3166,6 +3157,8 @@ function buildInitialListingLeadForm(profile, workspace) {
     parkingCount: '',
     erfSize: '',
     floorSize: '',
+    ratesTaxes: '',
+    levies: '',
     grossLettableArea: '',
     zoning: '',
     parking: '',
@@ -3202,6 +3195,7 @@ function buildInitialListingLeadForm(profile, workspace) {
     notes: '',
     listingDescription: '',
     keySellingPoints: [],
+    featureFacts: {},
     listingImages: [],
     coverImageId: '',
     selectedSyndicationChannels: ['arch9_seller_experience'],
@@ -3598,7 +3592,7 @@ function buildDeveloperSellerFacts({ form = {}, workspace = null, profile = null
 }
 
 function buildDeveloperListingCompleteness({ form = {} } = {}) {
-  const hasPortalDescription = Boolean(normalizeText(form.listingDescription || form.notes))
+  const hasPortalDescription = Boolean(normalizeText(form.listingDescription))
   const checks = [
     { label: 'Development linked', complete: Boolean(normalizeText(form.developmentId)) },
     { label: 'Unit linked', complete: Boolean(normalizeText(form.unitId)) },
@@ -4533,21 +4527,14 @@ function AgentListings({ initialTab = null } = {}) {
     })
   }
 
-  function toggleKeySellingPoint(value) {
-    const normalizedValue = normalizeDirectListingKey(value)
-    if (!normalizedValue) return
+  function updateListingFeatureFact(key, value) {
     setForm((previous) => {
-      const points = new Set((Array.isArray(previous.keySellingPoints) ? previous.keySellingPoints : []).map(normalizeDirectListingKey).filter(Boolean))
-      if (points.has(normalizedValue)) {
-        points.delete(normalizedValue)
-      } else {
-        points.add(normalizedValue)
-      }
-      const nextPoints = Array.from(points)
+      const featureFacts = setListingFeatureFact(normalizeListingFeatureFacts(previous.featureFacts, previous.keySellingPoints), key, value)
+      const keySellingPoints = mergeListingFeatureSelections(previous.keySellingPoints, featureFacts)
       if (isEditListingWorkspace && editListingId) {
-        writeListingMarketingDraftStorage(editListingId, { selectedFeatures: nextPoints })
+        writeListingMarketingDraftStorage(editListingId, { selectedFeatures: keySellingPoints, featureFacts })
       }
-      return { ...previous, keySellingPoints: nextPoints }
+      return { ...previous, featureFacts, keySellingPoints }
     })
   }
 
@@ -4661,8 +4648,8 @@ function AgentListings({ initialTab = null } = {}) {
         latitude: propertyAddressValue?.latitude ?? form.latitude ?? null,
         longitude: propertyAddressValue?.longitude ?? form.longitude ?? null,
         googlePlaceId: normalizeText(propertyAddressValue?.googlePlaceId || propertyAddressValue?.placeId || form.googlePlaceId),
-        description: normalizeText(form.listingDescription || form.notes),
-        listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+        description: normalizeText(form.listingDescription),
+        listingPreviewDescription: normalizeText(form.listingDescription),
         internalListingNotes: normalizeText(form.notes),
         sellerType: form.sellerType,
         mandateType: normalizeText(form.mandateType) || 'sole',
@@ -4862,7 +4849,7 @@ function AgentListings({ initialTab = null } = {}) {
       longitude,
       googlePlaceId,
       description: effectiveListingDescription || stripQuickListingMetadataText(listing.description),
-      listingPreviewDescription: normalizeText(form.listingDescription || form.notes) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
+      listingPreviewDescription: normalizeText(form.listingDescription) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
       internalListingNotes: nextNotes,
       sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
       mandateType: normalizeText(form.mandateType) || 'sole',
@@ -4897,11 +4884,13 @@ function AgentListings({ initialTab = null } = {}) {
       parkingCovered: form.parkingCount,
       erfSize: form.erfSize,
       floorSize: form.floorSize,
+      ratesTaxes: form.ratesTaxes,
+      levies: form.levies,
       askingPrice,
       propertyNotes: effectiveListingDescription,
       propertyDescription: effectiveListingDescription,
       listingDescription: effectiveListingDescription,
-      listingPreviewDescription: normalizeText(form.listingDescription || form.notes) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
+      listingPreviewDescription: normalizeText(form.listingDescription) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
       imageGallery: uploadedImages,
       coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
       features: buildQuickListingPublicationFeatures(form, effectiveKeySellingPoints),
@@ -4929,6 +4918,7 @@ function AgentListings({ initialTab = null } = {}) {
         sellerType: form.sellerType,
         ownershipStructure: form.sellerType,
         allowProtectedSectionOverride: true,
+        explicitClearFields: ['features', 'keySellingPoints'],
       })
       if (!savedOnboarding?.id) {
         throw new Error('Your property details could not be written to the listing record. Your entries are still available here; please try again.')
@@ -4948,6 +4938,8 @@ function AgentListings({ initialTab = null } = {}) {
           parkingBays: Number(form.parkingCount || 0) || null,
           floorSize: Number(form.floorSize || 0) || null,
           erfSize: Number(form.erfSize || 0) || null,
+          ratesTaxes: normalizeText(form.ratesTaxes) === '' ? null : Number(form.ratesTaxes),
+          levies: normalizeText(form.levies) === '' ? null : Number(form.levies),
           description: effectiveListingDescription,
           features: buildQuickListingPublicationFeatures(form, effectiveKeySellingPoints),
           amenities: [],
@@ -5030,7 +5022,7 @@ function AgentListings({ initialTab = null } = {}) {
         erfSize: Number(form.erfSize || 0) || null,
         floorSize: Number(form.floorSize || 0) || null,
         listingDescription: effectiveListingDescription,
-        listingPreviewDescription: normalizeText(form.listingDescription || form.notes) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
+        listingPreviewDescription: normalizeText(form.listingDescription) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
         keySellingPoints: effectiveKeySellingPoints,
         galleryImages: uploadedImages,
         coverImageId: normalizeText(form.coverImageId || uploadedImages[0]?.id),
@@ -5055,7 +5047,7 @@ function AgentListings({ initialTab = null } = {}) {
           country,
           propertyType,
           description: effectiveListingDescription,
-          listingPreviewDescription: normalizeText(form.listingDescription || form.notes) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
+          listingPreviewDescription: normalizeText(form.listingDescription) || normalizeText(listing.listingPreviewDescription) || effectiveListingDescription,
           selectedFeatures: effectiveKeySellingPoints,
         },
         selectedSyndicationChannels: Array.isArray(form.selectedSyndicationChannels) ? form.selectedSyndicationChannels : [],
@@ -6147,9 +6139,9 @@ function AgentListings({ initialTab = null } = {}) {
           latitude,
           longitude,
           googlePlaceId,
-          description: normalizeText(form.listingDescription) || quickNotes,
+          description: normalizeText(form.listingDescription),
           internalListingNotes: quickNotes,
-          listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+          listingPreviewDescription: normalizeText(form.listingDescription),
           sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
           mandateType: form.mandateType.trim() || 'sole',
           property24ListingUrl: form.externalListingLink,
@@ -6173,36 +6165,50 @@ function AgentListings({ initialTab = null } = {}) {
         }
         createdListingId = created.listing.id
         createdListingTitle = created.listing.listingTitle || created.listing.title || listingTitle
-        // The listing now exists. Finish the independent enrichment work in
-        // the background so creation is not held hostage by uploads, email,
-        // or secondary projections.
+        let propertySaveIssue = ''
+        try {
+          const savedOnboarding = await persistSellerProfileOnboardingFormData({
+            listingId: createdListingId,
+            formData: directListingPersistence.sellerOnboardingFormData,
+            status: 'not_started',
+            sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
+            ownershipStructure: directListingPersistence.seller?.ownerStructureType || directListingPersistence.seller?.ownershipType || form.sellerType,
+          })
+          if (!savedOnboarding?.id) throw new Error('Seller and property details were not saved.')
+          listingDistributionSync = await syncQuickListingDistributionData(createdListingId, form, {
+            title: listingTitle,
+            address: formattedAddress || propertyAddress,
+            listingStatus: resolvedListingStatus,
+          })
+          if (listingDistributionSync?.skipped || !listingDistributionSync?.publication?.listing_id) {
+            throw new Error('Publication details were not saved.')
+          }
+          const verifiedListing = await getPrivateListing(createdListingId, { includeRequirementsAndDocuments: false })
+          const verification = verifyListingPropertyPersistenceCopies({
+            form: { ...form, propertyAddress, formattedAddress: formattedAddress || propertyAddress, listingPrice: form.priceOnApplication ? '' : String(Number(form.listingPrice || 0) || estimatedPrice) },
+            listing: verifiedListing,
+            onboarding: savedOnboarding,
+            publication: listingDistributionSync.publication,
+          })
+          if (!verification.ready) {
+            throw new Error(`Some property fields did not match the saved listing: ${verification.mismatches.map((item) => item.label).join(', ')}.`)
+          }
+        } catch (persistenceError) {
+          propertySaveIssue = persistenceError?.message || 'Property details could not be verified.'
+          console.warn('[Listings] quick listing property save needs attention', persistenceError)
+        }
+        // The listing already exists. Only non-essential follow-up work runs
+        // in the background; property data is saved and verified above.
         void (async () => {
-        const distributionPromise = syncQuickListingDistributionData(created.listing.id, form, {
-          title: listingTitle,
-          address: formattedAddress || propertyAddress,
-          listingStatus: resolvedListingStatus,
-        })
-        const websitePublicationPromise = shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels)
-          ? distributionPromise
-            .then(() => setWebsiteListingPublication(created.listing.id, 'publish'))
+        const websitePublicationPromise = !propertySaveIssue && shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels)
+          ? setWebsiteListingPublication(created.listing.id, 'publish')
             .then((publication) => ({ attempted: true, publication }))
             .catch((publicationError) => {
               console.warn('[Listings] agency website publication needs attention after quick add', publicationError)
               return { attempted: true, error: publicationError?.message || 'website_publication_failed' }
             })
           : Promise.resolve(null)
-        const [distributionResult, _sellerFormResult, documentUploadResult, requirementSyncResult, sellerPortalInviteResult, publishedWebsite] = await Promise.all([
-          distributionPromise,
-          persistSellerProfileOnboardingFormData({
-            listingId: created.listing.id,
-            formData: directListingPersistence.sellerOnboardingFormData,
-            status: 'not_started',
-            sellerType: directListingPersistence.seller?.sellerLegalType || form.sellerType,
-            ownershipStructure: directListingPersistence.seller?.ownerStructureType || directListingPersistence.seller?.ownershipType || form.sellerType,
-          }).catch((persistenceError) => {
-            console.warn('[Listings] direct listing intake form data persistence skipped after quick add create', persistenceError)
-            return null
-          }),
+        const [documentUploadResult, requirementSyncResult, sellerPortalInviteResult, publishedWebsite] = await Promise.all([
           documentUploadQueue.length
             ? uploadQuickAddDocumentsForListing(created.listing.id, documentUploadQueue)
             : Promise.resolve(null),
@@ -6215,7 +6221,6 @@ function AgentListings({ initialTab = null } = {}) {
           })),
           websitePublicationPromise,
         ])
-        listingDistributionSync = distributionResult
         if (documentUploadResult) {
           uploadedDocuments = documentUploadResult.uploadedDocuments
           failedDocumentUploads = documentUploadResult.failedDocumentUploads
@@ -6296,6 +6301,7 @@ function AgentListings({ initialTab = null } = {}) {
         setQuickAddSuccess({
           id: createdListingId,
           title: createdListingTitle,
+          propertySaveIssue,
           statusLabel: activationTier.statusLabel,
           mandateStatus,
           complianceWarnings,
@@ -6305,10 +6311,10 @@ function AgentListings({ initialTab = null } = {}) {
             ? { synced: false, awaitingSellerSetup: true, totalRequirements: 0, missingRequirements: 0 }
             : { synced: false, status: 'processing' },
           sellerPortalInvite: { requested: directListingPersistence.sellerPortalInvite?.requested === true, status: 'processing' },
-          websitePublication: shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels) ? { attempted: true, status: 'processing' } : null,
+          websitePublication: !propertySaveIssue && shouldAutoPublishToAgencyWebsite(resolvedListingStatus, form.selectedSyndicationChannels) ? { attempted: true, status: 'processing' } : null,
           handoffPlan: null,
         })
-        setWorkflowMessage('Listing created. Documents, listing distribution, and any requested seller invitation are finishing in the background.')
+        setWorkflowMessage(propertySaveIssue ? '' : 'Listing and property details saved. Documents and any requested seller invitation are finishing in the background.')
         window.dispatchEvent(new Event('itg:listings-updated'))
         if (isCreateListingWorkspace && createdListingId) {
           if (typeof window !== 'undefined') window.localStorage.removeItem(createListingDraftStorageKey)
@@ -6444,7 +6450,7 @@ function AgentListings({ initialTab = null } = {}) {
           complianceWarnings,
           description: normalizeText(form.listingDescription) || quickListingNotesWithHandoff,
           listingDescription: normalizeText(form.listingDescription),
-          listingPreviewDescription: normalizeText(form.listingDescription || form.notes),
+          listingPreviewDescription: normalizeText(form.listingDescription),
           keySellingPoints: Array.isArray(form.keySellingPoints) ? form.keySellingPoints.map(normalizeText).filter(Boolean) : [],
           galleryImages: (Array.isArray(form.listingImages) ? form.listingImages : []).map((item) => {
             const image = { ...item }
@@ -8046,6 +8052,14 @@ function AgentListings({ initialTab = null } = {}) {
                       <UnitInput label="Erf size" value={form.erfSize} onChange={(value) => updateForm('erfSize', value)} />
                     ) : null}
                   </div>
+                  <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <FormField label="Monthly rates and taxes (R)">
+                      <Field type="number" min="0" step="1" value={form.ratesTaxes} onChange={(event) => updateForm('ratesTaxes', event.target.value)} placeholder="Optional" />
+                    </FormField>
+                    <FormField label="Monthly levies (R)">
+                      <Field type="number" min="0" step="1" value={form.levies} onChange={(event) => updateForm('levies', event.target.value)} placeholder="Optional" />
+                    </FormField>
+                  </div>
                   {isSectionalTitleProperty(form) ? (
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <FormField label="Complex / scheme">
@@ -8063,7 +8077,7 @@ function AgentListings({ initialTab = null } = {}) {
 
                 <ListingWizardSection title={`${getSpecialistSalesListingSchema(form.propertyCategory).fields.length ? '6' : '5'}. ${form.listingType === 'rental' ? 'Rental' : 'Sales'} portal options`} description="Capture the publication flags agents expect before syndication." divided>
                   <div className="mt-3 grid gap-3 md:grid-cols-2">
-                    {CREATE_LISTING_SALES_FLAG_OPTIONS.filter((option) => form.listingType !== 'rental' || ['showReducedBanner', 'noTransferDuty'].includes(option.key)).map((option) => (
+                    {CREATE_LISTING_SALES_FLAG_OPTIONS.filter((option) => form.listingType !== 'rental' || option.key === 'noTransferDuty').map((option) => (
                       <SelectionCard
                         key={option.key}
                         compact
@@ -8075,6 +8089,7 @@ function AgentListings({ initialTab = null } = {}) {
                       />
                     ))}
                   </div>
+                  <p className="mt-3 text-xs text-[#607387]">Reduced-price portal banners are unavailable until the portals confirm a supported feed control. You can record and send a lower price from the listing’s Marketing tab.</p>
                 </ListingWizardSection>
               </div>
             ) : null}
@@ -8141,25 +8156,9 @@ function AgentListings({ initialTab = null } = {}) {
                   <div className="grid gap-2">
                     <div>
                       <span className="text-sm font-semibold text-[#2d445e]">Key selling points</span>
-                      <p className="mt-1 text-xs text-[#607387]">Choose the features that can be passed through to Property24, Private Property, and the agency website.</p>
+                      <p className="mt-1 text-xs text-[#607387]">Capture the actual property facts here. Portal-native mappings will be confirmed in the publishing review.</p>
                     </div>
-                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                      {CREATE_LISTING_SELLING_POINT_OPTIONS.map((option) => {
-                        const selectedPoints = new Set((Array.isArray(form.keySellingPoints) ? form.keySellingPoints : []).map(normalizeDirectListingKey).filter(Boolean))
-                        const isSelected = selectedPoints.has(option.value)
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            onClick={() => toggleKeySellingPoint(option.value)}
-                            className={`flex items-center justify-between gap-3 rounded-[8px] border px-3 py-2 text-left text-sm font-semibold transition ${isSelected ? 'border-[#1f7d44] bg-[#eefaf3] text-[#176437]' : 'border-[#dce6f2] bg-white text-[#2d445e] hover:border-[#b7c8db]'}`}
-                          >
-                            <span>{option.label}</span>
-                            {isSelected ? <CheckCircle2 size={15} /> : <Circle size={15} className="text-[#8fa2b7]" />}
-                          </button>
-                        )
-                      })}
-                    </div>
+                    <ListingFeatureFields facts={normalizeListingFeatureFacts(form.featureFacts, form.keySellingPoints)} listingType={form.listingType} onChange={updateListingFeatureFact} />
                   </div>
                 </div>
               </div>
@@ -8376,8 +8375,13 @@ function AgentListings({ initialTab = null } = {}) {
           <div className="mt-3 rounded-[18px] border border-[#d8ecdf] bg-[#f3fbf6] p-4">
             <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
-                <p className="text-sm font-semibold text-[#1f7d44]">Listing created successfully. What would you like to do next?</p>
+                <p className="text-sm font-semibold text-[#1f7d44]">{quickAddSuccess.propertySaveIssue ? 'Listing created, but property details need attention.' : 'Listing created successfully. What would you like to do next?'}</p>
                 <p className="mt-1 text-xs text-[#4d6a59]">{quickAddSuccess.title} · {quickAddSuccess.statusLabel || 'Draft'}</p>
+                {quickAddSuccess.propertySaveIssue ? (
+                  <p role="alert" className="mt-2 rounded-[12px] border border-[#f2d6ac] bg-[#fffaf0] p-2.5 text-xs font-semibold text-[#9a5b13]">
+                    {quickAddSuccess.propertySaveIssue} Open this listing and review its details before publishing. Do not create it again.
+                  </p>
+                ) : null}
                 {quickAddSuccess.handoffPlan?.summary ? (
                   <p className="mt-1 text-xs font-semibold text-[#4d6a59]">{quickAddSuccess.handoffPlan.summary}</p>
                 ) : null}
@@ -8422,6 +8426,8 @@ function AgentListings({ initialTab = null } = {}) {
                       ? 'Seller portal link sent.'
                       : quickAddSuccess.sellerPortalInvite.status === 'prepared_local'
                         ? 'Seller portal link prepared locally.'
+                        : quickAddSuccess.sellerPortalInvite.status === 'processing'
+                          ? 'Seller portal invitation is processing; check the Seller tab for confirmation.'
                         : 'Seller portal invite needs a retry.'}
                   </p>
                 ) : null}
@@ -8429,7 +8435,9 @@ function AgentListings({ initialTab = null } = {}) {
                   <p className={`mt-1 text-xs font-semibold ${quickAddSuccess.websitePublication.error ? 'text-[#9a5b13]' : 'text-[#1f7d44]'}`}>
                     {quickAddSuccess.websitePublication.error
                       ? 'Agency website publication needs attention in Listing Channels.'
-                      : 'Published to the agency website.'}
+                      : quickAddSuccess.websitePublication.status === 'processing'
+                        ? 'Agency website publication is processing; check Listing Channels for confirmation.'
+                        : 'Published to the agency website.'}
                   </p>
                 ) : null}
               </div>

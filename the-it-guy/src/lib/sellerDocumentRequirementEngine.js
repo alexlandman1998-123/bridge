@@ -17,6 +17,7 @@ import {
   isSellerStructuredFactRequirement,
   partitionSellerDocumentRequirements,
 } from '../services/documents/sellerStructuredFactRequirementService.js'
+import { resolveListingSellerAuthorityContract } from './sellerPartyAuthorityContract.js'
 
 // Phase 9 canonical document consolidation:
 // This legacy seller requirement engine is retained as a compatibility fallback.
@@ -689,15 +690,9 @@ export function buildSellerRequirementProfile(onboardingData = {}, listingData =
       canonicalFacts?.seller?.owner_structure_type ||
       canonicalFacts?.seller?.legal_type,
   )
-  const directListingSource = normalizeKey(canonicalFacts?.source || canonicalFacts?.metadata?.source)
-  const sellerProfileCaptured = normalizeKey(
-    onboarding?.sellerProfileCaptureSource ||
-      onboarding?.seller_profile_capture_source ||
-      canonicalFacts?.seller?.seller_profile_capture_source,
-  ) === 'listing_seller_profile_capture'
-  const sellerOwnershipUnidentified =
-    ['unknown', 'unidentified', 'not_captured', 'not_identified'].includes(rawSellerOwnership) ||
-    (directListingSource === 'direct_listing_intake' && !sellerProfileCaptured && ['', 'individual', 'natural_person'].includes(rawSellerOwnership))
+  const authorityContract = resolveListingSellerAuthorityContract(listing, onboarding)
+  const sellerOwnershipUnidentified = !authorityContract.identified ||
+    ['unknown', 'unidentified', 'not_captured', 'not_identified'].includes(rawSellerOwnership)
   const sellerBranch = sellerOwnershipUnidentified ? 'unknown' : (explicitSellerBranch || flow.seller_branch || 'individual')
   const propertyBranch = flow.property_branch || 'residential'
   const sellerType = sellerOwnershipUnidentified
@@ -1157,6 +1152,14 @@ function getSellerRequirementCandidates(requirementProfile = {}) {
           generatedFrom,
         }),
         buildRequirement({
+          key: 'spouse_consent',
+          name: 'Spouse Consent to Sell',
+          description: 'Recorded consent from the spouse where the property falls within the joint estate.',
+          group: 'marital',
+          visibility: 'seller_visible',
+          generatedFrom,
+        }),
+        buildRequirement({
           key: 'spouse_proof_of_address',
           name: 'Spouse Proof of Address',
           description: 'Spouse proof of address where required.',
@@ -1290,6 +1293,14 @@ function getSellerRequirementCandidates(requirementProfile = {}) {
       }
     })
     docs.push(
+      buildRequirement({
+        key: 'ownership_split_confirmation',
+        name: 'Ownership Split Confirmation',
+        description: 'Confirmation of every legal owner and their recorded ownership share.',
+        group: 'seller_identity',
+        visibility: 'seller_visible',
+        generatedFrom,
+      }),
       buildRequirement({
         key: 'all_owner_authority_consent',
         name: 'All Owner Authority / Consent',

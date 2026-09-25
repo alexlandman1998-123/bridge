@@ -35,9 +35,11 @@ function buildSummaryModel(requiredItems = []) {
     rejected: 0,
   })
 
-  const completed = counts.uploaded + counts.under_review + counts.approved
+  const completed = counts.approved
+  const collected = counts.uploaded + counts.under_review + counts.approved
   const total = applicableRequired.length
   const percent = total > 0 ? Math.round((completed / total) * 100) : 100
+  const collectionPercent = total > 0 ? Math.round((collected / total) * 100) : 100
   const blockingItems = applicableRequired.filter((item) => {
     const normalized = normalizeDocumentStatus(item?.status || '')
     return normalized === 'required' || normalized === 'requested' || normalized === 'rejected'
@@ -46,7 +48,9 @@ function buildSummaryModel(requiredItems = []) {
   return {
     total,
     completed,
+    collected,
     percent,
+    collectionPercent,
     counts,
     blockingItems,
   }

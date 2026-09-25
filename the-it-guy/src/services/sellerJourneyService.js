@@ -836,15 +836,14 @@ function labelPortalStatus({ lead = {}, listing = {} } = {}) {
 
 function normalizeDocumentStatusLabel(status = '') {
   const normalized = normalizeSellerDocumentRequirementStatus(status)
-  if (normalized === 'approved') return 'Approved'
-  if (normalized === 'completed') return 'Completed'
-  if (normalized === 'uploaded') return 'Uploaded'
-  if (normalized === 'under_review') return 'Under Review'
-  if (normalized === 'requested') return 'Requested'
-  if (normalized === 'rejected') return 'Rejected'
-  if (normalized === 'required') return 'Outstanding'
-  if (normalized === 'not_applicable') return 'Not Applicable'
-  if (!normalized) return 'Outstanding'
+  if (normalized === 'approved' || normalized === 'completed') return 'Complete'
+  if (normalized === 'uploaded') return 'Ready for review'
+  if (normalized === 'under_review') return 'Under review'
+  if (normalized === 'requested') return 'Awaiting seller'
+  if (normalized === 'rejected') return 'Action required'
+  if (normalized === 'required') return 'Not requested'
+  if (normalized === 'not_applicable') return 'Not applicable'
+  if (!normalized) return 'Not requested'
   return normalizeText(status).replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 

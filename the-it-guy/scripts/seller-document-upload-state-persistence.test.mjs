@@ -51,6 +51,7 @@ assert.equal(documentMatchesSellerRequirement(uploadedDocument, requirement), tr
 const rows = buildSellerDocumentRequirementRows({
   listing: {
     id: 'listing-1',
+    documentRequirements: [requirement],
     documents: [uploadedDocument],
   },
   documents: [],
@@ -59,9 +60,11 @@ const rows = buildSellerDocumentRequirementRows({
   },
 })
 
-const row = rows.find((candidate) => candidate.key === 'signed_fica_declaration')
+// Requirement rows intentionally retain the outstanding requirement beside
+// every matching artefact; select the persisted projection for upload checks.
+const row = rows.find((candidate) => candidate.key === 'signed_fica_declaration' && candidate.status === 'uploaded')
 assert.equal(row?.status, 'uploaded')
-assert.equal(row?.statusLabel, 'Uploaded')
+assert.equal(row?.statusLabel, 'Ready for review')
 assert.equal(row?.uploadedFileName, 'signed-fica.pdf')
 assert.equal(row?.uploadedAt, '2026-08-10T10:00:00.000Z')
 

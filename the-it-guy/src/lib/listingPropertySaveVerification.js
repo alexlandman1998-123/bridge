@@ -85,10 +85,14 @@ export function verifyListingPropertyPersistenceCopies({ form = {}, listing = {}
     textCheck('propertyStructureType', 'ownership scheme (onboarding)', form.propertyStructureType, firstDefined(onboardingForm.propertyStructureType, onboardingForm.ownershipStructure)),
     numberCheck('listingPrice', 'listing price (onboarding)', form.listingPrice, onboardingForm.askingPrice),
     numberCheck('parkingCount', 'parking (onboarding)', form.parkingCount, firstDefined(onboardingForm.parkingCount, onboardingForm.parkingCovered, onboardingForm.parkingBays)),
-    textCheck('propertyAddress', 'property address (publication)', form.propertyAddress, publication.address),
+    numberCheck('ratesTaxes', 'rates and taxes (onboarding)', form.ratesTaxes, onboardingForm.ratesTaxes),
+    numberCheck('levies', 'levies (onboarding)', form.levies, onboardingForm.levies),
+    textCheck('propertyAddress', 'property address (publication)', firstDefined(form.formattedAddress, form.propertyAddress), publication.address),
     textCheck('propertyType', 'property type (publication)', form.propertyType, firstDefined(publication.property_type, publication.propertyType)),
     numberCheck('listingPrice', 'listing price (publication)', form.listingPrice, firstDefined(publication.asking_price, publication.askingPrice)),
     numberCheck('parkingCount', 'parking (publication)', form.parkingCount, firstDefined(publication.parking_bays, publication.parkingBays)),
+    numberCheck('ratesTaxes', 'rates and taxes (publication)', form.ratesTaxes, firstDefined(publication.rates_taxes, publication.ratesTaxes)),
+    numberCheck('levies', 'levies (publication)', form.levies, publication.levies),
   ]
   const mismatches = checks.filter(Boolean)
   return { ready: mismatches.length === 0, mismatches }

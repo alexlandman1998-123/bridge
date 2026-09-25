@@ -14,6 +14,7 @@ import { invokeEdgeFunction, isSupabaseConfigured, supabase } from './supabaseCl
 import { assertResolvedWorkspaceContext } from '../services/workspaceResolutionService'
 import { inferLeadCategoryFromRecord, normalizeLeadCategory } from './leadCategory'
 import { migrateBuyerProcessLeadRecord } from '../services/buyerProcessMigrationService'
+import { emitAgencyCrmUpdated } from './agencyCrmUpdateBus'
 
 const LEGACY_LEAD_SELECT_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
@@ -522,7 +523,7 @@ function buildLeadAssignmentEmailBase(organisationId = '', lead = {}, patch = {}
     leadSource: normalizeText(patch.leadSource || lead?.lead_source || lead?.leadSource),
     leadCategory: normalizeText(patch.leadCategory || lead?.lead_category || lead?.leadCategory),
     leadStatus: normalizeText(patch.status || patch.stage || lead?.status || lead?.stage),
-    propertyLabel: normalizeText(patch.propertyLabel || lead?.enquired_property_title || lead?.enquired_property_address || lead?.seller_property_address || lead?.property_interest),
+    propertyLabel: normalizeText(patch.propertyLabel || lead?.enquired_property_address || lead?.seller_property_address || lead?.formatted_address || lead?.property_interest || lead?.enquired_property_title),
     budgetLabel: normalizeText(patch.budgetLabel || (lead?.budget ? String(lead.budget) : '')),
     actionLink: buildLeadActionLink(leadId),
     source: 'agency_crm_assignment',
@@ -1401,7 +1402,9 @@ export async function createAgencyCrmLeadRecord(organisationId, payload = {}, { 
         syncError: '',
       }],
     })
-    return (Array.isArray(reconciled.leads) ? reconciled.leads : []).find((row) => normalizeText(row?.leadId) === normalizeText(lead.leadId)) || lead
+    const createdLead = (Array.isArray(reconciled.leads) ? reconciled.leads : []).find((row) => normalizeText(row?.leadId) === normalizeText(lead.leadId)) || lead
+    emitAgencyCrmUpdated({ organisationId: workspaceId, leadId: createdLead.leadId, mutation: 'created' })
+    return createdLead
   } catch (error) {
     console.error('[agencyCrmRepository] create lead failed without local fallback', error)
     throw error
@@ -1645,6 +1648,7 @@ export async function updateAgencyCrmLeadRecord(organisationId, leadId, patch = 
     console.warn('[agencyCrmRepository] lead assignment notification failed without rolling back update', notificationError)
   }
 
+  emitAgencyCrmUpdated({ organisationId: normalizedOrganisationId, leadId: dbLeadId, mutation: 'updated' })
   return updatedLead
 }
 
@@ -1705,6 +1709,7 @@ export async function updateAgencyCrmContactRecord(organisationId, contactId, pa
     throw error
   }
 
+  emitAgencyCrmUpdated({ organisationId: normalizedOrganisationId, mutation: 'contact_updated' })
   return updatedContact
 }
 

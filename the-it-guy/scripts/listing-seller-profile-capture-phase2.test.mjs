@@ -44,10 +44,12 @@ await test('AgentListingDetail exposes the listing seller profile builder workfl
 await test('inline seller detail edits refresh the seller requirement model for bulk uploaded listings', async () => {
   const detailSource = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
   const serviceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
+  const canonicalUpdateSource = await readFile(new URL('../src/services/listings/listingSellerCanonicalUpdateModel.js', import.meta.url), 'utf8')
 
   assert.ok(detailSource.includes('resolveSellerProfileOwnershipModel'), 'Inline seller edits should normalize ownership type into seller type.')
-  assert.ok(detailSource.includes('ownershipStructure: nextFormData.ownerStructureType || nextFormData.ownershipType'), 'Requirement sync should receive the normalized owner structure.')
-  assert.ok(serviceSource.includes('options.sellerType || nextFormData.sellerType'), 'Onboarding updates should prefer edited seller type over stale seeded type.')
+  assert.ok(detailSource.includes('saveListingSellerCanonicalUpdate'), 'Inline seller edits should use the canonical seller update service.')
+  assert.ok(canonicalUpdateSource.includes('nextFormData.ownerStructureType'), 'The canonical update should resolve the edited owner structure.')
+  assert.ok(serviceSource.includes('update.requirementsAffected'), 'Requirement sync should follow the canonical seller change classification.')
 })
 
 await test('bulk uploaded individual seed is overridden by edited company seller form data', () => {
@@ -94,7 +96,7 @@ await test('close corporation seller type is treated as company for requirement 
   assert.ok(getRequiredSellerDocuments(profile).some((doc) => doc.requirement_key === 'company_registration'))
 })
 
-await test('seeds an address-only bulk listing into an editable seller profile draft', () => {
+await test('does not infer an individual owner from an address-only listing', () => {
   const draft = createListingSellerProfileBuilderDraft({
     id: 'listing-abc',
     addressLine1: '10 Example Road',
@@ -102,7 +104,7 @@ await test('seeds an address-only bulk listing into an editable seller profile d
     sellerOnboarding: { formData: {} },
   })
 
-  assert.equal(draft.branch, 'individual')
+  assert.equal(draft.branch, '')
   assert.equal(draft.propertyAddress, '10 Example Road')
   assert.equal(draft.askingPrice, '2500000')
   assert.equal(draft.mandateType, 'sole')

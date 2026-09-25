@@ -74,6 +74,7 @@ function hydrateListingFromOnboarding(listing = {}, onboarding = {}) {
     exactAddressVisibility: firstText(listing.exactAddressVisibility, listing.exact_address_visibility, formData.exactAddressVisibility, formData.exact_address_visibility, canonicalProperty.exactAddressVisibility),
     features: Array.isArray(listing.features) && listing.features.length ? listing.features : selectedFeatures,
     selectedFeatures: Array.isArray(listing.selectedFeatures) && listing.selectedFeatures.length ? listing.selectedFeatures : selectedFeatures,
+    featureFacts: { ...asObject(listing.featureFacts), ...asObject(formData.featureFacts) },
     addressLine1: firstText(listing.addressLine1, listing.address_line_1, formData.propertyAddress),
     streetAddress: firstText(listing.streetAddress, listing.street_address, formData.streetAddress, formData.propertyAddress),
     suburb: firstText(listing.suburb, formData.suburb),

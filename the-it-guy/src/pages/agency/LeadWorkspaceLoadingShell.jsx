@@ -1,5 +1,6 @@
 import { Mail, MapPin, Phone, UserRound } from 'lucide-react'
 import { createElement, useMemo } from 'react'
+import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection'
 import { resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
 
 const BUYER_TABS = Object.freeze(['Overview', 'Buyer Profile', 'Transaction Setup / Offer', 'Properties', 'Appointments', 'Documents', 'Activity'])
@@ -40,10 +41,7 @@ export default function LeadWorkspaceLoadingShell({
     [safeContact?.firstName, safeContact?.lastName].filter(Boolean).join(' ') ||
     safeLead?.name || safeLead?.buyerName || safeLead?.sellerName,
   )
-  const property = normalizeText(
-    safeLead?.sellerPropertyAddress || safeLead?.formattedAddress || safeLead?.propertyInterest ||
-    safeLead?.enquiredPropertyTitle || safeLead?.areaInterest,
-  )
+  const property = resolveLeadPropertyAddress(safeLead)
   const stage = normalizeText(safeLead?.stage || safeLead?.status)
   const details = useMemo(() => [
     { key: 'phone', Icon: Phone, value: safeContact?.phone || safeLead?.phone },

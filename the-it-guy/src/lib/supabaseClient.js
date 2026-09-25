@@ -1,4 +1,4 @@
-import { isRetiredDocumentFunction, DOCUMENT_GENERATOR_RETIRED_CODE, DOCUMENT_GENERATOR_RETIRED_MESSAGE } from '../core/documents/documentGeneratorRetirement'
+import { isRetiredDocumentFunction, DOCUMENT_GENERATOR_RETIRED_CODE, DOCUMENT_GENERATOR_RETIRED_MESSAGE } from '../core/documents/documentGeneratorRetirement.js'
 import { createClient } from '@supabase/supabase-js'
 
 const viteEnv = typeof import.meta !== 'undefined' && import.meta?.env ? import.meta.env : {}

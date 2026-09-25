@@ -20,6 +20,31 @@ assert.equal(residentialRental.overall.status, 'ready')
 assert.equal(residentialRental.rollout.enabled, false)
 assert.equal(residentialRental.overall.legacyPublishPathPreserved, true)
 
+const featureReview = buildSyndicationChannelPreflight({
+  listing: {
+    id: 'feature-review', property_type: 'House', asking_price: 2000000,
+    sellerOnboarding: { formData: { featureFacts: { solar_panels: true, lapa: true, deck: true, study: true, studies: 2 } } },
+  },
+  publication: { title: 'Family home', description: 'A complete description.', bedrooms: 3, bathrooms: 2 },
+})
+const delivery = (channel, key) => featureReview.channels[channel].featureDelivery.find((item) => item.key === key)
+assert.deepEqual(delivery('property24', 'solar_panels'), {
+  key: 'solar_panels', label: 'Solar panels', value: 'Yes', delivery: 'native', field: 'propertyFeatures.sustainabilityInfo.solarPanels',
+})
+assert.equal(delivery('property24', 'lapa').field, 'featureTags.SpecialFeature.Lapa')
+assert.equal(delivery('property24', 'deck').delivery, 'description_only')
+assert.equal(delivery('property24', 'study').delivery, 'description_only')
+assert.equal(delivery('property24', 'studies').delivery, 'native')
+assert.equal(delivery('privateProperty', 'study').field, 'Study')
+assert.equal(delivery('privateProperty', 'solar_panels').delivery, 'description_only')
+assert.equal(delivery('privateProperty', 'studies').delivery, 'description_only', 'A count cannot be represented fully by PP Study Yes/No')
+const roofReview = buildSyndicationChannelPreflight({
+  listing: { property_type: 'House', sellerOnboarding: { formData: { featureFacts: { roof_type: 'Tiles', kitchen: true } } } },
+  publication: { title: 'Home', description: 'A complete home description.', bedrooms: 3, bathrooms: 2 },
+})
+assert.equal(roofReview.channels.property24.featureDelivery.find((item) => item.key === 'roof_type').field, 'tags.Tile')
+assert.equal(roofReview.channels.property24.featureDelivery.find((item) => item.key === 'kitchen').field, 'featureTags.Kitchen')
+
 const offersFromLand = buildSyndicationChannelPreflight({
   listing: {
     id: 'land-1',

@@ -5,6 +5,8 @@ import {
   resolveProperty24PropertyTypeId,
   resolveProperty24Status,
 } from '../server/services/property24ListingMapper.js'
+import { LISTING_FEATURE_CATALOG } from '../src/services/listings/listingFeatureCatalog.js'
+import { PROPERTY24_NATIVE_FACT_FIELDS } from '../server/services/listingFeatureDeliveryReview.js'
 
 const baseListing = {
   id: 'listing-1',
@@ -71,6 +73,7 @@ assert.equal(resolveProperty24ListingType('To Rent'), 'Rental')
 assert.equal(resolveProperty24ListingType('For Sale'), 'Sale')
 assert.equal(resolveProperty24Status('sold'), 'Sold')
 assert.equal(resolveProperty24Status('rented'), 'Rented')
+assert.equal(resolveProperty24Status('ReducedPrice'), 'ReducedPrice')
 assert.equal(resolveProperty24Status('active', { isNew: true }), 'NewListing')
 assert.equal(resolveProperty24Status('active', { isNew: false }), 'Active')
 assert.equal(resolveProperty24PropertyTypeId('Apartment'), 5)
@@ -257,9 +260,184 @@ const selectedFeaturePlan = createProperty24ListingPlan({
 })
 
 assert.equal(selectedFeaturePlan.payload.propertyFeatures.flatlet, true)
-assert.equal(selectedFeaturePlan.payload.propertyFeatures.parking.open, 16)
+assert.deepEqual(selectedFeaturePlan.payload.propertyFeatures.parking, { parkingSpaces: 16 })
 assert.equal(selectedFeaturePlan.payload.propertyInfo.showLocation, true)
 assert.match(selectedFeaturePlan.payload.description, /Additional features include staff accommodation, fibre connectivity and Security\./)
+
+const energyAndPetsPlan = createProperty24ListingPlan({
+  listing: baseListing,
+  publication: { ...basePublication, features: ['solar', 'backup_power', 'pet_friendly'] },
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
+})
+assert.equal(energyAndPetsPlan.payload.propertyFeatures.petsAllowed, 'Yes')
+
+const typedFeaturePlan = createProperty24ListingPlan({
+  listing: { ...baseListing, featureFacts: { study: true, studies: 2, solar_panels: true, pool: false, pet_friendly: false, en_suite: 2 } },
+  publication: { ...basePublication, features: ['Pool', 'Pet friendly'] },
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
+})
+assert.equal(typedFeaturePlan.payload.propertyFeatures.pool, false)
+assert.equal(typedFeaturePlan.payload.propertyFeatures.petsAllowed, 'No')
+assert.equal(typedFeaturePlan.payload.propertyFeatures.studies, 2)
+assert.equal(typedFeaturePlan.payload.propertyFeatures.sustainabilityInfo.solarPanels, true)
+assert.match(typedFeaturePlan.payload.description, /Study/)
+assert.match(typedFeaturePlan.payload.description, /Solar panels/)
+assert.match(typedFeaturePlan.payload.description, /En-suite bathrooms: 2/)
+assert.equal(typedFeaturePlan.payload.propertyFeatures.study, undefined)
+assert.equal(typedFeaturePlan.payload.propertyFeatures.solarPanels, undefined)
+
+const nativeFeaturePlan = createProperty24ListingPlan({
+  listing: { ...baseListing, featureFacts: {
+    carports: 2, storeys: 3, balcony: false, solar_panels: false,
+    solar_geyser: true, inverter_battery: true, water_tank: true,
+    borehole: true, fibre: true, generator: true, backup_water: true,
+    wheelchair_accessible: true, pantry: true, alarm: true,
+    built_in_cupboards: true,
+  } },
+  publication: basePublication,
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
+})
+assert.deepEqual(nativeFeaturePlan.payload.propertyFeatures.parking, { parkingSpaces: 1, carport: true })
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.numberOfFloors, 3)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.outsideArea.balcony, false)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.sustainabilityInfo.solarPanels, false)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.sustainabilityInfo.solarGeyser, true)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.sustainabilityInfo.backupBatteryOrInverter, true)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.sustainabilityInfo.waterTank, true)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.sustainabilityInfo.borehole, true)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.internetAccess.fibre, true)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.hasGenerator, true)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.hasBackupWater, true)
+assert.equal(nativeFeaturePlan.payload.propertyFeatures.isWheelchairAccessible, true)
+assert.deepEqual(nativeFeaturePlan.payload.tags, ['Pantry', 'AlarmSystem'])
+assert.ok(!nativeFeaturePlan.payload.tags.includes('Built_inCupboards'), 'Feature-description-only tags need a FeatureType')
+assert.equal(createProperty24ListingPlan({
+  listing: { ...baseListing, featureFacts: { study: true } }, publication: basePublication,
+  media: imageWithBytes, agentMapping: baseAgentMapping, catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
+}).payload.propertyFeatures.studies, undefined, 'A Study Yes must not invent a count')
+
+for (const [key, path] of Object.entries(PROPERTY24_NATIVE_FACT_FIELDS)) {
+  const feature = LISTING_FEATURE_CATALOG.find((item) => item.key === key)
+  assert.ok(feature, `${key} needs an agent-facing capture`)
+  const value = feature.type === 'count' ? 2 : true
+  const plan = createProperty24ListingPlan({
+    listing: { ...baseListing, featureFacts: { [key]: value } },
+    publication: basePublication,
+    media: imageWithBytes,
+    agentMapping: baseAgentMapping,
+    catalogMapping: baseCatalogMapping,
+    options: { agencyId: 31382, expiryDate: '2026-12-31' },
+  })
+  assert.equal(path.split('.').reduce((item, part) => item?.[part], plan.payload), key === 'pet_friendly' ? 'Yes' : value, `${key} must reach ${path}`)
+}
+
+const featureTagPlan = createProperty24ListingPlan({
+  listing: { ...baseListing, featureFacts: {
+    built_in_cupboards: true, walk_in_closet: true, guest_toilet: true,
+    irrigation_system: true, clubhouse: true, lapa: true, squash_court: true,
+  } },
+  publication: basePublication,
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
+})
+assert.deepEqual(featureTagPlan.payload.featureTags, [
+  { featureType: 'Closet', tags: ['Built_inCupboards'] },
+  { featureType: 'Closet', tags: ['Walk_in_closet'] },
+  { featureType: 'Bathroom', tags: ['GuestToilet'] },
+  { featureType: 'Garden', tags: ['Irrigationsystem'] },
+  { featureType: 'SpecialFeature', tags: ['Clubhouse'] },
+  { featureType: 'SpecialFeature', tags: ['Lapa'] },
+  { featureType: 'SpecialFeature', tags: ['SquashCourt'] },
+])
+const roomAndRoofPlan = createProperty24ListingPlan({
+  listing: { ...baseListing, featureFacts: { family_tv_room: true, kitchen: true, entrance_hall: true, roof_type: 'Tiles' } },
+  publication: basePublication, media: imageWithBytes,
+  agentMapping: baseAgentMapping, catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
+})
+assert.deepEqual(roomAndRoofPlan.payload.featureTags, [
+  { featureType: 'FamilyTVRoom' }, { featureType: 'Kitchen' }, { featureType: 'EntranceHall' },
+])
+assert.deepEqual(roomAndRoofPlan.payload.tags, ['Tile'])
+for (const [choice, tag] of [['Slate', 'Slate'], ['Thatch', 'Thatch'], ['Other', null]]) {
+  const plan = createProperty24ListingPlan({
+    listing: { ...baseListing, featureFacts: { roof_type: choice } },
+    publication: basePublication, media: imageWithBytes,
+    agentMapping: baseAgentMapping, catalogMapping: baseCatalogMapping,
+    options: { agencyId: 31382, expiryDate: '2026-12-31' },
+  })
+  assert.equal(plan.payload.tags?.[0] || null, tag)
+}
+
+const property24NativeFeatureKeys = new Map([
+  ['flatlet', 'flatlet'], ['pool', 'pool'], ['garden', 'garden'], ['pet_friendly', 'petsAllowed'],
+  ['studies', 'studies'], ['storeys', 'numberOfFloors'], ['generator', 'hasGenerator'],
+  ['backup_water', 'hasBackupWater'], ['wheelchair_accessible', 'isWheelchairAccessible'],
+])
+for (const feature of LISTING_FEATURE_CATALOG.filter((item) => item.listingTypes.includes('sale'))) {
+  const value = feature.type === 'boolean' ? true : feature.type === 'count' ? 2 : feature.options[0]
+  const plan = createProperty24ListingPlan({
+    listing: { ...baseListing, featureFacts: { [feature.key]: value } },
+    publication: basePublication,
+    media: imageWithBytes,
+    agentMapping: baseAgentMapping,
+    catalogMapping: baseCatalogMapping,
+    options: { agencyId: 31382, expiryDate: '2026-12-31' },
+  })
+  assert.equal(plan.canPreview, true, `${feature.key}: ${JSON.stringify(plan.dataBlockers)}`)
+  const nativeKey = property24NativeFeatureKeys.get(feature.key)
+  if (nativeKey) {
+    assert.equal(plan.payload.propertyFeatures[nativeKey], feature.key === 'pet_friendly' ? 'Yes' : feature.type === 'count' ? 2 : true, `${feature.key} must use its confirmed feed field`)
+  } else {
+    const expected = { staff_quarters: 'staff accommodation', electric_fence: 'electric fencing' }[feature.key] || feature.label.toLowerCase()
+    assert.ok(plan.payload.description.toLowerCase().includes(expected), `${feature.key} must have a description fallback`)
+  }
+}
+
+const soldPricePlan = createProperty24ListingPlan({
+  listing: { ...baseListing, listing_status: 'sold', asking_price: 1995000 },
+  publication: { ...basePublication, asking_price: 1995000 },
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31' },
+})
+assert.equal(soldPricePlan.canPreview, true)
+assert.equal(soldPricePlan.payload.status, 'Sold')
+assert.equal(soldPricePlan.payload.price, 1995000)
+const reducedPricePlan = createProperty24ListingPlan({
+  listing: { ...baseListing, asking_price: 1995000 },
+  publication: { ...basePublication, asking_price: 1995000 },
+  media: imageWithBytes,
+  agentMapping: baseAgentMapping,
+  catalogMapping: baseCatalogMapping,
+  existingSync: { listingNumber: 123456 },
+  options: { agencyId: 31382, expiryDate: '2026-12-31', status: 'ReducedPrice', photosChanged: false },
+})
+assert.equal(reducedPricePlan.canSubmit, true, JSON.stringify({ dataBlockers: reducedPricePlan.dataBlockers, technicalBlockers: reducedPricePlan.technicalBlockers }))
+assert.equal(reducedPricePlan.payload.status, 'ReducedPrice')
+assert.equal(reducedPricePlan.payload.price, 1995000)
+assert.equal(reducedPricePlan.payload.photos, null, 'A price-only update must not remove or retransmit unchanged photos')
+assert.ok(createProperty24ListingPlan({
+  listing: baseListing, publication: basePublication, media: imageWithBytes,
+  agentMapping: baseAgentMapping, catalogMapping: baseCatalogMapping,
+  options: { agencyId: 31382, expiryDate: '2026-12-31', status: 'ReducedPrice' },
+}).dataBlockers.includes('reduced_price_status_requires_existing_listing'))
+assert.match(energyAndPetsPlan.payload.description, /Solar power/)
+assert.match(energyAndPetsPlan.payload.description, /Backup power/)
+assert.equal(energyAndPetsPlan.payload.propertyInfo.municipalRatesAndTaxes.amount, 1300)
 
 const missingResidentialQuality = createProperty24ListingPlan({
   listing: { ...baseListing, title: '' },

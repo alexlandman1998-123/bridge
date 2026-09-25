@@ -16,6 +16,45 @@ export const DEFAULT_PROPERTY24_PROPERTY_TYPE_MAPPINGS = PROPERTY24_PHASE2_PROPE
 
 const RESIDENTIAL_DWELLING_PROPERTY_TYPE_IDS = new Set([4, 5, 6])
 
+// These v55 Tag values explicitly support association with a listing. Tags
+// marked feature-description-only in the contract need a FeatureType context.
+export const RESIDENTIAL_LISTING_TAGS = Object.freeze({
+  new_development: 'NewDevelopment',
+  security_estate: 'SecurityEstate',
+  pantry: 'Pantry',
+  scullery: 'Scullery',
+  laundry: 'Laundry',
+  patio: 'Patio',
+  built_in_braai: 'Built_inBraai',
+  jacuzzi: 'Jacuzzi',
+  tennis_court: 'TennisCourt',
+  alarm: 'AlarmSystem',
+  intercom: 'Intercom',
+  electric_fence: 'Electricfencing',
+  air_conditioning: 'AirConditioningUnit',
+  mountain_view: 'MountainView',
+})
+
+// These tags are explicitly feature-description tags in v55, so they belong
+// in Listing.featureTags with a matching FeatureType, never Listing.tags.
+export const RESIDENTIAL_FEATURE_TAGS = Object.freeze({
+  built_in_cupboards: ['Closet', 'Built_inCupboards'],
+  walk_in_closet: ['Closet', 'Walk_in_closet'],
+  guest_toilet: ['Bathroom', 'GuestToilet'],
+  irrigation_system: ['Garden', 'Irrigationsystem'],
+  clubhouse: ['SpecialFeature', 'Clubhouse'],
+  lapa: ['SpecialFeature', 'Lapa'],
+  squash_court: ['SpecialFeature', 'SquashCourt'],
+})
+
+export const RESIDENTIAL_FEATURE_TYPES = Object.freeze({
+  family_tv_room: 'FamilyTVRoom',
+  kitchen: 'Kitchen',
+  entrance_hall: 'EntranceHall',
+})
+
+export const RESIDENTIAL_ROOF_TAGS = Object.freeze({ Tiles: 'Tile', Slate: 'Slate', Thatch: 'Thatch' })
+
 export function normalizeProperty24ListingText(value = '') {
   return String(value || '').trim()
 }
@@ -126,6 +165,7 @@ export function resolveProperty24ListingType(value = '') {
 
 export function resolveProperty24Status(value = '', { isNew = true } = {}) {
   const key = normalizeProperty24ListingKey(value)
+  if (['reduced_price', 'reducedprice'].includes(key)) return 'ReducedPrice'
   if (['sold', 'registered', 'completed'].includes(key)) return 'Sold'
   if (['rented', 'let', 'leased'].includes(key)) return 'Rented'
   if (['pending', 'under_offer', 'offer_accepted', 'transaction_created'].includes(key)) return 'Pending'
@@ -327,23 +367,84 @@ function splitProperty24StreetAddress(value = '') {
     : { streetNumber: '', streetName: line }
 }
 
+function mappedBooleanFacts(facts, mapping) {
+  return Object.fromEntries(Object.entries(mapping)
+    .filter(([, key]) => typeof facts[key] === 'boolean')
+    .map(([portalKey, key]) => [portalKey, facts[key]]))
+}
+
+function mappedCountFact(facts, key) {
+  const value = toProperty24Integer(facts[key])
+  return value === null ? undefined : value
+}
+
 function buildPropertyFeatures(listing = {}, publication = {}, { category = '' } = {}) {
   const normalized = normalizeListingPortalFeatures({ listing, publication })
+  const facts = normalized.featureFacts
   const specialistFacts = resolveSpecialistFacts(listing, publication)
   const bedrooms = normalized.bedrooms
   const bathrooms = normalized.bathrooms
   const garages = normalized.garages ?? 0
   const parkingBays = normalized.parkingBays ?? (category === 'commercial' ? specialistParkingCount(specialistFacts.parking) : null)
+  const parkingSpaces = toProperty24Integer(parkingBays)
+  const sustainabilityInfo = mappedBooleanFacts(facts, {
+    solarPanels: 'solar_panels', solarGeyser: 'solar_geyser', gasGeyser: 'gas_geyser',
+    waterTank: 'water_tank', borehole: 'borehole', backupBatteryOrInverter: 'inverter_battery',
+  })
+  const internetAccess = mappedBooleanFacts(facts, {
+    adsl: 'internet_adsl', dialUp: 'internet_dial_up', fixedWiMax: 'internet_fixed_wimax',
+    isdn: 'internet_isdn', satellite: 'internet_satellite', vdsl: 'internet_vdsl',
+  })
+  if (typeof normalized.fibre === 'boolean') internetAccess.fibre = normalized.fibre
+  const outsideArea = mappedBooleanFacts(facts, { balcony: 'balcony', courtyard: 'courtyard', roofArea: 'roof_area' })
+  const outsideAreas = mappedCountFact(facts, 'outside_areas')
+  if (outsideAreas !== undefined) outsideArea.outsideAreas = outsideAreas
+  const kitchens = mappedBooleanFacts(facts, {
+    dishwasher: 'kitchen_dishwasher', cleaningService: 'kitchen_cleaning_service',
+    sink: 'kitchen_sink', coffeeMachine: 'kitchen_coffee_machine',
+  })
+  const kitchenCount = mappedCountFact(facts, 'kitchens')
+  if (kitchenCount !== undefined) kitchens.kitchens = kitchenCount
+  const publicTransport = mappedBooleanFacts(facts, {
+    nearbyBusService: 'nearby_bus', nearbyMinibusTaxiService: 'nearby_minibus_taxi', nearbyTrainService: 'nearby_train',
+  })
+  const parking = mappedBooleanFacts(facts, {
+    secureParking: 'secure_parking', onStreetParking: 'street_parking',
+    shadeNetCoveredParking: 'covered_parking', undergroundParking: 'underground_parking',
+    visitorsParking: 'visitors_parking', tandemParking: 'tandem_parking',
+    singleParking: 'single_parking', doubleParking: 'double_parking', tripleParking: 'triple_parking',
+  })
+  if (parkingSpaces !== null) parking.parkingSpaces = parkingSpaces
+  if (Number.isFinite(facts.carports)) parking.carport = facts.carports > 0
 
   return {
     ...(bedrooms !== null ? { bedrooms } : {}),
     ...(bathrooms !== null ? { bathrooms: { bathrooms } } : {}),
     garages,
-    ...(parkingBays !== null ? { parking: { open: parkingBays } } : {}),
+    ...(Object.keys(parking).length ? { parking } : {}),
+    ...(mappedCountFact(facts, 'studies') !== undefined ? { studies: mappedCountFact(facts, 'studies') } : {}),
+    ...(mappedCountFact(facts, 'storeys') !== undefined ? { numberOfFloors: mappedCountFact(facts, 'storeys') } : {}),
+    ...(Object.keys(kitchens).length ? { kitchens } : {}),
+    ...(mappedCountFact(facts, 'outbuildings_area') !== undefined ? { outBuildingsSize: mappedCountFact(facts, 'outbuildings_area') } : {}),
+    ...Object.fromEntries([
+      ['receptionRooms', 'reception_rooms'], ['domesticRooms', 'domestic_rooms'],
+      ['domesticBathrooms', 'domestic_bathrooms'], ['outsideToilets', 'outside_toilets'],
+    ].flatMap(([portalKey, key]) => {
+      const value = mappedCountFact(facts, key)
+      return value === undefined ? [] : [[portalKey, value]]
+    })),
+    ...mappedBooleanFacts(facts, { secondHouse: 'second_house', hasStandaloneBuilding: 'standalone_building' }),
+    ...(Object.keys(sustainabilityInfo).length ? { sustainabilityInfo } : {}),
+    ...(Object.keys(internetAccess).length ? { internetAccess } : {}),
+    ...(Object.keys(outsideArea).length ? { outsideArea } : {}),
+    ...(Object.keys(publicTransport).length ? { publicTransport } : {}),
+    ...(typeof facts.generator === 'boolean' ? { hasGenerator: facts.generator } : {}),
+    ...(typeof facts.backup_water === 'boolean' ? { hasBackupWater: facts.backup_water } : {}),
+    ...(typeof facts.wheelchair_accessible === 'boolean' ? { isWheelchairAccessible: facts.wheelchair_accessible } : {}),
     garden: normalized.garden ?? false,
     pool: normalized.pool ?? false,
     flatlet: normalized.flatlet ?? false,
-    petsAllowed: firstText(publication.petsAllowed, publication.pets_allowed, listing.petsAllowed, listing.pets_allowed) || 'DontKnow',
+    petsAllowed: normalized.featureFacts.pet_friendly === true ? 'Yes' : normalized.featureFacts.pet_friendly === false ? 'No' : firstText(publication.petsAllowed, publication.pets_allowed, listing.petsAllowed, listing.pets_allowed) || (normalized.petFriendly === true ? 'Yes' : normalized.petFriendly === false ? 'No' : 'DontKnow'),
     furnishedStatus: firstText(publication.furnishedStatus, publication.furnished_status, listing.furnishedStatus, listing.furnished_status) || 'No',
   }
 }
@@ -513,6 +614,21 @@ export function createProperty24ListingPlan({
     ? imageRows.length
     : Math.max(0, toProperty24Integer(options.expectedPhotoPayloadCount) || 0)
   const propertyFeatures = buildPropertyFeatures(listing, publication, { category: categoryContract.category })
+  const featureFacts = normalizeListingPortalFeatures({ listing, publication }).featureFacts
+  const tags = categoryContract.category === 'residential'
+    ? Object.entries(RESIDENTIAL_LISTING_TAGS)
+      .filter(([key]) => featureFacts[key] === true && (key !== 'new_development' || [4, 6].includes(propertyTypeId)))
+      .map(([, tag]) => tag)
+      .concat(RESIDENTIAL_ROOF_TAGS[featureFacts.roof_type] || [])
+    : []
+  const featureTags = categoryContract.category === 'residential'
+    ? Object.entries(RESIDENTIAL_FEATURE_TAGS)
+      .filter(([key]) => featureFacts[key] === true)
+      .map(([, [featureType, tag]]) => ({ featureType, tags: [tag] }))
+      .concat(Object.entries(RESIDENTIAL_FEATURE_TYPES)
+        .filter(([key]) => featureFacts[key] === true)
+        .map(([, featureType]) => ({ featureType })))
+    : []
   const propertyInfo = buildPropertyInfo({ listing, publication, suburbId, propertyTypeId, category: categoryContract.category, options })
   const categoryModel = evaluateProperty24ListingCategoryModel({
     listing,
@@ -532,6 +648,7 @@ export function createProperty24ListingPlan({
 
   dataBlockers.push(...categoryContract.blockers)
   dataBlockers.push(...categoryModel.blockers)
+  if (isNew && status === 'ReducedPrice') dataBlockers.push('reduced_price_status_requires_existing_listing')
 
   if (!agencyId) dataBlockers.push('missing_property24_agency_id')
   if (!property24AgentId) {
@@ -592,6 +709,8 @@ export function createProperty24ListingPlan({
         photos: previewPhotos,
         propertyInfo,
         propertyFeatures,
+        ...(tags.length ? { tags } : {}),
+        ...(featureTags.length ? { featureTags } : {}),
       }
     : null
   const payload = canSubmit

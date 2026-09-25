@@ -1,0 +1,13 @@
+{
+  "contract": "listing-documents-phase8-security-risk-v1",
+  "riskId": "DOCUMENT_UPLOAD_MALWARE_SCANNING",
+  "status": "open",
+  "severity": "high",
+  "decision": "block_production_release",
+  "reason": "Arch9 validates document type, MIME type, size and filename, but no server-side malware scanner is configured.",
+  "requiredResolution": "Configure and verify server-side malware scanning, or obtain a separately documented risk acceptance from the authorised security and product owners.",
+  "acceptedBy": null,
+  "acceptedAt": null,
+  "expiresAt": null,
+  "deploymentApproved": false
+}

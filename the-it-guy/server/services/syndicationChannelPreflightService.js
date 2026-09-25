@@ -2,6 +2,7 @@ import { buildSyndicationFacts } from '../../src/services/syndicationFactsServic
 import { evaluateProperty24ListingCategoryContract } from '../property24/listingCategoryContract.js'
 import { resolveSyndicationReviewRollout } from './syndicationReviewRolloutService.js'
 import { evaluateListingPortalAddressProtection } from './listingPortalAddressProtectionService.js'
+import { buildListingFeatureDeliveryReview } from './listingFeatureDeliveryReview.js'
 
 export const SYNDICATION_CHANNEL_PREFLIGHT_VERSION = 'arch9_syndication_channel_preflight_v1'
 
@@ -192,8 +193,18 @@ export function buildSyndicationChannelPreflight({
     publication,
     existingPrivatePropertySync: listing.privatePropertySync || listing.private_property_sync || {},
   })
-  const privateProperty = privatePropertyPreflight({ data, facts: normalizedFacts, sharedBlockers, addressProtection })
-  const property24 = property24Preflight({ listing, publication, data, facts: normalizedFacts, sharedBlockers, addressProtection })
+  const privatePropertyBase = privatePropertyPreflight({ data, facts: normalizedFacts, sharedBlockers, addressProtection })
+  const property24Base = property24Preflight({ listing, publication, data, facts: normalizedFacts, sharedBlockers, addressProtection })
+  const featureDelivery = buildListingFeatureDeliveryReview({
+    listing,
+    publication,
+    property24Category: property24Base.contract?.category || '',
+  })
+  const channelFeatures = (channel) => featureDelivery.facts.map((item) => ({
+    key: item.key, label: item.label, value: item.value, ...item[channel],
+  }))
+  const privateProperty = { ...privatePropertyBase, featureDelivery: channelFeatures('privateProperty') }
+  const property24 = { ...property24Base, featureDelivery: channelFeatures('property24') }
   const channels = { privateProperty, property24 }
   const readyChannels = Object.values(channels).filter((channel) => channel.dataReady).map((channel) => channel.channel)
   const rollout = resolveSyndicationReviewRollout({

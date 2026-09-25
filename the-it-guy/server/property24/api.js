@@ -1269,6 +1269,7 @@ export async function createProperty24ApiResponse({
         propertyTypeId: resolvedConfig.propertyTypeId,
         expiryDate: resolvedConfig.expiryDate,
         listingNumber: resolvedConfig.listingNumber,
+        status: resolvedConfig.status,
         storageBaseUrl: resolvedConfig.supabaseUrl,
         maxImages: resolvedConfig.maxImages,
         photosChanged: resolvedConfig.photosChanged,
@@ -1378,9 +1379,11 @@ export async function createProperty24ApiResponse({
         propertyTypeId: resolvedConfig.propertyTypeId,
         expiryDate: resolvedConfig.expiryDate,
         listingNumber: resolvedConfig.listingNumber,
+        status: resolvedConfig.status,
         storageBaseUrl: resolvedConfig.supabaseUrl,
         maxImages: resolvedConfig.maxImages,
         photosChanged: resolvedConfig.photosChanged,
+        loadImageBytes: !(resolvedConfig.listingNumber && resolvedConfig.photosChanged === false),
         convertImagesToJpeg: true,
       }), resolvedConfig)
       let report = createProperty24PublishReport({ config: resolvedConfig, preview, apply: true })

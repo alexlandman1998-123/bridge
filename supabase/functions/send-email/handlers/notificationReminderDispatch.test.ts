@@ -50,3 +50,32 @@ Deno.test("lead SLA reminder template uses branded reminder shell", () => {
   assertIncludes(html, "background: #123abc");
   assertIncludes(text, "Open Lead:");
 });
+
+Deno.test("manual seller document reminder uses the secure document request template", () => {
+  const { html, text } = buildReminderEmail(
+    {
+      id: "event-2",
+      automation_key: "seller_document_manual_reminder",
+      organisation_id: "00000000-0000-4000-8000-000000000001",
+      listing_id: "00000000-0000-4000-8000-000000000003",
+      recipient_email: "trustee@example.test",
+      recipient_role: "seller",
+      subject: "Reminder: trustee identity required",
+      message_preview: "Please upload the outstanding document.",
+      payload_json: {
+        requirementName: "Trustee identity",
+        recipientName: "Trustee One",
+        sellerWorkspaceToken: "seller-token",
+      },
+      metadata_json: {},
+    },
+    new Request("https://functions.example.test/send-email", {
+      headers: { origin: "https://app.example.test" },
+    }),
+    branding,
+  );
+
+  assertIncludes(html, "Trustee identity");
+  assertIncludes(html, "Upload Document");
+  assertIncludes(text, "/client/seller-token/selling/documents");
+});

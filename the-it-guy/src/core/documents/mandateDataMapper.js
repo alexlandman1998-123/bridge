@@ -59,6 +59,17 @@ function firstText(...values) {
   return ''
 }
 
+function joinDistinctText(values = []) {
+  const seen = new Set()
+  return values.map(normalizeText).filter((value) => {
+    if (!value) return false
+    const key = value.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).join('\n')
+}
+
 function firstPresent(...values) {
   for (const value of values) {
     if (value === null || value === undefined || value === '') continue
@@ -699,12 +710,19 @@ function resolveMandateProfile(onboarding = {}, lead = {}, agency = {}, organisa
     onboarding.additional_mandate_conditions,
     lead.additionalConditions,
   )
-  const specialConditions = firstText(
-    mandateDraft.specialConditions,
-    onboarding.specialConditions,
-    lead.specialConditions,
-    [selectedSpecialConditions, additionalConditions].filter(Boolean).join('\n'),
+  const explicitSpecialConditions = firstText(mandateDraft.specialConditions, onboarding.specialConditions, lead.specialConditions)
+  const sellerNotes = firstText(
+    onboarding.sellerNotes,
+    onboarding.seller_notes,
+    lead.sellerNotes,
+    lead.seller_notes,
   )
+  const specialConditions = joinDistinctText([
+    explicitSpecialConditions,
+    selectedSpecialConditions,
+    additionalConditions,
+    sellerNotes ? `Notes: ${sellerNotes}` : '',
+  ])
 
   return {
     type: firstText(mandateDraft.mandateType, mandateDraft.type, onboarding.mandateType, onboarding.mandate_type, lead.mandateType, privateListing.mandateType, agency.defaultMandateType, organisation.defaultMandateType, 'sole'),

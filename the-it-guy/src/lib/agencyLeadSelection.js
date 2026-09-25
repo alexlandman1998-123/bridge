@@ -75,6 +75,45 @@ export function getBuyerLeadOptions(leadRows = [], listing = {}) {
     })
 }
 
+export function resolveListingPropertyAddress(listing = {}) {
+  const safeListing = record(listing)
+  return text(
+    safeListing.formattedAddress ||
+    safeListing.formatted_address ||
+    safeListing.propertyAddress ||
+    safeListing.property_address ||
+    safeListing.addressLine1 ||
+    safeListing.address_line_1 ||
+    safeListing.streetAddress ||
+    safeListing.street_address ||
+    safeListing.address,
+  )
+}
+
+export function resolveLeadPropertyAddress(lead = {}) {
+  const safeLead = record(lead)
+  return text(
+    safeLead.sellerPropertyAddress ||
+    safeLead.seller_property_address ||
+    safeLead.enquiredPropertyAddress ||
+    safeLead.enquired_property_address ||
+    safeLead.formattedAddress ||
+    safeLead.formatted_address ||
+    safeLead.propertyAddress ||
+    safeLead.property_address ||
+    safeLead.addressLine1 ||
+    safeLead.address_line_1 ||
+    safeLead.streetAddress ||
+    safeLead.street_address ||
+    safeLead.propertyInterest ||
+    safeLead.property_interest ||
+    safeLead.enquiredPropertyTitle ||
+    safeLead.enquired_property_title ||
+    safeLead.areaInterest ||
+    safeLead.area_interest,
+  )
+}
+
 export function buildLeadListingLinkPatch(listing = {}) {
   const safeListing = record(listing)
   const listingId = text(safeListing.id || safeListing.listingId || safeListing.listing_id)
@@ -82,7 +121,7 @@ export function buildLeadListingLinkPatch(listing = {}) {
     listingId,
     enquiredListingId: listingId,
     enquiredPropertyTitle: text(safeListing.listingTitle || safeListing.title),
-    enquiredPropertyAddress: text(safeListing.propertyAddress || safeListing.addressLine1 || safeListing.streetAddress),
+    enquiredPropertyAddress: resolveListingPropertyAddress(safeListing),
     enquiredPropertyPrice: Number(safeListing.askingPrice || safeListing.estimatedValue || 0) || null,
   }
 }

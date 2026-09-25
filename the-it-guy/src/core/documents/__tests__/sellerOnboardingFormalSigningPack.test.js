@@ -19,3 +19,7 @@ test('the post-review signing pack contains FICA and mandate, never the already 
 test('does not allow a mandate-only post-review signing pack', () => {
   assert.deepEqual(validateSellerOnboardingFormalSigningSelection({ mandate: true }).missing, ['fica'])
 })
+
+test('allows a mandate-only pack when replacing an already reviewed mandate', () => {
+  assert.equal(validateSellerOnboardingFormalSigningSelection({ mandate: true }, { mandateReplacement: true }).valid, true)
+})

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import LeadWorkspaceRouteLoadingShell from '../../components/leads/LeadWorkspaceRouteLoadingShell'
 import { useWorkspace } from '../../context/WorkspaceContextBase'
+import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection'
 import { readAgencyLeadCoreCache } from './agencyLeadCoreCache'
 import { resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
 
@@ -80,13 +81,7 @@ export default function AgencyLeadWorkspaceShellPage({ loadingTab = false }) {
     lead?.buyerName ||
     lead?.sellerName,
   ) || (seller ? 'Seller lead' : 'Buyer lead')
-  const property = normalizeText(
-    lead?.sellerPropertyAddress ||
-    lead?.formattedAddress ||
-    lead?.propertyInterest ||
-    lead?.enquiredPropertyTitle ||
-    lead?.areaInterest,
-  )
+  const property = resolveLeadPropertyAddress(lead)
   const stage = normalizeText(lead?.stage || lead?.status) || 'Captured'
 
   const selectTab = useCallback((tab) => {

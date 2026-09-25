@@ -80,8 +80,8 @@ function subjectKind({ entityType = '', structureType = '', ownershipType = '' }
   if (candidate === 'power_of_attorney') return 'power_of_attorney'
   if (['married', 'married_cop', 'married_anc', 'married_in_community', 'married_out_of_community'].includes(candidate)) return 'married'
   if (entity === 'other' || candidate === 'other') return 'other'
-  if (entity === 'natural_person' && candidate === 'individual') return 'individual'
-  if (candidate === 'individual') return 'individual'
+  if (entity === 'natural_person' && ['individual', 'natural_person'].includes(candidate)) return 'individual'
+  if (['individual', 'natural_person'].includes(candidate)) return 'individual'
   return 'unknown'
 }
 
@@ -123,7 +123,18 @@ export function buildSellerSubject({ formData = {}, listing = {}, lead = {}, can
   }
   const entityType = firstText(sellerFacts.owner_entity_type, sellerFacts.ownerEntityType, form.ownerEntityType, form.owner_entity_type)
   const structureType = firstText(sellerFacts.owner_structure_type, sellerFacts.ownerStructureType, form.ownerStructureType, form.owner_structure_type)
-  const ownershipType = firstText(sellerFacts.ownership_type, sellerFacts.ownershipType, sellerFacts.legal_type, sellerFacts.seller_legal_type, form.ownershipType, form.ownership_type, form.sellerLegalType, form.seller_legal_type)
+  const ownershipType = firstText(
+    sellerFacts.ownership_type,
+    sellerFacts.ownershipType,
+    sellerFacts.legal_type,
+    sellerFacts.seller_legal_type,
+    form.ownershipType,
+    form.ownership_type,
+    form.sellerLegalType,
+    form.seller_legal_type,
+    form.sellerType,
+    form.seller_type,
+  )
   const inferredKind = subjectKind({ entityType, structureType, ownershipType })
   const ownershipDeclarationPending = [
     sellerFacts.ownership_declaration_pending,

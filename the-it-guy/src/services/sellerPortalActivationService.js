@@ -61,11 +61,10 @@ export function resolveSellerPortalLifecycle({ listing = {}, accessState = null,
       accessState?.portalStatus ||
       diagnostics?.portalStatus,
   )
-  if (rawStatus && Object.values(SELLER_PORTAL_STATUSES).includes(rawStatus)) return rawStatus
   if (accessState?.linkActive === false || onboarding.cancelledAt || onboarding.invitationCancelledAt) {
     return SELLER_PORTAL_STATUSES.invitationCancelled
   }
-  if (onboarding.inviteExpiresAt && new Date(onboarding.inviteExpiresAt).getTime() <= Date.now() && !onboarding.inviteConsumedAt) {
+  if (onboarding.inviteExpiresAt && new Date(onboarding.inviteExpiresAt).getTime() <= Date.now() && !onboarding.inviteConsumedAt && !accessState?.passwordSet) {
     return SELLER_PORTAL_STATUSES.invitationExpired
   }
   if (accessState?.passwordSet || onboarding.activatedAt || onboarding.inviteConsumedAt) {
@@ -74,6 +73,7 @@ export function resolveSellerPortalLifecycle({ listing = {}, accessState = null,
       ? SELLER_PORTAL_STATUSES.profileComplete
       : SELLER_PORTAL_STATUSES.activated
   }
+  if (rawStatus && Object.values(SELLER_PORTAL_STATUSES).includes(rawStatus)) return rawStatus
   if (onboarding.inviteCreatedAt || onboarding.invitationSentAt || onboarding.invitationLastSentAt) {
     return SELLER_PORTAL_STATUSES.invitationSent
   }

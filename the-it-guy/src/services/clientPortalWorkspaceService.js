@@ -77,6 +77,12 @@ import { buildFicaDeclarationDocumentMarkup } from '../core/documents/ficaDeclar
 import { buildFicaDeclarationDocumentModel } from '../core/documents/ficaDeclarationDocumentModel.js'
 import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel.js'
 import { buildClientLegalProgressModel } from '../core/clientPortal/clientLegalProgressModel.js'
+import {
+  filterSellerPortalDocuments,
+  filterSellerPortalRequirements,
+  isSellerPortalVisibleRequirement,
+  resolveSellerDocumentVisibility,
+} from './documents/sellerDocumentVisibilityPolicy.js'
 
 function normalizeWorkspace(value = 'shared') {
   const normalized = String(value || 'shared').trim().toLowerCase()
@@ -151,6 +157,12 @@ function getSellerDisplayName(listing = {}, formData = {}) {
 function mapSellerRequiredDocument(requirement = {}) {
   const key = String(requirement?.key || requirement?.requirement_key || requirement?.id || '').trim()
   const label = String(requirement?.label || requirement?.requirement_name || requirement?.name || key || 'Seller document').trim()
+  const visibility = resolveSellerDocumentVisibility(requirement) || 'seller_visible'
+  const sellerVisible = isSellerPortalVisibleRequirement({
+    ...requirement,
+    visibility,
+    applies_to: requirement?.applies_to || 'seller',
+  })
   return {
     ...requirement,
     key: key || label,
@@ -161,8 +173,8 @@ function mapSellerRequiredDocument(requirement = {}) {
     status: requirement?.status || requirement?.requiredDocumentStatus || 'required',
     applies_to: 'seller',
     expectedFromRole: 'seller',
-    visibility_scope: 'client',
-    visibility: requirement?.visibility || requirement?.document_visibility || 'seller_visible',
+    visibility_scope: sellerVisible ? 'client' : 'internal_only',
+    visibility,
     canonicalRequirementInstanceId: requirement?.canonicalRequirementInstanceId || requirement?.canonical_requirement_instance_id || '',
     canonical_requirement_instance_id: requirement?.canonical_requirement_instance_id || requirement?.canonicalRequirementInstanceId || '',
   }
@@ -815,18 +827,22 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
   } else {
     mandatePacket = attachSellerMandateFinalAccess(mandatePacket)
   }
-  const requiredDocuments = corePayload ? [] : getSellerRequiredDocuments(listing, formData)
-    .map((item) => mapSellerRequiredDocument(item))
+  const requiredDocuments = corePayload ? [] : filterSellerPortalRequirements(
+    getSellerRequiredDocuments(listing, formData)
+      .map((item) => mapSellerRequiredDocument(item)),
+  )
+  const documents = corePayload ? [] : filterSellerPortalDocuments(
+    Array.isArray(listing?.documents) ? listing.documents : [],
+    requiredDocuments,
+  ).map((item) => mapSellerUploadedDocument(item))
   const sellerDocumentPack = resolveSellerPortalRequiredDocumentPack({
     listing,
     formData,
     requirements: requiredDocuments,
-    documents: corePayload ? [] : listing?.documents || [],
+    documents,
     mandatePacket,
   })
   const sellerRequiredDocuments = sellerDocumentPack.requiredDocuments
-  const documents = (corePayload ? [] : Array.isArray(listing?.documents) ? listing.documents : [])
-    .map((item) => mapSellerUploadedDocument(item))
   const sellerComplianceSigning = buildSellerCompliancePortalModel({
     formData,
     listing,
@@ -897,6 +913,9 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     appointments,
     listing: {
       ...listing,
+      documents,
+      documentRequirements: sellerRequiredDocuments,
+      document_requirements: sellerRequiredDocuments,
       id: listingId,
       sellerLeadId: sellerLead.leadId,
       mandatePacketId,
@@ -1007,6 +1026,9 @@ async function fetchSellerClientPortalDataByToken(token, options = {}) {
     },
     listing: {
       ...listing,
+      documents,
+      documentRequirements: sellerRequiredDocuments,
+      document_requirements: sellerRequiredDocuments,
       listingPerformance,
       listing_performance: listingPerformance,
       heroImageUrl: sellerPortalHeroImageUrl || listing?.heroImageUrl || '',
@@ -3249,8 +3271,12 @@ function resolveSellerPortalRawDocuments(portalData = {}) {
 
 export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspaceMode = 'selling') {
   const rawRequirements = resolveSellerPortalRawRequirements(portalData)
-  const retiredRequirements = rawRequirements.filter(isRetiredSellerPortalRequirement)
-  const activeRequirements = rawRequirements.filter((requirement) => !isRetiredSellerPortalRequirement(requirement))
+  const retiredRequirements = filterSellerPortalRequirements(
+    rawRequirements.filter(isRetiredSellerPortalRequirement),
+  )
+  const activeRequirements = filterSellerPortalRequirements(
+    rawRequirements.filter((requirement) => !isRetiredSellerPortalRequirement(requirement)),
+  )
   if (workspaceMode !== 'selling') {
     return {
       source: 'portal_payload',
@@ -3276,7 +3302,7 @@ export function resolveSellerPortalRequiredDocumentPack(portalData = {}, workspa
     ...listing,
     documentRequirements: activeRequirements,
     document_requirements: activeRequirements,
-    documents: resolveSellerPortalRawDocuments(portalData),
+    documents: filterSellerPortalDocuments(resolveSellerPortalRawDocuments(portalData), activeRequirements),
     mandatePacket,
     mandate_packet: mandatePacket,
     mandatePacketId: listing?.mandatePacketId || listing?.mandate_packet_id || activeSellingContext?.mandatePacketId || activeSellingContext?.mandate_packet_id || '',
@@ -3468,7 +3494,12 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
     ...(signedMandateDocument ? [signedMandateDocument] : []),
     ...(propertyDisclosureDocument ? [propertyDisclosureDocument] : []),
     ...(sellerFicaDeclarationDocument ? [sellerFicaDeclarationDocument] : []),
-    ...(Array.isArray(portalData?.documents) ? portalData.documents : []),
+    ...(workspaceMode === 'selling'
+      ? filterSellerPortalDocuments(
+          Array.isArray(portalData?.documents) ? portalData.documents : [],
+          requiredDocumentsRaw,
+        )
+      : Array.isArray(portalData?.documents) ? portalData.documents : []),
   ]
   const uploadedDocumentsById = buildUploadedDocumentsLookup(uploadedDocuments)
   const downloadableDocumentsByKey = buildSellerDownloadableDocumentLookup(portalData, workspaceMode)
@@ -3487,7 +3518,7 @@ export function buildDocumentCenter(portalData, workspaceMode = 'buying') {
           ? uploadedStatus
           : requirement?.status || uploadedStatus,
         requiredDocumentStatus: uploadedStatus,
-        complete: ['uploaded', 'under_review', 'approved', 'completed'].includes(uploadedStatus),
+        complete: ['approved', 'completed'].includes(uploadedStatus),
         isUploaded: true,
         uploadedDocumentId: uploadedDocument.id || uploadedDocument.file_path || uploadedDocument.storage_path || null,
         uploaded_document_id: uploadedDocument.id || uploadedDocument.file_path || uploadedDocument.storage_path || null,

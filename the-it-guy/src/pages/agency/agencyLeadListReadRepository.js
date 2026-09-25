@@ -6,6 +6,7 @@ import {
   writeAgencyLeadCoreCache,
 } from './agencyLeadCoreCache'
 import { seedAgencyLeadWorkspaceSnapshot } from './agencyLeadWorkspaceSnapshotCache'
+import { AGENCY_CRM_UPDATED_EVENT, getAgencyCrmUpdateDetail } from '../../lib/agencyCrmUpdateBus'
 
 const LEGACY_LEAD_FIELDS =
   'lead_id, organisation_id, assigned_agent_id, contact_id, lead_category, lead_direction, lead_source, stage, status, priority, budget, area_interest, property_interest, seller_property_address, estimated_value, notes, converted_transaction_id, created_at, updated_at'
@@ -315,10 +316,26 @@ export function preloadAgencyLeadListRecords(organisationId) {
 
 export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
   const workspaceId = normalizeText(organisationId)
-  if (!workspaceId) return
-  primaryRecordsCache.delete(workspaceId)
+  if (!workspaceId) {
+    primaryRecordsCache.clear()
+    leadCoreRequestCache.clear()
+    return
+  }
+  for (const key of primaryRecordsCache.keys()) {
+    if (key === workspaceId || key.startsWith(`${workspaceId}:`)) primaryRecordsCache.delete(key)
+  }
   const resolvedLeadId = normalizeText(leadId)
-  if (resolvedLeadId) deleteAgencyLeadCoreCache(workspaceId, resolvedLeadId)
+  if (resolvedLeadId) {
+    deleteAgencyLeadCoreCache(workspaceId, resolvedLeadId)
+    leadCoreRequestCache.delete(`${workspaceId}:${resolvedLeadId}`)
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener(AGENCY_CRM_UPDATED_EVENT, (event) => {
+    const update = getAgencyCrmUpdateDetail(event)
+    invalidateAgencyLeadListCache(update.organisationId, update.leadId)
+  })
 }
 
 export async function listAgencyLeadListRecords(organisationId, options = {}) {

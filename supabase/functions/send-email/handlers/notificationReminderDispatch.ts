@@ -22,6 +22,7 @@ const REMINDER_AUTOMATION_KEYS = [
   "buyer_onboarding_reminder",
   "seller_onboarding_reminder",
   "seller_document_request_reminder",
+  "seller_document_manual_reminder",
   "attorney_invite_reminder",
   "bond_originator_invite_reminder",
   "agent_invite_reminder",
@@ -204,7 +205,10 @@ function resolveActionLink(event: ReminderEventRow, req: Request) {
     onboardingToken,
   );
   if (
-    sellerWorkspaceToken && automationKey === "seller_document_request_reminder"
+    sellerWorkspaceToken && [
+      "seller_document_request_reminder",
+      "seller_document_manual_reminder",
+    ].includes(automationKey)
   ) {
     return `${appBaseUrl}/client/${
       encodeURIComponent(sellerWorkspaceToken)
@@ -258,7 +262,7 @@ function reminderDisplayName(automationKey: string) {
     return "seller onboarding";
   }
 
-  if (automationKey === "seller_document_request_reminder") {
+  if (["seller_document_request_reminder", "seller_document_manual_reminder"].includes(automationKey)) {
     return "seller document request";
   }
   if (automationKey === "bond_application_portal_completion_reminder") {
@@ -587,7 +591,7 @@ function resolveTemplate(event: ReminderEventRow, actionLink: string) {
     };
   }
 
-  if (automationKey === "seller_document_request_reminder") {
+  if (["seller_document_request_reminder", "seller_document_manual_reminder"].includes(automationKey)) {
     const documentName = coalesceText(
       payload.requirementName,
       payload.requirement_name,
@@ -1325,7 +1329,7 @@ export async function handleNotificationReminderDispatchEmail(
       continue;
     }
 
-    if (automationKey === "seller_document_request_reminder") {
+    if (["seller_document_request_reminder", "seller_document_manual_reminder"].includes(automationKey)) {
       const currentEvent = await supabase
         .from("notification_events")
         .select("status")

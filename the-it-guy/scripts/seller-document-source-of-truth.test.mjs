@@ -90,8 +90,8 @@ assert.deepEqual(keys, [
   'signed_disclosure_form',
   'signed_fica_declaration',
   'rates_account',
-  'id_document',
-  'proof_of_address',
+  'seller_id_document',
+  'seller_proof_of_address',
   'gas_compliance_certificate',
   'solar_compliance_documents',
 ])
@@ -156,6 +156,8 @@ const gasCertificate = source.rows.find((row) => row.key === 'gas_compliance_cer
 assert.equal(gasCertificate.category, 'property')
 assert.equal(gasCertificate.blocking, true)
 assert.equal(gasCertificate.source.document, 'none')
+assert.match(gasCertificate.triggerSummary, /Gas Installation Captured/i)
+assert.equal(gasCertificate.capturedFacts.some((fact) => fact.key === 'gas_compliance_certificate'), true)
 
 const solarDocuments = source.rows.find((row) => row.key === 'solar_compliance_documents')
 assert.equal(solarDocuments.category, 'property')
@@ -169,6 +171,7 @@ assert.deepEqual(source.summary, {
   blocking: 5,
   uploaded: 3,
   outstanding: 5,
+  readyForReview: 0,
   underReview: 0,
   approved: 3,
   rejected: 0,
@@ -178,6 +181,21 @@ assert.deepEqual(source.summary, {
     fica: 2,
   },
 })
+
+const provisionalSource = buildSellerDocumentSourceOfTruth({
+  listing: {
+    id: 'listing-without-seller-structure',
+    listingStatus: 'active',
+    seller: { name: 'Contact Only', email: 'contact@example.com' },
+  },
+})
+assert.equal(provisionalSource.requirementState.status, 'provisional')
+assert.equal(provisionalSource.requirementState.provisional, true)
+assert.equal(provisionalSource.requirementState.reason, 'seller_structure_unconfirmed')
+assert.equal(provisionalSource.rows.length, 0, 'an unknown seller structure must not be guessed into an upload checklist')
+
+assert.equal(source.requirementState.status, 'confirmed')
+assert.equal(source.requirementState.provisional, false)
 
 const multiOwnerSource = buildSellerDocumentSourceOfTruth({
   listing: {
