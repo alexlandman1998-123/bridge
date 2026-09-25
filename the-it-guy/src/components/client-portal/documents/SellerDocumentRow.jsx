@@ -34,7 +34,7 @@ function getStatusPresentation(status = '') {
   }
   if (normalized === 'required' || normalized === 'requested') {
     return {
-      label: normalized === 'requested' ? 'Awaiting seller' : 'Not requested',
+      label: normalized === 'requested' ? 'Awaiting seller' : 'Upload required',
       classes: 'border-[#f4c7c3] bg-[#fff3f1] text-[#c24138]',
     }
   }

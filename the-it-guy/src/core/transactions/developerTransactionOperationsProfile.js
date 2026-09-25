@@ -1,3 +1,5 @@
+import { isDeveloperSaleTransactionType } from './transactionSaleProfile.js'
+
 function normalizeText(value) {
   return String(value || '').trim()
 }
@@ -109,9 +111,14 @@ export function buildDeveloperTransactionOperationsSummary(input = {}) {
   const transaction = toRecord(rawTransaction)
   const handover = toRecord(rawHandover)
   const developmentSettings = toRecord(rawDevelopmentSettings)
-  const isDeveloperSale = ['developer_sale', 'development', 'developer'].includes(
-    normalizeKey(transaction.transaction_type || transaction.transactionType || transaction.type || 'developer_sale'),
-  )
+  const explicitTransactionType = transaction.transaction_type || transaction.transactionType || transaction.type
+  // The transaction lifecycle has historically persisted both `developer_sale`
+  // and the routing alias `development_sale`. Keep the delivery panel on the
+  // same canonical classifier used by the portal profile, rather than silently
+  // treating a routed development matter as a resale.
+  const isDeveloperSale = explicitTransactionType
+    ? isDeveloperSaleTransactionType(explicitTransactionType)
+    : true
 
   if (!isDeveloperSale) {
     return null

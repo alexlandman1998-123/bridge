@@ -3863,9 +3863,34 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared', prospec
     ...buildDocumentCenter(portalData, workspaceMode),
     canonicalRequirements: [],
   }
+  const demoSellerLead = workspaceMode === 'selling'
+    ? (portalData?.sellerLead || {
+      id: portalData?.activeSellingContext?.sellerLeadId || `seller-${portalData?.listing?.id || token}`,
+      leadId: portalData?.activeSellingContext?.sellerLeadId || `seller-${portalData?.listing?.id || token}`,
+      leadCategory: 'seller',
+      listingId: portalData?.listing?.id || portalData?.activeSellingContext?.listingId || null,
+      sellerOnboardingStatus: portalData?.activeSellingContext?.sellerOnboardingStatus || portalData?.onboarding?.status || '',
+      sellerOnboardingToken: token,
+    })
+    : null
+  const demoSellerJourney = workspaceMode === 'selling'
+    ? (portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || buildSellerJourney({
+      lead: demoSellerLead,
+      listing: {
+        ...(portalData?.listing || {}),
+        sellerLeadId: demoSellerLead?.leadId,
+        sellerOnboardingStatus: portalData?.activeSellingContext?.sellerOnboardingStatus || portalData?.onboarding?.status || '',
+        mandateStatus: portalData?.activeSellingContext?.mandateStatus || '',
+        mandatePacket: portalData?.activeSellingContext?.mandatePacket || null,
+        documents: portalData?.documents || [],
+      },
+      mandatePacket: portalData?.activeSellingContext?.mandatePacket || null,
+      documents: portalData?.documents || [],
+    }))
+    : null
   const sellerPortalJourney = workspaceMode === 'selling'
     ? buildSellerPortalJourneyView({
-      journey: portalData?.sellerJourney || portalData?.activeSellingContext?.sellerJourney || null,
+      journey: demoSellerJourney,
       documentCenter,
       requiredDocuments: documentCenter?.requiredDocuments || [],
       documents: portalData?.documents || [],
@@ -3878,6 +3903,7 @@ function buildDemoClientPortalWorkspaceData(token, workspace = 'shared', prospec
   if (sellerPortalJourney) {
     portalData = {
       ...portalData,
+      sellerJourney: demoSellerJourney,
       sellerPortalJourney,
       activeSellingContext: {
         ...(portalData?.activeSellingContext || {}),

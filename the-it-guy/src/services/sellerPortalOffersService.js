@@ -30,6 +30,9 @@ function pickText(...values) {
 
 function normalizeOfferStatus(value = '') {
   const normalized = normalizeKey(value)
+  if (['sent_to_seller', 'seller_viewed', 'seller_review', 'awaiting_seller_review'].includes(normalized)) {
+    return 'seller_review'
+  }
   if (['new', 'submitted', 'seller_review', 'sent_to_seller', 'seller_viewed', 'awaiting_seller_review', 'awaiting_review'].includes(normalized)) {
     return 'new'
   }
@@ -175,8 +178,19 @@ function resolveDocuments(offer = {}) {
   return documents.map((document) => ({
     id: toText(document.id || document.path || document.url),
     name: toText(document.name || document.fileName || document.file_name, 'Offer document'),
-    url: toText(document.url || document.publicUrl || document.public_url),
-  }))
+    url: resolveSafeDocumentUrl(document.url || document.publicUrl || document.public_url),
+  })).filter((document) => document.url)
+}
+
+function resolveSafeDocumentUrl(value = '') {
+  const candidate = toText(value)
+  if (!candidate) return ''
+  try {
+    const parsed = new URL(candidate)
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : ''
+  } catch {
+    return ''
+  }
 }
 
 export function normalizeSellerPortalOffer(offer = {}, index = 0, options = {}) {
@@ -226,6 +240,7 @@ export function buildSellerPortalOffersPayload(offers = [], options = {}) {
   return {
     summary: {
       newCount: normalizedOffers.filter((offer) => offer.status === 'new').length,
+      sellerReviewCount: normalizedOffers.filter((offer) => offer.status === 'seller_review').length,
       underReviewCount: normalizedOffers.filter((offer) => offer.status === 'under_review').length,
       conditionallyAcceptedCount: normalizedOffers.filter((offer) => offer.status === 'conditionally_accepted').length,
       acceptedCount: normalizedOffers.filter((offer) => offer.status === 'accepted').length,

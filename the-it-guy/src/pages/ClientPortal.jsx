@@ -90,6 +90,7 @@ import {
 } from '../components/client-portal/buyerPortalTheme'
 import ClientDocumentCentre, { buildDocumentCentreSections } from '../components/client-portal/documents/ClientDocumentCentre'
 import BuyerDocumentWorkspace, { BuyerDocumentSummary } from '../components/client-portal/documents/BuyerDocumentWorkspace'
+import BuyerDevelopmentDeliveryPanel from '../components/client-portal/development/BuyerDevelopmentDeliveryPanel'
 import TransactionStageWorkspace, { resolveSellerTransactionStageKey } from '../components/client-portal/seller/TransactionStageWorkspace'
 import ProgressTimeline from '../components/ProgressTimeline'
 import MvpTransactionControlBoard from '../components/transaction/MvpTransactionControlBoard'
@@ -101,10 +102,13 @@ import {
 } from '../core/clientJourney/clientJourney.utils'
 import { buildBuyerJourneyPresentationModel } from '../core/clientPortal/buyerJourneyPresentationModel'
 import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
+import { buildDeveloperTransactionOperationsSummary } from '../core/transactions/developerTransactionOperationsProfile'
 import { buildBuyerDocumentPresentationModel } from '../core/clientPortal/buyerDocumentPresentationModel'
 import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFinancePresentationModel'
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
 import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
+import { resolveSellerPortalWorkflowProjection } from '../core/clientPortal/sellerPortalWorkflowProjection'
+import { resolveSellerPortalSyncPolicy } from '../core/clientPortal/sellerPortalSyncPolicy'
 import { getSystemBanks } from '../services/bondOriginatorBankService'
 import {
   createClientPortalDocumentSignedUrl,
@@ -130,7 +134,10 @@ import {
   getClientPortalWorkspaceData,
   getProspectDemoClientPortalWorkspaceData,
 } from '../services/clientPortalWorkspaceService'
+import { buildSellerPortalOffersPayload } from '../services/sellerPortalOffersService'
+import { isClientPortalDemoToken } from '../lib/onboardingDemoLinks'
 import useTransactionLiveRefresh from '../hooks/useTransactionLiveRefresh'
+import usePortalWorkspaceRefresh from '../hooks/usePortalWorkspaceRefresh'
 import { shouldRefreshPortalDetails } from '../core/transactions/portalRefreshPolicy'
 import { MatterConversationAccess } from '../components/transaction/MatterConversation'
 import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
@@ -163,7 +170,8 @@ import {
   getMainStageIndex,
 } from '../lib/stages'
 import { getSellerPortalStageMeta } from '../lib/sellerPortalStageMapper'
-import { buildSellerDocumentExperienceModel } from '../lib/sellerDocumentExperienceModel'
+import { buildSellerPortalDocumentSummary } from '../core/clientPortal/sellerPortalDocumentSummary'
+import { buildSellerPortalSaleJourneyGate } from '../core/clientPortal/sellerPortalSaleJourneyGate'
 import { buildSellerComplianceAgentStatus } from '../core/documents/sellerComplianceAgentStatusModel'
 import {
   formatPlatformFeeAmount,
@@ -190,6 +198,7 @@ function lazyPortalPanel(loader, rows = 5) {
 const GuidedBondApplication = lazyPortalPanel(() => import('../modules/bond/application/guided/GuidedBondApplication'), 8)
 const BuyerFinanceWorkspace = lazyPortalPanel(() => import('../components/client-portal/finance/BuyerFinanceWorkspace'), 6)
 const BuyerTeamWorkspace = lazyPortalPanel(() => import('../components/client-portal/team/BuyerTeamWorkspace'), 5)
+const SellerOffersPage = lazyPortalPanel(() => import('../components/client-portal/offers/SellerOffersPage'), 6)
 const ClientAppointmentsSection = lazyPortalPanel(() => import('../components/client-portal/appointments/ClientAppointmentsSection'), 5)
 const ClientPortalMatterAccountsPanel = lazyPortalPanel(() => import('../components/client-portal/ClientPortalMatterAccountsPanel'), 5)
 
@@ -255,43 +264,17 @@ async function withClientPortalLoadTimeout(task, { phase = 'portal', timeoutMs =
 
 const SELLER_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: Home },
-  { key: 'progress', label: 'Progress', icon: BarChart3 },
-  { key: 'appointments', label: 'Appointments', icon: CalendarClock },
-  { key: 'listing', label: 'Listing', icon: Home, section: 'overview', hash: '#seller-property-hero' },
-  { key: 'marketing', label: 'Marketing', icon: Megaphone, section: 'overview', hash: '#seller-marketing-activity' },
-  { key: 'documents', label: 'Documents', icon: FileText },
-  { key: 'account', label: 'Account', icon: HandCoins },
-  { key: 'details', label: 'My Details', icon: User },
+  { key: 'listing_marketing', label: 'Listing & Marketing', icon: Megaphone, section: 'overview', hash: '#seller-marketing-activity' },
+  { key: 'progress', label: 'Sale Journey', icon: BarChart3 },
+  { key: 'documents', label: 'Your Documents', icon: FileText },
+  { key: 'offers', label: 'Offers', icon: HandCoins },
+  { key: 'team', label: 'Your Team', icon: Users },
 ]
 
 const SELLER_PORTAL_NAV_GROUPS = [
   {
-    label: 'Home',
-    items: [
-      { key: 'overview', label: 'Overview', icon: Home },
-    ],
-  },
-  {
-    label: 'Your Sale',
-    items: [
-      { key: 'progress', label: 'Progress', icon: BarChart3 },
-      { key: 'appointments', label: 'Appointments', icon: CalendarClock },
-    ],
-  },
-  {
-    label: 'Property',
-    items: [
-      { key: 'listing', label: 'Listing', icon: Home, section: 'overview', hash: '#seller-property-hero' },
-      { key: 'marketing', label: 'Marketing', icon: Megaphone, section: 'overview', hash: '#seller-marketing-activity' },
-      { key: 'documents', label: 'Documents', icon: FileText },
-    ],
-  },
-  {
-    label: 'Account',
-    items: [
-      { key: 'account', label: 'Account', icon: HandCoins },
-      { key: 'details', label: 'My Details', icon: User },
-    ],
+    label: '',
+    items: SELLER_PORTAL_MENU,
   },
 ]
 
@@ -346,6 +329,7 @@ const SELLER_PROGRESS_STEPS = [
   { key: 'submitted', label: 'Submitted' },
   { key: 'mandate_signed', label: 'Mandate Signed' },
   { key: 'listing_created', label: 'Listing Created' },
+  { key: 'listing_live', label: 'Listing Live' },
   { key: 'documents_complete', label: 'Documents Complete' },
 ]
 
@@ -511,6 +495,7 @@ function buildSellerPortalProgressModel({
   hasMandatePacket = false,
   hasMandateSigned = false,
   hasListingCreated = false,
+  hasListingLive = false,
   hasDocumentsComplete = false,
 } = {}) {
   let currentKey = 'contacted'
@@ -525,6 +510,8 @@ function buildSellerPortalProgressModel({
     currentKey = 'submitted'
   } else if (!hasListingCreated) {
     currentKey = 'mandate_signed'
+  } else if (hasListingLive && !hasDocumentsComplete) {
+    currentKey = 'listing_live'
   } else if (!hasDocumentsComplete) {
     currentKey = 'listing_created'
   } else {
@@ -548,6 +535,7 @@ function buildSellerPortalProgressModel({
     submitted: 'Your seller onboarding has been submitted and is under review by your agent.',
     mandate_signed: 'Your mandate is in place and the listing setup is moving forward.',
     listing_created: 'Your property is moving through listing setup and live marketing preparation.',
+    listing_live: 'Your listing is live and your agent can share buyer interest and offers here.',
     documents_complete: 'Your seller file is complete and we will keep you updated as the sale progresses.',
   }
 
@@ -566,7 +554,7 @@ const SELLER_PROGRESS_PORTAL_KEY_BY_JOURNEY_KEY = {
   seller_onboarding_submitted: 'submitted',
   mandate_signed: 'mandate_signed',
   listing_created: 'listing_created',
-  listing_live: 'listing_created',
+  listing_live: 'listing_live',
   documents_submitted: 'documents_complete',
 }
 
@@ -648,23 +636,18 @@ function resolveSellerSaleProgressKey({
   return 'otp'
 }
 
-function shouldShowSellerSaleProgress({ hasDocumentsComplete = false, sellerStageMeta = null, mainStage = '' } = {}) {
-  const portalStageKey = normalizeSellerPortalKey(sellerStageMeta?.currentStageKey || sellerStageMeta?.currentStage?.key)
-  return Boolean(
-    hasDocumentsComplete ||
-      normalizeSellerSaleMainStage(mainStage) ||
-      ['offer_accepted', 'transfer', 'registered'].includes(portalStageKey),
-  )
+function shouldShowSellerSaleProgress({ transactionStarted = false } = {}) {
+  return Boolean(transactionStarted)
 }
 
 function buildSellerSaleProgressModel({
-  hasDocumentsComplete = false,
+  transactionStarted = false,
   sellerStageMeta = null,
   mainStage = '',
   activeSellingContext = {},
   portal = {},
 } = {}) {
-  const isStarted = shouldShowSellerSaleProgress({ hasDocumentsComplete, sellerStageMeta, mainStage })
+  const isStarted = shouldShowSellerSaleProgress({ transactionStarted })
   const currentKey = isStarted
     ? resolveSellerSaleProgressKey({
         sellerStageMeta,
@@ -1396,49 +1379,30 @@ function buildOnboardingDocumentMarkup({
 
 const CLIENT_PORTAL_MENU = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { key: 'progress', label: 'Progress', icon: BarChart3 },
-  { key: 'appointments', label: 'Appointments', icon: CalendarClock },
-  { key: 'details', label: 'My Details', icon: User },
-  { key: 'account', label: 'Account', icon: HandCoins },
-  { key: 'bond_application', label: 'Finance', icon: FileSignature },
-  { key: 'documents', label: 'Documents', icon: FileText },
-  { key: 'handover', label: 'Keys', icon: KeyRound },
-  { key: 'snags', label: 'Issues', icon: Wrench },
-  { key: 'team', label: 'Team', icon: Users },
+  { key: 'progress', label: 'Transfer Journey', icon: BarChart3 },
+  { key: 'documents', label: 'Your Documents', icon: FileText },
+  // Finance remains the existing read-only account and payment workspace in
+  // Phase 1. Phase 3 will expand it into the dedicated finance-status view.
+  { key: 'account', label: 'Finance', icon: HandCoins },
+  { key: 'bond_application', label: 'Bond Application', icon: FileSignature },
+  { key: 'team', label: 'Your Team', icon: Users },
 ]
 
 const BUYER_PORTAL_NAV_GROUPS = [
   {
-    label: 'Start',
-    items: [
-      { key: 'overview', label: 'Overview', icon: Home },
-    ],
-  },
-  {
-    label: 'Next Steps',
-    items: [
-      { key: 'progress', label: 'Progress', icon: BarChart3 },
-      { key: 'appointments', label: 'Appointments', icon: CalendarClock },
-      { key: 'bond_application', label: 'Finance', icon: FileSignature },
-    ],
-  },
-  {
-    label: 'Property',
-    items: [
-      { key: 'documents', label: 'Documents', icon: FileText },
-      { key: 'handover', label: 'Keys', icon: KeyRound },
-      { key: 'snags', label: 'Issues', icon: Wrench },
-    ],
-  },
-  {
-    label: 'Support',
-    items: [
-      { key: 'team', label: 'Team', icon: Users },
-      { key: 'account', label: 'Account', icon: HandCoins },
-      { key: 'details', label: 'My Details', icon: User },
-    ],
+    label: '',
+    items: CLIENT_PORTAL_MENU,
   },
 ]
+
+const BUYER_PORTAL_CORE_NAVIGATION_LABELS = Object.freeze({
+  overview: 'Overview',
+  progress: 'Transfer Journey',
+  documents: 'Your Documents',
+  account: 'Finance',
+  bond_application: 'Bond Application',
+  team: 'Your Team',
+})
 
 const BUYER_PORTAL_PRESENTATION_BY_MODE = Object.freeze({
   developer_development: Object.freeze({
@@ -3039,7 +3003,10 @@ function buildSellerTransactionHealth({
   ]
   const completed = signals.filter((signal) => signal.complete).length
   const hasAnySignal = completed > 0 || documentsNeedingAttention.length > 0 || sellerPrimaryNextAction
-  const blockerCount = documentsNeedingAttention.length + (sellerPrimaryNextAction?.blocking ? 1 : 0)
+  // A document-focused next action describes the same blocker as the document
+  // list. Count it once so the health card cannot disagree with the document
+  // centre and navigation.
+  const blockerCount = documentsNeedingAttention.length || (sellerPrimaryNextAction?.blocking ? 1 : 0)
 
   if (!hasAnySignal) {
     return {
@@ -3406,15 +3373,52 @@ function SellerProgressJourney({ listingProgressModel, saleProgressModel, transa
         helperMessage={progressModel?.helperMessage || 'Your seller portal will keep you updated as the sale progresses.'}
         actionLabel={progressModel?.actionLabel || 'View documents'}
         actionTo={progressModel?.actionTo || 'documents'}
-        tabs={transactionJourneyModel ? [] : [
+        tabs={transactionJourneyModel || !saleProgressModel?.isStarted ? [] : [
           { key: 'listing', label: 'Listing Progress' },
-          { key: 'sale', label: 'Sale Progress', badge: saleProgressModel?.isStarted === false ? 'Next' : '' },
+          { key: 'sale', label: 'Sale Progress' },
         ]}
         activeTabKey={activeWorkflowKey}
         onTabChange={setActiveWorkflowKey}
         tabAriaLabel="Seller journey progress"
         shadowClassName={PORTAL_DESIGN_TOKENS.shadow.strong}
         stepLabelClassName={`mt-3 max-w-[88px] text-[0.84rem] font-semibold leading-5 ${PORTAL_DESIGN_TOKENS.text.heading}`}
+        token={token}
+        workspaceNavigationScope={workspaceNavigationScope}
+      />
+    </section>
+  )
+}
+
+function SellerSaleJourneyNotStarted({ gate, listingProgressModel, token, workspaceNavigationScope, agentEmail = '' }) {
+  const primaryPath = getPortalWorkspacePath(token, workspaceNavigationScope, gate?.primaryAction?.key || 'offers')
+  const marketingPath = `${getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')}#seller-marketing-activity`
+
+  return (
+    <section className="space-y-5 pb-24 lg:pb-2">
+      <header className="rounded-[20px] border border-[#dce5ed] bg-[linear-gradient(135deg,#f0faf5_0%,#ffffff_72%)] p-6 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+        <span className="text-[0.68rem] font-bold uppercase tracking-[0.14em] text-[#087955]">Listing stage</span>
+        <h1 className="mt-2 text-[2rem] font-semibold tracking-[-0.05em] text-[#102032]">{gate?.title || 'Your sale journey starts after an accepted offer'}</h1>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-[#52667c]">{gate?.description}</p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Link to={primaryPath} className="inline-flex min-h-11 items-center gap-2 rounded-[11px] bg-[#087057] px-4 text-sm font-semibold text-white transition hover:bg-[#065d48]">
+            {gate?.primaryAction?.label || 'Review offers'}
+            <ArrowRight size={15} />
+          </Link>
+          <Link to={marketingPath} className="inline-flex min-h-11 items-center gap-2 rounded-[11px] border border-[#c9ddd4] bg-white px-4 text-sm font-semibold text-[#175444] transition hover:bg-[#f6fbf8]">
+            View listing activity
+          </Link>
+          {agentEmail ? (
+            <a href={`mailto:${agentEmail}`} className="inline-flex min-h-11 items-center gap-2 rounded-[11px] border border-[#d4dee9] bg-white px-4 text-sm font-semibold text-[#244159] transition hover:bg-[#f8fbfd]">
+              <MessageCircle size={15} /> Message agent
+            </a>
+          ) : null}
+        </div>
+      </header>
+
+      <SellerProgressJourney
+        listingProgressModel={listingProgressModel}
+        saleProgressModel={{ isStarted: false }}
+        transactionJourneyModel={null}
         token={token}
         workspaceNavigationScope={workspaceNavigationScope}
       />
@@ -3653,14 +3657,18 @@ function BuyerMobilePortal({
   heroStatusBadge,
   journeyProgressPercent,
   journeyCurrentStageLabel,
+  journeyCurrentWorkflowItem = null,
+  journeyCompletionSummary = '',
   journeyNextStageLabel,
   journeyHeroSubtext,
   clientJourneySteps = [],
+  developmentDeliveryModel = null,
   nextStepState = {},
   primaryOverviewAction = {},
   missingRequired,
   financeTypeLabel,
   financeSectionKey = 'account',
+  bondApplicationEnabled = false,
   matterAccountsSummary = {},
   matterAccounts = [],
   matterAccountsLoading = false,
@@ -3691,6 +3699,8 @@ function BuyerMobilePortal({
   onUploadBuyerDocument = null,
   onOpenBuyerDocument = null,
   teamMembers = [],
+  onSendTeamMessage = null,
+  teamMessageSending = false,
   enabledSections = {},
   portalNavigationLabels = {},
   buyerPortalStatusItems = [],
@@ -3726,6 +3736,8 @@ function BuyerMobilePortal({
     preferredDateTime: '',
     notes: '',
   })
+  const [buyerTeamMessage, setBuyerTeamMessage] = useState('')
+  const [buyerTeamMessageFeedback, setBuyerTeamMessageFeedback] = useState('')
   const requestedMobileSection = activeSection === 'bond_application' || activeSection === 'account' ? 'finance' : activeSection
   const buyerMoreSectionKeys = ['team', 'details', 'handover', 'snags', 'settings', 'alterations', 'review']
   const mobileSection = buyerMoreSectionKeys.includes(requestedMobileSection)
@@ -3737,12 +3749,13 @@ function BuyerMobilePortal({
     clientJourneySteps.find((step) => step.status === 'current' || step.status === 'blocked') ||
     clientJourneySteps[0]
   const safeProgress = Math.max(0, Math.min(100, Number(journeyProgressPercent) || 0))
+  const hasJourneyCompletionSummary = Boolean(String(journeyCompletionSummary || '').trim())
   const bottomNavItems = [
-    { key: 'overview', section: 'overview', label: portalNavigationLabels.overview || 'Home', icon: Home },
-    { key: 'progress', section: 'progress', label: portalNavigationLabels.progress || 'Tasks', icon: CheckCircle2 },
-    { key: 'documents', section: 'documents', label: portalNavigationLabels.documents || 'Documents', icon: FileText },
-    { key: 'finance', section: financeSectionKey, label: portalNavigationLabels.bond_application || portalNavigationLabels.account || 'Finance', icon: HandCoins },
-    { key: 'more', section: 'team', label: portalNavigationLabels.team || 'Team', icon: Users },
+    { key: 'overview', section: 'overview', label: BUYER_PORTAL_CORE_NAVIGATION_LABELS.overview, icon: Home },
+    { key: 'progress', section: 'progress', label: BUYER_PORTAL_CORE_NAVIGATION_LABELS.progress, icon: CheckCircle2 },
+    { key: 'documents', section: 'documents', label: BUYER_PORTAL_CORE_NAVIGATION_LABELS.documents, icon: FileText },
+    { key: 'finance', section: financeSectionKey, label: BUYER_PORTAL_CORE_NAVIGATION_LABELS.account, icon: HandCoins },
+    { key: 'more', section: 'team', label: BUYER_PORTAL_CORE_NAVIGATION_LABELS.team, icon: Users },
   ]
   const visibleTeamMembers = teamMembers.slice(0, 4)
   const buyerPrimaryContact = visibleTeamMembers.find((member) => member?.email || member?.phone) || visibleTeamMembers[0] || null
@@ -4050,6 +4063,20 @@ function BuyerMobilePortal({
     setBuyerUploadFeedback({ tone: '', message: '' })
   }
 
+  async function handleBuyerTeamMessageSubmit(event) {
+    event.preventDefault()
+    const message = buyerTeamMessage.trim()
+    if (!message || typeof onSendTeamMessage !== 'function') return
+    setBuyerTeamMessageFeedback('')
+    const result = await onSendTeamMessage(message)
+    if (result?.ok === false) {
+      setBuyerTeamMessageFeedback(result.error || 'Your message could not be sent. Please try again.')
+      return
+    }
+    setBuyerTeamMessage('')
+    setBuyerTeamMessageFeedback('Your message has been shared with the transaction team.')
+  }
+
   async function handleBuyerSelectedDocumentFile(file, sourceLabel = 'file') {
     if (!file || !selectedBuyerDocument || typeof onUploadBuyerDocument !== 'function') {
       return
@@ -4288,15 +4315,30 @@ function BuyerMobilePortal({
                       <span className="h-2 w-2 rounded-full" style={{ backgroundColor: mobileAccentColour }} />
                       <span className="min-w-0 truncate">{journeyCurrentStageLabel}</span>
                     </p>
+                    {journeyCurrentWorkflowItem?.label ? (
+                      <div className="mt-2 rounded-[10px] border border-white/[0.16] bg-white/[0.08] px-3 py-2">
+                        <p className="text-[0.58rem] font-semibold uppercase tracking-[0.12em] text-white/70">Current matter item</p>
+                        <p className="mt-1 truncate text-sm font-semibold text-white">{journeyCurrentWorkflowItem.label}</p>
+                        {journeyCurrentWorkflowItem.summary ? <p className="mt-1 text-xs leading-5 text-white/80">{journeyCurrentWorkflowItem.summary}</p> : null}
+                        {journeyCurrentWorkflowItem.ownerLabel ? <p className="mt-1 text-xs font-semibold text-white/75">With: {journeyCurrentWorkflowItem.ownerLabel}</p> : null}
+                      </div>
+                    ) : null}
                     <p className="mt-1 text-sm font-medium text-[#d8e7e5]">Next: {journeyNextStageLabel}</p>
                   </div>
-                  <div className="relative inline-flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.24)]" style={{ background: `conic-gradient(${mobileAccentColour} ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
-                    <span className="absolute inset-2 rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
-                    <span className="relative text-center">
-                      <span className="block text-[1.32rem] font-semibold leading-none text-white">{safeProgress}%</span>
-                      <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
-                    </span>
-                  </div>
+                  {hasJourneyCompletionSummary ? (
+                    <div className="inline-flex h-[88px] w-[88px] shrink-0 flex-col items-center justify-center rounded-[16px] border border-white/[0.18] bg-white/[0.1] px-1 text-center shadow-[0_16px_30px_rgba(0,0,0,0.24)]">
+                      <span className="text-[1.05rem] font-semibold leading-tight text-white">{journeyCompletionSummary}</span>
+                      <span className="mt-1 text-[0.54rem] font-semibold uppercase tracking-[0.08em] text-[#d8e7e5]">Milestones</span>
+                    </div>
+                  ) : (
+                    <div className="relative inline-flex h-[88px] w-[88px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.24)]" style={{ background: `conic-gradient(${mobileAccentColour} ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+                      <span className="absolute inset-2 rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+                      <span className="relative text-center">
+                        <span className="block text-[1.32rem] font-semibold leading-none text-white">{safeProgress}%</span>
+                        <span className="mt-1 block text-[0.62rem] font-semibold uppercase tracking-[0.12em] text-[#d8e7e5]">Complete</span>
+                      </span>
+                    </div>
+                  )}
                   </div>
                 </div>
               </BuyerMobilePropertyHero>
@@ -4425,6 +4467,15 @@ function BuyerMobilePortal({
               token={token}
               workspaceNavigationScope={workspaceNavigationScope}
             />
+            <div className="mt-4">
+              <BuyerDevelopmentDeliveryPanel
+                model={developmentDeliveryModel}
+                theme={{ primary: mobilePrimaryColour }}
+                handoverPath={enabledSections.handover ? getPortalWorkspacePath(token, workspaceNavigationScope, 'handover') : ''}
+                snagsPath={enabledSections.snags ? getPortalWorkspacePath(token, workspaceNavigationScope, 'snags') : ''}
+                documentsPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+              />
+            </div>
           </div>
         ) : null}
 
@@ -4558,6 +4609,15 @@ function BuyerMobilePortal({
                 </article>
               ))}
             </div>
+
+            {bondApplicationEnabled ? (
+              <Link
+                to={getPortalWorkspacePath(token, workspaceNavigationScope, 'bond_application')}
+                className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-4 text-sm font-semibold text-[#35546c]"
+              >
+                Open bond application
+              </Link>
+            ) : null}
 
             {matterAccountsLoading ? (
               <div className="mt-5 grid gap-3">
@@ -4979,6 +5039,16 @@ function BuyerMobilePortal({
                 </article>
               ))}
             </div>
+
+            {typeof onSendTeamMessage === 'function' ? (
+              <form onSubmit={handleBuyerTeamMessageSubmit} className="mt-5 rounded-[20px] border border-[#e5e9ef] bg-[#fbfcfd] p-4">
+                <div className="flex items-start gap-3"><span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#24364d] shadow-[inset_0_0_0_1px_rgba(226,232,240,0.9)]"><MessageCircle size={17} /></span><div><h4 className="text-sm font-semibold text-[#101823]">Message your team</h4><p className="mt-1 text-xs leading-5 text-[#667085]">Your message is saved to this transaction for the team to respond to.</p></div></div>
+                <label htmlFor="buyer-mobile-team-message" className="sr-only">Message your transaction team</label>
+                <textarea id="buyer-mobile-team-message" value={buyerTeamMessage} onChange={(event) => setBuyerTeamMessage(event.target.value)} rows={3} placeholder="Ask a question about your purchase..." className="mt-4 w-full resize-y rounded-[14px] border border-[#dfe5ec] bg-white px-3 py-2.5 text-sm leading-6 text-[#101823] outline-none placeholder:text-[#8a94a3] focus:border-[#9cb8d6] focus:ring-2 focus:ring-[#d7e5f4]" />
+                {buyerTeamMessageFeedback ? <p className={`mt-3 rounded-[12px] border px-3 py-2 text-sm ${buyerTeamMessageFeedback.startsWith('Your message has') ? 'border-[#cfe4d8] bg-[#eef9f2] text-[#2f7a51]' : 'border-[#f1cbc7] bg-[#fff5f4] text-[#b42318]'}`} role="status">{buyerTeamMessageFeedback}</p> : null}
+                <div className="mt-3 flex justify-end"><button type="submit" disabled={teamMessageSending || !buyerTeamMessage.trim()} className="inline-flex min-h-[42px] items-center justify-center rounded-[12px] bg-[#10213a] px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60">{teamMessageSending ? 'Sending...' : 'Send message'}</button></div>
+              </form>
+            ) : null}
           </section>
         ) : null}
       </div>
@@ -6173,6 +6243,16 @@ function SellerMobilePortal({
   sellerProgressPercent,
   sellerStepLabel,
   sellerJourneyStages,
+  sellerWorkflow = 'listing',
+  sellerOffers = [],
+  sellerAskingPrice = 0,
+  sellerTransactionId = '',
+  sellerPropertyId = '',
+  sellerJourneyHref = '',
+  sellerCommentDraft = '',
+  sellerCommentSaving = false,
+  onSellerCommentDraftChange = null,
+  onSellerCommentSubmit = null,
   sellerNextStep,
   sellerAgentName,
   sellerAgentEmail,
@@ -6205,7 +6285,7 @@ function SellerMobilePortal({
   const [mobileDocumentsActionOnly, setMobileDocumentsActionOnly] = useState(false)
   const [mobileDocumentSortDirection, setMobileDocumentSortDirection] = useState('asc')
   const requestedMobileSection = activeSection === 'progress' ? 'tasks' : activeSection
-  const mobileSection = ['overview', 'tasks', 'documents', 'team'].includes(requestedMobileSection)
+  const mobileSection = ['overview', 'tasks', 'documents', 'offers', 'team'].includes(requestedMobileSection)
     ? requestedMobileSection
     : 'overview'
   const isOverviewSection = mobileSection === 'overview'
@@ -6243,9 +6323,10 @@ function SellerMobilePortal({
   const previewDocuments = documentActionItems.slice(0, 4)
   const visibleActivity = sellerActivityItems.slice(0, 3)
   const bottomNavItems = [
-    { key: 'overview', section: 'overview', label: 'Home', icon: Home },
-    { key: 'tasks', section: 'progress', label: 'Tasks', icon: CheckCircle2 },
+    { key: 'overview', section: 'overview', label: 'Overview', icon: Home },
+    { key: 'tasks', section: 'progress', label: 'Journey', icon: CheckCircle2 },
     { key: 'documents', section: 'documents', label: 'Documents', icon: FileText },
+    { key: 'offers', section: 'offers', label: 'Offers', icon: HandCoins },
     { key: 'team', section: 'team', label: 'Team', icon: Users },
   ]
   const nextActionHref = sellerNextStep?.href ||
@@ -6553,9 +6634,9 @@ function SellerMobilePortal({
                 <Link to={getPortalWorkspacePath(token, workspaceNavigationScope, 'progress')} className="overflow-hidden rounded-[16px] border border-white/80 bg-white/95 shadow-[0_10px_26px_rgba(15,23,42,0.055)]">
                   <div className="p-4">
                     <span className="inline-flex h-10 w-10 items-center justify-center rounded-[12px] bg-[#eff8f1] text-[#347d43]"><BarChart3 size={20} /></span>
-                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">Sale</p>
-                    <strong className="mt-1 block text-lg font-semibold text-[#101823]">Track progress</strong>
-                    <span className="mt-1 block text-xs font-medium text-[#667085]">Signed OTP to registration</span>
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-[#8a94a3]">{sellerWorkflow === 'transaction' ? 'Sale' : 'Listing'}</p>
+                    <strong className="mt-1 block text-lg font-semibold text-[#101823]">{sellerWorkflow === 'transaction' ? 'Track progress' : 'Listing progress'}</strong>
+                    <span className="mt-1 block text-xs font-medium text-[#667085]">{sellerWorkflow === 'transaction' ? 'Signed OTP to registration' : 'Mandate to buyer interest'}</span>
                   </div>
                   <div className="flex min-h-[40px] items-center justify-between border-t border-[#edf0f3] px-4 text-xs font-semibold text-[#347d43]">
                     <span>View progress</span>
@@ -6644,14 +6725,36 @@ function SellerMobilePortal({
         ) : null}
 
         {mobileSection === 'team' ? (
-          <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
-            <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Team</p>
-            <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{sellerAgentName || sellerAgencyName || 'Your property team'}</h3>
-            <p className="mt-1 text-sm leading-6 text-[#667085]">Your main contact for seller updates, documents, viewings, and transaction progress.</p>
-            <div className="mt-4 grid gap-3">
-              {sellerAgentEmail ? <a href={`mailto:${sellerAgentEmail}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Message agent</span><MessageCircle size={18} /></a> : null}
-              {sellerAgentPhone ? <a href={`tel:${sellerAgentPhone}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Call agent</span><PhoneCall size={18} /></a> : null}
-            </div>
+          <div className="mt-4 space-y-4">
+            <section className="rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
+              <p className="text-[0.74rem] font-semibold uppercase tracking-[0.14em] text-[#7b8491]">Your Team</p>
+              <h3 className="mt-2 text-[1.4rem] font-semibold tracking-[-0.04em] text-[#101823]">{sellerAgentName || sellerAgencyName || 'Your property team'}</h3>
+              <p className="mt-1 text-sm leading-6 text-[#667085]">Your main contact for listing updates, offers, documents, and sale progress.</p>
+              <div className="mt-4 grid gap-3">
+                {sellerAgentEmail ? <a href={`mailto:${sellerAgentEmail}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Message agent</span><MessageCircle size={18} /></a> : null}
+                {sellerAgentPhone ? <a href={`tel:${sellerAgentPhone}`} className="flex min-h-[52px] items-center justify-between rounded-[18px] border border-[#e5e9ef] bg-[#fbfcfd] px-4 text-sm font-semibold text-[#10213a]"><span>Call agent</span><PhoneCall size={18} /></a> : null}
+              </div>
+            </section>
+            <SellerConversationCard
+              updates={sellerActivityItems}
+              commentDraft={sellerCommentDraft}
+              saving={sellerCommentSaving}
+              onCommentDraftChange={onSellerCommentDraftChange}
+              onCommentSubmit={onSellerCommentSubmit}
+            />
+          </div>
+        ) : null}
+
+        {mobileSection === 'offers' ? (
+          <section className="mt-4">
+            <SellerOffersPage
+              offers={sellerOffers}
+              askingPrice={sellerAskingPrice}
+              agent={{ name: sellerAgentName, email: sellerAgentEmail, phone: sellerAgentPhone }}
+              transactionId={sellerTransactionId}
+              propertyId={sellerPropertyId}
+              journeyHref={sellerJourneyHref}
+            />
           </section>
         ) : null}
       </div>
@@ -8324,6 +8427,8 @@ function BuyerPortalDashboard({
   workspaceNavigationScope,
 }) {
   const hasSecondaryInsight = Boolean(controlBoard || legalProgress?.available || latestAttorneyUpdate)
+  const usesSharedHighLevelJourney = journeyModel?.source === 'shared-high-level-journey'
+  const currentWorkflowItem = journeyModel?.currentWorkflowItem || null
   const messageAction = supportContact?.email
     ? { label: 'Message Team', href: `mailto:${supportContact.email}` }
     : { label: 'Message Team', to: 'team' }
@@ -8342,8 +8447,12 @@ function BuyerPortalDashboard({
           statusLabel={heroStatusBadge?.label || 'On track'}
           statusClassName={heroStatusBadge?.className}
           currentStageLabel={journeyModel?.currentStageLabel || currentStageLabel}
+          currentWorkflowLabel={currentWorkflowItem?.label || ''}
+          currentWorkflowSummary={currentWorkflowItem?.summary || ''}
+          currentWorkflowOwnerLabel={currentWorkflowItem?.ownerLabel || ''}
           nextStageLabel={journeyModel?.nextStageLabel || nextStageLabel}
-          progressPercent={journeyModel?.progressPercent ?? progressPercent}
+          progressPercent={usesSharedHighLevelJourney ? null : (journeyModel?.progressPercent ?? progressPercent)}
+          journeyCompletionSummary={usesSharedHighLevelJourney ? journeyModel?.completionSummary || '' : ''}
           timeInStageLabel={timeInStageLabel}
           stageUpdatedDateLabel={stageUpdatedDateLabel}
           attentionTitle={nextStepState?.title}
@@ -8384,7 +8493,7 @@ function BuyerPortalDashboard({
           onCommentDraftChange={onCommentDraftChange}
           onCommentSubmit={onCommentSubmit}
           onActionClick={onActionClick}
-          heading="Team updates"
+          heading="Latest updates from your team"
           subtitle={latestUpdatesSubtitle}
           showComposer={false}
           className="h-[430px] overflow-y-auto"
@@ -8672,9 +8781,26 @@ function ClientPortal() {
   const requestedWorkspace = useMemo(() => getPortalWorkspaceFromPath(location.pathname), [location.pathname])
   const portalDataWorkspace = requestedWorkspace === 'buyer_explicit' ? 'buyer' : requestedWorkspace
   portalLoadScopeRef.current = `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`
-  const isDemoRoute = useMemo(() => location.pathname.startsWith('/demo/'), [location.pathname])
+  const isDemoRoute = useMemo(
+    () => location.pathname.startsWith('/demo/') || isClientPortalDemoToken(token),
+    [location.pathname, token],
+  )
   const isSellerPortalToken = useMemo(() => String(token || '').trim().toLowerCase().startsWith('seller-'), [token])
   const isDemoMode = isDemoRoute || Boolean(workspaceData?.permissions?.demoOnly)
+  const sellerListingSyncId = pickFirstText(
+    workspaceData?.listing?.id,
+    workspaceData?.property?.id,
+    workspaceData?.legacyPortalData?.listing?.id,
+    workspaceData?.legacyPortalData?.activeSellingContext?.listingId,
+    workspaceData?.legacyPortalData?.activeSellingContext?.listing_id,
+    workspaceData?.legacyPortalData?.unit?.id,
+  )
+  const sellerPortalSyncPolicy = resolveSellerPortalSyncPolicy({
+    listingId: sellerListingSyncId,
+    transactionId: workspaceData?.transaction?.id || workspaceData?.legacyPortalData?.transaction?.id,
+    hasSecureSession: isSellerPortalToken && Boolean(sellerPortalAccessToken),
+    isDemo: isDemoRoute,
+  })
 
   const requestedSection = useMemo(
     () => getPortalSectionFromRoute(location.pathname, routeSection),
@@ -9166,6 +9292,17 @@ function ClientPortal() {
     scopeKey: `${token}:${portalDataWorkspace}:${sellerPortalAccessToken}`,
     includeNotifications: false,
     pollingIntervalMs: 15_000,
+  })
+
+  // A listing has no transaction_refresh_signals row yet. Keep the seller's
+  // offer and marketing surfaces current through the same secure loader until
+  // acceptance creates the transaction lane above.
+  usePortalWorkspaceRefresh({
+    enabled: sellerPortalSyncPolicy.useListingRefresh && !loading && !hydratingPortal && !sellerPortalAuth?.authRequired,
+    onRefresh: () => loadPortal({ background: true }),
+    pollingIntervalMs: sellerPortalSyncPolicy.listingPollingIntervalMs,
+    refreshOnMount: false,
+    scopeKey: `${token}:${sellerListingSyncId}:${sellerPortalAccessToken}`,
   })
 
   useEffect(() => {
@@ -9920,8 +10057,9 @@ function ClientPortal() {
     }
   }
 
-  async function handleSubmitPortalComment(event) {
-    event.preventDefault()
+  async function submitPortalMessage(message) {
+    const commentText = String(message || '').trim()
+    if (!commentText) return { ok: false, error: 'Write a message before sending it.' }
 
     try {
       setSaving(true)
@@ -9930,7 +10068,7 @@ function ClientPortal() {
         const createdAt = new Date().toISOString()
         const nextComment = {
           id: `demo-comment-${Date.now()}`,
-          commentText: commentDraft,
+          commentText,
           status: 'posted',
           createdAt,
           created_at: createdAt,
@@ -9942,26 +10080,36 @@ function ClientPortal() {
           ? { ...previous, activityFeed: [nextComment, ...(Array.isArray(previous.activityFeed) ? previous.activityFeed : [])] }
           : previous)
         setCommentDraft('')
-        return
+        return { ok: true, comment: nextComment }
       }
-      if (!window.confirm('This message will be visible to the buyer, seller and professional team on this matter. Post it?')) return
+      if (!window.confirm('This message will be visible to the buyer, seller and professional team on this matter. Post it?')) {
+        return { ok: false, error: 'Message was not sent.' }
+      }
       portalMessageRequestRef.current = matterMessageRequest(portalMessageRequestRef.current, {
-        scope: portalLoadScopeRef.current, body: commentDraft, audience: 'everyone',
+        scope: portalLoadScopeRef.current, body: commentText, audience: 'everyone',
       })
       await submitClientPortalComment({
         token,
-        commentText: commentDraft,
+        commentText,
         sellerPortalAccessToken,
         commandId: portalMessageRequestRef.current.commandId,
       })
       portalMessageRequestRef.current = null
       setCommentDraft('')
       await loadPortal()
+      return { ok: true }
     } catch (submitError) {
-      setError(submitError.message)
+      const error = submitError?.message || 'Unable to send your message right now.'
+      setError(error)
+      return { ok: false, error }
     } finally {
       setSaving(false)
     }
+  }
+
+  async function handleSubmitPortalComment(event) {
+    event.preventDefault()
+    return submitPortalMessage(commentDraft)
   }
 
   async function handleUploadRequiredDocument(documentKey, file, options = {}) {
@@ -10517,7 +10665,8 @@ function ClientPortal() {
     portalProfile?.supportLabels && typeof portalProfile.supportLabels === 'object'
       ? portalProfile.supportLabels
       : {}
-  const resolveBuyerPortalLabel = (sectionKey, fallback) => buyerPortalNavigationLabels[sectionKey] || fallback
+  const resolveBuyerPortalLabel = (sectionKey, fallback) =>
+    BUYER_PORTAL_CORE_NAVIGATION_LABELS[sectionKey] || buyerPortalNavigationLabels[sectionKey] || fallback
   const resolvePortalSectionEnabled = (sectionKey, fallback) => (
     Object.prototype.hasOwnProperty.call(portalProfileEnabledSections, sectionKey)
       ? Boolean(portalProfileEnabledSections[sectionKey])
@@ -10553,7 +10702,7 @@ function ClientPortal() {
     : ['buyer']
   const activeWorkspace = requestedWorkspace || 'buyer'
   const activeSection = requestedWorkspace === 'seller' && requestedSection === 'offers'
-    ? 'progress'
+    ? 'offers'
     : sectionEnabled[requestedSection]
       ? requestedSection
       : 'overview'
@@ -10566,8 +10715,6 @@ function ClientPortal() {
     return !status || status === 'active' || status === 'pending'
   }) || sellerContexts[0] || null
   const effectiveWorkspace = activeWorkspace === 'seller' && !hasSellingContext ? 'seller' : activeWorkspace
-  const selectedJourney = effectiveWorkspace === 'seller' ? 'seller' : 'buyer'
-  const canSwitchJourney = hasSellingContext
   const workspaceNavigationScope = effectiveWorkspace === 'buyer_explicit'
     ? 'buyer_explicit'
     : effectiveWorkspace === 'seller'
@@ -10740,20 +10887,6 @@ function ClientPortal() {
     }
   }, [effectiveWorkspace, token])
 
-  const handleJourneyChange = useCallback((value) => {
-    if (value === 'seller' && !hasSellingContext) {
-      navigate(getPortalWorkspacePath(token, 'seller', 'overview'))
-      return
-    }
-
-    if (value === 'seller') {
-      navigate(getPortalWorkspacePath(token, 'seller', 'overview'))
-      return
-    }
-
-    navigate(getPortalWorkspacePath(token, 'buyer', 'overview'))
-  }, [hasSellingContext, navigate, token])
-
   useEffect(() => {
     if (!portal) return
     if (effectiveWorkspace === 'seller') return
@@ -10836,14 +10969,33 @@ function ClientPortal() {
     portal?.activeSellingContext?.listing_id,
     portal?.unit?.id,
   )
-  // Residential offers are handled outside Arch9. Historical payload values
-  // remain readable by compatibility helpers, but never create a live portal workflow.
+  const sellerVisibleOffers = [
+    ...(Array.isArray(portal?.offers) ? portal.offers : []),
+    ...(Array.isArray(activeSellingContext?.offers) ? activeSellingContext.offers : []),
+    ...(Array.isArray(workspaceData?.offers) ? workspaceData.offers : []),
+  ]
+  const sellerOffersPayload = buildSellerPortalOffersPayload(sellerVisibleOffers, {
+    askingPrice: Number(portal?.listing?.askingPrice || activeSellingContext?.askingPrice || portal?.unit?.price || 0),
+    transactionId: portal?.transaction?.id || '',
+    propertyId: sellerListingId,
+  })
+  const sellerPortalOffers = sellerOffersPayload.offers
+  // Offers remain in the listing lane until accepted. The same seller-visible
+  // rows power both the Offers workspace and the journey transition.
   const sharedSellerPortalJourney =
     workspaceData?.sellerPortalJourney ||
     portal?.sellerPortalJourney ||
     portal?.activeSellingContext?.sellerPortalJourney ||
     activeSellingContext?.sellerPortalJourney ||
     null
+  const sellerWorkflowProjection = resolveSellerPortalWorkflowProjection({
+    listing: {
+      ...(portal?.listing || {}),
+      listingStatus: portal?.listing?.listingStatus || portal?.listing?.listing_status || activeSellingContext?.listingStatus || activeSellingContext?.listing_status,
+    },
+    offers: sellerPortalOffers,
+    transaction: portal?.transaction || null,
+  })
   const fallbackSellerStageMeta = getSellerPortalStageMeta({
     ...(portal?.transaction || {}),
     portal,
@@ -10865,10 +11017,13 @@ function ClientPortal() {
     sellerOfferCount: 0,
     hasOffers: false,
   })
-  // The shared seller journey intentionally describes listing progress. Once a
-  // transaction exists, the sale tracker must take its stage from the real
-  // transaction instead of allowing that listing-only snapshot to win.
-  const hasLinkedSellerTransaction = Boolean(portal?.transaction?.id)
+  // The shared journey owns the listing lane. The legal-sale lane is shown
+  // only after an accepted offer (or its confirmed transaction projection).
+  const hasLinkedSellerTransaction = sellerWorkflowProjection.isTransaction
+  const sellerSaleJourneyGate = buildSellerPortalSaleJourneyGate({
+    workflow: sellerWorkflowProjection.workflow,
+    offers: sellerPortalOffers,
+  })
   const sellerStageMeta = hasLinkedSellerTransaction
     ? fallbackSellerStageMeta
     : sharedSellerPortalJourney?.stageMeta || fallbackSellerStageMeta
@@ -10877,6 +11032,16 @@ function ClientPortal() {
     Number(portal.requiredDocumentSummary?.totalRequired || 0) - Number(portal.requiredDocumentSummary?.uploadedCount || 0),
     0,
   )
+  // The seller portal has one visible document inventory: the canonical
+  // document centre. Its summary is reused by the navigation, overview, and
+  // document workspace so a seller never sees competing document counts.
+  const sellerRequiredDocuments = Array.isArray(workspaceData?.documentCenter?.requiredDocuments)
+    ? workspaceData.documentCenter.requiredDocuments
+    : (Array.isArray(portal?.requiredDocuments) ? portal.requiredDocuments : [])
+  const sellerUploadedDocuments = Array.isArray(workspaceData?.documentCenter?.uploadedDocuments)
+    ? workspaceData.documentCenter.uploadedDocuments
+    : (Array.isArray(portal?.documents) ? portal.documents : [])
+  const sellerDocumentSummary = buildSellerPortalDocumentSummary(workspaceData?.documentCenter)
   const financeProcess = portal?.subprocesses?.find((item) => item.process_type === 'finance') || null
   const transferProcess =
     portal?.subprocesses?.find((item) => item.process_type === 'transfer') ||
@@ -10888,6 +11053,7 @@ function ClientPortal() {
   const workspaceSection = activeSection
   const isOverview = workspaceSection === 'overview'
   const isProgress = workspaceSection === 'progress'
+  const isOffers = workspaceSection === 'offers'
   const isAppointments = workspaceSection === 'appointments'
   const isDetails = workspaceSection === 'details'
   const isAccount = workspaceSection === 'account'
@@ -10899,7 +11065,7 @@ function ClientPortal() {
   const isTeam = workspaceSection === 'team'
   const isAlterations = workspaceSection === 'alterations'
   const isReview = workspaceSection === 'review'
-  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller' && ['overview', 'progress', 'appointments', 'documents', 'details', 'account'].includes(workspaceSection)
+  const hideSellerWorkspaceHeader = effectiveWorkspace === 'seller'
 
   const handoverStatus = portal?.handover?.status || 'not_started'
   const handoverCompleted = handoverStatus === 'completed'
@@ -11944,6 +12110,20 @@ function ClientPortal() {
         : handoverReadinessStatus === 'In Progress'
           ? 'Key collection preparation is underway. Complete the remaining items to stay on track.'
           : 'Keys are not ready yet. Start with your requirements to move forward.'
+  const buyerDevelopmentOperations = portalProfile?.isDevelopmentBuyerPortal
+    ? buildDeveloperTransactionOperationsSummary({
+        transaction: portal?.transaction || {},
+        handover: portal?.handover || {},
+        documents: portal?.documents || [],
+        clientIssues: portal?.issues || [],
+        developmentSettings: {
+          ...(portal?.settings || {}),
+          handover_enabled: sectionEnabled.handover,
+          snag_reporting_enabled: sectionEnabled.snags,
+        },
+        onboardingStatus,
+      })
+    : null
   const stageUpdatedAt = portal?.transaction?.stage_updated_at || portal?.lastUpdated || portal?.transaction?.updated_at || null
   const stageAgeDays = getDaysElapsed(stageUpdatedAt)
   const timeInStageLabel = getDaysInStageLabel(stageUpdatedAt)
@@ -12026,13 +12206,21 @@ function ClientPortal() {
     fallbackModel: legacyBuyerJourneyPresentationModel,
     fallbackSource: 'buyer-legacy',
   })
-  const journeyHeroSubtext = journeyCurrentStep?.whatHappensNow
-    ? String(journeyCurrentStep.whatHappensNow)
-    : stageEducation?.shortDescription || `Your team is progressing ${journeyCurrentStageLabel.toLowerCase()} right now.`
+  const usesSharedHighLevelBuyerJourney = buyerJourneyPresentationModel?.source === 'shared-high-level-journey'
+  const buyerJourneyStepsForDisplay = buyerJourneyPresentationModel?.steps?.length
+    ? buyerJourneyPresentationModel.steps
+    : clientJourneySteps
+  const buyerJourneyCurrentStageLabel = buyerJourneyPresentationModel?.currentStageLabel || journeyCurrentStageLabel
+  const buyerJourneyNextStageLabel = buyerJourneyPresentationModel?.nextStageLabel || journeyNextStageLabel
+  const journeyHeroSubtext = buyerJourneyPresentationModel?.helperMessage || (
+    journeyCurrentStep?.whatHappensNow
+      ? String(journeyCurrentStep.whatHappensNow)
+      : stageEducation?.shortDescription || `Your team is progressing ${buyerJourneyCurrentStageLabel.toLowerCase()} right now.`
+  )
   const whatHappensNextItems = buildClientWhatHappensNextCopy({
     journeyType,
     nextStepState,
-    nextStageLabel: journeyNextStageLabel,
+    nextStageLabel: buyerJourneyNextStageLabel,
     financeType: journeyFinanceType,
   })
 
@@ -12334,7 +12522,13 @@ function ClientPortal() {
     return Number.isNaN(time) || time >= Date.now() - (1000 * 60 * 60 * 2)
   }).length
   const sidebarStatusByKey = {
-    documents: missingRequired > 0 ? `${missingRequired} required` : 'Ready',
+    documents: effectiveWorkspace === 'seller'
+      ? (sellerDocumentSummary.actionRequired > 0
+          ? `${sellerDocumentSummary.actionRequired} need attention`
+          : sellerDocumentSummary.reviewRequired > 0
+            ? `${sellerDocumentSummary.reviewRequired} in review`
+            : 'Ready')
+      : (missingRequired > 0 ? `${missingRequired} required` : 'Ready'),
     account: matterAccountsState.loading
       ? 'Loading'
       : matterAccountsState.summary?.documentCount
@@ -12371,7 +12565,7 @@ function ClientPortal() {
   const buyerFinanceTypeLabel = journeyFinanceType === 'hybrid'
     ? 'Hybrid'
     : toTitleLabel(journeyFinanceType || financeTypeForPortal || 'cash')
-  const buyerMobileFinanceSectionKey = isOriginatorManagedPortalFinance ? 'bond_application' : 'account'
+  const buyerMobileFinanceSectionKey = 'account'
   const buyerMobileReservationAction = reservationRequiredForClient
     ? {
         statusLabel: reservationProofStatusLabel,
@@ -12545,18 +12739,7 @@ function ClientPortal() {
     ...(Array.isArray(portal?.activeSellingContext?.listingExternalLinks) ? portal.activeSellingContext.listingExternalLinks : []),
     ...(Array.isArray(portal?.listing?.externalLinks) ? portal.listing.externalLinks : []),
   ])
-  const sellerRequiredDocuments = Array.isArray(workspaceData?.documentCenter?.requiredDocuments)
-    ? workspaceData.documentCenter.requiredDocuments
-    : (Array.isArray(portal?.requiredDocuments) ? portal.requiredDocuments : [])
-  const sellerUploadedDocuments = Array.isArray(workspaceData?.documentCenter?.uploadedDocuments)
-    ? workspaceData.documentCenter.uploadedDocuments
-    : (Array.isArray(portal?.documents) ? portal.documents : [])
-  const sellerDocumentExperience = buildSellerDocumentExperienceModel({
-    requirements: sellerRequiredDocuments.filter((item) => item?.visibility !== 'internal'),
-    documents: sellerUploadedDocuments,
-    audience: 'seller',
-  })
-  const sellerDocumentsNeedingAttention = sellerDocumentExperience.actionItems
+  const sellerDocumentsNeedingAttention = sellerDocumentSummary.actionItems
   const sellerComplianceSigning =
     workspaceData?.sellerComplianceSigning ||
     portal?.sellerComplianceSigning ||
@@ -12631,8 +12814,13 @@ function ClientPortal() {
         normalizePortalStatus(activeSellingContext?.listingStatus || activeSellingContext?.listing_status).includes('active')
       ),
   )
+  const hasListingLive = hasListingCreated && Boolean(
+    ['active', 'active_market', 'listed', 'published', 'live', 'marketing'].includes(
+      normalizePortalStatus(activeSellingContext?.listingStatus || activeSellingContext?.listing_status || portal?.listing?.listingStatus || portal?.listing?.listing_status),
+    ) || portal?.listing?.listingVisibility === 'active_market' || portal?.listing?.listing_visibility === 'active_market',
+  )
   const hasDocumentsComplete = Boolean(
-    (sellerDocumentExperience.summary.ready || sellerStageMeta.currentStageKey === 'registered') &&
+    (sellerDocumentSummary.ready || sellerStageMeta.currentStageKey === 'registered') &&
       hasListingCreated &&
       (!sellerComplianceSigning || hasSellerCompliancePackComplete),
   )
@@ -12644,12 +12832,11 @@ function ClientPortal() {
     hasMandatePacket,
     hasMandateSigned,
     hasListingCreated,
+    hasListingLive,
     hasDocumentsComplete,
   })
   const sharedSellerListingProgressModel = buildSellerPortalProgressModelFromSharedJourney(sharedSellerPortalJourney)
-  const shouldUseSharedSellerListingProgress = Boolean(
-    (hasMandateSigned && (!sellerComplianceSigning || hasSellerCompliancePackComplete)) || hasDocumentsComplete,
-  )
+  const shouldUseSharedSellerListingProgress = Boolean(sharedSellerListingProgressModel)
   const sellerListingProgressModel = {
     ...(shouldUseSharedSellerListingProgress
       ? sharedSellerListingProgressModel || inferredSellerListingProgressModel
@@ -12662,7 +12849,7 @@ function ClientPortal() {
     actionTo: 'documents',
   }
   const sellerSaleProgressModel = buildSellerSaleProgressModel({
-    hasDocumentsComplete,
+    transactionStarted: sellerWorkflowProjection.isTransaction,
     sellerStageMeta,
     mainStage,
     activeSellingContext,
@@ -12803,13 +12990,20 @@ function ClientPortal() {
   const sellerListingUrl = sellerVisibleListingLinks[0]?.url || ''
   const sellerMarketingChannels = buildSellerMarketingChannels(sellerVisibleListingLinks, sellerAgencyLogoUrl)
   const sellerDocumentTracker = {
-    total: sellerDocumentExperience.summary.total,
-    completed: sellerDocumentExperience.summary.approved,
-    pending: sellerDocumentExperience.summary.actionRequired,
-    awaitingReview: sellerDocumentExperience.summary.reviewRequired,
-    percent: sellerDocumentExperience.summary.assurancePercent,
-    collectionPercent: sellerDocumentExperience.summary.collectionPercent,
+    total: sellerDocumentSummary.total,
+    completed: sellerDocumentSummary.approved,
+    pending: sellerDocumentSummary.actionRequired,
+    awaitingReview: sellerDocumentSummary.reviewRequired,
+    percent: sellerDocumentSummary.assurancePercent,
+    collectionPercent: sellerDocumentSummary.collectionPercent,
   }
+  // Attorney updates are matter data. Do not surface them while this is still
+  // a listing; the accepted-offer projection is the boundary into the legal
+  // transaction lane.
+  const sellerLegalProgress = hasLinkedSellerTransaction
+    ? { ...workspaceData?.legalProgress, sharedJourney: workspaceData?.transactionJourneySnapshot?.legalJourney }
+    : null
+  const sellerLatestAttorneyUpdate = hasLinkedSellerTransaction ? latestAttorneyUpdate : null
   const sellerListingPerformance = normalizeSellerListingPerformancePayload(
     portal?.listing?.listingPerformance,
     portal?.listing?.listing_performance,
@@ -12862,7 +13056,7 @@ function ClientPortal() {
           avatarUrl: sellerAgentAvatarUrl,
         }
       : null,
-    transferAttorneyRolePlayer || portal?.transaction?.attorney
+    hasLinkedSellerTransaction && (transferAttorneyRolePlayer || portal?.transaction?.attorney)
       ? {
           role: 'Transferring Attorney',
           name: pickFirstText(
@@ -12885,7 +13079,7 @@ function ClientPortal() {
           ),
         }
       : null,
-    portal?.transaction?.bond_originator || portal?.transaction?.assigned_bond_originator_email
+    hasLinkedSellerTransaction && (portal?.transaction?.bond_originator || portal?.transaction?.assigned_bond_originator_email)
       ? {
           role: 'Bond Originator',
           name: pickFirstText(portal?.transaction?.bond_originator, 'Bond Originator'),
@@ -12895,6 +13089,29 @@ function ClientPortal() {
         }
       : null,
   ].filter((participant) => participant?.name)
+  const sellerTeamPresentationModel = buildBuyerTeamPresentationModel({
+    source: 'seller',
+    members: sellerProgressParticipants.map((participant, index) => ({
+      ...participant,
+      id: `${participant.role}-${participant.email || participant.name}`,
+      isMainContact: index === 0,
+      isActive: index === 0,
+      description: participant.role === 'Estate Agent'
+        ? 'Coordinates listing activity, viewings, offers, and seller communication.'
+        : 'Supports the legal work once an offer is accepted and the sale progresses.',
+    })),
+    heading: 'Your property team',
+    description: 'The people supporting your listing, offers, documents, and sale journey.',
+    contactTopic: 'property sale',
+    messagePlaceholder: 'Ask about your listing, offers, documents, or sale journey...',
+    currentProcess: {
+      title: sellerCurrentStage || 'Listing progress',
+      helper: sellerWorkflowProjection.isTransaction
+        ? 'Your sale is progressing through the transaction milestones.'
+        : 'Your listing is live and your agent will share buyer interest and offers here.',
+      status: sellerWorkflowProjection.isTransaction ? 'Transaction active' : 'Listing active',
+    },
+  })
   const sellerProgressAction = {
     ...sellerNextStep,
     href: sellerNextStep?.href || getPortalWorkspacePath(token, workspaceNavigationScope, sellerNextStep?.to || 'documents'),
@@ -12911,12 +13128,7 @@ function ClientPortal() {
         mainStage,
       )
     : null
-  const sellerMobileCurrentIndex = Math.max(
-    !hasSellerOnboardingSubmitted ? 0 : 1,
-    sellerMobileResolvedIndex ??
-      (hasListingCreated ? 2 : hasMandateSigned ? 1 : 0),
-  )
-  const sellerMobileJourneyStages = [
+  const sellerMobileJourneyStageDefinitions = [
     {
       key: 'onboarding',
       label: 'Seller onboarding',
@@ -12935,13 +13147,13 @@ function ClientPortal() {
     },
     {
       key: 'listing',
-      label: 'Listing Created',
+      label: 'Listing Live',
       description: hasListingCreated
-        ? 'Your property listing has been created and buyer interest is being tracked.'
+        ? 'Your property listing is live and buyer interest is being tracked.'
         : 'Your agent will activate the listing once the mandate and listing pack are ready.',
       owner: sellerAgentName || sellerAgencyName,
     },
-    {
+    ...(hasLinkedSellerTransaction ? [{
       key: 'contract',
       label: 'Signed OTP',
       description: 'The signed OTP is recorded and the transaction is moving into finance and transfer.',
@@ -12958,8 +13170,17 @@ function ClientPortal() {
       label: 'Registration',
       description: 'Registration closes out the property sale and final records remain available here.',
       owner: 'Deeds office',
-    },
-  ].map((stage, index) => ({
+    }] : []),
+  ]
+  const sellerMobileCurrentIndex = Math.min(
+    sellerMobileJourneyStageDefinitions.length - 1,
+    Math.max(
+      !hasSellerOnboardingSubmitted ? 0 : 1,
+      sellerMobileResolvedIndex ??
+        (hasListingCreated ? 2 : hasMandateSigned ? 1 : 0),
+    ),
+  )
+  const sellerMobileJourneyStages = sellerMobileJourneyStageDefinitions.map((stage, index) => ({
     ...stage,
     number: index + 1,
     state: index < sellerMobileCurrentIndex ? 'completed' : index === sellerMobileCurrentIndex ? 'current' : 'upcoming',
@@ -13001,6 +13222,13 @@ function ClientPortal() {
     bondApplicationData?.summary?.bond_amount ||
     bondApplicationData?.loan_details?.bond_amount ||
     bondApplicationData?.summary?.loan_amount ||
+    portal?.transaction?.bond_amount ||
+    portal?.onboardingFormData?.formData?.bond_amount ||
+    0,
+  )
+  const buyerFinanceCashContribution = Number(
+    portal?.transaction?.cash_amount ||
+    portal?.onboardingFormData?.formData?.cash_amount ||
     0,
   )
   const buyerFinanceLoanToValue = purchasePriceValue > 0 && buyerFinanceRequestedAmount > 0
@@ -13009,12 +13237,14 @@ function ClientPortal() {
   const buyerFinancePresentationModel = buildBuyerFinancePresentationModel({
     source: 'production',
     financeType: journeyFinanceType || financeTypeForPortal,
-    status: isBondOrHybridTransaction ? buyerPortalBondApplicationStatusValue : '',
-    statusHelper: isBondOrHybridTransaction ? buyerPortalBondApplicationStatusDetail : '',
+    status: isOriginatorManagedPortalFinance ? buyerPortalBondApplicationStatusValue : '',
+    statusHelper: isOriginatorManagedPortalFinance ? buyerPortalBondApplicationStatusDetail : '',
     purchasePrice: purchasePriceValue,
     requestedAmount: buyerFinanceRequestedAmount,
+    cashContribution: buyerFinanceCashContribution,
     loanToValue: buyerFinanceLoanToValue,
     progressPercent: bondApplicationProgressPercent,
+    financeManagedBy: financeManagedByForPortal,
     manager: portal?.transaction?.bond_originator || portal?.transaction?.assigned_bond_originator_email
       ? {
           name: portal?.transaction?.bond_originator || 'Bond Originator',
@@ -13036,13 +13266,16 @@ function ClientPortal() {
       documents: buyerDocumentPresentationModel,
       finance: buyerFinancePresentationModel,
       team: buyerTeamPresentationModel,
+      developmentDelivery: buyerDevelopmentOperations,
     },
     capabilities: {
       documentActions: typeof handleDocumentCentreUpload === 'function' && typeof handleOpenPortalDocument === 'function',
       financeActions: typeof handleBondApplicationSubmit === 'function' && typeof handleUploadMatterAccountProof === 'function',
       portalComments: typeof handleSubmitPortalComment === 'function',
       contactActions: buyerTeamPresentationModel.contactableCount > 0,
+      developmentDeliveryActions: !buyerDevelopmentOperations?.snags?.enabled || typeof handleSubmitIssue === 'function',
     },
+    developmentRequired: portalProfile?.isDevelopmentBuyerPortal === true,
   })
   const rawPrimaryOverviewActionTo = nextStepState.ctaTo || 'documents'
   const primaryOverviewActionTo = sectionEnabled[rawPrimaryOverviewActionTo] === false ? 'documents' : rawPrimaryOverviewActionTo
@@ -13677,6 +13910,16 @@ function ClientPortal() {
             sellerProgressPercent={sellerMobileProgressPercent}
             sellerStepLabel={sellerMobileStepLabel}
             sellerJourneyStages={sellerMobileJourneyStages}
+            sellerWorkflow={sellerWorkflowProjection.workflow}
+            sellerOffers={sellerPortalOffers}
+            sellerAskingPrice={Number(portal?.listing?.askingPrice || activeSellingContext?.askingPrice || portal?.unit?.price || 0)}
+            sellerTransactionId={portal?.transaction?.id || ''}
+            sellerPropertyId={sellerListingId}
+            sellerJourneyHref={hasLinkedSellerTransaction ? getPortalWorkspacePath(token, workspaceNavigationScope, 'progress') : ''}
+            sellerCommentDraft={commentDraft}
+            sellerCommentSaving={saving}
+            onSellerCommentDraftChange={setCommentDraft}
+            onSellerCommentSubmit={handleSubmitPortalComment}
             sellerNextStep={sellerNextStep}
             sellerAgentName={sellerAgentName}
             sellerAgentEmail={sellerAgentEmail}
@@ -13710,17 +13953,21 @@ function ClientPortal() {
             buyerInitial={buyerInitial}
             purchasePriceLabel={purchasePriceLabel}
             heroStatusBadge={heroStatusBadge}
-            journeyProgressPercent={journeyProgressPercent}
-            journeyCurrentStageLabel={journeyCurrentStageLabel}
-            journeyNextStageLabel={journeyNextStageLabel}
+            journeyProgressPercent={usesSharedHighLevelBuyerJourney ? null : journeyProgressPercent}
+            journeyCurrentStageLabel={buyerJourneyCurrentStageLabel}
+            journeyCurrentWorkflowItem={usesSharedHighLevelBuyerJourney ? buyerJourneyPresentationModel?.currentWorkflowItem || null : null}
+            journeyCompletionSummary={usesSharedHighLevelBuyerJourney ? buyerJourneyPresentationModel?.completionSummary || '' : ''}
+            journeyNextStageLabel={buyerJourneyNextStageLabel}
             journeyHeroSubtext={journeyHeroSubtext}
-            clientJourneySteps={clientJourneySteps}
+            clientJourneySteps={buyerJourneyStepsForDisplay}
+            developmentDeliveryModel={buyerDevelopmentOperations}
             nextStepState={nextStepState}
             primaryOverviewAction={primaryOverviewAction}
             primaryOverviewActionClasses={primaryOverviewActionClasses}
             missingRequired={missingRequired}
             financeTypeLabel={buyerFinanceTypeLabel}
             financeSectionKey={buyerMobileFinanceSectionKey}
+            bondApplicationEnabled={isOriginatorManagedPortalFinance}
             matterAccountsSummary={matterAccountsState.summary || {}}
             matterAccounts={matterAccountsState.accounts || []}
             matterAccountsLoading={matterAccountsState.loading}
@@ -13757,6 +14004,8 @@ function ClientPortal() {
             onUploadBuyerDocument={handleBuyerMobileDocumentUpload}
             onOpenBuyerDocument={handleOpenPortalDocument}
             teamMembers={buyerTeamPresentationModel.members}
+            onSendTeamMessage={submitPortalMessage}
+            teamMessageSending={saving}
             enabledSections={sectionEnabled}
             portalNavigationLabels={buyerPortalNavigationLabels}
             buyerPortalStatusItems={buyerPortalStatusItems}
@@ -13811,31 +14060,6 @@ function ClientPortal() {
                 )}
                 <p className="mt-2 text-[0.82rem] tracking-[0.02em] text-[#dbe7f2]">Your purchase</p>
               </div>
-            <div className="mt-4 rounded-[14px] border border-white/10 bg-[rgba(7,14,24,0.34)] px-3 py-3">
-              <label htmlFor="client-journey-selector" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#a8bdd2]">
-                Mode
-              </label>
-              <select
-                id="client-journey-selector"
-                value={selectedJourney}
-                onChange={(event) => handleJourneyChange(event.target.value)}
-                className="mt-1.5 w-full rounded-[10px] border border-white/12 bg-[rgba(10,20,32,0.55)] px-2.5 py-2 text-sm font-semibold text-white outline-none focus:border-[#7aa3cc] focus:ring-2 focus:ring-[#7aa3cc]/35"
-              >
-                <option value="buyer">Buying</option>
-                <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
-              </select>
-            </div>
-            <div className="mt-3 rounded-[14px] border border-white/10 bg-[rgba(4,30,28,0.42)] px-3 py-3">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#9fd7a0]">Now</span>
-                <span className="text-xs font-semibold text-white">{safeJourneyProgressPercent}%</span>
-              </div>
-              <p className="mt-1 truncate text-sm font-semibold text-white">{journeyCurrentStageLabel}</p>
-              <p className="mt-1 truncate text-xs text-[#b9cad8]">Next: {journeyNextStageLabel}</p>
-              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/12" aria-hidden="true">
-                <div className="h-full rounded-full bg-[#74d46e]" style={{ width: `${safeJourneyProgressPercent}%`, backgroundColor: buyerPortalAccentColour }} />
-              </div>
-            </div>
             </>
             )}
           </div>
@@ -13844,7 +14068,7 @@ function ClientPortal() {
             <nav className="mt-4 grid gap-5 pb-4">
               {SELLER_PORTAL_NAV_GROUPS.map((group) => (
                 <div key={group.label}>
-                  <p className="mb-2 px-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#94a9bd]">{group.label}</p>
+                  {group.label ? <p className="mb-2 px-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#94a9bd]">{group.label}</p> : null}
                   <div className="grid gap-1">
                     {group.items.map((item) => {
                       const Icon = item.icon
@@ -13884,6 +14108,31 @@ function ClientPortal() {
                   </div>
                 </div>
               ))}
+              {sellerDetailsSections.length || hasLinkedSellerTransaction ? (
+                <div className="grid gap-1 border-t border-white/10 pt-4">
+                  <p className="mb-1 px-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#94a9bd]">More</p>
+                  {sellerDetailsSections.length ? (
+                    <Link
+                      to={getPortalWorkspacePath(token, workspaceNavigationScope, 'details')}
+                      aria-current={isDetails ? 'page' : undefined}
+                      className={`flex min-h-[40px] items-center gap-3 rounded-[10px] px-3 py-2 text-sm font-medium transition ${isDetails ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}
+                    >
+                      <User size={16} />
+                      My Details
+                    </Link>
+                  ) : null}
+                  {hasLinkedSellerTransaction ? (
+                    <Link
+                      to={getPortalWorkspacePath(token, workspaceNavigationScope, 'account')}
+                      aria-current={isAccount ? 'page' : undefined}
+                      className={`flex min-h-[40px] items-center gap-3 rounded-[10px] px-3 py-2 text-sm font-medium transition ${isAccount ? 'bg-white/10 text-white' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}
+                    >
+                      <HandCoins size={16} />
+                      Financial Records
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="mt-2 rounded-[14px] border border-white/12 bg-[rgba(4,30,28,0.52)] p-3">
                 <p className="text-sm font-semibold text-white">Need help?</p>
                 <p className="mt-1 text-xs leading-5 text-[#c0cfde]">We&apos;re here for you.</p>
@@ -13911,7 +14160,9 @@ function ClientPortal() {
             <nav className="mt-4 grid gap-5 pb-4">
               {portalNavigationGroups.map((group) => (
                 <div key={group.label}>
-                  <p className="mb-2 px-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#94a9bd]">{group.label}</p>
+                  {group.label ? (
+                    <p className="mb-2 px-1 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-[#94a9bd]">{group.label}</p>
+                  ) : null}
                   <div className="grid gap-2">
                     {group.items.map((item) => {
                       const isActive = isPortalNavigationItemActive(item, activeSection, location.hash)
@@ -13951,22 +14202,7 @@ function ClientPortal() {
                 )}
                 <span className="ml-auto text-xs font-semibold uppercase tracking-[0.12em] text-[#64748b]">Seller Portal</span>
               </div>
-            ) : (
-            <div className="mb-3 rounded-[12px] border border-[#dbe5ef] bg-[#f8fbff] px-3 py-2.5">
-              <label htmlFor="client-journey-selector-mobile" className="block text-[0.64rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">
-                Journey
-              </label>
-              <select
-                id="client-journey-selector-mobile"
-                value={selectedJourney}
-                onChange={(event) => handleJourneyChange(event.target.value)}
-                className="mt-1.5 w-full rounded-[10px] border border-[#d5e1ee] bg-white px-2.5 py-2 text-sm font-semibold text-[#21384d] outline-none focus:border-[#9cb8d6] focus:ring-2 focus:ring-[#d7e5f4]"
-              >
-                <option value="buyer">Buying</option>
-                <option value="seller">{canSwitchJourney ? 'Selling' : 'Selling (Request access)'}</option>
-              </select>
-            </div>
-            )}
+            ) : null}
             <div className="overflow-x-auto">
               <nav className="flex min-w-max items-center gap-2 rounded-[22px] border border-[#e2eaf3] bg-[#f8fbff] p-2 md:min-w-[640px]">
                 {portalNavigationItems.map((item) => {
@@ -14344,8 +14580,8 @@ function ClientPortal() {
                       sellerDocumentTracker={sellerDocumentTracker}
                       sellerComplianceSigning={sellerComplianceSigning}
                       sellerListingUrl={sellerListingUrl}
-                      latestAttorneyUpdate={latestAttorneyUpdate}
-                      legalProgress={{ ...workspaceData?.legalProgress, sharedJourney: workspaceData?.transactionJourneySnapshot?.legalJourney }}
+                      latestAttorneyUpdate={sellerLatestAttorneyUpdate}
+                      legalProgress={sellerLegalProgress}
                       commentDraft={commentDraft}
                       savingComment={saving}
                       onCommentDraftChange={setCommentDraft}
@@ -14465,38 +14701,68 @@ function ClientPortal() {
             ) : null}
 
             {isProgress && effectiveWorkspace === 'seller' ? (
-              <TransactionStageWorkspace
-                key={sellerTransactionStageKey}
-                journeyModel={workspaceData?.transactionJourneySnapshot ? sellerTransactionJourneyModel : null}
-                currentStageKey={sellerTransactionStageKey}
-                startedAt={
-                  portal?.transaction?.stage_updated_at ||
-                  portal?.transaction?.updated_at ||
-                  portal?.lastUpdated
-                }
-                completedAt={portal?.transaction?.completed_at || portal?.transaction?.registered_at}
-                pendingAction={sellerProgressAction}
-                activity={sellerActivityItems}
-                participants={sellerProgressParticipants}
-                overviewPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')}
-                documentsPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
-                listingUrl={sellerListingUrl}
-                agentEmail={sellerAgentEmail}
+              hasLinkedSellerTransaction ? (
+                <TransactionStageWorkspace
+                  key={sellerTransactionStageKey}
+                  journeyModel={workspaceData?.transactionJourneySnapshot ? sellerTransactionJourneyModel : null}
+                  currentStageKey={sellerTransactionStageKey}
+                  startedAt={
+                    portal?.transaction?.stage_updated_at ||
+                    portal?.transaction?.updated_at ||
+                    portal?.lastUpdated
+                  }
+                  completedAt={portal?.transaction?.completed_at || portal?.transaction?.registered_at}
+                  pendingAction={sellerProgressAction}
+                  activity={sellerActivityItems}
+                  participants={sellerProgressParticipants}
+                  overviewPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'overview')}
+                  documentsPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+                  listingUrl={sellerListingUrl}
+                  agentEmail={sellerAgentEmail}
+                />
+              ) : (
+                <SellerSaleJourneyNotStarted
+                  gate={sellerSaleJourneyGate}
+                  listingProgressModel={sellerListingProgressModel}
+                  token={token}
+                  workspaceNavigationScope={workspaceNavigationScope}
+                  agentEmail={sellerAgentEmail}
+                />
+              )
+            ) : null}
+
+            {isOffers && effectiveWorkspace === 'seller' ? (
+              <SellerOffersPage
+                offers={sellerPortalOffers}
+                askingPrice={Number(portal?.listing?.askingPrice || activeSellingContext?.askingPrice || portal?.unit?.price || 0)}
+                agent={{ name: sellerAgentName, email: sellerAgentEmail, phone: sellerAgentPhone }}
+                transactionId={portal?.transaction?.id || ''}
+                propertyId={sellerListingId}
+                journeyHref={hasLinkedSellerTransaction ? getPortalWorkspacePath(token, workspaceNavigationScope, 'progress') : ''}
               />
             ) : null}
 
             {isProgress && effectiveWorkspace !== 'seller' ? (
-              <BuyerProgressPage
-                journeyModel={buyerJourneyPresentationModel}
-                stageEducation={stageEducation}
-                whatHappensNextItems={whatHappensNextItems}
-                whatsHappeningSummary={whatsHappeningSummary}
-                primaryAction={primaryOverviewAction}
-                latestUpdate={latestJourneyFeedItems[0]}
-                theme={buyerPortalTheme}
-                token={token}
-                workspaceNavigationScope={workspaceNavigationScope}
-              />
+              <div className="space-y-5">
+                <BuyerProgressPage
+                  journeyModel={buyerJourneyPresentationModel}
+                  stageEducation={stageEducation}
+                  whatHappensNextItems={whatHappensNextItems}
+                  whatsHappeningSummary={whatsHappeningSummary}
+                  primaryAction={primaryOverviewAction}
+                  latestUpdate={latestJourneyFeedItems[0]}
+                  theme={buyerPortalTheme}
+                  token={token}
+                  workspaceNavigationScope={workspaceNavigationScope}
+                />
+                <BuyerDevelopmentDeliveryPanel
+                  model={buyerDevelopmentOperations}
+                  theme={buyerPortalTheme}
+                  handoverPath={sectionEnabled.handover ? getPortalWorkspacePath(token, workspaceNavigationScope, 'handover') : ''}
+                  snagsPath={sectionEnabled.snags ? getPortalWorkspacePath(token, workspaceNavigationScope, 'snags') : ''}
+                  documentsPath={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+                />
+              </div>
             ) : null}
 
             {isAppointments ? (
@@ -14691,31 +14957,56 @@ function ClientPortal() {
             ) : null}
 
             {isBondApplication ? (
+              !isOriginatorManagedPortalFinance ? (
+                <section
+                  aria-label="Bond application availability"
+                  className="rounded-[22px] border border-[#dbe5ef] bg-white p-6 shadow-[0_14px_34px_rgba(15,23,42,0.05)]"
+                >
+                  <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Finance</span>
+                  <h1 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-[#142132]">Bond application is not required</h1>
+                  <p className="mt-3 max-w-2xl text-sm leading-6 text-[#52657b]">
+                    {isBondOrHybridTransaction
+                      ? 'This purchase uses finance arranged directly by you or your bank. Keep your approval and supporting documents in Finance so your legal team can progress the matter.'
+                      : 'This is a cash purchase, so there is no bond application to complete in the portal.'}
+                  </p>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <Link
+                      to={getPortalWorkspacePath(token, workspaceNavigationScope, 'account')}
+                      className="inline-flex min-h-11 items-center justify-center rounded-[12px] bg-[#111827] px-5 text-sm font-semibold text-white transition hover:bg-black"
+                    >
+                      Open Finance
+                    </Link>
+                    <Link
+                      to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+                      className="inline-flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-5 text-sm font-semibold text-[#35546c]"
+                    >
+                      Your Documents
+                    </Link>
+                  </div>
+                </section>
+              ) : (
               <section
                 className="space-y-5"
                 aria-label="Bond application"
               >
-                <BuyerFinanceWorkspace
-                  model={buyerFinancePresentationModel}
-                  theme={buyerPortalTheme}
-                  primaryAction={buyerFinancePresentationModel.firstAction ? (
-                    <button
-                      type="button"
-                      onClick={() => setActiveBondApplicationTab('application')}
-                      className="inline-flex min-h-11 items-center justify-center rounded-[12px] bg-[#111827] px-5 text-sm font-semibold text-white transition hover:bg-black"
-                    >
-                      Continue application
-                    </button>
-                  ) : null}
-                  secondaryAction={(
+                <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <span className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-[#7b8ca2]">Finance</span>
+                    <h1 className="mt-2 text-3xl font-semibold tracking-[-0.06em] text-[#142132]">Bond application</h1>
+                    <p className="mt-2 max-w-2xl text-base leading-6 text-[#52657b]">Complete the application and review offers here. Your finance progress is summarised once in Finance.</p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] ${bondApplicationStatusClasses}`}>
+                      {bondApplicationStatus}
+                    </span>
                     <Link
-                      to={getClientPortalPath(token, 'documents')}
-                      className="inline-flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#35546c]"
+                      to={getPortalWorkspacePath(token, workspaceNavigationScope, 'account')}
+                      className="inline-flex min-h-10 items-center justify-center rounded-[10px] border border-[#dbe5ef] bg-white px-3 text-xs font-semibold text-[#35546c]"
                     >
-                      Finance documents
+                      Finance overview
                     </Link>
-                  )}
-                />
+                  </div>
+                </header>
                 <div className="space-y-5">
                 <header className="hidden">
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -15857,6 +16148,7 @@ function ClientPortal() {
                   )}
                   </div>
                 </section>
+              )
             ) : null}
 
             {isAccount ? (
@@ -15880,6 +16172,22 @@ function ClientPortal() {
                   <BuyerFinanceWorkspace
                     model={buyerFinancePresentationModel}
                     theme={buyerPortalTheme}
+                    primaryAction={isOriginatorManagedPortalFinance && buyerFinancePresentationModel.firstAction ? (
+                      <Link
+                        to={getPortalWorkspacePath(token, workspaceNavigationScope, 'bond_application')}
+                        className="inline-flex min-h-11 items-center justify-center rounded-[12px] bg-[#111827] px-5 text-sm font-semibold text-white transition hover:bg-black"
+                      >
+                        Continue application
+                      </Link>
+                    ) : null}
+                    secondaryAction={(
+                      <Link
+                        to={getPortalWorkspacePath(token, workspaceNavigationScope, 'documents')}
+                        className="inline-flex min-h-11 items-center justify-center rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#35546c]"
+                      >
+                        Finance documents
+                      </Link>
+                    )}
                     showLenders={false}
                   />
                   <ClientPortalMatterAccountsPanel
@@ -15924,27 +16232,7 @@ function ClientPortal() {
             />
           )}
 
-          {effectiveWorkspace === 'seller' ? (
-            <>
-          <section className="mt-5 rounded-[18px] border border-[#dbe5ef] bg-white px-4 py-3 shadow-[0_12px_24px_rgba(15,23,42,0.04)]">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h4 className="text-sm font-semibold text-[#142132]">Need the detailed view?</h4>
-                <p className="text-xs leading-5 text-[#6b7d93]">
-                  Use the advanced view for grouped tabs and older document tools.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAdvancedDocuments((previous) => !previous)}
-                className="inline-flex min-h-[36px] items-center justify-center rounded-[10px] border border-[#d1deeb] bg-[#f8fbff] px-3 py-1.5 text-xs font-semibold text-[#21384d] transition hover:border-[#b9cbde] hover:bg-white"
-              >
-                {showAdvancedDocuments ? 'Hide Advanced View' : 'Open Advanced View'}
-              </button>
-            </div>
-          </section>
-
-          {showAdvancedDocuments ? (
+          {effectiveWorkspace === 'seller' && showAdvancedDocuments ? (
           <section className="mt-5 space-y-5 rounded-[28px] border border-[#dbe5ef] bg-white p-6 shadow-[0_18px_36px_rgba(15,23,42,0.06)]">
           <div className="overflow-x-auto">
             <nav className="inline-flex min-w-full gap-2 rounded-[18px] border border-[#e2eaf3] bg-[#f8fbff] p-2">
@@ -17022,8 +17310,6 @@ function ClientPortal() {
           ) : null}
           </section>
           ) : null}
-            </>
-          ) : null}
         </>
       ) : null}
 
@@ -17375,7 +17661,7 @@ function ClientPortal() {
         </section>
       ) : null}
 
-      {isTeam ? <BuyerTeamWorkspace model={buyerTeamPresentationModel} theme={buyerPortalTheme} /> : null}
+      {isTeam ? <BuyerTeamWorkspace model={effectiveWorkspace === 'seller' ? sellerTeamPresentationModel : buyerTeamPresentationModel} theme={buyerPortalTheme} onSendMessage={submitPortalMessage} saving={saving} /> : null}
 
       {isAlterations ? (
         <section className="client-portal-card">

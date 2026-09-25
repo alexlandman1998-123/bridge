@@ -75,10 +75,6 @@ export const NOTIFICATION_AUTOMATION_KEYS = {
   OFFER_VIEWED_BY_SELLER: "offer_viewed_by_seller",
   OFFER_NOT_REVIEWED_REMINDER: "offer_not_reviewed_reminder",
   OFFER_REVIEW_OVERDUE_ESCALATION: "offer_review_overdue_escalation",
-  SELLER_MANDATE_VIEWED_UNSIGNED_REMINDER:
-    "seller_mandate_viewed_unsigned_reminder",
-  SELLER_MANDATE_SIGNING_OVERDUE_ESCALATION:
-    "seller_mandate_signing_overdue_escalation",
   BUYER_ONBOARDING_OPENED: "buyer_onboarding_opened",
   BUYER_ONBOARDING_STARTED_NOT_SUBMITTED_REMINDER:
     "buyer_onboarding_started_not_submitted_reminder",
@@ -507,55 +503,6 @@ export const NOTIFICATION_AUTOMATION_DEFINITIONS = Object.freeze(
       reminderPolicy: {
         cadenceDays: [3],
         stopWhen: "offer_seller_review_completed",
-        quietHours: {
-          enabled: true,
-          timezone: "Africa/Johannesburg",
-          startHour: 18,
-          endHour: 8,
-        },
-      },
-    }),
-    definition({
-      key: NOTIFICATION_AUTOMATION_KEYS.SELLER_MANDATE_VIEWED_UNSIGNED_REMINDER,
-      displayName: "Seller mandate viewed but unsigned reminder",
-      category: "reminder",
-      triggerType: "scheduled_reminder",
-      recipientRole: "seller",
-      implementationStatus: "active",
-      defaultEnabled: true,
-      communicationTypes: ["seller_mandate_viewed_unsigned_reminder"],
-      roleTypes: ["seller"],
-      reminderPolicy: {
-        cadenceDays: [1, 3],
-        stopWhen: "seller_mandate_signed",
-        quietHours: {
-          enabled: true,
-          timezone: "Africa/Johannesburg",
-          startHour: 18,
-          endHour: 8,
-        },
-        escalation: {
-          enabled: true,
-          afterDay: 3,
-          recipientRole: "agent",
-          label: "Escalate unsigned seller mandates after portal access.",
-        },
-      },
-    }),
-    definition({
-      key: NOTIFICATION_AUTOMATION_KEYS
-        .SELLER_MANDATE_SIGNING_OVERDUE_ESCALATION,
-      displayName: "Seller mandate signing overdue escalation",
-      category: "reminder",
-      triggerType: "scheduled_reminder",
-      recipientRole: "agent",
-      implementationStatus: "active",
-      defaultEnabled: true,
-      communicationTypes: ["seller_mandate_signing_overdue_escalation"],
-      roleTypes: ["agent", "manager"],
-      reminderPolicy: {
-        cadenceDays: [3],
-        stopWhen: "seller_mandate_signed",
         quietHours: {
           enabled: true,
           timezone: "Africa/Johannesburg",

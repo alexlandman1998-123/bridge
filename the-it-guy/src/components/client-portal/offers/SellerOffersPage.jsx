@@ -3,11 +3,10 @@ import {
   CheckCircle2,
   ChevronDown,
   CircleDollarSign,
-  Download,
   FileText,
+  ExternalLink,
   HelpCircle,
   MessageCircle,
-  MoreVertical,
   ShieldCheck,
   Sparkles,
   Timer,
@@ -38,6 +37,11 @@ const STATUS_META = {
     label: 'Under Review',
     badge: 'border-violet-200 bg-violet-50 text-violet-700',
     action: 'With your agent',
+  },
+  seller_review: {
+    label: 'Seller Review',
+    badge: 'border-sky-200 bg-sky-50 text-sky-700',
+    action: 'Discuss with your agent',
   },
   conditionally_accepted: {
     label: 'Conditionally Accepted',
@@ -144,9 +148,12 @@ function OfferKpiCards({ summary }) {
   )
 }
 
-function OfferCard({ offer, now }) {
+function OfferCard({ offer, now, agent = {}, journeyHref = '' }) {
   const meta = STATUS_META[offer.status] || STATUS_META.new
   const expiryDistance = getDaysUntil(offer.expiryDate, now)
+  const discussionHref = agent?.email
+    ? `mailto:${agent.email}?subject=${encodeURIComponent(`Offer review: ${formatMoney(offer.offerAmount)}`)}`
+    : ''
 
   return (
     <article className={`rounded-2xl border p-5 shadow-sm ${offer.status === 'new' ? 'border-emerald-200 bg-gradient-to-br from-emerald-50/80 to-white' : 'border-slate-200 bg-white'}`}>
@@ -154,19 +161,9 @@ function OfferCard({ offer, now }) {
         <span className={`inline-flex items-center rounded-full border px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] ${meta.badge}`}>
           {meta.label}
         </span>
-        <div className="flex items-center gap-2">
-          <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-amber-700">
-            {meta.action}
-          </span>
-          <button
-            type="button"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-[#708297] transition hover:border-slate-300 hover:text-[#0f2137]"
-            title="Offer actions coming soon."
-            disabled
-          >
-            <MoreVertical size={16} />
-          </button>
-        </div>
+        <span className="inline-flex items-center rounded-full bg-amber-50 px-3 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-amber-700">
+          {meta.action}
+        </span>
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[0.8fr_1fr_1fr]">
@@ -212,15 +209,37 @@ function OfferCard({ offer, now }) {
             <span className="block text-xs font-medium text-[#60758c]">Offer Notes</span>
             <p className="mt-1 text-sm leading-6 text-[#24384d]">{offer.notes}</p>
           </div>
+          {offer.documents.length ? (
+            <div>
+              <span className="block text-xs font-medium text-[#60758c]">Offer documents</span>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {offer.documents.map((document) => (
+                  <a
+                    key={document.id || document.url}
+                    href={document.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-[#244c6d] transition hover:border-slate-300"
+                  >
+                    <FileText size={14} />
+                    {document.name}
+                    <ExternalLink size={13} />
+                  </a>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-[#07966f] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#067e5f] disabled:cursor-not-allowed disabled:opacity-60"
-              title="Offer review coming soon."
-              disabled
-            >
-              Review offer
-            </button>
+            {offer.status === 'accepted' && journeyHref ? (
+              <a href={journeyHref} className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-5 text-sm font-semibold text-emerald-800 transition hover:bg-emerald-100">
+                Track sale journey
+              </a>
+            ) : null}
+            {discussionHref ? (
+              <a href={discussionHref} className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-[#07966f] px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#067e5f]">
+                Discuss with agent
+              </a>
+            ) : <span className="text-sm font-medium text-[#60758c]">Your agent will contact you to review this offer.</span>}
           </div>
         </div>
       </div>
@@ -267,25 +286,22 @@ function OffersSummaryPanel({ summary }) {
           </div>
         ))}
       </div>
-      <button
-        type="button"
-        className="mt-4 inline-flex min-h-[42px] w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#0f2137] transition hover:border-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
-        title="Offer comparison coming soon."
-        disabled
-      >
-        View comparison
-      </button>
     </aside>
   )
 }
 
-function WhatHappensNextCard() {
-  const steps = [
-    ['Review offers', 'Compare the details and terms.'],
-    ['Discuss with your agent', "We'll guide you on the best option."],
-    ['Make a decision', 'Accept, counter or decline an offer.'],
-    ['Finalise the sale', "We'll prepare the sale agreement."],
-  ]
+function WhatHappensNextCard({ hasAcceptedOffer = false }) {
+  const steps = hasAcceptedOffer
+    ? [
+        ['Accepted offer recorded', 'Your agent has recorded the accepted offer.'],
+        ['Sale journey starts', 'The legal and transfer milestones are now available in Sale Journey.'],
+        ['Keep documents current', 'Your property team will request anything still needed.'],
+      ]
+    : [
+        ['Review the offer details', 'Compare the amount, finance position, expiry, and conditions shown here.'],
+        ['Discuss with your agent', 'Use the discussion action to share questions or instructions with your agent.'],
+        ['Agent records the outcome', 'Your agent records any accepted, declined, or countered outcome in the controlled sale workflow.'],
+      ]
 
   return (
     <aside className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -329,30 +345,20 @@ function HelpCard({ agent }) {
               <MessageCircle size={16} />
               Message your agent
             </a>
-          ) : (
-            <button
-              type="button"
-              className="mt-4 inline-flex min-h-[42px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-[#0f2137] disabled:cursor-not-allowed disabled:opacity-60"
-              title="Agent messaging coming soon."
-              disabled
-            >
-              <MessageCircle size={16} />
-              Message your agent
-            </button>
-          )}
+          ) : <p className="mt-4 text-sm leading-6 text-[#60758c]">Your agent will contact you when a review is needed.</p>}
         </div>
       </div>
     </aside>
   )
 }
 
-function CurrentOffersSection({ offers, sortMode, onSortChange, now }) {
+function CurrentOffersSection({ offers, sortMode, onSortChange, now, agent, journeyHref }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-semibold tracking-[-0.03em] text-[#0f2137]">Current Offers</h2>
-          <p className="mt-1 text-sm text-[#60758c]">Review and compare offers received for your property.</p>
+          <p className="mt-1 text-sm text-[#60758c]">Review seller-visible offer details and discuss the terms with your agent.</p>
         </div>
         <label className="inline-flex min-h-[42px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-[#0f2137]">
           <span>Sort by:</span>
@@ -371,7 +377,7 @@ function CurrentOffersSection({ offers, sortMode, onSortChange, now }) {
       </div>
 
       <div className="mt-5 space-y-3">
-        {offers.length ? offers.map((offer) => <OfferCard key={offer.id} offer={offer} now={now} />) : <EmptyOffersState />}
+        {offers.length ? offers.map((offer) => <OfferCard key={offer.id} offer={offer} now={now} agent={agent} journeyHref={journeyHref} />) : <EmptyOffersState />}
         <article className="rounded-2xl border border-slate-200 bg-slate-50/70 px-5 py-4">
           <div className="flex items-center gap-4">
             <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-[#60758c] shadow-sm">
@@ -388,7 +394,7 @@ function CurrentOffersSection({ offers, sortMode, onSortChange, now }) {
   )
 }
 
-function SellerOffersPage({ offers = [], askingPrice = 0, agent = {}, transactionId = '', propertyId = '' }) {
+function SellerOffersPage({ offers = [], askingPrice = 0, agent = {}, transactionId = '', propertyId = '', journeyHref = '' }) {
   const [sortMode, setSortMode] = useState('newest')
   const [now] = useState(() => Date.now())
   const payload = useMemo(
@@ -402,17 +408,8 @@ function SellerOffersPage({ offers = [], askingPrice = 0, agent = {}, transactio
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold tracking-[-0.04em] text-[#0f2137]">Offers</h1>
-          <p className="mt-2 text-sm leading-6 text-[#526981]">View and manage offers received for your property.</p>
+          <p className="mt-2 text-sm leading-6 text-[#526981]">Review seller-visible offer details, documents, and current status. Your agent records any decision in the controlled sale workflow.</p>
         </div>
-        <button
-          type="button"
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-[#0f2137] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#162c45] disabled:cursor-not-allowed disabled:opacity-60"
-          title="Offer download coming soon."
-          disabled
-        >
-          <Download size={16} />
-          Download all offers
-        </button>
       </header>
 
       <div className="space-y-6">
@@ -420,11 +417,11 @@ function SellerOffersPage({ offers = [], askingPrice = 0, agent = {}, transactio
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0">
-            <CurrentOffersSection offers={sortedOffers} sortMode={sortMode} onSortChange={setSortMode} now={now} />
+            <CurrentOffersSection offers={sortedOffers} sortMode={sortMode} onSortChange={setSortMode} now={now} agent={payload.agent} journeyHref={journeyHref} />
           </div>
           <div className="space-y-5">
             <OffersSummaryPanel summary={payload.summary} />
-            <WhatHappensNextCard />
+            <WhatHappensNextCard hasAcceptedOffer={payload.summary.acceptedCount > 0} />
             <HelpCard agent={payload.agent} />
           </div>
         </div>

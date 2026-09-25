@@ -94,6 +94,8 @@ export function buildBuyerTeamPresentationModel({
   attorneyRolePlayers = [],
   heading = 'Your transaction team',
   description = 'The people helping you through your purchase, finance, and transfer.',
+  contactTopic = 'purchase',
+  messagePlaceholder = 'Ask about your purchase, documents, finance, or transfer...',
   currentProcess = null,
 } = {}) {
   const combinedMembers = [
@@ -113,6 +115,7 @@ export function buildBuyerTeamPresentationModel({
     if (!member) return null
     return Object.freeze({
       ...route,
+      title: route.key === 'general' ? `General questions about my ${text(contactTopic) || 'purchase'}` : route.title,
       member,
       helper: `Speak to ${member.name.split(/\s+/)[0]} · ${member.role}`,
     })
@@ -133,6 +136,7 @@ export function buildBuyerTeamPresentationModel({
       helper: text(currentProcess.helper || currentProcess.description),
       status: text(currentProcess.status) || 'In progress',
     }) : null,
+    messagePlaceholder: text(messagePlaceholder) || 'Ask your team a question...',
     isEmpty: deduplicatedMembers.length === 0,
   })
 }

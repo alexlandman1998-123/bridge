@@ -31,6 +31,19 @@ function UploadAction({ item, uploadingDocumentKey, onUpload, label = 'Upload', 
   )
 }
 
+function documentRequestMeta(item = {}) {
+  const entries = []
+  if (item.requestedBy) entries.push(`Requested by ${item.requestedBy}`)
+  if (item.dueDate) {
+    const dueDate = new Date(item.dueDate)
+    const dueLabel = Number.isNaN(dueDate.getTime())
+      ? item.dueDate
+      : dueDate.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })
+    entries.push(`Due ${dueLabel}`)
+  }
+  return entries
+}
+
 export function BuyerDocumentSummary({ model, action = null, compact = false }) {
   const categories = (model?.categories || []).filter((category) => category.counts.total > 0)
   return (
@@ -88,8 +101,10 @@ export default function BuyerDocumentWorkspace({
   const [selectedDocumentId, setSelectedDocumentId] = useState(model?.firstActionItem?.id || model?.sortedItems?.[0]?.id || '')
   const selectedDocument = model?.items?.find((item) => item.id === selectedDocumentId) || activeCategory?.items?.[0] || model?.sortedItems?.[0] || null
   const actionItem = model?.firstActionItem || null
+  const actionMeta = documentRequestMeta(actionItem)
   const openKey = String(selectedDocument?.linkedDocument?.file_path || selectedDocument?.linkedDocument?.storage_path || selectedDocument?.linkedDocument?.id || '').trim()
   const canOpen = Boolean(selectedDocument?.linkedDocument && typeof onOpenDocument === 'function')
+  const selectedDocumentMeta = documentRequestMeta(selectedDocument)
 
   const selectCategory = (key) => {
     setActiveCategoryKey(key)
@@ -126,7 +141,7 @@ export default function BuyerDocumentWorkspace({
       {actionItem ? (
         <section className="rounded-[20px] border border-amber-200 bg-amber-50/70 p-5" role="status">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-700"><AlertCircle size={23} /></span><div><p className="text-sm font-semibold text-amber-700">{model.counts.action} document{model.counts.action === 1 ? ' needs' : 's need'} your attention</p><h2 className="mt-2 text-base font-semibold text-[#142132]">{actionItem.title}</h2><p className="mt-1 text-sm leading-6 text-[#52657b]">{actionItem.description}</p></div></div>
+            <div className="flex items-start gap-4"><span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-700"><AlertCircle size={23} /></span><div><p className="text-sm font-semibold text-amber-700">{model.counts.action} document{model.counts.action === 1 ? ' needs' : 's need'} your attention</p><h2 className="mt-2 text-base font-semibold text-[#142132]">{actionItem.title}</h2><p className="mt-1 text-sm leading-6 text-[#52657b]">{actionItem.description}</p>{actionMeta.length ? <p className="mt-2 text-xs font-semibold text-amber-800">{actionMeta.join(' · ')}</p> : null}</div></div>
             <UploadAction item={actionItem} uploadingDocumentKey={uploadingDocumentKey} onUpload={onUpload} className="min-h-11 rounded-[12px] !border-[#111827] !bg-[#111827] px-5 !text-white hover:!bg-black" />
           </div>
         </section>
@@ -151,10 +166,12 @@ export default function BuyerDocumentWorkspace({
           {selectedDocument ? <>
             <div className="flex items-start justify-between gap-3"><div><h2 className="text-lg font-semibold tracking-[-0.04em] text-[#142132]">{selectedDocument.title}</h2><span className={`mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[selectedDocument.presentationStatus]}`}>{selectedDocument.presentationStatusLabel}</span></div><span className="grid h-9 w-9 shrink-0 place-items-center rounded-[12px] border border-[#dbe5ef] text-[#52657b]"><DocumentStatusIcon status={selectedDocument.presentationStatus} /></span></div>
             <p className="mt-4 text-sm leading-6 text-[#52657b]">{selectedDocument.description}</p>
+            {selectedDocumentMeta.length || selectedDocument.rejectionReason ? <section className="mt-4 rounded-[16px] border border-[#e3ebf4] bg-[#fbfdff] p-4"><h3 className="text-sm font-semibold text-[#142132]">Request details</h3>{selectedDocumentMeta.length ? <p className="mt-2 text-sm leading-6 text-[#52657b]">{selectedDocumentMeta.join(' · ')}</p> : null}{selectedDocument.rejectionReason ? <p className="mt-2 rounded-[12px] border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-800">Team feedback: {selectedDocument.rejectionReason}</p> : null}</section> : null}
             <section className="mt-5 rounded-[16px] border p-4" style={{ borderColor: buyerPortalHexToRgba(theme.primary, 0.16), backgroundColor: buyerPortalHexToRgba(theme.primary, 0.045) }}><h3 className="text-sm font-semibold text-[#142132]">Why is this needed?</h3><p className="mt-2 text-sm leading-6 text-[#52657b]">{selectedDocument.education || selectedDocument.whatIsThis || 'This document supports compliance, legal, finance, or transfer progression for your purchase.'}</p></section>
             <div className="mt-5 grid gap-3">
               <UploadAction item={selectedDocument} uploadingDocumentKey={uploadingDocumentKey} onUpload={onUpload} label={selectedDocument.presentationStatus === 'action' ? 'Upload document' : 'Replace document'} className="min-h-11 rounded-[12px] !border-[#111827] !bg-[#111827] px-4 !text-white hover:!bg-black" />
               {canOpen ? <button type="button" disabled={openingDocumentPath === openKey} onClick={() => onOpenDocument(selectedDocument.linkedDocument)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] border border-[#dbe5ef] bg-white px-4 text-sm font-semibold text-[#142132] disabled:opacity-60"><FileText size={15} />{openingDocumentPath === openKey ? 'Opening...' : 'View document'}</button> : null}
+              {selectedDocument.isActionRequired && !selectedDocument.uploadSpec && !canOpen ? <p className="rounded-[12px] border border-[#dbe5ef] bg-[#fbfdff] px-3 py-2 text-sm leading-6 text-[#52657b]">Your team is preparing the secure upload step for this request. It will appear here automatically.</p> : null}
             </div>
           </> : <p className="text-sm leading-6 text-[#52657b]">Select a document to see its details.</p>}
         </aside>

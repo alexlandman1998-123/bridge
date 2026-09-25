@@ -332,6 +332,7 @@ const RentalApplicantJourneyPage = lazy(() => import('./pages/rentals/RentalAppl
 const RentalApplicationWorkspacePage = lazy(() => import('./pages/rentals/RentalApplicationWorkspacePage'))
 const RentalApplicationDetailPage = lazy(() => import('./pages/rentals/RentalApplicationDetailPage'))
 const RetiredOfferWorkflowPage = lazy(() => import('./pages/RetiredOfferWorkflowPage'))
+const OnlineSigningUnavailablePage = lazy(() => import('./pages/OnlineSigningUnavailablePage'))
 const ClientModulePage = lazy(() => import('./pages/ClientModulePage'))
 const ClientOnboarding = lazy(() => import('./pages/ClientOnboarding'))
 const ClientPortal = lazy(() => import('./pages/ClientPortal'))
@@ -489,7 +490,6 @@ const PostDashboardSetup = lazy(() => import('./pages/PostDashboardSetup'))
 const Report = lazy(() => import('./pages/Report'))
 const RoleModuleOnboarding = lazy(() => import('./pages/RoleModuleOnboarding'))
 const SellerOnboarding = lazy(() => import('./pages/SellerOnboarding'))
-const ListingMandateSigning = lazy(() => import('./pages/ListingMandateSigning'))
 const SettingsAccountPage = lazy(() => import('./pages/settings/SettingsAccountPage'))
 const SettingsCommissionStructuresPage = lazy(() => import('./pages/settings/SettingsCommissionStructuresPage'))
 const SettingsCommunicationsComingSoonPage = lazy(() => import('./pages/settings/SettingsCommunicationsComingSoonPage'))
@@ -4116,7 +4116,7 @@ function AppRoutes() {
           <Route path="/seller/onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="client-portal-route" title="Seller onboarding failed to load"><SellerOnboarding /></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/collaboration/invite/:invitationToken" element={<AppErrorBoundary scope="seller-collaboration-portal" title="Seller collaboration failed to load"><SellerCollaborationPortal /></AppErrorBoundary>} />
           <Route path="/seller/collaboration/member/:participantId" element={<AppErrorBoundary scope="seller-collaboration-portal" title="Seller collaboration failed to load"><SellerCollaborationPortal /></AppErrorBoundary>} />
-          <Route path="/mandate-sign/:token" element={<AppErrorBoundary scope="listing-mandate-signing" title="Mandate signing failed to load"><ListingMandateSigning /></AppErrorBoundary>} />
+          <Route path="/mandate-sign/:token" element={<OnlineSigningUnavailablePage />} />
           <Route path="/mobile/buyer-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-buyer-onboarding" title="Mobile buyer onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="buyer" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/mobile/seller-onboarding/:token" element={<TokenRouteGate><AppErrorBoundary scope="mobile-seller-onboarding" title="Mobile seller onboarding failed to load"><MobilePublicPortalShell><MobileOnboardingPage portalType="seller" /></MobilePublicPortalShell></AppErrorBoundary></TokenRouteGate>} />
           <Route path="/seller/:token" element={<SellerLegacyRedirect />} />

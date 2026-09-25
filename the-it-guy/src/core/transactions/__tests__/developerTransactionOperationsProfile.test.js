@@ -101,3 +101,11 @@ test('does not build operations summary for private property transactions', () =
     null,
   )
 })
+
+test('accepts the development-sale routing alias used by transaction creation', () => {
+  const summary = buildDeveloperTransactionOperationsSummary({
+    transaction: { transaction_type: 'development_sale' },
+  })
+
+  assert.equal(summary?.isDeveloperSale, true)
+})

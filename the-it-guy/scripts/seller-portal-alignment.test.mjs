@@ -35,7 +35,16 @@ const clientPortalSource = await fs.readFile(new URL('../src/pages/ClientPortal.
 assert.match(clientPortalSource, /sharedSellerPortalJourney/)
 assert.match(clientPortalSource, /SellerPortalDashboard/)
 assert.match(clientPortalSource, /buildSellerPortalProgressModelFromSharedJourney/)
-assert.match(clientPortalSource, /SELLER_PORTAL_NAV_GROUPS[\s\S]*Your Sale[\s\S]*Property[\s\S]*Account/)
+assert.match(
+  clientPortalSource,
+  /const SELLER_PORTAL_MENU = \[[\s\S]*?key: 'overview'[\s\S]*?key: 'listing_marketing'[\s\S]*?key: 'progress'[\s\S]*?key: 'documents'[\s\S]*?key: 'offers'[\s\S]*?key: 'team'/,
+  'seller navigation should use the simplified portal menu and keep the listing, sale, documents, offers, and team workspaces reachable',
+)
+assert.match(
+  clientPortalSource,
+  /const SELLER_PORTAL_NAV_GROUPS = \[[\s\S]*?label: ''[\s\S]*?items: SELLER_PORTAL_MENU/,
+  'seller navigation should not reintroduce the former multi-heading sidebar',
+)
 assert.match(clientPortalSource, /SellerPropertyHero/)
 assert.match(clientPortalSource, /SellerTransactionHealthCard/)
 assert.match(clientPortalSource, /SellerListingPerformance/)
@@ -79,8 +88,12 @@ assert.match(
   /getSellerOnboardingByToken\(token, \{[\s\S]*includeRequirementsAndDocuments: false,[\s\S]*corePayload: true,[\s\S]*\}\)/,
   'seller onboarding first load should request the lightweight core payload',
 )
-assert.match(sellerOnboardingSource, /assignedAgentId/, 'seller onboarding submit notification should pass the assigned agent id when email is not on the listing payload')
-assert.match(sellerOnboardingSource, /!hasValidAssignedAgentEmail && !assignedAgentId && !leadId && !listingId/, 'seller onboarding submit notification should still run when ids can resolve the agent email server-side')
+assert.match(
+  sellerOnboardingSource,
+  /async function notifySellerOnboardingSubmitted\(token = ''\)[\s\S]*?body: JSON\.stringify\(\{ token: normalizedToken \}\)/,
+  'seller onboarding should request notification through the token-scoped server endpoint rather than trusting client-side agent routing data',
+)
+assert.match(sellerOnboardingSource, /void notifySellerOnboardingSubmitted\(token\)/, 'seller onboarding should trigger the server-resolved notification after a successful submission')
 
 const submittedEmailHandler = await fs.readFile(new URL('../../supabase/functions/send-email/handlers/sellerOnboardingSubmitted.ts', import.meta.url), 'utf8')
 assert.match(submittedEmailHandler, /resolveInternalNotificationRecipients/, 'seller onboarding submitted email should resolve internal recipients when no explicit to email is supplied')
@@ -154,7 +167,7 @@ try {
   assert.equal(portalView.currentStage.key, 'listing_live')
   assert.equal(portalView.stageMeta.currentStage.key, 'listing_live')
   assert.equal(portalView.stageMeta.currentStage.message.includes('listing is live'), true)
-  assert.equal(portalView.progressPercent, 88)
+  assert.equal(portalView.progressPercent, 100, 'a live listing with all listing-stage gates complete should report full listing readiness')
   assert.equal(portalView.stages.find((step) => step.key === 'mandate_signed').state, 'completed')
   assert.equal(portalView.statusCards.find((card) => card.key === 'mandate').value, 'Signed')
   assert.equal(portalView.statusCards.find((card) => card.key === 'listing').value, 'Live')
@@ -162,7 +175,7 @@ try {
   assert.equal(portalView.statusCards.find((card) => card.key === 'offers').value, '1 Received')
   assert.equal(portalView.statusCards.find((card) => card.key === 'readiness').value, 'Listing Live')
   assert.equal(portalView.readiness.status, 'completed')
-  assert.equal(portalView.documents.some((document) => document.status === 'Approved'), true)
+  assert.equal(portalView.documents.some((document) => document.id === 'doc-1' && document.status === 'Complete'), true, 'approved seller evidence should remain complete in the portal document view')
 } finally {
   await server.close()
 }

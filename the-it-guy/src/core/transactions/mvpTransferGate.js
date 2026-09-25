@@ -1,4 +1,5 @@
 import { evaluateMvpFinanceGate } from './mvpFinanceGate.js'
+import { normalizeFinanceType } from './financeType.js'
 
 export const MVP_TRANSFER_GATE_VERSION = 'arch9_mvp_transfer_gate_v1'
 const COMPLETE = new Set(['complete', 'completed', 'verified', 'approved', 'satisfied', 'waived', 'not_applicable'])
@@ -45,8 +46,8 @@ export function evaluateMvpTransferGate({ routingProfile = {}, participants = []
   const finance = evaluateMvpFinanceGate({ routingProfile, participants, participantRequirements, documentRequirements })
   const blockers = []
   if (!hasTransferAttorney(participants, participantRequirements)) blockers.push({ key: 'participant:transfer_attorney', ownerRole: 'agent', reason: 'A transfer attorney must be assigned before transfer can begin.' })
-  const financeType = key(routingProfile.financeType)
-  if (['bond', 'hybrid'].includes(financeType) && !hasActiveRole(participants, 'bond_attorney', participantRequirements)) {
+  const financeType = normalizeFinanceType(routingProfile.financeType, { allowUnknown: true })
+  if (['bond', 'combination'].includes(financeType) && !hasActiveRole(participants, 'bond_attorney', participantRequirements)) {
     blockers.push({ key: 'participant:bond_attorney', ownerRole: 'agent', reason: 'A bond attorney must be assigned before transfer can begin.' })
   }
   if (routingProfile.requiresCancellationAttorney && !hasActiveRole(participants, 'cancellation_attorney', participantRequirements)) {

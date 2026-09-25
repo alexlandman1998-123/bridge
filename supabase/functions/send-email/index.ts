@@ -5,7 +5,6 @@ import { handleReservationDepositEmail } from "./handlers/reservationDeposit.ts"
 import { handleReservationDepositReceivedEmail } from "./handlers/reservationDepositReceived.ts";
 import { handleSellerOnboardingEmail } from "./handlers/sellerOnboarding.ts";
 import { handleSellerOnboardingSubmittedEmail } from "./handlers/sellerOnboardingSubmitted.ts";
-import { handleSellerMandateSentEmail } from "./handlers/sellerMandateSent.ts";
 import { handleAppointmentEmail } from "./handlers/appointment.ts";
 import { handleWorkspaceInviteEmail } from "./handlers/workspaceInvite.ts";
 import { handleDevelopmentMarketingInviteEmail } from "./handlers/developmentMarketingInvite.ts";
@@ -87,7 +86,6 @@ import type {
   SendSellerOfferReviewPayload,
   SendSellerOnboardingPayload,
   SendSellerOnboardingSubmittedPayload,
-  SendSellerMandateSentPayload,
   SendSellerViewingAvailabilityRequestPayload,
   SendTransactionOperationsNotificationPayload,
   SendTransactionPartnerInvitationPayload,
@@ -395,13 +393,11 @@ Deno.serve(async (req: Request) => {
     }
 
     if (["seller_mandate_sent", "seller_mandate"].includes(type)) {
-      console.log("[send-email] routing template", {
-        route: "seller_mandate_sent",
-        recipient: recipient || null,
+      return jsonResponse(410, {
+        success: false,
+        error: "Seller mandate online-signing email delivery has been retired. Arrange wet-ink signatures and upload the signed originals for review.",
+        errorCode: "SELLER_MANDATE_ONLINE_SIGNING_EMAIL_RETIRED",
       });
-      return await handleSellerMandateSentEmail(
-        payload as SendSellerMandateSentPayload,
-      );
     }
 
     if (type === "otp_signing") {
@@ -899,8 +895,6 @@ Deno.serve(async (req: Request) => {
         "offer_viewed_by_seller",
         "offer_not_reviewed_reminder",
         "offer_review_overdue_escalation",
-        "seller_mandate_viewed_unsigned_reminder",
-        "seller_mandate_signing_overdue_escalation",
         "buyer_onboarding_opened",
         "buyer_onboarding_started_not_submitted_reminder",
         "buyer_onboarding_overdue_escalation",
@@ -1138,7 +1132,6 @@ Deno.serve(async (req: Request) => {
           "reservation_deposit_received",
           "seller_onboarding",
           "seller_onboarding_submitted",
-          "seller_mandate_sent",
           "new_enquiry_assigned_agent",
           "new_enquiry_unassigned_manager",
           "lead_assigned",
@@ -1201,8 +1194,6 @@ Deno.serve(async (req: Request) => {
           "offer_viewed_by_seller",
           "offer_not_reviewed_reminder",
           "offer_review_overdue_escalation",
-          "seller_mandate_viewed_unsigned_reminder",
-          "seller_mandate_signing_overdue_escalation",
           "buyer_onboarding_opened",
           "buyer_onboarding_started_not_submitted_reminder",
           "buyer_onboarding_overdue_escalation",
@@ -1306,7 +1297,6 @@ Deno.serve(async (req: Request) => {
         "reservation_deposit_received",
         "seller_onboarding",
         "seller_onboarding_submitted",
-        "seller_mandate_sent",
         "new_enquiry_assigned_agent",
         "new_enquiry_unassigned_manager",
         "lead_assigned",
@@ -1367,8 +1357,6 @@ Deno.serve(async (req: Request) => {
         "offer_viewed_by_seller",
         "offer_not_reviewed_reminder",
         "offer_review_overdue_escalation",
-        "seller_mandate_viewed_unsigned_reminder",
-        "seller_mandate_signing_overdue_escalation",
         "buyer_onboarding_opened",
         "buyer_onboarding_started_not_submitted_reminder",
         "buyer_onboarding_overdue_escalation",

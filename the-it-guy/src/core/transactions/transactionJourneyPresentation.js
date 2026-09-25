@@ -18,19 +18,64 @@ export function buildTransactionJourneyPresentation({
   fallbackProgressPercent,
   fallbackSource = 'legacy',
 } = {}) {
-  if (!snapshot?.legalOnly && (snapshot?.legalJourney || snapshot?.highLevelJourney?.ruleVersion === 1)) {
+  const hasSharedHighLevelJourney =
+    snapshot?.highLevelJourney?.ruleVersion === 1 || snapshot?.legalJourney?.status === 'ready'
+  if (!snapshot?.legalOnly && hasSharedHighLevelJourney) {
     const highLevelJourney = buildSharedHighLevelJourney(snapshot)
-    const steps = highLevelJourney.milestones.map(m => ({ ...m, key: m.id,
-      isCurrent: ['in_progress', 'waiting', 'blocked'].includes(m.status),
-      isBlocked: m.status === 'blocked', isUpcoming: m.status === 'pending' }))
+    const workflowItem = snapshot.currentWorkflowItem || null
+    const snapshotCurrentMilestoneKey = snapshot.currentMilestoneKey || snapshot.currentMilestone?.key || ''
+    const steps = highLevelJourney.milestones.map((milestone) => {
+      const isCurrent = ['in_progress', 'waiting', 'blocked'].includes(milestone.status) || milestone.id === snapshotCurrentMilestoneKey
+      const status = milestone.isComplete
+        ? 'complete'
+        : isCurrent
+          ? 'current'
+          : 'upcoming'
+      const description = isCurrent
+        ? workflowItem?.summary || `The transaction team is progressing ${milestone.label.toLowerCase()}.`
+        : ''
+
+      return {
+        ...milestone,
+        key: milestone.id,
+        status,
+        canonicalStatus: milestone.status,
+        isCurrent,
+        isBlocked: milestone.status === 'blocked',
+        isUpcoming: status === 'upcoming',
+        description,
+        shortDescription: description,
+        whatHappensNow: description,
+      }
+    })
     const currentStep = steps.find(s => s.isCurrent) || null
-    return { source: 'shared-high-level-journey', transactionId: snapshot.transactionId,
-      highLevelJourney, legalJourney: snapshot.legalJourney || null, steps,
+    const currentIndex = steps.findIndex(s => s.isCurrent)
+    const nextStep = currentIndex >= 0
+      ? steps.slice(currentIndex + 1).find((step) => !step.isComplete) || null
+      : null
+    const completedCount = steps.filter((step) => step.isComplete).length
+    const completionSummary = `${completedCount} of ${steps.length}`
+
+    return {
+      source: 'shared-high-level-journey',
+      transactionId: snapshot.transactionId,
+      highLevelJourney,
+      legalJourney: snapshot.legalJourney || null,
+      steps,
       currentStep, currentStepId: currentStep?.id || null,
-      currentIndex: steps.findIndex(s => s.isCurrent),
+      currentIndex,
+      nextStep,
+      currentStageLabel: currentStep?.label || (steps.every((step) => step.isComplete) ? 'Journey complete' : 'Current step'),
+      nextStageLabel: nextStep?.label || (steps.every((step) => step.isComplete) ? 'Complete' : 'Next step'),
+      currentWorkflowItem: workflowItem,
+      helperMessage: workflowItem?.summary || currentStep?.description || '',
+      completedCount,
+      completionSummary,
       isComplete: steps.every(s => s.isComplete),
-      statusLabel: `${steps.filter(s => s.isComplete).length} of 5 milestones complete`,
-      progressPercent: null }
+      statusLabel: `${completionSummary} milestones complete`,
+      // High-level journey rules deliberately do not define a weighted percentage.
+      progressPercent: null,
+    }
   }
   if (!isCanonicalSnapshot(snapshot)) {
     const fallback = fallbackModel || buildBuyerJourneyPresentationModel({

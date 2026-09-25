@@ -8,6 +8,9 @@ assert.ok(rows.some((row) => row.key === 'proof_of_funds'))
 assert.ok(rows.some((row) => row.key === 'bond_preapproval'))
 assert.ok(rows.some((row) => row.key === 'bond_cancellation_figures'))
 assert.ok(rows.every((row) => row.requiresUpload === true))
+const canonicalHybridRows = buildMvpTransactionDocumentBootstrap({ financeType: 'combination' }).requirements
+assert.equal(canonicalHybridRows.some((row) => row.key === 'proof_of_funds'), true)
+assert.equal(canonicalHybridRows.some((row) => row.key === 'bond_preapproval'), true)
 const developerRows = buildMvpTransactionDocumentBootstrap({ transactionType: 'developer_sale' }).requirements
 assert.equal(developerRows.find((row) => row.key === 'seller_identity')?.requiredFromRole, 'developer')
 assert.equal(developerRows.find((row) => row.key === 'seller_identity')?.label, 'Developer entity / representative authority')

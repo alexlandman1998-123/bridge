@@ -25,6 +25,12 @@ function keys(rows = []) {
 }
 
 {
+  const plan = resolveMvpLaunchRolePlan({ financeType: 'combination' })
+  assert.equal(keys(plan.requiredByFinance).includes('bond_originator'), true)
+  assert.equal(keys(plan.requiredByTransfer).includes('bond_attorney'), true)
+}
+
+{
   const plan = resolveMvpLaunchRolePlan({
     transactionType: 'private_sale',
     financeType: 'bond',

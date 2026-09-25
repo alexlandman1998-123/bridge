@@ -29,14 +29,6 @@ const EVENT_LABELS: Record<string, { title: string; subject: string }> = {
     title: "Offer Review Overdue",
     subject: "Offer review needs attention",
   },
-  seller_mandate_viewed_unsigned_reminder: {
-    title: "Seller Mandate Reminder",
-    subject: "Seller mandate awaiting signature",
-  },
-  seller_mandate_signing_overdue_escalation: {
-    title: "Seller Mandate Overdue",
-    subject: "Seller mandate signing needs attention",
-  },
   buyer_onboarding_opened: {
     title: "Buyer Onboarding Opened",
     subject: "Buyer opened onboarding",
@@ -166,12 +158,6 @@ function defaultMessage({
   }
   if (eventKind === "offer_review_overdue_escalation") {
     return `${offer}${property} has not been reviewed within the expected SLA.`;
-  }
-  if (eventKind === "seller_mandate_viewed_unsigned_reminder") {
-    return `The seller mandate${property} has been viewed but is still unsigned.`;
-  }
-  if (eventKind === "seller_mandate_signing_overdue_escalation") {
-    return `The seller mandate${property} is overdue for signature.`;
   }
   if (eventKind === "buyer_onboarding_opened") {
     return `${buyerName || "The buyer"} opened onboarding${property}.`;

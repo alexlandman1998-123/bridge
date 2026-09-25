@@ -1,7 +1,10 @@
+import { isBondFinanceType, normalizeFinanceType } from './financeType.js'
+
 export const MVP_TRANSACTION_WORKFLOW_BOOTSTRAP_VERSION = 'arch9_mvp_transaction_workflow_bootstrap_v1'
 
 export function buildMvpTransactionWorkflowBootstrap(profile = {}) {
-  const bond = ['bond', 'hybrid'].includes(profile.financeType)
+  const financeType = normalizeFinanceType(profile.financeType, { allowUnknown: true })
+  const bond = isBondFinanceType(financeType)
   const lanes = [
     { laneType: 'main', currentStage: 'onboarding', status: 'active', ownerRole: 'agent', blocked: false },
     { laneType: 'finance', currentStage: bond ? 'finance_intake' : 'proof_of_funds', status: 'pending', ownerRole: bond ? 'bond_originator' : 'buyer', blocked: false },

@@ -679,8 +679,6 @@ export type SendClientSellerPortalNotificationPayload = {
     | "offer_viewed_by_seller"
     | "offer_not_reviewed_reminder"
     | "offer_review_overdue_escalation"
-    | "seller_mandate_viewed_unsigned_reminder"
-    | "seller_mandate_signing_overdue_escalation"
     | "buyer_onboarding_opened"
     | "buyer_onboarding_started_not_submitted_reminder"
     | "buyer_onboarding_overdue_escalation"
@@ -1220,30 +1218,6 @@ export type SendSellerOnboardingSubmittedPayload = {
   listingId?: string;
   assignedAgentId?: string;
   actionLink?: string;
-};
-
-export type SendSellerMandateSentPayload = {
-  type: "seller_mandate_sent";
-  to: string;
-  organisationId?: string;
-  packetId?: string;
-  mandateId?: string;
-  recipientRole?: "agent" | "seller" | "purchaser";
-  recipientName?: string;
-  sellerName?: string;
-  propertyTitle?: string;
-  mandateType?: string;
-  mandateStartDate?: string;
-  mandateEndDate?: string;
-  askingPrice?: string;
-  portalLink?: string;
-  reminder?: boolean;
-  resend?: boolean;
-  agentName?: string;
-  organisationName?: string;
-  supportEmail?: string;
-  supportPhone?: string;
-  idempotencyKey?: string;
 };
 
 export type SendSellerMandateSignedPayload = {

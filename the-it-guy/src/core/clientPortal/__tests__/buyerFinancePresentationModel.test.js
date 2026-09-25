@@ -51,3 +51,21 @@ test('represents cash account state without inventing a bond journey', () => {
   assert.equal(model.account.openRequests, 2)
   assert.equal(model.hasAction, true)
 })
+
+test('keeps a client-managed hybrid purchase out of the originator journey while preserving both finance amounts', () => {
+  const model = buildBuyerFinancePresentationModel({
+    source: 'production',
+    financeType: 'hybrid',
+    financeManagedBy: 'client',
+    purchasePrice: 2_500_000,
+    requestedAmount: 1_900_000,
+    cashContribution: 600_000,
+  })
+
+  assert.equal(model.isDirectFinance, true)
+  assert.equal(model.isOriginatorManaged, false)
+  assert.deepEqual(model.stages, [])
+  assert.equal(model.status, 'Finance arranged directly')
+  assert.equal(model.cashContributionLabel, 'R 600 000')
+  assert.match(model.description, /cash contribution/i)
+})

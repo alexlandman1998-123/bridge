@@ -1,3 +1,5 @@
+import { normalizeFinanceType } from './financeType.js'
+
 export const DEAL_SETUP_DOCUMENT_REQUIREMENTS_VERSION = 'deal_setup_document_requirements_v1'
 
 const text = (value) => String(value ?? '').trim()
@@ -24,7 +26,7 @@ function profileDocumentKeys(profileDocumentsByBuyer, buyerId) {
 export function buildDealSetupDocumentRequirements({ setup = {}, profileDocumentsByBuyer = {} } = {}) {
   const buyers = Array.isArray(setup.buyers) ? setup.buyers.filter((buyer) => !buyer.removed_at && key(buyer.status) !== 'removed') : []
   const purchaserType = key(setup.terms?.purchaserType)
-  const financeType = key(setup.finance?.type)
+  const financeType = normalizeFinanceType(setup.finance?.type, { allowUnknown: true })
   const requirements = []
   buyers.forEach((buyer, index) => {
     const buyerId = text(buyer.buyer_party_id || buyer.buyerId || buyer.id) || `buyer-${index + 1}`
@@ -37,7 +39,7 @@ export function buildDealSetupDocumentRequirements({ setup = {}, profileDocument
   if (purchaserType === 'married_coc') requirements.push(requirement({ key: 'marriage_certificate', label: 'Marriage certificate', owner: 'Buyer parties', group: 'buyer_marital', reason: 'Required for a married purchaser setup.' }))
   if (purchaserType === 'company') requirements.push(requirement({ key: 'company_registration', label: 'Company registration and authority', owner: 'Buyer entity', group: 'buyer_entity', reason: 'Required for a company or CC purchaser.' }))
   if (purchaserType === 'trust') requirements.push(requirement({ key: 'trust_authority', label: 'Trust deed and letters of authority', owner: 'Trust / trustees', group: 'buyer_entity', reason: 'Required for a trust purchaser.' }))
-  if (financeType === 'cash' || financeType === 'hybrid') requirements.push(requirement({ key: 'proof_of_funds', label: 'Proof of funds', owner: 'Buyer', group: 'finance', reason: 'Cash contribution is part of this deal.' }))
-  if (financeType === 'bond' || financeType === 'hybrid') requirements.push(requirement({ key: 'bond_application', label: 'Bond application / pre-approval', owner: 'Bond originator', group: 'finance', reason: 'Bond finance is part of this deal.' }))
+  if (financeType === 'cash' || financeType === 'combination') requirements.push(requirement({ key: 'proof_of_funds', label: 'Proof of funds', owner: 'Buyer', group: 'finance', reason: 'Cash contribution is part of this deal.' }))
+  if (financeType === 'bond' || financeType === 'combination') requirements.push(requirement({ key: 'bond_application', label: 'Bond application / pre-approval', owner: 'Bond originator', group: 'finance', reason: 'Bond finance is part of this deal.' }))
   return Object.freeze({ version: DEAL_SETUP_DOCUMENT_REQUIREMENTS_VERSION, requirements: Object.freeze(requirements) })
 }

@@ -6,6 +6,8 @@ const MILESTONES = HIGH_LEVEL_MILESTONES
 // Render explicit rule outcomes without the legacy index-based normalizer.
 export default function DeveloperOverviewJourney({ model, loading = false, onOpenWorkspace, title = 'Transaction Journey', action = null }) {
   const steps = model?.highLevelJourney?.ruleVersion === 1 ? model.highLevelJourney.milestones : []
+  const currentMilestone = steps.find((step) => ['in_progress', 'waiting', 'blocked'].includes(step?.status)) || model?.currentStep || null
+  const currentWorkflowItem = model?.currentWorkflowItem || null
   return (
     <section data-developer-overview-journey aria-label="Transaction journey" aria-busy={loading} className="min-w-0 rounded-[20px] border border-borderDefault bg-white p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -20,8 +22,13 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
             const Item = onOpenWorkspace ? 'button' : 'div'
             const step = steps.find(item => (item.id || item.key) === milestone.id || (milestone.alternate && (item.id || item.key) === milestone.alternate))
             const complete = !loading && Boolean(step?.isComplete)
-            const current = !loading && ['in_progress', 'waiting', 'blocked'].includes(step?.status)
-            const status = loading ? 'Loading…' : ({ complete: 'Completed', blocked: 'Needs attention', waiting: 'Waiting', in_progress: 'In progress', pending: 'Pending' }[step?.status] || 'Not available')
+            const current = !loading && (
+              ['in_progress', 'waiting', 'blocked'].includes(step?.status) ||
+              milestone.id === model?.currentStepId
+            )
+            const status = loading ? 'Loading…' : current && !['in_progress', 'waiting', 'blocked'].includes(step?.status)
+              ? 'In progress'
+              : ({ complete: 'Completed', blocked: 'Needs attention', waiting: 'Waiting', in_progress: 'In progress', pending: 'Pending' }[step?.status] || 'Not available')
             return <li key={milestone.id} className="relative">
               <Item type={onOpenWorkspace ? 'button' : undefined} data-milestone={milestone.id} data-milestone-status={loading ? 'loading' : step?.status || 'unknown'} data-target={onOpenWorkspace ? milestone.target : undefined} onClick={onOpenWorkspace ? () => onOpenWorkspace(milestone.target) : undefined} aria-current={current ? 'step' : undefined} className="flex w-full flex-col items-center rounded-xl px-2 py-1 text-center focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700">
                 <span aria-hidden="true" className={`inline-flex size-10 items-center justify-center rounded-full border-2 ${complete ? 'border-emerald-700 bg-emerald-700 text-white' : current ? 'border-emerald-700 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-400'}`}>
@@ -34,6 +41,20 @@ export default function DeveloperOverviewJourney({ model, loading = false, onOpe
           })}
         </ol>
       </nav>
+      {currentMilestone || currentWorkflowItem ? (
+        <section className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" aria-label="Current transaction focus">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">Current stage</p>
+          <p className="mt-1 text-sm font-semibold text-textStrong">{currentMilestone?.label || model?.currentStageLabel || 'In progress'}</p>
+          {currentWorkflowItem?.label ? (
+            <>
+              <p className="mt-3 text-xs font-semibold uppercase tracking-[0.12em] text-textMuted">Current matter item</p>
+              <p className="mt-1 text-sm font-semibold text-textStrong">{currentWorkflowItem.label}</p>
+            </>
+          ) : null}
+          {currentWorkflowItem?.summary ? <p className="mt-1 text-sm leading-6 text-textMuted">{currentWorkflowItem.summary}</p> : null}
+          {currentWorkflowItem?.ownerLabel ? <p className="mt-2 text-xs font-semibold text-textMuted">With: {currentWorkflowItem.ownerLabel}</p> : null}
+        </section>
+      ) : null}
     </section>
   )
 }

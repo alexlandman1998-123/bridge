@@ -114,8 +114,9 @@ export default function BuyerFinanceWorkspace({ model, theme: themeInput, primar
     ? [
         [model.requestedAmountLabel, model.requestedAmountCaption, model.loanToValue ? `${model.loanToValue} of purchase price` : 'Amount requested', HandCoins],
         [model.purchasePriceLabel, 'Purchase price', 'Transaction value', CircleDollarSign],
+        ...(model.mode === 'hybrid' ? [[model.cashContributionLabel, 'Cash contribution', model.hasCashContribution ? 'Cash portion of the purchase' : 'Awaiting transaction amount', WalletCards]] : []),
         [model.manager?.name || 'Finance team', 'Finance contact', model.manager?.company || 'Your assigned team', ShieldCheck],
-        [`${model.progressPercent || 0}%`, 'Application complete', model.status, FileSignature],
+        [model.isOriginatorManaged ? `${model.progressPercent || 0}%` : 'Direct', model.isOriginatorManaged ? 'Application complete' : 'Finance route', model.status, FileSignature],
       ]
     : [
         [account.balanceDueLabel, 'Balance due', 'Visible posted entries', HandCoins],
@@ -151,7 +152,7 @@ export default function BuyerFinanceWorkspace({ model, theme: themeInput, primar
 
       {action ? <section className="rounded-[20px] border border-amber-200 bg-amber-50/70 p-5" role="status"><div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"><div className="flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-amber-100 text-amber-700"><AlertCircle size={20} /></span><div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-amber-700">Next action</p><h2 className="mt-1 text-base font-semibold text-[#142132]">{action.title}</h2>{action.description ? <p className="mt-1 text-sm leading-6 text-[#52657b]">{action.description}</p> : null}</div></div>{primaryAction ? <div className="shrink-0">{primaryAction}</div> : <ChevronRight className="text-amber-700" size={20} />}</div></section> : null}
 
-      {showLenders && model?.isBondFinance ? <LenderCards model={model} /> : null}
+      {showLenders && model?.isOriginatorManaged ? <LenderCards model={model} /> : null}
     </section>
   )
 }

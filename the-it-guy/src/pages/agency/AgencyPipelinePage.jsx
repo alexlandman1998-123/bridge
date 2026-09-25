@@ -120,8 +120,8 @@ import { buildSellerCompliancePortalModel } from '../../core/documents/sellerCom
 import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts'
 import { buildSellerOnboardingSigningPackSnapshot } from '../../core/documents/sellerOnboardingSigningPackSnapshot'
 import { createSellerOnboardingFormalPackApproval } from '../../core/documents/sellerOnboardingFormalPackApproval'
-import { createSellerOnboardingFormalPackDispatch } from '../../core/documents/sellerOnboardingFormalPackDispatch'
 import { createSellerOnboardingManualSigningPack } from '../../core/documents/sellerOnboardingManualSigningPack'
+import { ONLINE_SIGNING_DISABLED, ONLINE_SIGNING_DISABLED_MESSAGE } from '../../core/documents/onlineSigningPolicy'
 import { SELLER_ONBOARDING_SIGNING_STAGES, createSellerOnboardingSigningLifecycle } from '../../core/documents/sellerOnboardingSigningLifecycle'
 import { getSellerProcessDefinition } from '../../services/sellerProcessDefinitionService'
 import {
@@ -11821,11 +11821,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerLeadEditModal, setSellerLeadEditModal] = useState({ open: false, mode: 'profile' })
   const [mandateExecutionModalOpen, setMandateExecutionModalOpen] = useState(false)
   const [sellerOnboardingReviewModalOpen, setSellerOnboardingReviewModalOpen] = useState(false)
-  const [sellerOnboardingReviewRoute, setSellerOnboardingReviewRoute] = useState('digital_pack')
+  const [sellerOnboardingReviewRoute, setSellerOnboardingReviewRouteState] = useState('manual_upload')
+  const setSellerOnboardingReviewRoute = useCallback((route) => {
+    setSellerOnboardingReviewRouteState(ONLINE_SIGNING_DISABLED ? 'manual_upload' : route)
+  }, [])
+  useEffect(() => {
+    if (ONLINE_SIGNING_DISABLED && sellerOnboardingReviewRoute !== 'manual_upload') {
+      setSellerOnboardingReviewRoute('manual_upload')
+    }
+  }, [sellerOnboardingReviewRoute])
   const [sellerSigningPackModalOpen, setSellerSigningPackModalOpen] = useState(false)
   const [sellerSigningPackSaving, setSellerSigningPackSaving] = useState(false)
   const [sellerSigningPackError, setSellerSigningPackError] = useState('')
-  const [sellerSigningPackPrimaryEmail, setSellerSigningPackPrimaryEmail] = useState('')
   const [sellerSigningPackTerms, setSellerSigningPackTerms] = useState({
     mandateType: 'sole',
     commissionBasis: 'percentage',
@@ -26658,7 +26665,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('This seller lead does not yet have its onboarding intake record. Reload the lead and try again; do not create a market listing to send the signing pack.')
       return
     }
-    setSellerOnboardingReviewRoute('digital_pack')
+    setSellerOnboardingReviewRoute('manual_upload')
     setSellerOnboardingReviewModalOpen(true)
   }
 
@@ -26702,9 +26709,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function openSellerLeadSigningPack() {
+    if (ONLINE_SIGNING_DISABLED) setSellerOnboardingReviewRoute('manual_upload')
     const formData = getLeadSellerOnboardingFormData(selectedLead)
     setSellerSigningPackError('')
-    setSellerSigningPackPrimaryEmail(getSellerLeadSigningRecipients()[0]?.email || '')
     setSellerSigningPackTerms({
       mandateType: normalizeText(formData.mandateType || selectedLeadLinkedListing?.mandateType),
       commissionBasis: normalizeText(formData.commissionBasis || formData.commission_basis) === 'fixed' ? 'fixed' : 'percentage',
@@ -26720,6 +26727,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('This seller lead does not yet have its onboarding intake record. Reload the lead and try again; do not create a market listing to send the signing pack.')
       return
     }
+    if (ONLINE_SIGNING_DISABLED) setSellerOnboardingReviewRoute('manual_upload')
     setSellerOnboardingReviewModalOpen(false)
     openSellerLeadSigningPack()
   }
@@ -26728,6 +26736,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const listingId = normalizeText(selectedLeadLinkedListingId)
     const leadId = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLead?.id)
     if (sellerSigningPackSaving) return
+    if (ONLINE_SIGNING_DISABLED && sellerOnboardingReviewRoute !== 'manual_upload') {
+      setSellerOnboardingReviewRoute('manual_upload')
+      setSellerSigningPackError(`${ONLINE_SIGNING_DISABLED_MESSAGE} The physical-signature route has been selected instead.`)
+      return
+    }
     // Never fail silently when the lead has not hydrated its private-listing
     // link yet. This was the one early return that made “Send FICA + mandate”
     // appear to do nothing.
@@ -26760,9 +26773,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
 
-    const primaryDocumentContactEmail = recipients.some((signer) => signer.email === sellerSigningPackPrimaryEmail)
-      ? sellerSigningPackPrimaryEmail
-      : recipients[0].email
     const formData = getLeadSellerOnboardingFormData(selectedLead)
     const propertyAddress = normalizeText(
       selectedLeadLinkedListing?.propertyAddress || selectedLeadLinkedListing?.formattedAddress || selectedLead?.sellerPropertyAddress || selectedLead?.propertyInterest,
@@ -26863,102 +26873,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         status: 'completed',
       })
 
-      if (sellerOnboardingReviewRoute === 'manual_upload') {
-        await updatePrivateListing(listingId, {
-          mandateType: sellerSigningPackTerms.mandateType,
-          mandateStatus: 'sent',
-        }, { includeRequirementsAndDocuments: false })
-        await updateAgencyCrmLeadRecord(organisationId, leadId, {
-          stage: 'Mandate Sent',
-          status: 'Physical FICA and mandate pack prepared — awaiting signed upload',
-          mandateExecutionMode: 'manual',
-          mandatePreparedAt: now,
-        })
-        patchSelectedLeadRecord({
-          stage: 'Mandate Sent',
-          status: 'Physical FICA and mandate pack prepared — awaiting signed upload',
-          mandateExecutionMode: 'manual',
-          mandatePreparedAt: now,
-        }, leadId)
-        setSellerSigningPackModalOpen(false)
-        setMessage('Physical FICA and mandate copies are prepared. Download them from Documents and upload the wet-ink signed copies when returned.')
-        return
-      }
-
-      const response = await invokeEdgeFunction('listing-mandate-signing', {
-        body: {
-          action: 'issue',
-          listingId,
-          signerName: recipients[0].name,
-          signerEmail: recipients[0].email,
-          signers: recipients,
-          primaryDocumentContactEmail,
-          agentName: normalizeText(currentAgent?.fullName || currentAgent?.name || currentAgent?.email || 'Agent'),
-          selectedDocuments: ['fica', 'mandate'],
-          mandateSnapshot: {
-            propertyAddress,
-            mandateType: sellerSigningPackTerms.mandateType,
-            commissionBasis: commission.basis,
-            commissionPercentage: commission.percentage,
-            commissionAmount: commission.amount,
-            vatHandling: commission.vatHandling,
-          },
-          signingPack,
-        },
-      })
-      assertEdgeFunctionSuccess(response, 'Unable to issue the seller signing links.')
-      if (response?.data?.success === false) throw new Error(response.data.error || 'Unable to issue the seller signing links.')
-      const delivery = normalizeText(response?.data?.delivery).toLowerCase()
-      if (!['sent', 'partial'].includes(delivery)) {
-        throw new Error('The signing links were prepared but email delivery was not confirmed. No mandate has been marked as sent.')
-      }
-      const formalPackDispatch = createSellerOnboardingFormalPackDispatch({
-        existing: nextFormData.sellerOnboardingFormalPackDispatch || nextFormData.seller_onboarding_formal_pack_dispatch,
-        formalPackApproval,
-        response: response.data,
-        selectedDocuments: ['fica', 'mandate'],
-        signingRoute: sellerOnboardingReviewRoute,
-        actor: normalizeText(currentAgent?.id),
-        at: now,
-      })
-      const sentFormData = {
-        ...nextFormData,
-        sellerOnboardingFormalPackDispatch: formalPackDispatch,
-        seller_onboarding_formal_pack_dispatch: formalPackDispatch,
-        sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
-          existing: nextFormData.sellerOnboardingSigningLifecycle,
-          stage: SELLER_ONBOARDING_SIGNING_STAGES.packSent,
-          actor: normalizeText(currentAgent?.id),
-          at: now,
-          metadata: { selectedDocuments: ['fica', 'mandate'], route: sellerOnboardingReviewRoute, signingGroupId: formalPackDispatch.signingGroupId, delivery },
-        }),
-      }
-      sentFormData.seller_onboarding_signing_lifecycle = sentFormData.sellerOnboardingSigningLifecycle
-      await persistSellerProfileOnboardingFormData({ listingId, formData: sentFormData, status: 'completed' })
       await updatePrivateListing(listingId, {
         mandateType: sellerSigningPackTerms.mandateType,
         mandateStatus: 'sent',
       }, { includeRequirementsAndDocuments: false })
-      const deliveredCount = (Array.isArray(response?.data?.signingLinks) ? response.data.signingLinks : []).filter((item) => item?.delivery === 'sent').length
       const leadPatch = {
         stage: 'Mandate Sent',
-        status: delivery === 'sent' ? 'FICA and mandate sent for signature' : 'FICA and mandate partially delivered',
-        mandateStatus: 'sent_to_seller',
-        mandateSentAt: now,
+        status: 'Physical FICA and mandate pack prepared — awaiting signed upload',
+        mandateExecutionMode: 'manual',
+        mandatePreparedAt: now,
       }
       await updateAgencyCrmLeadRecord(organisationId, leadId, leadPatch)
-      await createAgencyCrmLeadActivity(organisationId, leadId, {
-        agent: currentAgent,
-        activityType: 'Seller signing pack sent',
-        activityNote: `FICA declaration and mandate sent to ${deliveredCount || recipients.length} of ${recipients.length} signer${recipients.length === 1 ? '' : 's'}.`,
-        outcome: delivery === 'sent' ? 'Sent for signature' : 'Partial delivery',
-        activityDate: now,
-      }, { actor: currentAgent })
       patchSelectedLeadRecord(leadPatch, leadId)
       setSellerSigningPackModalOpen(false)
-      setMessage(delivery === 'sent'
-        ? `FICA declaration and mandate sent to ${recipients.length} required signer${recipients.length === 1 ? '' : 's'}.`
-        : `The signing pack reached ${deliveredCount} of ${recipients.length} signers. Review delivery before resending.`)
+      setMessage('Physical FICA and mandate copies are prepared. Download them from Documents and upload the wet-ink signed copies when returned.')
       scheduleRecordsReload(organisationId, 750)
     } catch (signingError) {
       setSellerSigningPackError(signingError?.message || 'Unable to prepare and send the seller signing pack.')
@@ -27351,500 +27279,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
-  async function handleSendMandateToSeller(sendOptions = {}) {
-    if (!selectedLead || !organisationId) {
-      return { ok: false, errorMessage: 'Lead or organisation context is not ready yet. Refresh and try again.' }
-    }
-    if (!selectedLeadIsSeller) {
-      return { ok: false, errorMessage: 'Mandates can only be sent from a seller lead.' }
-    }
-    const mandateSigningDecision = resolveSellerAccessPolicy({
-      listingId: selectedLeadLinkedListing?.id || selectedLead?.listingId || selectedLead?.listing_id || selectedLead?.leadId,
-    }).actions.sendMandateSigningLink
-    if (!mandateSigningDecision.enabled) {
-      const errorMessage = getClientAccessPolicyMessage(mandateSigningDecision.reason)
-      setError(errorMessage)
-      return { ok: false, errorMessage, reason: mandateSigningDecision.reason }
-    }
-    const options = sendOptions && typeof sendOptions === 'object' ? sendOptions : {}
-    let dispatchId = normalizeText(options.dispatchId)
-    const statusPacket =
-      mandatePacketStatus?.packet &&
-      documentPacketBelongsToLead(mandatePacketStatus.packet, selectedLead?.leadId)
-        ? mandatePacketStatus.packet
-        : null
-    const mandatePacketId = normalizeText(
-      options.packetId ||
-      selectedLead?.mandatePacketId ||
-      selectedLead?.mandatePacket?.id ||
-      statusPacket?.id,
-    )
-    if (!mandatePacketId || !isUuidLike(mandatePacketId)) {
-      const errorMessage = 'The mandate packet is not available from Seller Lead anymore. Open Documents to upload or review the signed mandate record.'
-      setError(errorMessage)
-      return { ok: false, errorMessage }
-    }
-
-    const sellerEmail = normalizeText(options.sellerEmail || selectedLeadContact?.email).toLowerCase()
-    if (!isValidEmail(sellerEmail)) {
-      const errorMessage = 'Seller email is required to send the mandate.'
-      setError(errorMessage)
-      return { ok: false, errorMessage }
-    }
-
-    try {
-      if (isSupabaseConfigured && isUuidLike(mandatePacketId)) {
-        const packet = await fetchDocumentPacket(mandatePacketId, { includeVersions: false, includeEvents: false })
-        if (!documentPacketBelongsToLead(packet, selectedLead.leadId)) {
-          await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-            mandatePacketId: '',
-            mandateStatus: '',
-          })
-          patchSelectedLeadRecord({
-            mandatePacketId: '',
-            mandateStatus: '',
-          }, selectedLead.leadId)
-          const errorMessage = 'This lead was linked to a mandate packet for another lead. I cleared the stale link; generate a fresh mandate for this seller.'
-          setError(errorMessage)
-          return { ok: false, errorMessage }
-        }
-      }
-
-      const sellerName = [selectedLeadContact?.firstName, selectedLeadContact?.lastName].filter(Boolean).join(' ').trim() || 'Seller'
-      const propertyTitle = normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress || 'your property')
-      const onboardingToken = normalizeText(selectedLead?.sellerOnboardingToken)
-      const sellerClientPortalBaseLink = buildSellerClientPortalLink(onboardingToken)
-      const sellerMandatePortalLink = sellerClientPortalBaseLink ? `${sellerClientPortalBaseLink}/mandate` : ''
-      const sentAtIso = new Date().toISOString()
-      const providedSignerLinks = Array.isArray(options.signerLinks) ? options.signerLinks : []
-      const assignedAgentEmail = normalizeText(options.agentEmail || selectedLead?.assignedAgentEmail).toLowerCase()
-      const currentAgentEmail = normalizeText(currentAgent.email).toLowerCase()
-      const agentRecipientEmail = isValidEmail(assignedAgentEmail) ? assignedAgentEmail : currentAgentEmail
-      const agentRecipientName = normalizeText(selectedLead?.assignedAgentName || currentAgent.fullName || currentAgent.email)
-      const existingSignerRows = Array.isArray(mandatePacketStatus?.signingSummary?.signers)
-        ? mandatePacketStatus.signingSummary.signers
-        : []
-      const agentAlreadySigned = existingSignerRows.some((signer) =>
-        normalizeText(signer?.signer_role || signer?.role).toLowerCase() === 'agent' &&
-        normalizeText(signer?.status || signer?.statusRaw).toLowerCase() === 'signed'
-      )
-      let sellerSigningLink = resolveSellerSignerLink(providedSignerLinks, sellerEmail)
-      let agentSigningLink = resolveSignerLinkByRole(providedSignerLinks, 'agent', agentRecipientEmail)
-      const finalMandateStatus = normalizeText(options.signingStatus) || (agentAlreadySigned ? 'sent_to_seller' : 'sent_to_agent')
-      const targetSignerRole = finalMandateStatus === 'sent_to_seller' ? 'seller' : 'agent'
-      let signingEmailFailed = false
-      let signingLinkFailureMessage = ''
-
-      const canQueueBackgroundSigningStart =
-        LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED &&
-        options.resend !== true &&
-        options.reminder !== true &&
-        isSupabaseConfigured &&
-        isUuidLike(mandatePacketId)
-      if (canQueueBackgroundSigningStart) {
-        const recipientRole = targetSignerRole === 'seller' ? 'seller' : 'agent'
-        const recipientEmail = recipientRole === 'seller' ? sellerEmail : agentRecipientEmail
-        const recipientName = recipientRole === 'seller' ? sellerName : agentRecipientName
-        const backgroundPacketVersionId = normalizeText(options.packetVersionId)
-        setMessage('Mandate sending started in the background.')
-        const origin =
-          (typeof window !== 'undefined' && window.location?.origin)
-            ? window.location.origin
-            : 'https://app.arch9.co.za'
-        const queuedSendResponse = await withPipelineTimeout(
-          invokeEdgeFunction('legal-document-job-runner', {
-            body: {
-              action: 'prepare_and_send_ready_packet',
-              background: true,
-              prepareSigningLink: true,
-              type: 'seller_mandate_sent',
-              to: recipientEmail,
-              organisationId,
-              packetId: mandatePacketId,
-              packetVersionId: backgroundPacketVersionId || null,
-              targetSignerRole,
-              recipientRole,
-              recipientName,
-              sellerEmail,
-              sellerName,
-              propertyTitle,
-              mandateType: 'Mandate',
-              mandateStartDate: '',
-              mandateEndDate: '',
-              askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-              agentEmail: agentRecipientEmail,
-              agentName: agentRecipientName,
-              baseUrl: origin,
-              expiresInHours: 168,
-              jobType: 'send_for_signature',
-              jobDisplayType: 'send_mandate_for_signature',
-              phase4SignatureSendJob: true,
-              jobMetadata: {
-                phase4SignatureSendJob: true,
-                jobDisplayType: 'send_mandate_for_signature',
-                modalMayClose: true,
-                sourceAuthority: 'agency_pipeline_quick_start',
-              },
-            },
-          }),
-          'Mandate signing start could not be queued quickly enough. Please retry once the network settles.',
-          PIPELINE_CONTEXT_TIMEOUT_MS,
-        )
-        assertEdgeFunctionSuccess(queuedSendResponse, 'Mandate signing could not be queued.')
-        const queuedJob = queuedSendResponse?.data?.job || null
-        if (queuedJob) {
-          setMandatePacketStatus((previous) => (
-            normalizeText(previous?.packet?.id) === mandatePacketId
-              ? { ...previous, legalDocumentJob: queuedJob }
-              : previous
-          ))
-        }
-        void createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
-          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-          activityType: 'Mandate Signing Queued',
-          activityNote: `Mandate signing was queued in the background for the ${recipientRole}.`,
-          outcome: 'Queued',
-        }, { actor: currentAgent }).catch((activityError) => {
-          console.warn('[MANDATE] queued signing activity write skipped', activityError)
-        })
-        setError('')
-        setMessage('Mandate sending started. You can continue working while Arch9 prepares and sends the signing email.')
-        void refreshSelectedLeadMandateTarget({
-          packetId: mandatePacketId,
-          leadId: selectedLead.leadId,
-          leadPatch: {
-            mandateStatus: 'sending',
-            mandatePacketId,
-          },
-          reason: 'phase5_signature_send_job_queued_targeted_refresh',
-        })
-        return {
-          ok: true,
-          queued: true,
-          job: queuedJob,
-          recipientRole,
-          recipientEmail,
-        }
-      }
-
-      if (isSupabaseConfigured && isUuidLike(mandatePacketId) && (!agentSigningLink || !sellerSigningLink)) {
-        try {
-          const signingPreparation = await prepareSigningFields({
-            packetId: mandatePacketId,
-            packetVersionId: options.packetVersionId || null,
-            packetType: 'mandate',
-            organisationId,
-            placeholders: {
-              'seller.display_name': sellerName,
-              'seller.email': sellerEmail,
-              'agent.display_name': agentRecipientName,
-              'agent.email': agentRecipientEmail,
-              'property.address': propertyTitle,
-              'property.listing_title': propertyTitle,
-              'mandate.asking_price': String(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-            },
-            context: {
-              lead: {
-                sellerName: normalizeText(selectedLeadContact?.firstName),
-                sellerSurname: normalizeText(selectedLeadContact?.lastName),
-                sellerEmail,
-              },
-              mandateDraft: {
-                sellerEmail,
-              },
-              generatedByName: agentRecipientName,
-              generatedByUserEmail: agentRecipientEmail,
-              agentEmail: agentRecipientEmail,
-            },
-          })
-          const signingVersionId = normalizeText(signingPreparation?.version?.id)
-          await applyPreparedSigningLayoutForQuickFlow({
-            packetId: mandatePacketId,
-            versionId: signingVersionId,
-            preparedFields: signingPreparation?.seed?.fields || [],
-          })
-
-          const linkResult = await generateSigningLinks({
-            packetId: mandatePacketId,
-            packetVersionId: signingVersionId || null,
-            organisationId,
-            expiresInHours: 168,
-            baseUrl:
-              (typeof window !== 'undefined' && window.location?.origin)
-                ? window.location.origin
-              : 'https://app.arch9.co.za',
-            targetSignerRole,
-          })
-          dispatchId = normalizeText(linkResult?.dispatchId) || dispatchId
-          agentSigningLink = agentSigningLink || resolveSignerLinkByRole(linkResult?.signers, 'agent', agentRecipientEmail)
-          sellerSigningLink = sellerSigningLink || resolveSellerSignerLink(linkResult?.signers, sellerEmail)
-        } catch (linkError) {
-          console.warn('[MANDATE] unable to prepare signer link; continuing with client portal selling link', linkError)
-          const layoutReasons = Array.isArray(linkError?.details?.reasons)
-            ? linkError.details.reasons.map((reason) => normalizeText(reason)).filter(Boolean).join(', ')
-            : ''
-          signingLinkFailureMessage = [
-            normalizeText(linkError?.message),
-            layoutReasons ? `Layout diagnostics: ${layoutReasons}` : '',
-          ].filter(Boolean).join(' ')
-        }
-
-        if ((!sellerSigningLink || !agentSigningLink) && supabase) {
-          try {
-            const signerLookup = await supabase
-              .from('document_packet_signers')
-              .select('signing_token, signer_role, signer_email, status')
-              .eq('packet_id', mandatePacketId)
-              .order('created_at', { ascending: true })
-
-            if (!signerLookup.error) {
-              const normalizedSellerEmail = sellerEmail.toLowerCase()
-              const normalizedAgentEmail = agentRecipientEmail.toLowerCase()
-              const signerRows = Array.isArray(signerLookup.data) ? signerLookup.data : []
-              const origin =
-                (typeof window !== 'undefined' && window.location?.origin)
-                  ? window.location.origin
-                  : 'https://app.arch9.co.za'
-              if (!sellerSigningLink) {
-                const matchedSeller =
-                  signerRows.find(
-                    (row) =>
-                      normalizeText(row?.signer_role).toLowerCase() === 'seller' &&
-                      normalizeText(row?.signer_email).toLowerCase() === normalizedSellerEmail &&
-                      normalizeText(row?.signing_token),
-                  ) ||
-                  signerRows.find((row) => normalizeText(row?.signer_role).toLowerCase() === 'seller' && normalizeText(row?.signing_token)) ||
-                  null
-                const signerToken = normalizeText(matchedSeller?.signing_token)
-                if (signerToken) sellerSigningLink = `${origin}/sign/${signerToken}`
-              }
-              if (!agentSigningLink) {
-                const matchedAgent =
-                  signerRows.find(
-                    (row) =>
-                      normalizeText(row?.signer_role).toLowerCase() === 'agent' &&
-                      normalizeText(row?.signer_email).toLowerCase() === normalizedAgentEmail &&
-                      normalizeText(row?.signing_token),
-                  ) ||
-                  signerRows.find((row) => normalizeText(row?.signer_role).toLowerCase() === 'agent' && normalizeText(row?.signing_token)) ||
-                  null
-                const signerToken = normalizeText(matchedAgent?.signing_token)
-                if (signerToken) agentSigningLink = `${origin}/sign/${signerToken}`
-              }
-            }
-          } catch (signerLookupError) {
-            console.warn('[MANDATE] signer lookup fallback failed', signerLookupError)
-          }
-        }
-      }
-
-      const shouldSendToSeller = finalMandateStatus === 'sent_to_seller' || (!agentSigningLink && agentAlreadySigned && sellerSigningLink)
-      const outboundMandateLink = shouldSendToSeller
-        ? (sellerSigningLink || sellerMandatePortalLink)
-        : (agentSigningLink || sellerSigningLink || sellerMandatePortalLink)
-      const recipientRole = shouldSendToSeller ? 'seller' : 'agent'
-      const recipientEmail = recipientRole === 'seller' ? sellerEmail : agentRecipientEmail
-      const recipientName = recipientRole === 'seller' ? sellerName : agentRecipientName
-      const requiredSigningLink = recipientRole === 'seller' ? sellerSigningLink : agentSigningLink
-      if (!requiredSigningLink) {
-        const errorMessage =
-          [
-            recipientRole === 'seller'
-              ? 'Seller signing link could not be generated yet. Confirm the seller email address in the digital signing step, then send again.'
-              : 'Agent signing link could not be generated yet. Confirm the assigned agent email address in the digital signing step, then send again.',
-            signingLinkFailureMessage ? `Signing service said: ${signingLinkFailureMessage}` : '',
-          ].filter(Boolean).join(' ')
-        setError(errorMessage)
-        return { ok: false, errorMessage }
-      }
-
-      if (!isSupabaseConfigured) {
-        throw new Error('Mandate signing email delivery is not configured. No sent status was recorded.')
-      }
-      let emailDelivery = null
-      try {
-        const emailPayload = {
-          type: 'seller_mandate_sent',
-          to: recipientEmail,
-          organisationId,
-          packetId: mandatePacketId,
-          recipientRole,
-          recipientName,
-          sellerName,
-          propertyTitle,
-          mandateType: 'Mandate',
-          mandateStartDate: '',
-          mandateEndDate: '',
-          askingPrice: formatCurrency(Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0),
-          portalLink: outboundMandateLink,
-          agentName: agentRecipientName,
-          resend: options.resend === true,
-          reminder: options.reminder === true,
-          dispatchId,
-        }
-        const useServerSendReady = LEGAL_DOCUMENT_SERVER_SEND_READY_ENABLED && options.resend !== true && options.reminder !== true
-        const emailResponse = await withPipelineTimeout(
-          invokeEdgeFunction(useServerSendReady ? 'legal-document-job-runner' : 'send-mandate-signing-email', {
-            body: useServerSendReady
-              ? {
-                  action: 'send_ready_packet',
-                  ...emailPayload,
-                }
-              : emailPayload,
-          }),
-          'Mandate signing email timed out before the email provider confirmed delivery. The signing packet is prepared, but the recipient may not have been notified.',
-          PIPELINE_MANDATE_SIGNING_EMAIL_TIMEOUT_MS,
-        )
-        assertEdgeFunctionSuccess(emailResponse, 'Mandate signing email could not be sent.')
-        const serverSendResult = asRecord(asRecord(emailResponse?.data?.job).result || emailResponse?.data)
-        const emailDeliveryId = normalizeText(serverSendResult?.emailId || emailResponse?.data?.emailId)
-        const emailConfirmed = serverSendResult?.emailConfirmed === true || emailResponse?.data?.emailConfirmed === true || Boolean(emailDeliveryId)
-        if (!emailConfirmed) {
-          const error = new Error('Mandate signing email was prepared, but provider delivery was not confirmed. No sent status was recorded.')
-          error.code = 'SIGNING_EMAIL_UNCONFIRMED'
-          throw error
-        }
-        emailDelivery = { emailDeliveryId, emailConfirmed, delivery: serverSendResult?.delivery || emailResponse?.data?.delivery || null }
-      } catch (emailError) {
-        signingEmailFailed = true
-        console.warn('[MANDATE] signing email failed after link preparation', emailError)
-        throw new Error(emailError?.message || 'Mandate signing email could not be sent. The signing packet is prepared, but the agent was not notified.')
-      }
-
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-        stage: 'Seller Onboarding Submitted',
-        status: 'Submitted',
-        mandateStatus: finalMandateStatus,
-        mandateSentAt: sentAtIso,
-        mandateSigningLink: outboundMandateLink,
-      })
-      patchSelectedLeadRecord({
-        stage: 'Seller Onboarding Submitted',
-        status: 'Submitted',
-        mandateStatus: finalMandateStatus,
-        mandateSentAt: sentAtIso,
-        mandateSigningLink: outboundMandateLink,
-      }, selectedLead.leadId)
-      if (onboardingToken) {
-        updateSellerWorkflowRecordByToken(onboardingToken, (row) => ({
-          ...row,
-          mandateStatus: finalMandateStatus,
-          mandate: {
-            ...(row?.mandate || {}),
-            status: finalMandateStatus,
-            sentAt: sentAtIso,
-            signerLink: agentSigningLink || row?.mandate?.signerLink || '',
-          },
-          sellerOnboarding: {
-            ...(row?.sellerOnboarding || {}),
-            formData: {
-              ...((row?.sellerOnboarding?.formData && typeof row.sellerOnboarding.formData === 'object')
-                ? row.sellerOnboarding.formData
-                : {}),
-              mandatePacketId,
-              mandateSentAt: sentAtIso,
-              mandateSigningLink: sellerSigningLink || '',
-            },
-          },
-        }))
-      }
-
-      const listingId = normalizeText(selectedLead?.listingId)
-      if (isSupabaseConfigured && isUuidLike(listingId)) {
-        try {
-          await updatePrivateListing(
-            listingId,
-            {
-              listingStatus: 'mandate_sent',
-              mandateStatus: 'sent_for_signature',
-            },
-            { includeRequirementsAndDocuments: false },
-          )
-          await createPrivateListingActivity({
-            privateListingId: listingId,
-            activityType: 'mandate_sent',
-            activityTitle: 'Mandate sent for digital signing',
-            activityDescription: 'Mandate was sent to the seller for digital signing.',
-            performedBy: normalizeText(currentAgent.id),
-            visibility: 'internal',
-            metadata: {
-              leadId: normalizeText(selectedLead?.leadId),
-              packetId: mandatePacketId,
-              signingMethod: 'digital',
-            },
-          })
-        } catch (listingUpdateError) {
-          console.warn('[MANDATE] listing status update skipped', listingUpdateError)
-        }
-      }
-
-      if (isSupabaseConfigured && supabase && onboardingToken) {
-        try {
-          const onboardingLookup = await supabase
-            .from('private_listing_seller_onboarding')
-            .select('id, form_data')
-            .eq('token', onboardingToken)
-            .maybeSingle()
-          if (!onboardingLookup.error && onboardingLookup.data?.id) {
-            const existingFormData =
-              onboardingLookup.data.form_data && typeof onboardingLookup.data.form_data === 'object'
-                ? onboardingLookup.data.form_data
-                : {}
-            await supabase
-              .from('private_listing_seller_onboarding')
-              .update({
-                form_data: {
-                  ...existingFormData,
-                  mandatePacketId,
-                  mandateSentAt: sentAtIso,
-                  mandateSigningLink: sellerSigningLink || '',
-                },
-              })
-              .eq('id', onboardingLookup.data.id)
-          }
-        } catch (onboardingPersistError) {
-          console.warn('[MANDATE] onboarding metadata persistence skipped', onboardingPersistError)
-        }
-      }
-
-      await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
-        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Signed Mandate Requested',
-        activityNote: signingEmailFailed
-          ? 'Mandate signing link was created, but the email could not be sent.'
-          : 'Signed mandate request was recorded. Upload or confirm the wet-ink signed mandate in Documents.',
-        outcome: signingEmailFailed ? 'Email failed' : 'Signed mandate outstanding',
-      }, { actor: currentAgent })
-      setError('')
-      setMessage(signingEmailFailed
-        ? 'Mandate signing link created, but the email could not be sent. Upload or confirm the wet-ink signed mandate in Documents.'
-        : 'Signed mandate request recorded. Upload or confirm the wet-ink signed mandate in Documents.')
-      await refreshSelectedLeadMandateTarget({
-        packetId: mandatePacketId,
-        leadId: selectedLead.leadId,
-        leadPatch: {
-          stage: 'Seller Onboarding Submitted',
-          status: 'Submitted',
-          mandateStatus: finalMandateStatus,
-          mandateSentAt: sentAtIso,
-          mandateSigningLink: outboundMandateLink,
-        },
-        reason: 'phase5_post_send_targeted_refresh',
-      })
-      return {
-        ok: true,
-        emailDeliveryId: emailDelivery?.emailDeliveryId || null,
-        emailConfirmed: emailDelivery?.emailConfirmed === true,
-        recipientRole,
-        recipientEmail,
-        delivery: emailDelivery?.delivery || null,
-      }
-    } catch (sendError) {
-      const errorMessage = sendError?.message || 'Unable to send mandate right now.'
-      setError(errorMessage)
-      return { ok: false, errorMessage }
-    }
-  }
 
   async function handleOpenSellerLeadFinalSignedDocument(documentRow = {}) {
     const packetId = normalizeText(documentRow?.packetId || documentRow?.packet_id)
@@ -40360,15 +39794,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           </section>
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
-            <legend className="px-1 text-sm font-semibold text-[#243d56]">How will the FICA declaration and mandate be signed?</legend>
-            <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${sellerOnboardingReviewRoute === 'digital_pack' ? 'border-[#78ba96] bg-[#f2fbf5]' : 'border-[#dce6f2]'}`}>
-              <input type="radio" name="seller-onboarding-signing-route" checked={sellerOnboardingReviewRoute === 'digital_pack'} onChange={() => setSellerOnboardingReviewRoute('digital_pack')} />
-              <span><span className="block text-sm font-semibold text-[#243d56]">Send the digital signing pack</span><span className="mt-1 block text-sm leading-5 text-[#607387]">Send one combined FICA declaration and mandate pack to the required seller signers after you confirm commission terms.</span></span>
-            </label>
-            <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3 ${sellerOnboardingReviewRoute === 'manual_upload' ? 'border-[#78ba96] bg-[#f2fbf5]' : 'border-[#dce6f2]'}`}>
-              <input type="radio" name="seller-onboarding-signing-route" checked={sellerOnboardingReviewRoute === 'manual_upload'} onChange={() => setSellerOnboardingReviewRoute('manual_upload')} />
+            <legend className="px-1 text-sm font-semibold text-[#243d56]">Physical signing</legend>
+            <div className="flex items-start gap-3 rounded-xl border border-[#78ba96] bg-[#f2fbf5] p-3">
               <span><span className="block text-sm font-semibold text-[#243d56]">Prepare a physical-signature pack</span><span className="mt-1 block text-sm leading-5 text-[#607387]">Open the document workspace to prepare the FICA declaration and mandate for physical signing, then upload the signed originals when returned.</span></span>
-            </label>
+            </div>
           </fieldset>
         </div>
       </Modal>
@@ -40383,7 +39812,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button type="button" variant="secondary" disabled={sellerSigningPackSaving} onClick={() => setSellerSigningPackModalOpen(false)}>Cancel</Button>
             <Button type="button" disabled={sellerSigningPackSaving} onClick={() => void sendSellerLeadSigningPack()}>
-              {sellerSigningPackSaving ? 'Sending…' : sellerOnboardingReviewRoute === 'manual_upload' ? 'Prepare physical copies' : 'Send FICA + mandate'}
+              {sellerSigningPackSaving ? 'Preparing…' : 'Prepare physical copies'}
             </Button>
           </div>
         )}
@@ -40395,12 +39824,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             </div>
           ) : null}
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
-            The seller’s submitted onboarding facts remain frozen. This step adds the commercial terms and sends the separate Seller FICA Declaration and mandate for signature.
+            The seller’s submitted onboarding facts remain frozen. This step adds the commercial terms and prepares separate Seller FICA Declaration and mandate copies for wet-ink signing.
           </div>
           <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4">
-            <legend className="px-1 text-sm font-semibold text-[#243d56]">Signing route</legend>
-            <label className="flex items-start gap-3 text-sm text-[#243d56]"><input type="radio" name="seller-lead-signing-route" checked={sellerOnboardingReviewRoute === 'digital_pack'} onChange={() => setSellerOnboardingReviewRoute('digital_pack')} /><span><span className="block font-semibold">Send secure digital links</span><span className="mt-1 block leading-5 text-[#607387]">Each required signer receives a secure FICA and mandate link by email.</span></span></label>
-            <label className="flex items-start gap-3 text-sm text-[#243d56]"><input type="radio" name="seller-lead-signing-route" checked={sellerOnboardingReviewRoute === 'manual_upload'} onChange={() => setSellerOnboardingReviewRoute('manual_upload')} /><span><span className="block font-semibold">Prepare physical copies</span><span className="mt-1 block leading-5 text-[#607387]">No email is sent. The agent downloads the copies and uploads wet-ink signed documents when returned.</span></span></label>
+            <legend className="px-1 text-sm font-semibold text-[#243d56]">Physical signing</legend>
+            <div className="flex items-start gap-3 text-sm text-[#243d56]"><span><span className="block font-semibold">Prepare physical copies</span><span className="mt-1 block leading-5 text-[#607387]">No email is sent. The agent downloads the copies and uploads wet-ink signed documents when returned.</span></span></div>
           </fieldset>
           <fieldset className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2">
             <legend className="px-1 text-sm font-semibold text-[#243d56]">Mandate commercial terms</legend>
@@ -40420,7 +39848,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
             <p className="font-semibold text-[#243d56]">Required signer{getSellerLeadSigningRecipients().length === 1 ? '' : 's'}</p>
             <div className="mt-3 space-y-2">{getSellerLeadSigningRecipients().map((signer, index) => <div key={`${signer.email}:${signer.role}:${index}`} className="flex flex-wrap justify-between gap-2 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{signer.name || 'Name required'} <span className="font-normal text-[#607387]">· Required signer</span></span><span className="text-[#607387]">{signer.email || 'Email required'}</span></div>)}</div>
-            {getSellerLeadSigningRecipients().length > 1 ? <label className="mt-4 grid gap-1.5 font-semibold text-[#243d56]">Primary document contact<span className="font-normal text-[#607387]">This person receives the shared FICA details first; every required seller still receives and signs their own final link.</span><Field as="select" value={sellerSigningPackPrimaryEmail} onChange={(event) => setSellerSigningPackPrimaryEmail(event.target.value)}>{getSellerLeadSigningRecipients().map((signer) => <option key={signer.email} value={signer.email}>{signer.name || signer.email} · {signer.email}</option>)}</Field></label> : null}
           </section>
         </div>
       </Modal>
@@ -40428,30 +39855,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       <Modal
         open={mandateExecutionModalOpen}
         onClose={() => setMandateExecutionModalOpen(false)}
-        title="How will this mandate be signed?"
-        subtitle="Choose the route that matches the seller's process. Neither option marks the mandate as signed."
+        title="Prepare the physical mandate pack"
+        subtitle="Arch9 supports wet-ink mandate signatures only. Preparing copies does not mark the mandate as signed."
         className="max-w-2xl"
       >
-        <div className="grid gap-3 sm:grid-cols-2">
-          <section className="rounded-[16px] border border-[#cfe3d8] bg-[#f4fbf6] p-4">
-            <p className="text-sm font-semibold text-[#173d2d]">Digital signing through Arch9</p>
-            <p className="mt-2 text-sm leading-6 text-[#527062]">Prepare and send the digital mandate from Documents. The journey moves to Mandate Sent once the signing request is issued.</p>
-            <Button
-              type="button"
-              className="mt-4 w-full"
-              onClick={() => {
-                setMandateExecutionModalOpen(false)
-                handleSellerJourneyAction('send_mandate')
-              }}
-            >
-              Prepare digital mandate
-            </Button>
-          </section>
+        <div className="grid gap-3">
           <section className="rounded-[16px] border border-[#dbe3ec] bg-[#f8fafc] p-4">
-            <p className="text-sm font-semibold text-[#20364c]">Manual / wet-ink signing</p>
-            <p className="mt-2 text-sm leading-6 text-[#60758b]">Record that the mandate was sent manually. When it is returned, upload the signed copy from Documents.</p>
+            <p className="text-sm font-semibold text-[#20364c]">Wet-ink signatures required</p>
+            <p className="mt-2 text-sm leading-6 text-[#60758b]">Prepare physical FICA and mandate copies, arrange signatures, then upload the signed originals from Documents for review.</p>
             <Button type="button" variant="secondary" className="mt-4 w-full" onClick={recordManualMandateSent}>
-              Record manual mandate sent
+              Record physical mandate pack prepared
             </Button>
           </section>
         </div>

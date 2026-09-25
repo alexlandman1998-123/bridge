@@ -53,6 +53,8 @@ import {
 } from '../services/listings/listingFeatureCatalog'
 import StartDocumentModal from '../components/documents/StartDocumentModal'
 import SellerDocumentReviewActions from '../components/documents/SellerDocumentReviewActions'
+import HistoricalMandateExecutionReviewPanel from '../components/documents/HistoricalMandateExecutionReviewPanel'
+import WetInkConversionMigrationDependencyPanel from '../components/documents/WetInkConversionMigrationDependencyPanel'
 import ListingAgentReassignmentPanel from '../components/listings/ListingAgentReassignmentPanel'
 import ListingFeatureFields from '../components/listings/ListingFeatureFields'
 import ListingSellerInformationEditor from '../components/listings/ListingSellerInformationEditor'
@@ -146,8 +148,8 @@ import {
   validateSellerOnboardingFormalSigningSelection,
 } from '../core/documents/sellerOnboardingFormalSigningPack'
 import { createSellerOnboardingFormalPackApproval } from '../core/documents/sellerOnboardingFormalPackApproval'
-import { createSellerOnboardingFormalPackDispatch } from '../core/documents/sellerOnboardingFormalPackDispatch'
 import { createSellerOnboardingManualSigningPack } from '../core/documents/sellerOnboardingManualSigningPack'
+import { ONLINE_SIGNING_DISABLED, ONLINE_SIGNING_DISABLED_MESSAGE } from '../core/documents/onlineSigningPolicy'
 import { buildSellerOnboardingSigningPackSnapshot } from '../core/documents/sellerOnboardingSigningPackSnapshot'
 import { createSellerOnboardingCorrectionControl } from '../core/documents/sellerOnboardingCorrectionControl'
 import { buildSellerOnboardingJourneyStatus } from '../core/documents/sellerOnboardingJourneyStatus'
@@ -375,6 +377,21 @@ import {
   rejectSuggestion,
 } from '../services/leadSuggestionService'
 import { fetchOrganisationSettings } from '../lib/settingsApi'
+import {
+  listHistoricalMandateExecutionReviews,
+  resolveHistoricalMandateExecutionReview,
+} from '../services/historicalMandateExecutionReviewService'
+import {
+  listWetInkOfferExecution,
+  prepareWetInkOfferExecution,
+  recordWetInkOfferEvidence,
+  reviewWetInkOfferExecution,
+} from '../services/wetInkOfferExecutionService'
+import {
+  listWetInkConversionMigrationDependencies,
+  refreshWetInkConversionMigrationDependencies,
+  resolveWetInkConversionMigrationDependency,
+} from '../services/wetInkConversionMigrationDependencyService'
 import { upsertAreaFromAddress } from '../lib/location/upsertArea'
 import { formatSouthAfricanWhatsAppNumber, sendWhatsAppNotification } from '../lib/whatsapp'
 
@@ -392,6 +409,15 @@ const SELLER_REVIEW_DELIVERY_OPTIONS = [
   { value: SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.AGENT_ASSISTED) },
   { value: SELLER_REVIEW_DELIVERY_MODE.HARD_COPY, label: getSellerOfferReviewDeliveryModeLabel(SELLER_REVIEW_DELIVERY_MODE.HARD_COPY) },
 ]
+
+const WET_INK_OFFER_EXECUTION_STATUS_LABELS = {
+  not_prepared: 'Pack not attached',
+  awaiting_buyer_wet_ink: 'Awaiting buyer wet-ink signature',
+  awaiting_seller_wet_ink: 'Awaiting seller wet-ink signature',
+  awaiting_review: 'Awaiting evidence review',
+  fully_executed: 'Fully executed',
+  rejected: 'Evidence review rejected',
+}
 
 const SELLER_WORKSPACE_TABS = [
   { key: 'overview', label: 'Overview' },
@@ -3607,6 +3633,13 @@ function AgentListingDetail() {
   const [canonicalOffersLoading, setCanonicalOffersLoading] = useState(false)
   const [canonicalOffersError, setCanonicalOffersError] = useState('')
   const [canonicalOfferActionId, setCanonicalOfferActionId] = useState('')
+  const [wetInkOfferExecutions, setWetInkOfferExecutions] = useState([])
+  const [wetInkOfferExecutionAction, setWetInkOfferExecutionAction] = useState('')
+  const [wetInkOfferReviewNotes, setWetInkOfferReviewNotes] = useState({})
+  const [wetInkConversionMigrationDependencies, setWetInkConversionMigrationDependencies] = useState([])
+  const [wetInkConversionMigrationDependenciesLoading, setWetInkConversionMigrationDependenciesLoading] = useState(false)
+  const [wetInkConversionMigrationDependenciesError, setWetInkConversionMigrationDependenciesError] = useState('')
+  const [wetInkConversionMigrationDependencySavingId, setWetInkConversionMigrationDependencySavingId] = useState('')
   const [detailMessage, setDetailMessage] = useState('')
   const [detailError, setDetailError] = useState('')
   const [postCreateProgress, setPostCreateProgress] = useState(() => readListingPostCreateProgress(listingId))
@@ -3647,6 +3680,10 @@ function AgentListingDetail() {
   const [sellerDocumentDeliveries, setSellerDocumentDeliveries] = useState([])
   const [sellerDocumentDeliveriesLoading, setSellerDocumentDeliveriesLoading] = useState(false)
   const [sellerDocumentDeliveriesError, setSellerDocumentDeliveriesError] = useState('')
+  const [historicalMandateExecutionReviews, setHistoricalMandateExecutionReviews] = useState([])
+  const [historicalMandateExecutionReviewsLoading, setHistoricalMandateExecutionReviewsLoading] = useState(false)
+  const [historicalMandateExecutionReviewsError, setHistoricalMandateExecutionReviewsError] = useState('')
+  const [historicalMandateExecutionReviewSavingId, setHistoricalMandateExecutionReviewSavingId] = useState('')
   const [activeListingDocumentTab, setActiveListingDocumentTab] = useState('property')
   const [resendingSellerPortalLink, setResendingSellerPortalLink] = useState(false)
   const [resettingSellerPortalPassword, setResettingSellerPortalPassword] = useState(false)
@@ -3726,19 +3763,24 @@ function AgentListingDetail() {
   const [mandateSetupOpen, setMandateSetupOpen] = useState(false)
   const [mandateSetupDraft, setMandateSetupDraft] = useState({ sellerName: '', sellerEmail: '', propertyAddress: '' })
   const [sellerDocumentSendOpen, setSellerDocumentSendOpen] = useState(false)
-  const [sellerDocumentSendStep, setSellerDocumentSendStep] = useState(1)
   const [sellerDocumentSendSaving, setSellerDocumentSendSaving] = useState(false)
   const [sellerOnboardingReviewSaving, setSellerOnboardingReviewSaving] = useState(false)
   const [sellerOnboardingCorrectionReason, setSellerOnboardingCorrectionReason] = useState('')
   const [sellerDocumentSendSelection, setSellerDocumentSendSelection] = useState({ disclosure: false, fica: false, mandate: false })
-  const [primaryDocumentContactEmail, setPrimaryDocumentContactEmail] = useState('')
   const [sellerDocumentReplacementGroupId, setSellerDocumentReplacementGroupId] = useState('')
   const [sellerDocumentReplacementReason, setSellerDocumentReplacementReason] = useState('')
-  const [sellerDocumentCorrectionRequestActivityId, setSellerDocumentCorrectionRequestActivityId] = useState('')
   const [mandateReplacementOpen, setMandateReplacementOpen] = useState(false)
   const [mandateReplacementReason, setMandateReplacementReason] = useState('')
   const [mandateReplacementIntent, setMandateReplacementIntent] = useState(false)
-  const [sellerMandateSignatureRoute, setSellerMandateSignatureRoute] = useState('digital_pack')
+  const [sellerMandateSignatureRoute, setSellerMandateSignatureRouteState] = useState('manual_upload')
+  const setSellerMandateSignatureRoute = useCallback((route) => {
+    setSellerMandateSignatureRouteState(ONLINE_SIGNING_DISABLED ? 'manual_upload' : route)
+  }, [])
+  useEffect(() => {
+    if (ONLINE_SIGNING_DISABLED && sellerMandateSignatureRoute !== 'manual_upload') {
+      setSellerMandateSignatureRoute('manual_upload')
+    }
+  }, [sellerMandateSignatureRoute])
   const [sellerDocumentSigningSessions, setSellerDocumentSigningSessions] = useState([])
   const [sellerPortalInvitationStatus, setSellerPortalInvitationStatus] = useState([])
   const [sellerPortalTaskPlan, setSellerPortalTaskPlan] = useState({})
@@ -3746,8 +3788,6 @@ function AgentListingDetail() {
   const [sellerSigningCorrectionActivities, setSellerSigningCorrectionActivities] = useState([])
   const [sellerDocumentSigningSessionsLoading, setSellerDocumentSigningSessionsLoading] = useState(false)
   const [sellerDocumentSigningSessionAction, setSellerDocumentSigningSessionAction] = useState('')
-  const [lastSellerDocumentSigningLink, setLastSellerDocumentSigningLink] = useState('')
-  const [lastSellerDocumentSigningLinks, setLastSellerDocumentSigningLinks] = useState({})
   const [acceptedOfferOtpStartOffer, setAcceptedOfferOtpStartOffer] = useState(null)
   const [showFullGallery, setShowFullGallery] = useState(false)
   const [offerNotesDraftById, setOfferNotesDraftById] = useState({})
@@ -3929,7 +3969,7 @@ function AgentListingDetail() {
     if (!['digital_pack', 'manual_upload'].includes(requestedAction) || !listingRecord?.id) return
 
     openSellerDocumentSend({ fica: true, mandate: true })
-    setSellerMandateSignatureRoute(requestedAction)
+    setSellerMandateSignatureRoute(ONLINE_SIGNING_DISABLED ? 'manual_upload' : requestedAction)
     params.delete('sellerDocumentAction')
     navigate({
       pathname: location.pathname,
@@ -3941,6 +3981,55 @@ function AgentListingDetail() {
     () => String(listingRecord?.organisationId || listingRecord?.organisation_id || activeOrganisationId || '').trim(),
     [activeOrganisationId, listingRecord?.organisationId, listingRecord?.organisation_id],
   )
+
+  const loadHistoricalMandateExecutionReviews = useCallback(async () => {
+    if (!isSupabaseConfigured || !isUuidLike(listingOrganisationId) || !isUuidLike(listingRecord?.id)) {
+      setHistoricalMandateExecutionReviews([])
+      setHistoricalMandateExecutionReviewsError('')
+      return
+    }
+    setHistoricalMandateExecutionReviewsLoading(true)
+    setHistoricalMandateExecutionReviewsError('')
+    try {
+      const reviews = await listHistoricalMandateExecutionReviews({
+        organisationId: listingOrganisationId,
+        listingId: listingRecord.id,
+      })
+      setHistoricalMandateExecutionReviews(reviews)
+    } catch (error) {
+      setHistoricalMandateExecutionReviews([])
+      setHistoricalMandateExecutionReviewsError(error?.message || 'Historical mandate execution reviews are unavailable.')
+    } finally {
+      setHistoricalMandateExecutionReviewsLoading(false)
+    }
+  }, [listingOrganisationId, listingRecord?.id])
+
+  useEffect(() => {
+    if (sellerWorkspaceTab !== 'documents') return
+    void loadHistoricalMandateExecutionReviews()
+  }, [loadHistoricalMandateExecutionReviews, sellerWorkspaceTab])
+
+  async function handleHistoricalMandateExecutionReviewResolve(review, draft) {
+    if (!review?.id || historicalMandateExecutionReviewSavingId) return
+    setHistoricalMandateExecutionReviewSavingId(review.id)
+    setHistoricalMandateExecutionReviewsError('')
+    try {
+      const updated = await resolveHistoricalMandateExecutionReview({
+        reviewId: review.id,
+        classification: draft?.classification,
+        reviewReason: draft?.reviewReason,
+        downstreamRelease: draft?.downstreamRelease,
+      })
+      setHistoricalMandateExecutionReviews((current) => current.map((item) => (
+        item.id === updated.id ? { ...item, ...updated } : item
+      )))
+      setDetailMessage('Historical mandate execution decision recorded. No attorney handoff was initiated.')
+    } catch (error) {
+      setHistoricalMandateExecutionReviewsError(error?.message || 'Unable to record the historical mandate execution decision.')
+    } finally {
+      setHistoricalMandateExecutionReviewSavingId('')
+    }
+  }
 
   useEffect(() => {
     if ((!sellerOnboardingSendOpen && !sellerDocumentSendOpen) || !isSupabaseConfigured || !listingOrganisationId) return undefined
@@ -4162,6 +4251,55 @@ function AgentListingDetail() {
     return () => {
       cancelled = true
     }
+  }, [listingOrganisationId, listingRecord?.id, offersRefreshTick])
+
+  const loadWetInkConversionMigrationDependencies = useCallback(async () => {
+    if (!isSupabaseConfigured || !isUuidLike(listingOrganisationId) || !isUuidLike(listingRecord?.id)) {
+      setWetInkConversionMigrationDependencies([])
+      setWetInkConversionMigrationDependenciesError('')
+      return
+    }
+    setWetInkConversionMigrationDependenciesLoading(true)
+    setWetInkConversionMigrationDependenciesError('')
+    try {
+      const dependencies = await listWetInkConversionMigrationDependencies({
+        organisationId: listingOrganisationId,
+        listingId: listingRecord.id,
+      })
+      setWetInkConversionMigrationDependencies(dependencies)
+    } catch (error) {
+      // This migration is deployed with the controlled release bundle. Keep
+      // the existing offer workspace usable until then.
+      console.warn('[AgentListingDetail] wet-ink conversion migration queue unavailable', error)
+      setWetInkConversionMigrationDependencies([])
+      setWetInkConversionMigrationDependenciesError('')
+    } finally {
+      setWetInkConversionMigrationDependenciesLoading(false)
+    }
+  }, [listingOrganisationId, listingRecord?.id])
+
+  useEffect(() => {
+    if (activeTab !== 'offers') return
+    void loadWetInkConversionMigrationDependencies()
+  }, [activeTab, loadWetInkConversionMigrationDependencies])
+
+  useEffect(() => {
+    if (!listingOrganisationId || !listingRecord?.id || !isSupabaseConfigured) {
+      setWetInkOfferExecutions([])
+      return undefined
+    }
+    let cancelled = false
+    listWetInkOfferExecution({ organisationId: listingOrganisationId, listingId: listingRecord.id })
+      .then((records) => {
+        if (!cancelled) setWetInkOfferExecutions(Array.isArray(records) ? records : [])
+      })
+      .catch((error) => {
+        // The workflow migration may not yet be deployed. Do not disrupt the
+        // existing listing screen during that controlled rollout.
+        console.warn('[AgentListingDetail] wet-ink offer execution unavailable', error)
+        if (!cancelled) setWetInkOfferExecutions([])
+      })
+    return () => { cancelled = true }
   }, [listingOrganisationId, listingRecord?.id, offersRefreshTick])
 
   const refreshInterestedLeads = useCallback(async () => {
@@ -7132,15 +7270,7 @@ function AgentListingDetail() {
     }
     setDetailError('')
     setDetailMessage('')
-    if (!['yes', 'no'].includes(onboardingMandateChoice)) {
-      setDetailError('Choose whether this seller should receive a digital mandate.')
-      return
-    }
-    const digitalMandateRequested = onboardingMandateChoice === 'yes'
-    if (sellerOwnershipUnidentified && digitalMandateRequested) {
-      setDetailError('Confirm the legal owner before adding a digital mandate. You can still send basic seller onboarding now.')
-      return
-    }
+    const digitalMandateRequested = false
     const existingAttorneyRecommendation = readSellerOnboardingAttorneyRecommendation(sellerFormData)
     const selectedPreferredTransferAttorney = preferredTransferAttorneyOptions.find((option) => String(option?.id || '') === preferredTransferAttorneyOptionId) || null
     let preferredTransferAttorneyRecommendation = existingAttorneyRecommendation
@@ -7157,11 +7287,6 @@ function AgentListingDetail() {
       }
     }
     const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
-    const hasMandateCommission = commissionBasis === 'fixed' ? Number(commissionDraft.amount) > 0 : Number(commissionDraft.percentage) > 0
-    if (digitalMandateRequested && (!hasMandateCommission || !String(commissionDraft.vatHandling || '').trim())) {
-      setDetailError(`Enter the ${commissionBasis === 'fixed' ? 'fixed Rand commission' : 'commission percentage'} and VAT treatment before sending a digital mandate.`)
-      return
-    }
     const sellerEmail = resolveSellerEmailFromListing(listingRecord)
     const sellerPhone = resolveSellerPhoneFromListing(listingRecord)
     const hasSellerContact = isValidEmail(sellerEmail) || Boolean(formatSouthAfricanWhatsAppNumber(sellerPhone))
@@ -7422,7 +7547,7 @@ function AgentListingDetail() {
   }
 
   function openMandateSetup() {
-    setCommissionDraft((previous) => ({ ...previous, basis: previous.basis === 'fixed' ? 'fixed' : 'percentage', digitalMandateRequested: true }))
+    setCommissionDraft((previous) => ({ ...previous, basis: previous.basis === 'fixed' ? 'fixed' : 'percentage', digitalMandateRequested: false }))
     setMandateSetupDraft({
       sellerName: resolveSellerNameFromListing(listingRecord),
       sellerEmail: resolveSellerEmailFromListing(listingRecord),
@@ -7514,7 +7639,6 @@ function AgentListingDetail() {
     }))
     setDetailError('')
     setDetailMessage('')
-    setPrimaryDocumentContactEmail(getSellerSigningPlan().recipients[0]?.email || '')
     const activeGroup = sellerDocumentSigningSessions.find((session) => session?.status === 'active' && session?.signing_group_id)?.signing_group_id || ''
     const hasRequestedGroup = Boolean(correctionRequest?.metadata && Object.prototype.hasOwnProperty.call(correctionRequest.metadata, 'signingGroupId'))
     const requestedGroup = String(correctionRequest?.metadata?.signingGroupId || '')
@@ -7522,8 +7646,7 @@ function AgentListingDetail() {
     setSellerDocumentReplacementReason(String(correctionRequest?.metadata?.issue || ''))
     setMandateReplacementIntent(Boolean(correctionRequest?.metadata?.mandateReplacementIntent))
     setSellerDocumentCorrectionRequestActivityId(String(correctionRequest?.id || ''))
-    setSellerMandateSignatureRoute('digital_pack')
-    setSellerDocumentSendStep(2)
+    setSellerMandateSignatureRoute('manual_upload')
     setSellerDocumentSendOpen(true)
   }
 
@@ -7579,15 +7702,6 @@ function AgentListingDetail() {
             actor: String(listingActor?.id || profile?.id || ''),
           })
         : existingForm.sellerOnboardingCorrectionControl || existingForm.seller_onboarding_correction_control || null
-      if (status === SELLER_ONBOARDING_REVIEW_STATUS.correctionRequested && isSupabaseConfigured && isUuidLike(listingRecord.id)) {
-        const active = await invokeEdgeFunction('listing-mandate-signing', { body: { action: 'status', listingId: listingRecord.id } })
-        if (active?.error || active?.data?.success === false) throw new Error(active?.error?.message || active?.data?.error || 'Unable to check active signing links before requesting a correction.')
-        const sessions = Array.isArray(active?.data?.sessions) ? active.data.sessions : []
-        for (const session of sessions.filter((session) => session?.status === 'active')) {
-          const revoked = await invokeEdgeFunction('listing-mandate-signing', { body: { action: 'revoke', listingId: listingRecord.id, sessionId: session.id } })
-          if (revoked?.error || revoked?.data?.success === false) throw new Error(revoked?.error?.message || revoked?.data?.error || 'Unable to revoke an active signing link before requesting a correction.')
-        }
-      }
       const nextForm = {
         ...existingForm,
         sellerOnboardingReview: review,
@@ -7628,73 +7742,22 @@ function AgentListingDetail() {
     }
   }
 
-  async function loadSellerDocumentSigningSessions({ silent = false } = {}) {
-    if (!isSupabaseConfigured || !isUuidLike(listingRecord?.id)) return
-    try {
-      if (!silent) setSellerDocumentSigningSessionsLoading(true)
-      const result = await invokeEdgeFunction('listing-mandate-signing', { body: { action: 'status', listingId: listingRecord.id } })
-      if (result?.error || result?.data?.success === false) throw new Error(result?.error?.message || result?.data?.error || 'Unable to load seller document link status.')
-      setSellerDocumentSigningSessions(Array.isArray(result?.data?.sessions) ? result.data.sessions : [])
-      setSellerPortalInvitationStatus(Array.isArray(result?.data?.portalInvitations) ? result.data.portalInvitations : [])
-      setSellerPortalTaskPlan(result?.data?.portalTaskPlan && typeof result.data.portalTaskPlan === 'object' ? result.data.portalTaskPlan : {})
-      setSellerSigningReplacements(Array.isArray(result?.data?.replacements) ? result.data.replacements : [])
-      setSellerSigningCorrectionActivities(Array.isArray(result?.data?.correctionActivities) ? result.data.correctionActivities : [])
-    } catch (error) {
-      if (!silent) setDetailError(error?.message || 'Unable to load seller document link status.')
-    } finally {
-      if (!silent) setSellerDocumentSigningSessionsLoading(false)
-    }
+  function loadSellerDocumentSigningSessions() {
+    setSellerDocumentSigningSessions([])
+    setSellerPortalInvitationStatus([])
+    setSellerPortalTaskPlan({})
+    setSellerSigningReplacements([])
+    setSellerSigningCorrectionActivities([])
   }
 
-  async function revokeSellerDocumentSigningSession(sessionId) {
-    if (!sessionId || !isUuidLike(listingRecord?.id)) return
-    try {
-      setSellerDocumentSigningSessionAction(`revoke:${sessionId}`)
-      setDetailError('')
-      const result = await invokeEdgeFunction('listing-mandate-signing', { body: { action: 'revoke', listingId: listingRecord.id, sessionId } })
-      if (result?.error || result?.data?.success === false) throw new Error(result?.error?.message || result?.data?.error || 'Unable to revoke the seller document link.')
-      setDetailMessage('Seller document link revoked. It can no longer be opened or signed.')
-      await loadSellerDocumentSigningSessions({ silent: true })
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to revoke the seller document link.')
-    } finally {
-      setSellerDocumentSigningSessionAction('')
-    }
+  function copyLastSellerDocumentSigningLink() {
+    setDetailError(ONLINE_SIGNING_DISABLED_MESSAGE)
   }
 
-  async function copyLastSellerDocumentSigningLink(link = lastSellerDocumentSigningLink) {
-    if (!link) return
-    try {
-      await navigator.clipboard.writeText(link)
-      setDetailMessage('Secure seller document link copied. Treat it as sensitive and share it only with the seller.')
-    } catch {
-      setDetailError('Unable to copy the signing link. Please use a browser that permits clipboard access.')
-    }
+  function resendSellerDocumentSigningSession() {
+    setDetailError(ONLINE_SIGNING_DISABLED_MESSAGE)
   }
 
-  async function resendSellerDocumentSigningSession(sessionId) {
-    if (!sessionId || !isUuidLike(listingRecord?.id)) return
-    try {
-      setSellerDocumentSigningSessionAction(`resend:${sessionId}`)
-      setDetailError('')
-      const result = await invokeEdgeFunction('listing-mandate-signing', { body: {
-        action: 'resend', listingId: listingRecord.id, sessionId,
-        agentName: String(listingActor?.name || profile?.fullName || profile?.email || 'Your agent').trim(),
-      } })
-      if (result?.error || result?.data?.success === false) throw new Error(result?.error?.message || result?.data?.error || 'Unable to send a fresh seller document link.')
-      const link = String(result?.data?.signingLink || '')
-      setLastSellerDocumentSigningLink(link)
-      setLastSellerDocumentSigningLinks((current) => ({ ...current, [sessionId]: link }))
-      setDetailMessage(result?.data?.delivery === 'failed'
-        ? 'A fresh signing link was created, but email delivery failed. Copy the link below and share it securely; the previous link has been invalidated.'
-        : 'A fresh signing link was emailed. The previous link no longer works.')
-      await loadSellerDocumentSigningSessions({ silent: true })
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to send a fresh seller document link.')
-    } finally {
-      setSellerDocumentSigningSessionAction('')
-    }
-  }
 
   function downloadSellerSigningAudit() {
     if (!sellerDocumentSigningSessions.length) return
@@ -7710,6 +7773,11 @@ function AgentListingDetail() {
   }
 
   async function saveSellerDocumentSendSelection() {
+    if (ONLINE_SIGNING_DISABLED && sellerMandateSignatureRoute !== 'manual_upload') {
+      setSellerMandateSignatureRoute('manual_upload')
+      setDetailError(`${ONLINE_SIGNING_DISABLED_MESSAGE} The physical-signature route has been selected instead.`)
+      return
+    }
     if (!hasIdentifiedSellerEntity()) {
       setDetailError('Identify the seller entity in the Seller Profile before preparing a document link.')
       return
@@ -7742,21 +7810,13 @@ function AgentListingDetail() {
       setDetailError(incompleteSelection.missing[0] || `${incompleteSelection.title} is not ready yet.`)
       return
     }
-    const primarySigner = signingPlan.recipients.find((recipient) => recipient.email === primaryDocumentContactEmail) || signingPlan.recipients[0]
+    const primarySigner = signingPlan.recipients[0]
     if (!primarySigner || !isValidEmail(primarySigner.email)) {
       setDetailError('Add a valid email for every required signer before preparing a document link.')
       return
     }
     if ((sellerDocumentReplacementGroupId || mandateReplacementIntent) && sellerDocumentReplacementReason.trim().length < 5) {
       setDetailError('Give a short reason before replacing an active seller signing pack.')
-      return
-    }
-    if (mandateReplacementIntent && sellerMandateSignatureRoute !== 'digital_pack') {
-      setDetailError('Send mandate replacements digitally so Arch9 can preserve the signed source and activate the new version only after every required signature.')
-      return
-    }
-    if (sellerDocumentCorrectionRequestActivityId && sellerMandateSignatureRoute === 'manual_upload') {
-      setDetailError('Use a digital replacement pack for this seller correction request so the signed-record audit can be linked to the replacement.')
       return
     }
     const commissionBasis = commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage'
@@ -7866,85 +7926,9 @@ function AgentListingDetail() {
           formData: nextFormData,
         },
       }))
-      if (sellerMandateSignatureRoute === 'manual_upload') {
-        setSellerDocumentSendOpen(false)
-        setDetailMessage('Physical FICA and mandate copies are ready in Documents. Download them for wet-ink signature, then upload each signed copy; neither document is complete until that evidence is recorded.')
-        return
-      }
-      const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
-        action: 'issue',
-        listingId: listingRecord.id,
-        signerName: primarySigner.name,
-        signerEmail: primarySigner.email,
-        signers: signingPlan.recipients,
-        primaryDocumentContactEmail: primarySigner.email,
-        supersededSigningGroupId: sellerDocumentReplacementGroupId || undefined,
-        replacementReason: mandateReplacementIntent ? sellerDocumentReplacementReason.trim() : undefined,
-        correctionRequestActivityId: sellerDocumentCorrectionRequestActivityId || undefined,
-        agentName: String(listingActor?.name || profile?.fullName || profile?.email || 'Agent').trim(),
-        selectedDocuments: selected,
-        mandateSnapshot: {
-          propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '',
-          mandateType,
-          askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
-          commissionBasis,
-          commissionPercentage: commissionBasis === 'percentage' ? commissionDraft.percentage : '',
-          commissionAmount: commissionBasis === 'fixed' ? commissionDraft.amount : '',
-          vatHandling: commissionDraft.vatHandling,
-          branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace),
-        },
-        signingPack: buildSellerSigningPackSnapshot(selected),
-      } })
-      if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Unable to email the secure document link.')
-      const formalPackDispatch = createSellerOnboardingFormalPackDispatch({
-        existing: nextFormData.sellerOnboardingFormalPackDispatch || nextFormData.seller_onboarding_formal_pack_dispatch,
-        formalPackApproval,
-        response: response?.data,
-        selectedDocuments: selected,
-        signingRoute: sellerMandateSignatureRoute,
-        actor: String(listingActor?.id || profile?.id || ''),
-      })
-      const deliveryReachedRecipient = formalPackDispatch.deliveredRecipientCount > 0
-      const sentFormData = {
-        ...nextFormData,
-        sellerOnboardingFormalPackDispatch: formalPackDispatch,
-        seller_onboarding_formal_pack_dispatch: formalPackDispatch,
-        sellerOnboardingSigningLifecycle: createSellerOnboardingSigningLifecycle({
-          existing: nextFormData.sellerOnboardingSigningLifecycle || nextFormData.seller_onboarding_signing_lifecycle,
-          stage: deliveryReachedRecipient ? SELLER_ONBOARDING_SIGNING_STAGES.packSent : SELLER_ONBOARDING_SIGNING_STAGES.packPrepared,
-          actor: String(listingActor?.id || profile?.id || ''),
-          metadata: {
-            selectedDocuments: selected,
-            route: sellerMandateSignatureRoute,
-            signingGroupId: formalPackDispatch.signingGroupId,
-            supersededSigningGroupId: formalPackDispatch.supersededSigningGroupId,
-            isAmendment: formalPackDispatch.isAmendment,
-            signedSessionsRetained: formalPackDispatch.signedSessionsRetained,
-            delivery: formalPackDispatch.delivery,
-            deliveredRecipientCount: formalPackDispatch.deliveredRecipientCount,
-            recipientCount: formalPackDispatch.recipientCount,
-          },
-        }),
-      }
-      sentFormData.seller_onboarding_signing_lifecycle = sentFormData.sellerOnboardingSigningLifecycle
-      await updatePrivateListingOnboardingFormData(listingRecord.id, sentFormData, {
-        status: listingRecord?.sellerOnboardingStatus || listingRecord?.sellerOnboarding?.status || 'completed',
-        syncRequirements: false,
-      })
-      patchListing((row) => ({ ...row, sellerOnboarding: { ...(row?.sellerOnboarding || {}), formData: sentFormData } }))
-      setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
-      setLastSellerDocumentSigningLinks(Object.fromEntries((Array.isArray(response?.data?.signingLinks) ? response.data.signingLinks : []).map((item) => [String(item?.signerEmail || '').toLowerCase(), String(item?.signingLink || '')]).filter(([key, value]) => key && value)))
       setSellerDocumentSendOpen(false)
       setMandateReplacementIntent(false)
-      setSellerDocumentCorrectionRequestActivityId('')
-      setDetailMessage(formalPackDispatch.isAmendment || mandateReplacementIntent
-        ? `Amendment signing pack prepared for ${signingPlan.recipients.length} required signer${signingPlan.recipients.length === 1 ? '' : 's'}. The original signed pack remains unchanged as audit evidence.${formalPackDispatch.delivery === 'failed' ? ' No email delivery was confirmed; copy the new link below to share it safely.' : formalPackDispatch.delivery === 'partial' ? ` ${formalPackDispatch.deliveredRecipientCount} of ${formalPackDispatch.recipientCount} signing links were delivered.` : ''}`
-        : formalPackDispatch.delivery === 'failed'
-        ? 'The signing pack was prepared, but no delivery was confirmed. Copy the new link below to share it safely with the seller.'
-        : formalPackDispatch.delivery === 'partial'
-          ? `Signing links were delivered to ${formalPackDispatch.deliveredRecipientCount} of ${formalPackDispatch.recipientCount} required signers. Check the delivery status before resending the failed recipient.`
-          : `Secure seller document link${signingPlan.recipients.length === 1 ? '' : 's'} emailed to ${signingPlan.recipients.length} required signer${signingPlan.recipients.length === 1 ? '' : 's'} for ${selected.length} selected document${selected.length === 1 ? '' : 's'}.`)
-      await loadSellerDocumentSigningSessions({ silent: true })
+      setDetailMessage('Physical FICA and mandate copies are ready in Documents. Download them for wet-ink signature, then upload each signed copy; neither document is complete until that evidence is recorded.')
     } catch (error) {
       setDetailError(error?.message || 'Unable to save the selected seller documents.')
     } finally {
@@ -8029,58 +8013,6 @@ function AgentListingDetail() {
     }
     setMandateSetupOpen(false)
     setDetailMessage('Mandate details and selected documents saved. You can now send one secure signing link to the seller.')
-  }
-
-  async function sendListingMandateSigningLink() {
-    if (!isSupabaseConfigured || !isUuidLike(listingRecord?.id)) {
-      setDetailError('A live listing is required before a signing link can be sent.')
-      return
-    }
-    if (!hasIdentifiedSellerEntity()) {
-      setDetailError('Identify the seller entity in the Seller Profile before sending a signing link.')
-      return
-    }
-    const signingPlan = getSellerSigningPlan()
-    if (!signingPlan.ready) {
-      setDetailError(signingPlan.missing[0] || 'Complete the required signer details before sending a signing link.')
-      return
-    }
-
-    const mandateReadiness = getListingMandateReadiness()
-    if (!mandateReadiness.ready) {
-      setDetailError(mandateReadiness.missing[0] || 'Complete the listing details required for the mandate before sending it.')
-      return
-    }
-    const sellerName = signingPlan.recipients[0]?.name || resolveSellerNameFromListing(listingRecord) || 'Seller'
-    const sellerEmail = signingPlan.recipients[0]?.email || resolveSellerEmailFromListing(listingRecord)
-    const agentName = String(listingActor?.name || profile?.fullName || profile?.email || 'Agent').trim()
-    if (!isValidEmail(sellerEmail)) {
-      setDetailError('A valid seller email is required before sending the mandate for signature.')
-      return
-    }
-
-    try {
-      setFollowUpActionId('send_mandate_signing_link')
-      setDetailError('')
-      setDetailMessage('')
-      const selectedDocuments = ['mandate']
-      const response = await invokeEdgeFunction('listing-mandate-signing', { body: {
-        action: 'issue', listingId: listingRecord.id, signerName: sellerName, signerEmail: sellerEmail, signers: signingPlan.recipients, agentName, selectedDocuments,
-        mandateSnapshot: { propertyAddress: listingRecord?.propertyAddress || marketingDraft.addressLine1 || listingRecord?.listingTitle || '', mandateType: marketingDraft.mandateType || listingRecord?.mandateType || getListingSellerFormData(listingRecord).mandateType || 'sole', askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0), commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage', commissionPercentage: commissionDraft.basis === 'fixed' ? '' : commissionDraft.percentage, commissionAmount: commissionDraft.basis === 'fixed' ? commissionDraft.amount : '', vatHandling: commissionDraft.vatHandling, branding: resolveOnboardingBranding(listingRecord?.branding, currentWorkspace?.branding, currentWorkspace) },
-        signingPack: buildSellerSigningPackSnapshot(selectedDocuments),
-      } })
-      if (response?.error || response?.data?.success === false) throw new Error(response?.error?.message || response?.data?.error || 'Mandate signing email could not be sent.')
-      setLastSellerDocumentSigningLink(String(response?.data?.signingLink || ''))
-      setLastSellerDocumentSigningLinks(Object.fromEntries((Array.isArray(response?.data?.signingLinks) ? response.data.signingLinks : []).map((item) => [String(item?.signerEmail || '').toLowerCase(), String(item?.signingLink || '')]).filter(([key, value]) => key && value)))
-      setDetailMessage(response?.data?.delivery === 'failed'
-        ? 'The secure link was created but email delivery failed. Copy the new link from the document status area to share it safely.'
-        : 'A secure one-time signing link has been emailed to the seller.')
-      window.dispatchEvent(new Event('itg:listings-updated'))
-    } catch (error) {
-      setDetailError(error?.message || 'Unable to send the mandate for signature.')
-    } finally {
-      setFollowUpActionId('')
-    }
   }
 
   async function handleStartListingMandateDocument(selection = {}) {
@@ -8311,11 +8243,11 @@ function AgentListingDetail() {
     const linkedLead = listingLeads.find((lead) =>
       String(lead?.leadId || lead?.id || '') === String(offerRow?.buyerLeadId || canonicalOffer?.buyerLeadId || ''),
     )
-    const note = offerNotesDraftById?.[offerRow.id] || ''
     setOfferActionError('')
     setOfferActionMessage('')
-    if (OFFER_WORKFLOW_RETIRED) {
-      setOfferActionError(OFFER_WORKFLOW_RETIRED_MESSAGE)
+    const wetInkExecution = wetInkOfferExecutions.find((record) => record.offerId === String(offerRow.canonicalOfferId))
+    if (wetInkExecution?.status !== 'fully_executed') {
+      setOfferActionError('A reviewed, fully executed wet-ink OTP is required before creating a transaction.')
       return
     }
     try {
@@ -8327,19 +8259,13 @@ function AgentListingDetail() {
           canonicalOffer?.conditions?.signedOtpDocument,
         ].filter(Boolean),
       })
-      if (listingHasKingstonsSellerProcess && kingstonsBuyerOtpReadiness?.gate?.offerConversionReady !== true) {
-        throw new Error(kingstonsBuyerOtpReadiness?.gate?.reason || 'Upload the manually signed OTP before converting this Kingston buyer offer.')
-      }
-      const acceptedOffer = [
+      if (![
           OFFER_WORKFLOW_STATUS.ACCEPTED,
           OFFER_WORKFLOW_STATUS.CONVERTED_TO_TRANSACTION,
-        ].includes(currentStatus)
-        ? canonicalOffer
-        : await updateCanonicalOfferStatus(offerRow.canonicalOfferId, 'accepted', {
-            organisationId: listingOrganisationId,
-            actor: getCanonicalOfferActor(),
-            patch: buildCanonicalListingOfferPatch(offerRow, 'Accepted for transaction conversion', note),
-          })
+        ].includes(currentStatus)) {
+        throw new Error('The reviewed wet-ink OTP must mark this offer accepted before it can create a transaction.')
+      }
+      const acceptedOffer = canonicalOffer
       const conversionLead = {
         ...(linkedLead || {}),
         leadId: linkedLead?.leadId || acceptedOffer?.buyerLeadId || canonicalOffer?.buyerLeadId,
@@ -10638,7 +10564,6 @@ function AgentListingDetail() {
     setSellerSectionEditorKey('')
     setSellerSectionDraft({})
     setSellerSectionReturnToDocuments(false)
-    setSellerDocumentSendStep(1)
     setSellerDocumentSendOpen(true)
     setDetailError('')
   }
@@ -10802,7 +10727,6 @@ function AgentListingDetail() {
           ? 'Seller information updated. The saved ownership model and document requirements are now in sync.'
           : 'Seller profile captured. Document requirements have been recalculated from the saved seller model.'))
       if (returnToDocuments) {
-        setSellerDocumentSendStep(1)
         setSellerDocumentSendOpen(true)
       }
     } catch (error) {
@@ -11097,7 +11021,6 @@ function AgentListingDetail() {
       setSellerSectionReturnToDocuments(false)
       setDetailMessage(result.warnings?.[0]?.message || `${SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey)?.title || 'Seller details'} saved.`)
       if (returnToDocuments) {
-        setSellerDocumentSendStep(1)
         setSellerDocumentSendOpen(true)
       }
     } catch (error) {
@@ -11178,6 +11101,119 @@ function AgentListingDetail() {
     } finally {
       setSellerDocumentUploadKey('')
       event.target.value = ''
+    }
+  }
+
+  async function handleWetInkOfferExecutionUpload(offer, kind, event) {
+    const file = event.target.files?.[0]
+    const offerId = normalizeText(offer?.canonicalOfferId || offer?.offerId || offer?.id)
+    if (!file || !offerId || !listingRecord?.id || !listingOrganisationId) return
+    if (!isSupabaseConfigured || !isUuidLike(listingRecord.id)) {
+      setOfferActionError('Wet-ink OTP evidence needs the shared listing record in Supabase.')
+      event.target.value = ''
+      return
+    }
+    const actionKey = `${offerId}:${kind}`
+    setWetInkOfferExecutionAction(actionKey)
+    setOfferActionError('')
+    try {
+      const labels = {
+        printable_pack: 'Printable wet-ink OTP pack',
+        buyer: 'Buyer wet-ink signed OTP',
+        seller: 'Seller wet-ink signed OTP',
+      }
+      const document = await uploadPrivateListingDocument(listingRecord.id, file, {
+        requirementKey: `wet_ink_otp_${kind}_${offerId}`,
+        documentType: `wet_ink_otp_${kind}`,
+        documentCategory: 'buyer_offer',
+        documentName: `${labels[kind] || 'Wet-ink OTP evidence'} - ${offer.buyerName || 'Buyer'}`,
+        visibility: 'internal',
+        status: 'uploaded',
+      })
+      const documentId = normalizeText(document?.id)
+      if (!documentId) throw new Error('The uploaded OTP document did not receive a verified record ID.')
+      if (kind === 'printable_pack') {
+        await prepareWetInkOfferExecution({
+          offerId,
+          printablePackDocumentId: documentId,
+          note: `Printable OTP pack attached: ${file.name || 'OTP pack'}.`,
+        })
+      } else {
+        await recordWetInkOfferEvidence({
+          offerId,
+          signerRole: kind,
+          documentId,
+          note: `${kind === 'buyer' ? 'Buyer' : 'Seller'} wet-ink OTP evidence received: ${file.name || 'signed OTP'}.`,
+        })
+      }
+      setOfferActionMessage(`${labels[kind] || 'Wet-ink OTP evidence'} recorded. No online signature was captured.`)
+      setOffersRefreshTick((value) => value + 1)
+    } catch (error) {
+      setOfferActionError(error?.message || 'Unable to record wet-ink OTP evidence.')
+    } finally {
+      setWetInkOfferExecutionAction('')
+      event.target.value = ''
+    }
+  }
+
+  async function handleWetInkOfferExecutionReview(offer, decision, note) {
+    const offerId = normalizeText(offer?.canonicalOfferId || offer?.offerId || offer?.id)
+    const normalizedDecision = normalizeText(decision).toLowerCase()
+    const normalizedNote = String(note || '').trim()
+    if (!offerId || !['approve', 'reject'].includes(normalizedDecision)) return
+    if (normalizedNote.length < 20) {
+      setOfferActionError('A review note of at least 20 characters is required before recording this wet-ink execution decision.')
+      return
+    }
+    setWetInkOfferExecutionAction(`${offerId}:${normalizedDecision}`)
+    setOfferActionError('')
+    try {
+      await reviewWetInkOfferExecution({ offerId, decision: normalizedDecision, note: normalizedNote })
+      setWetInkOfferReviewNotes((previous) => ({ ...previous, [offerId]: '' }))
+      setOfferActionMessage(normalizedDecision === 'approve'
+        ? 'Wet-ink OTP evidence approved. The offer is fully executed; this action did not create a transaction.'
+        : 'Wet-ink OTP evidence was rejected. Attach a corrected printable pack to restart the physical signing workflow.')
+      setOffersRefreshTick((value) => value + 1)
+    } catch (error) {
+      setOfferActionError(error?.message || 'Unable to record the wet-ink OTP evidence decision.')
+    } finally {
+      setWetInkOfferExecutionAction('')
+    }
+  }
+
+  async function handleRefreshWetInkConversionMigrationDependencies() {
+    if (!isUuidLike(listingOrganisationId) || wetInkConversionMigrationDependenciesLoading) return
+    setWetInkConversionMigrationDependenciesLoading(true)
+    setWetInkConversionMigrationDependenciesError('')
+    try {
+      await refreshWetInkConversionMigrationDependencies({ organisationId: listingOrganisationId })
+      await loadWetInkConversionMigrationDependencies()
+      setOfferActionMessage('Wet-ink conversion migration dependencies refreshed. No historical evidence was changed.')
+    } catch (error) {
+      setWetInkConversionMigrationDependenciesError(error?.message || 'Unable to refresh conversion migration dependencies.')
+    } finally {
+      setWetInkConversionMigrationDependenciesLoading(false)
+    }
+  }
+
+  async function handleResolveWetInkConversionMigrationDependency(dependency, draft) {
+    if (!dependency?.id || wetInkConversionMigrationDependencySavingId) return
+    setWetInkConversionMigrationDependencySavingId(dependency.id)
+    setWetInkConversionMigrationDependenciesError('')
+    try {
+      const updated = await resolveWetInkConversionMigrationDependency({
+        dependencyId: dependency.id,
+        reviewStatus: draft?.reviewStatus,
+        reviewNote: draft?.reviewNote,
+      })
+      setWetInkConversionMigrationDependencies((current) => current.map((item) => (
+        item.id === updated.id ? { ...item, ...updated } : item
+      )))
+      setOfferActionMessage('Conversion migration review outcome recorded. No evidence or transaction was changed.')
+    } catch (error) {
+      setWetInkConversionMigrationDependenciesError(error?.message || 'Unable to record the conversion migration review outcome.')
+    } finally {
+      setWetInkConversionMigrationDependencySavingId('')
     }
   }
 
@@ -13012,21 +13048,21 @@ function AgentListingDetail() {
         title="Prepare seller onboarding"
         subtitle={sellerOwnershipUnidentified
           ? 'Send basic onboarding so the seller can confirm the legal owner. Mandate and compliance requirements stay blocked until that choice is saved.'
-          : 'Choose whether the seller should receive a separate digital mandate. These terms remain editable in the Commission tab until a mandate is signed.'}
+          : 'Prepare the seller onboarding record. Mandate terms remain editable in the Commission tab until the wet-ink signed mandate is reviewed.'}
         size="md"
       >
         <div className="space-y-5">
           <fieldset className="grid gap-3">
-            <legend className="text-sm font-semibold text-[#2d445e]">Should the seller sign the mandate digitally?</legend>
+            <legend className="text-sm font-semibold text-[#2d445e]">Should physical mandate copies be prepared after onboarding?</legend>
             <label className={`flex items-center gap-3 rounded-[14px] border border-[#dce6f2] px-4 py-3 text-sm font-medium ${sellerOwnershipUnidentified ? 'bg-[#f5f7fa] text-[#8292a5]' : 'bg-white text-[#243d56]'}`}>
               <input type="radio" name="digital-mandate-choice" value="yes" disabled={sellerOwnershipUnidentified} checked={onboardingMandateChoice === 'yes'} onChange={(event) => setOnboardingMandateChoice(event.target.value)} />
-              Yes — prepare a separate digital mandate after onboarding
+              Yes — prepare physical mandate copies after onboarding
             </label>
             <label className="flex items-center gap-3 rounded-[14px] border border-[#dce6f2] bg-white px-4 py-3 text-sm font-medium text-[#243d56]">
               <input type="radio" name="digital-mandate-choice" value="no" checked={onboardingMandateChoice === 'no'} onChange={(event) => setOnboardingMandateChoice(event.target.value)} />
-              No — send basic onboarding only
+              No — onboarding only
             </label>
-            {sellerOwnershipUnidentified ? <p className="text-xs leading-5 text-[#8a641d]">Digital mandate setup unlocks after the seller ownership model and signing authority are confirmed.</p> : null}
+            {sellerOwnershipUnidentified ? <p className="text-xs leading-5 text-[#8a641d]">Physical mandate preparation unlocks after the seller ownership model and signing authority are confirmed.</p> : null}
           </fieldset>
           {onboardingMandateChoice === 'yes' ? (
             <div className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 md:grid-cols-2">
@@ -13286,8 +13322,8 @@ function AgentListingDetail() {
       <Modal
         open={sellerDocumentSendOpen}
         onClose={sellerDocumentSendSaving ? undefined : () => { setSellerDocumentSendOpen(false); setMandateReplacementIntent(false) }}
-        title={mandateReplacementIntent ? 'Review and send replacement mandate' : 'Review and send FICA + mandate'}
-        subtitle={mandateReplacementIntent ? 'Confirm the new mandate and required signers before replacing the current version.' : 'Check the submitted seller details, set the commercial terms, then send digitally or prepare physical copies.'}
+        title={mandateReplacementIntent ? 'Prepare replacement mandate copies' : 'Prepare FICA + mandate copies'}
+        subtitle="Check the submitted seller details and commercial terms, then prepare the documents for wet-ink signatures."
         className="max-w-xl"
         footer={(
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
@@ -13322,37 +13358,7 @@ function AgentListingDetail() {
               {!mandateReadiness.ready ? <><ul className="mt-2 list-disc space-y-1 pl-5 text-xs">{mandateReadiness.missing.map((item) => <li key={item}>{item}</li>)}</ul><div className="mt-3 flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerProfileBuilderReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerProfileBuilder('Complete the seller details needed for the mandate, then return to send the secure pack.') }}>Edit seller details</Button><Button type="button" size="sm" variant="secondary" onClick={() => { setSellerSectionReturnToDocuments(true); setSellerDocumentSendOpen(false); openSellerSectionEditor(sellerProfile.sections.find((section) => section.key === 'mandate_details')) }}>Edit mandate details</Button></div></> : null}
             </div>
           })()}
-          {sellerDocumentSendStep === 1 ? <><fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">Mandate signature route</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send digital signing pack</span><span className="mt-1 block text-[#607387]">Send the selected frozen documents for each required seller to review and sign.</span></span></label>{!mandateReplacementIntent ? <label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Arrange physical FICA and mandate signing</span><span className="mt-1 block text-[#607387]">Prepare printable copies for wet-ink signatures. Each signed copy must then be uploaded and recorded.</span></span></label> : null}</fieldset>{sellerMandateSignatureRoute === 'digital_pack' ? <div className="space-y-3">{getSellerSigningDocumentOptions().documents.filter((document) => ['fica', 'mandate'].includes(document.key)).map((document) => (
-            <label key={document.key} className={`flex items-start gap-3 rounded-[16px] border p-4 ${document.ready ? 'cursor-pointer border-[#dce6f2] bg-white transition hover:border-[#b7c8db]' : 'border-[#f2dfbd] bg-[#fff9ec]'}`}>
-              <input type="checkbox" className="mt-1 h-4 w-4" disabled={!document.ready} checked={Boolean(sellerDocumentSendSelection[document.key] && document.ready)} onChange={(event) => setSellerDocumentSendSelection((previous) => ({ ...previous, [document.key]: event.target.checked }))} />
-              <span><span className="block text-sm font-semibold text-[#243d56]">{document.title}</span><span className={`mt-1 block text-sm leading-5 ${document.ready ? 'text-[#607387]' : 'text-[#7a5a17]'}`}>{document.ready ? `${document.copy} The seller will review the onboarding information already captured.` : document.missing[0]}</span></span>
-            </label>
-          ))}</div> : <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]">No digital link will be sent. Once you confirm this step, Documents will contain printable FICA and mandate copies. Download them for wet-ink signing, then upload the signed FICA declaration and mandate separately.</div>}</> : <div className="space-y-4">
-          <fieldset className="grid gap-3 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><legend className="px-1 font-semibold text-[#243d56]">How should the sellers sign?</legend><label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route-summary" checked={sellerMandateSignatureRoute === 'digital_pack'} onChange={() => setSellerMandateSignatureRoute('digital_pack')} /><span><span className="block font-semibold text-[#243d56]">Send a digital signing pack</span><span className="mt-1 block text-[#607387]">The seller receives the selected documents by secure signing link.</span></span></label>{!mandateReplacementIntent ? <label className="flex items-start gap-3"><input type="radio" name="seller-mandate-signature-route-summary" checked={sellerMandateSignatureRoute === 'manual_upload'} onChange={() => setSellerMandateSignatureRoute('manual_upload')} /><span><span className="block font-semibold text-[#243d56]">Prepare physical copies</span><span className="mt-1 block text-[#607387]">Download printable FICA and mandate copies, then upload the wet-ink signed documents.</span></span></label> : null}</fieldset>
-          <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-5 text-[#47637d]"><p className="font-semibold text-[#243d56]">Documents included</p><p className="mt-1">{[sellerDocumentSendSelection.fica ? 'Seller FICA Declaration' : '', sellerDocumentSendSelection.mandate ? 'Seller Mandate' : ''].filter(Boolean).join(' and ') || 'Select at least one document'}.</p></div>
-          <fieldset className="grid gap-4 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm sm:grid-cols-2"><legend className="px-1 font-semibold text-[#243d56]">Mandate commercial terms</legend><div><p className="font-semibold text-[#243d56]">Mandate type</p><Field as="select" value={marketingDraft.mandateType || listingRecord?.mandateType || 'sole'} onChange={(event) => setMarketingDraft((previous) => ({ ...previous, mandateType: event.target.value }))}><option value="sole">Exclusive</option><option value="dual">Dual</option><option value="tri">Tri</option><option value="open">Open</option></Field></div><fieldset className="grid gap-2"><legend className="font-semibold text-[#243d56]">Commission basis</legend><div className="flex flex-wrap gap-3"><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis-summary" checked={commissionDraft.basis !== 'fixed'} onChange={() => updateCommissionDraft('basis', 'percentage')} /> Percentage</label><label className="inline-flex items-center gap-2"><input type="radio" name="seller-document-commission-basis-summary" checked={commissionDraft.basis === 'fixed'} onChange={() => updateCommissionDraft('basis', 'fixed')} /> Fixed Rand amount</label></div></fieldset><label className="grid gap-1.5 font-semibold text-[#243d56]">{commissionDraft.basis === 'fixed' ? 'Fixed commission amount (R)' : 'Commission percentage'}<Field type="number" min="0" step="0.01" value={commissionDraft.basis === 'fixed' ? commissionDraft.amount : commissionDraft.percentage} onChange={(event) => updateCommissionDraft(commissionDraft.basis === 'fixed' ? 'amount' : 'percentage', event.target.value)} placeholder={commissionDraft.basis === 'fixed' ? '50000' : '5'} /></label><label className="grid gap-1.5 font-semibold text-[#243d56]">VAT treatment<Field as="select" value={commissionDraft.vatHandling} onChange={(event) => updateCommissionDraft('vatHandling', event.target.value)}><option value="">Select VAT treatment</option><option value="no">No VAT</option><option value="exclusive">VAT exclusive</option><option value="inclusive">VAT inclusive</option></Field></label></fieldset>
-          <div className="grid gap-3 rounded-[16px] border border-[#e2eaf3] bg-[#fbfdff] p-4 text-sm sm:grid-cols-2">
-            <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Seller</span><span className="font-semibold text-[#243d56]">{resolveSellerNameFromListing(listingRecord) || 'Not captured'}</span></div>
-            <div><span className="block text-xs font-semibold uppercase tracking-wide text-[#8292a5]">Email</span><span className="break-all font-semibold text-[#243d56]">{resolveSellerEmailFromListing(listingRecord) || 'Not captured'}</span></div>
-          </div>
-          {(() => {
-            const signingPlan = getSellerSigningPlan()
-            return <div data-testid="listing-seller-signers" className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm">
-              <p className="font-semibold text-[#243d56]">Required signer{signingPlan.recipients.length === 1 ? '' : 's'}</p>
-              <p className="mt-1 text-[#607387]">{signingPlan.summary}</p>
-              <div className="mt-3 space-y-2">{signingPlan.recipients.map((recipient) => <div key={`${recipient.email}:${recipient.role}`} className="flex items-center justify-between gap-3 rounded-xl bg-[#f8fbff] px-3 py-2"><span className="font-semibold text-[#243d56]">{recipient.name || 'Name required'} <span className="font-normal text-[#607387]">· {recipient.role}</span></span><span className="break-all text-xs text-[#607387]">{recipient.email || 'Email required'}</span></div>)}</div>
-              {signingPlan.recipients.length > 1 ? <label className="mt-4 grid gap-2 rounded-xl border border-[#dce6f2] bg-[#f8fbff] p-3 font-semibold text-[#243d56]">Primary document contact <span className="font-normal text-[#607387]">This seller completes the shared disclosure and FICA details before everyone reviews and signs the same final pack.</span><Field as="select" value={primaryDocumentContactEmail} onChange={(event) => setPrimaryDocumentContactEmail(event.target.value)}>{signingPlan.recipients.map((recipient) => <option key={recipient.email} value={recipient.email}>{recipient.name || recipient.email} · {recipient.email}</option>)}</Field></label> : null}
-              {!signingPlan.ready ? <p className="mt-3 text-xs font-semibold text-[#a34b2e]">{signingPlan.missing[0]}</p> : null}
-            </div>
-          })()}
-          {(() => {
-            const correctionGroups = [...sellerDocumentSigningSessions.filter((session) => session?.signing_group_id).reduce((groups, session) => { const key = String(session.signing_group_id); const current = groups.get(key) || []; current.push(session); groups.set(key, current); return groups }, new Map()).entries()].map(([id, sessions]) => ({ id, sessions, hasSigned: sessions.some((session) => String(session.status) === 'signed'), hasOpen: sessions.some((session) => String(session.status) === 'active'), latest: sessions[0] }))
-            if (!correctionGroups.length) return null
-            return <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm text-[#7a5a17]"><p className="font-semibold">Correct or replace a signing pack</p><p className="mt-1 leading-5">Open packs are replaced and their uncompleted links are revoked. If anyone has signed, Arch9 creates a new amendment pack and keeps the original signed pack unchanged as audit evidence.</p><label className="mt-3 grid gap-1.5 font-semibold">Pack to correct<Field as="select" value={sellerDocumentReplacementGroupId} onChange={(event) => setSellerDocumentReplacementGroupId(event.target.value)}><option value="">Send a separate new pack</option>{correctionGroups.map((group) => <option key={group.id} value={group.id}>{group.hasSigned ? 'Signed — create amendment' : group.hasOpen ? 'Open — replace links' : 'Previous pack'} · Sent {group.latest?.created_at ? new Date(group.latest.created_at).toLocaleDateString('en-ZA') : 'previously'} · {group.latest?.signer_name || group.latest?.signer_email}</option>)}</Field></label>{sellerDocumentReplacementGroupId ? <label className="mt-3 grid gap-1.5 font-semibold">Reason for correction<textarea value={sellerDocumentReplacementReason} onChange={(event) => setSellerDocumentReplacementReason(event.target.value)} rows={3} placeholder="For example: Seller corrected the asking price." className="rounded-xl border border-[#e4c77f] bg-white px-3 py-2 font-normal text-[#243d56]" /></label> : null}</div>
-          })()}
-          {sellerDocumentSendSelection.fica ? <div className="rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm"><p className="font-semibold text-[#243d56]">FICA confirmation</p><p className="mt-1 text-[#607387]">{formatStatusLabel(listingRecord?.sellerType || getListingSellerFormData(listingRecord)?.sellerType || 'seller')} seller · confirm the listed seller/contact details are correct before sending.</p></div> : null}
-          {sellerDocumentSendSelection.mandate ? <label className="grid gap-2 rounded-[16px] border border-[#dce6f2] bg-white p-4 text-sm font-semibold text-[#243d56]">Proposed conveyancing attorney <span className="font-normal text-[#607387]">(optional — included in the mandate for seller approval)</span><Field as="select" value={preferredTransferAttorneyOptionId} disabled={preferredTransferAttorneyLoading} onChange={(event) => setPreferredTransferAttorneyOptionId(event.target.value)}><option value="">Do not include an attorney</option>{preferredTransferAttorneyOptions.map((partner) => <option key={partner.id} value={partner.id}>{partner.companyName || 'Connected transfer attorney'}</option>)}</Field>{preferredTransferAttorneyLoading ? <span className="text-xs font-normal text-[#607387]">Loading connected attorney partners…</span> : null}</label> : null}
-          </div>}
+          {ONLINE_SIGNING_DISABLED ? <div className="rounded-[16px] border border-[#f2dfbd] bg-[#fff9ec] p-4 text-sm leading-6 text-[#7a5a17]"><p className="font-semibold">Wet-ink signatures required</p><p className="mt-1">Arch9 will prepare printable FICA and mandate copies. Download them, arrange physical signatures, then upload the signed originals in Documents.</p></div> : null}
         </div>
       </Modal>
       <Modal
@@ -15564,6 +15570,17 @@ function AgentListingDetail() {
               <div className="mt-4 rounded-[14px] border border-[#f4d4d4] bg-[#fff5f5] px-3 py-2 text-sm text-[#b42318]">{canonicalOffersError}</div>
             ) : null}
 
+            <div className="mt-5">
+              <WetInkConversionMigrationDependencyPanel
+                dependencies={wetInkConversionMigrationDependencies}
+                loading={wetInkConversionMigrationDependenciesLoading}
+                error={wetInkConversionMigrationDependenciesError}
+                savingDependencyId={wetInkConversionMigrationDependencySavingId}
+                onRefresh={() => void handleRefreshWetInkConversionMigrationDependencies()}
+                onResolve={(dependency, draft) => void handleResolveWetInkConversionMigrationDependency(dependency, draft)}
+              />
+            </div>
+
             {OFFER_WORKFLOW_RETIRED ? (
               <div className="mt-5 rounded-[16px] border border-[#f3d7a5] bg-[#fff8ed] px-4 py-3 text-sm text-[#8a5a16]">
                 Buyer onboarding is now the intake path for OTP preparation. Historical offer rows remain visible for audit only.
@@ -15756,6 +15773,26 @@ function AgentListingDetail() {
                   const buyerOtpRow = buyerOtpReadiness?.rows?.[0] || null
                   const buyerOtpReady = buyerOtpReadiness?.gate?.offerConversionReady === true
                   const buyerOtpUploadControlKey = `kingstons-buyer-otp:${offer.canonicalOfferId || offer.offerId || offer.id || offer.buyerLeadId || ''}`
+                  const wetInkOfferId = normalizeText(offer.canonicalOfferId || offer.offerId || offer.id)
+                  const wetInkExecution = wetInkOfferExecutions.find((record) => record.offerId === wetInkOfferId) || {
+                    offerId: wetInkOfferId,
+                    status: 'not_prepared',
+                  }
+                  const wetInkStatus = normalizeText(wetInkExecution.status) || 'not_prepared'
+                  const wetInkStatusLabel = WET_INK_OFFER_EXECUTION_STATUS_LABELS[wetInkStatus] || formatStatusLabel(wetInkStatus)
+                  const wetInkReviewNote = wetInkOfferReviewNotes[wetInkOfferId] || ''
+                  const wetInkCommercialTermsReady = Number(offer.offerPrice || 0) > 0
+                  const wetInkUploadKind = {
+                    not_prepared: 'printable_pack',
+                    rejected: 'printable_pack',
+                    awaiting_buyer_wet_ink: 'buyer',
+                    awaiting_seller_wet_ink: 'seller',
+                  }[wetInkStatus] || ''
+                  const wetInkUploadLabel = {
+                    printable_pack: wetInkStatus === 'rejected' ? 'Attach corrected OTP pack' : 'Attach printable OTP pack',
+                    buyer: 'Upload buyer-signed copy',
+                    seller: 'Upload seller-signed copy',
+                  }[wetInkUploadKind] || ''
                   return (
                   <article key={offer.id} className="rounded-[18px] border border-[#dce6f2] bg-white p-4 shadow-[0_8px_18px_rgba(15,23,42,0.04)]">
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -15854,6 +15891,70 @@ function AgentListingDetail() {
                             onChange={(event) => void handleKingstonsBuyerOtpUpload(offer, event)}
                           />
                         </label>
+                      </div>
+                    ) : null}
+                    {offer.sourceSystem === 'canonical_offer' && wetInkOfferId ? (
+                      <div data-testid="wet-ink-offer-execution-card" className="mt-3 rounded-[14px] border border-[#d8e6f6] bg-[#f6faff] p-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#607387]">Wet-ink OTP execution</p>
+                            <p className="mt-1 text-sm font-semibold text-[#243d56]">{wetInkStatusLabel}</p>
+                            <p className="mt-1 text-xs leading-5 text-[#607387]">Use a counsel-approved printable pack. Buyer and seller sign physical copies; no online signature is collected.</p>
+                          </div>
+                          {wetInkUploadKind ? (
+                            <label className={`inline-flex min-h-9 shrink-0 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${wetInkOfferExecutionAction ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
+                              {wetInkOfferExecutionAction === `${wetInkOfferId}:${wetInkUploadKind}` ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                              {wetInkUploadLabel}
+                              <input
+                                type="file"
+                                accept=".pdf,image/*"
+                                className="hidden"
+                                disabled={Boolean(wetInkOfferExecutionAction) || (wetInkUploadKind === 'printable_pack' && !wetInkCommercialTermsReady)}
+                                onChange={(event) => void handleWetInkOfferExecutionUpload(offer, wetInkUploadKind, event)}
+                              />
+                            </label>
+                          ) : null}
+                        </div>
+                        {wetInkUploadKind === 'printable_pack' && !wetInkCommercialTermsReady ? (
+                          <p className="mt-2 text-xs font-semibold text-[#9a5b11]">Capture the commercial offer amount before preparing a printable OTP pack.</p>
+                        ) : null}
+                        {wetInkStatus === 'awaiting_review' ? (
+                          <div className="mt-3 grid gap-2">
+                            <label className="grid gap-1">
+                              <span className="text-[0.72rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Evidence review note</span>
+                              <Field
+                                as="textarea"
+                                rows={3}
+                                value={wetInkReviewNote}
+                                onChange={(event) => setWetInkOfferReviewNotes((previous) => ({ ...previous, [wetInkOfferId]: event.target.value }))}
+                                placeholder="Record what was checked and why this physical execution is approved or rejected (minimum 20 characters)."
+                              />
+                            </label>
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                type="button"
+                                disabled={Boolean(wetInkOfferExecutionAction)}
+                                onClick={() => void handleWetInkOfferExecutionReview(offer, 'approve', wetInkReviewNote)}
+                              >
+                                {wetInkOfferExecutionAction === `${wetInkOfferId}:approve` ? 'Approving…' : 'Approve wet-ink evidence'}
+                              </Button>
+                              <Button
+                                size="sm"
+                                type="button"
+                                variant="secondary"
+                                className="border-[#f1d0ca] text-[#9f3a2f] hover:bg-[#fff6f4]"
+                                disabled={Boolean(wetInkOfferExecutionAction)}
+                                onClick={() => void handleWetInkOfferExecutionReview(offer, 'reject', wetInkReviewNote)}
+                              >
+                                {wetInkOfferExecutionAction === `${wetInkOfferId}:reject` ? 'Rejecting…' : 'Reject evidence'}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : null}
+                        {wetInkStatus === 'fully_executed' ? (
+                          <p className="mt-2 text-xs font-semibold text-[#1f7d44]">Wet-ink evidence is reviewed. Transaction creation remains a separate controlled step.</p>
+                        ) : null}
                       </div>
                     ) : null}
                     {[
@@ -15974,7 +16075,18 @@ function AgentListingDetail() {
                             ) : null}
                           </>
                         ) : (
-                          <span className="text-xs font-semibold text-[#9a5b11]">Use buyer onboarding for OTP intake.</span>
+                          wetInkStatus === 'fully_executed' ? (
+                            <Button
+                              size="sm"
+                              type="button"
+                              disabled={canonicalOfferActionId === `${offer.id}:convert`}
+                              onClick={() => void handleCanonicalListingOfferConversion(offer)}
+                            >
+                              {canonicalOfferActionId === `${offer.id}:convert` ? 'Creating transaction…' : 'Create transaction'}
+                            </Button>
+                          ) : (
+                            <span className="text-xs font-semibold text-[#9a5b11]">Complete and review the wet-ink OTP before creating a transaction.</span>
+                          )
                         )}
                       </div>
                     ) : null}
@@ -16737,7 +16849,7 @@ function AgentListingDetail() {
             const portalSignerRows = sellerDocumentSigningSessions.map((session) => {
               const invitation = portalInvitationBySession.get(String(session.id || '')) || {}
               const sessionEmail = String(invitation.recipient_email || session.signer_email || '').toLowerCase()
-              return { id: session.id, name: invitation.recipient_name || session.signer_name || 'Seller', email: sessionEmail, role: session.is_primary_document_contact ? 'Primary contact' : 'Co-signer', signing: String(session.status || 'active') === 'signed' ? 'Signed' : String(session.status || 'active') === 'revoked' ? 'Replaced / paused' : 'Awaiting signature', portal: invitation.status ? String(invitation.status).replace(/_/g, ' ') : 'Not issued', active: String(session.status || 'active') === 'active', rawLink: lastSellerDocumentSigningLinks[session.id] || lastSellerDocumentSigningLinks[sessionEmail] || '' }
+              return { id: session.id, name: invitation.recipient_name || session.signer_name || 'Seller', email: sessionEmail, role: session.is_primary_document_contact ? 'Primary contact' : 'Co-signer', signing: String(session.status || 'active') === 'signed' ? 'Signed' : String(session.status || 'active') === 'revoked' ? 'Replaced / paused' : 'Awaiting signature', portal: invitation.status ? String(invitation.status).replace(/_/g, ' ') : 'Not issued', active: String(session.status || 'active') === 'active' }
             })
             const currentSigningPack = sellerDocumentSigningSessions.find((session) => session?.is_primary_document_contact && ['active', 'signed'].includes(String(session?.status || ''))) || sellerDocumentSigningSessions.find((session) => ['active', 'signed'].includes(String(session?.status || '')))
             const currentFica = currentSigningPack?.signingPackSummary?.seller || {}
@@ -16947,7 +17059,7 @@ function AgentListingDetail() {
                   </div>
                 </article>
 
-                {portalSignerRows.length ? (
+                {!ONLINE_SIGNING_DISABLED && portalSignerRows.length ? (
                   <article className="rounded-[24px] border border-[#d8e6f2] bg-[#fbfdff] p-5 shadow-[0_12px_28px_rgba(15,23,42,0.04)]">
                     <div className="flex items-start justify-between gap-3"><div><h3 className="text-base font-semibold text-[#142132]">Seller Portal status</h3><p className="mt-1 text-sm text-[#607387]">Signing, invitation delivery, and outstanding seller documents for this listing.</p></div><div className="flex flex-wrap gap-2"><Button type="button" size="sm" variant="secondary" onClick={downloadSellerSigningAudit} disabled={!sellerDocumentSigningSessions.length}><Download size={14} />Download audit</Button><Button type="button" size="sm" variant="secondary" onClick={() => void loadSellerDocumentSigningSessions()} disabled={sellerDocumentSigningSessionsLoading}>{sellerDocumentSigningSessionsLoading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}Refresh</Button></div></div>
                     <div className="mt-4 overflow-x-auto rounded-[14px] border border-[#dce6f2] bg-white"><table className="min-w-full text-left text-sm"><thead className="bg-[#f5f9fc] text-xs text-[#607387]"><tr><th className="px-3 py-2">Owner</th><th className="px-3 py-2">Role</th><th className="px-3 py-2">Signing</th><th className="px-3 py-2">Portal invitation</th><th className="px-3 py-2">Delivery</th></tr></thead><tbody>{portalSignerRows.map((owner) => <tr key={owner.id} className="border-t border-[#edf2f7]"><td className="px-3 py-3"><p className="font-semibold text-[#243d56]">{owner.name}</p><p className="text-xs text-[#607387]">{owner.email || 'Email pending'}</p></td><td className="px-3 py-3 text-[#425970]">{owner.role}</td><td className="px-3 py-3 text-[#425970]">{owner.signing}</td><td className="px-3 py-3 capitalize text-[#425970]">{owner.portal}</td><td className="px-3 py-3">{owner.active ? <div className="flex flex-wrap gap-2">{owner.rawLink ? <button type="button" onClick={() => void copyLastSellerDocumentSigningLink(owner.rawLink)} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[#dbe6f2] px-2 text-xs font-semibold text-[#35546c]"><Copy size={12} />Copy link</button> : null}<button type="button" onClick={() => void resendSellerDocumentSigningSession(owner.id)} disabled={sellerDocumentSigningSessionAction === `resend:${owner.id}`} className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-[#dbe6f2] px-2 text-xs font-semibold text-[#35546c] disabled:opacity-60">{sellerDocumentSigningSessionAction === `resend:${owner.id}` ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}Send fresh link</button></div> : <span className="text-xs text-[#607387]">—</span>}</td></tr>)}</tbody></table></div>
@@ -17249,6 +17361,14 @@ function AgentListingDetail() {
                   </div>
                 </div>
               ) : null}
+              <HistoricalMandateExecutionReviewPanel
+                reviews={historicalMandateExecutionReviews}
+                loading={historicalMandateExecutionReviewsLoading}
+                error={historicalMandateExecutionReviewsError}
+                savingReviewId={historicalMandateExecutionReviewSavingId}
+                onRefresh={() => void loadHistoricalMandateExecutionReviews()}
+                onResolve={(review, draft) => void handleHistoricalMandateExecutionReviewResolve(review, draft)}
+              />
               <article className="rounded-[18px] border border-[#dde4ee] bg-white shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
                 <div className="flex flex-col gap-5 p-5 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex min-w-0 items-start gap-3">
@@ -17447,14 +17567,6 @@ function AgentListingDetail() {
                                   Retry message
                                 </Button>
                               ) : null}
-                              {documentMatchesSellerPackTransactionKey(doc, SELLER_BASE_PACK_KEYS.SIGNED_MANDATE) && !isListingDocumentComplete(doc) ? (
-                                (commissionDraft.basis === 'fixed' ? Number(commissionDraft.amount) > 0 : Number(commissionDraft.percentage) > 0) && String(commissionDraft.vatHandling || '').trim() ? (
-                                  <Button type="button" size="sm" onClick={() => void sendListingMandateSigningLink()} disabled={followUpActionId === 'send_mandate_signing_link'}>
-                                    {followUpActionId === 'send_mandate_signing_link' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-                                    Send signing link
-                                  </Button>
-                                ) : null
-                              ) : null}
                               {actions.canUpload ? (
                                 <label className={`inline-flex min-h-9 items-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-3 text-xs font-semibold text-[#1f4f78] transition ${sellerDocumentUploadKey ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-[#b7c8db] hover:bg-[#f7fbff]'}`}>
                                   {sellerDocumentUploadKey === (doc.key || doc.id || doc.label) ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
@@ -17595,13 +17707,6 @@ function AgentListingDetail() {
                     <option value="no">No VAT</option>
                     <option value="exclusive">VAT Exclusive</option>
                     <option value="inclusive">VAT Inclusive</option>
-                  </Field>
-                </label>
-                <label className="grid gap-2">
-                  <span className="text-sm font-semibold text-[#2d445e]">Digital Mandate</span>
-                  <Field as="select" value={commissionDraft.digitalMandateRequested ? 'yes' : 'no'} onChange={(event) => updateCommissionDraft('digitalMandateRequested', event.target.value === 'yes')}>
-                    <option value="yes">Prepare for digital signature</option>
-                    <option value="no">Do not prepare digitally</option>
                   </Field>
                 </label>
                 <label className="grid gap-2">

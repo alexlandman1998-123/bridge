@@ -11,6 +11,7 @@ import {
   UserRound,
   Users,
 } from 'lucide-react'
+import { useState } from 'react'
 import { buyerPortalHexToRgba, createBuyerPortalTheme } from '../buyerPortalTheme'
 
 const ROUTE_ICONS = {
@@ -74,7 +75,42 @@ function ContactRoute({ route, theme }) {
   )
 }
 
-export default function BuyerTeamWorkspace({ model, theme: themeInput }) {
+function TeamMessageComposer({ onSendMessage, saving = false, placeholder = 'Ask your team a question...' }) {
+  const [message, setMessage] = useState('')
+  const [feedback, setFeedback] = useState('')
+
+  const submit = async (event) => {
+    event.preventDefault()
+    const text = message.trim()
+    if (!text || typeof onSendMessage !== 'function') return
+    setFeedback('')
+    try {
+      const result = await onSendMessage(text)
+      if (result?.ok === false) {
+        setFeedback(result.error || 'Your message could not be sent. Please try again.')
+        return
+      }
+      setMessage('')
+      setFeedback('Your message has been shared with the transaction team.')
+    } catch (error) {
+      setFeedback(error?.message || 'Your message could not be sent. Please try again.')
+    }
+  }
+
+  return (
+    <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]">
+      <div className="flex items-start gap-3"><span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#eef4fb] text-[#35546c]"><MessageCircle size={20} /></span><div><h2 className="text-xl font-semibold tracking-[-0.04em] text-[#142132]">Message your team</h2><p className="mt-1 text-sm leading-6 text-[#52657b]">This is added to the matter conversation so the relevant team can respond in the portal.</p></div></div>
+      <form onSubmit={submit} className="mt-4">
+        <label htmlFor="buyer-team-message" className="sr-only">Message your transaction team</label>
+        <textarea id="buyer-team-message" value={message} onChange={(event) => setMessage(event.target.value)} rows={4} placeholder={placeholder} className="w-full resize-y rounded-[14px] border border-[#dbe5ef] bg-[#fbfdff] px-3 py-2.5 text-sm leading-6 text-[#142132] outline-none transition placeholder:text-[#8ca0b8] focus:border-[#b9cade] focus:ring-2 focus:ring-[#dce7f3]" />
+        {feedback ? <p className={`mt-3 rounded-[12px] border px-3 py-2 text-sm ${feedback.startsWith('Your message has') ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-800'}`} role="status">{feedback}</p> : null}
+        <div className="mt-3 flex justify-end"><button type="submit" disabled={saving || !message.trim()} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[12px] bg-[#111827] px-5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:bg-[#9aa9b8]"><MessageCircle size={15} />{saving ? 'Sending...' : 'Send message'}</button></div>
+      </form>
+    </section>
+  )
+}
+
+export default function BuyerTeamWorkspace({ model, theme: themeInput, onSendMessage = null, saving = false }) {
   const theme = themeInput?.primary ? themeInput : createBuyerPortalTheme(themeInput)
   if (model?.isEmpty) {
     return <section data-buyer-team="workspace" data-team-source={model?.source || 'unknown'} className="rounded-[24px] border border-dashed border-[#d5e1ee] bg-white px-6 py-10 text-center"><Users className="mx-auto text-[#7b8ca2]" size={32} /><h1 className="mt-4 text-xl font-semibold text-[#142132]">Your transaction team</h1><p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-[#6b7d93]">Your assigned contacts will appear here as the transaction team is confirmed.</p></section>
@@ -97,6 +133,8 @@ export default function BuyerTeamWorkspace({ model, theme: themeInput }) {
       <section className="grid gap-5 xl:grid-cols-[330px_minmax(0,1fr)] xl:items-start"><div><h2 className="mb-4 text-lg font-semibold tracking-[-0.04em] text-[#142132]">Your main contact</h2><TeamMemberCard member={mainContact} theme={theme} prominent /></div><div><h2 className="mb-4 text-lg font-semibold tracking-[-0.04em] text-[#142132]">Your specialist team</h2>{model.specialists.length ? <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">{model.specialists.map((member) => <TeamMemberCard key={member.id} member={member} theme={theme} />)}</div> : <div className="rounded-[22px] border border-dashed border-[#d5e1ee] bg-white p-6 text-sm leading-6 text-[#6b7d93]">Specialist contacts will appear here when they join the transaction.</div>}</div></section>
 
       {model.routes.length ? <section className="rounded-[24px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)]"><h2 className="text-xl font-semibold tracking-[-0.04em] text-[#142132]">Not sure who to contact?</h2><p className="mt-2 text-sm leading-6 text-[#52657b]">Choose a topic and contact the person responsible for it.</p><div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">{model.routes.map((route) => <ContactRoute key={route.key} route={route} theme={theme} />)}</div></section> : null}
+
+      {typeof onSendMessage === 'function' ? <TeamMessageComposer onSendMessage={onSendMessage} saving={saving} placeholder={model.messagePlaceholder} /> : null}
 
       <p className="flex items-center justify-center gap-2 text-sm text-[#52657b]"><Lock size={15} />Only authorised parties involved in your transaction can access your information.</p>
     </section>

@@ -111,7 +111,7 @@ function lifecycleStatus(status = '') {
 
 function statusLabel(status = '') {
   const labels = {
-    required: 'Not requested',
+    required: 'Upload required',
     requested: 'Awaiting seller',
     expired: 'Action required',
     rejected: 'Action required',
@@ -128,7 +128,7 @@ function statusLabel(status = '') {
     awaiting_signed_hard_copy: 'Awaiting seller',
     correction_requested: 'Action required',
   }
-  return labels[status] || 'Not requested'
+  return labels[status] || 'Upload required'
 }
 
 function handoffFor(requirement = {}, document = {}, bucket = '') {

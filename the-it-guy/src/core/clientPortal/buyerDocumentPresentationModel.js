@@ -52,6 +52,11 @@ function statusLabel(status, item = {}) {
   return 'Upcoming'
 }
 
+function dueDateSortValue(item = {}) {
+  const value = Date.parse(normalizeText(item.dueDate || item.due_date))
+  return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER
+}
+
 export function buildBuyerDocumentPresentationModel({ items = [], source = 'unknown' } = {}) {
   const normalizedItems = (Array.isArray(items) ? items : []).filter(Boolean).map((item, index) => {
     const categoryKey = resolveBuyerDocumentCategory(item)
@@ -65,6 +70,10 @@ export function buildBuyerDocumentPresentationModel({ items = [], source = 'unkn
       categoryLabel: BUYER_DOCUMENT_CATEGORIES.find((category) => category.key === categoryKey)?.label || 'Documents',
       presentationStatus,
       presentationStatusLabel: statusLabel(presentationStatus, item),
+      requestedBy: normalizeText(item.requestedBy || item.requested_by_name || item.createdByName || item.created_by_name),
+      dueDate: normalizeText(item.dueDate || item.due_date),
+      rejectionReason: normalizeText(item.rejectionReason || item.rejection_reason),
+      metaLine: normalizeText(item.metaLine || item.meta_line),
       isActionRequired: presentationStatus === 'action',
       isInReview: presentationStatus === 'review',
       isApproved: presentationStatus === 'approved',
@@ -93,7 +102,13 @@ export function buildBuyerDocumentPresentationModel({ items = [], source = 'unkn
   })
   const sortedItems = [...normalizedItems].sort((left, right) => {
     const priority = { action: 0, review: 1, approved: 2, upcoming: 3 }
-    return priority[left.presentationStatus] - priority[right.presentationStatus] || left.title.localeCompare(right.title)
+    const statusDifference = priority[left.presentationStatus] - priority[right.presentationStatus]
+    if (statusDifference) return statusDifference
+    if (left.presentationStatus === 'action') {
+      const dueDateDifference = dueDateSortValue(left) - dueDateSortValue(right)
+      if (dueDateDifference) return dueDateDifference
+    }
+    return left.title.localeCompare(right.title)
   })
 
   return Object.freeze({

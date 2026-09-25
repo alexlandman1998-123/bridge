@@ -29,8 +29,12 @@ export function BuyerPortalOverviewHero({
   statusLabel = 'On track',
   statusClassName = 'border-white/20 bg-white/12 text-white',
   currentStageLabel = 'In progress',
+  currentWorkflowLabel = '',
+  currentWorkflowSummary = '',
+  currentWorkflowOwnerLabel = '',
   nextStageLabel = 'We will keep you updated',
   progressPercent = 0,
+  journeyCompletionSummary = '',
   timeInStageLabel = 'Recently',
   stageUpdatedDateLabel = 'Recently',
   attentionEyebrow = 'Needs your attention',
@@ -43,6 +47,7 @@ export function BuyerPortalOverviewHero({
   propertyImageAlt = '',
 }) {
   const safeProgress = Math.max(0, Math.min(100, Number(progressPercent) || 0))
+  const hasMilestoneSummary = Boolean(String(journeyCompletionSummary || '').trim())
   const heroStyle = propertyImageUrl
     ? {
         backgroundImage: `${theme?.heroOverlayStyle?.background || 'linear-gradient(135deg, rgba(6,43,43,0.9), rgba(49,92,125,0.88))'}, url("${propertyImageUrl}")`,
@@ -102,6 +107,14 @@ export function BuyerPortalOverviewHero({
                 <span className="h-2 w-2 rounded-full" style={{ backgroundColor: theme?.accent || '#76d46f' }} />
                 <span className="min-w-0 truncate">{currentStageLabel}</span>
               </p>
+              {currentWorkflowLabel ? (
+                <div className="mt-2 rounded-[10px] border border-white/[0.16] bg-white/[0.08] px-3 py-2">
+                  <p className="text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-white/70">Current matter item</p>
+                  <p className="mt-1 truncate text-sm font-semibold text-white">{currentWorkflowLabel}</p>
+                  {currentWorkflowSummary ? <p className="mt-1 text-xs leading-5 text-white/80">{currentWorkflowSummary}</p> : null}
+                  {currentWorkflowOwnerLabel ? <p className="mt-1 text-xs font-semibold text-white/75">With: {currentWorkflowOwnerLabel}</p> : null}
+                </div>
+              ) : null}
               <p className="mt-1 text-sm font-medium text-white/80">Next: {nextStageLabel}</p>
               <div className="mt-4 grid gap-2 sm:grid-cols-3">
                 {[
@@ -116,13 +129,20 @@ export function BuyerPortalOverviewHero({
                 ))}
               </div>
             </div>
-            <div className="relative inline-flex h-[108px] w-[108px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(${theme?.accent || '#74d46e'} ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
-              <span className="absolute inset-[9px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
-              <span className="relative text-center">
-                <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
-                <span className="mt-1 block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-white/75">Complete</span>
-              </span>
-            </div>
+            {hasMilestoneSummary ? (
+              <div className="inline-flex h-[108px] w-[108px] shrink-0 flex-col items-center justify-center rounded-[18px] border border-white/[0.18] bg-white/[0.1] px-2 text-center shadow-[0_16px_30px_rgba(0,0,0,0.22)]">
+                <span className="text-[1.3rem] font-semibold leading-tight text-white">{journeyCompletionSummary}</span>
+                <span className="mt-1 text-[0.6rem] font-semibold uppercase tracking-[0.1em] text-white/75">Milestones complete</span>
+              </div>
+            ) : (
+              <div className="relative inline-flex h-[108px] w-[108px] shrink-0 items-center justify-center rounded-full shadow-[0_16px_30px_rgba(0,0,0,0.28)]" style={{ background: `conic-gradient(${theme?.accent || '#74d46e'} ${safeProgress * 3.6}deg, rgba(255,255,255,0.2) 0deg)` }}>
+                <span className="absolute inset-[9px] rounded-full bg-[#10243a]/[0.94] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]" />
+                <span className="relative text-center">
+                  <span className="block text-[1.55rem] font-semibold leading-none text-white">{safeProgress}%</span>
+                  <span className="mt-1 block text-[0.64rem] font-semibold uppercase tracking-[0.12em] text-white/75">Complete</span>
+                </span>
+              </div>
+            )}
           </div>
         </div>
       </article>

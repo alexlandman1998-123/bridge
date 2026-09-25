@@ -2997,7 +2997,6 @@ export async function createTransactionFromAcceptedCanonicalOffer({
   actor = null,
   payload = {},
 } = {}) {
-  assertOfferWorkflowAvailable()
   if (!isSupabaseConfigured || !supabase) {
     throw new Error('Transaction conversion requires the canonical Supabase offer and transaction tables.')
   }
@@ -3100,8 +3099,17 @@ export async function createTransactionFromAcceptedCanonicalOffer({
     return attachLegalHandoff({ ...reusedResult, conversionReceipt }, reusedTransactionId)
   }
 
+  const wetInkExecution = await supabase.rpc('bridge_assert_wet_ink_offer_transaction_ready', {
+    p_organisation_id: scopedOrganisationId,
+    p_offer_id: scopedOfferId,
+  })
+  if (wetInkExecution.error) throw wetInkExecution.error
+  if (wetInkExecution.data?.executionReady !== true) {
+    throw new Error('A reviewed, fully executed wet-ink OTP is required before creating a transaction.')
+  }
+
   if (canonicalOfferStatus !== 'accepted') {
-    throw new Error('Only an accepted offer can be converted to a transaction.')
+    throw new Error('The reviewed wet-ink OTP must mark this offer accepted before it can create a transaction.')
   }
 
   const candidateResult = await ensureAcceptedOfferConversionCandidate({

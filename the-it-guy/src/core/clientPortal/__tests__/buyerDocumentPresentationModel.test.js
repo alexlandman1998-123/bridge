@@ -39,6 +39,20 @@ test('builds one summary and category model for every buyer document surface', (
   assert.equal(model.source, 'production')
 })
 
+test('prioritises dated document requests and preserves their workflow context', () => {
+  const model = buildBuyerDocumentPresentationModel({
+    items: [
+      { id: 'later', title: 'Proof of funds', status: 'requested', requestedBy: 'Transfer attorney', dueDate: '2026-10-10' },
+      { id: 'first', title: 'Signed OTP', status: 'requested', requestedBy: 'Buyer agent', dueDate: '2026-10-01', rejectionReason: 'Signature page is missing.' },
+    ],
+  })
+
+  assert.equal(model.firstActionItem.id, 'first')
+  assert.equal(model.firstActionItem.requestedBy, 'Buyer agent')
+  assert.equal(model.firstActionItem.dueDate, '2026-10-01')
+  assert.equal(model.firstActionItem.rejectionReason, 'Signature page is missing.')
+})
+
 test('handles empty and malformed collections safely', () => {
   const model = buildBuyerDocumentPresentationModel({ items: null })
   assert.deepEqual(model.items, [])

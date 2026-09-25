@@ -1,3 +1,5 @@
+import { normalizeFinanceType } from './financeType.js'
+
 export const MVP_TRANSACTION_DOCUMENT_BOOTSTRAP_VERSION = 'arch9_mvp_transaction_document_bootstrap_v1'
 
 // The atomic transaction-creation RPC writes this value into the legacy
@@ -50,6 +52,7 @@ function requirement(key, label, requiredFromRole, groupKey, description, option
 }
 
 export function buildMvpTransactionDocumentBootstrap(profile = {}) {
+  const financeType = normalizeFinanceType(profile.financeType, { allowUnknown: true })
   const developmentSale = isDevelopmentSale(profile)
   const sellerPartyType = developmentSale ? 'developer' : 'private_seller'
   const sellerPartyLabel = developmentSale ? 'Developer' : 'Seller'
@@ -127,8 +130,8 @@ export function buildMvpTransactionDocumentBootstrap(profile = {}) {
     'Trust deed, letters of authority, and trustee resolution.',
     sellerDocumentOptions,
   ))
-  if (profile.financeType === 'cash' || profile.financeType === 'hybrid') rows.push(requirement('proof_of_funds', 'Proof of funds', 'buyer', 'finance', 'Evidence for the cash component of the purchase.'))
-  if (profile.financeType === 'bond' || profile.financeType === 'hybrid') rows.push(requirement('bond_preapproval', 'Bond pre-approval / application', 'bond_originator', 'finance', 'Bond application and approval evidence.'))
+  if (financeType === 'cash' || financeType === 'combination') rows.push(requirement('proof_of_funds', 'Proof of funds', 'buyer', 'finance', 'Evidence for the cash component of the purchase.'))
+  if (financeType === 'bond' || financeType === 'combination') rows.push(requirement('bond_preapproval', 'Bond pre-approval / application', 'bond_originator', 'finance', 'Bond application and approval evidence.'))
   if (profile.requiresCancellationAttorney) rows.push(requirement('bond_cancellation_figures', 'Existing bond cancellation figures', 'cancellation_attorney', 'cancellation', 'Cancellation figures for the seller’s existing bond.'))
   return Object.freeze({ version: MVP_TRANSACTION_DOCUMENT_BOOTSTRAP_VERSION, requirements: rows })
 }

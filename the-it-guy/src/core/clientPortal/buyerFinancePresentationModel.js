@@ -33,6 +33,20 @@ function normalizeFinanceType(value = '') {
   return 'cash'
 }
 
+function normalizeFinanceManager(value = '') {
+  const normalized = key(value)
+  return [
+    'bond_originator',
+    'bondoriginator',
+    'originator',
+    'originator_managed',
+    'ooba',
+    'ooba_assisted',
+  ].includes(normalized)
+    ? 'bond_originator'
+    : normalized || 'bond_originator'
+}
+
 function resolveBondStage({ currentStage, status, offers = [], bankApplications = [] }) {
   const explicit = key(currentStage)
   if (BOND_STAGE_DEFINITIONS.some((stage) => stage.key === explicit)) return explicit
@@ -84,8 +98,10 @@ export function buildBuyerFinancePresentationModel({
   currentStage = '',
   purchasePrice = 0,
   requestedAmount = 0,
+  cashContribution = 0,
   loanToValue = '',
   progressPercent = 0,
+  financeManagedBy = '',
   manager = null,
   nextStep = null,
   requiredActions = [],
@@ -98,6 +114,9 @@ export function buildBuyerFinancePresentationModel({
 } = {}) {
   const mode = normalizeFinanceType(financeType)
   const isBondFinance = mode !== 'cash'
+  const financeManager = normalizeFinanceManager(financeManagedBy)
+  const isOriginatorManaged = isBondFinance && financeManager === 'bond_originator'
+  const isDirectFinance = isBondFinance && !isOriginatorManaged
   const normalizedBanks = (Array.isArray(bankApplications) ? bankApplications : []).filter(Boolean).map(normalizeBankApplication)
   const normalizedOffers = (Array.isArray(offers) ? offers : []).filter(Boolean).map(normalizeOffer)
   const actions = (Array.isArray(requiredActions) ? requiredActions : []).filter(Boolean).map((action, index) => Object.freeze({
@@ -106,16 +125,20 @@ export function buildBuyerFinancePresentationModel({
     title: text(action.title || action.label) || 'Complete finance requirement',
     description: text(action.description || action.helper),
   }))
-  const stageKey = isBondFinance ? resolveBondStage({ currentStage, status, offers: normalizedOffers, bankApplications: normalizedBanks }) : 'account'
-  const currentStageIndex = isBondFinance ? BOND_STAGE_DEFINITIONS.findIndex((stage) => stage.key === stageKey) : -1
-  const stages = isBondFinance ? BOND_STAGE_DEFINITIONS.map((stage, index) => Object.freeze({
+  const stageKey = isOriginatorManaged ? resolveBondStage({ currentStage, status, offers: normalizedOffers, bankApplications: normalizedBanks }) : 'account'
+  const currentStageIndex = isOriginatorManaged ? BOND_STAGE_DEFINITIONS.findIndex((stage) => stage.key === stageKey) : -1
+  const stages = isOriginatorManaged ? BOND_STAGE_DEFINITIONS.map((stage, index) => Object.freeze({
     ...stage,
     state: index < currentStageIndex ? 'complete' : index === currentStageIndex ? 'current' : 'upcoming',
   })) : []
   const balanceDue = Number(accountSummary?.balanceDue || 0)
   const openRequests = Number(accountSummary?.openRequests || 0)
   const documentCount = Number(accountSummary?.documentCount || 0)
-  const resolvedStatus = text(status) || (isBondFinance ? 'Application not started' : accountCount ? 'Account published' : 'Account being prepared')
+  const resolvedStatus = text(status) || (isOriginatorManaged
+    ? 'Application not started'
+    : isDirectFinance
+      ? 'Finance arranged directly'
+      : accountCount ? 'Account published' : 'Account being prepared')
   const resolvedNextStep = actions[0] || (nextStep ? Object.freeze({
     title: text(nextStep.title || nextStep.label),
     description: text(nextStep.description || nextStep.helper),
@@ -126,12 +149,23 @@ export function buildBuyerFinancePresentationModel({
     mode,
     isBondFinance,
     isCashFinance: !isBondFinance,
-    title: isBondFinance ? 'Finance' : 'Finance & payments',
-    description: isBondFinance
+    isOriginatorManaged,
+    isDirectFinance,
+    financeManager,
+    title: isOriginatorManaged ? 'Finance' : 'Finance & payments',
+    description: isOriginatorManaged
       ? 'Track your bond application, bank responses, and next finance action.'
-      : 'Track payment requests, statements, and proof shared with your legal team.',
+      : isDirectFinance
+        ? mode === 'hybrid'
+          ? 'Track the cash contribution, direct finance documents, and payment requests shared with your legal team.'
+          : 'Track direct finance documents, payment requests, and proof shared with your legal team.'
+        : 'Track payment requests, statements, and proof shared with your legal team.',
     status: resolvedStatus,
-    statusHelper: text(statusHelper) || (isBondFinance ? 'Your live bond application status' : 'Published by your legal team'),
+    statusHelper: text(statusHelper) || (isOriginatorManaged
+      ? 'Your live bond application status'
+      : isDirectFinance
+        ? 'Upload your bank approval or supporting documents for your legal team.'
+        : 'Published by your legal team'),
     statusTone: actions.length ? 'action' : /approv|accept|complete|published/.test(key(resolvedStatus)) ? 'complete' : 'info',
     stageKey,
     stages: Object.freeze(stages),
@@ -139,6 +173,8 @@ export function buildBuyerFinancePresentationModel({
     purchasePriceLabel: amountLabel(purchasePrice),
     requestedAmountLabel: isBondFinance ? amountLabel(requestedAmount) : amountLabel(balanceDue, currency.format(0)),
     requestedAmountCaption: isBondFinance ? 'Requested bond' : 'Balance due',
+    cashContributionLabel: mode === 'hybrid' ? amountLabel(cashContribution) : '',
+    hasCashContribution: mode === 'hybrid' && Number(cashContribution) > 0,
     loanToValue: text(loanToValue),
     progressPercent: Math.max(0, Math.min(100, Math.round(Number(progressPercent) || 0))),
     manager: manager ? Object.freeze({

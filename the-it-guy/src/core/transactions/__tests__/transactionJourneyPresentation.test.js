@@ -47,3 +47,50 @@ test('preserves the supplied legacy model when no canonical snapshot is availabl
   assert.equal(buildTransactionJourneyPresentation({ fallbackModel }), fallbackModel)
 })
 
+test('uses the live fallback when a canonical snapshot is unavailable', () => {
+  const fallbackModel = buildBuyerJourneyPresentationModel({
+    steps: [{ id: 'finance', label: 'Finance', status: 'current' }],
+    source: 'buyer-legacy',
+  })
+
+  const model = buildTransactionJourneyPresentation({
+    snapshot: { schemaVersion: 1, milestones: [], legalJourney: { status: 'unavailable' } },
+    fallbackModel,
+  })
+
+  assert.equal(model.source, 'buyer-legacy')
+  assert.equal(model.currentStageLabel, 'Finance')
+  assert.equal(model.legalJourney.status, 'unavailable')
+})
+
+test('keeps the high-level milestone separate from the live workflow item', () => {
+  const model = buildTransactionJourneyPresentation({
+    snapshot: {
+      transactionId: 'tx-transfer',
+      highLevelJourney: {
+        ruleVersion: 1,
+        milestones: [
+          { id: 'otp_signed', label: 'OTP', status: 'complete', isComplete: true },
+          { id: 'finance', label: 'Finance', status: 'complete', isComplete: true },
+          { id: 'transfer', label: 'Transfer', status: 'in_progress', isComplete: false },
+          { id: 'lodgement', label: 'Lodged', status: 'pending', isComplete: false },
+          { id: 'registration', label: 'Registered', status: 'pending', isComplete: false },
+        ],
+      },
+      currentMilestoneKey: 'transfer',
+      currentWorkflowItem: {
+        key: 'rates_figures_requested',
+        label: 'Rates figures requested',
+        ownerLabel: 'Legal Team',
+        summary: 'Municipal clearance figures have been requested and the transfer team is waiting for the municipality.',
+      },
+    },
+  })
+
+  assert.equal(model.currentStageLabel, 'Transfer')
+  assert.equal(model.currentWorkflowItem.label, 'Rates figures requested')
+  assert.equal(model.currentStep.status, 'current')
+  assert.equal(model.nextStageLabel, 'Lodged')
+  assert.equal(model.completionSummary, '2 of 5')
+  assert.equal(model.progressPercent, null)
+})

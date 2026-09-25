@@ -1,3 +1,5 @@
+import { isBondFinanceType, normalizeFinanceType } from './financeType.js'
+
 export const MVP_LAUNCH_ROLE_PLAN_VERSION = 'arch9_mvp_launch_roles_v1'
 
 export const MVP_LAUNCH_ROLE_CATALOG = Object.freeze({
@@ -164,12 +166,12 @@ export function getMvpLaunchRoleDefinition(roleKey = '') {
 }
 
 export function resolveMvpLaunchRolePlan(profile = {}) {
-  const financeType = String(profile.financeType || '').trim().toLowerCase()
+  const financeType = normalizeFinanceType(profile.financeType, { allowUnknown: true })
   const buyerEntityType = String(profile.buyerEntityType || '').trim().toLowerCase()
   const sellerEntityType = String(profile.sellerEntityType || '').trim().toLowerCase()
   const isDevelopmentSale = isDevelopmentSaleTransactionType(profile.transactionType)
   const buyerCount = Number(profile.buyerCount || profile.additionalBuyerCount || 0)
-  const hasBondComponent = financeType === 'bond' || financeType === 'hybrid'
+  const hasBondComponent = isBondFinanceType(financeType)
   const roles = [
     roleRequirement('internal_admin', 'exception_recovery', { reason: 'Internal recovery is available but is not an ordinary transaction participant.' }),
     roleRequirement('buyer', 'transaction_creation', { requiredAtCreation: true }),
