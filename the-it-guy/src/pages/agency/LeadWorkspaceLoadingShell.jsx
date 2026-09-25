@@ -3,7 +3,7 @@ import { createElement, useMemo } from 'react'
 import { resolveLeadPropertyAddress } from '../../lib/agencyLeadSelection'
 import { resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
 
-const BUYER_TABS = Object.freeze(['Overview', 'Buyer Profile', 'Transaction Setup / Offer', 'Properties', 'Appointments', 'Documents', 'Activity'])
+const BUYER_TABS = Object.freeze(['Overview', 'Matches', 'Buyer Profile', 'Offer', 'Documents', 'Appointments', 'Activity'])
 const SELLER_TABS = Object.freeze(['Overview', 'Seller Profile', 'Property', 'Appointments', 'Documents', 'Activity'])
 const NEUTRAL_TABS = Object.freeze(['Overview', 'Profile', 'Property', 'Appointments', 'Documents', 'Activity'])
 
@@ -83,7 +83,7 @@ export default function LeadWorkspaceLoadingShell({
         <nav className="overflow-hidden border-t border-[#edf3f8] bg-[#fbfdff] p-2" aria-label="Lead workspace sections">
           <div className="flex min-w-max gap-2">
             {tabs.map((label) => {
-              const key = label.toLowerCase().replaceAll(' ', '_').replaceAll('/', '_')
+              const key = label === 'Matches' ? 'properties' : label.toLowerCase().replaceAll(' ', '_').replaceAll('/', '_')
               const selected = activeTab === 'overview' ? label === 'Overview' : key.includes(activeTab)
               return <span key={label} className={`grid min-h-11 min-w-32 place-items-center rounded-[13px] px-4 text-sm font-semibold ${selected ? 'bg-white text-[#123955] shadow-sm ring-1 ring-[#d9e6f2]' : 'text-[#7890a7]'}`}>{label}</span>
             })}

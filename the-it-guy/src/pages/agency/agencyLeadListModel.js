@@ -127,6 +127,31 @@ function getPropertyPresentation(lead = {}) {
   }
 }
 
+function parseRecord(value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value
+  if (typeof value !== 'string') return {}
+  try {
+    const parsed = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function getPropertyImageUrl(lead = {}) {
+  const raw = parseRecord(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
+  const property = parseRecord(raw?.property || raw?.listing || raw?.enquiry?.property || raw?.enquiry?.listing)
+  const candidates = [
+    lead?.propertyImageUrl, lead?.property_image_url, lead?.listingImageUrl, lead?.listing_image_url,
+    lead?.coverImageUrl, lead?.cover_image_url, lead?.imageUrl, lead?.image_url,
+    raw?.propertyImageUrl, raw?.property_image_url, raw?.listingImageUrl, raw?.listing_image_url,
+    raw?.coverImageUrl, raw?.cover_image_url, raw?.imageUrl, raw?.image_url,
+    property?.propertyImageUrl, property?.property_image_url, property?.coverImageUrl, property?.cover_image_url,
+    property?.imageUrl, property?.image_url,
+  ]
+  return candidates.map(normalizeText).find(Boolean) || ''
+}
+
 function getNextOpenTask(tasks = []) {
   return tasks
     .filter((task) => normalizeKey(task?.status) !== 'completed')
@@ -198,6 +223,7 @@ export function buildAgencyLeadListModel({ leads = [], contacts = [], activities
       source: normalizeText(lead?.leadSource) || 'Unknown source',
       propertyTitle: property.title,
       propertySubtitle: property.subtitle,
+      propertyImageUrl: getPropertyImageUrl(lead),
       stage: lifecycle.label,
       columnId: lifecycle.columnId,
       assignedAgent: normalizeText(lead?.assignedAgentName || lead?.assignedAgentEmail) || 'Unassigned',
@@ -262,5 +288,70 @@ export function buildAgencyLeadListSummary({ leads = [], tasks = [] } = {}) {
       offerReady: showDayLeads.filter((lead) => normalizeKey(`${lead?.stage} ${lead?.status}`).includes('offer')).length,
       queue: [],
     },
+  }
+}
+
+function isLostLead(lead = {}) {
+  const states = [lead?.stage, lead?.status].map(normalizeKey)
+  return states.some((state) => ['lost', 'archived', 'closed_lost', 'closed lost', 'deleted', 'cancelled', 'canceled'].includes(state))
+}
+
+function isNewLead(lead = {}) {
+  if (isAgencyLeadArchived(lead) || isLostLead(lead)) return false
+  const lifecycle = resolveAgencyLeadListLifecycle(lead)
+  return lifecycle.key === 'captured' || lifecycle.key === 'new_lead'
+}
+
+function isConvertedLeadThisMonth(lead = {}, monthStart) {
+  const updatedAt = new Date(lead?.updatedAt || lead?.createdAt || 0)
+  if (!Number.isFinite(updatedAt.getTime()) || updatedAt < monthStart) return false
+  const lifecycle = resolveAgencyLeadListLifecycle(lead)
+  if (getAgencyLeadCategory(lead) === 'seller') {
+    return Boolean(normalizeText(lead?.mandatePacketId)) || ['mandate_signed', 'listing_created', 'listing_live', 'documents_submitted'].includes(lifecycle.key)
+  }
+  return Boolean(normalizeText(lead?.convertedTransactionId || lead?.convertedDealId)) || ['transaction', 'closed_won'].includes(lifecycle.key)
+}
+
+export function buildAgencyLeadLandingMetrics(leads = [], { now = new Date() } = {}) {
+  const rows = Array.isArray(leads) ? leads : []
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+  const sourceCounts = new Map()
+  let newLeads = 0
+  let convertedMtd = 0
+  let buyerConvertedMtd = 0
+  let sellerMandatesMtd = 0
+  let lostLeads = 0
+  const categoryCounts = { buyer: 0, seller: 0, archived: 0 }
+
+  for (const lead of rows) {
+    const category = getAgencyLeadCategory(lead)
+    if (isAgencyLeadArchived(lead)) categoryCounts.archived += 1
+    else categoryCounts[category] = (categoryCounts[category] || 0) + 1
+    if (isNewLead(lead)) newLeads += 1
+    if (isLostLead(lead) || isAgencyLeadArchived(lead)) lostLeads += 1
+    const source = normalizeText(lead?.leadSource) || 'Unknown source'
+    sourceCounts.set(source, (sourceCounts.get(source) || 0) + 1)
+    if (isConvertedLeadThisMonth(lead, monthStart)) {
+      convertedMtd += 1
+      if (category === 'seller') sellerMandatesMtd += 1
+      else buyerConvertedMtd += 1
+    }
+  }
+
+  const [topSource = 'No source data', topSourceCount = 0] = [...sourceCounts.entries()]
+    .sort(([leftLabel, leftCount], [rightLabel, rightCount]) => rightCount - leftCount || leftLabel.localeCompare(rightLabel))[0] || []
+  const totalLeads = rows.length
+  return {
+    newLeads,
+    totalActive: Math.max(0, totalLeads - lostLeads),
+    convertedMtd,
+    buyerConvertedMtd,
+    sellerMandatesMtd,
+    topSource,
+    topSourceCount,
+    lostLeads,
+    totalLeads,
+    lostRate: totalLeads ? Math.round((lostLeads / totalLeads) * 100) : 0,
+    categoryCounts,
   }
 }

@@ -1,7 +1,7 @@
 import { useLocation } from 'react-router-dom'
 import { Suspense, lazy } from 'react'
+import LeadWorkspaceRouteLoadingShell from '../../components/leads/LeadWorkspaceRouteLoadingShell'
 import { loadAgencyLeadWorkspace } from './agencyLeadWorkspaceLoader'
-import LeadWorkspaceHydrationShell from './LeadWorkspaceHydrationShell'
 
 const AgencyPipelinePage = lazy(loadAgencyLeadWorkspace)
 
@@ -10,7 +10,7 @@ export default function AgencyLeadWorkspaceRoutePage() {
 
   return (
     <Suspense
-      fallback={<LeadWorkspaceHydrationShell search={location.search} />}
+      fallback={<LeadWorkspaceRouteLoadingShell loadStage="workspace_chunk_loading" />}
     >
       <AgencyPipelinePage
         key={`lead-workspace:${location.pathname}`}

@@ -1,4 +1,3 @@
-import { RefreshCw } from 'lucide-react'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import LeadCreateDialog from '../../components/leads/LeadCreateDialog'
@@ -11,6 +10,7 @@ import { createSellerLeadsPerformanceBaseline } from '../../services/observabili
 import LeadListPage from './LeadListPage'
 import {
   invalidateAgencyLeadListCache,
+  listAgencyLeadLandingMetrics,
   listAgencyLeadListRecords,
   preloadAgencyLeadCoreRecord,
 } from './agencyLeadListReadRepository'
@@ -22,6 +22,7 @@ import {
   DEFAULT_AGENCY_LEAD_FILTERS,
   LEAD_LIST_PAGE_SIZE,
   buildAgencyLeadListModel,
+  buildAgencyLeadLandingMetrics,
   buildAgencyLeadListSummary,
   getAgencyLeadColumns,
   getAgencyLeadStageOptions,
@@ -115,6 +116,7 @@ export default function AgencyLeadListRoutePage() {
   const [organisationId, setOrganisationId] = useState(() => resolveWorkspaceId({ currentWorkspace, currentMembership, workspace }))
   const [membershipRole, setMembershipRole] = useState(resolveMembershipRole(currentMembership, organisationMembershipRole))
   const [records, setRecords] = useState(EMPTY_RECORDS)
+  const [landingMetricLeads, setLandingMetricLeads] = useState([])
   const [agents, setAgents] = useState([])
   const [category, setCategory] = useState('buyer')
   const [filters, setFilters] = useState({ ...DEFAULT_AGENCY_LEAD_FILTERS })
@@ -189,6 +191,7 @@ export default function AgencyLeadListRoutePage() {
       }
       setOrganisationId(workspaceId)
 
+      const landingMetricsRequest = listAgencyLeadLandingMetrics(workspaceId, { forceRefresh }).catch(() => null)
       const primary = await listAgencyLeadListRecords(workspaceId, {
         includeRelatedRecords: false,
         forceRefresh,
@@ -204,6 +207,10 @@ export default function AgencyLeadListRoutePage() {
       })
       setTotalLeadCount(Number(primary?.totalCount || 0))
       setLoading(false)
+      void landingMetricsRequest
+        .then((landingMetrics) => {
+          if (requestId === loadRequestRef.current) setLandingMetricLeads(Array.isArray(landingMetrics?.leads) ? landingMetrics.leads : [])
+        })
       void performanceRef.current?.recordCheckpoint({ checkpoint: 'first_data', userId: profile?.id, workspaceId, metadata: { surface: 'lead_list', leadCount: primary?.leads?.length || 0, totalLeadCount: primary?.totalCount || 0, page: requestedPage } })
 
       if (isPrincipal) {
@@ -240,6 +247,7 @@ export default function AgencyLeadListRoutePage() {
     filters: deferredFilters,
   }), [category, deferredFilters, records])
   const summaryModel = useMemo(() => buildAgencyLeadListSummary(records), [records])
+  const landingMetrics = useMemo(() => buildAgencyLeadLandingMetrics(landingMetricLeads), [landingMetricLeads])
   const totalPages = Math.max(1, Math.ceil(totalLeadCount / LEAD_LIST_PAGE_SIZE))
   const currentPage = Math.min(page, totalPages)
   const pageStart = listModel.rows.length ? (currentPage - 1) * LEAD_LIST_PAGE_SIZE + 1 : 0
@@ -409,12 +417,9 @@ export default function AgencyLeadListRoutePage() {
           </div>
         </section>
       ) : null}
-      <div className="flex min-h-10 items-center justify-between gap-3">
-        <div className="min-w-0">{error ? <p className="rounded-[14px] border border-[#f2cccc] bg-[#fff5f4] px-4 py-2 text-sm text-[#9f3028]">{error}</p> : message ? <p className="rounded-[14px] border border-[#cfe8dc] bg-[#effaf3] px-4 py-2 text-sm text-[#26724c]">{message}</p> : null}</div>
-        <button type="button" disabled={refreshing} className="inline-flex h-10 shrink-0 items-center gap-2 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={() => void loadLeads({ forceRefresh: true, requestedPage: currentPage })}><RefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Refresh</button>
-      </div>
+      {error ? <p className="rounded-[14px] border border-[#f2cccc] bg-[#fff5f4] px-4 py-2 text-sm text-[#9f3028]">{error}</p> : message ? <p className="rounded-[14px] border border-[#cfe8dc] bg-[#effaf3] px-4 py-2 text-sm text-[#26724c]">{message}</p> : null}
       <LeadListPage
-        metrics={summaryModel.metrics}
+        metrics={landingMetrics}
         filters={filters}
         sources={sources}
         stages={getAgencyLeadStageOptions(category)}
@@ -423,7 +428,7 @@ export default function AgencyLeadListRoutePage() {
         category={category}
         categoryLabel={category === 'seller' ? 'Seller' : 'Buyer'}
         categoryTitle={categoryTitle}
-        categoryCounts={listModel.categoryCounts}
+        categoryCounts={landingMetrics.categoryCounts}
         categoryTabs={AGENCY_LEAD_CATEGORY_TABS}
         summary={{ total: totalLeadCount, filtered: listModel.rows.length, newThisWeek: summaryModel.metrics.newThisWeek }}
         sellerJourneyMetrics={summaryModel.sellerJourneyMetrics}
@@ -442,6 +447,8 @@ export default function AgencyLeadListRoutePage() {
         onResetFilters={() => { setPage(1); setFilters({ ...DEFAULT_AGENCY_LEAD_FILTERS }) }}
         onCategoryChange={(nextCategory) => { setPage(1); setCategory(nextCategory) }}
         onViewModeChange={handleViewModeChange}
+        refreshing={refreshing}
+        onRefresh={() => void loadLeads({ forceRefresh: true, requestedPage: currentPage })}
         onPageChange={(nextPage) => setPage(Math.max(1, Math.min(Number(nextPage) || 1, totalPages)))}
         onAddLead={(nextCategory) => {
           void loadLeadMutationActions().catch(() => null)

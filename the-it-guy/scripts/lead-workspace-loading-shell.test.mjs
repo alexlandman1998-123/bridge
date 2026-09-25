@@ -8,13 +8,13 @@ const source = await readFile(
 
 assert.match(
   source,
-  /import LeadWorkspaceHydrationShell from ['"]\.\/LeadWorkspaceHydrationShell['"]/,
-  'The lead workspace route should use the lightweight cached lead shell.',
+  /import LeadWorkspaceRouteLoadingShell from ['"]\.\.\/\.\.\/components\/leads\/LeadWorkspaceRouteLoadingShell['"]/,
+  'The lead workspace route should use the shared stable loading shell.',
 )
 assert.match(
   source,
-  /<Suspense[\s\S]*?fallback=\{<LeadWorkspaceHydrationShell search=\{location\.search\} \/>\}/,
-  'The inner lazy boundary should keep the cached lead identity visible.',
+  /<Suspense[\s\S]*?fallback=\{<LeadWorkspaceRouteLoadingShell loadStage="workspace_chunk_loading" \/>\}/,
+  'The inner lazy boundary should keep the same shell visible while the workspace loads.',
 )
 assert.doesNotMatch(
   source,

@@ -45,7 +45,7 @@ assert.match(agencyPipelinePageSource, /function normalizeLeadWorkspaceTabKey/)
 assert.match(agencyPipelinePageSource, /'offers'[\s\S]*return BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY/)
 assert.match(
   agencyPipelinePageSource,
-  /\{ key: 'overview', label: 'Overview', meta: '' \},\s*\{ key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' \},\s*\{ key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup \/ Offer'[\s\S]*?\{ key: 'properties', label: 'Properties'[\s\S]*?\{ key: 'appointments', label: 'Appointments'[\s\S]*?\{ key: 'activity', label: 'Activity'/,
+  /\{ key: 'overview', label: 'Overview', meta: '' \},\s*\{ key: 'properties', label: 'Matches'[\s\S]*?\{ key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' \},\s*\{ key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer'[\s\S]*?\{ key: 'documents', label: 'Documents'[\s\S]*?\{ key: 'appointments', label: 'Appointments'[\s\S]*?\{ key: 'activity', label: 'Activity'/,
 )
 assert.match(agencyPipelinePageSource, /BUYER_PROFILE_WORKSPACE_TAB_KEY = 'buyer_profile'/)
 assert.match(agencyPipelinePageSource, /resolveBuyerWorkspaceTabKey\(leadWorkspaceTab\) === 'overview' && !selectedLeadIsSeller \? \(/)

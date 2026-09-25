@@ -214,8 +214,9 @@ try {
     assert.match(sharedWorkspaceSource, /xl:grid-cols-5/, 'lead category tabs should make room for the archived view')
     for (const reference of [
       'Buyer Profile',
-      'Transaction Setup / Offer',
-      'Properties',
+      'Offer',
+      'Matches',
+      'Documents',
       'Appointments',
       'Activity',
       'Property enquiry',

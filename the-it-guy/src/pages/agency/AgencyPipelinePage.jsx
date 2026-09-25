@@ -6500,15 +6500,30 @@ function formatCompactCurrency(value) {
   return formatCurrency(amount)
 }
 
-function buildBuyerBudgetRangeLabel({ lead = {}, financeSummary = {} } = {}) {
+function buildBuyerEnquiryPriceBand(price = 0) {
+  const amount = Number(price || 0)
+  if (!Number.isFinite(amount) || amount <= 0) return ''
+  const bandSize = amount < 1_000_000 ? 250_000 : amount < 3_000_000 ? 500_000 : 1_000_000
+  const minimum = Math.floor(amount / bandSize) * bandSize
+  const maximum = minimum + bandSize
+  return `${formatCompactCurrency(minimum)} - ${formatCompactCurrency(maximum)}`
+}
+
+function buildBuyerBudgetRangeLabel({ lead = {}, financeSummary = {}, enquiryPrice = 0, onboardingSubmitted = false } = {}) {
   const rawBudget = normalizeText(lead?.budget)
   const rawEstimated = normalizeText(lead?.estimatedValue)
-  if (rawBudget && /[a-z]|-|–|—/i.test(rawBudget) && parseCurrencyAmount(rawBudget) > 0) return rawBudget
 
-  const affordability = financeSummary?.affordabilityEstimate || {}
-  const min = Number(affordability.estimatedPurchaseRangeMin || 0) || 0
-  const max = Number(affordability.estimatedPurchaseRangeMax || 0) || 0
-  if (min > 0 && max > 0 && min !== max) return `${formatCompactCurrency(min)} - ${formatCompactCurrency(max)}`
+  if (onboardingSubmitted) {
+    const affordability = financeSummary?.affordabilityEstimate || {}
+    const min = Number(affordability.estimatedPurchaseRangeMin || 0) || 0
+    const max = Number(affordability.estimatedPurchaseRangeMax || 0) || 0
+    if (min > 0 && max > 0 && min !== max) return `${formatCompactCurrency(min)} - ${formatCompactCurrency(max)}`
+  }
+
+  const enquiryBand = buildBuyerEnquiryPriceBand(enquiryPrice)
+  if (enquiryBand) return enquiryBand
+
+  if (rawBudget && /[a-z]|-|–|—/i.test(rawBudget) && parseCurrencyAmount(rawBudget) > 0) return rawBudget
 
   const budget = parseCurrencyAmount(rawBudget)
   const estimated = parseCurrencyAmount(rawEstimated)
@@ -6518,6 +6533,36 @@ function buildBuyerBudgetRangeLabel({ lead = {}, financeSummary = {} } = {}) {
   if (budget > 0) return formatCompactCurrency(budget)
   if (estimated > 0) return formatCompactCurrency(estimated)
   return 'Not captured'
+}
+
+function getBuyerOnboardingFinanceLabel({ onboardingSubmitted = false, formData = {} } = {}) {
+  if (!onboardingSubmitted) return 'Awaiting onboarding'
+  const rawValue = normalizeText(
+    formData?.purchase_finance_type ||
+      formData?.financeType ||
+      formData?.finance_type ||
+      formData?.structuredFinance?.finance_type ||
+      formData?.structured_finance?.finance_type,
+  )
+  const normalized = rawValue.toLowerCase().replace(/[+/_-]+/g, ' ')
+  if (normalized.includes('cash') && (normalized.includes('bond') || normalized.includes('mortgage') || normalized.includes('hybrid'))) return 'Hybrid'
+  if (normalized.includes('hybrid') || normalized.includes('combination')) return 'Hybrid'
+  if (normalized.includes('cash')) return 'Cash'
+  if (normalized.includes('bond') || normalized.includes('mortgage')) return 'Bond'
+  return rawValue || 'Not captured'
+}
+
+function getBuyerOnboardingUrgencyLabel({ onboardingSubmitted = false, formData = {} } = {}) {
+  if (!onboardingSubmitted) return 'Awaiting onboarding'
+  return normalizeText(
+    formData?.urgency ||
+      formData?.purchase_urgency ||
+      formData?.purchaseUrgency ||
+      formData?.move_timeframe ||
+      formData?.moveTimeframe ||
+      formData?.purchase_timeline ||
+      formData?.purchaseTimeline,
+  ) || 'Not captured'
 }
 
 function getBuyerUrgencyLabel({ lead = {}, openActions = {}, activityInsights = {} } = {}) {
@@ -6537,7 +6582,7 @@ function getBuyerUrgencyClassName(label = '') {
 
 function resolveBuyerWorkspaceTabKey(tabKey = '') {
   const normalized = normalizeLeadWorkspaceTabKey(tabKey)
-  if (['documents', 'insights', 'mapping'].includes(normalized)) return 'overview'
+  if (['insights', 'mapping'].includes(normalized)) return 'overview'
   return normalized
 }
 
@@ -18352,9 +18397,35 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [selectedLead, selectedLeadActivities, selectedLeadUnifiedTimeline],
   )
 
+  const selectedLeadEnquiryPrice = useMemo(
+    () => resolveLeadViewingPlannerPrice(selectedLead || {}, selectedLeadLinkedListing),
+    [selectedLead, selectedLeadLinkedListing],
+  )
+
   const selectedLeadBuyerBudgetLabel = useMemo(
-    () => buildBuyerBudgetRangeLabel({ lead: selectedLead || {}, financeSummary: selectedLeadFinanceReadinessSummary }),
-    [selectedLead, selectedLeadFinanceReadinessSummary],
+    () => buildBuyerBudgetRangeLabel({
+      lead: selectedLead || {},
+      financeSummary: selectedLeadFinanceReadinessSummary,
+      enquiryPrice: selectedLeadEnquiryPrice,
+      onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
+    }),
+    [selectedLead, selectedLeadBuyerOnboardingSubmitted, selectedLeadEnquiryPrice, selectedLeadFinanceReadinessSummary],
+  )
+
+  const selectedLeadBuyerOnboardingFinance = useMemo(
+    () => getBuyerOnboardingFinanceLabel({
+      onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
+      formData: selectedLeadFinanceFormData,
+    }),
+    [selectedLeadBuyerOnboardingSubmitted, selectedLeadFinanceFormData],
+  )
+
+  const selectedLeadBuyerOnboardingUrgency = useMemo(
+    () => getBuyerOnboardingUrgencyLabel({
+      onboardingSubmitted: selectedLeadBuyerOnboardingSubmitted,
+      formData: selectedLeadFinanceFormData,
+    }),
+    [selectedLeadBuyerOnboardingSubmitted, selectedLeadFinanceFormData],
   )
 
   const selectedLeadBuyerUrgency = useMemo(
@@ -34039,7 +34110,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                    <>
 	                      <section className="mt-6 overflow-hidden rounded-[24px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_22px_52px_rgba(31,54,78,0.08)]">
 	                        <div className="grid lg:grid-cols-[minmax(0,1.32fr)_minmax(390px,0.92fr)]">
-	                          <div className="bg-[linear-gradient(135deg,#0b2b4c_0%,#092640_52%,#061d33_100%)] p-6 text-white sm:p-8">
+	                          <div className="relative isolate overflow-hidden bg-[#0b2b4c] p-6 text-white sm:p-8">
+	                            {selectedLeadEnquiryPropertyContext.imageUrl ? (
+	                              <img
+	                                src={selectedLeadEnquiryPropertyContext.imageUrl}
+	                                alt=""
+	                                className="absolute inset-0 -z-20 h-full w-full object-cover opacity-[0.18]"
+	                                aria-hidden="true"
+	                              />
+	                            ) : null}
+	                            <span className="absolute inset-0 -z-10 bg-[linear-gradient(135deg,rgba(11,43,76,0.93)_0%,rgba(9,38,64,0.91)_52%,rgba(6,29,51,0.95)_100%)]" aria-hidden="true" />
 	                            <div className="flex h-full min-h-[270px] min-w-0 flex-col justify-between gap-10">
 	                              <div className="min-w-0">
 	                                <div className="flex flex-wrap items-center gap-2">
@@ -34100,11 +34180,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                              <div className="min-w-0 rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff]">
 	                                <div className="divide-y divide-[#e8eef5]">
 	                                  {[
-	                                    ['Budget', selectedLeadBuyerBudgetLabel, selectedLeadBuyerBudgetLabel === 'Not captured' ? 'Needs capture' : 'Captured', Home],
-	                                    ['Financing', selectedLeadFinanceReadinessSummary.confidenceLabel || selectedLead?.financeType || 'Not captured', selectedLeadFinanceReadinessSummary.confidenceLabel ? 'Active signal' : 'Pending', CheckSquare],
-	                                    ['Saved Searches', leadAppointmentOfferListingOptions.length || selectedLeadViewingAppointments.length || 0, 'Active signals', Bookmark],
-	                                    ['Match Score', `${selectedLeadBuyerMatchScore}%`, selectedLeadBuyerMatchScore >= 86 ? 'Strong fit' : 'Good fit', TrendingUp],
-	                                    ['Urgency', selectedLeadBuyerUrgency, selectedLeadBuyerUrgency === 'High' ? 'Act now' : 'Monitor', Zap],
+	                                    ['Budget', selectedLeadBuyerBudgetLabel, selectedLeadBuyerBudgetLabel === 'Not captured' ? 'Needs property price' : 'Enquiry property band', Home],
+	                                    ['Financing', selectedLeadBuyerOnboardingFinance, selectedLeadBuyerOnboardingSubmitted ? 'Onboarding submitted' : 'Onboarding required', CheckSquare],
+	                                    ['Match Budget', selectedLeadBuyerBudgetLabel, selectedLeadBuyerBudgetLabel === 'Not captured' ? 'Needs property price' : 'Temporary match signal', TrendingUp],
+	                                    ['Urgency', selectedLeadBuyerOnboardingUrgency, selectedLeadBuyerOnboardingSubmitted ? 'Onboarding submitted' : 'Onboarding required', Zap],
 	                                  ].map(([label, value, status, Icon]) => (
 	                                    <div key={label} className="flex items-center justify-between gap-4 px-4 py-3 text-sm">
 	                                      <span className="inline-flex min-w-0 items-center gap-2 font-semibold text-[#20364c]">
@@ -34264,11 +34343,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <div className="grid min-w-[960px] grid-cols-7 gap-2">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
+                        { key: 'properties', label: 'Matches', meta: selectedLeadBuyerRecommendations.length },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
-                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
-                        { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
-                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'documents', label: 'Documents', meta: selectedLeadAgentUploadedBuyerDocuments.length },
+	                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
                         const isActive = buyerWorkspaceVisualTab === tab.key
@@ -34525,11 +34604,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                    <div className="grid min-w-[960px] grid-cols-7">
                       {[
                         { key: 'overview', label: 'Overview', meta: '' },
+                        { key: 'properties', label: 'Matches', meta: selectedLeadBuyerRecommendations.length },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
-	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Transaction Setup / Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
-                        { key: 'properties', label: 'Properties', meta: selectedLeadBuyerRecommendations.length },
-                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
+	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
                         { key: 'documents', label: 'Documents', meta: selectedLeadAgentUploadedBuyerDocuments.length },
+	                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
                         const isActive = buyerWorkspaceVisualTab === tab.key

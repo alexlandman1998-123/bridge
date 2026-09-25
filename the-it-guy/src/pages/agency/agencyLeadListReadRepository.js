@@ -21,6 +21,7 @@ const ACTIVITY_FIELDS = 'activity_id, organisation_id, lead_id, agent_id, activi
 const TASK_FIELDS = 'task_id, organisation_id, lead_id, assigned_agent_id, title, description, due_date, status, priority, created_at, updated_at'
 const PRIMARY_RECORDS_CACHE_TTL_MS = 60_000
 const primaryRecordsCache = new Map()
+const landingMetricsCache = new Map()
 const leadCoreRequestCache = new Map()
 let compatibleLeadFields = null
 
@@ -248,6 +249,40 @@ async function fetchPrimaryRecords(workspaceId, { forceRefresh = false, page = 0
   return promise
 }
 
+async function fetchLandingMetricLeads(workspaceId, { forceRefresh = false } = {}) {
+  if (!forceRefresh) {
+    const cached = readFreshCache(landingMetricsCache, workspaceId)
+    if (cached?.data) return cached.data
+    if (cached?.promise) return cached.promise
+  }
+
+  const promise = (async () => {
+    const pageSize = 1000
+    const leads = []
+    let page = 0
+    let totalCount = 0
+    let hasMore = true
+    while (hasMore) {
+      const result = await selectCompatibleLeads(workspaceId, '', { page, pageSize })
+      if (result.error && !isUnavailable(result.error)) throw result.error
+      const rows = Array.isArray(result.data) ? result.data : []
+      totalCount = Number(result.count || totalCount || rows.length)
+      leads.push(...rows.map(mapLead))
+      page += 1
+      hasMore = Boolean(rows.length && rows.length === pageSize && leads.length < totalCount)
+    }
+    const data = { leads, totalCount: Number(totalCount || leads.length), source: 'remote' }
+    landingMetricsCache.set(workspaceId, { data, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
+    return data
+  })().catch((error) => {
+    landingMetricsCache.delete(workspaceId)
+    throw error
+  })
+
+  landingMetricsCache.set(workspaceId, { promise, expiresAt: Date.now() + PRIMARY_RECORDS_CACHE_TTL_MS })
+  return promise
+}
+
 function findLeadCoreInPrimaryCache(workspaceId, leadId) {
   const cached = readFreshCache(primaryRecordsCache, workspaceId)?.data
   if (!cached) return null
@@ -318,12 +353,14 @@ export function invalidateAgencyLeadListCache(organisationId, leadId = '') {
   const workspaceId = normalizeText(organisationId)
   if (!workspaceId) {
     primaryRecordsCache.clear()
+    landingMetricsCache.clear()
     leadCoreRequestCache.clear()
     return
   }
   for (const key of primaryRecordsCache.keys()) {
     if (key === workspaceId || key.startsWith(`${workspaceId}:`)) primaryRecordsCache.delete(key)
   }
+  landingMetricsCache.delete(workspaceId)
   const resolvedLeadId = normalizeText(leadId)
   if (resolvedLeadId) {
     deleteAgencyLeadCoreCache(workspaceId, resolvedLeadId)
@@ -376,4 +413,10 @@ export async function listAgencyLeadListRecords(organisationId, options = {}) {
     pageSize: Number(primary.pageSize || 0),
     source: 'remote',
   }
+}
+
+export async function listAgencyLeadLandingMetrics(organisationId, { forceRefresh = false } = {}) {
+  const workspaceId = requireWorkspaceId(organisationId)
+  if (!isSupabaseConfigured || !supabase) throw new Error('Supabase is required before loading agency CRM data.')
+  return fetchLandingMetricLeads(workspaceId, { forceRefresh })
 }

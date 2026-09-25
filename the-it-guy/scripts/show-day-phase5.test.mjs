@@ -6,8 +6,8 @@ const leadListSource = await readFile(new URL('../src/pages/agency/LeadListPage.
 const captureSource = await readFile(new URL('../src/services/showDayLeadCaptureService.js', import.meta.url), 'utf8')
 const packageSource = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
-assert.ok(leadListSource.includes('Show Day Intake'), 'Buyer Leads should retain Show Day Intake.')
-assert.ok(leadListSource.includes('ShowDayIntakeModal'), 'Buyer Leads should retain QR and visitor-book intake.')
+assert.ok(!leadListSource.includes('Show Day Intake'), 'Buyer Leads should not render the retired Show Day Intake control.')
+assert.ok(!leadListSource.includes('ShowDayIntakeModal'), 'Buyer Leads should not bundle the retired QR and visitor-book intake modal.')
 assert.ok(!leadListSource.includes('show-day-follow-up-queue'), 'Buyer Leads should not render a separate Show Day Follow-Up Queue.')
 assert.ok(!leadListSource.includes('Open Show Day Queue'), 'Buyer Leads should not offer a separate Show Day Queue.')
 assert.ok(!pageSource.includes('showDaySummary='), 'The pipeline should not feed a separate Show Day summary into Buyer Leads.')

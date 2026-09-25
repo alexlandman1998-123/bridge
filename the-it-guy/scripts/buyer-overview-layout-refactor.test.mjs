@@ -28,7 +28,7 @@ assert.match(pipeline, /resolveListingImageUrl\(linkedListing\)/)
 assert.match(pipeline, /min-w-\[430px\].*activityQuickTypes/s)
 
 assert.doesNotMatch(workspaceRoute, /if \(activeTab === 'overview'\) return/)
-assert.match(workspaceRoute, /Suspense[\s\S]*fallback=\{<LeadWorkspaceHydrationShell search=\{location\.search\} \/>\}/)
+assert.match(workspaceRoute, /Suspense[\s\S]*fallback=\{<LeadWorkspaceRouteLoadingShell loadStage="workspace_chunk_loading" \/>\}/)
 
 const qualificationRowsStart = pipeline.indexOf('function buildBuyerQualificationQuestionRows')
 const qualificationRowsEnd = pipeline.indexOf('\nfunction buildLeadAddressValue', qualificationRowsStart)

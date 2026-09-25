@@ -1,24 +1,19 @@
 import {
-  AlertTriangle,
   ArrowUpRight,
-  CheckSquare,
-  Clock3,
   Columns3,
   Filter,
   Home,
   MoreHorizontal,
   Plus,
-  QrCode,
+  RefreshCw,
   Search,
   Table2,
   Trash2,
   TrendingUp,
-  Upload,
   UserRound,
   X,
 } from 'lucide-react'
-import QRCode from 'qrcode'
-import { createElement, useEffect, useMemo, useState } from 'react'
+import { createElement, useState } from 'react'
 
 function MetricCard({ label, value, detail, compare, icon, tone }) {
   return (
@@ -44,8 +39,37 @@ function stageTone(label = '') {
   return 'border-[#dbe6f1] bg-[#f8fbff] text-[#4d6782]'
 }
 
-function LeadSourceBadge({ source = '' }) {
-  return <span className="inline-flex rounded-full border border-[#dbe6f1] bg-white px-2.5 py-1 text-[0.7rem] font-semibold text-[#4d6782]">{source || 'Unknown source'}</span>
+function normalizedSource(source = '') {
+  return String(source || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function LeadSourceBrand({ source = '' }) {
+  const sourceKey = normalizedSource(source)
+  const asset = sourceKey.includes('property24')
+    ? { src: '/lead-sources/property24.png', alt: 'Property24' }
+    : sourceKey.includes('privateproperty')
+      ? { src: '/lead-sources/private-property.jpeg', alt: 'Private Property' }
+      : null
+
+  return asset ? (
+    <img src={asset.src} alt={asset.alt} className="max-h-7 max-w-[110px] object-contain object-left" />
+  ) : <span className="text-[0.8rem] font-semibold text-[#4d6782]">{source || 'Unknown source'}</span>
+}
+
+function PropertyThumbnail({ row }) {
+  const [failed, setFailed] = useState(false)
+  const imageUrl = row.propertyImageUrl
+  return imageUrl && !failed ? (
+    <img src={imageUrl} alt="" className="h-12 w-[72px] shrink-0 rounded-lg object-cover" loading="lazy" onError={() => setFailed(true)} />
+  ) : (
+    <span className="inline-flex h-12 w-[72px] shrink-0 items-center justify-center rounded-lg bg-[#edf4fa] text-[#66819a]" aria-label="Property image unavailable"><Home size={18} /></span>
+  )
+}
+
+function StagePill({ stage = '' }) {
+  const value = String(stage).toLowerCase()
+  const dot = value.includes('lost') || value.includes('overdue') ? 'bg-[#c74b43]' : value.includes('converted') || value.includes('signed') || value.includes('live') || value.includes('qualified') ? 'bg-[#21a365]' : value.includes('attention') || value.includes('pending') ? 'bg-[#c6902d]' : 'bg-[#3978d6]'
+  return <span className={`inline-flex h-[30px] items-center gap-2 rounded-full border px-3 text-xs font-medium ${stageTone(stage)}`}><span className={`h-2 w-2 rounded-full ${dot}`} />{stage}</span>
 }
 
 function LeadActions({ row, openMenuId, setOpenMenuId, onArchive, onDelete }) {
@@ -89,78 +113,6 @@ function EmptyLeads({ total, title, category, onAdd }) {
   )
 }
 
-function ShowDayIntakeModal({ open, listings = [], publicIntakeBaseUrl = '', busy = false, onClose, onImport }) {
-  const [listingId, setListingId] = useState('')
-  const [showDayDate, setShowDayDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [visitorText, setVisitorText] = useState('')
-  const [qrDataUrl, setQrDataUrl] = useState('')
-  const [error, setError] = useState('')
-  const selectedListing = useMemo(() => listings.find((row) => String(row.id || row.listingId) === listingId) || null, [listingId, listings])
-  const intakeUrl = useMemo(() => {
-    if (!publicIntakeBaseUrl || !listingId) return ''
-    const params = new URLSearchParams({
-      intent: 'buy',
-      source: 'show-day',
-      campaign: 'show-day',
-      listingId,
-      listingTitle: selectedListing?.label || selectedListing?.title || 'Show Day',
-    })
-    return `${publicIntakeBaseUrl}?${params.toString()}`
-  }, [listingId, publicIntakeBaseUrl, selectedListing])
-
-  useEffect(() => {
-    let active = true
-    if (!intakeUrl) {
-      setQrDataUrl('')
-      return () => { active = false }
-    }
-    QRCode.toDataURL(intakeUrl, { width: 320, margin: 2, errorCorrectionLevel: 'M' })
-      .then((value) => { if (active) setQrDataUrl(value) })
-      .catch(() => { if (active) setQrDataUrl('') })
-    return () => { active = false }
-  }, [intakeUrl])
-
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/45 p-4" role="dialog" aria-modal="true" aria-label="Show Day intake">
-      <section className="max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-[22px] bg-white p-5 shadow-2xl sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div><p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6f8398]">Show Day Intake</p><h2 className="mt-1 text-xl font-semibold text-[#102236]">Capture visitors digitally or from the visitor book</h2></div>
-          <button type="button" className="grid h-10 w-10 place-items-center rounded-xl border border-slate-200" onClick={onClose}><X size={17} /></button>
-        </div>
-        <label className="mt-5 block text-sm font-semibold text-[#29435d]">Listing
-          <select className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3" value={listingId} onChange={(event) => { setListingId(event.target.value); setError('') }}>
-            <option value="">Select the show-day listing</option>
-            {listings.map((row) => <option key={row.id || row.listingId} value={row.id || row.listingId}>{row.label || row.title || row.address || 'Listing'}</option>)}
-          </select>
-        </label>
-        <div className="mt-5 grid gap-5 lg:grid-cols-2">
-          <article className="rounded-2xl border border-slate-200 bg-[#f8fbff] p-4 text-center">
-            <QrCode className="mx-auto text-[#315f8f]" size={22} />
-            <h3 className="mt-2 font-semibold text-[#17334f]">Visitor QR code</h3>
-            <p className="mt-1 text-sm text-[#60758d]">Visitors scan this code and submit their details through the agency’s buyer intake.</p>
-            {qrDataUrl ? <img src={qrDataUrl} alt="Show Day visitor intake QR code" className="mx-auto mt-4 h-56 w-56 rounded-xl bg-white p-2" /> : <div className="mx-auto mt-4 grid h-56 w-56 place-items-center rounded-xl border border-dashed border-slate-300 bg-white text-sm text-slate-500">Select a listing to generate the QR code.</div>}
-            {intakeUrl ? <button type="button" className="mt-3 text-sm font-semibold text-[#0b63f6]" onClick={() => navigator.clipboard.writeText(intakeUrl)}>Copy intake link</button> : null}
-          </article>
-          <article className="rounded-2xl border border-slate-200 p-4">
-            <Upload className="text-[#315f8f]" size={22} />
-            <h3 className="mt-2 font-semibold text-[#17334f]">Upload a signed visitor book</h3>
-            <p className="mt-1 text-sm text-[#60758d]">Paste rows from a CSV or spreadsheet. Accepted columns: name, phone, email, outcome, feedback and notes.</p>
-            <label className="mt-4 block text-sm font-semibold text-[#29435d]">Show Day date<input type="date" className="mt-2 min-h-11 w-full rounded-xl border border-slate-200 px-3" value={showDayDate} onChange={(event) => setShowDayDate(event.target.value)} /></label>
-            <label className="mt-3 inline-flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-[#29435d]"><Upload size={15} /> Choose CSV or text file<input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain" className="sr-only" onChange={async (event) => { const file = event.target.files?.[0]; if (file) { setVisitorText(await file.text()); setError('') } event.target.value = '' }} /></label>
-            <textarea className="mt-3 min-h-40 w-full rounded-xl border border-slate-200 p-3 text-sm" value={visitorText} onChange={(event) => setVisitorText(event.target.value)} placeholder={'Name,Phone,Email,Outcome,Feedback,Notes\nJane Smith,0821234567,jane@example.com,Interested,Loved the garden,Call tomorrow'} />
-            {error ? <p className="mt-2 text-sm text-red-700">{error}</p> : null}
-            <button type="button" disabled={busy} className="mt-3 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#0f2743] px-4 text-sm font-semibold text-white disabled:opacity-50" onClick={async () => {
-              if (!listingId || !visitorText.trim()) { setError('Select a listing and add at least one visitor.'); return }
-              try { await onImport?.({ listingId, showDayDate, visitorText }); setVisitorText(''); onClose?.() } catch (importError) { setError(importError?.message || 'The visitor book could not be imported.') }
-            }}><Upload size={15} /> {busy ? 'Importing…' : 'Import visitor book'}</button>
-          </article>
-        </div>
-      </section>
-    </div>
-  )
-}
-
 export default function LeadListPage({
   metrics = {},
   filters = {},
@@ -179,6 +131,7 @@ export default function LeadListPage({
   rows = [],
   kanbanColumns = [],
   viewMode = 'table',
+  refreshing = false,
   currentPage = 1,
   totalPages = 1,
   visiblePages = [],
@@ -188,6 +141,7 @@ export default function LeadListPage({
   onResetFilters,
   onCategoryChange,
   onViewModeChange,
+  onRefresh,
   onPageChange,
   onAddLead,
   onLeadIntent,
@@ -195,35 +149,25 @@ export default function LeadListPage({
   onArchiveLead,
   onDeleteLead,
   onMoveLead,
-  showDayListings = [],
-  publicIntakeBaseUrl = '',
-  showDayImportBusy = false,
-  onImportShowDayVisitors,
 }) {
   const [openMenuId, setOpenMenuId] = useState('')
   const [draggingId, setDraggingId] = useState('')
-  const [showDayIntakeOpen, setShowDayIntakeOpen] = useState(false)
   const metricCards = [
-    { label: 'New Leads', value: metrics.newLeads || 0, detail: `${metrics.newThisWeek || 0} this week`, compare: 'Current pipeline', icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
-    { label: 'Need Attention', value: metrics.needAttention || 0, detail: `${metrics.overdue || 0} overdue`, compare: metrics.overdue ? 'Action required' : 'Clear', icon: AlertTriangle, tone: 'text-[#8a641d] bg-[#fff7e8]' },
-    { label: 'Follow-Ups Today', value: metrics.followUpsToday || 0, detail: 'Ready for action', compare: 'Operational queue', icon: CheckSquare, tone: 'text-[#405b75] bg-[#f5f8fc]' },
-    { label: 'Overdue', value: metrics.overdueTasks || 0, detail: metrics.overdueTasks ? 'Needs attention' : 'No blockers', compare: metrics.overdueTasks ? 'Prioritize first' : 'Healthy', icon: Clock3, tone: 'text-[#9a4038] bg-[#fff5f4]' },
-    { label: 'Converted MTD', value: metrics.convertedMtd || 0, detail: `${metrics.active || 0} active`, compare: 'Month to date', icon: TrendingUp, tone: 'text-[#26724c] bg-[#effaf3]' },
+    { label: 'New Leads', value: metrics.newLeads || 0, detail: `${metrics.totalActive || 0} active leads`, compare: 'Awaiting progress', icon: UserRound, tone: 'text-[#315f8f] bg-[#edf5ff]' },
+    { label: 'Converted MTD', value: metrics.convertedMtd || 0, detail: `${metrics.buyerConvertedMtd || 0} transactions · ${metrics.sellerMandatesMtd || 0} mandates`, compare: 'Month to date', icon: TrendingUp, tone: 'text-[#26724c] bg-[#effaf3]' },
+    { label: 'Top Source', value: metrics.topSource || 'No source data', detail: `${metrics.topSourceCount || 0} leads`, compare: 'All captured leads', icon: ArrowUpRight, tone: 'text-[#405b75] bg-[#f5f8fc]' },
+    { label: 'Lost Rate', value: `${metrics.lostRate || 0}%`, detail: `${metrics.lostLeads || 0} archived or lost`, compare: `${metrics.totalLeads || 0} total leads`, icon: Trash2, tone: 'text-[#9a4038] bg-[#fff5f4]' },
   ]
 
   return (
     <div className="flex flex-col gap-5" data-testid="agency-lead-list-page">
-      <section className="order-1 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+      <section className="order-1 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
         {metricCards.map((card) => <MetricCard key={card.label} {...card} />)}
       </section>
 
       <section id="agency-lead-filters" className="order-2 min-w-0 rounded-[16px] border border-[#e4ebf2] bg-white/90 p-2.5 shadow-[0_10px_26px_rgba(24,45,68,0.045)] backdrop-blur">
         <div className="flex min-w-0 flex-col gap-2 xl:flex-row xl:items-center">
-          <label className="flex min-h-[38px] min-w-0 flex-1 items-center gap-2.5 rounded-[12px] border border-[#dbe6f1] bg-[#f8fbfe] px-3 focus-within:border-[#9db7cf] focus-within:bg-white">
-            <Search size={16} className="shrink-0 text-[#7f92a6]" />
-            <input className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]" type="search" placeholder="Search leads, clients, listings..." value={filters.search || ''} onChange={(event) => onFiltersChange({ search: event.target.value })} />
-          </label>
-          <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:flex xl:shrink-0">
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:ml-auto xl:flex xl:shrink-0">
             <select className="min-h-[38px] rounded-[12px] border border-[#dbe6f1] bg-white px-3 text-[0.82rem] font-semibold text-[#2b4056]" value={filters.source || 'all'} onChange={(event) => onFiltersChange({ source: event.target.value })}>
               <option value="all">All Sources</option>{sources.map((source) => <option key={source} value={source}>{source}</option>)}
             </select>
@@ -252,11 +196,11 @@ export default function LeadListPage({
                 <button type="button" aria-pressed={viewMode === 'table'} className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold ${viewMode === 'table' ? 'bg-white text-[#163247] shadow' : 'text-[#51667f]'}`} onClick={() => onViewModeChange('table')}><Table2 size={13} /> Table</button>
                 <button type="button" aria-pressed={viewMode === 'kanban'} className={`inline-flex min-h-[34px] items-center gap-1.5 rounded-[12px] px-3 text-xs font-semibold ${viewMode === 'kanban' ? 'bg-white text-[#163247] shadow' : 'text-[#51667f]'}`} onClick={() => onViewModeChange('kanban')}><Columns3 size={13} /> Kanban</button>
               </div>
-              {category === 'buyer' ? <button type="button" className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[#cddbe9] bg-white px-4 text-sm font-semibold text-[#29435d]" onClick={() => setShowDayIntakeOpen(true)}><QrCode size={16} /> Show Day Intake</button> : null}
+              {onRefresh ? <button type="button" disabled={refreshing} className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#405b75] disabled:opacity-60" onClick={onRefresh}><RefreshCw size={16} className={refreshing ? 'animate-spin' : ''} /> Refresh</button> : null}
               {category !== 'archived' ? <button type="button" className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white" onClick={() => onAddLead(category)}><Plus size={16} /> Add {categoryLabel} Lead</button> : null}
             </div>
           </div>
-          <div className="mt-4 grid gap-2 rounded-[16px] border border-[#dbe4ee] bg-[#f8fbff] p-1.5 sm:grid-cols-3" role="tablist" aria-label="Lead categories">
+          <div className="mt-4 grid h-12 gap-2 rounded-xl border border-[#dbe4ee] bg-[#f8fbff] p-1 sm:grid-cols-3" role="tablist" aria-label="Lead categories">
             {categoryTabs.map((tab) => {
               const active = category === tab.key
               const Icon = tab.key === 'seller' ? Home : tab.key === 'archived' ? X : UserRound
@@ -265,8 +209,12 @@ export default function LeadListPage({
           </div>
         </header>
 
-        <div className="shrink-0 border-b border-[rgba(15,23,42,0.06)] px-4 py-2 text-[0.78rem] text-[#73879c]">
-          {category === 'seller' ? `${sellerJourneyMetrics.sellerLeads || 0} seller leads · ${sellerJourneyMetrics.mandatesSigned || 0} mandates signed · ${sellerJourneyMetrics.listingsLive || 0} listings live` : `${operationalSummary.total || 0} leads · ${operationalSummary.needAttention || 0} need attention · ${operationalSummary.overdue || 0} overdue`}
+        <div className="flex shrink-0 flex-col gap-3 border-b border-[rgba(15,23,42,0.06)] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-[0.78rem] text-[#73879c]">{category === 'seller' ? `${sellerJourneyMetrics.sellerLeads || 0} seller leads · ${sellerJourneyMetrics.mandatesSigned || 0} mandates signed · ${sellerJourneyMetrics.listingsLive || 0} listings live` : `${operationalSummary.total || 0} leads · ${operationalSummary.needAttention || 0} need attention · ${operationalSummary.overdue || 0} overdue`}</p>
+          <label className="flex h-10 w-full items-center gap-2 rounded-xl border border-[#dbe6f1] bg-white px-3 focus-within:border-[#9db7cf] sm:w-[300px]">
+            <Search size={16} className="shrink-0 text-[#7f92a6]" />
+            <input className="min-w-0 flex-1 border-0 bg-transparent p-0 text-sm font-medium text-[#162334] outline-none placeholder:text-[#97a7b8]" type="search" placeholder="Search leads, addresses or names..." value={filters.search || ''} onChange={(event) => onFiltersChange({ search: event.target.value })} />
+          </label>
         </div>
 
         {viewMode === 'kanban' ? (
@@ -285,7 +233,7 @@ export default function LeadListPage({
         ) : (
           <>
             <div className="hidden overflow-visible lg:block">
-              {rows.length ? <table className="w-full table-fixed text-left"><thead className="bg-[#fbfdff] text-[0.68rem] uppercase tracking-[0.08em] text-[#7890a8]"><tr><th className="w-[24%] px-5 py-3">Lead</th><th className="w-[14%] px-4 py-3">Source</th><th className="w-[24%] px-4 py-3">Property</th><th className="w-[17%] px-4 py-3">Stage</th><th className="w-[15%] px-4 py-3">Last Activity</th><th className="w-[6%] px-4 py-3" /></tr></thead><tbody>{rows.map((row) => <tr key={row.id} tabIndex={0} className="cursor-pointer border-t border-[#edf2f7] hover:bg-[#fbfdff]" onPointerEnter={() => onLeadIntent(row.id)} onPointerDown={() => onLeadIntent(row.id)} onFocus={() => onLeadIntent(row.id)} onClick={() => onOpenLead(row.id)}><td className="px-5 py-4"><div className="font-semibold text-[#142132]">{row.name}</div><div className="mt-1 truncate text-xs text-[#60758b]">{row.phone || row.email || 'No contact details'}</div></td><td className="px-4 py-4"><LeadSourceBadge source={row.source} /></td><td className="px-4 py-4"><div className="truncate font-semibold text-[#20364c]">{row.propertyTitle}</div><div className="mt-1 truncate text-xs text-[#60758b]">{row.propertySubtitle}</div></td><td className="px-4 py-4"><span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${stageTone(row.stage)}`}>{row.stage}</span></td><td className="px-4 py-4"><div className="font-semibold text-[#142132]">{row.lastActivity}</div><div className="mt-1 truncate text-xs text-[#60758b]">{row.nextStep}</div></td><td className="px-4 py-4"><LeadActions row={row} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} onArchive={onArchiveLead} onDelete={onDeleteLead} /></td></tr>)}</tbody></table> : <EmptyLeads total={summary.total || 0} title={categoryTitle} category={category} onAdd={onAddLead} />}
+              {rows.length ? <table className="w-full table-fixed text-left"><thead className="h-11 bg-[#fbfdff] text-[0.7rem] font-semibold uppercase tracking-[0.04em] text-[#7890a8]"><tr><th className="w-[25%] px-5 py-3">Property</th><th className="w-[18%] px-4 py-3">Lead</th><th className="w-[14%] px-4 py-3">Source</th><th className="w-[17%] px-4 py-3">Stage</th><th className="w-[20%] px-4 py-3">Last Activity</th><th className="w-[6%] px-4 py-3">Actions</th></tr></thead><tbody>{rows.map((row) => <tr key={row.id} tabIndex={0} className="cursor-pointer border-t border-[#edf2f7] transition-colors duration-150 hover:bg-[#f8fbfe]" onPointerEnter={() => onLeadIntent(row.id)} onPointerDown={() => onLeadIntent(row.id)} onFocus={() => onLeadIntent(row.id)} onClick={() => onOpenLead(row.id)}><td className="px-5 py-3"><div className="flex min-w-0 items-center gap-3"><PropertyThumbnail row={row} /><div className="min-w-0"><div className="truncate text-sm font-semibold text-[#142132]">{row.propertyTitle}</div><div className="mt-1 truncate text-xs text-[#60758b]">{row.propertySubtitle}</div></div></div></td><td className="px-4 py-3"><div className="truncate text-sm font-semibold text-[#142132]">{row.name}</div><div className="mt-1 truncate text-xs text-[#60758b]">{row.phone || row.email || 'No contact details'}</div></td><td className="px-4 py-3"><LeadSourceBrand source={row.source} /></td><td className="px-4 py-3"><StagePill stage={row.stage} /></td><td className="px-4 py-3"><div className="text-sm font-semibold text-[#142132]">{row.lastActivity}</div><div className="mt-1 truncate text-xs text-[#60758b]">{row.nextStep}</div></td><td className="px-4 py-3"><LeadActions row={row} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} onArchive={onArchiveLead} onDelete={onDeleteLead} /></td></tr>)}</tbody></table> : <EmptyLeads total={summary.total || 0} title={categoryTitle} category={category} onAdd={onAddLead} />}
             </div>
             <div className="space-y-3 p-4 lg:hidden">
               {rows.length ? rows.map((row) => <article key={row.id} tabIndex={0} className="rounded-[18px] border border-[#e1e8f0] bg-white p-4 shadow-sm" onPointerEnter={() => onLeadIntent(row.id)} onPointerDown={() => onLeadIntent(row.id)} onFocus={() => onLeadIntent(row.id)} onClick={() => onOpenLead(row.id)}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h4 className="truncate font-semibold text-[#142132]">{row.name}</h4><p className="mt-1 truncate text-sm text-[#60758b]">{row.phone || row.email || 'No contact details'}</p></div><span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${stageTone(row.stage)}`}>{row.stage}</span></div><div className="mt-3 flex items-start gap-2 text-sm text-[#60758b]"><Home size={14} className="mt-0.5 shrink-0" /><span><strong className="block text-[#20364c]">{row.propertyTitle}</strong>{row.propertySubtitle}</span></div><div className="mt-3 flex items-center justify-between border-t border-[#edf2f7] pt-3"><span className="text-sm font-semibold text-[#142132]">{row.lastActivity}</span><div className="flex gap-2" onClick={(event) => event.stopPropagation()}><button type="button" className="inline-flex h-10 items-center gap-2 rounded-[12px] bg-[#0f2743] px-4 text-sm font-semibold text-white" onClick={() => onOpenLead(row.id)}>Open <ArrowUpRight size={14} /></button><LeadActions row={row} openMenuId={openMenuId} setOpenMenuId={setOpenMenuId} onArchive={onArchiveLead} onDelete={onDeleteLead} /></div></div></article>) : <EmptyLeads total={summary.total || 0} title={categoryTitle} category={category} onAdd={onAddLead} />}
@@ -295,7 +243,6 @@ export default function LeadListPage({
 
         <footer className="mt-auto border-t border-[rgba(15,23,42,0.06)] bg-[#fcfdff] px-4 py-4 sm:px-5"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><p className="text-sm font-medium text-[#60758b]">Showing {pageStart} to {pageEnd} of {summary.filtered || 0} leads</p><div className="flex flex-wrap gap-2"><button type="button" className="h-10 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold disabled:opacity-45" disabled={currentPage <= 1} onClick={() => onPageChange(currentPage - 1)}>Previous</button>{visiblePages.map((page) => <button key={page} type="button" className={`h-10 w-10 rounded-[12px] border text-sm font-semibold ${page === currentPage ? 'border-[#0f2743] bg-[#0f2743] text-white' : 'border-[#dbe4ee] bg-white text-[#405b75]'}`} onClick={() => onPageChange(page)}>{page}</button>)}<button type="button" className="h-10 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-sm font-semibold disabled:opacity-45" disabled={currentPage >= totalPages} onClick={() => onPageChange(currentPage + 1)}>Next</button></div></div></footer>
       </article>
-      <ShowDayIntakeModal open={showDayIntakeOpen} listings={showDayListings} publicIntakeBaseUrl={publicIntakeBaseUrl} busy={showDayImportBusy} onClose={() => setShowDayIntakeOpen(false)} onImport={onImportShowDayVisitors} />
     </div>
   )
 }

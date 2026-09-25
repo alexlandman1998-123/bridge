@@ -9,11 +9,11 @@ import { resolveAgencyLeadWorkspaceTab } from './agencyLeadWorkspaceRouteState'
 
 const BUYER_TABS = Object.freeze([
   ['overview', 'Overview'],
+  ['properties', 'Matches'],
   ['buyer_profile', 'Buyer Profile'],
-  ['onboarding_otp', 'Transaction Setup / Offer'],
-  ['properties', 'Properties'],
-  ['appointments', 'Appointments'],
+  ['onboarding_otp', 'Offer'],
   ['documents', 'Documents'],
+  ['appointments', 'Appointments'],
   ['activity', 'Activity'],
 ])
 const SELLER_TABS = Object.freeze([
