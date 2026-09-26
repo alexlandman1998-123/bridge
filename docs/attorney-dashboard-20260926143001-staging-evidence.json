@@ -1,0 +1,15 @@
+{
+  "version": "20260926143001",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex release review",
+  "approvedBy": "Requester in Codex task on 2026-09-26",
+  "notes": "The pre-existing baseline RPC was the intentional overlap; all four source RPCs existed before atomic rename. Verified four guarded wrappers, four revoked unchecked implementations, lead access to all snapshots and signature drill-down, and denial for a nonmember. Transaction-wrapped DDL contains no data backfill.",
+  "stagingLedgerRecorded": true,
+  "ledgerRecordedAt": "2026-09-26T12:32:49.156Z",
+  "capturedAt": "2026-09-26T12:32:49.156Z"
+}

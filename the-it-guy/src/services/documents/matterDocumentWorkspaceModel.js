@@ -997,6 +997,24 @@ export function buildRequiredDocumentRows({
   return [...bestRowsBySemanticRequirement.values()]
 }
 
+export function summarizeMatterOverviewPartyDocuments(requiredRows = [], party = 'buyer') {
+  const applicableRows = toArray(requiredRows).filter((row) => {
+    if (row?.canonicalCategory !== party) return false
+    const rawStatus = String(row?.requirement?.status || row?.status || '').trim().toLowerCase()
+    return !['not_required', 'not_applicable', 'waived'].includes(rawStatus)
+  })
+  const requiredCount = applicableRows.length
+  const completeCount = applicableRows.filter((row) => normalizeDocumentCommandStatus(row.status, {
+    hasDocument: Boolean(row.fileUrl || row.linkedDocument || row.satisfiesRequirement),
+  }) === 'verified').length
+  return {
+    requiredCount,
+    completeCount,
+    outstandingCount: requiredCount - completeCount,
+    percentComplete: requiredCount ? Math.round((completeCount / requiredCount) * 100) : 0,
+  }
+}
+
 export function buildAllDocumentLibraryRows({
   documents = [],
   getLinkedRequirementForDocument = () => null,

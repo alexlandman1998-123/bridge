@@ -102,6 +102,7 @@ function byKey(rows, key) {
   }
   assert.equal(byKey(requirements, 'body_corporate_details'), undefined, 'structured body-corporate details must not become an upload request')
   assert.ok(byKey(structuredFacts, 'body_corporate_details'), 'body-corporate details must remain a guided captured fact')
+  assert.equal(byKey(structuredFacts, 'body_corporate_details').is_required, false)
   assert.equal(byKey(requirements, 'body_corporate_rules').is_required, false)
 }
 

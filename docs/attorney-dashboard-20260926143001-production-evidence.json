@@ -1,0 +1,11 @@
+{
+  "version": "20260926143001",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex release review",
+  "notes": "The pre-existing baseline RPC was the intended overlap. Verified four guarded snapshots, metric-page RPC, four internal implementations denied to authenticated, successful active firm-lead calls, and SQLSTATE 42501 for a nonmember. Transaction-wrapped DDL contains no data backfill."
+}

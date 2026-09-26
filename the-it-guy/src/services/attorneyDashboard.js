@@ -21,9 +21,7 @@ import {
   resolvePortalPropertyLabel,
   resolvePortalSellerName,
 } from './portalCanonicalFieldFallbacks.js'
-import { normalizeAttorneyStageKey } from '../constants/attorneyWorkflowStages.js'
-import { getApplicableAttorneyTaskDefinitions } from './attorneyWorkflow/matterWorkflowPlanService.js'
-import { getCanonicalLegalWorkflowProgressPercent } from '../core/transactions/legalWorkflowProgress.js'
+import { buildMatterListProgress } from './attorneyMatterProgress.js'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { hydratePropertyLabelsFromListings } from './attorneyMatterListSnapshotService'
 import { hydrateMatterPropertyContext } from './matterPropertyContext'
@@ -32,10 +30,29 @@ import {
   COMPATIBILITY_FALLBACK_IDS,
   trackCompatibilityFallbackState,
 } from './observability/compatibilityFallbackTelemetry.js'
+import { trackTelemetryEvent } from './observability/telemetry.js'
+import { auditAttorneyDashboardMetricSnapshots } from './attorneyDashboardAssurance.js'
 
 const DASHBOARD_CACHE_TTL_MS = 15_000
 const dashboardCache = new Map()
 const dashboardInflight = new Map()
+const dashboardAssuranceLastReported = new Map()
+
+function reportDashboardAssuranceIssue({ issue, userId, firmId, roleView }) {
+  const key = `${firmId}:${roleView}:${issue}`
+  const now = Date.now()
+  if (now - (dashboardAssuranceLastReported.get(key) || 0) < 300_000) return
+  dashboardAssuranceLastReported.set(key, now)
+  void trackTelemetryEvent({
+    category: 'attorney_dashboard',
+    eventName: 'metric_source_assurance_failed',
+    userId,
+    workspaceId: firmId,
+    route: '/attorney/dashboard',
+    severity: 'error',
+    metadata: { issue, roleView },
+  })
+}
 
 function toLower(value) {
   return String(value || '').trim().toLowerCase()
@@ -483,7 +500,12 @@ export function getAttorneyMatterStats({ kpis = {}, matterRoleSummaries = [] } =
     awaitingSignatures: Number(kpis.awaitingSignatures || 0),
     awaitingGuarantees: Number(kpis.awaitingGuarantees || 0),
     documentRequestsOutstanding: Number(kpis.documentRequestsOutstanding || 0),
-    revenuePipelineValue: Number(kpis.revenuePipelineValue || 0),
+    revenuePipelineValue: kpis.revenuePipelineValue === null ? null : Number(kpis.revenuePipelineValue || 0),
+    revenuePipelineSourceStatus: kpis.revenuePipelineSourceStatus || 'unavailable',
+    revenuePipelinePricedMatters: Number(kpis.revenuePipelinePricedMatters || 0),
+    revenuePipelineUnpricedMatters: Number(kpis.revenuePipelineUnpricedMatters || 0),
+    revenuePipelineMatterIds: Array.isArray(kpis.revenuePipelineMatterIds) ? kpis.revenuePipelineMatterIds : [],
+    revenuePipelineRoleView: kpis.revenuePipelineRoleView || 'all',
     averageTransferTimeDays: Number(kpis.averageTransferTimeDays || 0),
     bondMatters: roleCounts.bondOnly + roleCounts.dualRole + roleCounts.allThreeRoles,
     cancellationMatters: roleCounts.cancellationOnly + roleCounts.allThreeRoles,
@@ -625,13 +647,16 @@ function riskToneFromMatter(matter = {}) {
 }
 
 function resolveMatterCardWorkflowProgress(transaction = {}, laneKey = 'transfer') {
-  const workflowPlan = transaction.routing_profile_json?.workflowPlan
-  const definitions = getApplicableAttorneyTaskDefinitions({ laneKey, workflowPlan, facts: { financeType: transaction.finance_type } })
-  const lane = transaction.attorneyWorkflowLanes?.find(item => item.process_type === laneKey)
-  const records = new Map((lane?.transaction_subprocess_steps || []).map(step => [normalizeAttorneyStageKey(step.step_key, laneKey), step]))
-  return getCanonicalLegalWorkflowProgressPercent({ workflowPlan, steps: definitions.map(task => ({
-    key: task.key, status: records.get(task.key)?.status || 'not_started',
-  })) })
+  const lane = transaction.attorneyWorkflowLanes?.find((item) => {
+    const processType = toLower(item?.process_type).replace(/_attorney$/, '')
+    return processType === laneKey || (laneKey === 'transfer' && processType === 'attorney')
+  })
+  return buildMatterListProgress(
+    transaction,
+    laneKey,
+    lane,
+    lane?.transaction_subprocess_steps || [],
+  ).percent
 }
 
 function resolveMatterCardStatus({ transaction = {}, matter = {}, laneKey = 'transfer' } = {}) {
@@ -906,63 +931,48 @@ function buildBusinessIntelligence({ uniqueMatters = [], matterRoleSummaries = [
   }
 }
 
-function getOldestInactiveDays(matters = [], predicate = () => false) {
-  return matters.reduce((oldest, matter) => {
-    if (!predicate(matter)) return oldest
-    return Math.max(oldest, daysSince(getLastActivityDate(matter.transaction)))
-  }, 0)
-}
-
-function buildAttentionMetrics({ uniqueMatters = [], kpis = {} } = {}) {
-  const clearanceCount = Number(kpis.clearanceCertificates ?? uniqueMatters.filter((matter) => isAwaitingClearance(matter.transaction)).length)
-  const invoiceCount = Number(kpis.invoicesOverdue ?? uniqueMatters.filter((matter) => isInvoiceOutstanding(matter.transaction)).length)
-  const stalledCount = Number(kpis.stalledMatters ?? uniqueMatters.filter((matter) => isMatterStalled(matter)).length)
+export function buildAttentionMetrics({ attentionSnapshot = null } = {}) {
+  const available = attentionSnapshot?.sourceStatus === 'available'
+  const metric = (sourceKey, definition) => {
+    const source = attentionSnapshot?.[sourceKey] || {}
+    const count = available ? Number(source.count || 0) : null
+    return {
+      ...definition,
+      count,
+      matterIds: available && Array.isArray(source.matterIds) ? source.matterIds : [],
+      roleView: attentionSnapshot?.roleView || 'all',
+      sourceStatus: available ? 'available' : 'unavailable',
+      helper: available
+        ? count > 0 ? definition.attentionHelper : definition.clearHelper
+        : 'Data source unavailable',
+    }
+  }
 
   return [
-    {
-      key: 'signatures',
-      label: 'Signatures Pending',
-      count: Number(kpis.awaitingSignatures || 0),
-      helper: getOldestInactiveDays(uniqueMatters, (matter) => matter.flags?.awaitingSignatures)
-        ? `Oldest ${getOldestInactiveDays(uniqueMatters, (matter) => matter.flags?.awaitingSignatures)} days`
-        : 'Ready to chase',
-      tone: 'red',
-    },
-    {
-      key: 'guarantees',
-      label: 'Guarantees Outstanding',
-      count: Number(kpis.awaitingGuarantees || 0),
-      helper: 'Banks waiting',
-      tone: 'red',
-    },
-    {
-      key: 'clearance',
-      label: 'Clearance Certificates',
-      count: clearanceCount,
-      helper: clearanceCount ? 'Expiring soon' : 'No blocker',
-      tone: 'amber',
-    },
-    {
-      key: 'client-documents',
-      label: 'Client Documents',
-      count: Number(kpis.awaitingFica || 0),
-      helper: 'Need follow-up',
-      tone: 'red',
-    },
-    {
-      key: 'invoices',
-      label: 'Invoices Overdue',
-      count: invoiceCount,
-      helper: invoiceCount ? 'Total invoices' : 'No overdue invoices',
-      tone: 'red',
-    },
-    {
-      key: 'stalled',
-      label: 'Matters Stalled',
-      count: stalledCount,
-      helper: 'No movement >14 days',
-      tone: 'red',
-    },
+    metric('signatures', {
+      key: 'signatures', label: 'Signatures Pending', filter: 'signatures_pending',
+      attentionHelper: 'Signers to follow up', clearHelper: 'No signatures pending', tone: 'red',
+    }),
+    metric('guarantees', {
+      key: 'guarantees', label: 'Guarantees Outstanding', filter: 'guarantees_outstanding',
+      attentionHelper: 'Follow-up due', clearHelper: 'No guarantees due', tone: 'red',
+    }),
+    metric('clearance', {
+      key: 'clearance', label: 'Clearance Certificates', filter: 'clearance_attention',
+      attentionHelper: 'Clearance unresolved', clearHelper: 'No clearance blocker', tone: 'amber',
+    }),
+    metric('clientDocuments', {
+      key: 'client-documents', label: 'Client Documents', filter: 'client_documents',
+      attentionHelper: 'Client follow-up needed', clearHelper: 'No client documents due', tone: 'red',
+    }),
+    metric('invoices', {
+      key: 'invoices', label: 'Invoices Overdue', filter: 'invoices_overdue',
+      attentionHelper: 'Published balance overdue', clearHelper: 'No overdue invoices', tone: 'red',
+    }),
+    metric('stalled', {
+      key: 'stalled', label: 'Matters Stalled', filter: 'stalled',
+      attentionHelper: 'No activity or blocker overdue', clearHelper: 'No stalled matters', tone: 'red',
+    }),
   ]
 }
 
@@ -1035,6 +1045,55 @@ export function getPartnerAnalytics({ uniqueMatters = [], isDalawyerDemo = false
   }
 }
 
+export function buildPartnerRevenueMetrics(partnerRevenueSnapshot = null) {
+  const available = partnerRevenueSnapshot?.sourceStatus === 'available'
+  const revenue = partnerRevenueSnapshot?.revenuePipeline || {}
+  const pricedMatterCount = available ? Number(revenue.pricedMatterCount || 0) : 0
+  const unpricedMatterCount = available ? Number(revenue.unpricedMatterCount || 0) : 0
+  const rows = available && Array.isArray(partnerRevenueSnapshot?.partners)
+    ? partnerRevenueSnapshot.partners.map((row) => {
+      const pricedMatterCount = Number(row.pricedMatterCount || 0)
+      const pipelineValue = pricedMatterCount > 0 ? Number(row.revenuePipeline || 0) : null
+      return {
+        partnerId: row.partnerId,
+        partner: row.partnerName || 'Partner',
+        partnerName: row.partnerName || 'Partner',
+        partnerType: row.partnerType || 'partner',
+        logoUrl: row.logoUrl || '',
+        avatar: getInitials(row.partnerName || 'Partner'),
+        activeMatters: Number(row.activeMatters || 0),
+        newThisMonth: Number(row.newThisMonth || 0),
+        revenuePipeline: pipelineValue,
+        pipelineValue,
+        pricedMatterCount,
+        matterIds: Array.isArray(row.matterIds) ? row.matterIds : [],
+      }
+    })
+    : []
+  const maxRevenuePipeline = rows.reduce((max, row) => Math.max(max, Number(row.pipelineValue || 0)), 0)
+
+  return {
+    revenue: {
+      sourceStatus: available ? 'available' : 'unavailable',
+      amount: available && pricedMatterCount > 0 ? Number(revenue.amount || 0) : null,
+      pricedMatterCount,
+      unpricedMatterCount,
+      activeMatterCount: available ? Number(revenue.activeMatterCount || 0) : 0,
+      postedEntryMatterCount: available ? Number(revenue.postedEntryMatterCount || 0) : 0,
+      acceptedQuoteMatterCount: available ? Number(revenue.acceptedQuoteMatterCount || 0) : 0,
+      matterIds: available && Array.isArray(revenue.matterIds) ? revenue.matterIds : [],
+      roleView: partnerRevenueSnapshot?.roleView || 'all',
+    },
+    partnerAnalytics: {
+      status: available ? (rows.length ? 'available' : 'empty') : 'unavailable',
+      rows: rows.map((row) => ({
+        ...row,
+        revenueShare: maxRevenuePipeline ? Math.round((row.pipelineValue / maxRevenuePipeline) * 100) : 0,
+      })),
+    },
+  }
+}
+
 export function getConveyancingPerformance({ uniqueMatters = [], businessIntelligence = {} } = {}) {
   const now = new Date()
   const weekStart = startOfWeek(now)
@@ -1073,32 +1132,6 @@ export function getConveyancingPerformance({ uniqueMatters = [], businessIntelli
   }
 }
 
-function withShowcaseConveyancingPerformance(performance = {}, uniqueMatters = []) {
-  const total = Math.max(uniqueMatters.length, 1)
-  const fallbackDistribution = [
-    { label: 'Transfer', count: Math.max(2, Math.ceil(total * 0.5)), percentage: 50 },
-    { label: 'Bond', count: Math.max(1, Math.ceil(total * 0.34)), percentage: 34 },
-    { label: 'Cancellation', count: Math.max(1, Math.floor(total * 0.16)), percentage: 16 },
-  ]
-  const distribution = (performance.matterDistribution || []).some((row) => Number(row.count || 0) > 0)
-    ? performance.matterDistribution
-    : fallbackDistribution
-
-  return {
-    ...performance,
-    averageDaysToRegistration: Number(performance.averageDaysToRegistration || 0) || 64,
-    registrationSampleSize: Number(performance.registrationSampleSize || 0) || 18,
-    registrationSuccessRate: Number(performance.registrationSuccessRate || 0) || 92.4,
-    averageDocumentTurnaroundDays: Number(performance.averageDocumentTurnaroundDays || 0) || 2.8,
-    registrationForecast: {
-      thisWeek: Math.max(Number(performance.registrationForecast?.thisWeek || 0), 2),
-      nextWeek: Math.max(Number(performance.registrationForecast?.nextWeek || 0), 3),
-      thisMonth: Math.max(Number(performance.registrationForecast?.thisMonth || 0), 9),
-    },
-    matterDistribution: distribution,
-  }
-}
-
 export function calculateMatterHealth({ uniqueMatters = [] } = {}) {
   const total = uniqueMatters.length
   const critical = uniqueMatters.filter((matter) => matter.flags?.delayed || daysSince(getLastActivityDate(matter.transaction)) >= 21)
@@ -1131,6 +1164,59 @@ export function calculateMatterHealth({ uniqueMatters = [] } = {}) {
     critical: {
       count: critical.length,
       percentage: toPercent(critical.length, total),
+    },
+  }
+}
+
+function buildHealthPerformanceMetrics(snapshot = null) {
+  const available = snapshot?.sourceStatus === 'available'
+  const health = snapshot?.matterHealth || {}
+  const performance = snapshot?.conveyancingPerformance || {}
+  const mapHealthBucket = (bucket = {}) => ({
+    count: available ? Number(bucket.count || 0) : null,
+    percentage: available ? Number(bucket.percentage || 0) : null,
+    matterIds: available && Array.isArray(bucket.matterIds) ? bucket.matterIds : [],
+  })
+  const nullableNumber = (value) => available && value !== null && value !== undefined ? Number(value) : null
+
+  return {
+    matterHealth: {
+      status: available ? (Number(health.total || 0) > 0 ? 'available' : 'empty') : 'unavailable',
+      total: available ? Number(health.total || 0) : null,
+      roleView: snapshot?.roleView || 'all',
+      onTrack: mapHealthBucket(health.onTrack),
+      attention: mapHealthBucket(health.attention),
+      critical: mapHealthBucket(health.critical),
+    },
+    conveyancingPerformance: {
+      status: available ? 'available' : 'unavailable',
+      reportingPeriod: available ? snapshot?.reportingPeriod || null : null,
+      averageDaysToRegistration: nullableNumber(performance.averageDaysToRegistration),
+      registrationSampleSize: available ? Number(performance.registrationSampleSize || 0) : null,
+      registrationMatterIds: available && Array.isArray(performance.registrationMatterIds) ? performance.registrationMatterIds : [],
+      registrationSuccessRate: nullableNumber(performance.registrationSuccessRate),
+      registrationOutcomeSampleSize: available ? Number(performance.registrationOutcomeSampleSize || 0) : null,
+      registrationOutcomeMatterIds: available && Array.isArray(performance.registrationOutcomeMatterIds) ? performance.registrationOutcomeMatterIds : [],
+      averageDocumentTurnaroundDays: nullableNumber(performance.averageDocumentTurnaroundDays),
+      documentTurnaroundSampleSize: available ? Number(performance.documentTurnaroundSampleSize || 0) : null,
+      documentTurnaroundMatterIds: available && Array.isArray(performance.documentTurnaroundMatterIds) ? performance.documentTurnaroundMatterIds : [],
+      roleView: snapshot?.roleView || 'all',
+      registrationForecast: {
+        thisWeek: available ? Number(performance.registrationForecast?.thisWeek || 0) : null,
+        thisWeekMatterIds: available && Array.isArray(performance.registrationForecast?.thisWeekMatterIds) ? performance.registrationForecast.thisWeekMatterIds : [],
+        nextWeek: available ? Number(performance.registrationForecast?.nextWeek || 0) : null,
+        nextWeekMatterIds: available && Array.isArray(performance.registrationForecast?.nextWeekMatterIds) ? performance.registrationForecast.nextWeekMatterIds : [],
+        thisMonth: available ? Number(performance.registrationForecast?.thisMonth || 0) : null,
+        thisMonthMatterIds: available && Array.isArray(performance.registrationForecast?.thisMonthMatterIds) ? performance.registrationForecast.thisMonthMatterIds : [],
+      },
+      matterDistribution: available && Array.isArray(performance.matterDistribution)
+        ? performance.matterDistribution.map((row) => ({
+          label: row.label,
+          count: Number(row.count || 0),
+          percentage: Number(row.percentage || 0),
+          matterIds: Array.isArray(row.matterIds) ? row.matterIds : [],
+        }))
+        : [],
     },
   }
 }
@@ -1270,12 +1356,20 @@ function mapDashboardSnapshotKpis(kpis = {}) {
   }
 }
 
-function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } = {}) {
+function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all', attentionSnapshot = null, partnerRevenueSnapshot = null, healthPerformanceSnapshot = null } = {}) {
   const allTransactions = Array.isArray(snapshot.matters) ? snapshot.matters : []
   const transactions = allTransactions.filter(isActiveDashboardMatter)
   const members = Array.isArray(snapshot.members) ? snapshot.members : []
   const departments = Array.isArray(snapshot.departments) ? snapshot.departments : []
   const kpis = mapDashboardSnapshotKpis(snapshot.kpis)
+  const partnerRevenue = buildPartnerRevenueMetrics(partnerRevenueSnapshot)
+  const healthPerformance = buildHealthPerformanceMetrics(healthPerformanceSnapshot)
+  kpis.revenuePipelineValue = partnerRevenue.revenue.amount
+  kpis.revenuePipelineSourceStatus = partnerRevenue.revenue.sourceStatus
+  kpis.revenuePipelinePricedMatters = partnerRevenue.revenue.pricedMatterCount
+  kpis.revenuePipelineUnpricedMatters = partnerRevenue.revenue.unpricedMatterCount
+  kpis.revenuePipelineMatterIds = partnerRevenue.revenue.matterIds
+  kpis.revenuePipelineRoleView = partnerRevenue.revenue.roleView
   const excludedTransactions = allTransactions.length - transactions.length
   if (excludedTransactions > 0) {
     kpis.activeMatters = Math.max(0, kpis.activeMatters - excludedTransactions)
@@ -1309,16 +1403,6 @@ function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } 
   const uniqueMatters = matterRoleSummaries
     .map((summary) => summary.units?.[0])
     .filter(Boolean)
-  // The compact dashboard RPC can omit monetary columns from individual
-  // matters. Use the hydrated transaction value when its aggregate reports
-  // zero, rather than presenting a false zero-value pipeline to the firm.
-  const hydratedRevenuePipeline = uniqueMatters.reduce(
-    (total, matter) => total + getTransactionValue(matter.transaction),
-    0,
-  )
-  if (!Number(kpis.revenuePipelineValue || 0) && hydratedRevenuePipeline > 0) {
-    kpis.revenuePipelineValue = hydratedRevenuePipeline
-  }
   const departmentsById = departments.reduce((byId, department) => ({ ...byId, [department.id]: department }), {})
   const assignmentByUserId = matterUnits.reduce((byUserId, matter) => {
     ;[matter.primaryAttorneyId, matter.secretaryId, matter.adminHandlerId].filter(Boolean).forEach((userId) => {
@@ -1369,7 +1453,6 @@ function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } 
     }))
     .slice(0, 5)
   const businessIntelligence = buildBusinessIntelligence({ uniqueMatters, matterRoleSummaries, organisationNamesById: {} })
-  const rawConveyancingPerformance = getConveyancingPerformance({ uniqueMatters, businessIntelligence })
 
   return {
     firm: snapshot.firm || null,
@@ -1419,10 +1502,10 @@ function buildAttorneyDashboardFromSnapshot(snapshot = {}, { roleView = 'all' } 
     financialSnapshot: getFinancialSnapshot(),
     matterLanes,
     businessIntelligence,
-    attentionMetrics: buildAttentionMetrics({ uniqueMatters, kpis }),
-    partnerAnalytics: getPartnerAnalytics({ uniqueMatters, organisationNamesById: {} }),
-    conveyancingPerformance: rawConveyancingPerformance,
-    matterHealth: calculateMatterHealth({ uniqueMatters }),
+    attentionMetrics: buildAttentionMetrics({ attentionSnapshot }),
+    partnerAnalytics: partnerRevenue.partnerAnalytics,
+    conveyancingPerformance: healthPerformance.conveyancingPerformance,
+    matterHealth: healthPerformance.matterHealth,
   }
 }
 
@@ -1606,19 +1689,67 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     }
   }
 
-  // The hot path is a single firm-scoped RPC: it calculates aggregate KPIs in
-  // Postgres and returns only a capped matter queue. Keep the older client-side
+  // The hot path uses parallel firm-scoped RPCs for the bounded operational
+  // payload and the full-scope attention, partner, and revenue aggregates. Keep the older client-side
   // assembler below as a temporary compatibility fallback for environments that
   // have not received the migration yet.
   timer.mark('snapshot:load:start')
-  const snapshotResult = await client.rpc('get_attorney_dashboard_snapshot', {
-    p_firm_id: resolvedFirm.id,
-    p_role_view: roleView,
-    // KPI counts are calculated across the full firm server-side. Fifty recent
-    // records give the operational rail and attention queue enough context
-    // without serialising a large matter catalogue into the first view.
-    p_detail_limit: 50,
+  const [snapshotResult, attentionResult, partnerRevenueResult, healthPerformanceResult] = await Promise.all([
+    client.rpc('get_attorney_dashboard_snapshot', {
+      p_firm_id: resolvedFirm.id,
+      p_role_view: roleView,
+      // KPI counts are calculated across the full firm server-side. Fifty recent
+      // records give the operational rail and attention queue enough context
+      // without serialising a large matter catalogue into the first view.
+      p_detail_limit: 50,
+    }),
+    client.rpc('get_attorney_dashboard_attention_snapshot', {
+      p_firm_id: resolvedFirm.id,
+      p_role_view: roleView,
+    }),
+    client.rpc('get_attorney_dashboard_partner_revenue_snapshot', {
+      p_firm_id: resolvedFirm.id,
+      p_role_view: roleView,
+    }),
+    client.rpc('get_attorney_dashboard_health_performance_snapshot', {
+      p_firm_id: resolvedFirm.id,
+      p_role_view: roleView,
+      p_period_start: null,
+      p_period_end: null,
+    }),
+  ])
+  let attentionSnapshot = attentionResult.error
+    ? { sourceStatus: 'unavailable' }
+    : attentionResult.data
+  let partnerRevenueSnapshot = partnerRevenueResult.error
+    ? { sourceStatus: 'unavailable' }
+    : partnerRevenueResult.data
+  let healthPerformanceSnapshot = healthPerformanceResult.error
+    ? { sourceStatus: 'unavailable' }
+    : healthPerformanceResult.data
+  for (const [name, result] of [
+    ['summary', snapshotResult],
+    ['attention', attentionResult],
+    ['revenue', partnerRevenueResult],
+    ['health_performance', healthPerformanceResult],
+  ]) {
+    if (result.error || (name === 'summary' ? !result.data : result.data?.sourceStatus !== 'available')) reportDashboardAssuranceIssue({
+      issue: `${name}.unavailable`, userId: currentUserId, firmId: resolvedFirm.id, roleView,
+    })
+  }
+  const assuranceIssues = auditAttorneyDashboardMetricSnapshots({
+    attention: attentionSnapshot,
+    revenue: partnerRevenueSnapshot,
+    healthPerformance: healthPerformanceSnapshot,
   })
+  for (const issue of assuranceIssues) {
+    reportDashboardAssuranceIssue({ issue, userId: currentUserId, firmId: resolvedFirm.id, roleView })
+  }
+  if (assuranceIssues.some((issue) => issue.startsWith('attention.'))) attentionSnapshot = { sourceStatus: 'unavailable' }
+  if (assuranceIssues.some((issue) => issue.startsWith('revenue.'))) partnerRevenueSnapshot = { sourceStatus: 'unavailable' }
+  if (assuranceIssues.some((issue) => issue.startsWith('health.') || issue.startsWith('forecast.') || issue.startsWith('distribution.'))) {
+    healthPerformanceSnapshot = { sourceStatus: 'unavailable' }
+  }
   const snapshotHasOperationalData =
     Number(snapshotResult.data?.kpis?.active_matters || 0) > 0 ||
     (Array.isArray(snapshotResult.data?.matters) && snapshotResult.data.matters.length > 0)
@@ -1640,7 +1771,7 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     return buildAttorneyDashboardFromSnapshot({
       ...(snapshotResult.data || {}),
       matters: await hydrateMatterPropertyContext(client, await hydrateDashboardWorkflowState(client, snapshotResult.data?.matters || [])),
-    }, { roleView })
+    }, { roleView, attentionSnapshot, partnerRevenueSnapshot, healthPerformanceSnapshot })
   }
   // The matter-list snapshot is the canonical, assignment-first source used by
   // the Matters workspace. Prefer it whenever the dashboard snapshot is empty
@@ -1668,7 +1799,7 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     return buildAttorneyDashboardFromSnapshot({
       ...compatibilitySnapshot,
       matters: await hydrateMatterPropertyContext(client, await hydrateDashboardWorkflowState(client, compatibilitySnapshot.matters)),
-    }, { roleView })
+    }, { roleView, attentionSnapshot, partnerRevenueSnapshot, healthPerformanceSnapshot })
   }
   const operationalWorkspaceSnapshot = await getOperationalWorkspaceCompatibilitySnapshot(resolvedFirm.id, currentUserId)
   if (operationalWorkspaceSnapshot) {
@@ -1688,7 +1819,7 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     return buildAttorneyDashboardFromSnapshot({
       ...compatibilitySnapshot,
       matters: await hydrateMatterPropertyContext(client, compatibilitySnapshot.matters),
-    }, { roleView })
+    }, { roleView, attentionSnapshot, partnerRevenueSnapshot, healthPerformanceSnapshot })
   }
   if (snapshotResult.error && !isMissingDashboardSnapshotRpc(snapshotResult.error)) {
     throw snapshotResult.error
@@ -1886,9 +2017,16 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     awaitingSignatures: uniqueMatters.filter((matter) => matter.flags.awaitingSignatures).length,
     awaitingGuarantees: uniqueMatters.filter((matter) => matter.flags.awaitingGuarantees).length,
     documentRequestsOutstanding: uniqueMatters.filter((matter) => matter.flags.awaitingFica || matter.flags.awaitingSignatures).length,
-    revenuePipelineValue: uniqueMatters.reduce((sum, matter) => sum + getTransactionValue(matter.transaction), 0),
+    revenuePipelineValue: null,
     averageTransferTimeDays: 0, // TODO: calculate from instruction to registration once dated attorney milestones are stored consistently.
   }
+  const partnerRevenue = buildPartnerRevenueMetrics(partnerRevenueSnapshot)
+  kpis.revenuePipelineValue = partnerRevenue.revenue.amount
+  kpis.revenuePipelineSourceStatus = partnerRevenue.revenue.sourceStatus
+  kpis.revenuePipelinePricedMatters = partnerRevenue.revenue.pricedMatterCount
+  kpis.revenuePipelineUnpricedMatters = partnerRevenue.revenue.unpricedMatterCount
+  kpis.revenuePipelineMatterIds = partnerRevenue.revenue.matterIds
+  kpis.revenuePipelineRoleView = partnerRevenue.revenue.roleView
 
   const departmentsById = departments.reduce((accumulator, department) => {
     accumulator[department.id] = department
@@ -2076,20 +2214,11 @@ async function loadAttorneyManagementDashboardData(firmId = null, { roleView = '
     isDalawyerDemo: isShowcaseDemo,
     organisationNamesById: organisationsById,
   })
-  const attentionMetrics = buildAttentionMetrics({ uniqueMatters, kpis })
-  const partnerAnalytics = getPartnerAnalytics({
-    uniqueMatters,
-    isDalawyerDemo: isShowcaseDemo,
-    organisationNamesById: organisationsById,
-  })
-  const rawConveyancingPerformance = getConveyancingPerformance({
-    uniqueMatters,
-    businessIntelligence,
-  })
-  const conveyancingPerformance = isShowcaseDemo
-    ? withShowcaseConveyancingPerformance(rawConveyancingPerformance, uniqueMatters)
-    : rawConveyancingPerformance
-  const matterHealth = calculateMatterHealth({ uniqueMatters })
+  const attentionMetrics = buildAttentionMetrics({ attentionSnapshot })
+  const partnerAnalytics = partnerRevenue.partnerAnalytics
+  const healthPerformance = buildHealthPerformanceMetrics(healthPerformanceSnapshot)
+  const conveyancingPerformance = healthPerformance.conveyancingPerformance
+  const matterHealth = healthPerformance.matterHealth
 
   return {
     firm: {

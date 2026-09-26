@@ -1,0 +1,11 @@
+{
+  "version": "20260926143000",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex release review",
+  "notes": "Verified the enabled production trigger and function; their pg_get_triggerdef and pg_get_functiondef digests exactly match the staging versions whose assignment-update/rollback behavior passed. No production assignment was modified for this smoke check. Migration is transaction-wrapped DDL with no data backfill."
+}

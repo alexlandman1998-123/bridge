@@ -17,10 +17,11 @@ import {
   UsersRound,
   WalletCards,
 } from 'lucide-react'
-import { createElement, useEffect, useMemo, useRef, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, Navigate, useLocation } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
 import useAttorneyPermissions from '../hooks/useAttorneyPermissions'
+import useAttorneyDashboardLiveRefresh from '../hooks/useAttorneyDashboardLiveRefresh'
 import { createPerfTimer } from '../lib/performanceTrace'
 import { getAttorneyManagementDashboardData } from '../services/attorneyDashboard'
 
@@ -57,21 +58,26 @@ const EMPTY_DASHBOARD = {
     rows: [],
   },
   conveyancingPerformance: {
-    averageDaysToRegistration: 0,
-    registrationSuccessRate: 0,
-    averageDocumentTurnaroundDays: 0,
+    status: 'unavailable',
+    averageDaysToRegistration: null,
+    registrationSampleSize: null,
+    registrationSuccessRate: null,
+    registrationOutcomeSampleSize: null,
+    averageDocumentTurnaroundDays: null,
+    documentTurnaroundSampleSize: null,
     registrationForecast: {
-      thisWeek: 0,
-      nextWeek: 0,
-      thisMonth: 0,
+      thisWeek: null,
+      nextWeek: null,
+      thisMonth: null,
     },
     matterDistribution: [],
   },
   matterHealth: {
-    total: 0,
-    onTrack: { count: 0, percentage: 0 },
-    attention: { count: 0, percentage: 0 },
-    critical: { count: 0, percentage: 0 },
+    status: 'unavailable',
+    total: null,
+    onTrack: { count: null, percentage: null, matterIds: [] },
+    attention: { count: null, percentage: null, matterIds: [] },
+    critical: { count: null, percentage: null, matterIds: [] },
   },
 }
 
@@ -81,6 +87,10 @@ const primaryButtonClass = 'inline-flex min-h-10 items-center justify-center gap
 
 function formatNumber(value) {
   return new Intl.NumberFormat('en-ZA').format(Number(value || 0))
+}
+
+function formatMetricCount(value) {
+  return value === null || value === undefined ? '—' : formatNumber(value)
 }
 
 function formatCurrency(value) {
@@ -151,8 +161,14 @@ function KpiCards({ stats = {}, performance = {} }) {
     {
       key: 'revenue',
       label: 'Revenue Pipeline',
-      value: formatCurrency(stats.revenuePipelineValue),
-      helper: 'Transfer value',
+      value: stats.revenuePipelineValue === null || stats.revenuePipelineValue === undefined
+        ? '—'
+        : formatCurrency(stats.revenuePipelineValue),
+      helper: stats.revenuePipelineSourceStatus !== 'available'
+        ? 'Professional-fee data unavailable'
+        : stats.revenuePipelinePricedMatters > 0
+          ? `Professional fees • ${formatNumber(stats.revenuePipelineUnpricedMatters)} unpriced`
+          : 'No structured professional fees',
       icon: WalletCards,
       tone: 'green',
     },
@@ -166,7 +182,15 @@ function KpiCards({ stats = {}, performance = {} }) {
         // “Incoming Matters” is a separate pre-instruction queue. Active
         // Matters must lead to the same all-matters workspace that supplies
         // this KPI, not that incoming queue.
-        const href = card.key === 'active' ? '/attorney/matters/all' : card.key === 'client' ? '/attorney/matters/delayed' : card.key === 'registration' ? '/attorney/matters/registered' : '/attorney/matters'
+        const href = card.key === 'active'
+          ? '/attorney/matters/all'
+          : card.key === 'client'
+            ? '/attorney/matters/delayed'
+            : card.key === 'registration'
+              ? '/attorney/matters/registered'
+              : card.key === 'revenue'
+                ? `/attorney/matters/all?revenue=revenue_pipeline&roleView=${encodeURIComponent(stats.revenuePipelineRoleView || 'all')}`
+                : '/attorney/matters'
         return (
           <Link key={card.key} to={href} className="group min-w-[166px] px-4 py-2 first:pl-2 last:pr-2 transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 lg:min-w-0 lg:px-5">
             <span className="flex items-center gap-3">
@@ -205,7 +229,7 @@ function NeedsAttentionSection({ metrics = [] }) {
           return (
             <Link
               key={item.key}
-              to="/attorney/matters/delayed"
+              to={`/attorney/matters/delayed?attention=${encodeURIComponent(item.filter || item.key)}&roleView=${encodeURIComponent(item.roleView || 'all')}`}
               className="group grid min-h-[112px] grid-cols-[auto_minmax(0,1fr)] items-center gap-3 border-b border-slate-100 p-4 transition hover:bg-slate-50 sm:border-r xl:border-b-0"
             >
               <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-red-50 text-red-600">
@@ -213,7 +237,7 @@ function NeedsAttentionSection({ metrics = [] }) {
               </span>
               <span className="min-w-0">
                 <span className="block truncate text-xs font-semibold text-slate-600">{item.label}</span>
-                <strong className="mt-2 block text-2xl font-semibold leading-none text-slate-950">{formatNumber(item.count)}</strong>
+                <strong className="mt-2 block text-2xl font-semibold leading-none text-slate-950">{formatMetricCount(item.count)}</strong>
                 <span className="mt-2 block truncate text-xs font-medium text-slate-500">{item.helper}</span>
               </span>
             </Link>
@@ -551,7 +575,9 @@ function PartnerAnalyticsCard({ analytics = EMPTY_DASHBOARD.partnerAnalytics }) 
                     <span className="flex min-w-0 items-center gap-3">
                       <PartnerAvatar row={row} index={index} />
                       <span className="min-w-0">
-                        <span className="block truncate font-semibold text-slate-950">{row.partnerName || row.partner}</span>
+                        <Link to={`/partners?profile=${encodeURIComponent(row.partnerId)}`} className="block truncate font-semibold text-slate-950 hover:text-[#0f684f]">
+                          {row.partnerName || row.partner}
+                        </Link>
                         <span className="mt-0.5 block truncate text-xs font-medium text-slate-500">{row.partnerType || 'Referral Partner'}</span>
                       </span>
                     </span>
@@ -560,7 +586,9 @@ function PartnerAnalyticsCard({ analytics = EMPTY_DASHBOARD.partnerAnalytics }) 
                   <td className="py-3 pr-4 text-center font-semibold text-slate-950">{formatNumber(row.newThisMonth)}</td>
                   <td className="py-3">
                     <div className="grid min-w-0 grid-cols-[76px_minmax(0,1fr)] items-center gap-3">
-                      <span className="font-semibold text-slate-950">{formatCurrency(row.pipelineValue ?? row.revenuePipeline)}</span>
+                      <span className="font-semibold text-slate-950">
+                        {row.pipelineValue === null || row.pipelineValue === undefined ? '—' : formatCurrency(row.pipelineValue)}
+                      </span>
                       <span className="h-2 overflow-hidden rounded-full bg-slate-100">
                         <span className="block h-full rounded-full bg-[#2f9a70]" style={{ width: `${clampPercentage(row.revenueShare)}%` }} />
                       </span>
@@ -573,7 +601,11 @@ function PartnerAnalyticsCard({ analytics = EMPTY_DASHBOARD.partnerAnalytics }) 
         </div>
       ) : (
         <div className="mt-6 flex flex-1 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8">
-          <p className="max-w-md text-sm font-medium leading-6 text-slate-500">Partner analytics will appear once matters are linked to referring partners.</p>
+          <p className="max-w-md text-sm font-medium leading-6 text-slate-500">
+            {analytics.status === 'unavailable'
+              ? 'Partner analytics data is currently unavailable.'
+              : 'Partner analytics will appear once matters are linked to referring partners.'}
+          </p>
         </div>
       )}
 
@@ -595,11 +627,12 @@ function getHealthDonutStyle(health = {}) {
 }
 
 function MatterHealthCard({ health = EMPTY_DASHBOARD.matterHealth }) {
+  const isUnavailable = health.status === 'unavailable'
   const hasMatters = Number(health.total || 0) > 0
   const legend = [
-    { label: 'On Track', value: health.onTrack, color: 'bg-[#2f9a70]' },
-    { label: 'Attention', value: health.attention, color: 'bg-[#f5a623]' },
-    { label: 'Critical', value: health.critical, color: 'bg-red-500' },
+    { key: 'on_track', label: 'On Track', value: health.onTrack, color: 'bg-[#2f9a70]' },
+    { key: 'attention', label: 'Attention', value: health.attention, color: 'bg-[#f5a623]' },
+    { key: 'critical', label: 'Critical', value: health.critical, color: 'bg-red-500' },
   ]
 
   return (
@@ -612,7 +645,14 @@ function MatterHealthCard({ health = EMPTY_DASHBOARD.matterHealth }) {
         actionLabel="View report"
       />
 
-      {hasMatters ? (
+      {isUnavailable ? (
+        <div className="mt-6 flex flex-1 items-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8">
+          <div>
+            <p className="text-lg font-semibold text-slate-950">Matter health is unavailable.</p>
+            <p className="mt-2 text-sm font-medium leading-6 text-slate-500">The firm-wide health snapshot could not be loaded. No zero values are being inferred.</p>
+          </div>
+        </div>
+      ) : hasMatters ? (
         <div className="mt-7 grid flex-1 gap-7 lg:grid-cols-[minmax(220px,0.9fr)_minmax(220px,1fr)] lg:items-center">
           <div className="relative mx-auto size-56 rounded-full p-5 shadow-[inset_0_0_0_1px_rgba(226,232,240,0.45)]" style={getHealthDonutStyle(health)}>
             <div className="grid size-full place-items-center rounded-full bg-white text-center shadow-[inset_0_8px_24px_rgba(15,23,42,0.06)]">
@@ -624,14 +664,18 @@ function MatterHealthCard({ health = EMPTY_DASHBOARD.matterHealth }) {
           </div>
           <div className="grid divide-y divide-slate-100">
             {legend.map((item) => (
-              <div key={item.label} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 py-4">
+              <Link
+                key={item.label}
+                to={`/attorney/matters/all?health=${item.key}&roleView=${encodeURIComponent(health.roleView || 'all')}`}
+                className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 py-4 transition hover:text-[#0f684f]"
+              >
                 <span className={`size-3 rounded-full ${item.color}`} />
                 <span className="font-semibold text-slate-900">{item.label}</span>
                 <span className="text-right">
                   <strong className="block text-xl font-semibold text-slate-950">{formatNumber(item.value?.percentage)}%</strong>
                   <span className="text-sm font-medium text-slate-500">{formatNumber(item.value?.count)} matters</span>
                 </span>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -653,47 +697,55 @@ function MatterHealthCard({ health = EMPTY_DASHBOARD.matterHealth }) {
 }
 
 function PerformanceKPIs({ performance = EMPTY_DASHBOARD.conveyancingPerformance }) {
+  const roleView = encodeURIComponent(performance.roleView || 'all')
+  const hasRegistrationAverage = performance.averageDaysToRegistration !== null && performance.averageDaysToRegistration !== undefined
+  const hasSuccessRate = performance.registrationSuccessRate !== null && performance.registrationSuccessRate !== undefined
+  const hasDocumentAverage = performance.averageDocumentTurnaroundDays !== null && performance.averageDocumentTurnaroundDays !== undefined
   const metricItems = [
     {
       label: 'Avg. Days to Registration',
-      value: formatNumber(performance.averageDaysToRegistration),
-      suffix: 'days',
-      helper: performance.registrationSampleSize ? `${formatNumber(performance.registrationSampleSize)} registrations sampled` : 'Baseline pending',
+      value: hasRegistrationAverage ? formatNumber(performance.averageDaysToRegistration) : '—',
+      suffix: hasRegistrationAverage ? 'days' : '',
+      helper: performance.registrationSampleSize !== null ? `${formatNumber(performance.registrationSampleSize)} registrations sampled` : 'Data unavailable',
+      href: `/attorney/matters/registered?performance=registered_in_period&roleView=${roleView}`,
     },
     {
       label: 'Registration Success Rate',
-      value: `${Number(performance.registrationSuccessRate || 0).toFixed(1)}%`,
+      value: hasSuccessRate ? `${Number(performance.registrationSuccessRate).toFixed(1)}%` : '—',
       suffix: '',
-      helper: Number(performance.registrationSuccessRate || 0) ? 'Completed matters' : 'Baseline pending',
+      helper: performance.registrationOutcomeSampleSize !== null ? `${formatNumber(performance.registrationOutcomeSampleSize)} terminal outcomes sampled` : 'Data unavailable',
+      href: `/attorney/matters/all?performance=terminal_outcome_in_period&roleView=${roleView}`,
     },
     {
       label: 'Avg. Doc Turnaround',
-      value: formatNumber(performance.averageDocumentTurnaroundDays),
-      suffix: 'days',
-      helper: Number(performance.averageDocumentTurnaroundDays || 0) ? 'Document SLA' : 'Baseline pending',
+      value: hasDocumentAverage ? formatNumber(performance.averageDocumentTurnaroundDays) : '—',
+      suffix: hasDocumentAverage ? 'days' : '',
+      helper: performance.documentTurnaroundSampleSize !== null ? `${formatNumber(performance.documentTurnaroundSampleSize)} client requests sampled` : 'Data unavailable',
+      href: `/attorney/matters/all?performance=documents_approved_in_period&roleView=${roleView}`,
     },
   ]
 
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {metricItems.map((item) => (
-        <article key={item.label} className="rounded-xl border border-slate-200 bg-white p-5">
+        <Link key={item.label} to={item.href} className="rounded-xl border border-slate-200 bg-white p-5 transition hover:border-[#0f684f]/30 hover:shadow-sm">
           <p className="text-sm font-semibold leading-5 text-slate-500">{item.label}</p>
           <strong className="mt-4 block text-3xl font-semibold tracking-[-0.04em] text-slate-950">
             {item.value} {item.suffix ? <span className="text-base font-medium text-slate-500">{item.suffix}</span> : null}
           </strong>
           <span className="mt-3 block text-sm font-semibold text-[#0f684f]">{item.helper}</span>
-        </article>
+        </Link>
       ))}
     </div>
   )
 }
 
-function RegistrationForecastCard({ forecast = EMPTY_DASHBOARD.conveyancingPerformance.registrationForecast }) {
+function RegistrationForecastCard({ forecast = EMPTY_DASHBOARD.conveyancingPerformance.registrationForecast, roleView = 'all' }) {
+  const encodedRoleView = encodeURIComponent(roleView)
   const rows = [
-    { label: 'This Week', value: forecast.thisWeek },
-    { label: 'Next Week', value: forecast.nextWeek },
-    { label: 'This Month', value: forecast.thisMonth },
+    { label: 'This Week', value: forecast.thisWeek, key: 'forecast_this_week' },
+    { label: 'Next Week', value: forecast.nextWeek, key: 'forecast_next_week' },
+    { label: 'This Month', value: forecast.thisMonth, key: 'forecast_this_month' },
   ]
 
   return (
@@ -704,10 +756,10 @@ function RegistrationForecastCard({ forecast = EMPTY_DASHBOARD.conveyancingPerfo
       </div>
       <div className="mt-6 grid grid-cols-3 divide-x divide-slate-200 text-center">
         {rows.map((row) => (
-          <span key={row.label} className="px-4">
+          <Link key={row.label} to={`/attorney/matters/all?performance=${row.key}&roleView=${encodedRoleView}`} className="px-4 transition hover:text-[#0f684f]">
             <span className="block text-sm font-medium text-slate-500">{row.label}</span>
-            <strong className="mt-4 block text-4xl font-semibold tracking-[-0.04em] text-slate-950">{formatNumber(row.value)}</strong>
-          </span>
+            <strong className="mt-4 block text-4xl font-semibold tracking-[-0.04em] text-slate-950">{formatMetricCount(row.value)}</strong>
+          </Link>
         ))}
       </div>
       <p className="mt-6 text-center text-sm font-medium text-slate-500">Matters expected to register</p>
@@ -734,7 +786,8 @@ function getDistributionStyle(distribution = []) {
   return { background: `conic-gradient(${gradient.join(', ')})` }
 }
 
-function MatterDistributionCard({ distribution = [] }) {
+function MatterDistributionCard({ distribution = [], roleView = 'all' }) {
+  const encodedRoleView = encodeURIComponent(roleView)
   const hasDistribution = distribution.some((item) => Number(item.count || 0) > 0)
   const colors = ['bg-[#2f9a70]', 'bg-[#f5a623]', 'bg-red-500', 'bg-slate-500']
 
@@ -751,12 +804,12 @@ function MatterDistributionCard({ distribution = [] }) {
           </div>
           <div className="grid gap-3">
             {distribution.map((item, index) => (
-              <div key={item.label} className="grid grid-cols-[auto_minmax(0,1fr)_64px_80px] items-center gap-3 text-sm">
+              <Link key={item.label} to={`/attorney/matters/all?performance=primary_${String(item.label || '').toLowerCase()}&roleView=${encodedRoleView}`} className="grid grid-cols-[auto_minmax(0,1fr)_64px_80px] items-center gap-3 text-sm transition hover:text-[#0f684f]">
                 <span className={`size-2.5 rounded-full ${colors[index % colors.length]}`} />
                 <span className="font-medium text-slate-700">{item.label}</span>
                 <strong className="text-right text-slate-950">{formatNumber(item.percentage)}%</strong>
                 <span className="text-right font-medium text-slate-500">{formatNumber(item.count)} matters</span>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -782,13 +835,20 @@ function ConveyancingPerformanceCard({ performance = EMPTY_DASHBOARD.conveyancin
         actionHref="/attorney/matters/registered"
         actionLabel="View report"
       />
-      <div className="mt-6 grid gap-4">
-        <PerformanceKPIs performance={performance} />
-        <div className="grid gap-4 xl:grid-cols-2">
-          <RegistrationForecastCard forecast={forecast} />
-          <MatterDistributionCard distribution={distribution} />
+      {performance.status === 'unavailable' ? (
+        <div className="mt-6 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8">
+          <p className="text-lg font-semibold text-slate-950">Performance data is unavailable.</p>
+          <p className="mt-2 text-sm font-medium leading-6 text-slate-500">The reporting snapshot could not be loaded. Missing data is shown as unavailable rather than zero.</p>
         </div>
-      </div>
+      ) : (
+        <div className="mt-6 grid gap-4">
+          <PerformanceKPIs performance={performance} />
+          <div className="grid gap-4 xl:grid-cols-2">
+            <RegistrationForecastCard forecast={forecast} roleView={performance.roleView} />
+            <MatterDistributionCard distribution={distribution} roleView={performance.roleView} />
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -831,6 +891,8 @@ function AttorneyDashboardPage() {
   const [dashboard, setDashboard] = useState(EMPTY_DASHBOARD)
   const [selectedTeamMember, setSelectedTeamMember] = useState(null)
   const [analyticsReady, setAnalyticsReady] = useState(false)
+  const mountedRef = useRef(true)
+  const requestSequenceRef = useRef(0)
 
   const roleView = useMemo(() => {
     const value = new URLSearchParams(location.search).get('roleView') || 'all'
@@ -843,19 +905,15 @@ function AttorneyDashboardPage() {
   const currentUserId = normalizeText(profile?.id || profile?.userId)
   const shellClass = 'grid w-full max-w-none gap-4 bg-[#f7f9fb] px-0 py-3'
 
-  useEffect(() => {
-    let active = true
-    let requestSequence = 0
-
-    async function loadDashboard() {
-      const request = ++requestSequence
+  const loadDashboard = useCallback(async ({ background = false } = {}) => {
+      const request = ++requestSequenceRef.current
       const timer = createPerfTimer('attorney.page.dashboard', {
         firmId: attorneyFirmId || null,
         userId: currentUserId || null,
         roleView,
       })
       let outcome = 'success'
-      setLoading(true)
+      if (!background) setLoading(true)
       setError('')
       try {
         timer.mark('service:start')
@@ -868,28 +926,35 @@ function AttorneyDashboardPage() {
           hasFirm: Boolean(nextData?.firm?.id),
           activeMatters: nextData?.kpis?.activeMatters ?? null,
         })
-        if (!active || request !== requestSequence) return
+        if (!mountedRef.current || request !== requestSequenceRef.current) return
         setDashboard(nextData || EMPTY_DASHBOARD)
       } catch (loadError) {
         outcome = 'failed'
-        if (!active || request !== requestSequence) return
+        if (!mountedRef.current || request !== requestSequenceRef.current) return
         setError(loadError?.message || 'Unable to load attorney dashboard.')
-        setDashboard(EMPTY_DASHBOARD)
+        if (!background) setDashboard(EMPTY_DASHBOARD)
       } finally {
         timer.end({ outcome })
-        if (active && request === requestSequence) setLoading(false)
+        // A realtime refresh can overtake the initial request. Whichever
+        // request wins must release the initial skeleton as well.
+        if (mountedRef.current && request === requestSequenceRef.current) setLoading(false)
       }
-    }
-
-    void loadDashboard()
-    const refresh = () => { void loadDashboard() }
-    window.addEventListener('itg:transaction-updated', refresh)
-
-    return () => {
-      active = false
-      window.removeEventListener('itg:transaction-updated', refresh)
-    }
   }, [attorneyFirmId, currentUserId, roleView])
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
+
+  useEffect(() => {
+    void loadDashboard()
+  }, [loadDashboard])
+
+  useAttorneyDashboardLiveRefresh({
+    firmId: attorneyFirmId,
+    enabled: role === 'attorney' && Boolean(attorneyFirmId),
+    onRefresh: () => loadDashboard({ background: true }),
+  })
 
   useEffect(() => {
     let active = true

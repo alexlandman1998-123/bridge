@@ -1143,6 +1143,8 @@ function normalizeSnapshotMatterRow(row = {}) {
     nextAction: row.nextAction,
     nextActionDueAt: row.nextActionDueAt,
     expectedRegistrationDate: row.targetRegistrationDate,
+    lifecycleState: row.lifecycleState,
+    registrationDate: row.registrationDate,
     waitingOnRole: row.waitingOnRole,
     buyerName: row.buyerName,
     propertyAddress: row.propertyLabel,
@@ -1273,7 +1275,14 @@ export function buildAttorneyMatterWorkspace(operational = {}, options = {}) {
       )
   const baseRows = applyMatterListScope(unscopedBaseRows, scope)
 
-  const viewRows = applyBaseView(baseRows, viewConfig.key)
+  const attentionMatterIds = Array.isArray(options.matterIds)
+    ? new Set(options.matterIds.map((value) => normalize(value)).filter(Boolean))
+    : null
+  // Authoritative dashboard drill-downs already define their population in
+  // SQL. Do not intersect them with the older keyword/status-based view.
+  const viewRows = attentionMatterIds
+    ? baseRows.filter((row) => attentionMatterIds.has(normalize(row.matterId || row.transactionId || row.id)))
+    : applyBaseView(baseRows, viewConfig.key)
   const filteredRows = sortWorkspaceRows(applyWorkspaceFilters(viewRows, { ...options, view: viewConfig.key }))
   const pageSize = ATTORNEY_MATTER_PAGE_SIZES.includes(Number(options.pageSize)) ? Number(options.pageSize) : 20
   const page = Math.max(1, Number(options.page || 1))

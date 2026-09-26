@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { mapMatterToActiveMatterCard } from '../attorneyDashboard'
 
 describe('attorney dashboard active matter cards', () => {
-  it('maps existing matter state into a card without dashboard-only status or progress fields', () => {
+  it('does not infer progress from legacy stage text when canonical workflow steps are unavailable', () => {
     const card = mapMatterToActiveMatterCard({
       summary: {
         transactionId: 'matter-1',
@@ -32,10 +32,38 @@ describe('attorney dashboard active matter cards', () => {
       value: 2450000,
       href: '/transactions/matter-1',
     })
-    expect(card.progress).toBeGreaterThan(0)
+    expect(card.progress).toBe(0)
   })
 
-  it('uses the matter-type financial field and retains an unassigned attorney', () => {
+  it('updates progress from the applicable canonical workflow steps', () => {
+    const transaction = {
+      id: 'matter-progress',
+      routing_profile_json: {
+        workflowPlan: {
+          status: 'active',
+          laneKeys: ['transfer'],
+          lanes: [{ laneKey: 'transfer', stepKeys: ['instruction_received', 'matter_opened'] }],
+        },
+      },
+      attorneyWorkflowLanes: [{
+        process_type: 'transfer',
+        transaction_subprocess_steps: [
+          { step_key: 'instruction_received', status: 'completed' },
+          { step_key: 'matter_opened', status: 'not_started' },
+        ],
+      }],
+    }
+    const buildCard = () => mapMatterToActiveMatterCard({
+      summary: { transactionId: transaction.id, roles: new Set(['transfer']), transaction },
+      primaryUnit: { transactionId: transaction.id, flags: {} },
+    })
+
+    expect(buildCard().progress).toBe(50)
+    transaction.attorneyWorkflowLanes[0].transaction_subprocess_steps[1].status = 'completed'
+    expect(buildCard().progress).toBe(100)
+  })
+
+  it('uses the matter-type financial field and retains the firm-level team fallback', () => {
     const card = mapMatterToActiveMatterCard({
       summary: {
         transactionId: 'matter-2',
@@ -46,7 +74,7 @@ describe('attorney dashboard active matter cards', () => {
     })
 
     expect(card.value).toBe(1850000)
-    expect(card.assignedStaff).toBe('Unassigned')
+    expect(card.assignedStaff).toBe('Attorney team')
     expect(card.statusLabel).toBe('Awaiting Bank')
   })
 
@@ -69,6 +97,6 @@ describe('attorney dashboard active matter cards', () => {
       },
     })
 
-    expect(card.propertyAddress).toBe('Junoah Estate · Unit 12B')
+    expect(card.propertyAddress).toBe('Unit 12B | Junoah Estate')
   })
 })

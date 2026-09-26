@@ -1,0 +1,11 @@
+{
+  "version": "20260926111138",
+  "targetProjectRef": "isdowlnollckzvltkasn",
+  "sqlApplied": true,
+  "targetStateVerified": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex release review",
+  "notes": "Verified live health/performance RPC and four refresh triggers, successful active firm-lead call, and SQLSTATE 42501 for a missing identity. Transaction-wrapped DDL contains no data backfill."
+}

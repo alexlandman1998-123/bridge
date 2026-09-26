@@ -291,6 +291,7 @@ function appendSectionalRequirements(docs, generatedFrom) {
       description: 'Body corporate or managing agent contact details.',
       group: 'property',
       visibility: 'seller_visible',
+      required: false,
       generatedFrom,
     }),
     buildRequirement({

@@ -9,6 +9,7 @@ import AppointmentCalendarActions from '../../components/appointments/Appointmen
 import BuyerJourneyOverviewPanel from './BuyerJourneyOverviewPanel'
 import LeadWorkspaceLoadingShell from './LeadWorkspaceLoadingShell'
 import { buildLeadArchivePatch, resolveSellerLeadActionTokens } from './sellerLeadActionModel'
+import { buildSellerLeadReadinessRows } from './sellerLeadReadinessDisplayModel'
 import {
   readAgencyLeadWorkspaceSnapshot as readLeadWorkspaceSessionSnapshot,
   writeAgencyLeadWorkspaceSnapshot as writeLeadWorkspaceSessionSnapshot,
@@ -40,6 +41,7 @@ import {
   updateListingSellerProfileDraftPerson,
 } from '../../lib/listingSellerProfileBuilderModel'
 import { buildSellerSubject } from '../../lib/sellerSubjectModel'
+import { buildSellerFicaScope } from '../../lib/sellerFicaScopeModel'
 import { needsSellerOwnershipSetup, resolveSellerInformationEditMode } from '../../lib/sellerOwnershipSetupRouting'
 import { needsSellerOnboardingReplacement } from '../../lib/sellerOnboardingReplacement'
 import { buildManualFicaPackDocument } from '../../services/documents/ficaManualPackService'
@@ -17708,17 +17710,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ])
 
   const selectedSellerReadinessRequirements = useMemo(() => {
-    const listingReadiness = selectedSellerReadiness.listingReadiness
-    if (!listingReadiness?.hasListing) {
-      return [{ key: 'listing', label: 'Listing', complete: false, status: 'Not created' }]
-    }
-    return (listingReadiness.items || []).map((item) => ({
-      key: item.key,
-      label: item.label,
-      complete: item.complete,
-      status: item.complete ? 'Complete' : 'Incomplete',
-    }))
-  }, [selectedSellerReadiness.listingReadiness])
+    return buildSellerLeadReadinessRows({
+      lead: selectedLead || {},
+      listing: selectedLeadLinkedListing || {},
+      onboarding: getWorkspaceSellerOnboarding(selectedLead || {}, selectedLeadLinkedListing || {}),
+      journey: selectedSellerJourney,
+      listingReadiness: selectedSellerReadiness.listingReadiness,
+      documentSummary: selectedSellerDocumentSummary,
+    })
+  }, [selectedLead, selectedLeadLinkedListing, selectedSellerDocumentSummary, selectedSellerJourney, selectedSellerReadiness.listingReadiness])
 
   const selectedSellerSummarySections = useMemo(() => {
     const lead = selectedLead || {}
@@ -18094,6 +18094,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const bondExistsAffirmed = bondExistsValue === true || ['yes', 'true', '1'].includes(normalizeText(bondExistsValue).toLowerCase())
     return {
       sellerSubject,
+      ficaScope: buildSellerFicaScope({ sellerSubject, onboarding, canonicalFacts: canonicalSellerFacts }),
       roleplayers,
       cards: [
         {
@@ -33953,9 +33954,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         ? 'Almost Ready'
                                         : 'Needs Attention'}
                                 </p>
-                                <div className="mt-2 flex items-center justify-center gap-0.5 text-[#f5a400]" aria-hidden="true">
-                                  {[0, 1, 2, 3, 4].map((item) => <Star key={item} className={`h-4 w-4 ${selectedSellerReadiness.listingReadiness?.hasListing && (selectedSellerReadiness.listingReadiness.percent || 0) >= (item + 1) * 20 ? 'fill-current' : ''}`} />)}
-                                </div>
+                                {selectedSellerReadiness.listingReadiness?.hasListing ? (
+                                  <div className="mt-2 flex items-center justify-center gap-0.5 text-[#f5a400]" aria-hidden="true">
+                                    {[0, 1, 2, 3, 4].map((item) => <Star key={item} className={`h-4 w-4 ${(selectedSellerReadiness.listingReadiness.percent || 0) >= (item + 1) * 20 ? 'fill-current' : ''}`} />)}
+                                  </div>
+                                ) : (
+                                  <p className="mt-2 text-center text-xs font-medium text-[#6d839b]">Listing score starts when the listing is created.</p>
+                                )}
                               </div>
 
                               <div className="min-w-0 rounded-[16px] border border-[#e1eaf4] bg-[#fbfdff]">
@@ -39138,6 +39143,30 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           }}
                         />
                       </Suspense>
+
+                      <section className="mt-4 rounded-[16px] border border-[#dfe8f2] bg-[#f8fbfe] p-4" data-testid="seller-fica-scope">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <h4 className="text-sm font-semibold text-[#102033]">FICA collection scope</h4>
+                            <p className="mt-1 text-xs leading-5 text-[#60758b]">People and facts to assess before any paid provider request. This is not a verification result or compliance approval.</p>
+                          </div>
+                          <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#405b75]">{selectedSellerProfileWorkspace.ficaScope.subjects.length} in scope</span>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {selectedSellerProfileWorkspace.ficaScope.subjects.map((subject, index) => (
+                            <span key={`${subject.type}-${subject.label}-${index}`} className={`rounded-full border px-3 py-1.5 text-xs font-semibold ${subject.complete ? 'border-[#cfe8dc] bg-[#f2fbf5] text-[#286b43]' : 'border-[#f1dfbd] bg-[#fff9ec] text-[#8a641d]'}`}>
+                              {subject.label} · {subject.roles.join(', ')} · {subject.complete ? 'facts captured' : `${subject.missing.length} missing`}
+                            </span>
+                          ))}
+                        </div>
+                        {selectedSellerProfileWorkspace.ficaScope.missing.length ? (
+                          <div className="mt-3 rounded-[12px] border border-[#f1dfbd] bg-white px-3 py-2 text-xs leading-5 text-[#73591f]">
+                            <strong>Still to collect:</strong> {selectedSellerProfileWorkspace.ficaScope.missing.join(' · ')}
+                          </div>
+                        ) : null}
+                        <p className="mt-3 text-xs leading-5 text-[#60758b]">Evidence to assess: {selectedSellerProfileWorkspace.ficaScope.evidence.join(' · ') || 'To be determined'}.</p>
+                        <p className="mt-1 text-xs leading-5 text-[#60758b]">Compliance review: {selectedSellerProfileWorkspace.ficaScope.review.join(' · ')}</p>
+                      </section>
 
                       <div className="mt-5 grid gap-4 lg:grid-cols-2">
                         {selectedSellerProfileCards.map((card) => (

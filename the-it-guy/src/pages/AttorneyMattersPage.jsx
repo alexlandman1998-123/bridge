@@ -42,6 +42,8 @@ import {
 } from '../services/attorneyMatterWorkspace'
 import { getAttorneyMatterListSnapshot } from '../services/attorneyMatterListSnapshotService'
 import { getAttorneyMatterSnapshotRolloutStatus } from '../services/attorneyMatterSnapshotRolloutService'
+import { getAttorneyDashboardMetricPage } from '../services/attorneyDashboardMetricPage'
+import { trackTelemetryEvent } from '../services/observability/telemetry'
 import {
   acceptAttorneyIncomingMatterInstruction,
   declineAttorneyIncomingMatterInstruction,
@@ -76,6 +78,15 @@ const DEFAULT_FILTERS = {
   expectedLodgement: 'all',
   priority: 'all',
   matterValue: 'all',
+}
+
+const ATTENTION_SNAPSHOT_KEYS = {
+  signatures_pending: 'signatures',
+  guarantees_outstanding: 'guarantees',
+  clearance_attention: 'clearance',
+  client_documents: 'clientDocuments',
+  invoices_overdue: 'invoices',
+  stalled: 'stalled',
 }
 
 const KPI_ICONS = {
@@ -153,22 +164,6 @@ function normalize(value = '') {
   return String(value || '').trim().toLowerCase()
 }
 
-function formatDue(value) {
-  const date = new Date(value || '')
-  if (Number.isNaN(date.getTime())) return '—'
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const target = new Date(date)
-  target.setHours(0, 0, 0, 0)
-
-  if (target.getTime() === today.getTime()) return 'Today'
-  if (target.getTime() === tomorrow.getTime()) return 'Tomorrow'
-  return date.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' })
-}
-
 function formatShortDate(value) {
   const date = new Date(value || '')
   if (Number.isNaN(date.getTime())) return '-'
@@ -219,22 +214,6 @@ function humanizeKey(value = '') {
     .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/\b\w/g, (match) => match.toUpperCase())
-}
-
-function getDueState(value, status) {
-  const date = new Date(value || '')
-  if (Number.isNaN(date.getTime())) return 'none'
-
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const target = new Date(date)
-  target.setHours(0, 0, 0, 0)
-
-  if (target < today || status === 'Delayed') return 'overdue'
-  if (target.getTime() <= tomorrow.getTime()) return 'soon'
-  return 'scheduled'
 }
 
 function LoadingState({ copy = 'Loading attorney matters...' }) {
@@ -344,7 +323,7 @@ function StatusPill({ status }) {
   const displayStatus = status === 'Active' ? 'On Track' : status === 'Attention' ? 'At Risk' : status === 'Registered' ? 'Completed' : status
 
   return (
-    <span className={classNames('inline-flex rounded-lg px-3 py-1 text-xs font-semibold', STATUS_STYLES[displayStatus] || STATUS_STYLES.Active)}>
+    <span className={classNames('inline-flex items-center justify-center whitespace-nowrap rounded-lg px-3.5 py-1.5 text-xs font-semibold leading-none', STATUS_STYLES[displayStatus] || STATUS_STYLES.Active)}>
       {displayStatus}
     </span>
   )
@@ -1168,7 +1147,8 @@ function MatterPropertyCell({ row, preview }) {
   )
 }
 
-function MatterStageCell({ row }) {
+function MatterStageCell({ row, showProgress = true }) {
+  if (!showProgress) return <span className="text-xs font-semibold text-slate-700">{row.currentStage || 'Stage unavailable'}</span>
   return <StageProgress stage={row.stage || { label: 'Instruction', index: 0, steps: ['Instruction'] }} />
 }
 
@@ -1198,25 +1178,7 @@ function MatterNextActionCell({ row, preview }) {
   )
 }
 
-function MatterDueCell({ row }) {
-  const state = getDueState(row.expectedDue, row.status)
-  const dateLabel = formatDue(row.expectedDue)
-  const tileClass = state === 'overdue'
-    ? 'bg-red-50 text-red-700'
-    : state === 'soon'
-      ? 'bg-orange-50 text-orange-700'
-      : state === 'scheduled'
-        ? 'bg-emerald-50 text-emerald-700'
-        : 'bg-slate-50 text-slate-500'
-
-  return (
-    <div className={classNames('inline-flex min-w-12 justify-center rounded-lg px-3 py-2 text-center text-xs font-semibold leading-4', tileClass)}>
-      {dateLabel === '—' ? '—' : dateLabel}
-    </div>
-  )
-}
-
-function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter }) {
+function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter, showProgress = true }) {
   const preview = getMatterPreview(row)
 
   return (
@@ -1247,13 +1209,9 @@ function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter }) {
         <RowActions row={row} />
       </div>
       <div className="mt-4 grid gap-3 border-t border-slate-100 pt-3">
-        <MatterStageCell row={row} />
-        <div className="grid gap-3 sm:grid-cols-2">
+        <MatterStageCell row={row} showProgress={showProgress} />
+        <div className="grid gap-3 sm:grid-cols-3">
           <MatterNextActionCell row={row} preview={preview} />
-          <div>
-            <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Due</p>
-            <MatterDueCell row={row} />
-          </div>
           <div>
             <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Assigned To</p>
             <Assignee person={row.assignedAttorney} />
@@ -1268,7 +1226,7 @@ function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter }) {
   )
 }
 
-function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, onOpenMatter }) {
+function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, onOpenMatter, showProgress = true }) {
   const allSelected = rows.length > 0 && rows.every((row) => selectedRows.includes(row.matterId))
 
   return (
@@ -1281,13 +1239,14 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
             selected={selectedRows.includes(row.matterId)}
             onToggleRow={onToggleRow}
             onOpenMatter={onOpenMatter}
+            showProgress={showProgress}
           />
         ))}
       </div>
 
       <div className="hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm md:block">
         <div className="overflow-x-auto">
-        <table className="w-full min-w-[1180px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[1100px] border-collapse text-left text-sm">
           <thead className="bg-white text-[0.68rem] uppercase tracking-[0.12em] text-slate-500">
             <tr>
               <th className="w-10 border-b border-slate-200 px-4 py-3">
@@ -1296,9 +1255,8 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Matter &amp; Property</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Stage</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Next Action</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Due</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Assigned To</th>
-              <th className="border-b border-slate-200 px-4 py-3 font-semibold">Status</th>
+              <th className="min-w-[140px] border-b border-slate-200 px-5 py-3 font-semibold">Status</th>
               <th className="border-b border-slate-200 px-4 py-3 font-semibold">Actions</th>
             </tr>
           </thead>
@@ -1330,11 +1288,10 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
                     />
                   </td>
                   <td className="px-4 py-3"><MatterPropertyCell row={row} preview={preview} /></td>
-                  <td className="px-4 py-3"><MatterStageCell row={row} /></td>
+                  <td className="px-4 py-3"><MatterStageCell row={row} showProgress={showProgress} /></td>
                   <td className="px-4 py-3"><MatterNextActionCell row={row} preview={preview} /></td>
-                  <td className="px-4 py-3"><MatterDueCell row={row} /></td>
                   <td className="px-4 py-3"><Assignee person={row.assignedAttorney} /></td>
-                  <td className="px-4 py-3"><StatusPill status={row.status} /></td>
+                  <td className="px-5 py-3"><StatusPill status={row.status} /></td>
                   <td className="px-4 py-3"><RowActions row={row} /></td>
                 </tr>
               )
@@ -1657,10 +1614,22 @@ function AttorneyMattersPage() {
   const performanceBaselineRef = useRef({ key: '', baseline: null })
 
   const viewKey = normalize(matterType || 'all')
-  const usesSnapshotReadModel = ['all', 'transfer', 'bond', 'cancellation'].includes(viewKey)
+  const attentionFilter = normalize(new URLSearchParams(location.search).get('attention'))
+  const attentionSnapshotKey = ATTENTION_SNAPSHOT_KEYS[attentionFilter] || ''
+  const revenueFilter = normalize(new URLSearchParams(location.search).get('revenue'))
+  const hasRevenueDrilldown = revenueFilter === 'revenue_pipeline'
+  const healthFilter = normalize(new URLSearchParams(location.search).get('health'))
+  const healthSnapshotKey = healthFilter === 'on_track' ? 'onTrack' : healthFilter === 'attention' ? 'attention' : healthFilter === 'critical' ? 'critical' : ''
+  const performanceFilter = normalize(new URLSearchParams(location.search).get('performance'))
+  const dashboardRoleView = normalize(new URLSearchParams(location.search).get('roleView')) || 'all'
+  const hasDashboardMetricDrilldown = Boolean(attentionSnapshotKey || hasRevenueDrilldown || healthSnapshotKey || performanceFilter)
+  const usesSnapshotReadModel = !hasDashboardMetricDrilldown && ['all', 'transfer', 'bond', 'cancellation'].includes(viewKey)
   const snapshotPage = usesSnapshotReadModel ? page : 1
   const snapshotPageSize = usesSnapshotReadModel ? pageSize : 20
   const snapshotSearchTerm = usesSnapshotReadModel ? searchTerm : ''
+  const metricPage = hasDashboardMetricDrilldown ? page : 1
+  const metricPageSize = hasDashboardMetricDrilldown ? pageSize : 20
+  const metricSearchTerm = hasDashboardMetricDrilldown ? searchTerm : ''
   const viewEnabled = isAttorneyMatterViewEnabled(viewKey, attorneyModuleState.modules)
   const attorneyFirmId = useMemo(() => {
     if (normalize(activeWorkspace?.type) === 'attorney_firm') return normalize(activeWorkspace?.id)
@@ -1726,6 +1695,49 @@ function AttorneyMattersPage() {
       setError('')
       try {
         timer.mark('workspace:start')
+        if (hasDashboardMetricDrilldown) {
+          const metricStartedAt = performance.now()
+          const metricGroup = attentionSnapshotKey ? 'attention' : hasRevenueDrilldown ? 'revenue' : healthSnapshotKey ? 'health' : 'performance'
+          const metricKey = attentionSnapshotKey || (hasRevenueDrilldown ? 'revenue_pipeline' : healthSnapshotKey || performanceFilter)
+          const snapshot = await getAttorneyDashboardMetricPage({
+            firmId: attorneyFirmId,
+            metricGroup,
+            metricKey,
+            roleView: dashboardRoleView,
+            page: metricPage,
+            pageSize: metricPageSize,
+            search: metricSearchTerm,
+          })
+          if (!active) return
+          if (performance.now() - metricStartedAt > 3000) {
+            void trackTelemetryEvent({
+              category: 'attorney_dashboard',
+              eventName: 'metric_drilldown_slow',
+              userId: currentUserId,
+              workspaceId: attorneyFirmId,
+              severity: 'warning',
+              metadata: { metricGroup, metricKey, durationMs: Math.round(performance.now() - metricStartedAt), totalRows: snapshot.pagination?.totalRows || 0 },
+            })
+          }
+          setMatterSnapshot(snapshot)
+          setSource(null)
+          timer.mark('metricPage:end', {
+            rows: snapshot.rows?.length || 0,
+            totalRows: snapshot.pagination?.totalRows || 0,
+          })
+          void baseline?.record(ATTORNEY_MATTER_PERFORMANCE_METRICS.listReady, {
+            userId: currentUserId,
+            workspaceId: attorneyFirmId,
+            metadata: {
+              view: viewKey,
+              outcome: 'success',
+              rowCount: snapshot.rows?.length || 0,
+              totalRowCount: snapshot.pagination?.totalRows || 0,
+              source: 'metric_rpc',
+            },
+          })
+          return
+        }
         if (usesSnapshotReadModel && snapshotRollout.enabled) {
           const snapshot = await getAttorneyMatterListSnapshot({
             firmId: attorneyFirmId,
@@ -1793,6 +1805,20 @@ function AttorneyMattersPage() {
       } catch (loadError) {
         outcome = 'failed'
         if (!active) return
+        if (hasDashboardMetricDrilldown) {
+          void trackTelemetryEvent({
+            category: 'attorney_dashboard',
+            eventName: 'metric_drilldown_failed',
+            userId: currentUserId,
+            workspaceId: attorneyFirmId,
+            severity: 'error',
+            metadata: {
+              metricGroup: attentionSnapshotKey ? 'attention' : hasRevenueDrilldown ? 'revenue' : healthSnapshotKey ? 'health' : 'performance',
+              metricKey: attentionSnapshotKey || (hasRevenueDrilldown ? 'revenue_pipeline' : healthSnapshotKey || performanceFilter),
+              errorCode: String(loadError?.code || 'unknown'),
+            },
+          })
+        }
         setError(loadError?.message || 'Unable to load attorney matters.')
         void baseline?.record(ATTORNEY_MATTER_PERFORMANCE_METRICS.listReady, {
           userId: currentUserId,
@@ -1809,7 +1835,7 @@ function AttorneyMattersPage() {
     return () => {
       active = false
     }
-  }, [attorneyFirmId, currentUserId, filters, snapshotPage, snapshotPageSize, snapshotSearchTerm, snapshotRollout.enabled, usesSnapshotReadModel, viewEnabled, viewKey])
+  }, [attentionSnapshotKey, attorneyFirmId, currentUserId, dashboardRoleView, filters, hasDashboardMetricDrilldown, hasRevenueDrilldown, healthSnapshotKey, metricPage, metricPageSize, metricSearchTerm, performanceFilter, snapshotPage, snapshotPageSize, snapshotSearchTerm, snapshotRollout.enabled, usesSnapshotReadModel, viewEnabled, viewKey])
 
   useEffect(() => {
     function handleHeaderSearch(event) {
@@ -2115,13 +2141,13 @@ function AttorneyMattersPage() {
   return (
     <main className="w-full max-w-none bg-[#f7f9fb] px-0 py-2">
       <div className="w-full max-w-none space-y-4 px-2 md:px-3 xl:px-4">
-        {viewKey === 'all' ? (
+        {viewKey === 'all' && !hasDashboardMetricDrilldown ? (
           <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
             {workspace.kpis.map((item) => <KpiCard key={item.key} item={item} />)}
           </section>
         ) : null}
 
-        {!usesIncomingQueue && viewKey !== 'needs_attention' ? <LegalPortfolioPriorityQueue model={legalPriorityQueue} onOpenMatter={handleOpenMatter} /> : null}
+        {!hasDashboardMetricDrilldown && !usesIncomingQueue && viewKey !== 'needs_attention' ? <LegalPortfolioPriorityQueue model={legalPriorityQueue} onOpenMatter={handleOpenMatter} /> : null}
 
         {incomingAction.error ? (
           <section className="flex items-start gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 shadow-sm">
@@ -2132,17 +2158,32 @@ function AttorneyMattersPage() {
 
         <BulkActionBar selectedCount={selectedRows.length} onClear={() => setSelectedRows([])} />
 
-        <MatterFilters
-          workspace={workspace}
-          searchTerm={searchTerm}
-          filters={filters}
-          onSearchChange={(value) => {
-            setSearchTerm(value)
-            setPage(1)
-          }}
-          onFilterChange={handleFilterChange}
-          onReset={handleResetFilters}
-        />
+        {hasDashboardMetricDrilldown ? (
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <label htmlFor="dashboard-metric-search" className="block text-sm font-semibold text-slate-800">Search these dashboard matters</label>
+            <input
+              id="dashboard-metric-search"
+              type="search"
+              value={searchTerm}
+              onChange={(event) => { setSearchTerm(event.target.value); setPage(1) }}
+              placeholder="Reference, property or buyer"
+              className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm md:max-w-md"
+            />
+            <p className="mt-2 text-xs text-slate-500">The dashboard total is the full metric population; searching narrows this list.</p>
+          </section>
+        ) : (
+          <MatterFilters
+            workspace={workspace}
+            searchTerm={searchTerm}
+            filters={filters}
+            onSearchChange={(value) => {
+              setSearchTerm(value)
+              setPage(1)
+            }}
+            onFilterChange={handleFilterChange}
+            onReset={handleResetFilters}
+          />
+        )}
 
         {workspace.tableRows.length ? (
           usesIncomingQueue ? (
@@ -2152,6 +2193,7 @@ function AttorneyMattersPage() {
               onToggleRow={handleToggleRow}
               onToggleAll={handleToggleAll}
               onOpenMatter={handleOpenMatter}
+              showProgress={!hasDashboardMetricDrilldown}
               onAcceptMatter={handleAcceptIncomingMatter}
               onDeclineMatter={handleRequestDeclineIncomingMatter}
               onAssignMatter={handleRequestAssignIncomingMatter}
@@ -2170,7 +2212,9 @@ function AttorneyMattersPage() {
             />
           )
         ) : (
-          <EmptyState view={workspace.view} />
+          hasDashboardMetricDrilldown ? (
+            <section className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">No matters match this dashboard metric{searchTerm ? ' and search' : ''}.</section>
+          ) : <EmptyState view={workspace.view} />
         )}
 
         <Pagination

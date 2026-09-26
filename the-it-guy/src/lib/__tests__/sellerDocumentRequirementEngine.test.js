@@ -63,6 +63,7 @@ test('keeps data-capture requirements out of the upload checklist and exposes th
   assert.equal(documents.some((row) => row.requirement_key === 'bond_bank_details'), false)
   assert.equal(documents.some((row) => row.requirement_key === 'tenant_details'), false)
   assert.equal(structuredFacts.find((row) => row.requirement_key === 'body_corporate_details')?.capture_surface, 'sectional_title_details')
+  assert.equal(structuredFacts.find((row) => row.requirement_key === 'body_corporate_details')?.is_required, false)
   assert.equal(structuredFacts.find((row) => row.requirement_key === 'bond_bank_details')?.capture_surface, 'bond_details')
   assert.equal(structuredFacts.find((row) => row.requirement_key === 'tenant_details')?.capture_surface, 'tenancy_details')
 

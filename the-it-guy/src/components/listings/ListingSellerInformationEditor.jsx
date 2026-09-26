@@ -119,8 +119,7 @@ export default function ListingSellerInformationEditor({
           <div className="sm:col-span-2 text-sm font-semibold text-[#243d56]">Sectional title / scheme details</div>
           <Input label="Scheme name" field="schemeName" draft={draft} onChange={onChange} />
           <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Unit / section number<Field value={draft.sectionNumber || draft.unitNumber || ''} onChange={(event) => onChange('sectionNumber', event.target.value)} /></label>
-          <Input label="Body corporate name" field="schemeBodyCorporateName" draft={draft} onChange={onChange} />
-          <Input label="Managing agent name" field="schemeManagingAgentName" draft={draft} onChange={onChange} />
+          <Input label="Managing agent name (optional)" field="schemeManagingAgentName" draft={draft} onChange={onChange} />
           <Input label="Managing agent email (optional)" field="schemeManagingAgentEmail" type="email" draft={draft} onChange={onChange} />
           <Input label="Managing agent phone (optional)" field="schemeManagingAgentPhone" type="tel" draft={draft} onChange={onChange} />
           <Input label="Scheme levies (optional)" field="schemeLevies" type="number" draft={draft} onChange={onChange} />

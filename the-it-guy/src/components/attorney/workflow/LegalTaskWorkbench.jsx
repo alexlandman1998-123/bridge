@@ -85,6 +85,7 @@ function PhaseNavigator({
   onTogglePhase,
   onSelectTask,
 }) {
+  const [showAllTasks, setShowAllTasks] = useState(false)
   const selectedPhase = phases.find((phase) => phase.key === selectedPhaseKey) || phases[0] || null
   const phaseExceptions = useMemo(() => {
     const grouped = new Map()
@@ -102,7 +103,7 @@ function PhaseNavigator({
   return (
     <aside className={`min-h-0 transition-[width] duration-200 xl:sticky xl:top-24 xl:self-start ${collapsed ? 'xl:w-[72px]' : ''}`}>
       <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
-        <div className={`shrink-0 border-b border-slate-200 bg-slate-50/70 py-4 ${collapsed ? 'px-2' : 'px-4'}`}>
+        <div className={`shrink-0 border-b border-slate-200 py-4 ${collapsed ? 'px-2' : 'px-4'}`}>
           <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-3'}`}>
             {!collapsed ? <h2 className="text-base font-semibold text-slate-950">{workflowLabel}</h2> : null}
             <button
@@ -115,7 +116,7 @@ function PhaseNavigator({
               {collapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
             </button>
           </div>
-          {!collapsed ? <span className="mt-2 block text-xs font-medium text-slate-500">{Math.max(1, phases.findIndex((phase) => phase.key === selectedPhase?.key) + 1)} of {phases.length}</span> : null}
+          {!collapsed ? <span className="mt-1 block text-xs font-medium text-slate-500">{Math.max(1, phases.findIndex((phase) => phase.key === selectedPhase?.key) + 1)} of {phases.length} stages</span> : null}
         </div>
         <nav className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${collapsed ? 'p-2' : 'p-2.5'}`} aria-label={`${workflowLabel} stages`}>
           <ol className="space-y-1.5">
@@ -124,16 +125,21 @@ function PhaseNavigator({
               const expanded = active && expandedPhaseKey === phase.key
               const phaseIndex = phases.findIndex((item) => item.key === phase.key)
               const exception = phaseExceptions.get(phase.key)
+              const selectedTaskIndex = Math.max(0, (phase.tasks || []).findIndex((task) => task.key === selectedTaskKey))
+              const visiblePhaseTasks = showAllTasks
+                ? phase.tasks || []
+                : (phase.tasks || []).slice(Math.max(0, selectedTaskIndex - 1), selectedTaskIndex + 2)
               return (
                 <li key={phase.key}>
                   <button
                     type="button"
-                    className={`relative flex min-h-12 w-full items-center gap-3 rounded-xl py-2.5 text-left transition ${collapsed ? 'justify-center px-2' : 'px-3'} ${active ? 'bg-emerald-50 text-emerald-950 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-emerald-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-950'}`}
+                    className={`relative flex min-h-[72px] w-full items-center gap-3 rounded-xl border py-2.5 text-left transition ${collapsed ? 'justify-center px-2' : 'px-3'} ${active ? 'border-emerald-200 bg-white text-slate-950 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950'}`}
                     onClick={() => {
                       if (expanded) {
                         onTogglePhase?.(phase.key)
                         return
                       }
+                      setShowAllTasks(false)
                       onTogglePhase?.(phase.key)
                       onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => !isAttorneyTaskResolved(task.status))?.key || phase.tasks?.[0]?.key)
                     }}
@@ -145,7 +151,7 @@ function PhaseNavigator({
                     </span>
                     {!collapsed ? <span className="min-w-0 flex-1">
                       <strong className="block text-sm font-semibold leading-5">{phase.label}</strong>
-                      <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} / {phase.total} complete{phase.notApplicable ? ` · ${phase.notApplicable} N/A` : ''}</span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{phase.completed} of {phase.total} complete</span>
                     </span> : null}
                     {exception && !collapsed ? (
                       <span
@@ -155,10 +161,11 @@ function PhaseNavigator({
                         <AlertTriangle size={12} /> {exception.count}
                       </span>
                     ) : null}
+                    {!collapsed ? <ChevronRight size={16} className={`shrink-0 text-slate-500 transition ${expanded ? 'rotate-90' : ''}`} /> : null}
                   </button>
                   {!collapsed && expanded && phase.tasks?.length ? (
                     <ol className="mt-1.5 space-y-1 border-l border-slate-200 pl-3" aria-label={`${phase.label} tasks`}>
-                      {phase.tasks.map((task) => {
+                      {visiblePhaseTasks.map((task) => {
                         const taskActive = task.key === selectedTaskKey
                         const taskComplete = ['completed', 'completed_externally'].includes(task.displayStatus)
                         return (
@@ -169,7 +176,7 @@ function PhaseNavigator({
                               aria-current={taskActive ? 'step' : undefined}
                               onClick={() => onSelectTask?.(task.key)}
                             >
-                              <span className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full border ${taskComplete ? 'border-emerald-600 bg-emerald-600 text-white' : task.displayStatus === 'in_progress' ? 'border-blue-400 bg-blue-50 text-blue-700' : 'border-slate-300 bg-white text-slate-400'}`}>
+                              <span className={`inline-flex size-4 shrink-0 items-center justify-center rounded-full border ${taskComplete ? 'border-emerald-600 bg-emerald-600 text-white' : taskActive ? 'border-emerald-600 bg-white text-emerald-700' : 'border-slate-300 bg-white text-slate-400'}`}>
                                 {taskComplete ? <CheckCircle2 size={10} /> : <Circle size={7} />}
                               </span>
                               <span className="min-w-0 flex-1 truncate">{task.label}{task.displayStatus === 'not_applicable' ? ' · N/A' : task.displayStatus === 'completed_externally' ? ' · external' : ''}</span>
@@ -177,6 +184,8 @@ function PhaseNavigator({
                           </li>
                         )
                       })}
+                      {phase.tasks.length > visiblePhaseTasks.length ? <li><button type="button" className="px-2 py-2 text-xs font-semibold text-emerald-800 hover:underline" onClick={() => setShowAllTasks(true)}>View all {phase.tasks.length} tasks →</button></li> : null}
+                      {showAllTasks && phase.tasks.length > 3 ? <li><button type="button" className="px-2 py-2 text-xs font-semibold text-slate-500 hover:underline" onClick={() => setShowAllTasks(false)}>Show fewer tasks</button></li> : null}
                     </ol>
                   ) : null}
                 </li>
@@ -320,6 +329,12 @@ export default function LegalTaskWorkbench({
   ].includes(model.taskKey) || /existing bond.*(cancellation|requirement)|cancellation.*existing bond/i.test(`${model.taskLabel} ${model.taskDescription}`)
   const canEdit = !model.readOnly && !saving
   const attachedDocuments = model.documents.filter(isAttachedDocument)
+  const activePhase = phases.find((phase) => phase.key === selectedPhaseKey) || phases[0] || null
+  const phaseProgress = activePhase?.total ? Math.round((activePhase.completed / activePhase.total) * 100) : 0
+  const primaryAction = Object.values(model.requirementActions || {}).find((action) => action?.id === 'review_document' && !action.disabled)
+    || model.primaryAction
+    || Object.values(model.requirementActions || {}).find((action) => action && !action.disabled)
+  const primaryActionIsUpload = primaryAction?.id === 'upload_document'
   const confirmationItems = isBondCancellationConfirmation ? [
     { id: 'existingBond', label: 'Existing bond confirmed' },
     { id: 'cancellationInstruction', label: 'Cancellation instructions confirmed' },
@@ -528,26 +543,35 @@ export default function LegalTaskWorkbench({
         aria-busy={saving}
       >
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
-          <header className="shrink-0 px-5 pb-3 pt-5 lg:px-6">
+          <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 px-5 pb-4 pt-5 lg:px-6">
             {utilityError ? <p role="alert" className="mb-2 text-sm text-red-700">{utilityError}</p> : null}
-            <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Stage {phases.findIndex((phase) => phase.key === selectedPhaseKey) + 1} · {model.phaseLabel}</span>
-            <h2 className="mt-2 min-w-0 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950 sm:text-3xl">{model.taskLabel}</h2>
+            <div className="min-w-0 flex-1">
+              <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Stage {phases.findIndex((phase) => phase.key === selectedPhaseKey) + 1} · {activePhase?.label || model.phaseLabel}</span>
+              <h2 className="mt-2 min-w-0 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950 sm:text-3xl">{model.taskLabel}</h2>
+              {model.taskDescription ? <p className="mt-2 max-w-2xl text-sm leading-5 text-slate-600">{model.taskDescription}</p> : null}
+            </div>
+            {activePhase ? <div className="w-full shrink-0 sm:w-52">
+              <span className="text-xs font-semibold text-slate-600">Stage progress</span>
+              <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-emerald-700" style={{ width: `${phaseProgress}%` }} /></span>
+              <span className="mt-1 block text-xs text-slate-500">{activePhase.completed} of {activePhase.total} complete</span>
+            </div> : null}
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-slate-200 px-5 py-4 lg:px-6">
-            <section className="overflow-hidden rounded-xl border border-slate-200">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3.5">
-                <div><h3 className="text-lg font-semibold text-slate-950">Supporting documents</h3><p className="mt-1 text-sm text-slate-500">Review the OTP and any files linked to this task.</p></div>
-                {!model.readOnly ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
+            <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50/50 px-5 py-4">
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-emerald-800">Current task</span>
+                <h3 className="mt-1 text-lg font-semibold text-slate-950">{model.outstandingRequirements?.[0]?.label || model.taskLabel}</h3>
+                <p className="mt-1 text-sm leading-5 text-slate-600">{primaryAction?.description || model.taskDescription || 'Review the requirements and take the next action.'}</p>
+                <button type="button" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:underline" onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentModalOpen(true) }}><FileText size={16} /> View linked documents ({attachedDocuments.length}) <ChevronRight size={15} /></button>
               </div>
-              <div className="divide-y divide-slate-100">
-                {attachedDocuments.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
-                {!attachedDocuments.length ? <p className="px-4 py-6 text-sm text-slate-500">No supporting documents are attached yet.</p> : null}
-              </div>
+              {primaryAction && !model.readOnly ? <Button type="button" size="sm" disabled={saving || primaryAction.disabled} onClick={() => runAction(primaryAction, 'primary')}>{primaryAction.label} <ChevronRight size={16} /></Button> : null}
             </section>
 
+            {onSaveConfirmations ? <TaskConfirmations taskKey={model.taskKey} items={confirmationItems} saved={model.confirmations || {}} disabled={!canEdit || model.taskResolved} onSave={onSaveConfirmations} /> : null}
+
             <section aria-labelledby="legal-task-outstanding-heading" className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
                 <h3 id="legal-task-outstanding-heading" className="text-lg font-semibold text-slate-950">{model.transferMatterOpeningTask ? 'File setup' : model.transferOtpSourceTask ? 'Source review' : model.transferTitleDeedTask ? 'Ownership review' : model.transferExistingBondTask ? 'Bond and cancellation decision' : 'Required action'}</h3>
                 {!model.readOnly ? <span className="text-sm text-slate-500">Complete the relevant items below.</span> : null}
               </div>
@@ -625,13 +649,22 @@ export default function LegalTaskWorkbench({
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-100 bg-white">
-                  {model.outstandingRequirements.map((item) => <RequirementRow key={item.id} item={item} action={model.readOnly ? null : model.requirementActions?.[item.id]} saving={saving} onRunAction={runAction} />)}
+                  {model.outstandingRequirements.map((item) => <RequirementRow key={item.id} item={item} action={model.readOnly || model.requirementActions?.[item.id] === primaryAction ? null : model.requirementActions?.[item.id]} saving={saving} onRunAction={runAction} />)}
                   {!model.outstandingRequirements.length ? <li className="flex items-center gap-3 px-4 py-5 text-sm text-emerald-700"><CheckCircle2 size={18} /> All required items are present.</li> : null}
                 </ul>
               )}
             </section>
 
-            {onSaveConfirmations ? <TaskConfirmations taskKey={model.taskKey} items={confirmationItems} saved={model.confirmations || {}} disabled={!canEdit || model.taskResolved} onSave={onSaveConfirmations} /> : null}
+            <section className="mt-4 overflow-hidden rounded-xl border border-slate-200">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                <h3 className="text-lg font-semibold text-slate-950">Supporting documents</h3>
+                {!model.readOnly && !primaryActionIsUpload ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
+              </div>
+              <div className="divide-y divide-slate-100">
+                {attachedDocuments.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-0.5 block text-xs text-slate-500">Available</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
+                {!attachedDocuments.length ? <p className="px-4 py-3 text-sm text-slate-500">No supporting documents attached yet.</p> : null}
+              </div>
+            </section>
             {!model.readOnly && model.contextualActions?.length ? <div className="mt-4 flex flex-wrap gap-2">{model.contextualActions.map(action => <Button key={action.id} type="button" variant="secondary" disabled={saving || action.disabled} onClick={() => runAction(action, 'task')}>{action.label}</Button>)}</div> : null}
           </div>
 
@@ -655,13 +688,11 @@ export default function LegalTaskWorkbench({
                     <Save size={15} /> Save progress
                   </Button>
                 ) : null}
-                {!model.readOnly && model.uploadAction ? <Button type="button" variant="ghost" size="sm" disabled={saving || model.uploadAction.disabled} onClick={() => { setPreviewDocument(null); setDocumentModalOpen(true) }}>
-                  <Paperclip size={15} /> Upload document
-                </Button> : null}
               </div>
-              {model.completeAction ? (
+              {model.completeAction && primaryAction?.id !== 'mark_complete' ? (
                 <Button
                   type="button"
+                  variant={primaryAction ? 'secondary' : 'primary'}
                   size="sm"
                   disabled={saving || !model.canComplete || model.completeAction.disabled}
                   aria-describedby={!model.requirementsSatisfied ? completionHelpId : undefined}

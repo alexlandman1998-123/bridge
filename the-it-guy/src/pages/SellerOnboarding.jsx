@@ -4303,8 +4303,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         return `Please complete the property address before continuing: ${missingAddressItems.join(', ')}.`
       }
       const sectionalIdentifier = form.sectionNumber || form.unitNumber
-      if ((propertyBranch === 'sectional_title') && (!form.schemeName || !sectionalIdentifier || !form.schemeManagingAgentName)) {
-        return 'Scheme name, unit / section number, and managing agent details are required for sectional title properties.'
+      if ((propertyBranch === 'sectional_title') && (!form.schemeName || !sectionalIdentifier)) {
+        return 'Scheme name and unit / section number are required for sectional title properties.'
       }
       if (showEstateDetails && (!form.estateName || (!form.hoaManagementCompany && !form.hoaContactName))) {
         return 'Estate / HOA name and managing agent details are required for estate properties.'
@@ -4470,8 +4470,8 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         }
       }
       const sectionalIdentifier = form.sectionNumber || form.unitNumber
-      if (activeMobilePaneIndex === propertyPaneIndexes.sectional && (!form.schemeName || !sectionalIdentifier || !form.schemeManagingAgentName)) {
-        return 'Scheme name, unit / section number, and managing agent details are required for sectional title properties.'
+      if (activeMobilePaneIndex === propertyPaneIndexes.sectional && (!form.schemeName || !sectionalIdentifier)) {
+        return 'Scheme name and unit / section number are required for sectional title properties.'
       }
       if (activeMobilePaneIndex === propertyPaneIndexes.estate && (!form.estateName || (!form.hoaManagementCompany && !form.hoaContactName))) {
         return 'Estate / HOA name and managing agent details are required for estate properties.'
@@ -6367,7 +6367,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   <FormSection
                     icon={ClipboardCheck}
                     title="Sectional title / scheme details"
-                    description="Sectional title properties need scheme and body corporate details."
+                    description="Capture the scheme and unit details. Managing agent details can be added if known."
                     mobilePaneIndex={propertyPaneIndexes.sectional}
                   >
                     <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -6384,11 +6384,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                         />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Body corporate name
-                        <input className={DETAIL_INPUT_CLASS} value={form.schemeBodyCorporateName} onChange={(event) => handleFormUpdate('schemeBodyCorporateName', event.target.value)} />
-                      </label>
-                      <label className="grid gap-2 text-sm font-medium text-[#2a4057]">
-                        Managing agent name
+                        Managing agent name (optional)
                         <input className={DETAIL_INPUT_CLASS} value={form.schemeManagingAgentName} onChange={(event) => handleFormUpdate('schemeManagingAgentName', event.target.value)} />
                       </label>
                       <label className="grid gap-2 text-sm font-medium text-[#2a4057]">

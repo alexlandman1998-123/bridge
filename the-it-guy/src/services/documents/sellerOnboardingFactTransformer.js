@@ -916,7 +916,6 @@ export function validateSellerOnboardingFacts(facts = {}, { draft = false } = {}
     'Unit / section number should be captured for sectional title properties.',
     'recommended',
   ))
-  push(missingIf(propertyBranch === 'sectional_title' && !hasValue(facts.property?.scheme?.managing_agent?.name), 'sectional_managing_agent_missing', 'Managing agent details should be captured for sectional title properties.', 'recommended'))
   push(missingIf(propertyBranch === 'estate_hoa' && !hasValue(facts.property?.estate?.name || facts.property?.estate_name), 'estate_name_missing', 'Estate / HOA name should be captured for estate properties.', 'recommended'))
   push(missingIf(propertyBranch === 'estate_hoa' && !hasValue(facts.property?.estate?.hoa_contact?.name), 'estate_hoa_contact_missing', 'HOA contact details should be captured for estate properties.', 'recommended'))
   push(missingIf((propertyBranch === 'commercial' || propertyBranch === 'mixed_use') && !hasValue(facts.property?.use?.description), 'commercial_use_description_missing', 'Commercial and mixed-use properties should capture the operating context.', 'recommended'))

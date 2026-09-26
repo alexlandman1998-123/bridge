@@ -1,0 +1,15 @@
+{
+  "version": "20260926143000",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex release review",
+  "approvedBy": "Requester in Codex task on 2026-09-26",
+  "notes": "Verified trigger function and enabled assignment trigger. Updating an existing staging assignment advanced the refresh watermark inside a DO statement; a deliberate exception rolled back that statement with no persisted change.",
+  "stagingLedgerRecorded": true,
+  "ledgerRecordedAt": "2026-09-26T12:31:15.025Z",
+  "capturedAt": "2026-09-26T12:31:15.025Z"
+}

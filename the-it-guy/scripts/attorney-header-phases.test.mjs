@@ -28,5 +28,7 @@ try {
   assert.ok(header.includes('sharedJourneyHeaderPhases(sharedLegalJourney, workflowKey)'))
   assert.ok(header.includes('onSelectWorkflowPhase?.(stage, workflowKey)'))
   assert.ok(page.includes('focusRequest={journeyFocusRequest}'))
+  assert.match(page, /<ArchlineMatterHeader[\s\S]*?<MatterOverviewQuickFacts[\s\S]*?onOpenDocuments=\{\(party\) => \{ setActiveDocumentLibraryCategory\(party\); openWorkspaceMenu\('documents'\) \}\}/)
+  assert.match(page, /documentSourceStatus=\{documentWorkspaceLoad\.status === 'error' \? 'unavailable' : documentDataHydrated \? 'available' : 'loading'\}/)
   console.log('PASS: Work phase semantics across 9 lane/finance combinations; shared-snapshot header and navigation wiring checked.')
 } finally { await server.close() }

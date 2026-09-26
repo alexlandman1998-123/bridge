@@ -4,6 +4,7 @@ import {
   buildMatterDocumentWorkspaceModel,
   normalizeMatterDocumentCategory,
   normalizeDocumentCommandStatus,
+  summarizeMatterOverviewPartyDocuments,
 } from '../documents/matterDocumentWorkspaceModel.js'
 
 const transaction = {
@@ -419,5 +420,20 @@ assert.deepEqual(cancellationScopedModel.filters.map((filter) => filter.key), ['
 
 assert.equal(baseModel.documentsByWorkflow.finance.length > 0, true)
 assert.equal(baseModel.documentsByWorkflow.transfer.length > 0, true)
+
+const overviewRequirements = [
+  { canonicalCategory: 'buyer', status: 'approved' },
+  { canonicalCategory: 'buyer', status: 'pending_review', satisfiesRequirement: true },
+  { canonicalCategory: 'buyer', status: 'missing', requirement: { status: 'waived' } },
+  { canonicalCategory: 'seller', status: 'verified' },
+  { canonicalCategory: 'seller', status: 'missing' },
+]
+assert.deepEqual(summarizeMatterOverviewPartyDocuments(overviewRequirements, 'buyer'), {
+  requiredCount: 2, completeCount: 1, outstandingCount: 1, percentComplete: 50,
+})
+assert.deepEqual(summarizeMatterOverviewPartyDocuments(overviewRequirements, 'seller'), {
+  requiredCount: 2, completeCount: 1, outstandingCount: 1, percentComplete: 50,
+})
+assert.equal(summarizeMatterOverviewPartyDocuments([], 'buyer').requiredCount, 0)
 
 console.log('matter document workspace model tests passed')

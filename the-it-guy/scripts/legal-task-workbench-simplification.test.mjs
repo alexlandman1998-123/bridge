@@ -22,7 +22,11 @@ try {
     phases: [{ key: 'instruction', label: 'Instruction', completed: 0, total: 5, tasks: [] }],
   }))
   const html = render()
-  assert.match(html, /0 \/ 5 complete/)
+  assert.match(html, /0 of 5 complete/)
+  assert.match(html, /Stage progress/)
+  assert.match(html, /Current task/)
+  assert.match(html, /View linked documents \(0\)/)
+  assert.equal((html.match(/Upload document<\/button>/g) || []).length, 1)
   assert.doesNotMatch(html, /sales_agreement_or_otp|applicable tasks complete|Outstanding items are advisory:/)
   assert.match(html, /Required action/)
   assert.match(html, /Supporting documents/)
@@ -39,6 +43,10 @@ try {
   assert.doesNotMatch(documentHtml, /More status options/)
   assert.match(render({ outstandingRequirements: [{ id: 'otp', label: 'OTP', description: 'Check all signatures.' }] }), /<summary[^>]*>Details<\/summary><p[^>]*>Check all signatures\./)
   assert.doesNotMatch(render({ completeAction: null }), /Complete task<\/button>/)
+  const readyToComplete = render({ primaryAction: { id: 'mark_complete', label: 'Complete task', source: 'status' } })
+  assert.equal((readyToComplete.match(/Complete task/g) || []).length, 1)
+  const uploadFirst = render({ primaryAction: { id: 'upload_document', label: 'Upload document', source: 'work' } })
+  assert.equal((uploadFirst.match(/Upload document/g) || []).length, 1)
   const outcomesHtml = render({ outcomeActions: [
     { id: 'mark_not_applicable', label: 'Not applicable' },
     { id: 'complete_externally', label: 'Completed externally' },

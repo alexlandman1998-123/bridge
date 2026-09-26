@@ -83,7 +83,8 @@ assert.equal(model.contextualActions.some(action => action.id === 'open_parties'
 let reviews = [], reviewFails = true
 await render(React.createElement(Workbench, { model, phases: vm.phases, selectedTaskKey: vm.selectedTask.key, selectedPhaseKey: vm.selectedTask.phaseKey, onSaveConfirmations: async () => true, onReviewDocument: async (...args) => { reviews.push(args); if (reviewFails) throw new Error('Review unavailable'); return { message: 'Document approved.' } } }))
 assert.doesNotMatch(document.querySelector('[aria-label="Transfer instruction received from the instructing party."]').textContent, /Not applicable/, 'Stage 1 confirmations are strictly Yes/No')
-assert.ok(document.body.textContent.indexOf('Supporting documents') < document.body.textContent.indexOf('Required action'), 'supporting documents lead Stage 1 work')
+assert.ok(document.body.textContent.indexOf('Current task') < document.body.textContent.indexOf('Required action'), 'the current task leads Stage 1 work')
+assert.ok(document.body.textContent.indexOf('Required action') < document.body.textContent.indexOf('Supporting documents'), 'supporting documents follow task requirements')
 await click('Review OTP')
 assert.match(document.body.textContent, /Signed OTP/)
 await click('Approve document')

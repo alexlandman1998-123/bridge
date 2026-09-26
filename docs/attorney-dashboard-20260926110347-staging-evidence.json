@@ -1,0 +1,15 @@
+{
+  "version": "20260926110347",
+  "targetProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "stagingProjectRef": "vaszuxjeoajeuhlcnzzf",
+  "sqlApplied": true,
+  "catalogChecks": "pass",
+  "behaviorChecks": "pass",
+  "rollbackOrNoResidue": "pass",
+  "reviewedBy": "Codex release review",
+  "approvedBy": "Requester in Codex task on 2026-09-26",
+  "notes": "Transaction-wrapped DDL, no data backfill. Verified revenue RPC and four refresh triggers; active firm lead call succeeds and missing identity is denied.",
+  "stagingLedgerRecorded": true,
+  "ledgerRecordedAt": "2026-09-26T12:28:07.498Z",
+  "capturedAt": "2026-09-26T12:28:07.498Z"
+}

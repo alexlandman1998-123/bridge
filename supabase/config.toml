@@ -283,6 +283,11 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/knowledge-factory-graphql/index.ts"
 
+[functions.knowledge-factory-fica-discovery]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/knowledge-factory-fica-discovery/index.ts"
+
 [functions.email-campaign-worker]
 enabled = true
 verify_jwt = false
