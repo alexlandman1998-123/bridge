@@ -23,7 +23,7 @@ test('unpublished changes have a channel-aware review interface', () => {
   assert.match(detail, /title="Publication changes"/)
   assert.match(detail, /Compare the current Arch9 record with the last snapshot accepted by each channel/)
   assert.match(detail, /Unpublished changes/)
-  assert.match(detail, /Changes not published/)
+  assert.match(detail, /unpublished change/)
   assert.match(detail, /Matches verified snapshot/)
   assert.match(detail, /Snapshot starts on next update/)
 })

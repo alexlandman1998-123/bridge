@@ -6,14 +6,11 @@ import { fileURLToPath } from 'node:url'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-test('Marketing tab renders operational health from all four publication channels', async () => {
+test('Marketing tab omits the operational health card while retaining channel actions', async () => {
   const source = await readFile(path.join(appRoot, 'src/pages/AgentListingDetail.jsx'), 'utf8')
-  assert.match(source, /buildListingMarketingOperationalHealth/)
-  assert.match(source, /ListingMarketingOperationalHealthPanel/)
-  for (const channel of ['property24', 'private_property', 'agency_website', 'arch9_catalogue']) {
-    assert.match(source, new RegExp(`key: '${channel}'`), `${channel} must participate in operational health`)
-  }
-  assert.match(source, /refreshMarketingOperationalHealth/)
+  assert.doesNotMatch(source, /ListingMarketingOperationalHealthPanel|refreshMarketingOperationalHealth/)
+  assert.match(source, /id="listing-distribution-channels"/)
+  assert.match(source, /<ListingShowDaysPanel/)
 })
 
 test('operational health detects drift and remains observational', async () => {

@@ -143,6 +143,21 @@ try {
   assert.equal(structuredCompanyOtp.buyer_representative_capacity, 'Director')
   assert.equal(structuredCompanyOtp.buyer_resolution_date, '2026-08-01')
   assert.equal(structuredCompanyOtp.buyer_authority_basis, 'Board resolution')
+
+  const multipleOwnerOtp = resolveOtpPacketPlaceholders({
+    listing: {
+      sellerType: 'multiple_owners',
+      sellerOnboarding: { formData: { ownerStructureType: 'multiple_owners', multipleOwners: [
+        { name: 'Ava', surname: 'Owner', idNumber: '8001010000001', email: 'ava@example.test', phone: '0821111111', ownershipShare: '50' },
+        { name: 'Ben', surname: 'Owner', idNumber: '8001010000002', email: 'ben@example.test', phone: '0822222222', ownershipShare: '50' },
+      ] } },
+    },
+  })
+  assert.deepEqual(multipleOwnerOtp.seller_parties.map((seller) => seller.name), ['Ava Owner', 'Ben Owner'])
+  assert.deepEqual(multipleOwnerOtp.seller_parties.map((seller) => seller.idNumber), ['8001010000001', '8001010000002'])
+  assert.equal(multipleOwnerOtp.seller_parties[1].phone, '0822222222')
+  assert.equal(multipleOwnerOtp.seller_full_name, 'Ava Owner')
+  assert.equal(multipleOwnerOtp.seller_entity_type, 'Multiple Owners')
 } finally {
   await server.close()
 }

@@ -80,6 +80,7 @@ function makeRequest({ routeType = 'listings', dependencies = {}, env = makeEnv(
       avatarUrl: 'https://example.com/pauly.jpg',
       status: 'active',
     },
+    connection: { enabled: true },
   })
   assert.equal(plan.listingType, 'rental')
   assert.equal(plan.requiresProperty24Sync, true)
@@ -210,4 +211,3 @@ function makeRequest({ routeType = 'listings', dependencies = {}, env = makeEnv(
 }
 
 console.log('Property24 listing-agent reassignment tests passed.')
-

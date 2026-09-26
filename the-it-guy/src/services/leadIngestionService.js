@@ -943,7 +943,7 @@ export async function createOrUpdateLeadFromEnquiry(
         type: 'property_enquiry_acknowledgement', to: enquiry.contact.email, agentEmail: agentEmail || undefined,
         recipientName: [enquiry.contact.firstName, enquiry.contact.lastName].filter(Boolean).join(' ') || 'there', organisationId: enquiry.organisationId,
         leadId: lead.leadId, source: enquiry.source, originalMessage: `Thank you for your enquiry about ${propertyLabel}. A Kingdom Real Estate agent has received your enquiry and will be in touch shortly.`,
-        agentName, agentEmail: agentEmail || undefined, replyTo: agentEmail || undefined, subject: `Thanks for your enquiry about ${propertyLabel}`,
+        agentName, replyTo: agentEmail || undefined, subject: `Thanks for your enquiry about ${propertyLabel}`,
         idempotencyKey: `portal-lead-introduction:${reference}`,
       } }).catch((error) => ({ error }))
       const operations = agentEmail ? await client.functions.invoke('send-email', { body: {

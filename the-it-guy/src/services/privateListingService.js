@@ -2714,12 +2714,12 @@ function mapPrivateListingRow(row, onboardingByListingId = null, requirementsByL
   if (!row) return null
   const assignedAgentProfile = assignedAgentsById ? assignedAgentsById.get(String(row.assigned_agent_id || '')) || null : null
   const assignedAgentName = pickFirstText(
-    row.assigned_agent_name,
-    row.assigned_agent,
     assignedAgentProfile?.full_name,
     [assignedAgentProfile?.first_name, assignedAgentProfile?.last_name].filter(Boolean).join(' '),
+    row.assigned_agent_name,
+    row.assigned_agent,
   )
-  const assignedAgentEmail = pickFirstText(row.assigned_agent_email, assignedAgentProfile?.email).toLowerCase()
+  const assignedAgentEmail = pickFirstText(assignedAgentProfile?.email, row.assigned_agent_email).toLowerCase()
   const onboarding = onboardingByListingId ? onboardingByListingId.get(String(row.id || '')) || null : null
   const requirementRows = requirementsByListingId ? requirementsByListingId.get(String(row.id || '')) || [] : []
   const baseDocumentRows = documentsByListingId ? documentsByListingId.get(String(row.id || '')) || [] : []

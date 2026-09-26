@@ -61,7 +61,6 @@ import ListingSellerInformationEditor from '../components/listings/ListingSeller
 import ListingSellerCollaborationPanel from '../components/listings/ListingSellerCollaborationPanel'
 import ListingSellerHistoricalNormalizationBanner from '../components/listings/ListingSellerHistoricalNormalizationBanner'
 import ListingShowDaysPanel from '../components/listings/ListingShowDaysPanel'
-import ListingMarketingOperationalHealthPanel from '../components/listings/ListingMarketingOperationalHealthPanel'
 import {
   ListingViewingDetailsModal,
   ListingViewingRequestModal,
@@ -79,7 +78,6 @@ import {
   deriveListingPublicationStates,
   getListingPublicationChannelKey,
 } from '../services/listings/listingPublicationState'
-import { buildListingMarketingOperationalHealth } from '../services/listings/listingMarketingOperationalHealth'
 import {
   buildListingChannelPublicationDisplay,
   getListingChannelViewUrl,
@@ -102,7 +100,7 @@ import {
 } from '../services/listings/listingSellerOverviewModel'
 import SyndicationReviewModal from '../components/listings/SyndicationReviewModal'
 import WebsiteListingPublicationPanel from '../components/listings/WebsiteListingPublicationPanel'
-import { getWebsiteListingPublicationStatus, setWebsiteListingPublication } from '../services/websiteListingPublicationService'
+import { setWebsiteListingPublication } from '../services/websiteListingPublicationService'
 import {
   ListingWorkspacePortalActionPanel,
   ListingWorkspacePortalChecklist,
@@ -184,14 +182,17 @@ import {
   buildListingSellerDocumentReadiness,
   buildListingSellerProfileRequirementProjection,
   createListingSellerProfileBuilderDraft,
+  hasListingSellerProfileBranchDetailsToDiscard,
   isListingSellerOwnershipUnidentified,
   removeListingSellerProfileDraftPerson,
   resolveListingSellerProfileBranch,
+  selectListingSellerProfileBranch,
+  updateListingSellerProfileDraftField,
   updateListingSellerProfileDraftPerson,
   validateListingSellerProfileBuilderDraft,
 } from '../lib/listingSellerProfileBuilderModel'
 import { resolveOfferLinkDeliveryPlan } from '../lib/offerLinkDeliveryPlan'
-import { getPropertyCategoryLabel, PROPERTY_CATEGORIES } from '../lib/propertyTaxonomy'
+import { getPropertyCategoryLabel, getPropertyStructureTypeLabel, getPropertyStructureTypesByCategory, getPropertyTypeLabel, getPropertyTypeOptionsByCategory, PROPERTY_CATEGORIES } from '../lib/propertyTaxonomy'
 import {
   buildSellerOnboardingLink,
   buildSellerClientPortalLink,
@@ -2468,7 +2469,7 @@ function FieldDisplay({ label, value }) {
   )
 }
 
-function SellerProfilePeopleEditor({ title, rows = [], roleTitle = 'Person', onAdd, onUpdate, onRemove }) {
+function SellerProfilePeopleEditor({ title, rows = [], roleTitle = 'Person', minimumRows = 0, ownerFields = false, onAdd, onUpdate, onRemove }) {
   return (
     <div className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4 sm:col-span-2">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -2478,7 +2479,7 @@ function SellerProfilePeopleEditor({ title, rows = [], roleTitle = 'Person', onA
         </div>
         <Button type="button" size="sm" variant="secondary" onClick={onAdd}>
           <Plus size={14} />
-          Add
+          Add {roleTitle}
         </Button>
       </div>
       <div className="mt-4 space-y-3">
@@ -2486,7 +2487,7 @@ function SellerProfilePeopleEditor({ title, rows = [], roleTitle = 'Person', onA
           <div key={row.id || `${roleTitle}-${index}`} className="rounded-[16px] border border-[#dce6f2] bg-white p-3">
             <div className="flex items-start justify-between gap-3">
               <p className="text-xs font-semibold uppercase tracking-[0.08em] text-[#6f839a]">{roleTitle} {index + 1}</p>
-              <button
+              {rows.length > minimumRows ? <button
                 type="button"
                 onClick={() => onRemove(index)}
                 className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-[#e3c7c2] bg-[#fff7f6] text-[#a83b32] transition hover:bg-[#ffefed]"
@@ -2494,7 +2495,7 @@ function SellerProfilePeopleEditor({ title, rows = [], roleTitle = 'Person', onA
                 title={`Remove ${roleTitle.toLowerCase()}`}
               >
                 <Trash2 size={14} />
-              </button>
+              </button> : null}
             </div>
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
@@ -2513,22 +2514,36 @@ function SellerProfilePeopleEditor({ title, rows = [], roleTitle = 'Person', onA
                 ID / Passport
                 <Field value={row.idNumber || ''} onChange={(event) => onUpdate(index, 'idNumber', event.target.value)} />
               </label>
+              {ownerFields ? <>
+                <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                  Phone number
+                  <Field type="tel" value={row.phone || ''} onChange={(event) => onUpdate(index, 'phone', event.target.value)} />
+                </label>
+                <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+                  Ownership share (if known)
+                  <Field value={row.ownershipShare || ''} onChange={(event) => onUpdate(index, 'ownershipShare', event.target.value)} />
+                </label>
+                <label className="inline-flex min-h-[42px] items-center gap-2 self-end rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e] sm:col-span-2">
+                  <input type="checkbox" checked={Boolean(row.consentToSell)} onChange={(event) => onUpdate(index, 'consentToSell', event.target.checked)} />
+                  Owner has confirmed consent to sell
+                </label>
+              </> : null}
               <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
-                Residential address
+                Residential address (current place of residence)
                 <Field value={row.residentialAddress || ''} onChange={(event) => onUpdate(index, 'residentialAddress', event.target.value)} />
               </label>
-              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              {!ownerFields ? <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
                 Capacity
                 <Field value={row.capacity || row.roleCapacity || ''} onChange={(event) => onUpdate(index, 'capacity', event.target.value)} placeholder={roleTitle} />
-              </label>
-              <label className="inline-flex min-h-[42px] items-center gap-2 self-end rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]">
+              </label> : null}
+              {!ownerFields ? <label className="inline-flex min-h-[42px] items-center gap-2 self-end rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]">
                 <input
                   type="checkbox"
                   checked={Boolean(row.signingAuthority)}
                   onChange={(event) => onUpdate(index, 'signingAuthority', event.target.checked)}
                 />
                 Signing authority
-              </label>
+              </label> : null}
             </div>
           </div>
         )) : (
@@ -3796,11 +3811,11 @@ function AgentListingDetail() {
   const marketingDraftDirtyRef = useRef(false)
   const [marketingDraftDirty, setMarketingDraftDirty] = useState(false)
   const [marketingSaving, setMarketingSaving] = useState(false)
+  const [marketingSaveConfirmed, setMarketingSaveConfirmed] = useState(false)
   const hydratedMarketingListingIdRef = useRef('')
   const [readinessChecklistOpen, setReadinessChecklistOpen] = useState(false)
   const [publicationChangesOpen, setPublicationChangesOpen] = useState(false)
   const [agencyWebsitePublication, setAgencyWebsitePublication] = useState(null)
-  const [marketingHealthRefreshing, setMarketingHealthRefreshing] = useState(false)
   const [property24ManageOpen, setProperty24ManageOpen] = useState(false)
   const [propertyDetailsReturnTarget, setPropertyDetailsReturnTarget] = useState('')
   const [sellerWorkspaceTab, setSellerWorkspaceTab] = useState(() => getSellerWorkspaceTabFromSearch(typeof window !== 'undefined' ? window.location.search : '') || 'overview')
@@ -3831,6 +3846,7 @@ function AgentListingDetail() {
   const markMarketingDraftDirty = useCallback((dirty = true) => {
     marketingDraftDirtyRef.current = Boolean(dirty)
     setMarketingDraftDirty(Boolean(dirty))
+    setMarketingSaveConfirmed(false)
   }, [])
   const [overviewLastRefreshedAt, setOverviewLastRefreshedAt] = useState('')
   const [interestedLeadRows, setInterestedLeadRows] = useState([])
@@ -4140,7 +4156,7 @@ function AgentListingDetail() {
         assignedEmail ||
         'Unassigned',
       ).trim(),
-      email: assignedEmail || profileEmail,
+      email: assignedEmail || (profileMatchesAssignment ? profileEmail : ''),
       phone: String(
         listingRecord?.assignedAgentPhone ||
         listingRecord?.assigned_agent_phone ||
@@ -4899,6 +4915,7 @@ function AgentListingDetail() {
       !('currentTarget' in draftOverride)
       ? draftOverride
       : marketingDraft
+    setMarketingSaveConfirmed(false)
     setDetailMessage('')
     setDetailError('')
     const normalizedExternalLinks = normalizeExternalListingLinks(draft.externalLinks)
@@ -4967,6 +4984,7 @@ function AgentListingDetail() {
     }
     if (!updatedListing?.id || !isSupabaseConfigured) {
       markMarketingDraftDirty(false)
+      setMarketingSaveConfirmed(true)
       hydratedMarketingListingIdRef.current = String(updatedListing?.id || listingRecord?.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage('Listing details saved locally.')
@@ -5113,6 +5131,7 @@ function AgentListingDetail() {
       }
       await upsertAreaFromAddress(buildAddressAutocompleteValueFromDraft(effectiveDraft), { incrementListingCount: false })
       markMarketingDraftDirty(false)
+      setMarketingSaveConfirmed(true)
       hydratedMarketingListingIdRef.current = String(mergedSavedListing?.id || updatedListing.id || listingId || '').trim()
       clearStoredMarketingDraft(hydratedMarketingListingIdRef.current)
       setDetailMessage(priceHistoryIssue ? 'Listing price saved, but pricing history could not be recorded. Please retry or contact support.' : options.successMessage || 'Listing details saved.')
@@ -6003,7 +6022,6 @@ function AgentListingDetail() {
   }
 
   async function openSyndicationReview({ requiredForChannel = '', showModal = true } = {}) {
-    setSyndicationReviewOpen(showModal)
     setSyndicationReviewLoading(true)
     setDetailError('')
     try {
@@ -6011,7 +6029,9 @@ function AgentListingDetail() {
       if (saveResult?.ok === false) throw saveResult.error || new Error('Save the listing before reviewing channel settings.')
       const payload = await callPrivatePropertyListingAction('syndication-review', {}, { method: 'GET', fallbackMessage: 'Channel review could not be loaded.' })
       const review = payload?.review || null
+      if (!review) throw new Error('Channel review returned no results. Please try again.')
       setSyndicationReview(review)
+      setSyndicationReviewOpen(showModal)
       if (requiredForChannel) setSyndicationReviewAcknowledgements((previous) => ({ ...previous, [requiredForChannel]: false }))
       return review
     } catch (error) {
@@ -6234,36 +6254,6 @@ function AgentListingDetail() {
       return null
     } finally {
       setProperty24Action('')
-    }
-  }
-
-  async function refreshMarketingOperationalHealth() {
-    if (marketingHealthRefreshing) return
-    setMarketingHealthRefreshing(true)
-    setDetailError('')
-    setDetailMessage('Refreshing marketing channel health...')
-    try {
-      const checks = []
-      if (property24HasReference) checks.push(refreshProperty24ListingStatus())
-      if (privatePropertyHasChannel) checks.push(refreshPrivatePropertyListingStatus())
-      if (agencyWebsitePublication?.websiteSiteId) {
-        checks.push(getWebsiteListingPublicationStatus(listingRecord.id).then((publication) => {
-          setAgencyWebsitePublication(publication)
-          return publication
-        }).catch(() => null))
-      }
-      const results = await Promise.all(checks)
-      await loadListingData({ showLoading: false })
-      const failureCount = results.filter((result) => !result).length
-      if (failureCount) {
-        setDetailMessage('')
-        setDetailError(`${failureCount} marketing channel health check${failureCount === 1 ? '' : 's'} could not be confirmed. Review the operational health findings and retry.`)
-      } else {
-        setDetailError('')
-        setDetailMessage(checks.length ? 'Marketing channel health refreshed.' : 'No connected marketing channels need a live status check yet.')
-      }
-    } finally {
-      setMarketingHealthRefreshing(false)
     }
   }
 
@@ -7645,7 +7635,6 @@ function AgentListingDetail() {
     setSellerDocumentReplacementGroupId(hasRequestedGroup ? requestedGroup : activeGroup)
     setSellerDocumentReplacementReason(String(correctionRequest?.metadata?.issue || ''))
     setMandateReplacementIntent(Boolean(correctionRequest?.metadata?.mandateReplacementIntent))
-    setSellerDocumentCorrectionRequestActivityId(String(correctionRequest?.id || ''))
     setSellerMandateSignatureRoute('manual_upload')
     setSellerDocumentSendOpen(true)
   }
@@ -9483,12 +9472,6 @@ function AgentListingDetail() {
   const directListingPostCreateActions = directListingOperationalSummary.followUpActions || []
   const directListingOutstandingPostCreateActions = directListingPostCreateActions.filter((action) => !action.complete)
   const activeSellerSectionEditor = SELLER_PROFILE_SECTION_BY_KEY.get(sellerSectionEditorKey) || null
-  const sellerProfileRequirementPreview = useMemo(
-    () => listingRecord
-      ? buildListingSellerProfileRequirementProjection(sellerProfileBuilderDraft, listingRecord, { draft: true })
-      : null,
-    [listingRecord, sellerProfileBuilderDraft],
-  )
   const sellerSetupState = useMemo(
     () => buildListingSellerSetupState(listingRecord || {}),
     [listingRecord],
@@ -10542,7 +10525,8 @@ function AgentListingDetail() {
   }
 
   function openSellerProfileBuilder(message = '') {
-    setSellerProfileBuilderDraft(createListingSellerProfileBuilderDraft(listingRecord || {}))
+    const draft = createListingSellerProfileBuilderDraft(listingRecord || {})
+    setSellerProfileBuilderDraft(draft.branch === 'multiple_owners' ? selectListingSellerProfileBranch(draft, draft.branch) : draft)
     setSellerProfileBuilderStep(1)
     setSellerProfileBuilderOpen(true)
     setSellerContactEditorOpen(false)
@@ -10614,7 +10598,15 @@ function AgentListingDetail() {
   }
 
   function updateSellerProfileBuilderDraft(key, value) {
-    setSellerProfileBuilderDraft((previous) => ({ ...previous, [key]: value }))
+    setSellerProfileBuilderDraft((previous) => updateListingSellerProfileDraftField(previous, key, value))
+  }
+
+  function handleSellerProfileBuilderBranchSelection(nextBranch) {
+    if (sellerProfileBuilderDraft.branch === nextBranch) return
+    if (hasListingSellerProfileBranchDetailsToDiscard(sellerProfileBuilderDraft, nextBranch) &&
+      !window.confirm('Changing the owner type will remove the details entered for the previous owner type. Continue?')) return
+    setSellerProfileBuilderDraft((previous) => selectListingSellerProfileBranch(previous, nextBranch))
+    setDetailError('')
   }
 
   function addSellerProfileBuilderPerson(key, roleTitle) {
@@ -12581,44 +12573,14 @@ function AgentListingDetail() {
     const agencyWebsiteLive = agencyWebsitePublication?.status === 'published' &&
       agencyWebsitePublication?.websiteStatus === 'published' &&
       agencyWebsitePublication?.projectionStatus === 'Published'
-    const marketingOperationalHealth = buildListingMarketingOperationalHealth({
-      listingStatus: marketingDraft.listingStatus || listingRecord?.listingStatus || listingRecord?.status,
-      activityAvailable: !channelActivityUnavailable,
-      channels: [
-        {
-          key: 'property24', label: 'Property24', connected: property24HasReference,
-          live: property24Published, actualStatus: property24StatusKey,
-          reference: property24Reference, publicUrl: getListingChannelViewUrl('property24', property24Url),
-          publicationState: listingPublicationStates.property24, updateState: property24Update,
-        },
-        {
-          key: 'private_property', label: 'Private Property', connected: privatePropertyHasChannel,
-          live: privatePropertyLive, actualStatus: privatePropertyStatusKey,
-          reference: privatePropertyReference, publicUrl: getListingChannelViewUrl('private_property', privatePropertyUrl),
-          publicationState: listingPublicationStates.private_property, updateState: privatePropertyUpdate,
-        },
-        {
-          key: 'agency_website', label: 'Agency Website', connected: agencyWebsiteConnected,
-          live: agencyWebsiteLive, actualStatus: agencyWebsitePublication?.status,
-          reference: agencyWebsitePublication?.websiteSiteId,
-          publicUrl: agencyWebsitePublication?.hostname ? `https://${agencyWebsitePublication.hostname}` : '',
-          publicationState: listingPublicationStates.agency_website,
-        },
-        {
-          key: 'arch9_catalogue', label: 'Arch9 public catalogue', connected: arch9IsPublished,
-          live: arch9IsPublished, actualStatus: marketingDraft.publicationStatus,
-          reference: listingRecord?.arch9Reference || listingRecord?.listingReference || listingRecord?.listingCode,
-          publicUrl: marketingDraft.bridgeListingPublicUrl,
-          requiresReference: false,
-          publicationState: listingPublicationStates.arch9_catalogue,
-        },
-      ],
-    })
     const marketingLiveChannelCount = channelRows.filter((channel) => normalizeKey(channel.status) === 'live').length + (agencyWebsiteLive ? 1 : 0)
     const marketingChannelCount = channelRows.length + (agencyWebsiteConnected ? 1 : 0)
     const channelCountLabel = marketingChannelCount ? `${marketingLiveChannelCount} / ${marketingChannelCount}` : String(marketingLiveChannelCount)
     const remainingReadinessCount = incompleteReadinessItems.length
     const pendingMediaUploads = getPendingListingMediaUploads(marketingDraft)
+    const previewListingUrl = normalizeKey(listingRecord?.bridgeListingStatus || listingRecord?.propertyDetails?.bridgeListingStatus) === 'published'
+      ? getListingChannelViewUrl('arch9_catalogue', listingRecord?.bridgeListingPublicUrl || arch9PublicListingUrl)
+      : ''
 
     return (
       <section className="space-y-5">
@@ -12850,13 +12812,6 @@ function AgentListingDetail() {
           />
         </article>
 
-        <ListingMarketingOperationalHealthPanel
-          report={marketingOperationalHealth}
-          onRefresh={() => void refreshMarketingOperationalHealth()}
-          refreshing={marketingHealthRefreshing}
-          onReviewChanges={() => setPublicationChangesOpen(true)}
-        />
-
         <ListingShowDaysPanel
           organisationId={listingOrganisationId}
           listing={listingShowDaySnapshot}
@@ -12865,9 +12820,9 @@ function AgentListingDetail() {
 
         <div className="flex flex-col gap-4 rounded-[18px] border border-[#d8e3ee] bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.045)] lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <p className={`inline-flex items-center gap-2 text-sm font-semibold ${marketingDraftDirty ? 'text-[#9a5b13]' : 'text-[#1f7d44]'}`}>
-              <span className={`h-2.5 w-2.5 rounded-full ${marketingDraftDirty ? 'bg-[#d99321]' : 'bg-[#1f9d64]'}`} />
-              {marketingDraftDirty ? 'Unsaved marketing changes' : 'Marketing changes saved'}
+            <p className={`inline-flex items-center gap-2 text-sm font-semibold ${marketingDraftDirty ? 'text-[#9a5b13]' : marketingSaveConfirmed ? 'text-[#1f7d44]' : 'text-[#607387]'}`}>
+              <span className={`h-2.5 w-2.5 rounded-full ${marketingDraftDirty ? 'bg-[#d99321]' : marketingSaveConfirmed ? 'bg-[#1f9d64]' : 'bg-[#8294aa]'}`} />
+              {marketingSaving ? 'Saving marketing changes…' : marketingDraftDirty ? 'Unsaved marketing changes' : marketingSaveConfirmed ? 'Marketing changes saved' : 'No unsaved marketing changes'}
             </p>
             <p className="mt-1 text-xs leading-5 text-[#607387]">
               {pendingMediaUploads.length
@@ -12876,15 +12831,22 @@ function AgentListingDetail() {
             </p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap lg:justify-end">
-            <a href={arch9PublicListingUrl || `${ARCH9_PUBLIC_SITE_ORIGIN}/buy`} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#2d445e] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]">
-              <Eye size={15} />
-              Preview listing
-            </a>
+            {previewListingUrl ? (
+              <a href={previewListingUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-[#dbe6f2] bg-white px-4 text-sm font-semibold text-[#2d445e] transition hover:border-[#b7c8db] hover:bg-[#f7fbff]">
+                <Eye size={15} />
+                Preview listing
+              </a>
+            ) : (
+              <Button type="button" variant="secondary" disabled title="A saved Arch9 public listing is needed before this page can open.">
+                <Eye size={15} />
+                Preview listing
+              </Button>
+            )}
             <Button type="button" variant="secondary" onClick={() => setPublicationChangesOpen(true)}>
               <CircleAlert size={15} />
               Review {unpublishedMarketingChanges.length ? `${unpublishedMarketingChanges.length} changes` : 'publication state'}
             </Button>
-            <Button type="button" variant="secondary" onClick={openSyndicationReview} disabled={syndicationReviewLoading || marketingSaving}>
+            <Button type="button" variant="secondary" onClick={() => void openSyndicationReview()} disabled={syndicationReviewLoading || marketingSaving || gallerySaving}>
               {syndicationReviewLoading ? <Loader2 size={15} className="animate-spin" /> : <ShieldCheck size={15} />}
               Review channels
             </Button>
@@ -12915,7 +12877,7 @@ function AgentListingDetail() {
           footer={(
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="secondary" onClick={() => setPublicationChangesOpen(false)}>Close</Button>
-              <Button type="button" variant="secondary" onClick={() => { setPublicationChangesOpen(false); void openSyndicationReview() }} disabled={syndicationReviewLoading}>
+              <Button type="button" variant="secondary" onClick={() => { setPublicationChangesOpen(false); void openSyndicationReview() }} disabled={syndicationReviewLoading || marketingSaving || gallerySaving}>
                 <ShieldCheck size={15} />
                 Open channel review
               </Button>
@@ -13512,7 +13474,7 @@ function AgentListingDetail() {
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 {LISTING_SELLER_PROFILE_BRANCHES.filter((branch) => branch.value).map((branch) => {
                   const selected = sellerProfileBuilderDraft.branch === branch.value
-                  return <button key={branch.value} type="button" onClick={() => updateSellerProfileBuilderDraft('branch', branch.value)} className={`min-h-[88px] rounded-[16px] border p-4 text-left transition ${selected ? 'border-[#168452] bg-[#ecfaf1] text-[#0f6840] shadow-[0_8px_18px_rgba(22,132,82,0.12)]' : 'border-[#dce6f2] bg-white text-[#243d56] hover:border-[#a9c9b8] hover:bg-[#f7fcf9]'}`}>
+                  return <button key={branch.value} type="button" onClick={() => handleSellerProfileBuilderBranchSelection(branch.value)} className={`min-h-[88px] rounded-[16px] border p-4 text-left transition ${selected ? 'border-[#168452] bg-[#ecfaf1] text-[#0f6840] shadow-[0_8px_18px_rgba(22,132,82,0.12)]' : 'border-[#dce6f2] bg-white text-[#243d56] hover:border-[#a9c9b8] hover:bg-[#f7fcf9]'}`}>
                     <span className="block text-sm font-semibold">{branch.label}</span>
                     <span className="mt-1 block text-xs leading-5 text-[#607387]">{selected ? 'Selected' : 'Choose this owner type'}</span>
                   </button>
@@ -13566,7 +13528,7 @@ function AgentListingDetail() {
               <Field value={sellerProfileBuilderDraft.idNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('idNumber', event.target.value)} />
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
-              Residential address
+              Residential address (current place of residence)
               <Field value={sellerProfileBuilderDraft.residentialAddress || ''} onChange={(event) => updateSellerProfileBuilderDraft('residentialAddress', event.target.value)} />
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
@@ -13602,6 +13564,8 @@ function AgentListingDetail() {
             <SellerProfilePeopleEditor
               title="Owners"
               roleTitle="Owner"
+              minimumRows={2}
+              ownerFields
               rows={sellerProfileBuilderDraft.multipleOwners || []}
               onAdd={() => addSellerProfileBuilderPerson('multipleOwners', 'Owner')}
               onUpdate={(index, field, value) => updateSellerProfileBuilderPerson('multipleOwners', index, field, value)}
@@ -13734,19 +13698,41 @@ function AgentListingDetail() {
 
           {sellerProfileBuilderStep === 3 ? <>
           <section className="grid gap-4 rounded-[18px] border border-[#dce6f2] bg-white p-4 sm:grid-cols-2">
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
-              Property address
-              <Field value={sellerProfileBuilderDraft.propertyAddress || ''} onChange={(event) => updateSellerProfileBuilderDraft('propertyAddress', event.target.value)} />
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Property category
+              <Field as="select" value={sellerProfileBuilderDraft.propertyCategory || 'residential'} onChange={(event) => updateSellerProfileBuilderDraft('propertyCategory', event.target.value)}>
+                {PROPERTY_CATEGORIES.map((category) => <option key={category} value={category}>{getPropertyCategoryLabel(category)}</option>)}
+              </Field>
             </label>
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Property title type
               <Field as="select" value={sellerProfileBuilderDraft.propertyStructureType || 'full_title'} onChange={(event) => updateSellerProfileBuilderDraft('propertyStructureType', event.target.value)}>
-                <option value="full_title">Full title</option>
-                <option value="sectional_title">Sectional title</option>
-                <option value="estate">Estate</option>
-                <option value="agricultural_holding">Agricultural holding</option>
+                {sellerProfileBuilderDraft.propertyStructureType && !getPropertyStructureTypesByCategory(sellerProfileBuilderDraft.propertyCategory).includes(sellerProfileBuilderDraft.propertyStructureType) ? <option value={sellerProfileBuilderDraft.propertyStructureType}>{getPropertyStructureTypeLabel(sellerProfileBuilderDraft.propertyStructureType)} (existing title type)</option> : null}
+                {getPropertyStructureTypesByCategory(sellerProfileBuilderDraft.propertyCategory).map((type) => <option key={type} value={type}>{getPropertyStructureTypeLabel(type)}</option>)}
               </Field>
             </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
+              Property type
+              <Field as="select" value={sellerProfileBuilderDraft.propertyType || ''} onChange={(event) => updateSellerProfileBuilderDraft('propertyType', event.target.value)}>
+                {sellerProfileBuilderDraft.propertyType && !getPropertyTypeOptionsByCategory(sellerProfileBuilderDraft.propertyCategory).some((type) => type.value === sellerProfileBuilderDraft.propertyType) ? <option value={sellerProfileBuilderDraft.propertyType}>{getPropertyTypeLabel(sellerProfileBuilderDraft.propertyType)} (existing property type)</option> : null}
+                {getPropertyTypeOptionsByCategory(sellerProfileBuilderDraft.propertyCategory).map((type) => <option key={type.value} value={type.value}>{type.label}</option>)}
+              </Field>
+            </label>
+            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
+              Property address
+              <Field value={sellerProfileBuilderDraft.propertyAddress || ''} onChange={(event) => updateSellerProfileBuilderDraft('propertyAddress', event.target.value)} />
+            </label>
+            {['sectional_title', 'share_block'].includes(sellerProfileBuilderDraft.propertyStructureType) ? <>
+              <div className="sm:col-span-2"><p className="text-sm font-semibold text-[#243d56]">Sectional title / scheme details</p></div>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Scheme name<Field value={sellerProfileBuilderDraft.schemeName || ''} onChange={(event) => updateSellerProfileBuilderDraft('schemeName', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Unit / section number<Field value={sellerProfileBuilderDraft.sectionNumber || sellerProfileBuilderDraft.unitNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('sectionNumber', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Body corporate name<Field value={sellerProfileBuilderDraft.schemeBodyCorporateName || ''} onChange={(event) => updateSellerProfileBuilderDraft('schemeBodyCorporateName', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Managing agent name<Field value={sellerProfileBuilderDraft.schemeManagingAgentName || ''} onChange={(event) => updateSellerProfileBuilderDraft('schemeManagingAgentName', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Managing agent email (optional)<Field type="email" value={sellerProfileBuilderDraft.schemeManagingAgentEmail || ''} onChange={(event) => updateSellerProfileBuilderDraft('schemeManagingAgentEmail', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Managing agent phone (optional)<Field type="tel" value={sellerProfileBuilderDraft.schemeManagingAgentPhone || ''} onChange={(event) => updateSellerProfileBuilderDraft('schemeManagingAgentPhone', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Scheme levies (optional)<Field type="number" min="0" value={sellerProfileBuilderDraft.schemeLevies || ''} onChange={(event) => updateSellerProfileBuilderDraft('schemeLevies', event.target.value)} /></label>
+              <label className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]"><input type="checkbox" checked={Boolean(sellerProfileBuilderDraft.schemeRulesAvailable)} onChange={(event) => updateSellerProfileBuilderDraft('schemeRulesAvailable', event.target.checked)} />Scheme rules available</label>
+            </> : null}
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Title deed number
               <Field value={sellerProfileBuilderDraft.titleDeedNumber || ''} onChange={(event) => updateSellerProfileBuilderDraft('titleDeedNumber', event.target.value)} />
@@ -13759,18 +13745,14 @@ function AgentListingDetail() {
                 <option value="no_bond">No bond</option>
               </Field>
             </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Bond holder
-              <Field value={sellerProfileBuilderDraft.bondHolder || ''} disabled={sellerProfileBuilderDraft.bondStatus !== 'bonded'} onChange={(event) => updateSellerProfileBuilderDraft('bondHolder', event.target.value)} />
-            </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
-              Outstanding bond
-              <Field type="number" min="0" step="0.01" value={sellerProfileBuilderDraft.outstandingBond || ''} disabled={sellerProfileBuilderDraft.bondStatus !== 'bonded'} onChange={(event) => updateSellerProfileBuilderDraft('outstandingBond', event.target.value)} />
-            </label>
-            <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
-              Co-owner details
-              <Field as="textarea" value={sellerProfileBuilderDraft.coOwnerDetails || ''} onChange={(event) => updateSellerProfileBuilderDraft('coOwnerDetails', event.target.value)} />
-            </label>
+            {sellerProfileBuilderDraft.bondStatus === 'bonded' ? <>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Bond bank<Field value={sellerProfileBuilderDraft.bondHolder || ''} onChange={(event) => updateSellerProfileBuilderDraft('bondHolder', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Bond account number<Field value={sellerProfileBuilderDraft.bondAccountReference || ''} onChange={(event) => updateSellerProfileBuilderDraft('bondAccountReference', event.target.value)} /></label>
+              <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">Estimated settlement amount (optional)<Field type="number" min="0" step="0.01" value={sellerProfileBuilderDraft.outstandingBond || ''} onChange={(event) => updateSellerProfileBuilderDraft('outstandingBond', event.target.value)} /></label>
+              <label className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]"><input type="checkbox" checked={Boolean(sellerProfileBuilderDraft.multipleBonds)} onChange={(event) => updateSellerProfileBuilderDraft('multipleBonds', event.target.checked)} />Multiple bonds</label>
+              <label className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]"><input type="checkbox" checked={Boolean(sellerProfileBuilderDraft.accessBond)} onChange={(event) => updateSellerProfileBuilderDraft('accessBond', event.target.checked)} />Access bond</label>
+              <label className="inline-flex min-h-[42px] items-center gap-2 rounded-[12px] border border-[#dbe6f2] bg-[#fbfdff] px-3 text-sm font-semibold text-[#2d445e]"><input type="checkbox" checked={Boolean(sellerProfileBuilderDraft.cancellationRequired)} onChange={(event) => updateSellerProfileBuilderDraft('cancellationRequired', event.target.checked)} />Bond cancellation required</label>
+            </> : null}
             <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e]">
               Asking price
               <Field type="number" min="0" step="1000" value={sellerProfileBuilderDraft.askingPrice || ''} onChange={(event) => updateSellerProfileBuilderDraft('askingPrice', event.target.value)} />
@@ -13826,90 +13808,6 @@ function AgentListingDetail() {
             </label>
           </section>
 
-          {!sellerProfileBuilderBranch ? (
-            <section className="rounded-[18px] border border-dashed border-[#c9d8e8] bg-[#f8fbff] p-4">
-              <p className="text-sm font-semibold text-[#243d56]">Document requirements are waiting for the owner type</p>
-              <p className="mt-1 text-sm leading-6 text-[#607387]">Choose who owns this property above. We will then show the appropriate FICA and property documents instead of assuming an individual owner.</p>
-            </section>
-          ) : sellerProfileRequirementPreview ? (
-            <section data-testid="listing-seller-profile-requirement-preview" className="rounded-[18px] border border-[#dce6f2] bg-[#fbfdff] p-4">
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#6f839a]">Document impact</p>
-                  <h4 className="mt-1 text-sm font-semibold text-[#142132]">
-                    {sellerProfileRequirementPreview.summary.total} requirements generated from this seller model
-                  </h4>
-                  <p className="mt-1 text-xs leading-5 text-[#607387]">
-                    {sellerProfileRequirementPreview.summary.sellerVisible} seller-visible, {sellerProfileRequirementPreview.summary.internal} internal
-                    {sellerProfileRequirementPreview.summary.retired ? `, ${sellerProfileRequirementPreview.summary.retired} no longer applicable` : ''}
-                  </p>
-                </div>
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div className="rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
-                    <p className="text-lg font-semibold text-[#142132]">{sellerProfileRequirementPreview.summary.required}</p>
-                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Required</p>
-                  </div>
-                  <div className="rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
-                    <p className="text-lg font-semibold text-[#142132]">{sellerProfileRequirementPreview.summary.ownerCount}</p>
-                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Owners</p>
-                  </div>
-                  <div className="rounded-[12px] border border-[#dbe6f2] bg-white px-3 py-2">
-                    <p className="text-lg font-semibold text-[#142132]">{sellerProfileRequirementPreview.summary.retired}</p>
-                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.08em] text-[#7b8ca2]">Retired</p>
-                  </div>
-                </div>
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-2">
-                {sellerProfileRequirementPreview.groups.filter((group) => group.rows.length).map((group) => (
-                  <div key={group.key} className="rounded-[14px] border border-[#e1e9f2] bg-white p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-[#243d56]">{group.label}</p>
-                      <span className="rounded-full border border-[#dbe6f2] bg-[#fbfdff] px-2.5 py-1 text-[0.68rem] font-semibold text-[#607387]">
-                        {group.rows.length}
-                      </span>
-                    </div>
-                    <div className="mt-3 space-y-2">
-                      {group.rows.slice(0, 4).map((row) => (
-                        <div key={row.requirement_key} className="flex items-start justify-between gap-3 text-xs leading-5">
-                          <span className="font-semibold text-[#425970]">{row.requirement_name}</span>
-                          <span className="shrink-0 text-[#7b8ca2]">{row.is_required === false ? 'Optional' : 'Required'}</span>
-                        </div>
-                      ))}
-                      {group.rows.length > 4 ? (
-                        <p className="text-xs font-semibold text-[#7b8ca2]">+{group.rows.length - 4} more</p>
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {sellerProfileRequirementPreview.retiredRows?.length ? (
-                <div data-testid="listing-seller-profile-retired-requirements-preview" className="mt-4 rounded-[14px] border border-[#f0ddbf] bg-[#fffaf1] p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-[#6f4b16]">No longer applicable after save</p>
-                      <p className="mt-1 text-xs leading-5 text-[#8a6a35]">
-                        These requirements will be kept on the listing as retired records instead of disappearing from the document history.
-                      </p>
-                    </div>
-                    <span className="rounded-full border border-[#efd9b0] bg-white px-2.5 py-1 text-[0.68rem] font-semibold text-[#8a6a35]">
-                      {sellerProfileRequirementPreview.retiredRows.length}
-                    </span>
-                  </div>
-                  <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {sellerProfileRequirementPreview.retiredRows.slice(0, 6).map((row) => (
-                      <div key={row.requirement_key} className="flex items-start justify-between gap-3 rounded-[10px] border border-[#f0ddbf] bg-white px-3 py-2 text-xs leading-5">
-                        <span className="font-semibold text-[#6f4b16]">{row.requirement_name}</span>
-                        <span className="shrink-0 text-[#9a7a45]">Not applicable</span>
-                      </div>
-                    ))}
-                  </div>
-                  {sellerProfileRequirementPreview.retiredRows.length > 6 ? (
-                    <p className="mt-2 text-xs font-semibold text-[#9a7a45]">+{sellerProfileRequirementPreview.retiredRows.length - 6} more retired requirements</p>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
-          ) : null}
           </> : null}
         </form>
       </Modal>
@@ -16231,8 +16129,8 @@ function AgentListingDetail() {
                 </div>
               </article>
 
-              <section className="grid items-start gap-5 xl:grid-cols-2">
-                <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
+              <section className="grid items-stretch gap-5 xl:grid-cols-2">
+                <article className="flex min-h-[315px] flex-col rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
                   <div className="flex items-center justify-between gap-3">
                     <h2 className="text-base font-semibold text-[#142132]">Latest Buyer Activity</h2>
                     <button type="button" onClick={() => openSellerWorkspaceSection('leads')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
@@ -16240,7 +16138,7 @@ function AgentListingDetail() {
                       <ChevronRight size={14} />
                     </button>
                   </div>
-                  <div className="mt-4 space-y-3">
+                  <div className="mt-4 flex flex-1 flex-col gap-3">
                     {interestedLeadsLoading && !overviewBuyerActivity.length ? (
                       <div className="rounded-[14px] border border-[#d8e6f6] bg-[#f3f8fd] px-4 py-6 text-sm font-medium text-[#2c5a89]">
                         Loading buyer activity…
@@ -16262,7 +16160,7 @@ function AgentListingDetail() {
                         <span className="shrink-0 text-xs font-semibold text-[#7b8ca2]">{formatOverviewTimestamp(item.timestamp)}</span>
                       </div>
                     )) : (
-                      <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">
+                      <div className="flex min-h-[150px] flex-1 items-center rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-6 py-6 text-sm text-[#607387]">
                         No buyer leads yet.
                       </div>
                     )}
@@ -16273,12 +16171,12 @@ function AgentListingDetail() {
                   </Button>
                 </article>
 
-                <article className="min-h-[315px] rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
+                <article className="flex min-h-[315px] flex-col rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]">
                   <div className="flex items-center gap-3">
                     <h2 className="text-base font-semibold text-[#142132]">Upcoming Viewings</h2>
                   </div>
                   <p className="mt-1 text-xs text-[#607387]">Open a viewing to see buyer, seller and agent responses.</p>
-                  <div className="mt-4 grid gap-2">
+                  <div className="mt-4 flex flex-1 flex-col gap-2">
                     {viewingsLoading && !overviewUpcomingViewings.length ? (
                       <div className="rounded-[14px] border border-[#d8e6f6] bg-[#f3f8fd] px-4 py-6 text-sm font-medium text-[#2c5a89]">Loading viewings…</div>
                     ) : viewingsError ? (
@@ -16297,7 +16195,7 @@ function AgentListingDetail() {
                         <ChevronRight size={15} className="hidden text-[#607387] sm:block" />
                       </button>
                     )) : (
-                      <div className="rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-4 py-6 text-sm text-[#607387]">
+                      <div className="flex min-h-[150px] flex-1 items-center rounded-[14px] border border-dashed border-[#d3deea] bg-[#fbfcfe] px-6 py-6 text-sm text-[#607387]">
                         No upcoming viewings.
                       </div>
                     )}
@@ -16309,7 +16207,7 @@ function AgentListingDetail() {
                 </article>
               </section>
 
-              <section className="grid items-stretch gap-5 lg:grid-cols-2 xl:h-[800px] xl:grid-cols-3" data-testid="listing-overview-three-columns">
+              <section className="grid items-stretch gap-5 lg:grid-cols-2 xl:grid-cols-3" data-testid="listing-overview-three-columns">
                 <article className="order-2 flex min-h-0 flex-col rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-1">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -16359,7 +16257,18 @@ function AgentListingDetail() {
                   </div>
                 </article>
 
-                <article className="order-1 flex min-h-0 flex-col overflow-hidden rounded-[16px] border border-[#dde4ee] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.035)] lg:order-2" data-testid="listing-overview-marketing-hero">
+                <div className="order-1 flex min-w-0 flex-col gap-5 lg:order-2">
+                <ListingAgentReassignmentPanel
+                  listingId={listingRecord.id}
+                  listing={listingRecord}
+                  agent={overviewListingAgent}
+                  listingType="sale"
+                  onReassigned={async () => {
+                    await loadListingData({ showLoading: false })
+                    setDetailMessage('Listing agent reassigned successfully.')
+                  }}
+                />
+                <article className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[16px] border border-[#dde4ee] bg-white shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-marketing-hero">
                   <div className="flex items-center justify-between gap-3 px-5 py-4">
                     <h2 className="text-base font-semibold text-[#142132]">Marketing</h2>
                     <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
@@ -16373,7 +16282,7 @@ function AgentListingDetail() {
                       {marketingDraft.galleryImages.length || 0} image{marketingDraft.galleryImages.length === 1 ? '' : 's'}
                     </span>
                   </div>
-                  <div className="min-h-0 flex-1 p-5 xl:overflow-y-auto">
+                  <div className="flex-1 p-5">
                     <p className="text-[2rem] font-semibold leading-tight tracking-[-0.04em] text-[#142132]">
                       {overviewPricePosition.askingPrice ? formatMoneyValue(overviewPricePosition.askingPrice) : 'Price not captured'}
                     </p>
@@ -16405,9 +16314,10 @@ function AgentListingDetail() {
                     </div>
                   </div>
                 </article>
+                </div>
 
-                <div className="order-3 grid min-h-0 gap-5 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:h-full xl:grid-cols-1 xl:grid-rows-[minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.95fr)_minmax(0,1fr)]">
-                  <article className="min-h-0 rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] xl:overflow-y-auto" data-testid="listing-overview-document-progress">
+                <div className="order-3 grid content-start gap-5 lg:col-span-2 lg:grid-cols-2 xl:col-span-1 xl:grid-cols-1">
+                  <article className="min-h-[210px] rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-document-progress">
                     <div className="flex items-center justify-between gap-3">
                       <h2 className="text-base font-semibold text-[#142132]">Document Progress</h2>
                       <button type="button" onClick={() => openSellerWorkspaceSection('documents')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">Open documents <ChevronRight size={14} /></button>
@@ -16432,7 +16342,7 @@ function AgentListingDetail() {
                       </div>
                     )}
                   </article>
-                  <article className="min-h-0 rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] xl:overflow-y-auto" data-testid="listing-overview-price-position">
+                  <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-price-position">
                     <div className="flex items-center justify-between gap-3">
                       <h2 className="text-base font-semibold text-[#142132]">Price Position</h2>
                       <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">
@@ -16461,18 +16371,7 @@ function AgentListingDetail() {
                     </div>
                   </article>
 
-                  <ListingAgentReassignmentPanel
-                    listingId={listingRecord.id}
-                    listing={listingRecord}
-                    agent={overviewListingAgent}
-                    listingType="sale"
-                    className="min-h-0 rounded-[16px] p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] xl:overflow-y-auto"
-                    onReassigned={async () => {
-                      await loadListingData({ showLoading: false })
-                      setDetailMessage('Listing agent reassigned successfully.')
-                    }}
-                  />
-                  <article className="min-h-0 rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)] xl:overflow-y-auto" data-testid="listing-overview-published">
+                  <article className="rounded-[16px] border border-[#dde4ee] bg-white p-5 shadow-[0_8px_20px_rgba(15,23,42,0.035)]" data-testid="listing-overview-published">
                     <div className="flex items-center justify-between gap-3">
                       <h2 className="text-base font-semibold text-[#142132]">Published</h2>
                       <button type="button" onClick={() => openSellerWorkspaceSection('marketing')} className="inline-flex items-center gap-1 text-xs font-semibold text-[#1f4f78]">Manage <ChevronRight size={14} /></button>
@@ -16885,85 +16784,64 @@ function AgentListingDetail() {
             }
             if (sellerOwnershipUnidentified) {
               return (
-                <section className="space-y-4" data-testid="listing-seller-setup-required">
-                  <ListingSellerHistoricalNormalizationBanner
-                    listingId={listingRecord?.id || listingId}
-                    onReview={() => openSellerProfileBuilder('Review the historical seller record, resolve any conflicts, and confirm the legal owner before requirements change.')}
-                  />
-                  <article className="rounded-[22px] border border-[#f2dfbd] bg-[#fffaf0] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[15px] bg-[#fff0cf] text-[#8a641d]"><CircleAlert size={21} /></span>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h2 className="text-lg font-semibold tracking-[-0.02em] text-[#142132]">{sellerSetupState.title}</h2>
-                            <span className="rounded-full border border-[#ead7ad] bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a641d]">{sellerSetupState.source.label}</span>
-                          </div>
-                          <p className="mt-1.5 max-w-3xl text-sm leading-6 text-[#607387]">{sellerSetupState.explanation}</p>
+                <section className="grid items-stretch gap-5 lg:grid-cols-2" data-testid="listing-seller-setup-required">
+                  <article className="flex flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
+                    <div className="flex items-center justify-between gap-3">
+                      <h2 className="text-sm font-semibold uppercase tracking-[0.08em] text-[#607891]">Seller information</h2>
+                      <UserRound size={19} className="text-[#52708d]" aria-hidden="true" />
+                    </div>
+                    <div className="mt-5">
+                      {[
+                        ['Known contact', sellerSetupState.contact.name],
+                        ['Email', sellerSetupState.contact.email],
+                        ['Phone', sellerSetupState.contact.phone],
+                        ['Property', sellerProfile.propertyAddress],
+                      ].map(([label, value]) => (
+                        <div key={label} className="border-b border-[#edf2f7] py-3 first:pt-0 last:border-0">
+                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aad]">{label}</p>
+                          <p className="mt-1 break-words text-sm font-semibold text-[#2d445e]">{presentSellerWorkspaceValue(value)}</p>
                         </div>
-                      </div>
-                      <Button type="button" size="sm" onClick={() => openSellerProfileBuilder(sellerSetupState.requiresReview ? 'Review the imported contact, then confirm the actual legal owner.' : 'Choose the legal owner so Arch9 can build the correct seller workspace.') }>
-                        <UserRound size={15} />
-                        {sellerSetupState.requiresReview ? 'Review and set up seller' : 'Set up seller'}
+                      ))}
+                    </div>
+                    <div className="mt-auto pt-4">
+                      <p className="rounded-[14px] border border-[#dbe6f2] bg-[#f7fbff] p-3 text-xs leading-5 text-[#607387]">
+                        Contact details are not proof of ownership. Confirm the legal owner to create the right mandate and document checklist.
+                      </p>
+                      <Button type="button" className="mt-4 w-full justify-center" onClick={() => openSellerProfileBuilder(sellerSetupState.requiresReview ? 'Review the imported contact, then confirm the actual legal owner.' : 'Confirm who legally owns the property. Existing contact details will be preserved.')}>
+                        {sellerSetupState.requiresReview ? 'Review and capture owner details' : 'Capture owner details'}
                       </Button>
                     </div>
                   </article>
 
-                  <div className="grid items-stretch gap-4 xl:grid-cols-3">
-                    <article className="flex min-h-[430px] flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.045)]">
-                      <div className="flex items-center justify-between gap-3">
-                        <div><p className="text-xs font-semibold uppercase tracking-[0.1em] text-[#8294aa]">Column 1</p><h3 className="mt-1 text-base font-semibold text-[#142132]">Seller information</h3></div>
-                        <UserRound size={19} className="text-[#52708d]" />
-                      </div>
-                      <div className="mt-5 space-y-3">
-                        {[
-                          ['Known contact', sellerSetupState.contact.name],
-                          ['Email', sellerSetupState.contact.email],
-                          ['Phone', sellerSetupState.contact.phone],
-                          ['Property', sellerProfile.propertyAddress],
-                        ].map(([label, value]) => (
-                          <div key={label} className="border-b border-[#edf2f7] pb-3 last:border-0">
-                            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.08em] text-[#8a9aad]">{label}</p>
-                            <p className="mt-1 break-words text-sm font-semibold text-[#2d445e]">{presentSellerWorkspaceValue(value)}</p>
+                  <article className="flex flex-col rounded-[22px] border border-[#f2dfbd] bg-[#fffaf0] p-5 shadow-[0_10px_24px_rgba(15,23,42,0.04)]">
+                    <span className="grid h-11 w-11 place-items-center rounded-full bg-[#fff0cf] text-[#8a641d]"><FileText size={19} aria-hidden="true" /></span>
+                    <h2 className="mt-4 text-lg font-semibold text-[#142132]">{sellerSetupState.requiresReview ? 'Confirm the seller to unlock' : 'Complete seller setup to unlock'}</h2>
+                    <p className="mt-1 max-w-xl text-sm leading-6 text-[#607387]">
+                      Once the seller’s details and legal owner type are confirmed, these areas will become available:
+                    </p>
+                    <div className="mt-5 space-y-4">
+                      {[
+                        { label: 'Mandate', description: 'Confirm the legal owner and signing authority.', icon: FileText },
+                        { label: 'Seller onboarding', description: 'Send onboarding and collect ownership information.', icon: Send },
+                        { label: 'Documents & compliance', description: 'Generate the compliance checklist.', icon: ShieldCheck },
+                        { label: 'Notes & special conditions', description: 'Add selling details, conditions and agent notes.', icon: MessageSquare },
+                      ].map(({ label, description, icon: Icon }) => (
+                        <div key={label} className="flex items-start gap-3">
+                          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[11px] border border-[#e6edf4] bg-white text-[#52708d]"><Icon size={17} aria-hidden="true" /></span>
+                          <div>
+                            <p className="text-sm font-semibold text-[#243d56]">{label}</p>
+                            <p className="mt-0.5 text-xs leading-5 text-[#607387]">{description}</p>
                           </div>
-                        ))}
-                      </div>
-                      <div className="mt-auto rounded-[15px] border border-[#dbe6f2] bg-[#f7fbff] p-3 text-xs leading-5 text-[#607387]">Contact details are not treated as proof of ownership. Select Individual, Multiple owners, Company, Trust, Deceased estate or another supported structure.</div>
-                      <Button type="button" className="mt-4 w-full justify-center" onClick={() => openSellerProfileBuilder('Confirm who legally owns the property. Existing contact details will be preserved.')}>Capture owner details</Button>
-                    </article>
-
-                    <div className="grid min-h-[430px] grid-rows-2 gap-4">
-                      <article className="flex flex-col rounded-[22px] border border-[#e3e8ef] bg-[#f8fafc] p-5">
-                        <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-[#142132]">Mandate</h3><FileText size={18} className="text-[#9aa8b7]" /></div>
-                        <p className="mt-3 text-sm leading-6 text-[#607387]">{sellerSetupState.blockers.mandate}</p>
-                        <span className="mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-[#edf1f5] px-3 py-1.5 text-xs font-semibold text-[#66788b]"><CircleAlert size={13} /> Blocked until seller setup</span>
-                      </article>
-                      <article className="flex flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
-                        <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-[#142132]">Seller onboarding</h3><Send size={18} className="text-[#52708d]" /></div>
-                        <p className="mt-3 text-sm leading-6 text-[#607387]">Send basic onboarding now and let the seller identify the ownership structure. No mandate or document pack is assumed.</p>
-                        <Button type="button" size="sm" variant="secondary" className="mt-auto w-full justify-center" onClick={() => handleSendSellerOnboardingFollowUp()}>
-                          <Send size={15} /> Send seller onboarding
-                        </Button>
-                      </article>
-                    </div>
-
-                    <div className="grid min-h-[430px] grid-rows-2 gap-4">
-                      <article className="flex flex-col rounded-[22px] border border-[#e3e8ef] bg-[#f8fafc] p-5">
-                        <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-[#142132]">Documents and compliance</h3><ShieldCheck size={18} className="text-[#9aa8b7]" /></div>
-                        <p className="mt-3 text-sm leading-6 text-[#607387]">{sellerSetupState.blockers.documents}</p>
-                        <span className="mt-auto inline-flex w-fit items-center gap-2 rounded-full bg-[#edf1f5] px-3 py-1.5 text-xs font-semibold text-[#66788b]"><CircleAlert size={13} /> No assumed checklist</span>
-                      </article>
-                      <article className="flex flex-col rounded-[22px] border border-[#dde4ee] bg-white p-5 shadow-[0_10px_24px_rgba(15,23,42,0.035)]">
-                        <div className="flex items-center justify-between gap-3"><h3 className="text-base font-semibold text-[#142132]">Notes and special conditions</h3><MessageSquare size={18} className="text-[#52708d]" /></div>
-                        <div className="mt-3 max-h-24 space-y-2 overflow-y-auto pr-1">
-                          {notesRows.some(([, value]) => String(value || '').trim())
-                            ? notesRows.filter(([, value]) => String(value || '').trim()).map(([label, value]) => <p key={label} className="text-sm leading-5 text-[#607387]"><span className="font-semibold text-[#2d445e]">{label}:</span> {value}</p>)
-                            : <p className="text-sm leading-6 text-[#8292a5]">No notes or special conditions captured yet.</p>}
                         </div>
-                        <Button type="button" size="sm" variant="secondary" className="mt-auto w-full justify-center" onClick={() => openSellerSectionEditor(getSection('notes'))}><Pencil size={14} /> Edit notes</Button>
-                      </article>
+                      ))}
                     </div>
-                  </div>
+                    <div className="mt-auto pt-5">
+                      <ListingSellerHistoricalNormalizationBanner
+                        listingId={listingRecord?.id || listingId}
+                        onReview={() => openSellerProfileBuilder('Review the historical seller record, resolve any conflicts, and confirm the legal owner before requirements change.')}
+                      />
+                    </div>
+                  </article>
                 </section>
               )
             }
@@ -17808,7 +17686,7 @@ function AgentListingDetail() {
                     {sellerDocumentRequirementModel.retired ? ` ${sellerDocumentRequirementModel.retired} retired requirement${sellerDocumentRequirementModel.retired === 1 ? '' : 's'} kept for history.` : ''}
                   </p>
                 </div>
-                <Button type="button" size="sm" onClick={() => openSellerProfileBuilder('Update the seller model and preview the document impact before saving.')}>
+                <Button type="button" size="sm" onClick={() => openSellerProfileBuilder('Update the seller details here. Document requirements refresh after saving.')}>
                   <UserRound size={15} />
                   Update Seller Model
                 </Button>

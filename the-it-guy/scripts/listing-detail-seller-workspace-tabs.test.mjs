@@ -56,7 +56,10 @@ assert.ok(overviewBlock.includes("openSellerWorkspaceSection('seller')"), 'Overv
 assert.ok(overviewBlock.includes("openSellerWorkspaceSection('marketing')"), 'Overview marketing/pricing CTAs should open Marketing.')
 assert.equal(overviewBlock.includes('>Recent Activity<'), false, 'Overview should not repeat the retired recent activity block.')
 assert.equal(overviewBlock.includes('No offers received yet.'), false, 'Price Position should not reference the retired offer workflow.')
-assert.ok(overviewBlock.includes('ListingAgentReassignmentPanel'), 'Overview should show the listing agent and reassignment control below pricing.')
+assert.ok(
+  overviewBlock.indexOf('ListingAgentReassignmentPanel') < overviewBlock.indexOf('data-testid="listing-overview-marketing-hero"'),
+  'Overview should show the listing agent picker above Marketing.',
+)
 assert.ok(source.includes('buildListingOverviewPerformance({'), 'Overview should build performance from canonical sources.')
 assert.equal(overviewBlock.includes("label: 'Views'"), false, 'Overview must not display unsupported view analytics.')
 assert.equal(source.includes('const totalViews = explicitViews || portalViews + bridgeViews || 0'), false, 'Overview should not use legacy listing payload totals.')

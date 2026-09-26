@@ -13,6 +13,9 @@ test('marketing actions are consolidated at the bottom of the tab', () => {
   assert.match(detailSource, /Preview listing/)
   assert.match(detailSource, /Review channels/)
   assert.match(detailSource, /Save changes/)
+  assert.match(detailSource, /marketingSaveConfirmed \? 'Marketing changes saved' : 'No unsaved marketing changes'/)
+  assert.doesNotMatch(detailSource, /arch9PublicListingUrl \|\| `\$\{ARCH9_PUBLIC_SITE_ORIGIN\}\/buy`/)
+  assert.match(detailSource, /previewListingUrl \? \(/)
   assert.doesNotMatch(detailSource, /<section className="space-y-5">\s*<div className="flex flex-wrap justify-end gap-2">/)
 })
 

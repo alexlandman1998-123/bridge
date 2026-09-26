@@ -21,13 +21,16 @@ assert.match(overview, />Listed on</, 'The marketing hero must show channel plac
 assert.match(overview, /row\.href/, 'Published channels must expose their listing links.')
 assert.match(overview, /data-testid="listing-overview-price-position"/, 'The compact Price Position card must remain available.')
 assert.equal(overview.includes('No offers received yet.'), false, 'Retired offer empty-state copy must be removed.')
-assert.match(overview, /ListingAgentReassignmentPanel/, 'The Price Position column must include the listing agent card.')
+assert.ok(
+  overview.indexOf('ListingAgentReassignmentPanel') < overview.indexOf('data-testid="listing-overview-marketing-hero"'),
+  'The listing agent picker should sit above Marketing.',
+)
 assert.match(overview, /onReassigned=/, 'The listing agent card must refresh after reassignment.')
 assert.equal(overview.includes('>Recent Activity<'), false, 'The redundant Recent Activity block must be removed.')
 
-assert.match(agentPanelSource, /currentAgentAvatarUrl/, 'The listing agent card must support a profile image.')
+assert.match(agentPanelSource, /avatarUrl\(agent\)/, 'The listing agent card must support a profile image.')
 assert.match(agentPanelSource, /currentAgentEmail/, 'The listing agent card must show the agent email when available.')
-assert.match(agentPanelSource, /currentAgentPhone/, 'The listing agent card must show the agent phone when available.')
-assert.match(agentPanelSource, /Confirm reassignment/, 'The existing guarded reassignment action must remain available.')
+assert.match(agentPanelSource, /reassignListingAgent\(listingId, nextId/, 'Choosing another agent must use the guarded reassignment service.')
+assert.match(agentPanelSource, /aria-selected=\{selected\}/, 'The current primary agent must be marked as selected.')
 
 console.log('Listing Overview Phase 3 presentation contract passed')

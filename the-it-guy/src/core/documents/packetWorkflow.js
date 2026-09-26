@@ -715,7 +715,14 @@ function buildOtpSellerParties({
   sellerRegistrationNumber = '',
   developmentSeller = {},
   sellerSignatory = {},
+  ownerRecords = [],
 } = {}) {
+  if (ownerRecords.length) {
+    return dedupePartyRecords(ownerRecords.map((owner, index) => normalizePartyRecord({
+      ...owner,
+      fullName: firstText(owner.fullName, owner.full_name, combineName(owner.firstName || owner.first_name || owner.name, owner.surname || owner.lastName || owner.last_name)),
+    }, { role: 'Seller', title: `Seller ${index + 1}` })))
+  }
   const sellerParty = normalizePartyRecord({
     name: sellerName,
     registrationNumber: sellerRegistrationNumber,
@@ -1285,6 +1292,13 @@ export function resolveOtpPacketPlaceholders({
   )
   const sourceSeller = asRecord(source.seller || source.sellerFacts || source.seller_facts || source.canonicalSellerFacts || source.canonical_seller_facts)
   const sourceListing = asRecord(listing || privateListing || source.listing || source.privateListing || source.private_listing || source.canonicalListing || source.canonical_listing)
+  const listingSellerForm = asRecord(sourceListing.sellerOnboarding?.formData || sourceListing.seller_onboarding?.form_data || sourceListing.sellerOnboardingFormData)
+  const listingSellerFacts = asRecord(sourceListing.sellerCanonicalFacts?.seller || sourceListing.seller_canonical_facts_json?.seller)
+  const ownerType = firstText(listingSellerForm.ownerStructureType, listingSellerForm.ownershipType, listingSellerFacts.owner_structure_type, sourceSeller.owner_structure_type, sourceListing.sellerType).toLowerCase()
+  const ownerRecords = ownerType === 'multiple_owners'
+    ? [listingSellerForm.multipleOwners, listingSellerForm.owners, listingSellerFacts.owners, sourceSeller.owners]
+      .find((owners) => Array.isArray(owners) && owners.length) || []
+    : []
   const transactionMetadata = asRecord(transaction?.metadata_json || transaction?.metadata)
   const unitMetadata = asRecord(unit?.metadata_json || unit?.metadata || unit?.property || unit?.property_facts)
   const addressDetails = asRecord(
@@ -1337,7 +1351,7 @@ export function resolveOtpPacketPlaceholders({
   ).toLowerCase()
   const developmentSeller = resolveDevelopmentSellerDetails({ unit, transaction, contextSellerDetails: sellerDetails })
   const sellerSignatory = developmentSeller.signatory || {}
-  const sellerEntityTypeRaw = normalizeText(developmentSeller.entityType || transaction?.seller_type || 'company').toLowerCase()
+  const sellerEntityTypeRaw = normalizeText(ownerRecords.length ? 'multiple_owners' : developmentSeller.entityType || transaction?.seller_type || 'company').toLowerCase()
   const sellerRegistrationNumber =
     normalizeNullableText(developmentSeller.registrationNumber) ||
     normalizeNullableText(transaction?.seller_registration_number) ||
@@ -1400,6 +1414,7 @@ export function resolveOtpPacketPlaceholders({
     sellerRegistrationNumber,
     developmentSeller,
     sellerSignatory,
+    ownerRecords,
   })
   const primaryBuyer = buyerParties[0] || {}
   const primarySeller = sellerParties[0] || {}

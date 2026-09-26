@@ -19,7 +19,7 @@ async function test(name, fn) {
 await test('AgentListingDetail renders retired requirement lifecycle surfaces', async () => {
   const source = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
 
-  assert.ok(source.includes('listing-seller-profile-retired-requirements-preview'), 'Builder preview should list requirements that will be retired.')
+  assert.ok(!source.includes('listing-seller-profile-retired-requirements-preview'), 'Owner capture should not preview retired requirements.')
   assert.ok(source.includes('listing-seller-retired-requirements'), 'Documents tab should show retired requirements after save.')
   assert.ok(source.includes('sellerDocumentRequirementModel.retiredRows'), 'Documents model should expose retired requirement rows.')
   assert.ok(source.includes('const projectedDocumentRequirements = requirementProjection.allRequirementRows.map'), 'Local listing state should preserve active and retired requirement rows.')

@@ -37,7 +37,9 @@ export default function PublicDevelopmentEnquiryForm({ developmentName, agency, 
     try {
       interest = window.sessionStorage.getItem("arch9:development-enquiry-interest") || interest;
       window.sessionStorage.removeItem("arch9:development-enquiry-interest");
-    } catch {}
+    } catch {
+      // Session storage can be unavailable; keep the development name as the default.
+    }
     return { name: "", email: "", phone: "", message: "", interest };
   });
   const [status, setStatus] = useState("");

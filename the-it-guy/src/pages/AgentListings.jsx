@@ -3113,18 +3113,6 @@ function readListingsViewMode() {
   return 'residential'
 }
 
-function formatRelativeDate(value) {
-  if (!value) return 'No recent activity'
-  const delta = Date.now() - new Date(value).getTime()
-  if (!Number.isFinite(delta) || delta < 0) return 'Updated today'
-  const days = Math.floor(delta / (1000 * 60 * 60 * 24))
-  if (days <= 0) return 'Updated today'
-  if (days === 1) return 'Updated 1 day ago'
-  if (days < 30) return `Updated ${days} days ago`
-  const months = Math.floor(days / 30)
-  return months <= 1 ? 'Updated 1 month ago' : `Updated ${months} months ago`
-}
-
 function buildInitialListingLeadForm(profile, workspace) {
   return {
     quickStep: 'property',
@@ -3749,6 +3737,7 @@ function AgentListings({ initialTab = null } = {}) {
 
   const [loading, setLoading] = useState(true)
   const [supportingDataLoading, setSupportingDataLoading] = useState(true)
+  const [developmentDataLoading, setDevelopmentDataLoading] = useState(true)
   const [error, setError] = useState('')
   const [workflowMessage, setWorkflowMessage] = useState('')
   const [listingsTab, setListingsTab] = useState(() => {
@@ -3930,6 +3919,7 @@ function AgentListings({ initialTab = null } = {}) {
     try {
       if (showLoading) setLoading(true)
       setSupportingDataLoading(true)
+      setDevelopmentDataLoading(true)
       setError('')
       let participantRows = []
       let options = []
@@ -4029,17 +4019,25 @@ function AgentListings({ initialTab = null } = {}) {
               return dbPrivateListings
             })
           : Promise.resolve([])
-        const [organisationContext, participantRowsResult, optionsResult, fullListingsResult] = await Promise.all([
+        const [organisationContext, participantRowsResult, optionsResult] = await Promise.all([
           organisationContextPromise,
           participantRowsPromise,
           optionsPromise,
-          fullListingsPromise,
         ])
 
         participantRows = participantRowsResult
         options = optionsResult
         branchRows = extractBranchOptions(organisationContext)
-        dbPrivateListings = fullListingsResult
+        const developmentTransactionRows = Array.isArray(participantRows) ? participantRows.filter(Boolean) : []
+        setTransactionRows(developmentTransactionRows)
+        setDevelopmentRows(developmentTransactionRows.filter((row) => getTransactionScopeForRow(row) === 'development'))
+        setDevelopmentOptions(Array.isArray(options) ? options : [])
+        setAssignedDevelopmentIds(Array.isArray(assignedIds) ? assignedIds : [])
+        setDevelopmentDataLoading(false)
+
+        // Full listing hydration only enriches residential cards. Do not make
+        // the development workspace wait for it before becoming usable.
+        dbPrivateListings = await fullListingsPromise
       }
       const agentRows = Array.isArray(participantRows) ? participantRows.filter(Boolean) : []
       setTransactionRows(agentRows)
@@ -4050,6 +4048,7 @@ function AgentListings({ initialTab = null } = {}) {
       setBranchOptions(branchRows)
       setOrganisationId(resolvedOrganisationId)
       setPrivateListings(mergePrivateListingRows(dbPrivateListings, runtimeListings, getCurrentDeletedListingIds(locallyDeletedIds)))
+      setDevelopmentDataLoading(false)
     } catch (loadError) {
       setError(loadError?.message || 'Unable to load listings at the moment.')
       if (!corePublished) {
@@ -4060,11 +4059,13 @@ function AgentListings({ initialTab = null } = {}) {
         setOrganisationUsers([])
         setBranchOptions([])
       }
+      setDevelopmentDataLoading(false)
       const locallyDeletedIds = syncDeletedListingIds(deletedIdsOverride)
       if (!corePublished) setPrivateListings(mergePrivateListingRows([], readAgentPrivateListings(), getCurrentDeletedListingIds(locallyDeletedIds)))
     } finally {
       if (showLoading) setLoading(false)
       setSupportingDataLoading(false)
+      setDevelopmentDataLoading(false)
     }
   }, [agencyWorkflowMode, currentMembership, getCurrentDeletedListingIds, isDeveloperWorkspace, profile, selectedWorkspaceOrganisationId, syncDeletedListingIds, workspaceRole])
 
@@ -7252,6 +7253,9 @@ function AgentListings({ initialTab = null } = {}) {
     ? 'current'
     : listingCollectionView
   const showImportedReviewTab = hasImportedReview || (listingCollectionView === 'review' && (loading || supportingDataLoading))
+  // Development cards depend on assignment and workspace lookups that finish
+  // after the lightweight residential listing summaries.
+  const isDevelopmentTabLoading = listingsTab === 'developments' && (loading || developmentDataLoading)
 
   useEffect(() => {
     if (!loading && !supportingDataLoading && !hasImportedReview) {
@@ -8665,8 +8669,10 @@ function AgentListings({ initialTab = null } = {}) {
           </div>
         ) : null}
 
-        {loading ? (
-          <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">Loading listings…</div>
+        {loading || isDevelopmentTabLoading ? (
+          <div className="rounded-[18px] border border-[#e3ebf4] bg-[#fbfcfe] px-4 py-6 text-sm text-[#6c7f95]">
+            {listingsTab === 'developments' ? 'Loading developments…' : 'Loading listings…'}
+          </div>
         ) : null}
 
         {!loading && (isDeveloperWorkspace || listingsTab !== 'developments') ? (
@@ -8812,7 +8818,7 @@ function AgentListings({ initialTab = null } = {}) {
           )
         ) : null}
 
-        {!loading && listingsTab === 'developments' ? (
+        {!isDevelopmentTabLoading && listingsTab === 'developments' ? (
           <>
             {filteredDevelopmentCards.length ? (
               <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -8866,27 +8872,12 @@ function AgentListings({ initialTab = null } = {}) {
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-between text-[0.8rem] text-[#6b7d93]">
-                      <span>{formatRelativeDate(card.lastUpdatedAt)}</span>
+                    <div className="flex items-center justify-end text-[0.8rem] text-[#6b7d93]">
                       <span className="inline-flex items-center gap-1 font-semibold text-[#1f4f78]">
                         Open workspace
                         <ArrowRight size={14} />
                       </span>
                     </div>
-                    {!isDeveloperWorkspace ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          openDeveloperLeadCaptureModal(card)
-                        }}
-                        disabled={pilotCreationFreeze.paused}
-                      >
-                        <ShieldCheck size={15} />
-                        Submit Buyer Lead
-                      </Button>
-                    ) : null}
                   </div>
                 </article>
               ))}

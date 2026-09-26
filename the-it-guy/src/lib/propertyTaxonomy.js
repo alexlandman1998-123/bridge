@@ -25,6 +25,21 @@ export const PROPERTY_STRUCTURE_TYPES = [
   'other',
 ]
 
+export const PROPERTY_STRUCTURES_BY_CATEGORY = Object.freeze({
+  residential: ['full_title', 'sectional_title', 'share_block', 'freehold', 'other'],
+  commercial: ['full_title', 'sectional_title', 'freehold', 'other'],
+  industrial: ['full_title', 'freehold', 'sectional_title', 'other'],
+  retail: ['full_title', 'sectional_title', 'freehold', 'other'],
+  agricultural: ['agricultural_holding', 'freehold', 'full_title', 'other'],
+  mixed_use: ['full_title', 'sectional_title', 'freehold', 'other'],
+  vacant_land: ['full_title', 'freehold', 'agricultural_holding', 'other'],
+})
+
+export function getPropertyStructureTypesByCategory(category) {
+  const key = normalizePropertyCategory(category, { fallback: 'residential' })
+  return PROPERTY_STRUCTURES_BY_CATEGORY[key] || PROPERTY_STRUCTURES_BY_CATEGORY.residential
+}
+
 export const PROPERTY_TYPES_BY_CATEGORY = {
   residential: ['house', 'apartment', 'townhouse', 'cluster', 'duplex', 'penthouse', 'vacant_stand'],
   commercial: ['office_building', 'medical_suite', 'business_park', 'commercial_building'],

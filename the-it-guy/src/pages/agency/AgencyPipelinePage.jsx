@@ -11988,6 +11988,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [appointmentManualParticipantOpen, setAppointmentManualParticipantOpen] = useState(false)
   const [appointmentDeselectedParticipantKeys, setAppointmentDeselectedParticipantKeys] = useState([])
   const [isSellerOnboardingSending, setIsSellerOnboardingSending] = useState(false)
+  const [isManualSellerOnboardingPreparing, setIsManualSellerOnboardingPreparing] = useState(false)
   const [sellerOnboardingDeliveryState, setSellerOnboardingDeliveryState] = useState({
     linkStatus: 'idle',
     emailStatus: 'idle',
@@ -26447,6 +26448,108 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     void handleSendSellerOnboarding()
   }
 
+  async function handleCaptureSellerOnboardingManually() {
+    if (!selectedLead || !selectedLeadIsSeller || isManualSellerOnboardingPreparing) return
+    if (!selectedSellerCanSendOnboarding) {
+      openSellerContactFeedbackModal()
+      return
+    }
+    if (selectedLeadOnboardingCompleted) {
+      setError('Seller onboarding has already been submitted. Review the existing information instead.')
+      return
+    }
+    if (!organisationId || !isSupabaseConfigured || MOCK_DATA_ENABLED) {
+      setError('The seller onboarding workspace is unavailable right now. Please try again when connected.')
+      return
+    }
+
+    setIsManualSellerOnboardingPreparing(true)
+    setError('')
+    try {
+      const existingFormData = getLeadSellerOnboardingFormData(selectedLead)
+      const leadFormData = {
+        ...existingFormData,
+        sellerFirstName: normalizeText(existingFormData.sellerFirstName || existingFormData.firstName || selectedLeadContact?.firstName || selectedLead?.sellerName),
+        sellerSurname: normalizeText(existingFormData.sellerSurname || existingFormData.lastName || selectedLeadContact?.lastName || selectedLead?.sellerSurname),
+        email: normalizeText(existingFormData.email || existingFormData.sellerEmail || selectedLeadContact?.email || selectedLead?.sellerEmail).toLowerCase(),
+        phone: normalizeText(existingFormData.phone || existingFormData.sellerPhone || selectedLeadContact?.phone || selectedLead?.sellerPhone),
+        propertyAddress: normalizeText(existingFormData.propertyAddress || selectedLead?.sellerPropertyAddress || selectedLead?.formattedAddress),
+      }
+      const canonicalSellerFacts = isPlainObject(selectedLead?.sellerCanonicalFacts)
+        ? selectedLead.sellerCanonicalFacts
+        : isPlainObject(leadFormData.canonicalSellerFacts) ? leadFormData.canonicalSellerFacts : {}
+      const sellerSubject = buildSellerSubject({
+        formData: leadFormData,
+        lead: { ...selectedLead, ...selectedLeadContact },
+        canonicalFacts: canonicalSellerFacts,
+      })
+      const formData = prepareSellerOnboardingRoute({
+        formData: leadFormData,
+        subject: sellerSubject,
+        canonicalSellerFacts,
+      })
+      const existingListingId = normalizeText(selectedLeadLinkedListing?.id || selectedLead?.listingId)
+      const listingResult = existingListingId
+        ? { listing: selectedLeadLinkedListing || { id: existingListingId } }
+        : await createPrivateListing({
+            organisationId,
+            assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
+            sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
+            originatingCrmLeadId: normalizeLeadIdentityKey(selectedLead?.leadId),
+            listingStatus: 'seller_lead',
+            sellerOnboardingStatus: 'not_started',
+            mandateStatus: 'not_started',
+            listingVisibility: 'internal',
+            title: normalizeText(selectedLead?.propertyInterest || selectedLead?.sellerPropertyAddress),
+            propertyType: normalizeText(selectedLeadPropertyType) || 'House',
+            listingCategory: 'private_sale',
+            askingPrice: Number(selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+            addressLine1: normalizeText(selectedLead?.sellerPropertyAddress || selectedLeadPropertyArea),
+            formattedAddress: normalizeText(selectedLead?.formattedAddress),
+            streetAddress: normalizeText(selectedLead?.streetAddress || selectedLead?.sellerPropertyAddress),
+            suburb: normalizeText(selectedLead?.suburb || selectedLead?.areaInterest),
+            city: normalizeText(selectedLead?.city),
+            province: normalizeText(selectedLead?.province),
+            country: normalizeText(selectedLead?.country) || 'South Africa',
+            postalCode: normalizeText(selectedLead?.postalCode),
+            sellerCanonicalFacts: canonicalSellerFacts,
+            source: 'pipeline_seller_lead',
+          }, { includeRequirementsAndDocuments: false, syncRequirements: false })
+      const listingId = normalizeText(listingResult?.listing?.id || existingListingId)
+      if (!listingId) throw new Error('Unable to prepare a seller onboarding record for this lead.')
+
+      const token = selectedLeadNeedsOnboardingReplacement
+        ? generateSellerOnboardingToken()
+        : normalizeText(selectedLead?.sellerOnboardingToken || selectedLeadLinkedListing?.sellerOnboarding?.token) || generateSellerOnboardingToken()
+      const onboarding = await persistSellerProfileOnboardingFormData({
+        listingId,
+        token,
+        formData,
+        status: 'in_progress',
+        sellerType: sellerSubject.onboardingReady ? sellerSubject.kind : '',
+        ownershipStructure: sellerSubject.onboardingReady ? (sellerSubject.ownership.structureType || sellerSubject.kind) : '',
+        maritalRegime: normalizeText(formData.maritalRegime || formData.marriageRegime),
+        replaceToken: selectedLeadNeedsOnboardingReplacement,
+      })
+      const savedToken = normalizeText(onboarding?.token)
+      if (!savedToken) throw new Error('Unable to prepare a seller onboarding record for this lead.')
+      const leadPatch = {
+        listingId,
+        sellerOnboardingToken: savedToken,
+        sellerOnboardingStatus: 'in_progress',
+        sellerOnboardingReplacementRequired: false,
+        seller_onboarding_replacement_required: false,
+      }
+      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      navigate(`/seller/onboarding/${encodeURIComponent(savedToken)}?completion_mode=agent_assisted&lead_id=${encodeURIComponent(selectedLead.leadId)}`)
+    } catch (captureError) {
+      setError(captureError?.message || 'Unable to open manual seller onboarding right now.')
+    } finally {
+      setIsManualSellerOnboardingPreparing(false)
+    }
+  }
+
   async function handleSendSellerPortalLink() {
     if (!selectedLead || !selectedLeadIsSeller) return
     if (isSellerOnboardingSending) return
@@ -33353,6 +33456,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                            setLeadWorkspaceTab('seller')
 	                                          },
 	                                        },
+	                                        ...(!selectedLeadOnboardingCompleted ? [{
+	                                          label: 'Capture Seller Onboarding Manually',
+	                                          Icon: Pencil,
+	                                          tone: 'text-[#29435d]',
+	                                          disabled: isManualSellerOnboardingPreparing,
+	                                          onClick: () => {
+	                                            setLeadActionsMenuOpen(false)
+	                                            void handleCaptureSellerOnboardingManually()
+	                                          },
+	                                        }] : []),
 	                                        {
 	                                          label: 'Copy Seller Onboarding Link',
 	                                          Icon: Copy,
@@ -34213,6 +34326,19 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 ? 'Copied'
                                 : selectedSellerNextBestActionModel.label}
                           </Button>
+                          {selectedSellerCanSendOnboarding && !selectedLeadOnboardingCompleted ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              className="min-h-10 w-full justify-center"
+                              disabled={isManualSellerOnboardingPreparing}
+                              onClick={() => void handleCaptureSellerOnboardingManually()}
+                            >
+                              <Pencil className="h-4 w-4" />
+                              {isManualSellerOnboardingPreparing ? 'Opening seller onboarding…' : 'Capture Seller Onboarding Manually'}
+                            </Button>
+                          ) : null}
                         </div>
                       </section>
 

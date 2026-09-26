@@ -6,7 +6,7 @@ function person({ name = '', email: address = '', role = '' } = {}) {
 }
 
 function personName(value = {}) {
-  return text(value.fullName || value.name || [value.firstName, value.surname || value.lastName].filter(Boolean).join(' '))
+  return text(value.fullName || [value.firstName || value.name, value.surname || value.lastName].filter(Boolean).join(' '))
 }
 
 function uniqueRecipients(recipients = []) {

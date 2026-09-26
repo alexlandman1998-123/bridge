@@ -200,7 +200,7 @@ export default function LeadListPage({
               {category !== 'archived' ? <button type="button" className="inline-flex min-h-[42px] items-center gap-2 rounded-[14px] bg-[#0f2743] px-4 text-sm font-semibold text-white" onClick={() => onAddLead(category)}><Plus size={16} /> Add {categoryLabel} Lead</button> : null}
             </div>
           </div>
-          <div className="mt-4 grid h-12 gap-2 rounded-xl border border-[#dbe4ee] bg-[#f8fbff] p-1 sm:grid-cols-3" role="tablist" aria-label="Lead categories">
+          <div className="mt-4 grid min-h-[58px] gap-2 rounded-xl border border-[#dbe4ee] bg-[#f8fbff] p-1 sm:grid-cols-3" role="tablist" aria-label="Lead categories">
             {categoryTabs.map((tab) => {
               const active = category === tab.key
               const Icon = tab.key === 'seller' ? Home : tab.key === 'archived' ? X : UserRound

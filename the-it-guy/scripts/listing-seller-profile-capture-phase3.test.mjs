@@ -16,12 +16,13 @@ async function test(name, fn) {
   }
 }
 
-await test('AgentListingDetail surfaces seller document impact in the builder and Documents tab', async () => {
+await test('AgentListingDetail keeps document requirements on the Documents tab, not in owner capture', async () => {
   const source = await readFile(new URL('../src/pages/AgentListingDetail.jsx', import.meta.url), 'utf8')
   const persistenceSource = await readFile(new URL('../src/services/privateListingService.js', import.meta.url), 'utf8')
 
-  assert.ok(source.includes('sellerProfileRequirementPreview'), 'Builder modal should compute a live requirement preview.')
-  assert.ok(source.includes('listing-seller-profile-requirement-preview'), 'Builder modal should render the document impact preview.')
+  assert.ok(!source.includes('sellerProfileRequirementPreview'), 'Owner capture should not calculate a live document preview.')
+  assert.ok(!source.includes('listing-seller-profile-requirement-preview'), 'Owner capture should not render the document impact preview.')
+  assert.ok(!source.includes('Document impact'), 'Owner capture should not mention document impact.')
   assert.ok(source.includes('sellerDocumentRequirementModel'), 'Documents tab should compute the saved seller requirement model.')
   assert.ok(source.includes('listing-seller-document-model-summary'), 'Documents tab should render seller model summary.')
   assert.ok(source.includes('const projectedDocumentRequirements = requirementProjection.allRequirementRows.map'), 'Local-only listings should retain their generated requirement rows.')

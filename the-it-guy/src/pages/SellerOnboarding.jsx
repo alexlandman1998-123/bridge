@@ -70,10 +70,10 @@ import {
   getPropertyTypeLabel,
   getPropertyTypeOptionsByCategory,
   getPropertyStructureTypeLabel,
+  getPropertyStructureTypesByCategory,
   normalizePropertyCategory,
   normalizePropertyStructureType,
   PROPERTY_CATEGORIES,
-  PROPERTY_STRUCTURE_TYPES,
 } from '../lib/propertyTaxonomy'
 import {
   createBlankPropertyAddress,
@@ -258,18 +258,6 @@ const PROPERTY_STRUCTURE_META = {
   other: { icon: Circle, description: 'Another title type.' },
 }
 
-const PROPERTY_STRUCTURES_BY_CATEGORY = {
-  residential: ['full_title', 'sectional_title', 'share_block', 'freehold', 'other'],
-  commercial: ['full_title', 'sectional_title', 'freehold', 'other'],
-  industrial: ['full_title', 'freehold', 'sectional_title', 'other'],
-  retail: ['full_title', 'sectional_title', 'freehold', 'other'],
-  agricultural: ['agricultural_holding', 'freehold', 'full_title', 'other'],
-  mixed_use: ['full_title', 'sectional_title', 'freehold', 'other'],
-  vacant_land: ['full_title', 'freehold', 'agricultural_holding', 'other'],
-}
-
-const SELLER_PROPERTY_STRUCTURE_TYPES = PROPERTY_STRUCTURE_TYPES.filter((value) => value !== 'estate')
-
 const OCCUPANCY_STATUSES = [
   { value: 'unknown', label: 'Unknown' },
   { value: 'vacant', label: 'Vacant' },
@@ -440,10 +428,7 @@ function choiceCardClass(isActive) {
 }
 
 function getPropertyStructureOptionsByCategory(category) {
-  const normalizedCategory = normalizePropertyCategory(category, { fallback: 'residential' })
-  const values = PROPERTY_STRUCTURES_BY_CATEGORY[normalizedCategory] || SELLER_PROPERTY_STRUCTURE_TYPES
-  return values
-    .filter((value) => SELLER_PROPERTY_STRUCTURE_TYPES.includes(value))
+  return getPropertyStructureTypesByCategory(category)
     .map((value) => ({
       value,
       label: getPropertyStructureTypeLabel(value),
@@ -2308,7 +2293,7 @@ function ReviewCard({ title, items, onEdit, missing = [], collapsible = false, d
   )
 }
 
-function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddress = '', onSubmit = null, submitting = false }) {
+function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddress = '', onSubmit = null, submitting = false, agentAssisted = false }) {
   const issueCount = issueGroups.reduce((total, group) => total + (group.missing?.length || 0), 0)
   const ready = issueCount === 0
 
@@ -2326,11 +2311,11 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
         </span>
         <div className="min-w-0">
           <p className={`text-lg font-semibold tracking-normal ${ready ? 'text-[#14532d]' : 'text-[#7a4b10]'}`}>
-            {ready ? 'Ready to send to your agent' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
+            {ready ? agentAssisted ? 'Ready to submit seller onboarding' : 'Ready to send to your agent' : `${issueCount} item${issueCount === 1 ? '' : 's'} need attention`}
           </p>
           <p className={`mt-1 text-sm leading-6 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
             {ready
-              ? 'Everything required for onboarding has been captured. Send it to your agent when the summary looks correct.'
+              ? agentAssisted ? 'Everything required for onboarding has been captured. Submit it when the summary looks correct.' : 'Everything required for onboarding has been captured. Send it to your agent when the summary looks correct.'
               : 'Open the highlighted sections below and finish the missing details before submitting.'}
           </p>
         </div>
@@ -2395,7 +2380,7 @@ function ReviewReadinessPanel({ issueGroups = [], sellerName = '', propertyAddre
           disabled={!ready || submitting}
           className={`min-h-[52px] w-full rounded-[16px] ${BRAND_ACTION_BUTTON_CLASS}`}
         >
-          {submitting ? 'Sending...' : ready ? 'Send onboarding to agent' : 'Complete required items to continue'}
+          {submitting ? 'Submitting...' : ready ? agentAssisted ? 'Save and submit onboarding' : 'Send onboarding to agent' : 'Complete required items to continue'}
           <CheckCircle2 size={16} />
         </Button>
         <p className={`mt-2 text-center text-xs leading-5 ${ready ? 'text-[#25603d]' : 'text-[#8a5a18]'}`}>
@@ -2987,6 +2972,10 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
   const requestedComplianceSignerId = useMemo(() => getSellerComplianceSignerIdFromUrl(), [token])
   const onboardingCompletionMode = useMemo(() => getSellerOnboardingCompletionModeFromUrl(), [token])
   const isAgentAssistedCompletion = onboardingCompletionMode === SELLER_ONBOARDING_COMPLETION_MODES.agentAssisted
+  const agentLeadIdFromUrl = isAgentAssistedCompletion && typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('lead_id') || ''
+    : ''
+  const agentLeadId = /^[a-zA-Z0-9-]+$/.test(agentLeadIdFromUrl) ? agentLeadIdFromUrl : ''
 
   useEffect(() => {
     setSignerAcknowledgements(null)
@@ -5025,7 +5014,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           console.error('[Seller Onboarding] submitted callback failed', callbackError)
         }
       }
-      void notifySellerOnboardingSubmitted(token)
+      if (!isAgentAssistedCompletion) void notifySellerOnboardingSubmitted(token)
       console.debug('[Seller Onboarding] submit completed', {
         durationMs: Math.round(getRuntimeTimestampMs() - startedAt),
         mode: useDbFirstSellerOnboarding ? 'supabase' : 'local',
@@ -5280,7 +5269,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         ) : null}
         {currentStep === FINAL_STEP_INDEX ? (
           <Button type="button" variant="ghost" onClick={handleSubmit} disabled={submitting} className={`min-h-[52px] w-full rounded-[18px] ${BRAND_ACTION_BUTTON_CLASS}`}>
-            {submitting ? 'Sending...' : 'Send onboarding to agent'}
+            {submitting ? 'Submitting...' : isAgentAssistedCompletion ? 'Save and submit onboarding' : 'Send onboarding to agent'}
             <CheckCircle2 size={14} />
           </Button>
         ) : null}
@@ -5313,7 +5302,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
           ) : null}
           {currentStep === FINAL_STEP_INDEX ? (
             <Button type="button" variant="ghost" onClick={handleSubmit} disabled={submitting} className={`min-h-[46px] ${BRAND_ACTION_BUTTON_CLASS}`}>
-              {submitting ? 'Sending...' : 'Send onboarding to agent'}
+              {submitting ? 'Submitting...' : isAgentAssistedCompletion ? 'Save and submit onboarding' : 'Send onboarding to agent'}
               <CheckCircle2 size={14} />
             </Button>
           ) : null}
@@ -6830,6 +6819,7 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
                   propertyAddress={getPropertyDisplayAddress(listing, form)}
                   onSubmit={handleSubmit}
                   submitting={submitting}
+                  agentAssisted={isAgentAssistedCompletion}
                 />
                 <ReviewCard
                   title="Seller Summary"
@@ -7015,6 +7005,15 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
         : hasRequestedComplianceSigner
           ? 'mx-auto w-full max-w-[560px] lg:max-w-[960px]'
           : PAGE_CONTAINER_CLASS}>
+        {agentLeadId ? (
+          <Link
+            to={`/pipeline/leads/${agentLeadId}`}
+            className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-[12px] border border-[#d5e1ed] bg-white px-4 text-sm font-semibold text-[#29435d] shadow-sm"
+          >
+            <ChevronLeft size={16} />
+            {isCompleted ? 'Return to seller lead' : 'Back to seller lead'}
+          </Link>
+        ) : null}
         {content}
       </div>
     </main>
