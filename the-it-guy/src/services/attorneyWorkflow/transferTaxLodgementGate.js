@@ -1,4 +1,5 @@
 import { resolveTransferTaxDecision } from '../transferTaxDecisionService.js'
+import { phase4TaxTaskKeys, phase4DecisionIssues } from './transferPhase4Policy.js'
 
 const COMPLETED_STATUSES = new Set(['completed'])
 
@@ -27,7 +28,7 @@ function requirement(key, label) {
  * resolved, but a transfer cannot be declared ready to lodge without the
  * proof appropriate to its confirmed route.
  */
-export function evaluateTransferTaxLodgementReadiness({ transferTaxDecision = {}, steps = [] } = {}) {
+export function evaluateTransferTaxLodgementReadiness({ transferTaxDecision = {}, scenarioProfile = {}, propertyConditions = null, profile = {}, steps = [] } = {}) {
   const decision = resolveTransferTaxDecision(transferTaxDecision)
   const completed = completedStepKeys(steps)
   const requirements = []
@@ -42,27 +43,19 @@ export function evaluateTransferTaxLodgementReadiness({ transferTaxDecision = {}
     }
   }
 
-  if (decision.route === 'transfer_duty') {
-    requirements.push(
-      requirement('transfer_duty_tdc01_submission', 'Transfer-duty submission confirmed'),
-      requirement('sars_transfer_tax_receipt_verified', 'SARS transfer-duty receipt verified'),
-    )
-  } else {
-    requirements.push(requirement('vat_exemption_evidence_verified', 'VAT, zero-rated, or exemption evidence verified'))
-    requirements.push(requirement('sars_transfer_tax_receipt_verified', 'SARS transfer-tax receipt verified'))
-  }
-
-  if (decision.sellerNonResidentReview === 'yes') {
-    requirements.push(requirement('non_resident_seller_withholding_review', 'Non-resident seller withholding review completed'))
-  }
+  requirements.push(...phase4TaxTaskKeys(decision, scenarioProfile)
+    .filter((item) => item !== 'transfer_tax_route_confirmed')
+    .map((item) => requirement(item, item.replace(/_/g, ' '))))
 
   const missingRequirements = requirements.filter((item) => !completed.has(item.key))
+  const decisionIssues = phase4DecisionIssues(decision, scenarioProfile, propertyConditions, profile)
   return {
-    ready: missingRequirements.length === 0,
+    ready: missingRequirements.length === 0 && decisionIssues.length === 0,
     route: decision.route,
     requirements,
     missingRequirements,
-    warnings: missingRequirements.map((item) => `${item.label} is required before lodgement.`),
+    warnings: [...missingRequirements.map((item) => `${item.label} is required before lodgement.`),
+      ...decisionIssues.map((item) => `Review ${item} before lodgement.`)],
   }
 }
 

@@ -10,6 +10,7 @@ import { buildMvpTransactionDocumentBootstrap } from '../core/transactions/mvpTr
 import { buildMvpTransactionWorkflowBootstrap } from '../core/transactions/mvpTransactionWorkflowBootstrap.js'
 import { assessMvpTestDataProtection, assertMvpTestDataProtection } from '../core/transactions/mvpTestDataProtection.js'
 import { assertMvpPilotCreationAllowed } from './mvpPilotCreationFreeze.js'
+import { promoteStagedBuyerLeadDocuments } from '../services/documents/buyerLeadDocumentHandoffService.js'
 import {
   assertMvpTransactionOverrideAuthorization,
   resolveTransactionCreationOverrideReason,
@@ -926,6 +927,25 @@ export async function createTransactionFromLeadOverride({
   const allowRuntimeFallback = unsafeFallbackAllowed && Boolean(options?.allowRuntimeFallback || explicitMockMode || !isSupabaseConfigured || !supabase)
   const canPersistToSupabase = Boolean(isSupabaseConfigured && supabase && !explicitMockMode)
 
+  async function withBuyerDocumentHandoff(result) {
+    if (!result?.persisted || !result?.transactionId || !isUuidLike(nextLeadId)) return result
+    try {
+      await promoteStagedBuyerLeadDocuments(supabase, {
+        transactionId: result.transactionId,
+        organisationId: nextOrganisationId,
+        leadId: nextLeadId,
+        lead,
+      })
+      return result
+    } catch (error) {
+      console.warn('[transactionLifecycleService] Buyer lead document handoff needs retry.', error)
+      return {
+        ...result,
+        warning: [result.warning, 'Buyer lead documents need handoff retry.'].filter(Boolean).join(' '),
+      }
+    }
+  }
+
   if (!nextOrganisationId) {
     throw new Error('Organisation id is required before converting a lead into a transaction.')
   }
@@ -1009,7 +1029,7 @@ export async function createTransactionFromLeadOverride({
         }
       }
 
-      return {
+      return withBuyerDocumentHandoff({
         ...created,
         transactionId: duplicateByAcceptedOffer.id,
         existing: true,
@@ -1024,7 +1044,7 @@ export async function createTransactionFromLeadOverride({
         warning: !leadLinkageResult?.updated
           ? leadLinkageResult?.reason || 'existing_offer_transaction_reused'
           : 'existing_offer_transaction_reused',
-      }
+      })
     }
 
     const duplicate = !acceptedOfferId
@@ -1050,7 +1070,7 @@ export async function createTransactionFromLeadOverride({
         }
       }
 
-      return {
+      return withBuyerDocumentHandoff({
         ...created,
         transactionId: duplicate.id,
         existing: true,
@@ -1066,7 +1086,7 @@ export async function createTransactionFromLeadOverride({
         warning: !leadLinkageResult?.updated
           ? leadLinkageResult?.reason || 'existing_transaction_reused'
           : 'existing_transaction_reused',
-      }
+      })
     }
 
     // Buyer resolution is deliberately performed inside the database command
@@ -1205,7 +1225,7 @@ export async function createTransactionFromLeadOverride({
       source: 'supabase',
     })
 
-    return {
+    return withBuyerDocumentHandoff({
       ...created,
       transactionId: insertedRow.id,
       transactionRow: mapSupabaseTransactionRowToRuntimeShape({
@@ -1220,7 +1240,7 @@ export async function createTransactionFromLeadOverride({
       atomicCreation,
       overrideAuthorization,
       warning: existing ? 'existing_transaction_reused' : null,
-    }
+    })
   } catch (error) {
     if (allowRuntimeFallback) {
       return createTransactionFromLeadManualOverride({ lead, listing, actor, payload })

@@ -1260,9 +1260,19 @@ function mapLaneStepToClientText(laneKey = '', step = null, fallback = '') {
       transfer_duty_assessment_payment: 'The transfer-tax clearance process is underway.',
       vat_exemption_evidence_verified: 'The applicable transfer-tax clearance is being verified.',
       non_resident_seller_withholding_review: 'The transfer-tax clearance process is underway.',
+      ordinary_vat_basis_verified: 'The transfer-tax clearance process is underway.',
+      going_concern_zero_rate_verified: 'The transfer-tax clearance process is underway.',
+      transfer_duty_exemption_basis_verified: 'The transfer-tax clearance process is underway.',
+      non_resident_seller_applicability_review: 'The transfer-tax clearance process is underway.',
+      non_resident_seller_directive_review: 'The transfer-tax clearance process is underway.',
+      non_resident_seller_withholding_payment_review: 'The transfer-tax clearance process is underway.',
       sars_transfer_tax_receipt_verified: 'Transfer tax clearance has been verified.',
       municipal_rates_clearance_review: 'Municipal rates clearance is being reviewed.',
       levy_hoa_clearance_review: 'Property levy or HOA clearance is being reviewed where applicable.',
+      body_corporate_levy_clearance_review: 'Property levy clearance is being reviewed.',
+      hoa_clearance_review: 'Property association clearance is being reviewed.',
+      property_conditions_applicability_review: 'Property conditions are being reviewed.',
+      title_conditions_review: 'Property title conditions are being reviewed.',
       property_compliance_review: 'Property compliance certificates are being reviewed.',
       transfer_document_pack_review: 'The transfer document pack is being prepared and reviewed.',
       buyer_signing_review: 'Buyer signing is being managed and reviewed.',
@@ -3441,7 +3451,20 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
         : null,
     }
   })
-  const items = requiredDocuments
+  const unmatchedItems = documents
+    .filter((document) => ['agent_buyer_document_upload', 'client_portal_requested_document_upload'].includes(document?.source) &&
+      !document?.canonical_requirement_instance_id &&
+      !document?.canonicalRequirementInstanceId)
+    .map((document) => ({
+      ...buildUploadedDocumentCenterItem(document),
+      description: document?.source === 'agent_buyer_document_upload'
+        ? 'Uploaded by your agent. Awaiting matching to a specific document requirement.'
+        : 'Uploaded for an additional request. Awaiting review.',
+      status: 'uploaded',
+      awaitingRequirementMatch: document?.source === 'agent_buyer_document_upload',
+      buyerCategoryKey: canonicalBuyerDocumentCategory(document?.document_type || document?.category),
+    }))
+  const items = [...requiredDocuments, ...unmatchedItems]
   const summary = items.reduce((result, item) => {
     const status = normalizeDocumentStatus(item.status)
     result.total += 1
@@ -3463,6 +3486,8 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
     rejectedDocuments: requiredDocuments.filter((item) => item.status === 'rejected'),
     signedDocuments: [],
     items,
+    unmatchedDocuments: unmatchedItems.filter((item) => item.awaitingRequirementMatch),
+    standaloneDocuments: unmatchedItems,
     summary,
     canonicalRequirements: requirements,
     canonicalProjection: projection,

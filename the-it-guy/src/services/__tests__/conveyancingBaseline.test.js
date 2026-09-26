@@ -4,19 +4,28 @@ import { buildMatterWorkflowPlan } from '../attorneyWorkflow/matterWorkflowPlanS
 import { evaluateTransferTaxLodgementReadiness } from '../attorneyWorkflow/transferTaxLodgementGate.js'
 import { fetchSharedMatterJourney, fetchSellerSharedMatterJourney, sharedJourneyHeaderPhases, sharedJourneyAudienceForRole } from '../sharedMatterJourneyReader.js'
 
-test('freehold clearance is excluded only for an explicitly absent HOA', () => {
-  for (const [hoaApplicable, expected] of [['yes', true], ['unknown', true], [undefined, true], ['no', false]]) {
+test('freehold HOA clearance is present only when HOA applies', () => {
+  for (const [hoaApplicable, expected] of [['yes', true], ['unknown', false], [undefined, false], ['no', false]]) {
     const plan = buildMatterWorkflowPlan({ routingProfile: { propertyTenure: 'freehold', hoaApplicable } })
-    assert.equal(plan.lanes[0].stepKeys.includes('levy_hoa_clearance_review'), expected)
+    assert.equal(plan.lanes[0].stepKeys.includes('hoa_clearance_review'), expected)
   }
 })
 
 test('every non-duty route needs the final receipt, and reopening removes readiness', () => {
   for (const route of ['vat', 'zero_rated_going_concern', 'exempt']) {
+    const decision = { route, status: 'confirmed', sarsStatus: 'receipted', basisNote: 'Reviewed basis',
+      sarsProofReference: 'SARS proof', sellerVatRegistered: 'yes',
+      supplyInCourseOfEnterprise: 'yes', sellerVatNumberReference: 'VAT file',
+      buyerVatRegistered: 'yes', buyerVatNumberReference: 'Buyer VAT file',
+      goingConcernAgreementReference: 'OTP', exemptionType: 'Statutory provision',
+      exemptionEvidenceReference: 'Exemption file' }
+    const routeStep = route === 'vat' ? 'ordinary_vat_basis_verified'
+      : route === 'zero_rated_going_concern' ? 'going_concern_zero_rate_verified'
+        : 'transfer_duty_exemption_basis_verified'
     for (const status of ['not_started', 'completed', 'in_progress', 'not_applicable']) {
       const result = evaluateTransferTaxLodgementReadiness({
-        transferTaxDecision: { route, status: 'confirmed' },
-        steps: [{ stepKey: 'vat_exemption_evidence_verified', status: 'completed' },
+        transferTaxDecision: decision,
+        steps: [{ stepKey: routeStep, status: 'completed' },
           { stepKey: 'sars_transfer_tax_receipt_verified', status }],
       })
       assert.equal(result.ready, status === 'completed')

@@ -72,6 +72,13 @@ export function isSellerPortalVisibleRequirement(requirement = {}) {
   return audience.includes('seller')
 }
 
+// Agent uploads follow the visibility of an explicitly seller-facing request.
+// Unclassified, internal and role-player requests remain private by default.
+export function resolveSellerLeadUploadVisibility(requirement = {}, { unreleasedMandate = false } = {}) {
+  if (unreleasedMandate) return 'internal'
+  return isSellerPortalVisibleRequirement(requirement) ? 'seller_visible' : 'internal'
+}
+
 function requirementReferenceValues(record = {}) {
   return [
     record?.id,

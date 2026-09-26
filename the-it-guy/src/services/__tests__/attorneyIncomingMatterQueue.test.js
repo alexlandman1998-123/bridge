@@ -16,6 +16,23 @@ try {
     buildAttorneyIncomingMatterQueueFromSources,
     __attorneyIncomingMatterQueueTestUtils,
   } = await server.ssrLoadModule('/src/services/attorneyIncomingMatterQueue.js')
+  const { resolveAttorneyIncomingInstructionStatus } =
+    await server.ssrLoadModule('/src/core/transactions/attorneyIncomingMatterContract.js')
+
+  assert.deepEqual(
+    __attorneyIncomingMatterQueueTestUtils.getOtpStatus({
+      transaction: { onboarding_status: 'otp_uploaded' },
+      status: 'ready_for_acceptance',
+    }),
+    { key: 'received', label: 'OTP uploaded' },
+  )
+  assert.equal(
+    resolveAttorneyIncomingInstructionStatus({
+      transaction: { onboarding_status: 'otp_uploaded' },
+      assignment: { assignment_type: 'transfer', instruction_status: 'awaiting_signed_otp' },
+    }),
+    'ready_for_acceptance',
+  )
 
   const source = {
     firm: { id: 'firm-1', name: 'Arch9 Attorneys' },

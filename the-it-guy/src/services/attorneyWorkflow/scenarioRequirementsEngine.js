@@ -1,6 +1,6 @@
 import { resolveMatterScenarioProfile, scenarioIssues } from '../matterScenarioProfile.js'
 
-export const SCENARIO_REQUIREMENTS_VERSION = 'scenario_requirements_v1'
+export const SCENARIO_REQUIREMENTS_VERSION = 'scenario_requirements_v2'
 
 // Adapt the existing catalogue, rather than inventing a second legal checklist.
 // Flags here mean "at least one party" and must only be used to select the
@@ -10,13 +10,16 @@ export function resolveScenarioRequirementFacts(facts = {}) {
   const scenarioProfile = resolveMatterScenarioProfile(facts.scenarioProfile)
   const result = { ...facts, scenarioProfile }
   for (const role of ['buyer', 'seller']) {
-    for (const type of ['individual', 'company', 'trust']) {
-      result[`${role}Is${type[0].toUpperCase()}${type.slice(1)}`] = scenarioProfile.parties.some(p => p.role === role && p.entityType === type)
+    for (const type of ['individual', 'company', 'trust', 'close_corporation']) {
+      const label = type === 'close_corporation' ? 'CloseCorporation' : `${type[0].toUpperCase()}${type.slice(1)}`
+      result[`${role}Is${label}`] = scenarioProfile.parties.some(p => p.role === role && p.entityType === type)
     }
   }
+  result.buyerHasForeignIndividual = scenarioProfile.parties.some(p => p.role === 'buyer' && p.entityType === 'individual' && p.identityRoute === 'foreign_passport')
+  result.hasForeignMaritalCapacity = scenarioProfile.parties.some(p => p.entityType === 'individual' && p.maritalRegime === 'foreign')
   result.confidenceWarnings = [...new Set([
     ...(facts.confidenceWarnings || []), ...scenarioIssues(scenarioProfile),
-    ...scenarioProfile.parties.filter(p => !['individual', 'company', 'trust'].includes(p.entityType))
+    ...scenarioProfile.parties.filter(p => !['individual', 'company', 'close_corporation', 'trust'].includes(p.entityType))
       .map(p => `${p.id}: ${p.entityType} requires an attorney applicability review; no substitute entity checklist has been assumed.`),
     ...scenarioProfile.exceptions.filter(Boolean).map(note => `Exceptional circumstance requires review: ${note}`),
   ])]
@@ -26,8 +29,11 @@ export function resolveScenarioRequirementFacts(facts = {}) {
 export function scopeScenarioRequirements(requirements, facts = {}) {
   return requirements.map(requirement => {
     const role = requirement.appliesTo || requirement.requiredFrom || requirement.signerType?.split('_')[0]
-    const entityType = requirement.entityType || (requirement.signerType && /trustee/.test(requirement.id) ? 'trust' : requirement.signerType && /director/.test(requirement.id) ? 'company' : null)
-    const parties = (facts.scenarioProfile?.parties || []).filter(p => p.role === role && (!entityType || p.entityType === entityType))
+    const entityType = requirement.entityType || (requirement.signerType && /trustee/.test(requirement.id) ? 'trust' : requirement.signerType && /director/.test(requirement.id) ? 'company' : requirement.signerType && /cc_member/.test(requirement.id) ? 'close_corporation' : null)
+    const parties = (facts.scenarioProfile?.parties || []).filter(p => p.role === role &&
+      (!entityType || p.entityType === entityType) &&
+      (!requirement.identityRoutes || requirement.identityRoutes.includes(p.identityRoute)) &&
+      (!requirement.maritalRegimes || requirement.maritalRegimes.includes(p.maritalRegime)))
     return {
       ...requirement,
       scenarioRuleVersion: SCENARIO_REQUIREMENTS_VERSION,
@@ -51,5 +57,6 @@ export function scopeScenarioRequirements(requirements, facts = {}) {
       })),
       }),
     }
-  })
+  }).filter(requirement => !facts.scenarioProfile ||
+    !(requirement.identityRoutes || requirement.maritalRegimes) || requirement.partyRequirements.length > 0)
 }

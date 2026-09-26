@@ -10,6 +10,7 @@ const INTERNAL_TAX_TASKS = [
   'transfer_duty_assessment_payment',
   'vat_exemption_evidence_verified',
   'non_resident_seller_withholding_review',
+  'ordinary_vat_basis_verified',
 ]
 
 function journeyFor({ route = 'transfer_duty', statusByKey = {} } = {}) {
@@ -49,7 +50,9 @@ test('keeps every role on the same tax-task status while keeping buyer and selle
   } })
   const report = buildTransferTaxCrossRoleAssurance({
     journey,
-    transferTaxDecision: { route: 'transfer_duty', status: 'confirmed' },
+    transferTaxDecision: { route: 'transfer_duty', status: 'confirmed', sarsStatus: 'receipted',
+      tdc01Reference: 'TDC01-1', dutyPaymentRequired: 'no',
+      basisNote: 'Dutiable transfer', sarsProofReference: 'SARS-1' },
   })
 
   assert.equal(report.ready, true)
@@ -64,15 +67,18 @@ test('keeps every role on the same tax-task status while keeping buyer and selle
   assert.equal(JSON.stringify(report.views.buyer), JSON.stringify(report.views.seller).replaceAll('"audience":"seller"', '"audience":"buyer"'))
 })
 
-test('uses the VAT evidence gate without exposing the route to client portals', () => {
+test('uses the ordinary VAT gate without exposing the route to client portals', () => {
   const journey = journeyFor({ statusByKey: {
     transfer_tax_route_confirmed: 'completed',
-    vat_exemption_evidence_verified: 'completed',
+    ordinary_vat_basis_verified: 'completed',
     sars_transfer_tax_receipt_verified: 'completed',
   } })
   const report = buildTransferTaxCrossRoleAssurance({
     journey,
-    transferTaxDecision: { route: 'vat', status: 'confirmed' },
+    transferTaxDecision: { route: 'vat', status: 'confirmed', sarsStatus: 'receipted',
+      sellerVatRegistered: 'yes', supplyInCourseOfEnterprise: 'yes',
+      sellerVatNumberReference: 'VAT file', basisNote: 'Taxable supply',
+      sarsProofReference: 'SARS-2' },
   })
 
   assert.equal(report.ready, true)

@@ -6951,8 +6951,7 @@ export async function linkPrivateListingDocument(listingId, {
       .from('private_listing_documents')
       .select(selectFields)
       .eq('private_listing_id', normalizedListingId)
-      .order('uploaded_at', { ascending: false })
-      .limit(25),
+      .order('uploaded_at', { ascending: false }),
     PRIVATE_LISTING_DOCUMENT_SELECT_VARIANTS,
     'private_listing_documents',
   )

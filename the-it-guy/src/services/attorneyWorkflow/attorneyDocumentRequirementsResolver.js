@@ -47,6 +47,8 @@ function requirement({
   requiredFrom = 'client',
   appliesTo = 'transaction',
   entityType = null,
+  identityRoutes = null,
+  maritalRegimes = null,
   required = true,
   requestable = true,
   reviewRequired = true,
@@ -66,6 +68,8 @@ function requirement({
     requiredFrom,
     appliesTo,
     entityType,
+    identityRoutes,
+    maritalRegimes,
     required,
     requestable,
     reviewRequired,
@@ -163,6 +167,20 @@ function addCommonTransferRequirements(requirements) {
   )
 }
 
+function addCloseCorporationRequirements(requirements, role) {
+  const label = role === 'buyer' ? 'Buyer' : 'Seller'
+  for (const [suffix, documentLabel, category, reason] of [
+    ['cc_registration', 'CC Founding / Registration Documents', 'entity_documents', 'Verify the close corporation and its registered members.'],
+    ['cc_member_ids', 'CC Member and Signatory IDs', 'fica', 'Identify the members and authorised signatories.'],
+    ['cc_resolution', 'CC Member Resolution and Signing Authority', 'entity_documents', 'Confirm member authority for this transaction and signer.'],
+    ['cc_beneficial_ownership', 'CC Beneficial Ownership Information', 'entity_documents', 'Review beneficial ownership for the close corporation.'],
+  ]) requirements.push(requirement({
+    id: `${role}_${suffix}`, label: `${label} ${documentLabel}`, category,
+    requiredFrom: role, appliesTo: role, entityType: 'close_corporation',
+    visibilityDefault: 'client_visible', reason,
+  }))
+}
+
 function addBuyerEntityRequirements(requirements, facts) {
   if (facts.buyerIsIndividual) {
     requirements.push(
@@ -173,9 +191,21 @@ function addBuyerEntityRequirements(requirements, facts) {
         requiredFrom: 'buyer',
         appliesTo: 'buyer',
         entityType: 'individual',
+        identityRoutes: ['unknown', 'sa_id'],
         visibilityDefault: 'client_visible',
         reason: 'Individual buyer requires identity verification.',
       }),
+      ...(facts.buyerHasForeignIndividual ? [requirement({
+        id: 'buyer_passport', label: 'Foreign Buyer Passport', category: 'fica',
+        requiredFrom: 'buyer', appliesTo: 'buyer', entityType: 'individual',
+        identityRoutes: ['foreign_passport'], visibilityDefault: 'client_visible',
+        reason: 'A buyer without a South African ID must provide passport details for identity and TDC01 entry.',
+      }), requirement({
+        id: 'buyer_foreign_tax_entry', label: 'Foreign Buyer SARS Tax Entry', category: 'transfer_documents',
+        requiredFrom: 'attorney', appliesTo: 'buyer', entityType: 'individual',
+        identityRoutes: ['foreign_passport'], requestable: false, clientUploadAllowed: false,
+        reason: 'Confirm the foreign individual purchaser tax number and TDC01 passport entry with SARS.',
+      })] : []),
       requirement({
         id: 'buyer_proof_of_address',
         label: 'Buyer Proof of Address',
@@ -196,6 +226,12 @@ function addBuyerEntityRequirements(requirements, facts) {
         visibilityDefault: 'client_visible',
         reason: 'Marital regime may affect signing authority.',
       }),
+      ...(facts.hasForeignMaritalCapacity ? [requirement({
+        id: 'buyer_foreign_marital_capacity', label: 'Buyer Foreign-Law Marital Capacity Review',
+        category: 'entity_documents', requiredFrom: 'attorney', appliesTo: 'buyer', entityType: 'individual',
+        maritalRegimes: ['foreign'], requestable: false, clientUploadAllowed: false,
+        reason: 'Attorney must resolve the applicable foreign-law capacity and spouse assistance before signing.',
+      })] : []),
     )
   }
 
@@ -309,6 +345,7 @@ function addBuyerEntityRequirements(requirements, facts) {
       }),
     )
   }
+  if (facts.buyerIsCloseCorporation) addCloseCorporationRequirements(requirements, 'buyer')
 }
 
 function addSellerEntityRequirements(requirements, facts) {
@@ -321,9 +358,16 @@ function addSellerEntityRequirements(requirements, facts) {
         requiredFrom: 'seller',
         appliesTo: 'seller',
         entityType: 'individual',
+        identityRoutes: ['unknown', 'sa_id'],
         visibilityDefault: 'client_visible',
         reason: 'Individual seller requires identity verification.',
       }),
+      ...(facts.scenarioProfile?.parties?.some(p => p.role === 'seller' && p.entityType === 'individual' && p.identityRoute === 'foreign_passport') ? [requirement({
+        id: 'seller_passport', label: 'Foreign Seller Passport', category: 'fica',
+        requiredFrom: 'seller', appliesTo: 'seller', entityType: 'individual',
+        identityRoutes: ['foreign_passport'], visibilityDefault: 'client_visible',
+        reason: 'Verify a seller without a South African ID by passport.',
+      })] : []),
       requirement({
         id: 'seller_proof_of_address',
         label: 'Seller Proof of Address',
@@ -344,6 +388,12 @@ function addSellerEntityRequirements(requirements, facts) {
         visibilityDefault: 'client_visible',
         reason: 'Marital regime may affect seller signing authority.',
       }),
+      ...(facts.hasForeignMaritalCapacity ? [requirement({
+        id: 'seller_foreign_marital_capacity', label: 'Seller Foreign-Law Marital Capacity Review',
+        category: 'entity_documents', requiredFrom: 'attorney', appliesTo: 'seller', entityType: 'individual',
+        maritalRegimes: ['foreign'], requestable: false, clientUploadAllowed: false,
+        reason: 'Attorney must resolve the applicable foreign-law capacity and spouse assistance before signing.',
+      })] : []),
     )
   }
 
@@ -434,8 +484,14 @@ function addSellerEntityRequirements(requirements, facts) {
         visibilityDefault: 'client_visible',
         reason: 'Trust seller requires trustee authority to sign.',
       }),
+      requirement({
+        id: 'seller_trust_beneficial_ownership', label: 'Seller Trust Beneficial Ownership Information',
+        category: 'entity_documents', requiredFrom: 'seller', appliesTo: 'seller', entityType: 'trust',
+        visibilityDefault: 'client_visible', reason: 'Review the trust beneficial owners for FICA.',
+      }),
     )
   }
+  if (facts.sellerIsCloseCorporation) addCloseCorporationRequirements(requirements, 'seller')
 }
 
 function addBondRequirements(requirements, signingRequirements, facts) {
@@ -494,7 +550,7 @@ function addCancellationRequirements(requirements, signingRequirements, facts) {
     requirement({ ...cancellationBase, id: 'cancellation_figures', label: 'Cancellation Figures', visibilityDefault: 'professional_shared', reason: 'Cancellation figures are required before cancellation guarantees can be accepted.' }),
     requirement({ ...cancellationBase, id: 'cancellation_guarantees', label: 'Guarantees for Cancellation', visibilityDefault: 'professional_shared', reason: 'Cancellation guarantees must be accepted by the cancellation attorney.' }),
     requirement({ ...cancellationBase, id: 'bank_cancellation_documents', label: 'Bank Cancellation Documents', visibilityDefault: 'professional_shared', reason: 'Bank cancellation documents must be prepared or received.' }),
-    requirement({ ...cancellationBase, id: 'cancellation_consent', label: 'Cancellation Consent', required: false, reason: 'Cancellation consent may be required.' }),
+    requirement({ ...cancellationBase, id: 'cancellation_consent', label: 'Bondholder Cancellation Consent', reason: 'Written bondholder consent or an authorised cancellation instruction must be reviewed before lodgement.' }),
     requirement({ ...cancellationBase, id: 'proof_of_settlement', label: 'Proof of Settlement', required: false, reason: 'Proof of settlement may be required after cancellation settlement.' }),
   )
 
@@ -713,6 +769,13 @@ function addBaseSigningRequirements(signingRequirements, facts) {
       reason: 'Trust buyer resolution must be signed by trustees.',
     }))
   }
+  if (facts.buyerIsCloseCorporation) {
+    signingRequirements.push(signingRequirement({
+      id: 'buyer_cc_member_resolution_signature', label: 'Buyer CC Member Resolution Signature',
+      signerType: 'buyer_cc_member', sourceRequirementId: 'buyer_cc_resolution',
+      reason: 'Close corporation buyer requires an authorised member signing route.',
+    }))
+  }
   if (facts.sellerIsCompany) {
     signingRequirements.push(signingRequirement({
       id: 'seller_director_resolution_signature',
@@ -729,6 +792,13 @@ function addBaseSigningRequirements(signingRequirements, facts) {
       signerType: 'seller_trustee',
       sourceRequirementId: 'seller_trustee_resolution',
       reason: 'Trust seller resolution must be signed by trustees.',
+    }))
+  }
+  if (facts.sellerIsCloseCorporation) {
+    signingRequirements.push(signingRequirement({
+      id: 'seller_cc_member_resolution_signature', label: 'Seller CC Member Resolution Signature',
+      signerType: 'seller_cc_member', sourceRequirementId: 'seller_cc_resolution',
+      reason: 'Close corporation seller requires an authorised member signing route.',
     }))
   }
 }
@@ -762,6 +832,13 @@ export function resolveLegalDocumentRequirements(transactionOrFacts = {}) {
   const signingRequirements = []
 
   addCommonTransferRequirements(requirements)
+  if (facts.isCashDeal || facts.isHybridDeal) {
+    requirements.push(requirement({
+      id: 'proof_of_funds', label: 'Cash Funding Source Evidence', category: 'finance_documents',
+      requiredFrom: 'buyer', appliesTo: 'buyer', visibilityDefault: 'professional_shared',
+      reason: 'The transfer attorney must review the source and availability of the cash component.',
+    }))
+  }
   addBuyerEntityRequirements(requirements, facts)
   addSellerEntityRequirements(requirements, facts)
   addTransactionTypeRequirements(requirements, facts)

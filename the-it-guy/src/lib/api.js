@@ -14,6 +14,7 @@ import { resolveClientPortalFinalSignedArtifactAccess } from '../core/documents/
 import { updateDocumentClientVisibilityRecord } from '../domains/documents/api.js'
 import { hydrateMatterPropertyContext } from '../services/matterPropertyContext'
 import { reuseBuyerProfileForTransaction } from '../services/buyerProfileReuseService.js'
+import { applyPartyCapacityDecisions } from '../services/matterScenarioProfile.js'
 export { generateMandateDocumentFromTemplate } from './generateMandateDocument'
 import {
   CANONICAL_TRANSACTION_STAGES,
@@ -25753,6 +25754,10 @@ export async function fetchClientPortalCanonicalDocumentProjection(token) {
   const client = requireClientPortalTokenClient(normalizedToken)
   const rpc = await client.rpc('bridge_client_portal_canonical_document_projection')
   if (rpc.error) throw rpc.error
+  const unmatchedRpc = await client.rpc('bridge_client_portal_unmatched_buyer_documents_projection')
+  // During a staged release, keep the existing canonical room available until
+  // the additive unmatched-files RPC migration has reached the database.
+  if (unmatchedRpc.error && unmatchedRpc.error.code !== 'PGRST202') throw unmatchedRpc.error
 
   const projection = rpc.data && typeof rpc.data === 'object' ? rpc.data : {}
   if (String(projection.role || '').trim().toLowerCase() !== 'buyer') {
@@ -25761,12 +25766,24 @@ export async function fetchClientPortalCanonicalDocumentProjection(token) {
   if (!String(projection.transactionId || '').trim()) {
     throw new Error('The canonical document projection did not resolve a transaction.')
   }
+  const unmatched = unmatchedRpc.data && typeof unmatchedRpc.data === 'object' ? unmatchedRpc.data : {}
+  if (!unmatchedRpc.error && (String(unmatched.role || '').trim().toLowerCase() !== 'buyer' ||
+      String(unmatched.transactionId || '').trim() !== String(projection.transactionId).trim())) {
+    throw new Error('The unmatched buyer document projection does not match the buyer transaction.')
+  }
+  const documentsById = new Map()
+  for (const document of [
+    ...(Array.isArray(projection.documents) ? projection.documents : []),
+    ...(Array.isArray(unmatched.documents) ? unmatched.documents : []),
+  ]) {
+    if (document?.id) documentsById.set(String(document.id), document)
+  }
   return {
     projectionVersion: String(projection.projectionVersion || '').trim(),
     role: 'buyer',
     transactionId: String(projection.transactionId).trim(),
     requirements: Array.isArray(projection.requirements) ? projection.requirements : [],
-    documents: Array.isArray(projection.documents) ? projection.documents : [],
+    documents: [...documentsById.values()],
   }
 }
 
@@ -39089,6 +39106,16 @@ export async function saveTransactionRoutingProfile({
   const transaction = transactionQuery.data
   if (!transaction) throw new Error('Transaction not found.')
 
+  const reviewedScenarioProfile = scenarioProfile
+      ? applyPartyCapacityDecisions(transaction.routing_profile_json?.scenarioProfile, scenarioProfile, {
+        canReview: normalizedActorRole === 'attorney',
+        userId: actorProfile.userId || '',
+        now: new Date().toISOString(),
+        propertyTenure: propertyTenure || transaction.routing_profile_json?.propertyTenure || transaction.property_tenure,
+        propertyConditions: mvpProfile?.propertyConditions || transaction.routing_profile_json?.mvpProfile?.propertyConditions || {},
+      })
+    : undefined
+
   const { payload, routingProfile, workflowPlanImpact } = buildTransactionRoutingCorrectionPayload(transaction, {
     financeType,
     transactionType,
@@ -39102,7 +39129,7 @@ export async function saveTransactionRoutingProfile({
     transferTaxDecision,
     transferTaxActor: { userId: actorProfile.userId || null, role: normalizedActorRole },
     mvpProfile,
-    scenarioProfile,
+    scenarioProfile: reviewedScenarioProfile,
     matterProfile: {
       status: 'confirmed',
       confirmedAt: new Date().toISOString(),
@@ -52159,6 +52186,7 @@ export async function uploadDocument({
   file,
   category,
   isClientVisible = false,
+  clientRecipientRole = null,
   documentType = null,
   visibilityScope = null,
   stageKey = null,
@@ -52264,6 +52292,7 @@ export async function uploadDocument({
     category: category || 'General',
     document_type: normalizedDocumentType,
     visibility_scope: visibilityScope || (isClientVisible ? 'shared' : 'internal'),
+    client_recipient_role: normalizeNullableText(clientRecipientRole),
     uploaded_by_user_id: activeProfile.userId || null,
     uploaded_by_role: activeProfile.role || null,
     uploaded_by_email: activeProfile.email || null,

@@ -25,8 +25,13 @@ try {
   }
   const page = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
   const header = page.slice(page.indexOf('function ArchlineMatterHeader('), page.indexOf('function ArchlineMatterHeader(') + 26000)
+  const headerMetrics = header.slice(header.indexOf('const metricRows = ['), header.indexOf('].filter((item) => item.value'))
   assert.ok(header.includes('sharedJourneyHeaderPhases(sharedLegalJourney, workflowKey)'))
   assert.ok(header.includes('onSelectWorkflowPhase?.(stage, workflowKey)'))
+  assert.doesNotMatch(headerMetrics, /Transfer Stage|Bond Stage|Cancellation Stage/)
+  assert.ok(page.includes('mediaLibrary?.coverImageUrl'))
+  assert.ok(page.includes('...(!isPrivateMatter ? [resolveDevelopmentCoverImage(development)] : [])'))
+  assert.ok(header.includes('absolute inset-0 z-0 h-full w-full object-cover'))
   assert.ok(page.includes('focusRequest={journeyFocusRequest}'))
   assert.match(page, /<ArchlineMatterHeader[\s\S]*?<MatterOverviewQuickFacts[\s\S]*?onOpenDocuments=\{\(party\) => \{ setActiveDocumentLibraryCategory\(party\); openWorkspaceMenu\('documents'\) \}\}/)
   assert.match(page, /documentSourceStatus=\{documentWorkspaceLoad\.status === 'error' \? 'unavailable' : documentDataHydrated \? 'available' : 'loading'\}/)

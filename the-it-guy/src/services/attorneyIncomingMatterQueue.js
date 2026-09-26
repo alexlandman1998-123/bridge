@@ -396,6 +396,9 @@ function getOtpStatus({ transaction = {}, status = '' } = {}) {
   const onboardingStatus = normalizeKey(transactionRow.onboarding_status || transactionRow.onboardingStatus)
   const mainStage = String(transactionRow.current_main_stage || transactionRow.currentMainStage || '').trim().toUpperCase()
 
+  if (onboardingStatus === 'otp_uploaded') {
+    return { key: 'received', label: 'OTP uploaded' }
+  }
   if (onboardingStatus === 'signed_otp_received' || ['ATT', 'ATTY', 'XFER', 'REG'].includes(mainStage)) {
     return { key: 'received', label: 'Signed OTP received' }
   }

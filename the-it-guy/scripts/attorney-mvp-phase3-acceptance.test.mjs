@@ -5,6 +5,7 @@ import { buildTransferWorkspaceViewModel } from '../src/services/attorneyWorkflo
 import { buildLegalTaskWorkbenchModel } from '../src/core/transactions/legalTaskWorkbenchModel.js'
 import { getCanonicalLegalWorkflowProgressPercent } from '../src/core/transactions/legalWorkflowProgress.js'
 import { buildLegalWorkflowOperationalHealthModel } from '../src/core/transactions/legalWorkflowOperationalHealthModel.js'
+import { isAttorneyAttestedMilestone } from '../src/core/transactions/attorneyTaskOperationalContract.js'
 
 // Local projections only. This test deliberately does not claim browser/RLS acceptance.
 const scenarios = [
@@ -41,15 +42,19 @@ for (const scenario of scenarios) {
         taskContext: initial.selectedTaskContext, workActions: initial.selectedTaskContext.workActions,
         statusActions: initial.availableActions.primary })
       const isTransferTaxLodgementGate = lane.laneKey === 'transfer' && stepKey === 'lodgement_ready'
+      const attestedMilestone = isAttorneyAttestedMilestone(lane.laneKey, stepKey)
       // Attorneys can work ahead across the workflow. The sole deliberate
       // exception is lodging a transfer before the applicable SARS route is
       // confirmed: that is a statutory readiness gate, not a generic UI lock.
       assert.equal(workbench.canComplete, !isTransferTaxLodgementGate, `${scenario.name}/${stepKey}: completion availability must match the tax-lodgement rule`)
-      if (isTransferTaxLodgementGate) {
-        assert(workbench.outcomeActions.some(action => action.id === 'mark_not_applicable' && !action.disabled), `${scenario.name}/${stepKey}: attorney retains an explicit N/A route`)
+      if (attestedMilestone) {
+        assert(!initial.availableActions.primary.some(action => action.id === 'complete_externally'))
+        assert(!initial.availableActions.primary.some(action => action.id === 'mark_not_applicable'))
+        assert(initial.availableActions.primary.some(action => action.id === 'mark_complete' && action.requiresNote))
+      } else {
+        assert(workbench.outcomeActions.some(action => action.id === 'complete_externally' && action.requiresReason))
+        assert(workbench.outcomeActions.some(action => action.id === 'mark_not_applicable' && action.requiresReason))
       }
-      assert(workbench.outcomeActions.some(action => action.id === 'complete_externally' && action.requiresReason))
-      assert(workbench.outcomeActions.some(action => action.id === 'mark_not_applicable' && action.requiresReason))
       assert.equal(make(stepKey, snapshot, false).availableActions.primary.length, 0, 'read-only users have no mutation actions')
       taskChecks++
       for (const status of ['completed', 'completed_externally', 'not_applicable', 'not_started']) {

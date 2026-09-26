@@ -73,7 +73,7 @@ function verifyFailClosedSourceContracts() {
   assert.doesNotMatch(membershipPermissions, /owner-admin-|resolveOwnerAdminMembershipFallback/)
   assert.doesNotMatch(legalPermissions, /PHASE_ONE_SHARED_WORKFLOW_EDITING|canEditAllWorkflowLanesInPhaseOne/)
   assert.match(legalPermissions, /membership\?\.isActive/)
-  assert.match(legalPermissions, /isAssignedParticipant \|\| managementOverrideEnabled/)
+  assert.match(legalPermissions, /isAssignedParticipant \|\| teamWorkflowEligible \|\| managementOverrideEnabled/)
 }
 
 const server = await createServer({
@@ -107,6 +107,16 @@ try {
   assert.equal(transferAttorney.canReviewDocuments, true)
   assert.equal(transferAttorney.canManageSigning, true)
   assert.equal(transferAttorney.canPublishClientVisibleUpdate, true)
+
+  const allocatedSecretary = resolveAttorneyActionPermissions({
+    appRole: 'attorney',
+    membership: activeMembership('conveyancing_secretary'),
+    attorneyRole: 'transfer_attorney',
+    attorneyAccess: laneAccess({ isAssignedAttorney: false, isAssignedParticipant: false, teamWorkflowEligible: true }),
+    canViewAsAttorney: true,
+  })
+  assert.equal(allocatedSecretary.canUpdateLane, true)
+  assert.equal(allocatedSecretary.canAddSharedUpdate, true)
 
   const transferAttorneyOnBond = resolveAttorneyActionPermissions({
     appRole: 'attorney',

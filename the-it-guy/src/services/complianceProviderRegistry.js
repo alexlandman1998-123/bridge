@@ -38,6 +38,12 @@ export function getComplianceProvider(key = 'mock') {
   return providers.get(String(key || '').trim().toLowerCase()) || mockProvider
 }
 
+export function isMockComplianceRun(run = {}) {
+  return String(run?.provider || '').trim() === 'Mock Compliance Provider' ||
+    String(run?.reportReference || '').startsWith('normalized-report:VERIFY-') ||
+    /^VERIFY-[A-Z0-9]+$/.test(String(run?.providerReference || ''))
+}
+
 export function registerComplianceProvider(key, provider) {
   if (!key || !provider?.startVerification) throw new Error('A valid compliance provider is required.')
   providers.set(String(key).trim().toLowerCase(), provider)

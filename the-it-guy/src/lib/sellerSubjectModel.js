@@ -123,7 +123,9 @@ export function buildSellerSubject({ formData = {}, listing = {}, lead = {}, can
   }
   const entityType = firstText(sellerFacts.owner_entity_type, sellerFacts.ownerEntityType, form.ownerEntityType, form.owner_entity_type)
   const structureType = firstText(sellerFacts.owner_structure_type, sellerFacts.ownerStructureType, form.ownerStructureType, form.owner_structure_type)
+  const explicitRoute = firstText(sellerFacts.seller_ownership_route, sellerFacts.sellerOwnershipRoute, form.sellerOwnershipRoute, form.seller_ownership_route)
   const ownershipType = firstText(
+    explicitRoute,
     sellerFacts.ownership_type,
     sellerFacts.ownershipType,
     sellerFacts.legal_type,
@@ -135,7 +137,7 @@ export function buildSellerSubject({ formData = {}, listing = {}, lead = {}, can
     form.sellerType,
     form.seller_type,
   )
-  const inferredKind = subjectKind({ entityType, structureType, ownershipType })
+  const inferredKind = subjectKind({ entityType, structureType: explicitRoute || structureType, ownershipType })
   const ownershipDeclarationPending = [
     sellerFacts.ownership_declaration_pending,
     sellerFacts.ownershipDeclarationPending,

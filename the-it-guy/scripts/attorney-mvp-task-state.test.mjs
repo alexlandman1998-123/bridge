@@ -5,6 +5,7 @@ import { buildLegalTaskWorkbenchModel } from '../src/core/transactions/legalTask
 import { buildTransferWorkspaceViewModel } from '../src/services/attorneyWorkflow/transferWorkspaceViewModel.js'
 import { getApplicableAttorneyTaskDefinitions } from '../src/services/attorneyWorkflow/matterWorkflowPlanService.js'
 import { getCanonicalLegalWorkflowProgressPercent } from '../src/core/transactions/legalWorkflowProgress.js'
+import { buildMatterListProgress } from '../src/services/attorneyMatterProgress.js'
 
 function model(laneKey, plan, steps = [], facts = {}) {
   return buildTransferWorkspaceViewModel({ workflowKey: laneKey, workflow: {
@@ -28,8 +29,8 @@ for (const laneKey of ['transfer', 'bond', 'cancellation']) {
   }
   assert.equal(model(laneKey, { status: 'active', lanes: [] }).tasks.length, 0, 'an excluded lane must not restore all tasks')
 }
-const plan = { status: 'active', lanes: [{ laneKey: 'transfer', stepKeys: ['guarantees_received'] }] }
-assert.deepEqual(model('transfer', plan, [], { financeType: 'cash', isCashDeal: true }).tasks.map(t => t.key), ['guarantees_received'], 'confirmed plan wins over secondary scenario filters')
+const plan = { status: 'active', lanes: [{ laneKey: 'transfer', stepKeys: ['payment_security_review'] }] }
+assert.deepEqual(model('transfer', plan, [], { financeType: 'cash', isCashDeal: true }).tasks.map(t => t.key), ['payment_security_review'], 'confirmed plan wins over secondary scenario filters')
 assert.equal(getCanonicalLegalWorkflowProgressPercent({ steps: [{ status: 'not_started', displayStatus: 'completed' }] }), 0)
 assert.equal(getCanonicalLegalWorkflowProgressPercent({ lane: { summary: { completionPercent: 100 } }, steps: [{ status: 'not_started' }] }), 0)
 console.log('Attorney MVP task-state regression tests passed: all three lanes, missing records, plan authority, counts, completion and reopening.')
@@ -67,12 +68,12 @@ console.log('Actual header projection matches Work; data/document action routing
 
 const dashboardSource = readFileSync(new URL('../src/services/attorneyDashboard.js', import.meta.url), 'utf8')
 const dashboardFunction = dashboardSource.slice(dashboardSource.indexOf('function resolveMatterCardWorkflowProgress('), dashboardSource.indexOf('function resolveMatterCardStatus('))
-const dashboardProgress = new Function('normalizeAttorneyStageKey', 'getApplicableAttorneyTaskDefinitions', 'getCanonicalLegalWorkflowProgressPercent', dashboardFunction + '; return resolveMatterCardWorkflowProgress;')(
-  value => value, getApplicableAttorneyTaskDefinitions, getCanonicalLegalWorkflowProgressPercent,
+const dashboardProgress = new Function('toLower', 'buildMatterListProgress', dashboardFunction + '; return resolveMatterCardWorkflowProgress;')(
+  value => String(value || '').toLowerCase(), buildMatterListProgress,
 )
 for (const laneKey of ['transfer', 'bond', 'cancellation']) {
   const stepKeys = getApplicableAttorneyTaskDefinitions({ laneKey }).slice(0, 3).map(task => task.key)
-  const workflowPlan = { status: 'active', lanes: [{ laneKey, stepKeys }] }
+  const workflowPlan = { status: 'active', laneKeys: [laneKey], lanes: [{ laneKey, stepKeys }] }
   for (const status of ['completed', 'completed_externally', 'not_applicable', 'not_started']) {
     const transaction = { routing_profile_json: { workflowPlan }, attorney_stage: stepKeys.at(-1),
       attorneyWorkflowLanes: [{ process_type: laneKey, transaction_subprocess_steps: [{ step_key: stepKeys[0], status }] }] }

@@ -1,17 +1,28 @@
 import { getAttorneyStageDefinitionsForLane } from '../../constants/attorneyWorkflowStages.js'
 import { isBondFinanceType, normalizeFinanceType } from '../../core/transactions/financeType.js'
-import { scenarioFingerprint } from '../matterScenarioProfile.js'
+import { resolveMatterScenarioProfile, scenarioFingerprint } from '../matterScenarioProfile.js'
+import { PHASE4_TAX_TASKS, PHASE4_PROPERTY_TASKS, phase4TaxTaskKeys, phase4PropertyTaskKeys } from './transferPhase4Policy.js'
+import { requiredSpecialistRouteKeys, specialistRouteConfirmed, SPECIALIST_ROUTE_TASKS } from './specialistRoutePolicy.js'
 
-export const MATTER_WORKFLOW_PLAN_VERSION = 'attorney_matter_workflow_plan_v10'
+export const MATTER_WORKFLOW_PLAN_VERSION = 'attorney_matter_workflow_plan_v14'
 
 const LANE_KEYS = Object.freeze(['transfer', 'bond', 'cancellation'])
-const CASH_EXCLUDED_TRANSFER_STEPS = new Set([
-  'payment_security_review',
-])
 const NON_LEVY_TRANSFER_STEPS = new Set([
   'levy_clearance_requested',
   'levy_clearance_received',
 ])
+
+function specialistTaskKeys(profile = {}) {
+  const scenario = parseJsonObject(profile.scenarioProfile)
+  const routeKeys = requiredSpecialistRouteKeys(scenario, profile.propertyTenure)
+  if (!routeKeys.length) return []
+  return ['specialist_classification_review', ...routeKeys
+    .filter(key => specialistRouteConfirmed(scenario.specialistRoutes?.[key], scenario, {
+      propertyTenure: profile.propertyTenure,
+      propertyConditions: profile.propertyConditions || profile.mvpProfile?.propertyConditions || {},
+    }))
+    .map(key => SPECIALIST_ROUTE_TASKS[key])]
+}
 
 // A confirmed plan is authoritative, including an intentionally absent lane.
 // Only provisional matters use the shared legacy finance filter.
@@ -21,14 +32,15 @@ export function getApplicableAttorneyTaskDefinitions({ laneKey = 'transfer', wor
     const keys = getMatterWorkflowPlanStepKeys(workflowPlan, laneKey)
     return definitions.filter((definition) => keys.includes(definition.key))
   }
-  const clearedCash = (facts.financeType === 'cash' || facts.isCashDeal === true) &&
-    normalizeText(facts.paymentSecurity || facts.payment_security).toLowerCase() === 'cleared_trust_funds'
-  return definitions.filter((definition) => !(laneKey === 'transfer' && clearedCash && CASH_EXCLUDED_TRANSFER_STEPS.has(definition.key)))
+  const financeType = normalizeFinanceType(facts.financeType || facts.finance_type, { allowUnknown: true })
+  return definitions.filter((definition) => definition.key !== 'cash_funding_source_review' || ['cash', 'combination'].includes(financeType))
+    .filter((definition) => definition.key !== 'party_capacity_specialist_review')
+    .filter((definition) => !['specialist_classification_review', ...Object.values(SPECIALIST_ROUTE_TASKS)].includes(definition.key) || specialistTaskKeys(facts).includes(definition.key))
 }
 
 export function getAttorneyTaskSuggestion(stepKey, profile = {}) {
-  if (CASH_EXCLUDED_TRANSFER_STEPS.has(stepKey)) {
-    if (profile.paymentSecurity === 'cleared_trust_funds') return 'Cleared trust funds selected. Review whether this guarantee task is not applicable under the payment arrangement.'
+  if (stepKey === 'payment_security_review') {
+    if (profile.paymentSecurity === 'cleared_trust_funds') return 'Check that the purchase funds have actually cleared in trust and record the payment-security decision.'
     return 'Review the agreed purchase-price security. Cash funding alone does not establish whether a guarantee is needed.'
   }
   if (NON_LEVY_TRANSFER_STEPS.has(stepKey)) {
@@ -55,38 +67,28 @@ function parseJsonObject(value) {
   }
 }
 
+function persistedScenarioFingerprint(scenarioProfile) {
+  return scenarioProfile ? scenarioFingerprint(resolveMatterScenarioProfile(scenarioProfile)) : null
+}
+
 function normalizeLaneKey(value) {
   const key = normalizeText(value).toLowerCase().replace(/_attorney$/, '')
   return LANE_KEYS.includes(key) ? key : ''
 }
 
 function resolveTransferStepKeys(profile = {}) {
-  const propertyTenure = normalizeText(profile.propertyTenure || profile.property_tenure).toLowerCase()
-  const hoaApplicable = normalizeText(profile.hoaApplicable ?? profile.hoa_applicable ?? profile.mvpProfile?.hoaApplicable).toLowerCase()
+  const specialistSteps = specialistTaskKeys(profile)
   const financeType = normalizeFinanceType(profile.financeType || profile.finance_type, { allowUnknown: true })
-  const paymentSecurity = normalizeText(profile.paymentSecurity || profile.mvpProfile?.paymentSecurity).toLowerCase()
-  const clearedCash = financeType === 'cash' && paymentSecurity === 'cleared_trust_funds'
   const taxDecision = parseJsonObject(profile.transferTaxDecision || profile.transfer_tax_decision)
-  const taxRoute = normalizeText(taxDecision.route).toLowerCase() || 'needs_tax_advice'
-  const taxSteps = ['transfer_tax_route_confirmed']
-  if (taxRoute === 'transfer_duty') {
-    taxSteps.push('transfer_duty_tdc01_submission')
-    if (normalizeText(taxDecision.sarsEvidenceRequest).toLowerCase() === 'yes') taxSteps.push('sars_evidence_request_response')
-    if (normalizeText(taxDecision.dutyPaymentRequired).toLowerCase() === 'yes') taxSteps.push('transfer_duty_assessment_payment')
-  } else if (['vat', 'zero_rated_going_concern', 'exempt'].includes(taxRoute)) {
-    taxSteps.push('vat_exemption_evidence_verified')
-  }
-  if (normalizeText(taxDecision.sellerNonResidentReview).toLowerCase() === 'yes') taxSteps.push('non_resident_seller_withholding_review')
-  taxSteps.push('sars_transfer_tax_receipt_verified')
+  const taxSteps = phase4TaxTaskKeys(taxDecision, profile.scenarioProfile)
+  const propertySteps = phase4PropertyTaskKeys(profile)
   return getAttorneyStageDefinitionsForLane('transfer')
     .filter((definition) => definition.key !== 'transfer_duty_vat_review')
-    .filter((definition) => definition.key !== 'levy_hoa_clearance_review' || propertyTenure !== 'freehold' || !['no', 'false'].includes(hoaApplicable))
-    .filter((definition) => definition.key !== 'payment_security_review' || !clearedCash)
-    .filter((definition) => ![
-      'transfer_tax_route_confirmed', 'transfer_duty_tdc01_submission', 'sars_evidence_request_response',
-      'transfer_duty_assessment_payment', 'vat_exemption_evidence_verified', 'non_resident_seller_withholding_review',
-      'sars_transfer_tax_receipt_verified',
-    ].includes(definition.key) || taxSteps.includes(definition.key))
+    .filter((definition) => definition.key !== 'cash_funding_source_review' || ['cash', 'combination'].includes(financeType))
+    .filter((definition) => definition.key !== 'party_capacity_specialist_review')
+    .filter((definition) => !['specialist_classification_review', ...Object.values(SPECIALIST_ROUTE_TASKS)].includes(definition.key) || specialistSteps.includes(definition.key))
+    .filter((definition) => !PHASE4_TAX_TASKS.includes(definition.key) || taxSteps.includes(definition.key))
+    .filter((definition) => !PHASE4_PROPERTY_TASKS.includes(definition.key) || propertySteps.includes(definition.key))
     .map((definition) => definition.key)
 }
 
@@ -103,7 +105,7 @@ function resolveRequiredLaneKeys(profile = {}) {
     // Plans may outlive legacy flags, so enforce the same canonical finance
     // condition here as well as in routing.
     bondRegistrationRequired ? 'bond' : '',
-    profile.requiresCancellationAttorney ? 'cancellation' : '',
+    (profile.sellerHasExistingBond || profile.cancellationRequired || profile.requiresCancellationAttorney) ? 'cancellation' : '',
   ].filter(Boolean)
 }
 
@@ -131,7 +133,7 @@ export function buildMatterWorkflowPlan({ routingProfile = {}, generatedAt = nul
     matterProfileRevision: Number(matterProfile.revision) || 0,
     matterProfileFingerprint: normalizeText(matterProfile.factFingerprint) || null,
     generatedAt: generatedAt || matterProfile.confirmedAt || null,
-    scenarioFingerprint: profile.scenarioProfile ? scenarioFingerprint(profile.scenarioProfile) : null,
+    scenarioFingerprint: persistedScenarioFingerprint(profile.scenarioProfile),
     laneKeys: requiredLaneKeys,
     lanes,
     configuration: {
@@ -143,6 +145,7 @@ export function buildMatterWorkflowPlan({ routingProfile = {}, generatedAt = nul
       buyerEntityType: normalizeText(profile.buyerEntityType) || 'unknown',
       sellerEntityType: normalizeText(profile.sellerEntityType) || 'unknown',
       vatTreatment: normalizeText(profile.vatTreatment) || 'unknown',
+      propertyConditions: parseJsonObject(profile.propertyConditions || profile.mvpProfile?.propertyConditions),
       transferTaxDecision: parseJsonObject(profile.transferTaxDecision || profile.transfer_tax_decision),
       sellerHasExistingBond: Boolean(profile.sellerHasExistingBond),
       cancellationRequired: Boolean(profile.cancellationRequired),
@@ -160,7 +163,7 @@ export function isMatterWorkflowPlanCurrent(plan = {}, routingProfile = {}) {
   return (
     [MATTER_WORKFLOW_PLAN_VERSION].includes(plan?.version) &&
     plan?.status === 'active' &&
-    (plan.scenarioFingerprint || null) === (profile.scenarioProfile ? scenarioFingerprint(profile.scenarioProfile) : null) &&
+    (plan.scenarioFingerprint || null) === persistedScenarioFingerprint(profile.scenarioProfile) &&
     matterProfile?.status === 'confirmed' &&
     normalizeText(plan.matterProfileFingerprint) === normalizeText(matterProfile.factFingerprint) &&
     Number(plan.matterProfileRevision) === Number(matterProfile.revision)
@@ -224,6 +227,98 @@ export function diffMatterWorkflowPlans(previousPlan = {}, nextPlan = {}) {
     removedSteps,
     previousTaskCount: previousSteps.size,
     nextTaskCount: nextSteps.size,
+  }
+}
+
+const LODGEMENT_MILESTONES = Object.freeze({
+  transfer: ['lodgement_ready', 'lodged_at_deeds_office'],
+  bond: ['bond_lodgement_ready', 'bond_lodged'],
+  cancellation: ['cancellation_lodgement_ready', 'cancellation_lodged'],
+})
+const COMPLETION_ONLY_BEFORE_READINESS = Object.freeze({
+  transfer: new Set([
+    'title_deed_checked', 'buyer_party_capacity_review', 'seller_party_capacity_review',
+    'transfer_document_pack_review', 'buyer_signing_review', 'seller_signing_review',
+    'payment_security_review', 'cash_funding_source_review',
+    ...PHASE4_TAX_TASKS, ...PHASE4_PROPERTY_TASKS,
+    'specialist_classification_review', ...Object.values(SPECIALIST_ROUTE_TASKS),
+  ]),
+  bond: new Set([
+    'bond_instruction_received', 'bank_requirements_confirmed', 'bank_conditions_resolved',
+    'buyer_signed_bond_documents', 'guarantees_issued', 'guarantee_wording_accepted',
+    'bond_lodgement_instructions_confirmed', 'bond_approval_letter_received',
+    'bank_approval_to_lodge_received',
+  ]),
+  cancellation: new Set([
+    'cancellation_existing_bond_confirmed', 'cancellation_bank_captured',
+    'cancellation_bond_account_captured', 'cancellation_instruction_received',
+    'notice_period_captured', 'cancellation_figures_received', 'figures_expiry_captured',
+    'cancellation_guarantees_accepted', 'cancellation_guarantee_allocation_review',
+    'cancellation_consent_confirmed', 'cancellation_simultaneous_lodgement_confirmed',
+    'seller_cancellation_documents_signed',
+  ]),
+})
+
+// Read-only release inspection. Rows outside the candidate plan stay visible as
+// history; they are never promoted to a newly required task or removed here.
+export function inspectMatterWorkflowPlanSnapshot({ routingProfile = {}, lanes = [] } = {}) {
+  const storedPlan = readMatterWorkflowPlan(routingProfile)
+  const candidatePlan = buildMatterWorkflowPlan({ routingProfile })
+  const impact = diffMatterWorkflowPlans(storedPlan, candidatePlan)
+  const versionChanged = storedPlan.version !== candidatePlan.version
+  const planCurrent = isMatterWorkflowPlanCurrent(storedPlan, routingProfile)
+  const rowsByLane = new Map((Array.isArray(lanes) ? lanes : []).map(lane => [
+    normalizeLaneKey(lane.laneKey || lane.process_type || lane.processType),
+    new Map((lane.steps || []).map(step => [normalizeText(step.step_key || step.stepKey), step])),
+  ]))
+  const candidateKeys = new Set(candidatePlan.lanes.flatMap(lane => lane.stepKeys.map(key => `${lane.laneKey}:${key}`)))
+  const missingRows = candidatePlan.lanes.flatMap(lane => lane.stepKeys
+    .filter(key => !rowsByLane.get(lane.laneKey)?.has(key))
+    .map(stepKey => ({ laneKey: lane.laneKey, stepKey })))
+  const preservedHistoricalRows = (Array.isArray(lanes) ? lanes : []).flatMap(lane => {
+    const laneKey = normalizeLaneKey(lane.laneKey || lane.process_type || lane.processType)
+    return (lane.steps || []).filter(step =>
+      !candidateKeys.has(`${laneKey}:${normalizeText(step.step_key || step.stepKey)}`) &&
+      ['completed', 'completed_externally', 'not_applicable'].includes(step.status))
+      .map(step => ({ laneKey, stepKey: normalizeText(step.step_key || step.stepKey), status: step.status }))
+  })
+  const readinessRisks = []
+  const lodgedLanes = []
+  for (const lane of candidatePlan.lanes) {
+    const [readyKey, lodgedKey] = LODGEMENT_MILESTONES[lane.laneKey] || []
+    const rows = rowsByLane.get(lane.laneKey) || new Map()
+    if (rows.get(lodgedKey)?.status === 'completed') {
+      lodgedLanes.push(lane.laneKey)
+      continue
+    }
+    if (['completed_externally', 'not_applicable'].includes(rows.get(readyKey)?.status)) {
+      readinessRisks.push({ laneKey: lane.laneKey, stepKey: readyKey, reason: 'invalid_readiness_outcome' })
+    }
+    if (rows.get(readyKey)?.status !== 'completed') continue
+    if (!planCurrent || versionChanged || impact.changed) {
+      readinessRisks.push({ laneKey: lane.laneKey, reason: 'readiness_on_stale_plan' })
+    }
+    const readyIndex = lane.stepKeys.indexOf(readyKey)
+    for (const stepKey of lane.stepKeys.slice(0, readyIndex < 0 ? 0 : readyIndex)) {
+      const status = rows.get(stepKey)?.status
+      if (!['completed', 'completed_externally', 'not_applicable'].includes(status)) {
+        readinessRisks.push({ laneKey: lane.laneKey, stepKey, reason: 'unresolved_before_readiness' })
+      } else if (COMPLETION_ONLY_BEFORE_READINESS[lane.laneKey]?.has(stepKey) && status !== 'completed') {
+        readinessRisks.push({ laneKey: lane.laneKey, stepKey, reason: 'reviewed_completion_required' })
+      }
+    }
+  }
+  return {
+    storedVersion: storedPlan.version || null,
+    candidateVersion: candidatePlan.version,
+    planCurrent,
+    versionChanged,
+    impact,
+    missingRows,
+    preservedHistoricalRows,
+    lodgedLanes,
+    readinessRisks,
+    requiresReconciliation: !planCurrent || versionChanged || impact.changed || missingRows.length > 0 || readinessRisks.length > 0,
   }
 }
 

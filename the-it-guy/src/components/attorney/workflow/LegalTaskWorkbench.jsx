@@ -209,6 +209,7 @@ export default function LegalTaskWorkbench({
   onSelectTask,
   onRunAction,
   onOpenDocuments,
+  onOpenRoutingProfile,
   onAddNote,
   onMarkInProgress,
   onPersistTaskResponses,
@@ -646,6 +647,11 @@ export default function LegalTaskWorkbench({
                       </div> : null}
                     </div>
                   ))}
+                </div>
+              ) : model.specialistRouteTask ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
+                  <p className="text-sm text-slate-600">Review the specialist owner, reason, instrument and evidence in the matter classification.</p>
+                  <Button type="button" variant="secondary" disabled={!canEdit} onClick={() => onOpenRoutingProfile?.()}>Open specialist classification</Button>
                 </div>
               ) : (
                 <ul className="divide-y divide-slate-100 bg-white">

@@ -13,6 +13,9 @@ const INTERNAL_TRANSFER_TAX_TASKS = new Set([
   'transfer_duty_assessment_payment',
   'vat_exemption_evidence_verified',
   'non_resident_seller_withholding_review',
+  'ordinary_vat_basis_verified', 'going_concern_zero_rate_verified',
+  'transfer_duty_exemption_basis_verified', 'non_resident_seller_applicability_review',
+  'non_resident_seller_directive_review', 'non_resident_seller_withholding_payment_review',
 ])
 
 const CLIENT_TAX_RECEIPT_TASK = 'sars_transfer_tax_receipt_verified'
@@ -50,6 +53,7 @@ function stepsFromJourney(index) {
 export function buildTransferTaxCrossRoleAssurance({
   journey,
   transferTaxDecision = {},
+  scenarioProfile = {},
   audiences = TRANSFER_TAX_CROSS_ROLE_AUDIENCES,
 } = {}) {
   const blockers = []
@@ -136,6 +140,7 @@ export function buildTransferTaxCrossRoleAssurance({
 
   const lodgementReadiness = evaluateTransferTaxLodgementReadiness({
     transferTaxDecision,
+    scenarioProfile,
     steps: stepsFromJourney(attorneyTasks),
   })
 

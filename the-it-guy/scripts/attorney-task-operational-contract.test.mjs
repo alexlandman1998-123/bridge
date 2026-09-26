@@ -53,6 +53,11 @@ assert.deepEqual(sellerFica.visibilityPolicy.clientAudience, ['seller'])
 
 const registration = getAttorneyTaskOperationalContract('registered', 'transfer')
 assert.deepEqual(registration.visibilityPolicy.clientAudience, ['buyer', 'seller'])
+assert.equal(registration.completionPolicy.requiresNote, true)
+assert.equal(registration.allowedActions.some((action) => action.status === 'completed_externally'), false)
+assert.equal(registration.allowedActions.some((action) => action.status === 'not_applicable'), false)
+assert.throws(() => assertAttorneyTaskStatusAction(registration, 'completed_externally'), /not available/)
+assert.equal(getAttorneyTaskOperationalContract('municipal_rates_clearance_review', 'transfer').completionPolicy.requiresNote, true)
 
 const entityAuthority = getAttorneyTaskOperationalContract('existing_bond_confirmed', 'transfer')
 assert.equal(entityAuthority.visibilityPolicy.clientVisibleAllowed, false)

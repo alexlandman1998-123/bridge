@@ -4,6 +4,7 @@ import {
   filterSellerPortalDocuments,
   filterSellerPortalRequirements,
   isSellerPortalVisibleDocument,
+  resolveSellerLeadUploadVisibility,
   resolveSellerDocumentAudienceAccess,
 } from '../sellerDocumentVisibilityPolicy.js'
 
@@ -22,6 +23,15 @@ test('seller portal visibility is fail-closed for sensitive and role-player docu
     requirement: { applies_to: 'seller' },
   }), false)
   assert.equal(isSellerPortalVisibleDocument({ visibility: 'internal_only', clientVisible: true }), false)
+})
+
+test('agent uploads inherit only seller-facing request visibility', () => {
+  assert.equal(resolveSellerLeadUploadVisibility({ visibility: 'seller_visible' }), 'seller_visible')
+  assert.equal(resolveSellerLeadUploadVisibility({ applies_to: 'seller' }), 'seller_visible')
+  assert.equal(resolveSellerLeadUploadVisibility({ visibility: 'internal_only', applies_to: 'seller' }), 'internal')
+  assert.equal(resolveSellerLeadUploadVisibility({ visibility: 'shared_role_players' }), 'internal')
+  assert.equal(resolveSellerLeadUploadVisibility({}), 'internal')
+  assert.equal(resolveSellerLeadUploadVisibility({ visibility: 'seller_visible' }, { unreleasedMandate: true }), 'internal')
 })
 
 test('legacy uploads are released only through a seller-visible linked requirement', () => {

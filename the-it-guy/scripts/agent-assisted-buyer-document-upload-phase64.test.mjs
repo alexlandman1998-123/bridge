@@ -2,13 +2,14 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 
 const leadWorkspaceSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+const buyerDocumentContractSource = await readFile(new URL('../src/core/documents/buyerLeadDocumentContract.js', import.meta.url), 'utf8')
 const workflowSmokeSource = await readFile(new URL('./agency-workflow-smoke.test.mjs', import.meta.url), 'utf8')
 const packageJson = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 
 assert.match(
   leadWorkspaceSource,
-  /const BUYER_AGENT_DOCUMENT_TYPES = \[/,
-  'Phase 64 should define agent-selectable buyer document types.',
+  /const BUYER_AGENT_DOCUMENT_TYPES = BUYER_LEAD_DOCUMENT_TYPES/,
+  'Buyer lead upload choices should share the phase 1 document mapping contract.',
 )
 
 for (const label of [
@@ -18,7 +19,7 @@ for (const label of [
   'Bank statements',
   'Bond pre-approval',
 ]) {
-  assert.match(leadWorkspaceSource, new RegExp(label), `Phase 64 should expose ${label}.`)
+  assert.match(buyerDocumentContractSource, new RegExp(label), `Phase 64 should expose ${label}.`)
 }
 
 assert.match(
@@ -77,8 +78,20 @@ assert.match(
 
 assert.match(
   leadWorkspaceSource,
-  /\{ key: 'documents', label: 'Documents'[\s\S]*?selectedLeadAgentUploadedBuyerDocuments\.length/,
-  'Buyer workspace should expose the Documents tab to agents.',
+  /\{ key: 'documents', label: 'Documents'[\s\S]*?selectedBuyerDocumentReadModel\.uploads\.length/,
+  'Buyer workspace should count merged lead and transaction documents on the Documents tab.',
+)
+
+assert.match(
+  leadWorkspaceSource,
+  /async function reconcileBuyerLeadDocuments\([\s\S]*reconcileStagedBuyerLeadDocuments\(supabase, context\)[\s\S]*reconcileStagedBuyerLeadDocuments\(supabase, context, \{ dryRun: false \}\)/,
+  'Historical buyer files should be previewed before an agent retries transaction handoff.',
+)
+
+assert.match(
+  leadWorkspaceSource,
+  /selectedBuyerDocumentReadModel\.stagedCount > 0[\s\S]*Reconcile lead files/,
+  'The buyer document workspace should offer a retry only when linked staged files remain.',
 )
 
 assert.match(

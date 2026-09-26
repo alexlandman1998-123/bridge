@@ -111,7 +111,7 @@ export const BOND_ATTORNEY_JOURNEY_LANES = Object.freeze([
     key: 'attorney_lodgement_registration',
     label: 'Lodgement, Registration, Close-Out',
     ownerRole: 'bond_attorney',
-    stageKeys: ['bond_lodgement_ready', 'bond_lodged', 'bond_registered', 'bond_close_out_complete'],
+    stageKeys: ['bond_lodgement_instructions_confirmed', 'bond_lodgement_ready', 'bond_lodged', 'bond_registered', 'bond_close_out_complete'],
     outcome: 'Bond is lodged with transfer, registered, and closed out with the bank.',
   }),
 ])

@@ -453,7 +453,9 @@ export function resolveTransactionFacts(transaction = {}) {
     // matter. A bond attorney is relevant only where the captured finance
     // route has a bond component.
     requiresBondAttorney: isBondDeal || isHybridDeal,
-    requiresCancellationAttorney: hasUsableValue(routingProfile.requiresCancellationAttorney) ? truthyFlag(routingProfile.requiresCancellationAttorney) : cancellationRequired,
+    requiresCancellationAttorney: sellerHasExistingBond ||
+      (hasUsableValue(routingProfile.requiresCancellationAttorney)
+        ? truthyFlag(routingProfile.requiresCancellationAttorney) : cancellationRequired),
     buyerEntityType,
     sellerEntityType,
     buyerIsIndividual: buyerEntityType === 'individual',

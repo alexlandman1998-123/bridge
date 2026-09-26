@@ -35,9 +35,8 @@ const cash = buildTransferModel({
   sellerEntityType: 'individual',
 })
 const cashTasks = taskKeys(cash)
-assert(!cashTasks.includes('guarantees_requested'), 'cash transfer must not show a guarantee request task')
-assert(!cashTasks.includes('guarantees_received'), 'cash transfer must not show a guarantee receipt task')
-assert(!cashTasks.includes('transfer_guarantees_accepted'), 'cash transfer must not show guarantee acceptance')
+assert(cashTasks.includes('payment_security_review'), 'cash transfer must review its agreed payment security')
+assert(!cashTasks.includes('guarantees_requested'), 'retired guarantee request must not reappear')
 
 const bond = buildTransferModel({
   financeType: 'bond',
@@ -45,12 +44,10 @@ const bond = buildTransferModel({
   sellerEntityType: 'individual',
 })
 const bondTasks = taskKeys(bond)
-assert(bondTasks.includes('guarantees_requested'), 'bond transfer must show guarantee request')
-assert(bondTasks.includes('guarantees_received'), 'bond transfer must show guarantee receipt')
-assert(bondTasks.includes('transfer_guarantees_accepted'), 'bond transfer must show guarantee acceptance')
+assert(bondTasks.includes('payment_security_review'), 'bond transfer must review guarantees and payment security')
 
-const individualBuyerFica = cash.tasks.find((task) => task.key === 'buyer_fica_requested')
-const companyBuyerFica = bond.tasks.find((task) => task.key === 'buyer_fica_requested')
+const individualBuyerFica = cash.tasks.find((task) => task.key === 'buyer_fica_review')
+const companyBuyerFica = bond.tasks.find((task) => task.key === 'buyer_fica_review')
 assert(individualBuyerFica?.requiredDocumentKeys.includes('buyer_id_document'), 'individual buyer FICA must include an ID document')
 assert(companyBuyerFica?.requiredDocumentKeys.includes('buyer_company_registration_documents'), 'company buyer FICA must include company registration documents')
 assert(!companyBuyerFica?.requiredDocumentKeys.includes('buyer_id_document'), 'company buyer FICA must not inherit the individual-only ID task')
@@ -62,10 +59,10 @@ for (const model of [cash, bond]) {
   assert.equal(new Set(taskKeys(model)).size, visibleTaskCount, 'each Work task must belong to one phase only')
 }
 
-const financialPhase = phaseFor(bond, 'rates_clearance_received')
+const financialPhase = phaseFor(bond, 'municipal_rates_clearance_review')
 assert.equal(financialPhase?.key, 'financial_preparation', 'rates clearance must be in Financial Preparation')
-assert.ok(taskKeys(bond).includes('compliance_certificates_received'), 'compliance certificates must be a visible attorney task')
-assert.equal(phaseFor(bond, 'transfer_documents_prepared')?.key, 'documents_guarantees', 'transfer documents must be in Documents & Guarantees')
+assert.ok(taskKeys(bond).includes('property_compliance_review'), 'compliance certificates must be a visible attorney task')
+assert.equal(phaseFor(bond, 'transfer_document_pack_review')?.key, 'documents_guarantees', 'transfer documents must be in Documents & Guarantees')
 
 const headerSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.jsx', import.meta.url), 'utf8')
 assert.match(headerSource, /getApplicableAttorneyTaskDefinitions/)

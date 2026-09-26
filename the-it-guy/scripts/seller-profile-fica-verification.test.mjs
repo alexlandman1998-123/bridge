@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import { getComplianceProvider } from '../src/services/complianceProviderRegistry.js'
+import { getComplianceProvider, isMockComplianceRun } from '../src/services/complianceProviderRegistry.js'
 
 const page = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
 const component = await readFile(new URL('../src/components/compliance/SellerFicaVerification.jsx', import.meta.url), 'utf8')
@@ -8,6 +8,11 @@ const service = await readFile(new URL('../src/services/clientComplianceService.
 const migration = await readFile(new URL('../../supabase/migrations/202608290002_client_compliance_verification.sql', import.meta.url), 'utf8')
 
 assert.match(page, /<SellerFicaVerification/, 'Seller Profile should mount the FICA verification experience.')
+assert.match(page, /ficaScope\.subjects\.length > 1/, 'The extra scope panel should appear only when multiple parties need assessment.')
+assert.doesNotMatch(page, /FICA collection scope/, 'The profile should not repeat the missing-information panel.')
+assert.match(page, /selectedSellerProfileDefectRows\.length \? \(/, 'The defects card should depend on captured defects, not general lead notes.')
+assert.match(page, /getSellerProfileNarrativeNotes\(onboarding\?\.agentNotes, onboarding\?\.agent_notes, lead\?\.notes\)/)
+assert.doesNotMatch(page.slice(page.indexOf('async function handleSaveSellerLeadEditDetails'), page.indexOf('async function handleMovePipelineCard')), /notes: formData\.agentNotes/, 'Saving seller notes must not overwrite lead provenance notes.')
 assert.doesNotMatch(page.slice(page.indexOf("key: 'tax'"), page.indexOf("key: 'ownership'")), /FICA Status/, 'Tax & Compliance must not expose an editable FICA status row.')
 assert.match(component, /Additional information required/)
 assert.match(component, /Verification in progress/)
@@ -15,7 +20,10 @@ assert.match(component, /FICA verification completed/)
 assert.match(component, /Review required/)
 assert.match(component, /Verification could not be completed/)
 assert.match(component, /Re-run Verification/)
-assert.match(component, /Verify with TPN Report/)
+assert.doesNotMatch(component, /Verify with TPN Report/)
+assert.match(component, /sellerProviderUnavailable/)
+assert.match(component, /ignoredMockSellerRun/)
+assert.match(service, /partyType === 'seller' && provider\.key === 'mock'/)
 assert.doesNotMatch(component, /FICA verification storage is being activated/)
 assert.match(service, /recordComplianceAuditEvent/)
 assert.match(service, /COMPLIANCE_STORAGE_TABLES/)
@@ -28,5 +36,8 @@ const result = await getComplianceProvider('mock').startVerification({ subject: 
 assert.equal(result.status, 'verified')
 assert.equal(result.riskRating, 'low')
 assert.deepEqual(result.checks.map((check) => check.type), ['identity', 'address', 'sanctions', 'pep', 'risk'])
+assert.equal(isMockComplianceRun(result), true)
+assert.equal(isMockComplianceRun({ provider: 'configured provider', providerReference: result.providerReference, reportReference: result.reportReference }), true)
+assert.equal(isMockComplianceRun({ provider: 'Knowledge Factory', providerReference: 'KF-123' }), false)
 
 console.log('seller profile FICA verification contract passed')

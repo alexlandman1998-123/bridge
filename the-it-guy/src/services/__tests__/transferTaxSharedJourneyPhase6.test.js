@@ -11,6 +11,12 @@ test('keeps route-specific transfer-tax operations out of client-facing task con
     'transfer_duty_assessment_payment',
     'vat_exemption_evidence_verified',
     'non_resident_seller_withholding_review',
+    'ordinary_vat_basis_verified',
+    'going_concern_zero_rate_verified',
+    'transfer_duty_exemption_basis_verified',
+    'non_resident_seller_applicability_review',
+    'non_resident_seller_directive_review',
+    'non_resident_seller_withholding_payment_review',
   ]) {
     const definition = getAttorneyStageDefinition(taskKey, 'transfer')
     assert.equal(definition.clientVisibleAllowed, false, `${taskKey} must remain internal`)

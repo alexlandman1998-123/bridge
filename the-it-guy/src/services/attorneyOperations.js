@@ -1,7 +1,7 @@
 import { getAttorneyProfessionalProfilePermissions, getCurrentUserAttorneyMembership } from '../lib/attorneyPermissions'
 import { buildMatterListProgress, fetchMatterListProgress } from './attorneyMatterProgress.js'
 import { fetchDashboardDevelopmentProfileImages } from '../lib/api/dashboardTransactionSummaryApi.js'
-import { getFirmAttorneyAssignments, getUserAttorneyAssignments } from './transactionAttorneyAssignments'
+import { getFirmAttorneyAssignments } from './transactionAttorneyAssignments'
 import { getAttorneyFirmById, getAttorneyFirmDepartments, getCurrentUserPrimaryAttorneyFirm } from './attorneyFirms'
 import { getAttorneyFirmMembers } from './attorneyFirmMembers'
 import {
@@ -996,14 +996,15 @@ async function loadAttorneyOperationalWorkspaceData(firmId = null, userId = null
 
   const currentDepartment = resolvedCurrentMembership?.departmentId ? departmentById[resolvedCurrentMembership.departmentId] : null
 
-  const assignments = MANAGEMENT_ROLES.has(currentRole) || permissions.can_view_all_firm_matters
+  // Assignment SELECT is team-scoped in the database: everyone in the firm
+  // sees unallocated intake, while allocated matters reach only the team and
+  // principals. A user-id filter here would hide unallocated work entirely.
+  const assignments = resolvedCurrentMembership?.isActive
     ? await getFirmAttorneyAssignments(resolvedFirm.id)
-    : resolvedCurrentMembership
-      ? await getUserAttorneyAssignments(resolvedFirm.id, currentUserId)
-      : []
+    : []
   timer.mark('assignments:loaded', {
     assignments: assignments?.length || 0,
-    scope: MANAGEMENT_ROLES.has(currentRole) || permissions.can_view_all_firm_matters ? 'firm' : 'user',
+    scope: 'matter_team',
   })
 
   const relevantAssignments = assignments.filter((assignment) => ['pending', 'active', 'paused'].includes(toLower(assignment.status)))

@@ -1,4 +1,4 @@
-export const ATTORNEY_TASK_CONTRACT_VERSION = 'attorney_task_operational_v1'
+export const ATTORNEY_TASK_CONTRACT_VERSION = 'attorney_task_operational_v2'
 
 export const ATTORNEY_TASK_TYPES = Object.freeze({
   captureInformation: 'capture_information',
@@ -18,6 +18,57 @@ export const ATTORNEY_TASK_STATUS_ACTIONS = Object.freeze({
   completed_externally: 'complete_externally',
   not_applicable: 'mark_not_applicable',
 })
+
+export const ATTORNEY_ATTESTED_MILESTONE_KEYS = Object.freeze({
+  transfer: Object.freeze(['lodgement_ready', 'lodged_at_deeds_office', 'registered']),
+  bond: Object.freeze(['bond_lodgement_ready', 'bond_lodged', 'bond_registered']),
+  cancellation: Object.freeze(['cancellation_lodgement_ready', 'cancellation_lodged', 'cancellation_registered']),
+})
+
+export const ATTORNEY_EVIDENCE_DECISION_KEYS = Object.freeze({
+  transfer: Object.freeze([
+    'title_deed_checked', 'transfer_tax_route_confirmed', 'transfer_duty_tdc01_submission',
+    'sars_evidence_request_response', 'transfer_duty_assessment_payment',
+    'vat_exemption_evidence_verified', 'non_resident_seller_withholding_review',
+    'ordinary_vat_basis_verified', 'going_concern_zero_rate_verified',
+    'transfer_duty_exemption_basis_verified', 'non_resident_seller_applicability_review',
+    'non_resident_seller_directive_review', 'non_resident_seller_withholding_payment_review',
+    'sars_transfer_tax_receipt_verified', 'municipal_rates_clearance_review',
+    'levy_hoa_clearance_review', 'body_corporate_levy_clearance_review',
+    'hoa_clearance_review', 'property_conditions_applicability_review',
+    'title_conditions_review', 'property_compliance_review', 'transfer_document_pack_review',
+    'specialist_classification_review', 'estate_authority_transfer_review',
+    'insolvency_authority_transfer_review', 'court_order_transfer_review',
+    'unusual_title_resolution_review', 'agricultural_consent_review',
+    'share_block_instrument_review', 'other_specialist_execution_review',
+    'buyer_signing_review', 'seller_signing_review', 'cash_funding_source_review', 'payment_security_review',
+  ]),
+  bond: Object.freeze([
+    'bond_approval_letter_received', 'buyer_signed_bond_documents',
+    'bank_approval_to_lodge_received', 'guarantee_wording_accepted', 'bond_lodgement_instructions_confirmed',
+  ]),
+  cancellation: Object.freeze([
+    'cancellation_figures_received', 'figures_expiry_captured',
+    'cancellation_guarantees_accepted', 'cancellation_guarantee_allocation_review',
+    'cancellation_consent_confirmed', 'cancellation_simultaneous_lodgement_confirmed',
+    'seller_cancellation_documents_signed',
+  ]),
+})
+
+const SPECIALIST_DECISION_KEYS = Object.freeze([
+  'specialist_classification_review', 'estate_authority_transfer_review',
+  'insolvency_authority_transfer_review', 'court_order_transfer_review',
+  'unusual_title_resolution_review', 'agricultural_consent_review',
+  'share_block_instrument_review', 'other_specialist_execution_review',
+])
+
+export function isAttorneyAttestedMilestone(laneKey, taskKey) {
+  return (ATTORNEY_ATTESTED_MILESTONE_KEYS[normalizeLaneKey(laneKey)] || []).includes(key(taskKey))
+}
+
+export function requiresAttorneyEvidenceDecision(laneKey, taskKey) {
+  return (ATTORNEY_EVIDENCE_DECISION_KEYS[normalizeLaneKey(laneKey)] || []).includes(key(taskKey))
+}
 
 const LANE_LABELS = Object.freeze({
   transfer: 'Transfer Attorney',
@@ -101,7 +152,7 @@ function dueDaysForTaskType(taskType = '') {
   return 1
 }
 
-function buildAllowedActions({ taskType, requiredInputs, requiredDocuments, actionLabel }) {
+function buildAllowedActions({ taskType, requiredInputs, requiredDocuments, actionLabel, attestedMilestone, evidenceDecision, specialistDecision }) {
   const actions = []
   if (requiredInputs.length) {
     actions.push({ id: 'capture_data', label: 'Capture information', mode: 'task_workbench' })
@@ -123,9 +174,11 @@ function buildAllowedActions({ taskType, requiredInputs, requiredDocuments, acti
   actions.push({ id: 'mark_in_progress', label: 'Mark in progress', mode: 'status_update', status: 'in_progress' })
   actions.push({ id: 'mark_waiting', label: 'Mark waiting', mode: 'status_update', status: 'waiting', requiresNote: true })
   actions.push({ id: 'mark_blocked', label: 'Mark blocked', mode: 'status_update', status: 'blocked', requiresNote: true })
-  actions.push({ id: 'mark_complete', label: actionLabel || 'Mark complete', mode: 'status_update', status: 'completed' })
-  actions.push({ id: 'complete_externally', label: 'Completed externally', mode: 'status_update', status: 'completed_externally', requiresNote: true })
-  actions.push({ id: 'mark_not_applicable', label: 'Not applicable', mode: 'status_update', status: 'not_applicable', requiresNote: true })
+  actions.push({ id: 'mark_complete', label: actionLabel || 'Mark complete', mode: 'status_update', status: 'completed', requiresNote: attestedMilestone || evidenceDecision })
+  if (!attestedMilestone && !specialistDecision) {
+    actions.push({ id: 'complete_externally', label: 'Completed externally', mode: 'status_update', status: 'completed_externally', requiresNote: true })
+    actions.push({ id: 'mark_not_applicable', label: 'Not applicable', mode: 'status_update', status: 'not_applicable', requiresNote: true })
+  }
   return freezeRows(actions)
 }
 
@@ -178,6 +231,9 @@ export function createAttorneyTaskOperationalContract({
     requiredDocuments: normalizedRequiredDocuments,
   })
   const audience = inferClientAudience(normalizedTaskKey, clientVisibleAllowed, clientAudience)
+  const attestedMilestone = isAttorneyAttestedMilestone(normalizedLaneKey, normalizedTaskKey)
+  const evidenceDecision = requiresAttorneyEvidenceDecision(normalizedLaneKey, normalizedTaskKey)
+  const specialistDecision = normalizedLaneKey === 'transfer' && SPECIALIST_DECISION_KEYS.includes(normalizedTaskKey)
   const primaryAction = defaultPrimaryAction(taskType, actionLabel)
 
   const contract = {
@@ -198,6 +254,9 @@ export function createAttorneyTaskOperationalContract({
       requiredInputs: normalizedRequiredInputs,
       requiredDocuments: normalizedRequiredDocuments,
       actionLabel,
+      attestedMilestone,
+      evidenceDecision,
+      specialistDecision,
     }),
     requirements: Object.freeze({
       inputs: freezeRows(normalizedRequiredInputs),
@@ -208,7 +267,7 @@ export function createAttorneyTaskOperationalContract({
       requireAllInputs: normalizedRequiredInputs.some((requirement) => requirement.required),
       requireAllDocuments: normalizedRequiredDocuments.length > 0,
       requireEvidenceConfirmation: (evidenceRequirements || []).length > 0,
-      requiresNote: Boolean(requiresNote),
+      requiresNote: Boolean(requiresNote || attestedMilestone || evidenceDecision),
       readinessGate: readinessGate?.key
         ? Object.freeze({ key: key(readinessGate.key), label: text(readinessGate.label) })
         : null,

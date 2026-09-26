@@ -15,7 +15,9 @@ import {
 } from '../../core/documents/documentPartyClassification.js'
 import { getApplicableAttorneyTaskDefinitions, getAttorneyTaskSuggestion } from './matterWorkflowPlanService.js'
 import { isAttorneyTaskResolved, isAttorneyTaskCompleted, summarizeAttorneyTaskOutcomes } from '../../core/transactions/attorneyTaskOutcomes.js'
+import { isAttorneyAttestedMilestone, requiresAttorneyEvidenceDecision } from '../../core/transactions/attorneyTaskOperationalContract.js'
 import { evaluateTransferTaxLodgementReadiness } from './transferTaxLodgementGate.js'
+import { resolveMatterScenarioProfile, partyCapacityReviewReady, partyCapacityCheckRequirements } from '../matterScenarioProfile.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -25,13 +27,13 @@ const LEGAL_WORKSPACE_PHASES_BY_LANE = Object.freeze({
     { key: 'bond_instruction', label: 'Instruction & Bank', stageKeys: ['bond_instruction_received', 'bank_reference_captured', 'bond_approval_letter_received'] },
     { key: 'bond_conditions', label: 'Bank Conditions', stageKeys: ['bank_requirements_confirmed', 'bank_conditions_outstanding', 'bank_conditions_resolved'] },
     { key: 'bond_documents', label: 'Documents & Guarantees', stageKeys: ['bond_documents_prepared', 'buyer_bond_signing_scheduled', 'buyer_signed_bond_documents', 'bond_documents_sent_to_bank', 'bank_approval_to_lodge_received', 'guarantees_issued', 'guarantee_wording_accepted'] },
-    { key: 'bond_registration', label: 'Lodgement & Registration', stageKeys: ['bond_lodgement_ready', 'bond_lodged', 'bond_registered', 'bond_close_out_complete'] },
+    { key: 'bond_registration', label: 'Lodgement & Registration', stageKeys: ['bond_lodgement_instructions_confirmed', 'bond_lodgement_ready', 'bond_lodged', 'bond_registered', 'bond_close_out_complete'] },
   ]),
   cancellation: Object.freeze([
     { key: 'cancellation_instruction', label: 'Instruction & Bank', stageKeys: ['cancellation_existing_bond_confirmed', 'cancellation_bank_captured', 'cancellation_bond_account_captured', 'cancellation_instruction_received'] },
     { key: 'cancellation_figures', label: 'Notice & Figures', stageKeys: ['notice_period_captured', 'cancellation_figures_requested', 'cancellation_figures_received', 'figures_expiry_captured', 'notice_penalty_risk_captured'] },
-    { key: 'cancellation_documents', label: 'Guarantees & Documents', stageKeys: ['cancellation_guarantees_requested', 'cancellation_guarantees_received', 'cancellation_guarantees_accepted', 'cancellation_documents_prepared', 'seller_cancellation_documents_signed'] },
-    { key: 'cancellation_registration', label: 'Registration & Close-Out', stageKeys: ['cancellation_lodgement_ready', 'cancellation_lodged', 'cancellation_registered', 'settlement_proof_captured', 'cancellation_close_out_complete'] },
+    { key: 'cancellation_documents', label: 'Guarantees & Documents', stageKeys: ['cancellation_guarantees_requested', 'cancellation_guarantees_received', 'cancellation_guarantees_accepted', 'cancellation_guarantee_allocation_review', 'cancellation_documents_prepared', 'seller_cancellation_documents_signed', 'cancellation_consent_confirmed'] },
+    { key: 'cancellation_registration', label: 'Registration & Close-Out', stageKeys: ['cancellation_simultaneous_lodgement_confirmed', 'cancellation_lodgement_ready', 'cancellation_lodged', 'cancellation_registered', 'settlement_proof_captured', 'cancellation_close_out_complete'] },
   ]),
 })
 
@@ -807,6 +809,8 @@ function isTaskOverdue(task = {}, now = new Date()) {
 function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = null, documents = [], scenario = null } = {}) {
   const definitions = getApplicableAttorneyTaskDefinitions({ laneKey: workflowKey, workflowPlan: workflow?.workflowPlan, facts: workflow?.facts || {} })
     .map((definition) => applyTransferScenarioToTask(definition, scenario))
+  const rawPartyProfile = workflow?.workflowPlan?.configuration?.scenarioProfile || workflow?.facts?.scenarioProfile
+  const partyProfile = rawPartyProfile ? resolveMatterScenarioProfile(rawPartyProfile) : null
   const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
   const storedStepMap = new Map(
     laneSteps.map((step) => [getStoredStepKey(step, workflowKey), step]),
@@ -834,6 +838,18 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
     const phase = findPhaseForTask(definition.key, workflowKey)
 
     const derivedCompletion = buildFicaTaskDerivedCompletion(definition.key, documents)
+    const partyRole = definition.key.startsWith('buyer_') ? 'buyer' : definition.key.startsWith('seller_') ? 'seller' : ''
+    const isCapacityOrSigning = ['buyer_party_capacity_review', 'seller_party_capacity_review', 'buyer_signing_review', 'seller_signing_review'].includes(definition.key)
+    const partyCapacity = isCapacityOrSigning ? {
+      role: partyRole,
+      parties: (partyProfile?.parties || []).filter(p => p.role === partyRole).map(p => ({
+        id: p.id, name: p.name || p.id, entityType: p.entityType,
+        status: p.capacityReview.status,
+        ready: partyCapacityReviewReady(p),
+        signatories: p.representatives.map(r => r.name || r.id),
+        checks: partyCapacityCheckRequirements(p).map(check => ({ ...check, complete: p.capacityReview.confirmations?.[check.key] === true })),
+      })),
+    } : null
 
     return {
       id: storedStep?.id || definition.key,
@@ -849,6 +865,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
       status: persistedStatus,
       displayStatus,
       derivedCompletion,
+      partyCapacity,
       statusLabel: DISPLAY_STATUS_META[displayStatus] || DISPLAY_STATUS_META.not_started,
       isCurrent: index === currentIndex,
       completedAt: storedStep?.completedAt || storedStep?.completed_at || null,
@@ -1005,14 +1022,19 @@ function buildCompletionReadiness(task = null) {
 
   const missingRequiredDocuments = (task.relatedDocuments || []).filter((document) => document.missing || document.ready === false)
   const missingRequiredData = (task.dataRequirements || []).filter((requirement) => requirement.required !== false && !requirement.complete)
+  const missingParties = task.partyCapacity?.parties?.filter(p => !p.ready) || []
   const warnings = [
     ...missingRequiredData.map((requirement) => `${requirement.label || requirement.id} has not been captured.`),
     ...missingRequiredDocuments.map((document) => `${document.displayName || document.label || document.name || document.sourceRequirementKey} is not ready.`),
+    ...missingParties.map(p => `${p.name}: attorney capacity and signatory decision is ${p.status}.`),
+    ...(task.partyCapacity && !task.partyCapacity.parties.length ? ['No party is identified for this signing route.'] : []),
     ...(task.taxLodgementReadiness?.warnings || []),
   ]
 
   return {
-    canComplete: missingRequiredDocuments.length === 0 && missingRequiredData.length === 0 && task.taxLodgementReadiness?.ready !== false,
+    canComplete: missingRequiredDocuments.length === 0 && missingRequiredData.length === 0 &&
+      missingParties.length === 0 && (!task.partyCapacity || task.partyCapacity.parties.length > 0) &&
+      task.taxLodgementReadiness?.ready !== false,
     missingRequiredDocuments,
     missingRequiredData,
     warnings,
@@ -1074,7 +1096,14 @@ function buildChecklistItems(task = null) {
     persisted: Boolean(document.id && !document.missing),
   }))
 
-  return [...evidenceItems, ...dataItems, ...documentItems]
+  const partyItems = (task.partyCapacity?.parties || []).flatMap(p => p.checks.map(check => ({
+    id: `party:${p.id}:${check.key}`,
+    label: `${p.name} (${p.entityType}): ${check.label}`,
+    description: p.signatories.length ? `Signatories: ${p.signatories.join(', ')}. Decision: ${p.status}.` : `Decision: ${p.status}.`,
+    type: 'party', required: true, complete: check.complete, persisted: p.ready,
+  })))
+
+  return [...partyItems, ...evidenceItems, ...dataItems, ...documentItems]
 }
 
 function normalizeVisibilityLabel(value = '') {
@@ -1209,12 +1238,13 @@ function buildAvailableActions(task = null, permissions = {}) {
     }
   }
 
+  const attestedMilestone = isAttorneyAttestedMilestone(resolveTaskLaneKey(task), task.key)
   const primary = [
-    !isAttorneyTaskResolved(task.status) ? {
+    !attestedMilestone && !isAttorneyTaskResolved(task.status) ? {
       id: 'complete_externally', label: 'Completed externally', status: 'completed_externally',
       disabled: false, requiresNote: false, requiresReason: true,
     } : null,
-    task.status !== 'not_applicable' ? {
+    !attestedMilestone && task.status !== 'not_applicable' ? {
       id: 'mark_not_applicable', label: 'Not applicable', status: 'not_applicable',
       disabled: false, requiresNote: false, requiresReason: true,
     } : null,
@@ -1229,7 +1259,9 @@ function buildAvailableActions(task = null, permissions = {}) {
           // Evidence is guidance for ordinary work. Lodgement is the narrow
           // exception: the confirmed tax route needs its verified proof.
           disabled: task.taxLodgementReadiness?.ready === false,
-          requiresNote: task.completionReadiness?.canComplete === false,
+          requiresNote: attestedMilestone ||
+            requiresAttorneyEvidenceDecision(resolveTaskLaneKey(task), task.key) ||
+            task.completionReadiness?.canComplete === false,
           reason: task.taxLodgementReadiness?.ready === false
             ? task.taxLodgementReadiness.warnings?.[0] || 'Complete the applicable transfer-tax verification before lodgement.'
             : task.completionReadiness?.canComplete === false

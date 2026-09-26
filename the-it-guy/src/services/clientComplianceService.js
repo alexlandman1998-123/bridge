@@ -120,12 +120,15 @@ export async function recordComplianceAuditEvent({ organisationId, clientContact
   }
 }
 
-export async function startClientComplianceVerification({ organisationId = '', clientContactId = '', entityType = 'individual', subject = {}, providerKey = 'mock', rerun = false } = {}) {
+export async function startClientComplianceVerification({ organisationId = '', clientContactId = '', entityType = 'individual', subject = {}, providerKey = 'mock', partyType = '', rerun = false } = {}) {
+  const provider = getComplianceProvider(providerKey)
+  if (partyType === 'seller' && provider.key === 'mock') {
+    throw new Error('Seller FICA verification is unavailable until a live provider is configured.')
+  }
   const db = client()
   const orgId = uuid(organisationId, 'organisation')
   const contactId = uuid(clientContactId, 'client contact')
   if (complianceStorageUnavailable) throw unavailableStorageError()
-  const provider = getComplianceProvider(providerKey)
   const active = await db.from('compliance_verification_runs').select('id').eq('organisation_id', orgId).eq('client_contact_id', contactId).eq('status', 'in_progress').limit(1).maybeSingle()
   if (active.error) {
     if (markComplianceStorageUnavailable(active.error)) throw unavailableStorageError()

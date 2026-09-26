@@ -102,7 +102,8 @@ function readPersistedRoutingProfile(input = {}) {
 function stableMatterProfileFingerprint(facts = {}) {
   const source = MATTER_PROFILE_FACT_KEYS
     .map((key) => `${key}:${String(facts[key] ?? '')}`)
-    .join('|') + (facts.scenarioProfile ? scenarioFingerprint(facts.scenarioProfile) : '') + JSON.stringify(facts.transferTaxDecision || {})
+    .join('|') + (facts.scenarioProfile ? scenarioFingerprint(facts.scenarioProfile) : '') +
+    JSON.stringify(facts.transferTaxDecision || {}) + JSON.stringify(facts.propertyConditions || {})
   let hash = 2166136261
   for (let index = 0; index < source.length; index += 1) {
     hash ^= source.charCodeAt(index)
@@ -117,7 +118,7 @@ function buildMatterProfileMetadata(baseProfile, existingProfile = {}, requested
     : {}
   const requested = requestedMetadata && typeof requestedMetadata === 'object' ? requestedMetadata : {}
   const facts = Object.fromEntries(MATTER_PROFILE_FACT_KEYS.map((key) => [key, baseProfile[key]]))
-  const fingerprint = stableMatterProfileFingerprint({ ...facts, scenarioProfile: baseProfile.scenarioProfile, transferTaxDecision: baseProfile.transferTaxDecision })
+  const fingerprint = stableMatterProfileFingerprint({ ...facts, scenarioProfile: baseProfile.scenarioProfile, transferTaxDecision: baseProfile.transferTaxDecision, propertyConditions: baseProfile.propertyConditions })
   const missingFactKeys = [
     baseProfile.financeType === 'unknown' ? 'finance_type' : '',
     baseProfile.transactionType === 'unknown' ? 'transaction_type' : '',
@@ -603,6 +604,7 @@ export function resolveTransactionRoutingProfile(input = {}) {
     sellerMaritalRegime: mvpProfile.sellerMaritalRegime || 'unknown',
     paymentSecurity: mvpProfile.paymentSecurity || 'unknown',
     hoaApplicable: mvpProfile.hoaApplicable || 'unknown',
+    propertyConditions: mvpProfile.propertyConditions || {},
     bondWorkflow: mvpProfile.bondWorkflow || 'auto',
     cancellationWorkflow: mvpProfile.cancellationWorkflow || 'auto',
     version: TRANSACTION_ROUTING_PROFILE_VERSION,
@@ -628,7 +630,10 @@ export function resolveTransactionRoutingProfile(input = {}) {
     // for a cash/unknown/developer-finance matter. The finance route is the
     // canonical condition for this legal lane.
     requiresBondAttorney: financeType === 'bond' || financeType === 'hybrid',
-    requiresCancellationAttorney: mvpProfile.cancellationWorkflow === 'include' || (mvpProfile.cancellationWorkflow !== 'exclude' && cancellationRequired),
+    // An existing registered seller bond cannot be suppressed by a workflow
+    // preference or by the buyer's cash/bond funding route.
+    requiresCancellationAttorney: sellerHasExistingBond || mvpProfile.cancellationWorkflow === 'include' ||
+      (mvpProfile.cancellationWorkflow !== 'exclude' && cancellationRequired),
     isDevelopmentSale: transactionType === 'development_sale',
     isCommercialTransaction: transactionType === 'commercial',
     isSectionalTitle: propertyTenure === 'sectional_title',

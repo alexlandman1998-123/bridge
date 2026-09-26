@@ -1735,7 +1735,7 @@ async function fetchLaneForUpdate(client, transactionId, laneKey) {
 }
 
 async function assertTransferTaxGateBeforeLodgement(client, { transactionId, lane, laneKey, stepKey, status } = {}) {
-  if (laneKey !== 'transfer' || status !== 'completed') return
+  if (laneKey !== 'transfer' || !['completed', 'completed_externally', 'not_applicable'].includes(status)) return
   if (!['lodgement_ready', 'lodged_at_deeds_office'].includes(stepKey)) return
 
   const [transaction, stepsResult] = await Promise.all([
@@ -1823,6 +1823,9 @@ export async function updateAttorneyWorkflowStepStatus({
 
   if (['completed_externally', 'not_applicable'].includes(normalizedStatus) && !normalizedNote) {
     throw new Error('Record a reason for this task outcome.')
+  }
+  if (operationalContract?.completionPolicy?.requiresNote && normalizedStatus === 'completed' && !normalizedNote) {
+    throw new Error('Record the attorney milestone attestation before completing this task.')
   }
   await assertTransferTaxGateBeforeLodgement(client, {
     transactionId: normalizedTransactionId,

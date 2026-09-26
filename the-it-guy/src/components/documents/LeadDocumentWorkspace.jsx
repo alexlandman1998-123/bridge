@@ -8,8 +8,8 @@ function rowIdentity(row = {}, categoryKey = '') {
     .replace(/[^a-z0-9]+/g, '-')
 }
 
-function isCompletedStatus(status = {}) {
-  return status.state === 'complete' || status.state === 'review'
+function isCompletedStatus(status = {}, partyType = 'seller') {
+  return status.state === 'complete' || (partyType !== 'buyer' && status.state === 'review')
 }
 
 export default function LeadDocumentWorkspace({
@@ -25,10 +25,10 @@ export default function LeadDocumentWorkspace({
   const normalizedCategories = useMemo(() => categories.map((category) => {
     const items = category.items || []
     const requiredItems = items.filter((row) => row.required !== false)
-    const completed = requiredItems.filter((row) => isCompletedStatus(getStatusMeta(row))).length
+    const completed = requiredItems.filter((row) => isCompletedStatus(getStatusMeta(row), partyType)).length
     const total = requiredItems.length
     return { ...category, items, completed, total, progress: total ? Math.round((completed / total) * 100) : 0 }
-  }), [categories, getStatusMeta])
+  }), [categories, getStatusMeta, partyType])
   const summary = useMemo(() => {
     const total = normalizedCategories.reduce((sum, category) => sum + category.total, 0)
     const completed = normalizedCategories.reduce((sum, category) => sum + category.completed, 0)

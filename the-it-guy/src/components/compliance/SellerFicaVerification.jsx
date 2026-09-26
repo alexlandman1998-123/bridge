@@ -3,7 +3,7 @@ import { AlertTriangle, Check, CheckCircle2, CircleHelp, Clock3, FileText, Info,
 import Button from '../ui/Button'
 import Drawer from '../ui/Drawer'
 import { getClientComplianceVerification, recordComplianceAuditEvent, startClientComplianceVerification } from '../../services/clientComplianceService'
-import { getComplianceProvider } from '../../services/complianceProviderRegistry'
+import { getComplianceProvider, isMockComplianceRun } from '../../services/complianceProviderRegistry'
 
 const CHECK_LABELS = { identity: 'Identity', address: 'Address', sanctions: 'Sanctions', pep: 'PEP', risk: 'Risk' }
 const DEFAULT_CHECKS = Object.keys(CHECK_LABELS).map((type) => ({ type, status: 'not_run', result: 'Not run' }))
@@ -107,19 +107,23 @@ export default function SellerFicaVerification({ organisationId, clientContactId
     return () => { active = false }
   }, [canView, clientContactId, organisationId])
 
-  const run = snapshot.run
+  const configuredProvider = getComplianceProvider(providerKey)
+  const sellerProviderUnavailable = partyType === 'seller' && configuredProvider.key === 'mock'
+  const ignoredMockSellerRun = partyType === 'seller' && isMockComplianceRun(snapshot.run)
+  const run = ignoredMockSellerRun ? null : snapshot.run
   const storageUnavailable = snapshot.unavailable === true
   const status = running ? 'in_progress' : run?.status || 'not_started'
   const checks = run?.checks?.length ? run.checks : DEFAULT_CHECKS
   const partyLabel = partyType === 'buyer' ? 'Buyer' : 'Seller'
   const displayName = clientName || sellerName
-  const state = presentation(status, missingFields, partyLabel)
-  const configuredProvider = getComplianceProvider(providerKey)
+  const state = sellerProviderUnavailable && !run
+    ? { title: 'Seller FICA verification unavailable', copy: 'A live verification provider has not been connected. You can complete the seller information, but no verification can be run yet.', tone: 'neutral' }
+    : presentation(status, missingFields, partyLabel)
   const resolvedProviderLabel = String(providerLabel || run?.provider || configuredProvider?.label || 'configured provider').trim()
   const buyerState = buyerPanelPresentation({ status, missingFields, unavailable: storageUnavailable })
   const buyerChecks = checks.map((check) => buyerCheckPresentation(check, { missingFields, processing: running || status === 'in_progress' }))
   const risk = run?.riskRating || 'unknown'
-  const canStart = canRun && !storageUnavailable && !missingFields.length && !running && status !== 'in_progress'
+  const canStart = canRun && !sellerProviderUnavailable && !storageUnavailable && !missingFields.length && !running && status !== 'in_progress'
   const address = subject.residentialAddress || [subject.street, subject.suburb, subject.city, subject.province, subject.country].filter(Boolean).join(', ')
   const maskedId = subject.idNumber ? `${'•'.repeat(Math.max(6, String(subject.idNumber).length - 4))}${String(subject.idNumber).slice(-4)}` : 'Not captured'
   const cardClass = state.tone === 'green' ? 'border-[#b9ddca] bg-[linear-gradient(135deg,#f6fcf8_0%,#fbfefd_100%)]' : state.tone === 'amber' ? 'border-[#ead7ae] bg-[#fffdf8]' : state.tone === 'red' ? 'border-[#ecc9c5] bg-[#fffafa]' : 'border-[#d5e3ed] bg-[linear-gradient(135deg,#f8fbfd_0%,#ffffff_100%)]'
@@ -131,7 +135,7 @@ export default function SellerFicaVerification({ organisationId, clientContactId
     setVerifyOpen(false)
     setError('')
     try {
-      const nextRun = await startClientComplianceVerification({ organisationId, clientContactId, entityType, subject, providerKey, rerun })
+      const nextRun = await startClientComplianceVerification({ organisationId, clientContactId, entityType, subject, providerKey, partyType, rerun })
       setSnapshot((previous) => ({ ...previous, run: nextRun }))
       onAuditActivity?.(rerun ? 'FICA verification re-run' : 'FICA verification completed', nextRun)
     } catch (runError) {
@@ -269,7 +273,8 @@ export default function SellerFicaVerification({ organisationId, clientContactId
               <p className="mt-2 text-sm leading-6 text-[#526b82]">{state.copy}</p>
               {partyType === 'buyer' ? <p className="mt-3 rounded-[12px] border border-[#dce8e2] bg-white/70 px-3 py-2 text-xs leading-5 text-[#526b82]">Buyer CDD covers identity, address, sanctions, prominent-person and risk screening. Company and trust purchasers also require beneficial-owner and control-person verification.</p> : null}
               {missingFields.length ? <p className="mt-3 text-xs font-semibold text-[#8a641d]">Missing: {missingFields.join(' · ')}</p> : null}
-              <p className="mt-5 text-xs text-[#71869b]">Verification powered by <span className="font-semibold text-[#31506b]">{run?.provider || 'configured provider'}</span></p>
+              {ignoredMockSellerRun ? <p className="mt-3 text-xs font-semibold text-[#a43e36]">A previous test result is not accepted as FICA verification.</p> : null}
+              <p className="mt-5 text-xs text-[#71869b]">{sellerProviderUnavailable ? 'No live verification provider connected' : <>Verification powered by <span className="font-semibold text-[#31506b]">{run?.provider || resolvedProviderLabel}</span></>}</p>
             </div>
           </div>
 
@@ -283,7 +288,7 @@ export default function SellerFicaVerification({ organisationId, clientContactId
             {run ? <div className="mt-5 grid gap-4 border-t border-[#d8e6df] pt-4 sm:grid-cols-2 xl:grid-cols-4"><div><p className="text-xs text-[#71869b]">Verified on</p><p className="mt-1 text-xs font-semibold text-[#20364c]">{formatDateTime(run.completedAt)}</p></div><div><p className="text-xs text-[#71869b]">Verified by</p><p className="mt-1 text-xs font-semibold text-[#20364c]">{run.provider || 'Provider'}</p></div><div><p className="text-xs text-[#71869b]">Reference</p><p className="mt-1 truncate text-xs font-semibold text-[#20364c]">{run.providerReference || '—'}</p></div><div><p className="text-xs text-[#71869b]">Risk rating</p><span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${risk === 'low' ? 'bg-[#def4e8] text-[#17643a]' : risk === 'medium' ? 'bg-[#fff0c9] text-[#8a641d]' : risk === 'high' ? 'bg-[#fde8e6] text-[#a43e36]' : 'bg-[#edf2f7] text-[#60758b]'}`}>{titleCase(risk)}</span></div></div> : null}
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               {missingFields.length || ['failed', 'incomplete'].includes(status) ? <Button type="button" size="sm" onClick={onCompleteInformation}>{missingFields.length ? 'Complete Information' : 'Resolve Information'}</Button> : null}
-              {!run && !missingFields.length ? <Button type="button" size="sm" onClick={() => setVerifyOpen(true)} disabled={!canStart}>Verify with TPN Report</Button> : null}
+              {!run && !missingFields.length && !sellerProviderUnavailable ? <Button type="button" size="sm" onClick={() => setVerifyOpen(true)} disabled={!canStart}>Verify with {resolvedProviderLabel}</Button> : null}
               {run?.reportReference ? <Button type="button" size="sm" variant="secondary" onClick={viewReport}><FileText className="h-4 w-4" />View Report</Button> : null}
               {status === 'review_required' ? <Button type="button" size="sm" onClick={viewReport}><ShieldCheck className="h-4 w-4" />Review Verification</Button> : null}
               {run && status !== 'in_progress' ? <Button type="button" size="sm" variant="secondary" onClick={() => setVerifyOpen(true)} disabled={!canStart}><RefreshCw className="h-4 w-4" />Re-run Verification</Button> : null}

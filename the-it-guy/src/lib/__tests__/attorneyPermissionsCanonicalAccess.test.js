@@ -19,13 +19,13 @@ beforeEach(() => {
   mocks.client = {
     rpc: vi.fn(async () => ({ data: true, error: null })),
     from: vi.fn(() => {
-      throw new Error('Canonical organisation access should not fall through to browser-side membership queries.')
+      throw new Error('Known-firm access should not fall through to browser-side membership queries.')
     }),
   }
 })
 
-describe('canonical attorney matter access', () => {
-  it('opens the matter when the database grants the assigned organisation access', async () => {
+describe('attorney matter team access', () => {
+  it('opens the matter when the database grants assigned-firm team access', async () => {
     await expect(canAccessAttorneyMatter(
       '3b53b01f-9f89-4e0c-9912-77bce2ac7f69',
       '37f3adfa-5f63-45af-95cf-9acb5037b38e',
@@ -33,8 +33,18 @@ describe('canonical attorney matter access', () => {
       { membership: null },
     )).resolves.toBe(true)
 
-    expect(mocks.client.rpc).toHaveBeenCalledWith('bridge_can_access_transaction_spine', {
-      target_transaction_id: '3b53b01f-9f89-4e0c-9912-77bce2ac7f69',
+    expect(mocks.client.rpc).toHaveBeenCalledWith('bridge_attorney_matter_team_access', {
+      p_transaction_id: '3b53b01f-9f89-4e0c-9912-77bce2ac7f69',
+      p_firm_id: '37f3adfa-5f63-45af-95cf-9acb5037b38e',
+      p_capability: 'view',
     })
+  })
+
+  it('hides an allocated matter from a firm member outside its team', async () => {
+    mocks.client.rpc.mockResolvedValue({ data: false, error: null })
+    await expect(canAccessAttorneyMatter(
+      '3b53b01f-9f89-4e0c-9912-77bce2ac7f69',
+      '37f3adfa-5f63-45af-95cf-9acb5037b38e',
+    )).resolves.toBe(false)
   })
 })

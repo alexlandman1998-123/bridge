@@ -42,9 +42,14 @@ import {
 } from '../../lib/listingSellerProfileBuilderModel'
 import { buildSellerSubject } from '../../lib/sellerSubjectModel'
 import { buildSellerFicaScope } from '../../lib/sellerFicaScopeModel'
+import { getSellerProfileNarrativeNotes } from '../../lib/sellerLeadProfileNotesModel'
 import { needsSellerOwnershipSetup, resolveSellerInformationEditMode } from '../../lib/sellerOwnershipSetupRouting'
 import { needsSellerOnboardingReplacement } from '../../lib/sellerOnboardingReplacement'
 import { buildManualFicaPackDocument } from '../../services/documents/ficaManualPackService'
+import { buildBuyerLeadDocumentReadModel, fetchBuyerLeadCanonicalDocumentRows } from '../../services/documents/buyerLeadDocumentReadService'
+import { reconcileStagedBuyerLeadDocuments } from '../../services/documents/buyerLeadDocumentHandoffService'
+import { validateDocumentUploadFile } from '../../lib/documentUploadPolicy'
+import { getMissingSellerPackListingDocuments } from '../../services/sellerPackHandoffContinuity'
 import {
   SELLER_BASE_PACK_COMPLETION_ROUTES,
   SELLER_BASE_PACK_KEYS,
@@ -131,6 +136,8 @@ import {
 } from '../../services/sellerDocumentRequirementsService'
 import { projectCanonicalSellerDocumentRows } from '../../services/documents/canonicalSellerDocumentProjectionService'
 import { resolveCanonicalDocumentRequestPresentation } from '../../services/documents/canonicalDocumentRequestPresentationService'
+import { BUYER_LEAD_DOCUMENT_TYPES, resolveBuyerLeadDocumentTarget } from '../../core/documents/buyerLeadDocumentContract'
+import { resolveSellerLeadUploadVisibility } from '../../services/documents/sellerDocumentVisibilityPolicy'
 import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
 import { buildSellerCompliancePortalModel } from '../../core/documents/sellerCompliancePortalModel'
 import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts'
@@ -816,15 +823,8 @@ const OTP_UPLOAD_WIZARD_STEPS = [
   { key: 'instruction', label: 'Send Instruction' },
   { key: 'upload', label: 'Upload OTP' },
 ]
-const BUYER_AGENT_DOCUMENT_STORAGE_FOLDER = 'buyer-agent-documents'
-const BUYER_AGENT_DOCUMENT_TYPES = [
-  { key: 'buyer_id_document', label: 'Buyer ID document' },
-  { key: 'buyer_proof_of_address', label: 'Buyer proof of address' },
-  { key: 'proof_of_funds', label: 'Proof of funds' },
-  { key: 'bank_statements', label: 'Bank statements' },
-  { key: 'bond_pre_approval', label: 'Bond pre-approval' },
-  { key: 'buyer_fica_declaration', label: 'Signed Buyer FICA Declaration' },
-]
+const BUYER_AGENT_DOCUMENT_STORAGE_FOLDER = 'buyer-leads'
+const BUYER_AGENT_DOCUMENT_TYPES = BUYER_LEAD_DOCUMENT_TYPES
 const BUYER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
   { key: 'buyer', label: 'Buyer Documents', description: 'Identity and buyer verification', Icon: UserRound, iconClass: 'border-[#dbeafe] bg-[#eff6ff] text-[#2563a6]' },
   { key: 'finance', label: 'Finance Documents', description: 'Bond and proof-of-funds documentation', Icon: Gauge, iconClass: 'border-[#d8e4f4] bg-[#f2f7fc] text-[#315b7a]' },
@@ -6351,6 +6351,17 @@ function getWorkspaceSellerOnboarding(lead = {}, listing = {}) {
   }
 }
 
+function getWorkspacePropertyPostalCode(onboarding = {}) {
+  const postalCode = firstWorkspaceText(onboarding?.postalCode, onboarding?.propertyAddressDetails?.postalCode)
+  const propertyPostalCode = firstWorkspaceText(onboarding?.propertyPostalCode)
+  const residentialPostalCode = firstWorkspaceText(onboarding?.residentialPostalCode)
+  // Older agent edits used postalCode for the seller's residential address.
+  if (postalCode && propertyPostalCode && postalCode === residentialPostalCode && postalCode !== propertyPostalCode) {
+    return propertyPostalCode
+  }
+  return postalCode || propertyPostalCode
+}
+
 function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, journey = {}, readiness = {}, documentSummary = {} } = {}) {
   const listingSource = listing?.sourceListing && isPlainObject(listing.sourceListing) ? listing.sourceListing : (listing || {})
   const onboarding = getWorkspaceSellerOnboarding(lead, listingSource)
@@ -6365,12 +6376,14 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
     ...(isPlainObject(listingSource?.marketing_details) ? listingSource.marketing_details : {}),
   }
   const addressLine = firstWorkspaceText(
+    onboarding?.propertyAddress,
+    onboarding?.propertyAddressDetails?.formatted,
+    onboarding?.propertyAddressDetails?.line1,
+    onboarding?.formattedAddress,
     lead?.sellerPropertyAddress,
     lead?.seller_property_address,
     lead?.formattedAddress,
     lead?.streetAddress,
-    onboarding?.propertyAddress,
-    onboarding?.formattedAddress,
     onboarding?.streetAddress,
     propertyDetails?.address,
     listingSource?.propertyAddress,
@@ -6378,10 +6391,10 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
     listingSource?.address,
     listing?.address,
   )
-  const suburb = firstWorkspaceText(lead?.suburb, onboarding?.suburb, propertyDetails?.suburb, listingSource?.suburb, listing?.suburb)
-  const city = firstWorkspaceText(lead?.city, onboarding?.city, propertyDetails?.city, listingSource?.city)
-  const province = firstWorkspaceText(lead?.province, onboarding?.province, propertyDetails?.province, listingSource?.province)
-  const postalCode = firstWorkspaceText(lead?.postalCode, lead?.postal_code, onboarding?.postalCode, onboarding?.postal_code, propertyDetails?.postalCode, listingSource?.postalCode, listingSource?.postal_code)
+  const suburb = firstWorkspaceText(onboarding?.suburb, onboarding?.propertySuburb, onboarding?.propertyAddressDetails?.suburb, lead?.suburb, propertyDetails?.suburb, listingSource?.suburb, listing?.suburb)
+  const city = firstWorkspaceText(onboarding?.city, onboarding?.propertyCity, onboarding?.propertyAddressDetails?.city, lead?.city, propertyDetails?.city, listingSource?.city)
+  const province = firstWorkspaceText(onboarding?.province, onboarding?.propertyProvince, onboarding?.propertyAddressDetails?.province, lead?.province, propertyDetails?.province, listingSource?.province)
+  const postalCode = firstWorkspaceText(getWorkspacePropertyPostalCode(onboarding), lead?.postalCode, lead?.postal_code, propertyDetails?.postalCode, listingSource?.postalCode, listingSource?.postal_code)
   const formattedAddress = buildWorkspaceFormattedAddress(addressLine, suburb, city, province, postalCode)
   const listingId = firstWorkspaceText(listingSource?.id, listingSource?.listingId, listingSource?.listing_id, listing?.id, lead?.listingId, lead?.listing_id)
   const listingStatus = firstWorkspaceText(
@@ -6400,7 +6413,7 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
       : asArray(readiness?.blockers),
   }
   const leadPropertyInterestAsType = workspaceTextLooksLikeAddress(lead?.propertyInterest) ? '' : lead?.propertyInterest
-  const propertyType = firstWorkspaceText(lead?.propertyType, lead?.property_type, onboarding?.propertyType, onboarding?.property_type, propertyDetails?.propertyType, listingSource?.propertyType, listing?.propertyType, leadPropertyInterestAsType)
+  const propertyType = firstWorkspaceText(onboarding?.propertyType, onboarding?.property_type, lead?.propertyType, lead?.property_type, propertyDetails?.propertyType, listingSource?.propertyType, listing?.propertyType, leadPropertyInterestAsType)
   const features = uniqueWorkspaceList([
     propertyDetails?.features,
     propertyDetails?.propertyFeatures,
@@ -6428,27 +6441,30 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
     fieldMapping: PROPERTY_WORKSPACE_FIELD_MAPPING,
     profile: {
       address: formattedAddress || addressLine || 'No property address yet',
-      sourceLabel: Object.keys(onboarding).length ? 'Provided by seller' : 'Updated by agent',
+      sourceLabel: Object.keys(onboarding).length ? 'Captured property information' : 'Lead information',
       rows: [
         { label: 'Property type', value: propertyType },
-        { label: 'Property title type', value: firstWorkspaceText(onboarding?.propertyTitleType, onboarding?.property_title_type, onboarding?.propertySubtype, onboarding?.property_subtype, onboarding?.propertyStructureType, onboarding?.property_structure_type, propertyDetails?.propertyTitleType, propertyDetails?.property_title_type, propertyDetails?.propertySubtype, propertyDetails?.propertyStructureType) },
-        { label: 'Complex / Estate', value: firstWorkspaceText(onboarding?.complexName, onboarding?.estateName, onboarding?.estateComplexName, propertyDetails?.complexName, listingSource?.estateName) },
-        { label: 'Erf / Stand number', value: firstWorkspaceText(lead?.erfNumber, onboarding?.erfNumber, onboarding?.standNumber, onboarding?.propertyReference, propertyDetails?.erfNumber) },
+        { label: 'Property title type', value: titleCaseWorkspaceValue(firstWorkspaceText(onboarding?.propertyStructureType, onboarding?.property_structure_type, onboarding?.ownershipScheme, onboarding?.propertyTitleType, onboarding?.property_title_type, propertyDetails?.propertyStructureType, propertyDetails?.propertyTitleType)) },
+        { label: 'Complex / Estate', value: firstWorkspaceText(onboarding?.estateComplexName, onboarding?.complexName, onboarding?.estateName, propertyDetails?.complexName, listingSource?.estateName) },
+        { label: 'Erf / Stand number', value: firstWorkspaceText(onboarding?.erfNumber, onboarding?.standNumber, lead?.erfNumber, propertyDetails?.erfNumber) },
         { label: 'Sectional title', value: firstWorkspaceValue(onboarding?.sectionalTitle, onboarding?.isSectionalTitle, propertyDetails?.sectionalTitle) },
+        { label: 'Scheme name', value: firstWorkspaceText(onboarding?.schemeName, propertyDetails?.schemeName) },
+        { label: 'Section number', value: firstWorkspaceText(onboarding?.sectionNumber, propertyDetails?.sectionNumber) },
         { label: 'Unit number', value: firstWorkspaceText(onboarding?.unitNumber, onboarding?.unit_number, propertyDetails?.unitNumber) },
         { label: 'Suburb', value: suburb },
         { label: 'City', value: city },
         { label: 'Province', value: province },
         { label: 'Postal code', value: postalCode },
         { label: 'GPS coordinates', value: firstWorkspaceText(
-          lead?.latitude && lead?.longitude ? `${lead.latitude}, ${lead.longitude}` : '',
           onboarding?.latitude && onboarding?.longitude ? `${onboarding.latitude}, ${onboarding.longitude}` : '',
+          onboarding?.propertyAddressDetails?.latitude && onboarding?.propertyAddressDetails?.longitude ? `${onboarding.propertyAddressDetails.latitude}, ${onboarding.propertyAddressDetails.longitude}` : '',
+          lead?.latitude && lead?.longitude ? `${lead.latitude}, ${lead.longitude}` : '',
           propertyDetails?.latitude && propertyDetails?.longitude ? `${propertyDetails.latitude}, ${propertyDetails.longitude}` : '',
         ) },
       ].map((row) => ({ ...row, value: formatCapturedValue(row.value) })),
     },
     listing: {
-      hasListing: Boolean(listingId || journey?.listingCreated),
+      hasListing: journey?.listingCreated === true,
       id: listingId,
       status: listingStatus || 'Not created',
       statusTone: journey?.listingLive || normalizeText(listingStatus).toLowerCase().includes('live') || normalizeText(listingStatus).toLowerCase().includes('active') ? 'success' : listingId ? 'warning' : 'neutral',
@@ -9100,12 +9116,20 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     mortgageBank: normalizeText(onboarding?.mortgageBank || onboarding?.mortgage_bank),
     bondBalance: normalizeText(onboarding?.bondBalance || onboarding?.bond_balance || onboarding?.approxBondBalance),
     primaryResidence: toSellerProfileText(onboarding?.primaryResidence || onboarding?.primary_residence),
-    propertyAddress: normalizeText(onboarding?.propertyAddress || onboarding?.formattedAddress || lead?.sellerPropertyAddress || lead?.formattedAddress),
-    propertyType: normalizeText(lead?.propertyInterest || onboarding?.propertyType || onboarding?.property_type || propertyDetails?.propertyType),
-    propertySuburb: normalizeText(lead?.suburb || onboarding?.suburb || propertyDetails?.suburb),
-    propertyCity: normalizeText(lead?.city || onboarding?.city || propertyDetails?.city),
-    propertyProvince: normalizeText(lead?.province || onboarding?.province || propertyDetails?.province),
-    propertyPostalCode: normalizeText(lead?.postalCode || onboarding?.postalCode || propertyDetails?.postalCode),
+    propertyAddress: normalizeText(onboarding?.propertyAddress || onboarding?.propertyAddressDetails?.formatted || onboarding?.formattedAddress || lead?.sellerPropertyAddress || lead?.formattedAddress),
+    propertyType: normalizeText(onboarding?.propertyType || onboarding?.property_type || lead?.propertyType || propertyDetails?.propertyType || (workspaceTextLooksLikeAddress(lead?.propertyInterest) ? '' : lead?.propertyInterest)),
+    estateComplexName: normalizeText(onboarding?.estateComplexName || onboarding?.complexName || onboarding?.estateName || propertyDetails?.complexName),
+    erfNumber: normalizeText(onboarding?.erfNumber || onboarding?.standNumber || lead?.erfNumber || propertyDetails?.erfNumber),
+    sectionalTitle: toSellerProfileText(firstWorkspaceValue(onboarding?.sectionalTitle, onboarding?.isSectionalTitle, propertyDetails?.sectionalTitle)),
+    schemeName: normalizeText(onboarding?.schemeName || propertyDetails?.schemeName),
+    sectionNumber: normalizeText(onboarding?.sectionNumber || propertyDetails?.sectionNumber),
+    unitNumber: normalizeText(onboarding?.unitNumber || propertyDetails?.unitNumber),
+    latitude: normalizeText(onboarding?.latitude || onboarding?.propertyAddressDetails?.latitude || lead?.latitude || propertyDetails?.latitude),
+    longitude: normalizeText(onboarding?.longitude || onboarding?.propertyAddressDetails?.longitude || lead?.longitude || propertyDetails?.longitude),
+    propertySuburb: normalizeText(onboarding?.suburb || onboarding?.propertySuburb || onboarding?.propertyAddressDetails?.suburb || lead?.suburb || propertyDetails?.suburb),
+    propertyCity: normalizeText(onboarding?.city || onboarding?.propertyCity || onboarding?.propertyAddressDetails?.city || lead?.city || propertyDetails?.city),
+    propertyProvince: normalizeText(onboarding?.province || onboarding?.propertyProvince || onboarding?.propertyAddressDetails?.province || lead?.province || propertyDetails?.province),
+    propertyPostalCode: normalizeText(getWorkspacePropertyPostalCode(onboarding) || lead?.postalCode || propertyDetails?.postalCode),
     bedrooms: normalizeText(lead?.bedrooms || onboarding?.bedrooms || propertyDetails?.bedrooms),
     bathrooms: normalizeText(lead?.bathrooms || onboarding?.bathrooms || propertyDetails?.bathrooms),
     garages: normalizeText(lead?.garages || onboarding?.garages || propertyDetails?.garages),
@@ -9123,7 +9147,7 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     cracks: normalizeText(onboarding?.cracks || onboarding?.structuralCracks),
     pestDamage: normalizeText(onboarding?.pestDamage || onboarding?.pest_damage),
     otherDefects: normalizeText(onboarding?.otherDefects || onboarding?.knownDefects || onboarding?.known_defects),
-    agentNotes: normalizeText(onboarding?.agentNotes || onboarding?.agent_notes || lead?.notes),
+    agentNotes: getSellerProfileNarrativeNotes(onboarding?.agentNotes, onboarding?.agent_notes, lead?.notes),
   }
 }
 
@@ -9295,7 +9319,7 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     residentialCity: normalizeText(form.residentialCity),
     residentialProvince: normalizeText(form.residentialProvince),
     residentialPostalCode: normalizeText(form.residentialPostalCode),
-    postalCode: normalizeText(form.residentialPostalCode),
+    postalCode: normalizeText(form.propertyPostalCode),
     residentialCountry: normalizeText(form.residentialCountry) || 'South Africa',
     country: normalizeText(form.residentialCountry) || 'South Africa',
     bankName: normalizeText(form.bankName),
@@ -9454,6 +9478,14 @@ function buildKingstonsSellerProfileFormData(form = {}) {
     propertyAddress: normalizeText(form.propertyAddress),
     formattedAddress: normalizeText(form.propertyAddress),
     propertyType: normalizeText(form.propertyType),
+    estateComplexName: normalizeText(form.estateComplexName),
+    erfNumber: normalizeText(form.erfNumber),
+    sectionalTitle: normalizeText(form.sectionalTitle) ? normalizeText(form.sectionalTitle).toLowerCase() === 'yes' : null,
+    schemeName: normalizeText(form.schemeName),
+    sectionNumber: normalizeText(form.sectionNumber),
+    unitNumber: normalizeText(form.unitNumber),
+    latitude: normalizeText(form.latitude),
+    longitude: normalizeText(form.longitude),
     suburb: normalizeText(form.propertySuburb),
     city: normalizeText(form.propertyCity),
     province: normalizeText(form.propertyProvince),
@@ -10568,6 +10600,14 @@ const KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS = {
   primaryResidence: '',
   propertyAddress: '',
   propertyType: '',
+  estateComplexName: '',
+  erfNumber: '',
+  sectionalTitle: '',
+  schemeName: '',
+  sectionNumber: '',
+  unitNumber: '',
+  latitude: '',
+  longitude: '',
   propertySuburb: '',
   propertyCity: '',
   propertyProvince: '',
@@ -11650,6 +11690,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [sellerLinkCopiedKind, setSellerLinkCopiedKind] = useState('')
   const [openingSellerLeadDocumentId, setOpeningSellerLeadDocumentId] = useState('')
   const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
+  const [sellerPackHandoffRetrying, setSellerPackHandoffRetrying] = useState(false)
   const [sellerLeadMandateUploading, setSellerLeadMandateUploading] = useState(false)
   const [sellerLeadDocumentUploadingKey, setSellerLeadDocumentUploadingKey] = useState('')
   const [formalValuationUploading, setFormalValuationUploading] = useState(false)
@@ -12000,6 +12041,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   // outside that collection so a later shallow snapshot cannot erase signed files.
   const [selectedLeadHydratedListing, setSelectedLeadHydratedListing] = useState(null)
   const [selectedLeadDocumentHydrationStatus, setSelectedLeadDocumentHydrationStatus] = useState('idle')
+  const [buyerDocumentReadState, setBuyerDocumentReadState] = useState({ transactionId: '', leadId: '', status: 'idle', rows: [], error: '' })
+  const [buyerDocumentRefreshTick, setBuyerDocumentRefreshTick] = useState(0)
+  const [buyerDocumentReconcileBusy, setBuyerDocumentReconcileBusy] = useState(false)
   const [showDayImportBusy, setShowDayImportBusy] = useState(false)
   const [appointmentSchedulingIntegrity, setAppointmentSchedulingIntegrity] = useState(null)
   const [appointmentSchedulingLoading, setAppointmentSchedulingLoading] = useState(false)
@@ -15238,6 +15282,23 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLead?.lead_id ||
       (isLeadWorkspaceRoute ? routeLeadId : selectedLeadId),
   )
+  useEffect(() => {
+    const transactionId = normalizeText(selectedLeadLinkedTransactionId)
+    const leadId = selectedLeadRecordId
+    if (selectedLeadIsSeller || leadWorkspaceTab !== 'documents' || !isUuidLike(transactionId) || !isUuidLike(leadId) || !isSupabaseConfigured) {
+      return undefined
+    }
+    let cancelled = false
+    setBuyerDocumentReadState({ transactionId, leadId, status: 'loading', rows: [], error: '' })
+    fetchBuyerLeadCanonicalDocumentRows(supabase, { transactionId, organisationId, leadId })
+      .then((rows) => {
+        if (!cancelled) setBuyerDocumentReadState({ transactionId, leadId, status: 'ready', rows, error: '' })
+      })
+      .catch((error) => {
+        if (!cancelled) setBuyerDocumentReadState({ transactionId, leadId, status: 'error', rows: [], error: error?.message || 'Buyer documents could not be loaded.' })
+      })
+    return () => { cancelled = true }
+  }, [buyerDocumentRefreshTick, leadWorkspaceTab, organisationId, selectedLeadIsSeller, selectedLeadLinkedTransactionId, selectedLeadRecordId])
   const selectedLeadJourneyEntityType = selectedLeadIsSeller ? JOURNEY_ENTITY_TYPES.sellerLead : JOURNEY_ENTITY_TYPES.buyerLead
   const selectedLeadMandatePacketId = normalizeText(selectedLead?.mandatePacketId || selectedLead?.mandate_packet_id || selectedLead?.mandatePacket?.id)
   const selectedLeadPropertyArea = normalizeText(selectedLead?.sellerPropertyAddress || selectedLead?.areaInterest)
@@ -17186,7 +17247,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ? 'Contact Seller First'
     : selectedLeadNeedsOnboardingReplacement
       ? 'Send Corrected Onboarding'
-      : selectedLeadSellerPortalActionLabel
+      : !selectedSellerJourney.onboardingSubmitted
+        ? isSellerOnboardingSending ? 'Sending...' : 'Send Seller Onboarding Link'
+        : selectedLeadSellerPortalActionLabel
   const selectedKingstonsSellerPackRows = useMemo(
     () => selectedLeadHasKingstonsPipelineSignal
       ? buildKingstonsSellerPackDocumentRows(selectedLead || {}, {
@@ -17212,6 +17275,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedKingstonsSellerPackSummary = useMemo(
     () => summarizeKingstonsSellerPack(selectedKingstonsSellerPackRows),
     [selectedKingstonsSellerPackRows],
+  )
+  const missingSellerPackListingDocuments = useMemo(
+    () => selectedLeadHasKingstonsPipelineSignal && selectedLeadLinkedListingId && selectedLeadDocumentHydrationStatus === 'ready'
+      ? getMissingSellerPackListingDocuments(selectedKingstonsSellerPackRows, selectedLeadLinkedListing?.documents)
+      : [],
+    [selectedLeadHasKingstonsPipelineSignal, selectedLeadLinkedListingId, selectedLeadDocumentHydrationStatus, selectedKingstonsSellerPackRows, selectedLeadLinkedListing?.documents],
   )
   const selectedKingstonsSellerPack = useMemo(
     () => selectedLeadHasKingstonsPipelineSignal ? getKingstonsSellerPackState(selectedLead || {}) : { documents: {}, sellerType: '' },
@@ -17388,11 +17457,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ],
   )
 
+  const selectedBuyerDocumentReadModel = useMemo(() => buildBuyerLeadDocumentReadModel({
+    leadRows: selectedLeadAgentUploadedBuyerDocuments,
+    canonicalRows: buyerDocumentReadState.transactionId === selectedLeadLinkedTransactionId &&
+      buyerDocumentReadState.leadId === selectedLeadRecordId
+      ? buyerDocumentReadState.rows : [],
+    hasTransaction: isUuidLike(selectedLeadLinkedTransactionId),
+  }), [buyerDocumentReadState, selectedLeadAgentUploadedBuyerDocuments, selectedLeadLinkedTransactionId, selectedLeadRecordId])
+
   const selectedBuyerDocumentCategories = useMemo(() => {
-    const uploadedByKey = new Map(selectedLeadAgentUploadedBuyerDocuments.map((row) => [
-      normalizeKey(row.key || row.requirementKey || row.requirement_key || row.documentType || row.document_type),
-      row,
-    ]))
     const ficaRows = selectedBuyerFicaRoleplayerModel.flatMap((group) => group.items || [])
     const ficaByKey = new Map(ficaRows.map((row) => [normalizeKey(row.key || row.requirementKey || row.requirement_key), row]))
     const configuredRows = BUYER_AGENT_DOCUMENT_TYPES.map((definition) => ({
@@ -17403,7 +17476,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       status: 'missing',
       statusLabel: 'Missing',
       ...(ficaByKey.get(definition.key) || {}),
-      ...(uploadedByKey.get(definition.key) || {}),
     }))
     const categoryForKey = (key = '') => ['proof_of_funds', 'bank_statements', 'bond_pre_approval'].includes(normalizeKey(key)) ? 'finance' : 'buyer'
     const buyerRows = configuredRows.filter((row) => categoryForKey(row.key) === 'buyer')
@@ -17422,7 +17494,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }]
     const rowsByCategory = { buyer: buyerRows, finance: financeRows, property: [], legal: legalRows }
     return BUYER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => ({ ...category, items: rowsByCategory[category.key] || [] }))
-  }, [selectedBuyerFicaRoleplayerModel, selectedLeadAgentUploadedBuyerDocuments, selectedLeadBuyerOfferDocumentUploaded])
+  }, [selectedBuyerFicaRoleplayerModel, selectedLeadBuyerOfferDocumentUploaded])
 
   useEffect(() => {
     const firstId = selectedSellerFicaRoleplayerModel[0]?.id || ''
@@ -17726,6 +17798,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ? selectedLeadLinkedListing.sourceListing
       : (selectedLeadLinkedListing || {})
     const onboarding = getWorkspaceSellerOnboarding(lead, listing)
+    const propertyFromListing = selectedSellerJourney.listingCreated === true
     const directListingIntake = isPlainObject(listing?.directListingIntake)
       ? listing.directListingIntake
       : isPlainObject(listing?.direct_listing_intake)
@@ -17809,8 +17882,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         title: 'Seller',
         rows: [
           ['Name', value(onboarding?.fullName, onboarding?.sellerFullName, directSeller?.fullName, directSeller?.name, selectedLeadDisplayName, lead?.sellerName, lead?.name)],
-          ['Mobile', value(selectedLeadContact?.phone, onboarding?.mobile, onboarding?.phone, directSeller?.mobile, directSeller?.phone, lead?.sellerPhone, lead?.phone)],
-          ['Email', value(selectedLeadContact?.email, onboarding?.email, directSeller?.email, lead?.sellerEmail, lead?.email)],
+          ['Mobile', value(onboarding?.sellerPhone, onboarding?.mobile, onboarding?.phone, selectedLeadContact?.phone, directSeller?.mobile, directSeller?.phone, lead?.sellerPhone, lead?.phone)],
+          ['Email', value(onboarding?.sellerEmail, onboarding?.email, selectedLeadContact?.email, directSeller?.email, lead?.sellerEmail, lead?.email)],
           ['Owner Type', ownerType],
         ],
       },
@@ -17819,37 +17892,40 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         title: 'Property',
         rows: [
           ['Address', value(
-            listing?.propertyAddress,
-            listing?.property_address,
-            listing?.formattedAddress,
-            listing?.formatted_address,
-            listing?.address,
+            propertyFromListing ? listing?.propertyAddress : '',
+            propertyFromListing ? listing?.property_address : '',
+            propertyFromListing ? listing?.formattedAddress : '',
+            propertyFromListing ? listing?.formatted_address : '',
+            propertyFromListing ? listing?.address : '',
             onboarding?.propertyAddress,
             onboarding?.property_address,
             onboarding?.formattedAddress,
             onboarding?.formatted_address,
             lead?.sellerPropertyAddress,
             lead?.seller_property_address,
+            listing?.propertyAddress,
+            listing?.property_address,
+            listing?.formattedAddress,
+            listing?.formatted_address,
+            listing?.address,
             selectedLeadPropertyLabel === 'No property linked' ? '' : selectedLeadPropertyLabel,
           )],
           ['Property Type', value(
-            listing?.propertyType,
-            listing?.property_type,
-            listing?.propertyStructureType,
-            listing?.property_structure_type,
+            propertyFromListing ? listing?.propertyType : '',
+            propertyFromListing ? listing?.property_type : '',
             onboarding?.propertyType,
             onboarding?.property_type,
-            onboarding?.propertyStructureType,
-            onboarding?.property_structure_type,
             lead?.propertyType,
             lead?.property_type,
             lead?.sellerPropertyType,
             lead?.seller_property_type,
+            listing?.propertyType,
+            listing?.property_type,
           )],
           ['Expected Price', price(
-            listing?.askingPrice,
-            listing?.asking_price,
-            listing?.price,
+            propertyFromListing ? listing?.askingPrice : '',
+            propertyFromListing ? listing?.asking_price : '',
+            propertyFromListing ? listing?.price : '',
             onboarding?.expectedPrice,
             onboarding?.expected_price,
             onboarding?.askingPrice,
@@ -17857,6 +17933,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             lead?.estimatedValue,
             lead?.estimated_value,
             lead?.budget,
+            listing?.askingPrice,
+            listing?.asking_price,
+            listing?.price,
           )],
         ],
       },
@@ -17882,6 +17961,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerDocumentCategories,
     selectedSellerJourney.onboardingSent,
     selectedSellerJourney.onboardingSubmitted,
+    selectedSellerJourney.listingCreated,
   ])
 
   const selectedLeadPropertyWorkspace = useMemo(() => buildSellerPropertyWorkspaceViewModel({
@@ -18222,7 +18302,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ['Pest Damage', field(onboarding?.pestDamage, onboarding?.pest_damage)],
         ['Other', field(onboarding?.otherDefects, onboarding?.knownDefects, onboarding?.known_defects)],
       ],
-      agentNotes: field(onboarding?.agentNotes, onboarding?.agent_notes, lead?.notes),
+      agentNotes: getSellerProfileNarrativeNotes(onboarding?.agentNotes, onboarding?.agent_notes, lead?.notes),
     }
   }, [
     selectedLead,
@@ -22907,7 +22987,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         postalCode: formData.propertyPostalCode || formData.residentialPostalCode,
         propertyInterest: formData.propertyType,
         estimatedValue: Number(String(formData.askingPrice || '').replace(/[^\d.-]/g, '')) || Number(selectedLead?.estimatedValue || 0) || 0,
-        notes: formData.agentNotes || normalizeText(selectedLead?.notes),
       }
       const contactPatch = {
         firstName: formData.firstName,
@@ -22958,7 +23037,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         postalCode: leadPatch.postalCode,
         propertyInterest: formData.propertyType,
         estimatedValue: String(leadPatch.estimatedValue || ''),
-        notes: leadPatch.notes,
       }))
       setError('')
       setMessage('Seller profile saved.')
@@ -25438,7 +25516,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           documentName: normalizeText(documentRow.uploadedFileName || documentRow.fileName || documentRow.label || meta.requirementName),
           filePath,
           fileUrl: filePath ? '' : fileUrl,
-          visibility: 'internal',
+          visibility: resolveSellerLeadUploadVisibility({
+            ...documentRow,
+            visibility: documentRow.visibility || documentRow.document_visibility || 'seller_visible',
+          }, {
+            unreleasedMandate: normalizeSellerBasePackKey(documentRow.key) === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+          }),
           status: 'uploaded',
           pendingTransactionPromotion: true,
           promotionStatus: 'pending_transaction',
@@ -25459,9 +25542,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
         results.push({
           key: documentRow.key,
-          status: linked?.id ? 'linked' : 'skipped',
+          status: linked?.id ? 'linked' : 'failed',
           requirementKey: meta.requirementKey,
           documentId: linked?.id || '',
+          error: linked?.id ? '' : 'The listing document was not saved.',
         })
       } catch (linkError) {
         results.push({
@@ -25504,6 +25588,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       skipped: false,
       failures: [],
       results,
+    }
+  }
+
+  async function retryKingstonsSellerPackListingHandoff() {
+    if (!selectedLeadLinkedListingId || !selectedLead || sellerPackHandoffRetrying) return
+    setSellerPackHandoffRetrying(true)
+    setError('')
+    try {
+      await syncKingstonsSellerPackToListing(selectedLeadLinkedListingId, selectedLead)
+      const listing = await getPrivateListing(selectedLeadLinkedListingId, {
+        includeRequirementsAndDocuments: true,
+        includeDistributionData: false,
+      })
+      if (!listing) throw new Error('The listing could not be reloaded to confirm its documents.')
+      const remaining = getMissingSellerPackListingDocuments(selectedKingstonsSellerPackRows, listing.documents)
+      setSelectedLeadHydratedListing({ ...listing, listingOptionSourceAuthority: 'canonical_hydrated_listing' })
+      if (remaining.length) throw new Error(`${remaining.length} Seller Pack document${remaining.length === 1 ? '' : 's'} still need linking.`)
+      setMessage('Seller Pack documents are linked to the listing. Review the transaction handoff on the listing when applicable.')
+    } catch (handoffError) {
+      setError(`Seller Pack handoff needs attention. ${handoffError?.message || 'Please retry.'}`)
+    } finally {
+      setSellerPackHandoffRetrying(false)
     }
   }
 
@@ -26185,7 +26291,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               getSellerLeadDocumentCategoryKey(documentRow),
           ) || 'seller',
           documentName: normalizeText(file.name || documentLabel || documentRow?.title) || 'Seller document',
-          visibility: 'internal',
+          visibility: resolveSellerLeadUploadVisibility(documentRow),
           status: 'uploaded',
         }),
         `${documentLabel} upload is taking too long. Please try again.`,
@@ -26209,6 +26315,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         title: documentLabel,
         status: 'uploaded',
         statusLabel: 'Uploaded',
+        visibility: resolveSellerLeadUploadVisibility(documentRow),
         uploadedAt,
         uploaded_at: uploadedAt,
         uploadedBy: normalizeText(currentAgent.email || currentAgent.fullName || currentAgent.id),
@@ -26395,7 +26502,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError('')
       setMessage(selectedLeadHasKingstonsPipelineSignal
         ? 'Seller contact logged. Next best action is now Schedule Valuation Appointment.'
-        : 'Seller contact logged. Next best action is now Send Seller Portal Link.')
+        : 'Seller contact logged. Next best action is now Send Seller Onboarding Link.')
       scheduleRecordsReload(organisationId, 850)
     } catch (contactError) {
       const errorMessage = contactError?.message || 'Unable to save seller contact feedback.'
@@ -26410,6 +26517,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (selectedLeadIsSeller) {
+      if (selectedLeadNeedsOnboardingReplacement || !selectedSellerJourney.onboardingSubmitted) {
+        requestSellerOnboardingAttorneySelection()
+        return
+      }
       void handleSendSellerPortalLink()
       return
     }
@@ -26643,6 +26754,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       await activateSellerPortalForListing({
         listingId,
         activationSource: SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+        listingCreated: selectedSellerJourney.listingCreated === true,
         sellerContactEmail: sellerEmail,
         sellerContactPhone: normalizeText(selectedLeadContact?.phone || selectedLead?.sellerPhone || selectedLead?.phone),
         sellerFirstName: normalizeText(selectedLeadContact?.firstName || selectedLead?.sellerName),
@@ -27666,6 +27778,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         title: definition.label,
         category: definition.category || 'seller',
         document_category: definition.category || 'seller',
+        visibility: resolveSellerLeadUploadVisibility({
+          ...sourceDocument,
+          visibility: sourceDocument.visibility || sourceDocument.document_visibility || 'seller_visible',
+        }, {
+          unreleasedMandate: normalizeSellerBasePackKey(key) === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+        }),
         requirementLane: definition.requirementLane || definition.requirement_lane,
         requirement_lane: definition.requirement_lane || definition.requirementLane,
         documentRequirementSection: definition.documentRequirementSection || definition.document_requirement_section,
@@ -27788,7 +27906,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               documentName: normalizeText(file.name || definition.fileName || definition.label || requirementMeta.requirementName),
               filePath: upload.storagePath,
               fileUrl: '',
-              visibility: 'internal',
+              visibility: resolveSellerLeadUploadVisibility({
+                ...sourceDocument,
+                visibility: sourceDocument.visibility || sourceDocument.document_visibility || 'seller_visible',
+              }, {
+                unreleasedMandate: normalizeSellerBasePackKey(key) === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE,
+              }),
               status: 'uploaded',
               uploadedAt: uploadedDocument.uploadedAt,
               metadata: {
@@ -30606,6 +30729,51 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }
   }
 
+  async function openBuyerLeadDocument(documentRow = {}) {
+    const bucket = normalizeText(documentRow.storageBucket)
+    const path = normalizeText(documentRow.storagePath)
+    if (!DOCUMENTS_BUCKET_CANDIDATES.includes(bucket) || !path ||
+        !selectedBuyerDocumentReadModel.uploads.some((row) => row.storageBucket === bucket && row.storagePath === path)) {
+      setError('This buyer document is not available in the current lead workspace.')
+      return
+    }
+    const preview = window.open('about:blank', '_blank')
+    try {
+      const signed = await supabase.storage.from(bucket).createSignedUrl(path, 60)
+      if (signed.error || !signed.data?.signedUrl) throw signed.error || new Error('The document could not be opened.')
+      if (preview) preview.location.href = signed.data.signedUrl
+      else window.open(signed.data.signedUrl, '_blank', 'noopener,noreferrer')
+    } catch (error) {
+      preview?.close()
+      setError(error?.message || 'The buyer document could not be opened.')
+    }
+  }
+
+  async function reconcileBuyerLeadDocuments() {
+    const transactionId = normalizeText(selectedLeadLinkedTransactionId)
+    const leadId = normalizeText(selectedLeadRecordId)
+    if (buyerDocumentReconcileBusy || selectedLeadIsSeller || !isUuidLike(transactionId) || !isUuidLike(leadId) || !isUuidLike(organisationId)) return
+    setBuyerDocumentReconcileBusy(true)
+    setError('')
+    try {
+      const context = { transactionId, organisationId, leadId }
+      const preview = await reconcileStagedBuyerLeadDocuments(supabase, context)
+      if (preview.summary.manualReview) {
+        setError(`${preview.summary.manualReview} historical buyer file${preview.summary.manualReview === 1 ? '' : 's'} need manual review before handoff. No files were changed.`)
+        return
+      }
+      const result = await reconcileStagedBuyerLeadDocuments(supabase, context, { dryRun: false })
+      setBuyerDocumentRefreshTick((previous) => previous + 1)
+      setMessage(result.handedOff
+        ? `${result.handedOff} buyer file${result.handedOff === 1 ? '' : 's'} carried to the transaction. Each still needs its exact document requirement reviewed.`
+        : 'Buyer files are already carried to the transaction.')
+    } catch (reconciliationError) {
+      setError(reconciliationError?.message || 'Buyer document reconciliation could not be completed.')
+    } finally {
+      setBuyerDocumentReconcileBusy(false)
+    }
+  }
+
   async function uploadAgentBuyerLeadDocument(event = null) {
     const file = event?.target?.files?.[0] || null
     if (event?.target) event.target.value = ''
@@ -30624,20 +30792,43 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       : null
     const uploadedAt = new Date().toISOString()
+    const transactionId = isUuidLike(selectedLeadLinkedTransactionId) ? selectedLeadLinkedTransactionId : ''
+    const target = resolveBuyerLeadDocumentTarget(documentType.key, {
+      financeType: selectedLeadFinanceFormData?.finance_type || selectedLead?.financeType,
+      purchaserType: selectedLeadFinanceFormData?.purchaser_entity_type || selectedLeadFinanceFormData?.purchaser_type || selectedLead?.purchaserType,
+    })
+    let stagedUpload = null
+    let canonicalDocument = null
     try {
       setAgentBuyerDocumentUploading(true)
       setError('')
-      const upload = await uploadToStorageCandidateBuckets({
-        file,
-        objectPath: buildKingstonsSellerPackStoragePath({
-          organisationId,
-          leadId,
-          documentKey: documentType.key || 'buyer_document',
-          fileName: file.name || documentType.label || 'buyer-document',
-          storageFolder: BUYER_AGENT_DOCUMENT_STORAGE_FOLDER,
-        }),
-        context: 'buyer lead document upload',
-      })
+      const filePolicy = validateDocumentUploadFile(file, { surface: 'internal_transaction', transactionId: transactionId || null })
+      if (transactionId) {
+        const { uploadDocument } = await loadTransactionApiActions()
+        canonicalDocument = await uploadDocument({
+          transactionId,
+          file,
+          category: 'Buyer',
+          documentType: target.documentDefinitionKey || documentType.key,
+          isClientVisible: true,
+          clientRecipientRole: 'buyer',
+          visibilityScope: 'shared',
+          uploadedByParty: 'buyer',
+          source: 'agent_buyer_document_upload',
+          inferCanonicalRequirement: false,
+        })
+      } else {
+        stagedUpload = await uploadToStorageCandidateBuckets({
+          file,
+          objectPath: `organisations/${organisationId}/${BUYER_AGENT_DOCUMENT_STORAGE_FOLDER}/${leadId}/${sanitizeSellerPackStorageSegment(documentType.key, 'buyer_document')}/${Date.now()}-${filePolicy.safeName}`,
+          context: 'buyer lead document upload',
+        })
+      }
+      const upload = stagedUpload || {
+        storageBucket: canonicalDocument.file_bucket,
+        storagePath: canonicalDocument.file_path,
+        url: canonicalDocument.url || '',
+      }
       const uploadedDocument = {
         key: manualFicaPack?.key || documentType.key,
         requirementKey: manualFicaPack?.requirementKey || documentType.key,
@@ -30662,12 +30853,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         storageBucket: upload.storageBucket,
         storagePath: upload.storagePath,
         url: upload.url,
+        ...(canonicalDocument?.id ? { canonicalDocumentId: canonicalDocument.id, transactionId } : {}),
       }
       const rawPayload = parseLeadRawEnquiryPayload(selectedLead?.rawEnquiryPayload || selectedLead?.raw_enquiry_payload)
-      const agentUploadedBuyerDocuments = [
+      const agentUploadedBuyerDocuments = [...new Map([
         ...getAgentUploadedBuyerDocuments(selectedLead),
         uploadedDocument,
-      ]
+      ].map((row) => [normalizeText(row?.storagePath || row?.storage_path || row?.canonicalDocumentId), row])).values()]
       const nextRawPayload = {
         ...rawPayload,
         agentUploadedBuyerDocuments,
@@ -30676,24 +30868,61 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         rawEnquiryPayload: nextRawPayload,
         agentUploadedBuyerDocuments,
       }
-      patchSelectedLeadRecord(leadPatch, leadId)
-      await updateAgencyCrmLeadRecord(workspaceId, leadId, {
-        rawEnquiryPayload: nextRawPayload,
-        agentUploadedBuyerDocuments,
-      })
-      await createAgencyCrmLeadActivity(workspaceId, leadId, {
-        agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-        activityType: 'Buyer Document Uploaded By Agent',
-        activityNote: `${documentType.label} uploaded by agent: ${file.name || documentType.label}.`,
-        outcome: 'Buyer document captured',
-        activityDate: uploadedAt,
-      }, { actor: currentAgent })
+      let stagedLeadSaveConfirmed = false
+      let stagedLeadReadFailed = false
+      try {
+        await updateAgencyCrmLeadRecord(workspaceId, leadId, {
+          rawEnquiryPayload: nextRawPayload,
+          agentUploadedBuyerDocuments,
+        })
+        if (stagedUpload) {
+          const persistedLead = await supabase.from('leads').select('raw_enquiry_payload')
+            .eq('organisation_id', workspaceId).eq('lead_id', leadId).maybeSingle()
+          if (persistedLead.error) {
+            stagedLeadReadFailed = true
+            throw persistedLead.error
+          }
+          const persistedPayload = parseLeadRawEnquiryPayload(persistedLead.data?.raw_enquiry_payload)
+          if (!Array.isArray(persistedPayload.agentUploadedBuyerDocuments) ||
+              !persistedPayload.agentUploadedBuyerDocuments.some((row) => row?.storagePath === stagedUpload.storagePath)) {
+            throw new Error('The buyer document was uploaded, but its lead record was not saved.')
+          }
+          stagedLeadSaveConfirmed = true
+        }
+        patchSelectedLeadRecord(leadPatch, leadId)
+      } catch (leadError) {
+        if (stagedUpload) {
+          if (!stagedLeadSaveConfirmed && !stagedLeadReadFailed) {
+            await supabase.storage.from(stagedUpload.storageBucket).remove([stagedUpload.storagePath])
+          }
+          throw leadError
+        }
+        // The canonical transaction row is durable. Do not report a failed
+        // upload or delete it because the lead mirror could not be refreshed.
+        console.warn('[AgencyPipelinePage] Buyer document saved on transaction; lead mirror needs refresh.', leadError)
+        setMessage(`${documentType.label} saved on the transaction. The lead view needs a refresh.`)
+        setLeadWorkspaceTab('documents')
+        setBuyerDocumentRefreshTick((previous) => previous + 1)
+        return
+      }
+      try {
+        await createAgencyCrmLeadActivity(workspaceId, leadId, {
+          agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
+          activityType: 'Buyer Document Uploaded By Agent',
+          activityNote: `${documentType.label} uploaded by agent: ${file.name || documentType.label}.`,
+          outcome: 'Buyer document captured',
+          activityDate: uploadedAt,
+        }, { actor: currentAgent })
+      } catch (activityError) {
+        console.warn('[AgencyPipelinePage] Buyer document saved; activity audit mirror needs retry.', activityError)
+      }
       setMessage(`${documentType.label} uploaded for this buyer.`)
       if (manualFicaPack) {
         setAgentBuyerFicaSignerName('')
         setAgentBuyerFicaSignerCapacity('')
       }
       setLeadWorkspaceTab('documents')
+      setBuyerDocumentRefreshTick((previous) => previous + 1)
     } catch (uploadError) {
       setError(uploadError?.message || 'Unable to upload the buyer document.')
     } finally {
@@ -31801,9 +32030,17 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       title: 'Edit Property Ownership',
       subtitle: 'Update ownership, title scheme, HOA, and bond information for this seller.',
     },
+    notes: {
+      title: 'Edit Seller Notes',
+      subtitle: 'Record seller-specific notes separately from property defects and canvassing history.',
+    },
     property: {
       title: 'Edit Property Information',
-      subtitle: 'Update the property details used by the seller rail, appointments, and listing preparation.',
+      subtitle: 'Update the same property details shown in the Property Profile.',
+    },
+    characteristics: {
+      title: 'Edit Property Characteristics',
+      subtitle: 'Update dimensions, room counts, and the estimated asking price.',
     },
     features: {
       title: 'Edit Property Features',
@@ -34036,7 +34273,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         { key: 'properties', label: 'Matches', meta: selectedLeadBuyerRecommendations.length },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
 	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
-                        { key: 'documents', label: 'Documents', meta: selectedLeadAgentUploadedBuyerDocuments.length },
+                        { key: 'documents', label: 'Documents', meta: selectedBuyerDocumentReadModel.uploads.length },
 	                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
@@ -34297,7 +34534,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         { key: 'properties', label: 'Matches', meta: selectedLeadBuyerRecommendations.length },
                         { key: BUYER_PROFILE_WORKSPACE_TAB_KEY, label: 'Buyer Profile', meta: '' },
 	                        { key: BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY, label: 'Offer', meta: selectedLeadTransactionSetupComplete ? 'Ready' : '' },
-                        { key: 'documents', label: 'Documents', meta: selectedLeadAgentUploadedBuyerDocuments.length },
+                        { key: 'documents', label: 'Documents', meta: selectedBuyerDocumentReadModel.uploads.length },
 	                        { key: 'appointments', label: 'Appointments', meta: selectedLeadAppointments.length },
                         { key: 'activity', label: 'Activity', meta: selectedLeadUnifiedTimeline.length },
                       ].map((tab) => {
@@ -34705,11 +34942,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </section>
 
                       <section className="flex min-h-[430px] min-w-0 flex-col overflow-hidden rounded-[20px] border border-[#dbe7f2] bg-white shadow-[0_1px_2px_rgba(15,23,42,0.03),0_14px_34px_rgba(31,54,78,0.05)] lg:col-span-2 lg:row-start-3 xl:col-span-1 xl:col-start-3 xl:row-span-2 xl:row-start-1">
-                        <div className="flex items-center justify-between gap-3 border-b border-[#edf3f8] px-5 py-4">
+                        <div className="border-b border-[#edf3f8] px-5 py-4">
                           <h3 className="text-base font-semibold text-[#102033]">Seller Summary</h3>
-                          <Button type="button" size="sm" variant="secondary" className="h-9 rounded-[12px] px-3 text-xs" onClick={() => handleLeadWorkspaceTabSelection('seller')}>
-                            Edit
-                          </Button>
                         </div>
                         <div className="min-h-0 flex-1 space-y-3 px-5 py-5">
                           {selectedSellerSummarySections.map((section) => (
@@ -39079,10 +39313,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           <p className="text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#18324b]">Seller Profile</p>
                           <h3 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-[#102033]">Submitted seller information</h3>
                         </div>
-                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={handleSellerOnboardingCommand} disabled={isSellerOnboardingSending}>
-                          <Send className="h-4 w-4" />
-                          {selectedLeadSellerOnboardingCommandLabel}
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => openSellerLeadEditModal('notes')}>
+                            <Pencil className="h-4 w-4" /> Seller Notes
+                          </Button>
+                          <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={handleSellerOnboardingCommand} disabled={isSellerOnboardingSending}>
+                            <Send className="h-4 w-4" />
+                            {selectedLeadSellerOnboardingCommandLabel}
+                          </Button>
+                        </div>
                       </div>
 
                       {selectedSellerProfileWorkspace.roleplayers?.length > 0 ? (
@@ -39144,11 +39383,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         />
                       </Suspense>
 
+                      {selectedSellerProfileWorkspace.ficaScope.subjects.length > 1 ? (
                       <section className="mt-4 rounded-[16px] border border-[#dfe8f2] bg-[#f8fbfe] p-4" data-testid="seller-fica-scope">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
-                            <h4 className="text-sm font-semibold text-[#102033]">FICA collection scope</h4>
-                            <p className="mt-1 text-xs leading-5 text-[#60758b]">People and facts to assess before any paid provider request. This is not a verification result or compliance approval.</p>
+                            <h4 className="text-sm font-semibold text-[#102033]">People and entities to assess</h4>
+                            <p className="mt-1 text-xs leading-5 text-[#60758b]">Multiple parties may need separate checks. Final scope requires compliance review.</p>
                           </div>
                           <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#405b75]">{selectedSellerProfileWorkspace.ficaScope.subjects.length} in scope</span>
                         </div>
@@ -39159,14 +39399,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             </span>
                           ))}
                         </div>
-                        {selectedSellerProfileWorkspace.ficaScope.missing.length ? (
-                          <div className="mt-3 rounded-[12px] border border-[#f1dfbd] bg-white px-3 py-2 text-xs leading-5 text-[#73591f]">
-                            <strong>Still to collect:</strong> {selectedSellerProfileWorkspace.ficaScope.missing.join(' · ')}
-                          </div>
-                        ) : null}
-                        <p className="mt-3 text-xs leading-5 text-[#60758b]">Evidence to assess: {selectedSellerProfileWorkspace.ficaScope.evidence.join(' · ') || 'To be determined'}.</p>
-                        <p className="mt-1 text-xs leading-5 text-[#60758b]">Compliance review: {selectedSellerProfileWorkspace.ficaScope.review.join(' · ')}</p>
                       </section>
+                      ) : null}
 
                       <div className="mt-5 grid gap-4 lg:grid-cols-2">
                         {selectedSellerProfileCards.map((card) => (
@@ -39210,7 +39444,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           </section>
                         ) : null}
 
-                        {selectedSellerProfileDefectRows.length || isMeaningfulSellerProfileValue(selectedSellerProfileAgentNotes) ? (
+                        {selectedSellerProfileDefectRows.length ? (
                           <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
                             <div className="flex items-center justify-between gap-3">
                               <h4 className="text-sm font-semibold text-[#102033]">Known Defects</h4>
@@ -39232,11 +39466,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                 })}
                               </dl>
                             ) : null}
-                            {isMeaningfulSellerProfileValue(selectedSellerProfileAgentNotes) ? (
-                              <div className="mt-4 rounded-[12px] border border-[#d7eadf] bg-[#f4fbf6] px-3 py-2 text-sm font-semibold text-[#25764a]">
-                                {selectedSellerProfileAgentNotes}
-                              </div>
-                            ) : null}
+                          </section>
+                        ) : null}
+                        {isMeaningfulSellerProfileValue(selectedSellerProfileAgentNotes) ? (
+                          <section className="rounded-[16px] border border-[#dfe8f2] bg-white p-4 shadow-[0_8px_20px_rgba(31,54,78,0.025)]">
+                            <div className="flex items-center justify-between gap-3">
+                              <h4 className="text-sm font-semibold text-[#102033]">Seller Notes</h4>
+                              <button type="button" className="inline-flex h-8 items-center justify-center rounded-[10px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#405b75]" onClick={() => openSellerLeadEditModal('notes')}>Edit</button>
+                            </div>
+                            <p className="mt-4 whitespace-pre-wrap text-sm text-[#20364c]">{selectedSellerProfileAgentNotes}</p>
                           </section>
                         ) : null}
                       </div>
@@ -39245,15 +39483,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                   ) : null}
 
                   {leadWorkspaceTab === 'property' && selectedLeadIsSeller ? (
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)]">
-                    <section className="order-2 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
+                  <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.85fr)]">
+                    <section className="order-2 self-start rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
                             <Home className="h-4 w-4" /> Property Profile
                           </p>
                           <h4 className="mt-3 break-words text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadPropertyWorkspace.profile.address}</h4>
-                          <p className="mt-2 text-sm leading-6 text-[#60758b]">Property information supplied during seller onboarding.</p>
+                          <p className="mt-2 text-sm leading-6 text-[#60758b]">Property information captured by the seller or agent.</p>
                         </div>
                         <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => openSellerLeadEditModal('property')}>
                           <Pencil className="mr-1.5 h-4 w-4" /> Edit Details
@@ -39270,30 +39508,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                     </section>
 
-                    <section className="order-1 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
+                    <section className="order-1 self-start rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:order-none">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
                             <TrendingUp className="h-4 w-4" /> Listing & Readiness
                           </p>
                           <h4 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
-                            {selectedLeadPropertyWorkspace.listing.hasListing ? `${selectedLeadPropertyWorkspace.listing.readiness.percent}%` : 'Listing not created'}
+                            {selectedLeadPropertyWorkspace.listing.hasListing ? `${selectedLeadPropertyWorkspace.listing.readiness.percent}% ready` : 'Listing not created'}
                           </h4>
                           <p className="mt-2 text-sm leading-6 text-[#60758b]">
                             {selectedLeadPropertyWorkspace.listing.hasListing
                               ? selectedLeadPropertyWorkspace.listing.title || 'Linked listing'
-                              : `Property information is ${selectedLeadPropertyWorkspace.listing.readiness.percent}% complete.`}
+                              : 'This seller lead has a property record, but no listing has been created yet.'}
                           </p>
                         </div>
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          selectedLeadPropertyWorkspace.listing.statusTone === 'success'
-                            ? 'bg-[#e8f7f1] text-[#1d7a52]'
-                            : selectedLeadPropertyWorkspace.listing.statusTone === 'warning'
-                              ? 'bg-[#fff4e5] text-[#a16207]'
-                              : 'bg-[#eef3f7] text-[#687c91]'
-                        }`}>
-                          {selectedLeadPropertyWorkspace.listing.status}
-                        </span>
                       </div>
                       {selectedLeadPropertyWorkspace.listing.hasListing ? (
                         <div className="mt-5 space-y-4">
@@ -39343,35 +39572,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               )
                             })}
                           </div>
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            <Button type="button" size="sm" className="rounded-[12px]" onClick={() => handleSellerJourneyAction(selectedLeadPropertyWorkspace.listing.nextAction?.id || 'open_journey')}>
-                              Complete Missing Details <ArrowUpRight className="ml-1.5 h-4 w-4" />
-                            </Button>
-                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => handleSellerJourneyAction('open_listing')}>
-                              Manage Listing <Settings className="ml-1.5 h-4 w-4" />
-                            </Button>
-                          </div>
                         </div>
                       ) : (
                         <div className="mt-5 rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
                           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Listing not created</p>
-                          <p className="mt-2 text-sm leading-6 text-[#60758b]">Complete the missing information before creating the listing.</p>
-                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => openSellerLeadEditModal('property')}>
-                              Complete Property Details
-                            </Button>
-                            <Button type="button" size="sm" className="rounded-[12px]" onClick={() => handleSellerJourneyAction('create_listing')}>
-                              Create Listing
-                            </Button>
-                          </div>
+                          <p className="mt-2 text-sm leading-6 text-[#60758b]">This is a read-only progress indicator. Listing creation is managed in the seller journey after the mandate stage.</p>
                         </div>
                       )}
                     </section>
 
                     <section className="order-3 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)]">
-                      <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
-                        <Ruler className="h-4 w-4" /> Property Characteristics
-                      </p>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
+                          <Ruler className="h-4 w-4" /> Property Characteristics
+                        </p>
+                        <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => openSellerLeadEditModal('characteristics')}>Edit Details</Button>
+                      </div>
                       <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                         {selectedLeadPropertyWorkspace.characteristics.metrics.map((metric) => {
                           const MetricIcon = metric.Icon
@@ -39434,6 +39650,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
 	                  {leadWorkspaceTab === 'documents' ? (
                   <div className="space-y-4">
+                    {!selectedLeadIsSeller && buyerDocumentReadState.status === 'loading' ? (
+                      <div role="status" className="rounded-[18px] border border-[#d8e6f6] bg-[#f4f9ff] px-4 py-3 text-sm text-[#315b7a]">Loading transaction buyer documents…</div>
+                    ) : null}
+                    {!selectedLeadIsSeller && buyerDocumentReadState.status === 'error' ? (
+                      <div role="alert" className="rounded-[18px] border border-[#f0d9ab] bg-[#fff8e8] px-4 py-3 text-sm text-[#705019]">Transaction documents could not be loaded. Lead-staged files remain visible; refresh before relying on this checklist.</div>
+                    ) : null}
+                    {!selectedLeadIsSeller && selectedBuyerDocumentReadModel.unmatchedCount > 0 ? (
+                      <div role="status" className="rounded-[18px] border border-[#f0d9ab] bg-[#fff8e8] px-4 py-3 text-sm text-[#705019]">{selectedBuyerDocumentReadModel.unmatchedCount} buyer upload{selectedBuyerDocumentReadModel.unmatchedCount === 1 ? '' : 's'} saved on the transaction but awaiting exact requirement matching. They do not complete the checklist yet.</div>
+                    ) : null}
+                    {missingSellerPackListingDocuments.length ? (
+                      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[18px] border border-[#f0d9ab] bg-[#fff8e8] px-4 py-3" role="alert">
+                        <p className="text-sm text-[#705019]"><span className="font-semibold">Seller Pack handoff needs attention.</span> {missingSellerPackListingDocuments.length} uploaded document{missingSellerPackListingDocuments.length === 1 ? '' : 's'} not yet linked to the listing.</p>
+                        <button type="button" disabled={sellerPackHandoffRetrying} onClick={() => void retryKingstonsSellerPackListingHandoff()} className="rounded-[11px] bg-[#13784f] px-3 py-2 text-xs font-semibold text-white disabled:opacity-60">{sellerPackHandoffRetrying ? 'Retrying…' : 'Retry listing handoff'}</button>
+                      </div>
+                    ) : null}
                     {isLeadWorkspaceRoute && routeLeadId && ['loading', 'slow'].includes(routeLeadHydrationStatus) ? (
                       <div className="rounded-[18px] border border-[#d8e6f6] bg-[#f4f9ff] px-4 py-3 text-sm font-semibold text-[#315b7a]">
                         Document uploads are available while the rest of this lead workspace keeps syncing in the background.
@@ -39464,7 +39695,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const awaitingServerPdf = isSellerFinalDocumentAwaitingServerPdf(documentRow)
                         if (!selectedLeadIsSeller) {
                           if (hasFile && documentUrl) return <a href={documentUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a]"><Download className="h-3.5 w-3.5" /> Download</a>
+                          const savedUpload = selectedBuyerDocumentReadModel.uploads.find((row) => row.storagePath === documentStoragePath)
+                          if (savedUpload) return <button type="button" onClick={() => void openBuyerLeadDocument(savedUpload)} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a]"><Download className="h-3.5 w-3.5" /> Open</button>
                           if (documentKey === 'uploaded_otp') return <button type="button" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)} className="inline-flex min-h-9 items-center rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]">{hasFile ? 'View' : 'Upload'}</button>
+                          if (!BUYER_AGENT_DOCUMENT_TYPES.some((item) => item.key === documentKey)) return <button type="button" onClick={() => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)} className="inline-flex min-h-9 items-center rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a]">Buyer onboarding</button>
                           return <button type="button" disabled={agentBuyerDocumentUploading} onClick={() => { setAgentBuyerDocumentType(documentKey); agentBuyerDocumentUploadInputRef.current?.click?.() }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#cfdceb] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60"><Upload className="h-3.5 w-3.5" />{agentBuyerDocumentUploading && agentBuyerDocumentType === documentKey ? 'Uploading...' : hasFile ? 'Replace' : 'Upload'}</button>
                         }
                         const basePackDocumentKey = normalizeSellerBasePackKey(documentKey)
@@ -39845,11 +40079,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <h4 className="mt-1 text-lg font-semibold text-[#18324b]">Documents</h4>
                             <p className="mt-1 text-sm text-[#6a8098]">{selectedLeadDisplayName}</p>
                           </div>
-                          <Upload className="h-4 w-4 text-[#7890a8]" />
+                          <div className="flex items-center gap-2">
+                            {isUuidLike(selectedLeadLinkedTransactionId) && selectedBuyerDocumentReadModel.stagedCount > 0 ? (
+                              <button type="button" disabled={buyerDocumentReconcileBusy} onClick={() => void reconcileBuyerLeadDocuments()} className="rounded-[11px] border border-[#cfdceb] bg-white px-3 py-2 text-xs font-semibold text-[#315b7a] disabled:opacity-60">
+                                {buyerDocumentReconcileBusy ? 'Checking files…' : 'Reconcile lead files'}
+                              </button>
+                            ) : null}
+                            <Upload className="h-4 w-4 text-[#7890a8]" />
+                          </div>
                         </div>
                         <div className="mt-4 grid gap-3 md:grid-cols-3">
                           {[
-                            ['Buyer uploads', selectedLeadBuyerOnboardingSubmitted ? 'Submitted' : 'Pending'],
+                            ['Buyer uploads', selectedBuyerDocumentReadModel.uploads.length
+                              ? `${selectedBuyerDocumentReadModel.canonicalCount} on transaction · ${selectedBuyerDocumentReadModel.stagedCount} on lead`
+                              : 'None yet'],
                             ['FICA', selectedLeadBuyerOnboardingSubmitted ? 'In review' : 'Not requested'],
 	                            ['OTP document', selectedLeadBuyerOfferDocumentUploaded ? 'Uploaded' : 'Not uploaded'],
                           ].map(([label, value]) => (
@@ -39862,11 +40105,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         <div className="mt-4 rounded-[16px] border border-[#dbe7f2] bg-[#fbfdff] p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <p className="text-sm font-semibold text-[#20364c]">Agent-assisted buyer uploads</p>
-                              <p className="mt-1 text-xs leading-5 text-[#6a8098]">Use this when the buyer emailed documents to the agent.</p>
+                              <p className="text-sm font-semibold text-[#20364c]">Buyer document uploads</p>
+                              <p className="mt-1 text-xs leading-5 text-[#6a8098]">Agent and buyer portal files appear together here. Use this when the buyer emailed documents to the agent.</p>
                             </div>
                             <span className="rounded-full border border-[#dbe7f2] bg-white px-3 py-1 text-xs font-semibold text-[#607891]">
-                              {selectedLeadAgentUploadedBuyerDocuments.length} uploaded
+                              {selectedBuyerDocumentReadModel.uploads.length} file{selectedBuyerDocumentReadModel.uploads.length === 1 ? '' : 's'} recorded
                             </span>
                           </div>
                           <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
@@ -39915,15 +40158,18 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               <p className="text-xs leading-5 text-[#6a8098] md:col-span-2">This records a physical declaration against the buyer FICA pack. It remains evidence awaiting compliance review.</p>
                             </div>
                           ) : null}
-                          {selectedLeadAgentUploadedBuyerDocuments.length ? (
-                            <div className="mt-4 grid gap-2">
-                              {selectedLeadAgentUploadedBuyerDocuments.slice(-5).reverse().map((documentRow, index) => (
-                                <div key={`${documentRow.storagePath || documentRow.fileName || documentRow.label}-${index}`} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-white px-4 py-3">
+                          {selectedBuyerDocumentReadModel.uploads.length ? (
+                            <div className="mt-4 grid max-h-[420px] gap-2 overflow-y-auto">
+                              {selectedBuyerDocumentReadModel.uploads.map((documentRow) => (
+                                <div key={`${documentRow.storageBucket}:${documentRow.storagePath}`} className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[#e6eef7] bg-white px-4 py-3">
                                   <div className="min-w-0">
                                     <p className="truncate text-sm font-semibold text-[#203a54]">{documentRow.label || documentRow.title || 'Buyer document'}</p>
-                                    <p className="mt-0.5 truncate text-xs font-medium text-[#6a8098]">{documentRow.uploadedFileName || documentRow.fileName || 'Uploaded file'}</p>
+                                    <p className="mt-0.5 truncate text-xs font-medium text-[#6a8098]">{documentRow.fileName || 'Uploaded file'} · {documentRow.isCanonical ? documentRow.source === 'agent_buyer_document_upload' ? 'Agent upload' : 'Buyer portal' : 'Lead-staged'}</p>
                                   </div>
-                                  <span className="rounded-full border border-[#cfe8dc] bg-[#f5fcf8] px-2.5 py-1 text-xs font-semibold text-[#286b43]">Uploaded</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="rounded-full border border-[#f0d9ab] bg-[#fff8e8] px-2.5 py-1 text-xs font-semibold text-[#8a641d]">{documentRow.statusLabel}</span>
+                                    <button type="button" onClick={() => void openBuyerLeadDocument(documentRow)} className="rounded-[10px] border border-[#dbe4ee] bg-white px-2.5 py-1 text-xs font-semibold text-[#315b7a]">Open</button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -40490,7 +40736,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           <section className="rounded-[18px] border border-[#dfe8f2] bg-[#fbfdff] p-4">
             <div className="flex items-start gap-3">
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-[14px] bg-[#eaf7ef] text-[#167348]">
-                {sellerLeadEditMode === 'property' || sellerLeadEditMode === 'features' || sellerLeadEditMode === 'defects' ? <Home className="h-5 w-5" /> : sellerLeadEditMode === 'personal' || sellerLeadEditMode === 'profile' ? <UserRound className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
+                {sellerLeadEditMode === 'property' || sellerLeadEditMode === 'characteristics' || sellerLeadEditMode === 'features' || sellerLeadEditMode === 'defects' ? <Home className="h-5 w-5" /> : sellerLeadEditMode === 'personal' || sellerLeadEditMode === 'profile' ? <UserRound className="h-5 w-5" /> : <FileText className="h-5 w-5" />}
               </span>
               <div>
                 <h4 className="text-sm font-semibold text-[#102033]">{sellerLeadEditTitle}</h4>
@@ -40645,11 +40891,44 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <Field placeholder="Property address" className="sm:col-span-2" value={sellerProfileEditForm.propertyAddress} onChange={(event) => updateSellerProfileEditField('propertyAddress', event.target.value)} />
                 <Field placeholder="Property type" value={sellerProfileEditForm.propertyType} onChange={(event) => updateSellerProfileEditField('propertyType', event.target.value)} />
-                <Field placeholder="Estimated asking price" value={sellerProfileEditForm.askingPrice} onChange={(event) => updateSellerProfileEditField('askingPrice', event.target.value)} />
+                <Field as="select" aria-label="Property title type" value={sellerProfileEditForm.ownershipScheme} onChange={(event) => {
+                  const value = event.target.value
+                  setSellerProfileEditForm((previous) => ({
+                    ...previous,
+                    ownershipScheme: value,
+                    sectionalTitle: value ? (['sectional_title', 'share_block'].includes(value) ? 'Yes' : 'No') : '',
+                  }))
+                }}>
+                  <option value="">Property title type — not captured</option>
+                  {sellerProfileEditForm.ownershipScheme && !['full_title', 'sectional_title', 'share_block', 'freehold', 'agricultural_holding', 'other'].includes(sellerProfileEditForm.ownershipScheme) ? (
+                    <option value={sellerProfileEditForm.ownershipScheme}>{titleCaseWorkspaceValue(sellerProfileEditForm.ownershipScheme)}</option>
+                  ) : null}
+                  {['full_title', 'sectional_title', 'share_block', 'freehold', 'agricultural_holding', 'other'].map((value) => (
+                    <option key={value} value={value}>{titleCaseWorkspaceValue(value)}</option>
+                  ))}
+                </Field>
+                <Field placeholder="Complex / Estate" value={sellerProfileEditForm.estateComplexName} onChange={(event) => updateSellerProfileEditField('estateComplexName', event.target.value)} />
+                <Field placeholder="Erf / Stand number" value={sellerProfileEditForm.erfNumber} onChange={(event) => updateSellerProfileEditField('erfNumber', event.target.value)} />
+                <Field as="select" aria-label="Sectional title" value={sellerProfileEditForm.sectionalTitle} onChange={(event) => updateSellerProfileEditField('sectionalTitle', event.target.value)}>
+                  <option value="">Sectional title — not captured</option>
+                  <option value="Yes">Sectional title — Yes</option>
+                  <option value="No">Sectional title — No</option>
+                </Field>
+                <Field placeholder="Scheme name" value={sellerProfileEditForm.schemeName} onChange={(event) => updateSellerProfileEditField('schemeName', event.target.value)} />
+                <Field placeholder="Section number" value={sellerProfileEditForm.sectionNumber} onChange={(event) => updateSellerProfileEditField('sectionNumber', event.target.value)} />
+                <Field placeholder="Unit number" value={sellerProfileEditForm.unitNumber} onChange={(event) => updateSellerProfileEditField('unitNumber', event.target.value)} />
                 <Field placeholder="Suburb" value={sellerProfileEditForm.propertySuburb} onChange={(event) => updateSellerProfileEditField('propertySuburb', event.target.value)} />
                 <Field placeholder="City" value={sellerProfileEditForm.propertyCity} onChange={(event) => updateSellerProfileEditField('propertyCity', event.target.value)} />
                 <Field placeholder="Province" value={sellerProfileEditForm.propertyProvince} onChange={(event) => updateSellerProfileEditField('propertyProvince', event.target.value)} />
                 <Field placeholder="Postal code" value={sellerProfileEditForm.propertyPostalCode} onChange={(event) => updateSellerProfileEditField('propertyPostalCode', event.target.value)} />
+                <Field placeholder="GPS latitude" value={sellerProfileEditForm.latitude} onChange={(event) => updateSellerProfileEditField('latitude', event.target.value)} />
+                <Field placeholder="GPS longitude" value={sellerProfileEditForm.longitude} onChange={(event) => updateSellerProfileEditField('longitude', event.target.value)} />
+              </div>
+            ) : null}
+
+            {sellerLeadEditMode === 'characteristics' ? (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <Field placeholder="Estimated asking price" value={sellerProfileEditForm.askingPrice} onChange={(event) => updateSellerProfileEditField('askingPrice', event.target.value)} />
                 <Field placeholder="Bedrooms" value={sellerProfileEditForm.bedrooms} onChange={(event) => updateSellerProfileEditField('bedrooms', event.target.value)} />
                 <Field placeholder="Bathrooms" value={sellerProfileEditForm.bathrooms} onChange={(event) => updateSellerProfileEditField('bathrooms', event.target.value)} />
                 <Field placeholder="Garages" value={sellerProfileEditForm.garages} onChange={(event) => updateSellerProfileEditField('garages', event.target.value)} />
@@ -40682,7 +40961,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                 <Field placeholder="Cracks" value={sellerProfileEditForm.cracks} onChange={(event) => updateSellerProfileEditField('cracks', event.target.value)} />
                 <Field placeholder="Pest damage" value={sellerProfileEditForm.pestDamage} onChange={(event) => updateSellerProfileEditField('pestDamage', event.target.value)} />
                 <Field placeholder="Other defects" className="sm:col-span-2" value={sellerProfileEditForm.otherDefects} onChange={(event) => updateSellerProfileEditField('otherDefects', event.target.value)} />
-                <Field as="textarea" rows={4} placeholder="Agent notes" className="sm:col-span-2" value={sellerProfileEditForm.agentNotes} onChange={(event) => updateSellerProfileEditField('agentNotes', event.target.value)} />
+              </div>
+            ) : null}
+
+            {sellerLeadEditMode === 'notes' ? (
+              <div className="mt-4">
+                <Field as="textarea" rows={5} placeholder="Seller notes" value={sellerProfileEditForm.agentNotes} onChange={(event) => updateSellerProfileEditField('agentNotes', event.target.value)} />
               </div>
             ) : null}
           </section>

@@ -178,9 +178,19 @@ function isTransferFinancialReviewTask(task = {}) {
     'transfer_duty_assessment_payment',
     'vat_exemption_evidence_verified',
     'non_resident_seller_withholding_review',
+    'ordinary_vat_basis_verified',
+    'going_concern_zero_rate_verified',
+    'transfer_duty_exemption_basis_verified',
+    'non_resident_seller_applicability_review',
+    'non_resident_seller_directive_review',
+    'non_resident_seller_withholding_payment_review',
     'sars_transfer_tax_receipt_verified',
     'municipal_rates_clearance_review',
     'levy_hoa_clearance_review',
+    'body_corporate_levy_clearance_review',
+    'hoa_clearance_review',
+    'property_conditions_applicability_review',
+    'title_conditions_review',
     'property_compliance_review',
   ].includes(text(task.key))
 }
@@ -234,6 +244,13 @@ export function buildLegalTaskWorkbenchModel({
     }
   }
 
+  const specialistRouteTask = text(task.key) === 'specialist_classification_review' || [
+    'estate_authority_transfer_review', 'insolvency_authority_transfer_review',
+    'court_order_transfer_review', 'unusual_title_resolution_review',
+    'agricultural_consent_review', 'share_block_instrument_review',
+    'other_specialist_execution_review',
+  ].includes(text(task.key))
+
   const normalizedWorkActions = workActions.map((action) => normalizeAction(action, 'work'))
   const normalizedStatusActions = statusActions.map((action) => normalizeAction({ ...action, disabled: action.disabled || !canUpdateTask }, 'status'))
   // An attorney's Work tab must remain operable while the action projection is
@@ -246,7 +263,7 @@ export function buildLegalTaskWorkbenchModel({
         task.displayStatus !== 'waiting' ? { id: 'mark_waiting', label: 'Mark waiting', status: 'waiting', disabled: false, requiresNote: true } : null,
         ...(['completed', 'completed_externally', 'not_applicable'].includes(task.displayStatus)
           ? [{ id: 'reopen_task', label: 'Reopen task', status: 'not_started', requiresNote: true }]
-          : [
+          : specialistRouteTask ? [] : [
               { id: 'complete_externally', label: 'Completed externally', status: 'completed_externally', requiresReason: true },
               { id: 'mark_not_applicable', label: 'Not applicable', status: 'not_applicable', requiresReason: true },
             ]),
@@ -451,6 +468,7 @@ export function buildLegalTaskWorkbenchModel({
     transferTitleDeedTask,
     transferExistingBondTask,
     transferFicaReviewTask,
+    specialistRouteTask,
     transferFinancialReviewTask,
     transferDocumentsGuaranteesReviewTask,
     transferLodgementRegistrationTask,

@@ -72,6 +72,7 @@ const STATUS_ALIASES = Object.freeze({
   ready_for_acceptance: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
   ready_for_instruction: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
   signed_otp_received: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
+  otp_uploaded: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.readyForAcceptance,
   accepted: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.accepted,
   declined: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
   rejected: ATTORNEY_INCOMING_INSTRUCTION_STATUSES.declined,
@@ -290,8 +291,8 @@ export function resolveAttorneyIncomingInstructionStatus({
   const instructionLane = getAttorneyInstructionLane(assignmentRow)
 
   // Bond-registration and cancellation instructions must reach their attorney
-  // independently of the buyer OTP. Transfer remains gated by the signed OTP,
-  // because it is the legal hand-off which requires the executed offer.
+  // independently of the buyer OTP. An uploaded OTP makes the transfer
+  // instruction actionable for firm acceptance and legal work.
   if (instructionLane && instructionLane !== 'transfer') {
     if (openDocuments.length || reviewDocuments.length) {
       return ATTORNEY_INCOMING_INSTRUCTION_STATUSES.awaitingDocuments

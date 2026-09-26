@@ -33,6 +33,12 @@ assert.match(
 
 assert.match(
   agencySource,
+  /uploadPrivateListingDocument\(targetListingId, file, \{[\s\S]*?visibility: resolveSellerLeadUploadVisibility\(documentRow\)/,
+  'seller-facing agent uploads should be visible in the seller portal while internal requests remain private',
+)
+
+assert.match(
+  agencySource,
   /const canUploadSellerLeadDocument = selectedLeadIsSeller[\s\S]*?!canUploadSellerLeadSignedMandate[\s\S]*?!canUploadKingstonsDocument/,
   'normal seller document rows should receive a generic upload button without duplicating special-case upload controls',
 )

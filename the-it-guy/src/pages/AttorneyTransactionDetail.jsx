@@ -211,6 +211,7 @@ import { confirmAttorneyTransactionFeeReceipt } from '../services/transactionFee
 import { getFinanceReadiness } from '../services/bondFinanceReadinessService'
 import { getPrivateListingTransferAttorneyAllocation } from '../services/privateListingAttorneyAllocationService'
 import { fetchMatterHealth, saveMatterHealth } from '../services/matterHealthService'
+import { getAttorneyMatterTeam, saveAttorneyMatterTeam } from '../services/attorneyMatterTeamService'
 import { createDeveloperDocumentPortalLink } from '../services/developerDocumentPortalService'
 import { getTransferInstructionLifecycle } from '../services/transferInstructionLifecycleService'
 import {
@@ -1459,12 +1460,14 @@ function resolveDevelopmentCoverImage(development = {}) {
 
   return [
     // The developer's selected Cover Image is the canonical matter image.
+    mediaLibrary?.coverImageUrl,
+    mediaLibrary?.cover_image_url,
+    development?.cover_image_url,
+    development?.coverImageUrl,
     mediaLibrary?.heroImageUrl,
     mediaLibrary?.hero_image_url,
     development?.primary_image_url,
     development?.primaryImageUrl,
-    development?.cover_image_url,
-    development?.coverImageUrl,
     development?.hero_image_url,
     development?.heroImageUrl,
     ...imageLinks,
@@ -6816,7 +6819,6 @@ function ArchlineMatterHeader({
   matterType = 'transfer',
   loanAmount = '',
   bankName = '',
-  stageLabel = '',
   daysOpenLabel,
   instructionDate,
   matterChips = [],
@@ -6865,7 +6867,6 @@ function ArchlineMatterHeader({
     { key: 'property-type', label: 'Property Type', value: cleanMetricValue(propertyType), icon: Building2 },
     { key: 'days-open', label: 'Days Open', value: cleanMetricValue(daysOpenLabel), icon: Clock3 },
     { key: 'instruction-date', label: 'Instruction Date', value: cleanMetricValue(instructionDate), icon: CalendarDays },
-    { key: 'stage', label: isCancellationMatter ? 'Cancellation Stage' : isBondMatter ? 'Bond Stage' : 'Transfer Stage', value: cleanMetricValue(stageLabel), icon: Workflow },
   ].filter((item) => item.value !== '—')
   const chips = matterChips.filter((item) => item?.label)
   const normalizedStatus = String(statusLabel || '').toLowerCase()
@@ -6887,9 +6888,9 @@ function ArchlineMatterHeader({
     <header className="archline-matter-header no-print -mx-3 border-b border-slate-200/70 bg-white px-3 py-5 md:-mx-4 md:px-4 lg:-mx-6 lg:px-6">
       <div className="mx-auto max-w-[1680px] space-y-5">
         <section className="relative isolate min-h-[385px] overflow-hidden rounded-[24px] border border-black/10 bg-[linear-gradient(135deg,#092f29,#142132_58%,#38574e)] px-4 py-4 text-white shadow-[0_20px_48px_rgba(15,23,42,0.15)] md:min-h-[405px] md:px-6 md:py-5">
-          {propertyImageUrl ? <img src={propertyImageUrl} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover object-[68%_center]" /> : null}
-          <div className="absolute inset-0 -z-10 bg-[linear-gradient(90deg,rgba(3,8,9,0.88)_0%,rgba(6,13,14,0.68)_46%,rgba(8,16,16,0.45)_100%)]" />
-          <div className="archline-matter-header-topbar flex flex-wrap items-start justify-between gap-3">
+          {propertyImageUrl ? <img src={propertyImageUrl} alt="" className="pointer-events-none absolute inset-0 z-0 h-full w-full object-cover object-[68%_center]" /> : null}
+          <div className="pointer-events-none absolute inset-0 z-0 bg-[linear-gradient(90deg,rgba(3,8,9,0.88)_0%,rgba(6,13,14,0.68)_46%,rgba(8,16,16,0.45)_100%)]" />
+          <div className="archline-matter-header-topbar relative z-10 flex flex-wrap items-start justify-between gap-3">
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
               <Link
                 to={backPath}
@@ -6922,7 +6923,7 @@ function ArchlineMatterHeader({
             </div>
           </div>
 
-          <div className="relative mt-10 grid min-h-[280px] gap-7 md:absolute md:inset-x-6 md:bottom-5 md:mt-0 md:min-h-0 xl:grid-cols-1 xl:items-stretch">
+          <div className="relative z-10 mt-10 grid min-h-[280px] gap-7 md:absolute md:inset-x-6 md:bottom-5 md:mt-0 md:min-h-0 xl:grid-cols-1 xl:items-stretch">
             <div className="archline-matter-header-media hidden min-h-[230px] overflow-hidden rounded-[20px] border border-[rgba(7,30,26,0.07)] bg-[linear-gradient(145deg,#f4f9f7,#edf5f2)] shadow-[0_18px_42px_rgba(7,30,26,0.07)] xl:min-h-[300px]">
               {propertyImageUrl ? (
                 <img src={propertyImageUrl} alt={propertyPrimary} className="h-full w-full object-cover" />
@@ -7461,7 +7462,110 @@ function ArchlinePartiesWorkspace({
   )
 }
 
+function AttorneyMatterTeamCard({ transactionId }) {
+  const [team, setTeam] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    if (!transactionId) {
+      setTeam(null)
+      setLoading(false)
+      return () => { active = false }
+    }
+    setLoading(true)
+    setError('')
+    getAttorneyMatterTeam(transactionId)
+      .then((result) => { if (active) setTeam(result) })
+      .catch((loadError) => { if (active) setError(loadError?.message || 'Matter team could not be loaded.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [transactionId])
+
+  const members = Array.isArray(team?.members) ? team.members : []
+  const available = Array.isArray(team?.availableMembers) ? team.availableMembers : []
+  const openEditor = () => {
+    setSelectedIds(members.map((member) => member.userId))
+    setError('')
+    setEditing(true)
+  }
+  const toggleMember = (userId) => setSelectedIds((current) => current.includes(userId)
+    ? current.filter((id) => id !== userId)
+    : [...current, userId])
+  const saveTeam = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const next = await saveAttorneyMatterTeam(transactionId, selectedIds)
+      setTeam(next)
+      setEditing(false)
+    } catch (saveError) {
+      setError(saveError?.message || 'Matter team could not be saved.')
+    } finally {
+      setSaving(false)
+    }
+  }
+  const personAvatar = (person) => person.avatarUrl ? (
+    <img src={person.avatarUrl} alt="" className="size-10 shrink-0 rounded-full object-cover ring-2 ring-white" />
+  ) : (
+    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-800 ring-2 ring-white">
+      {String(person.name || person.email || 'TM').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}
+    </span>
+  )
+
+  return <>
+    <ArchlinePanel className="flex flex-col !border-[#cbdcd6] !bg-[linear-gradient(145deg,#f5fbf8,#e9f3ef)] p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <span className="text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-emerald-800">Internal · Attorney firm</span>
+          <h2 className="mt-1 flex items-center gap-2 text-lg font-semibold tracking-[-0.02em] text-[#142132]"><UsersRound size={19} /> Matter team</h2>
+        </div>
+        {team?.canManage ? <Button type="button" variant="secondary" size="sm" onClick={openEditor}>Manage team</Button> : null}
+      </div>
+      {loading ? <p className="mt-5 text-sm text-[#60758d]">Loading matter team…</p> : null}
+      {!loading && !error && !members.length ? (
+        <div className="mt-5 rounded-[14px] border border-emerald-200/80 bg-white/75 px-4 py-4 text-sm leading-6 text-[#60758d]">
+          <strong className="block text-[#142132]">Open to the firm</strong>
+          Active firm members can see this matter until a principal allocates a team.
+        </div>
+      ) : null}
+      {!loading && members.length ? <div className="mt-4 grid gap-2 sm:grid-cols-2">
+        {members.map((person) => <div key={person.userId} className="flex min-w-0 items-center gap-3 rounded-[14px] border border-emerald-100 bg-white/90 px-3 py-3 shadow-sm">
+          {personAvatar(person)}
+          <div className="min-w-0">
+            <strong className="block truncate text-sm font-semibold text-[#142132]" title={person.name}>{person.name}</strong>
+            <span className="block truncate text-xs text-[#60758d]" title={person.email}>{person.email || 'No email on profile'}</span>
+            <span className="mt-1 block text-[0.65rem] font-semibold uppercase tracking-[0.08em] text-emerald-800">{String(person.role || 'Team member').replaceAll('_', ' ')}</span>
+          </div>
+        </div>)}
+      </div> : null}
+      {error && !editing ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}
+      {team && team.assignmentStatus !== 'active' ? <p className="mt-3 text-xs text-amber-800">Workflow changes begin after the firm accepts the instruction.</p> : null}
+    </ArchlinePanel>
+    <Modal open={editing} onClose={saving ? undefined : () => setEditing(false)} title="Allocate matter team"
+      subtitle="Select the conveyancers and legal secretaries who will work on this matter. Firm principals retain oversight."
+      className="max-w-xl"
+      footer={<div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button><Button type="button" onClick={saveTeam} disabled={saving}>{saving ? 'Saving…' : 'Save team'}</Button></div>}>
+      <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
+        {available.map((person) => <label key={person.userId} className="flex cursor-pointer items-center gap-3 rounded-[14px] border border-slate-200 bg-white p-3 hover:border-emerald-300">
+          <input type="checkbox" checked={selectedIds.includes(person.userId)} onChange={() => toggleMember(person.userId)} className="size-4 accent-emerald-700" />
+          {personAvatar(person)}
+          <span className="min-w-0 flex-1"><strong className="block truncate text-sm text-[#142132]">{person.name}</strong><span className="block truncate text-xs text-[#60758d]">{person.email || 'No email on profile'} · {String(person.role || 'Team member').replaceAll('_', ' ')}</span></span>
+        </label>)}
+        {!available.length ? <p className="text-sm text-[#60758d]">No active firm members are available yet.</p> : null}
+      </div>
+      <p className="mt-3 text-xs leading-5 text-[#60758d]">Leaving the team empty makes the matter visible to all active members of this firm. Once allocated, only this team and firm principals can see it in their attorney workspace.</p>
+      {error ? <p className="mt-3 text-sm text-red-700" role="alert">{error}</p> : null}
+    </Modal>
+  </>
+}
+
 function ArchlineOverviewWorkspace({
+  transactionId,
   lifecycleProgress,
   contactRows = [],
   agencyDetail = '',
@@ -7604,29 +7708,7 @@ function ArchlineOverviewWorkspace({
           )}
         </ArchlinePanel>
 
-        <ArchlinePanel
-          title="Latest Activity"
-          action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('activity')}>View all</Button>}
-          className="flex flex-col overflow-hidden"
-        >
-          <div className="h-[168px] space-y-2 overflow-y-auto overscroll-contain pb-4 pl-5 pr-6">
-            {activityRows.length ? activityRows.map((entry) => (
-              <article key={entry.id} className="flex gap-3">
-                <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-slate-50 text-[#35546c]">
-                  <Activity size={15} />
-                </span>
-                <div className="min-w-0">
-                  <strong className="block truncate text-sm font-semibold text-[#142132]">{entry.title || entry.body || 'Matter update'}</strong>
-                  <p className="mt-0.5 truncate text-xs text-[#60758d]">
-                    {entry.authorName || 'Matter team'} {entry.createdAt ? `· ${formatDateTime(entry.createdAt)}` : ''}
-                  </p>
-                </div>
-              </article>
-            )) : (
-              <p className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-[#60758d]">No matter activity has been recorded yet.</p>
-            )}
-          </div>
-        </ArchlinePanel>
+        <AttorneyMatterTeamCard transactionId={transactionId} />
       </div>
 
       <ArchlinePanel className="order-2 p-5">
@@ -7659,12 +7741,13 @@ function ArchlineOverviewWorkspace({
         </div>
       </ArchlinePanel>
 
-      <ArchlinePanel className="order-3 px-5 pb-5">
+      <div className="order-3 grid gap-4 xl:grid-cols-2">
+      <ArchlinePanel className="min-w-0 px-5 pb-5">
         <div className="flex flex-wrap items-center justify-between gap-3 py-4">
           <div className="flex items-center gap-3 text-[#142132]"><FileText size={20} className="text-[#35546c]" /><h2 className="text-base font-semibold">Key parties</h2></div>
           <Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('stakeholders')}>View all parties</Button>
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2">
           {keyPartyRows.length ? keyPartyRows.map((row) => (
             <article key={row.key} className="flex min-h-[96px] min-w-0 items-center gap-4 rounded-[16px] border border-slate-200 bg-white px-4 py-3">
               <span className="inline-flex size-14 shrink-0 items-center justify-center rounded-full bg-slate-100 text-[#263b59]"><row.Icon size={25} strokeWidth={1.8} /></span>
@@ -7680,6 +7763,25 @@ function ArchlineOverviewWorkspace({
           )}
         </div>
       </ArchlinePanel>
+
+      <ArchlinePanel
+        title="Latest Activity"
+        action={<Button type="button" variant="ghost" size="sm" onClick={() => onOpenWorkspace?.('activity')}>View all</Button>}
+        className="min-w-0 overflow-hidden"
+      >
+        <div className="h-[260px] space-y-2 overflow-y-auto overscroll-contain pb-4 pl-5 pr-6">
+          {activityRows.length ? activityRows.map((entry) => (
+            <article key={entry.id} className="flex gap-3">
+              <span className="mt-0.5 inline-flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-slate-50 text-[#35546c]"><Activity size={15} /></span>
+              <div className="min-w-0">
+                <strong className="block truncate text-sm font-semibold text-[#142132]">{entry.title || entry.body || 'Matter update'}</strong>
+                <p className="mt-0.5 truncate text-xs text-[#60758d]">{entry.authorName || 'Matter team'} {entry.createdAt ? `· ${formatDateTime(entry.createdAt)}` : ''}</p>
+              </div>
+            </article>
+          )) : <p className="rounded-[14px] border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-sm text-[#60758d]">No matter activity has been recorded yet.</p>}
+        </div>
+      </ArchlinePanel>
+      </div>
 
       <Modal
         open={healthEditorOpen}
@@ -17312,10 +17414,13 @@ function AttorneyTransactionDetail() {
         revision: Number(routingDiagnostics?.profile?.matterProfile?.revision || 0) + 1,
       },
     })
-    return diffMatterWorkflowPlans(
-      resolveMatterWorkflowPlan(transaction.routing_profile_json || {}),
-      buildMatterWorkflowPlan({ routingProfile: proposedProfile, generatedAt: confirmedAt }),
-    )
+    const currentPlan = resolveMatterWorkflowPlan(transaction.routing_profile_json || {})
+    const proposedPlan = buildMatterWorkflowPlan({ routingProfile: proposedProfile, generatedAt: confirmedAt })
+    return {
+      ...diffMatterWorkflowPlans(currentPlan, proposedPlan),
+      currentVersion: currentPlan.version || 'unversioned',
+      proposedVersion: proposedPlan.version,
+    }
   }, [routingDiagnostics?.profile?.matterProfile, routingProfileDraft, transaction, workspaceRole])
   const requiredDocumentsByDocumentId = useMemo(() => {
     const map = new Map()
@@ -18038,6 +18143,7 @@ function AttorneyTransactionDetail() {
   const bondAmountFallback = hasCapturedFinanceType ? (financeRequiresBondSupport ? 'Pending' : 'N/A') : 'Not captured'
   const propertyAddress = buildPropertyAddress(transaction, data?.onboardingFormData, unit, development)
   const propertyImageUrl = [
+    ...(!isPrivateMatter ? [resolveDevelopmentCoverImage(development)] : []),
     transaction?.propertyImageUrl,
     transaction?.property_image_url,
     transaction?.thumbnail_url,
@@ -22803,7 +22909,6 @@ function AttorneyTransactionDetail() {
             matterType={transaction?.matter_type || transaction?.transaction_type || transaction?.transaction_category || 'transfer'}
             loanAmount={formatCurrencyValue(transaction?.bond_amount || transaction?.outstanding_bond_amount, '—')}
             bankName={transaction?.current_bond_bank || transaction?.bank_name || transaction?.bond_bank || ''}
-            stageLabel={transferStageLabel}
             daysOpenLabel={daysBetween(transaction?.instruction_date || transaction?.created_at)}
             instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, '—')}
             matterChips={archlineMatterChips}
@@ -22966,6 +23071,7 @@ function AttorneyTransactionDetail() {
         {workspaceRole === 'attorney' && ['today', 'overview'].includes(activeWorkspaceMenu) ? (
           <section className="space-y-4">
             <ArchlineOverviewWorkspace
+              transactionId={transaction?.id}
               lifecycleProgress={displayedLifecycleProgress}
               overviewNextActions={overviewNextActions}
               contactRows={transactionContactRows}
@@ -23117,12 +23223,16 @@ function AttorneyTransactionDetail() {
                   openDocumentUploadModal({ category: archlineActiveLegalTaskWorkflowKey })
                 }
               }}
+              onOpenRoutingProfile={openRoutingProfileModal}
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
               onOpenFinance={(task) => {
                 if ([
                   'transfer_tax_route_confirmed', 'transfer_duty_tdc01_submission', 'sars_evidence_request_response',
                   'transfer_duty_assessment_payment', 'vat_exemption_evidence_verified',
                   'non_resident_seller_withholding_review', 'sars_transfer_tax_receipt_verified',
+                  'ordinary_vat_basis_verified', 'going_concern_zero_rate_verified',
+                  'transfer_duty_exemption_basis_verified', 'non_resident_seller_applicability_review',
+                  'non_resident_seller_directive_review', 'non_resident_seller_withholding_payment_review',
                 ].includes(String(task?.key || ''))) {
                   openRoutingProfileModal()
                   return
@@ -25922,7 +26032,7 @@ function AttorneyTransactionDetail() {
         )}
       >
         <form id="transaction-routing-profile-form" onSubmit={handleSaveRoutingProfile} className="grid gap-4">
-          <MatterScenarioProfileEditor value={routingProfileDraft.scenarioProfile} onChange={scenarioProfile => setRoutingProfileDraft(previous => ({ ...previous, scenarioProfile }))} />
+          <MatterScenarioProfileEditor value={routingProfileDraft.scenarioProfile} propertyTenure={routingProfileDraft.propertyTenure} onChange={scenarioProfile => setRoutingProfileDraft(previous => ({ ...previous, scenarioProfile }))} />
           <details className="rounded border border-borderSoft p-3">
             <summary>Party profile change summary</summary>
             <ul className="mt-2 space-y-1 text-sm">{describeScenarioChanges(
@@ -25959,11 +26069,12 @@ function AttorneyTransactionDetail() {
           </div>
           {routingProfileImpact ? (
             <div className={`rounded-[12px] border px-3 py-2.5 text-xs leading-5 ${
-              routingProfileImpact.changed
+              routingProfileImpact.changed || routingProfileImpact.currentVersion !== routingProfileImpact.proposedVersion
                 ? 'border-primary/25 bg-primarySoft text-textMuted'
                 : 'border-borderSoft bg-surfaceAlt text-textMuted'
             }`}>
               <strong className="block text-[0.7rem] uppercase text-textStrong">Workflow plan impact</strong>
+              <p className="mt-1">Current plan: {routingProfileImpact.currentVersion}. Proposed plan: {routingProfileImpact.proposedVersion}.</p>
               {routingProfileImpact.changed ? (
                 <>
                   <p className="mt-1">
@@ -25986,7 +26097,9 @@ function AttorneyTransactionDetail() {
                   </div>
                 </>
               ) : (
-                <p className="mt-1">This confirmation keeps the current applicable workflow plan unchanged.</p>
+                <p className="mt-1">{routingProfileImpact.currentVersion !== routingProfileImpact.proposedVersion
+                  ? 'The applicable tasks stay the same; the plan version will update.'
+                  : 'This confirmation keeps the current applicable workflow plan unchanged.'}</p>
               )}
             </div>
           ) : null}
@@ -26138,6 +26251,18 @@ function AttorneyTransactionDetail() {
                     <option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option>
                   </Field>
                 </label>
+                {routingProfileDraft.transferTaxDecision?.route === 'zero_rated_going_concern' ? <>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Buyer VAT registered</span>
+                    <Field as="select" value={routingProfileDraft.transferTaxDecision?.buyerVatRegistered || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, buyerVatRegistered: event.target.value } }))}>
+                      <option value="unknown">Unknown</option><option value="yes">Yes</option><option value="no">No</option>
+                    </Field>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-label font-semibold uppercase text-textMuted">Buyer VAT evidence reference</span>
+                    <Field value={routingProfileDraft.transferTaxDecision?.buyerVatNumberReference || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, buyerVatNumberReference: event.target.value } }))} />
+                  </label>
+                </> : null}
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">Non-resident seller review</span>
                   <Field as="select" value={routingProfileDraft.transferTaxDecision?.sellerNonResidentReview || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, sellerNonResidentReview: event.target.value } }))}>
@@ -26162,11 +26287,84 @@ function AttorneyTransactionDetail() {
                     <option value="not_started">Not started</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="query">SARS query</option><option value="approved">Approved</option><option value="payment_pending">Payment pending</option><option value="receipted">Receipt verified</option>
                   </Field>
                 </label>
+                {[
+                  ['tdc01Reference', 'TDC01 submission reference', 'transfer_duty'],
+                  ['assessmentReference', 'SARS assessment reference', 'transfer_duty'],
+                  ['paymentReference', 'Duty payment proof reference', 'transfer_duty'],
+                  ['goingConcernAgreementReference', 'Written going-concern agreement reference', 'zero_rated_going_concern'],
+                  ['sarsQueryResponseReference', 'SARS query response reference', 'query'],
+                  ['sarsProofReference', 'SARS receipt or exemption proof reference', 'all'],
+                ].filter(([, , route]) => route === 'all' || route === routingProfileDraft.transferTaxDecision?.route ||
+                  (route === 'query' && (routingProfileDraft.transferTaxDecision?.sarsEvidenceRequest === 'yes' ||
+                    routingProfileDraft.transferTaxDecision?.sarsStatus === 'query')))
+                  .map(([field, label]) => (
+                    <label key={field} className="flex flex-col gap-1.5">
+                      <span className="text-label font-semibold uppercase text-textMuted">{label}</span>
+                      <Field value={routingProfileDraft.transferTaxDecision?.[field] || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, [field]: event.target.value } }))} />
+                    </label>
+                  ))}
               </div>
+              {routingProfileDraft.transferTaxDecision?.route === 'exempt' ? <div className="mt-3 rounded-lg border border-border p-3">
+                <p className="text-sm font-semibold text-text">Claimed exemptions</p>
+                {(routingProfileDraft.transferTaxDecision?.exemptionClaims || []).map((claim, index) => {
+                  const updateClaim = (field, value) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: {
+                    ...previous.transferTaxDecision,
+                    exemptionClaims: (previous.transferTaxDecision?.exemptionClaims || []).map((item, position) => position === index ? { ...item, [field]: value } : item),
+                  } }))
+                  return <div key={index} className="mt-2 grid gap-2 rounded-lg border border-border p-3 md:grid-cols-2">
+                    {[['statutoryBasis', 'Statutory provision'], ['appliesTo', 'Person or share covered'], ['evidenceReference', 'Supporting proof'], ['basisNote', 'Attorney decision']].map(([field, label]) =>
+                      <label key={field} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label}</span><Field value={claim[field] || ''} onChange={(event) => updateClaim(field, event.target.value)} /></label>)}
+                    <label className="flex flex-col gap-1"><span className="text-label text-textMuted">Applies</span><Field as="select" value={claim.applicable || 'unknown'} onChange={(event) => updateClaim('applicable', event.target.value)}><option value="unknown">Review needed</option><option value="yes">Yes</option><option value="no">No</option></Field></label>
+                    <button type="button" className="text-sm text-textMuted underline" onClick={() => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, exemptionClaims: (previous.transferTaxDecision?.exemptionClaims || []).filter((_, position) => position !== index) } }))}>Remove claim</button>
+                  </div>
+                })}
+                <button type="button" className="mt-2 text-sm font-semibold text-text underline" onClick={() => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, exemptionClaims: [...(previous.transferTaxDecision?.exemptionClaims || []), { statutoryBasis: '', appliesTo: '', applicable: 'unknown', evidenceReference: '', basisNote: '' }] } }))}>Add exemption claim</button>
+              </div> : null}
+              {(routingProfileDraft.scenarioProfile?.parties || []).filter((party) => party.role === 'seller' && party.taxResidence !== 'south_africa').map((party) => {
+                const review = routingProfileDraft.transferTaxDecision?.nonResidentSellers?.[party.id] || {}
+                const updateReview = (field, value) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: {
+                  ...previous.transferTaxDecision,
+                  nonResidentSellers: { ...previous.transferTaxDecision?.nonResidentSellers,
+                    [party.id]: { ...previous.transferTaxDecision?.nonResidentSellers?.[party.id], [field]: value } },
+                } }))
+                return <div key={party.id} className="mt-3 rounded-lg border border-border p-3">
+                  <p className="text-sm font-semibold text-text">{party.name || party.id} · {party.entityType} · {party.taxResidence}</p>
+                  <div className="mt-2 grid gap-2 md:grid-cols-2">
+                    {[['applicable', 'Withholding applies', ['unknown', 'yes', 'no']], ['directiveStatus', 'SARS directive', ['unknown', 'issued', 'not_required']], ['withholdingRequired', 'Payment required', ['unknown', 'yes', 'no']]].map(([field, label, options]) =>
+                      <label key={field} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label}</span><Field as="select" value={review[field] || 'unknown'} onChange={(event) => updateReview(field, event.target.value)}>{options.map((option) => <option key={option} value={option}>{option.replaceAll('_', ' ')}</option>)}</Field></label>)}
+                    {[['directiveReference', 'Directive proof'], ['paymentReference', 'Withholding payment proof'], ['proofReference', 'Review evidence'], ['basisNote', 'Seller-specific basis']].map(([field, label]) =>
+                      <label key={field} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label}</span><Field value={review[field] || ''} onChange={(event) => updateReview(field, event.target.value)} /></label>)}
+                  </div>
+                </div>
+              })}
               <label className="mt-3 flex flex-col gap-1.5">
                 <span className="text-label font-semibold uppercase text-textMuted">Decision basis</span>
                 <Field as="textarea" rows={2} value={routingProfileDraft.transferTaxDecision?.basisNote || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, transferTaxDecision: { ...previous.transferTaxDecision, basisNote: event.target.value } }))} placeholder="Record the VAT, duty, exemption, or advice basis." />
               </label>
+            </div>
+            <div className="md:col-span-2 rounded-xl border border-border bg-surfaceMuted/35 p-4">
+              <p className="text-sm font-semibold text-text">Property conditions and clearances</p>
+              <p className="mt-1 text-sm text-textMuted">Electrical compliance remains in the standard document checklist. Classify any additional certificates here.</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                {[['titleRestrictions', 'Title restrictions apply'], ['complianceCertificates', 'Additional compliance certificates apply']].map(([field, label]) =>
+                  <label key={field} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label}</span><Field as="select" value={routingProfileDraft.mvpProfile?.propertyConditions?.[field] || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, [field]: event.target.value } } }))}><option value="unknown">Review needed</option><option value="yes">Yes</option><option value="no">No</option></Field></label>)}
+                {routingProfileDraft.mvpProfile?.propertyConditions?.titleRestrictions === 'yes' ? <label className="flex flex-col gap-1">
+                  <span className="text-label text-textMuted">Title condition evidence reference</span>
+                  <Field value={routingProfileDraft.mvpProfile?.propertyConditions?.titleConditionsReference || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, titleConditionsReference: event.target.value } } }))} />
+                </label> : null}
+                {routingProfileDraft.mvpProfile?.propertyConditions?.complianceCertificates === 'yes'
+                  ? [['gas', 'Gas'], ['electricFence', 'Electric fence'], ['beetle', 'Beetle / wood-borer']].map(([type, label]) =>
+                    <label key={type} className="flex flex-col gap-1"><span className="text-label text-textMuted">{label} certificate</span><Field as="select" value={routingProfileDraft.mvpProfile?.propertyConditions?.certificates?.[type] || 'unknown'} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, certificates: { ...previous.mvpProfile?.propertyConditions?.certificates, [type]: event.target.value } } } }))}><option value="unknown">Review needed</option><option value="yes">Required</option><option value="no">Not required</option></Field></label>) : null}
+                {[
+                  ['municipal', 'Municipal'],
+                  ...(routingProfileDraft.propertyTenure === 'sectional_title' ? [['bodyCorporate', 'Body corporate']] : []),
+                  ...(routingProfileDraft.propertyTenure === 'estate_hoa' || routingProfileDraft.mvpProfile?.hoaApplicable === 'yes' ? [['hoa', 'HOA']] : []),
+                ].map(([type, label]) => <div key={type} className="rounded-lg border border-border p-3">
+                  <p className="text-sm font-semibold text-text">{label} clearance</p>
+                  {[['issuer', 'Issuer', 'text'], ['validUntil', 'Valid until', 'date']].map(([field, fieldLabel, inputType]) =>
+                    <label key={field} className="mt-2 flex flex-col gap-1"><span className="text-label text-textMuted">{fieldLabel}</span><Field type={inputType} value={routingProfileDraft.mvpProfile?.propertyConditions?.clearances?.[type]?.[field] || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, clearances: { ...previous.mvpProfile?.propertyConditions?.clearances, [type]: { ...previous.mvpProfile?.propertyConditions?.clearances?.[type], [field]: event.target.value } } } } }))} /></label>)}
+                </div>)}
+              </div>
             </div>
           </div>
           <label className="flex flex-col gap-1.5">

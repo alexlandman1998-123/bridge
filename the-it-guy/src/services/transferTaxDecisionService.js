@@ -1,4 +1,4 @@
-export const TRANSFER_TAX_DECISION_VERSION = 'transfer_tax_decision_v1'
+export const TRANSFER_TAX_DECISION_VERSION = 'transfer_tax_decision_v2'
 
 export const TRANSFER_TAX_ROUTES = Object.freeze([
   'transfer_duty',
@@ -46,6 +46,33 @@ function auditEntries(value) {
     : []
 }
 
+function sellerReviews(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(Object.entries(value).map(([partyId, review]) => [partyId, {
+    applicable: yesNoUnknown(review?.applicable),
+    directiveStatus: ['issued', 'not_required'].includes(key(review?.directiveStatus)) ? key(review.directiveStatus) : 'unknown',
+    directiveReference: text(review?.directiveReference),
+    withholdingRequired: yesNoUnknown(review?.withholdingRequired),
+    paymentReference: text(review?.paymentReference),
+    proofReference: text(review?.proofReference),
+    basisNote: text(review?.basisNote),
+  }]))
+}
+
+function exemptionClaims(source) {
+  const supplied = Array.isArray(source.exemptionClaims) ? source.exemptionClaims :
+    source.exemptionType ? [{ statutoryBasis: source.exemptionType,
+      evidenceReference: source.exemptionEvidenceReference, applicable: 'yes',
+      basisNote: source.basisNote, appliesTo: 'whole transaction' }] : []
+  return supplied.slice(0, 20).map((claim) => ({
+    statutoryBasis: text(claim?.statutoryBasis),
+    appliesTo: text(claim?.appliesTo),
+    applicable: yesNoUnknown(claim?.applicable),
+    evidenceReference: text(claim?.evidenceReference),
+    basisNote: text(claim?.basisNote),
+  }))
+}
+
 /**
  * Normalises the attorney's tax decision independently from onboarding facts.
  * Onboarding can prefill facts, but never becomes a legal determination.
@@ -62,11 +89,23 @@ export function resolveTransferTaxDecision(value = {}) {
     sellerVatRegistered: yesNoUnknown(source.sellerVatRegistered ?? source.seller_vat_registered),
     // This is a reference only. The authoritative VAT number remains in seller onboarding.
     sellerVatNumberReference: text(source.sellerVatNumberReference ?? source.seller_vat_number_reference),
+    buyerVatRegistered: yesNoUnknown(source.buyerVatRegistered),
+    buyerVatNumberReference: text(source.buyerVatNumberReference),
     supplyInCourseOfEnterprise: yesNoUnknown(source.supplyInCourseOfEnterprise ?? source.supply_in_course_of_enterprise),
     sellerNonResidentReview: yesNoUnknown(source.sellerNonResidentReview ?? source.seller_non_resident_review),
     sarsEvidenceRequest: yesNoUnknown(source.sarsEvidenceRequest ?? source.sars_evidence_request),
     dutyPaymentRequired: yesNoUnknown(source.dutyPaymentRequired ?? source.duty_payment_required),
     sarsStatus: sarsStatus(source.sarsStatus ?? source.sars_status),
+    tdc01Reference: text(source.tdc01Reference),
+    assessmentReference: text(source.assessmentReference),
+    paymentReference: text(source.paymentReference),
+    sarsProofReference: text(source.sarsProofReference),
+    sarsQueryResponseReference: text(source.sarsQueryResponseReference),
+    goingConcernAgreementReference: text(source.goingConcernAgreementReference),
+    exemptionType: text(source.exemptionType),
+    exemptionEvidenceReference: text(source.exemptionEvidenceReference),
+    exemptionClaims: exemptionClaims(source),
+    nonResidentSellers: sellerReviews(source.nonResidentSellers),
     basisNote: text(source.basisNote ?? source.basis_note),
     confirmedAt: source.confirmedAt || source.confirmed_at || null,
     confirmedBy: source.confirmedBy || source.confirmed_by || null,
@@ -78,10 +117,24 @@ export function resolveTransferTaxDecision(value = {}) {
 export function applyTransferTaxDecisionUpdate(existing = {}, update = {}, actor = {}) {
   const prior = resolveTransferTaxDecision(existing)
   const next = resolveTransferTaxDecision({ ...prior, ...update })
+  if (next.route !== prior.route) {
+    // A receipt and SARS state belong to a specific legal route. The attorney
+    // must review new proof after a route correction, even if the form sent an
+    // old hidden field from the previous route.
+    const newProof = text(update.sarsProofReference)
+    next.sarsProofReference = newProof && newProof !== prior.sarsProofReference ? newProof : ''
+    next.sarsStatus = next.sarsProofReference && update.sarsStatus === 'receipted' ? 'receipted' : 'not_started'
+    next.sarsQueryResponseReference = ''
+  }
   const changed = [
-    'route', 'sellerVatRegistered', 'sellerVatNumberReference', 'supplyInCourseOfEnterprise',
+    'route', 'sellerVatRegistered', 'sellerVatNumberReference', 'buyerVatRegistered',
+    'buyerVatNumberReference', 'supplyInCourseOfEnterprise',
     'sellerNonResidentReview', 'sarsEvidenceRequest', 'dutyPaymentRequired', 'sarsStatus', 'basisNote',
-  ].some((field) => next[field] !== prior[field])
+    'tdc01Reference', 'assessmentReference', 'paymentReference', 'sarsProofReference',
+    'sarsQueryResponseReference', 'goingConcernAgreementReference', 'exemptionType', 'exemptionEvidenceReference',
+  ].some((field) => next[field] !== prior[field]) ||
+    JSON.stringify(next.nonResidentSellers) !== JSON.stringify(prior.nonResidentSellers) ||
+    JSON.stringify(next.exemptionClaims) !== JSON.stringify(prior.exemptionClaims)
 
   if (!changed) return prior
 

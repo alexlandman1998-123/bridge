@@ -12,7 +12,7 @@ assert.equal(unknown.vatTreatment, 'unknown')
 const provisional = buildMatterWorkflowPlan({ routingProfile: unknown })
 assert.equal(provisional.status, 'active')
 assert.equal(provisional.provisional, true)
-assert(provisional.lanes[0].stepKeys.includes('rates_clearance_received'))
+assert(provisional.lanes[0].stepKeys.includes('municipal_rates_clearance_review'))
 
 const profile = resolveTransactionRoutingProfile({ transaction: {
   finance_type: 'cash', purchaser_type: 'individual', seller_type: 'company', property_tenure: 'freehold',
@@ -23,10 +23,23 @@ assert.equal(profile.requiresCancellationAttorney, false)
 assert.equal(profile.buyerMaritalRegime, 'in_community')
 const plan = buildMatterWorkflowPlan({ routingProfile: profile })
 assert(!plan.laneKeys.includes('bond'))
-assert(plan.lanes[0].stepKeys.includes('guarantees_received'), 'cash must retain security review')
-assert(plan.lanes[0].stepKeys.includes('levy_clearance_received'), 'applicability is reviewed, not silently removed')
+assert(plan.lanes[0].stepKeys.includes('payment_security_review'), 'cash must retain security review')
+assert(plan.lanes[0].stepKeys.includes('property_conditions_applicability_review'), 'property conditions need an explicit review')
 const existing = { version: 'attorney_matter_workflow_plan_v1', status: 'active', lanes: [] }
 assert.equal(resolveMatterWorkflowPlan({ workflowPlan: existing }), existing, 'do not silently rewrite accepted plans')
+
+const milestoneView = buildTransferWorkspaceViewModel({
+  workflowKey: 'transfer',
+  selectedTaskKey: 'lodgement_ready',
+  workflow: {
+    workflowPlan: plan,
+    facts: profile,
+    lane: { laneKey: 'transfer', steps: [], permissions: { canUpdateStage: true }, dataRequirements: [], documentRequirements: [] },
+  },
+})
+assert(!milestoneView.availableActions.primary.some(action => action.status === 'completed_externally'))
+assert(!milestoneView.availableActions.primary.some(action => action.status === 'not_applicable'))
+assert(milestoneView.availableActions.primary.find(action => action.status === 'completed')?.requiresNote)
 
 for (const laneKey of ['transfer', 'bond', 'cancellation']) {
   const fullPlan = buildMatterWorkflowPlan({ routingProfile: { financeType: 'bond', requiresBondAttorney: true, requiresCancellationAttorney: true } })

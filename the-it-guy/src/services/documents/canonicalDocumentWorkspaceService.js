@@ -578,12 +578,22 @@ export async function getCanonicalBuyerPortalDocumentProjection({ client = supab
   }
   const result = await db.rpc('bridge_client_portal_canonical_document_projection')
   if (result.error) throw result.error
+  const unmatchedResult = await db.rpc('bridge_client_portal_unmatched_buyer_documents_projection')
+  if (unmatchedResult.error && unmatchedResult.error.code !== 'PGRST202') throw unmatchedResult.error
+  if (!unmatchedResult.error && (normalizeRole(unmatchedResult.data?.role) !== 'buyer' ||
+      normalizeText(unmatchedResult.data?.transactionId) !== normalizeText(result.data?.transactionId))) {
+    throw new Error('Unmatched buyer document projection does not match this transaction.')
+  }
+  const documentsById = new Map()
+  for (const document of [...normalizeArray(result.data?.documents), ...normalizeArray(unmatchedResult.data?.documents)]) {
+    if (document?.id) documentsById.set(String(document.id), document)
+  }
   return {
     projectionVersion: normalizeText(result.data?.projectionVersion) || CANONICAL_DOCUMENT_ROLE_PROJECTION_VERSION,
     role: normalizeRole(result.data?.role || 'buyer'),
     transactionId: normalizeText(result.data?.transactionId),
     requirements: normalizeArray(result.data?.requirements),
-    documents: normalizeArray(result.data?.documents),
+    documents: [...documentsById.values()],
   }
 }
 

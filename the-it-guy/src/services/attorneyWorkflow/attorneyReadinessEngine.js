@@ -437,9 +437,8 @@ function calculateLodgementFromOperations(operations = {}, laneResults = {}) {
       missing.push(`${lane.label} has critical blockers`)
       continue
     }
-    const readyStage = stageCompleteForLane(lane, meta.requiredStageForLodgement)
-    const readiness = Number(laneResults[role]?.readiness || 0)
-    if (readyStage || readiness >= 75) complete += 1
+    const readyStage = stepIsComplete(lane, [meta.requiredStageForLodgement])
+    if (readyStage) complete += 1
     else missing.push(`${lane.label} not ready for lodgement`)
   }
 

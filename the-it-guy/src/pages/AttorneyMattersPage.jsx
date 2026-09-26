@@ -5,6 +5,7 @@ import {
   BriefcaseBusiness,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   Clock3,
   Download,
   FileText,
@@ -23,6 +24,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import { createElement, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { preloadTransactionDetailRoute } from '../routes/transactionDetailRouteLoader.js'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useWorkspace } from '../context/WorkspaceContext'
@@ -54,6 +56,7 @@ import {
   requestPersistedPdfAccess,
 } from '../lib/documentPacketsApi'
 import { getAssignableAttorneyFirmMembers } from '../services/transactionAttorneyAssignments'
+import { getAttorneyMatterTeam, getAttorneyMatterTeamSummaries, saveAttorneyMatterTeam } from '../services/attorneyMatterTeamService'
 import { assignAttorneyIncomingMatterPrimary } from '../services/transferFirmAllocationService'
 import {
   resolvePortalBuyerName,
@@ -329,20 +332,159 @@ function StatusPill({ status }) {
   )
 }
 
-function Assignee({ person }) {
-  const isUnassigned = !person?.id || normalize(person?.name) === 'unassigned'
+function MatterTeamAssignee({ row, teamMembers = null, onSaved }) {
+  const buttonRef = useRef(null)
+  const popupRef = useRef(null)
+  const [open, setOpen] = useState(false)
+  const [position, setPosition] = useState({ top: 0, left: 0 })
+  const [team, setTeam] = useState(null)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
 
-  return (
-    <div className="flex min-w-[150px] items-center gap-2">
-      <span className={classNames('inline-grid h-8 w-8 shrink-0 place-items-center rounded-full text-xs font-semibold', isUnassigned ? 'bg-slate-100 text-slate-500' : 'bg-[#00463d] text-white')}>
-        {isUnassigned ? 'UN' : person.initials}
+  useEffect(() => {
+    if (!open) return undefined
+    const measure = () => {
+      const rect = buttonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      setPosition({
+        left: Math.max(8, Math.min(rect.left, window.innerWidth - 336)),
+        top: window.innerHeight - rect.bottom < 360
+          ? Math.max(8, rect.top - 368)
+          : rect.bottom + 8,
+      })
+    }
+    const onOutside = (event) => {
+      if (!buttonRef.current?.contains(event.target) && !popupRef.current?.contains(event.target)) setOpen(false)
+    }
+    const onEscape = (event) => { if (event.key === 'Escape') setOpen(false) }
+    measure()
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+    document.addEventListener('pointerdown', onOutside)
+    document.addEventListener('keydown', onEscape)
+    return () => {
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+      document.removeEventListener('pointerdown', onOutside)
+      document.removeEventListener('keydown', onEscape)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open || !row.matterId) return undefined
+    let active = true
+    getAttorneyMatterTeam(row.matterId)
+      .then((result) => {
+        if (!active) return
+        setTeam(result)
+        setSelectedIds((result.members || []).map((member) => member.userId))
+      })
+      .catch((loadError) => { if (active) setError(loadError?.message || 'Team could not be loaded.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [open, row.matterId])
+
+  const summary = Array.isArray(teamMembers)
+    ? [...teamMembers].sort((a, b) => {
+      const primaryId = row.assignedAttorney?.id
+      if (a.userId === primaryId) return -1
+      if (b.userId === primaryId) return 1
+      return String(a.name || '').localeCompare(String(b.name || ''))
+    })
+    : null
+  const lead = summary?.[0] || (summary === null && row.assignedAttorney?.id ? row.assignedAttorney : null)
+  const additionalCount = Math.max(0, (summary?.length || 0) - 1)
+  const displayName = lead?.name || row.assignedAttorney?.firmName || 'Unassigned'
+  const initials = lead?.initials || String(displayName).split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+  const available = Array.isArray(team?.availableMembers) ? team.availableMembers : []
+  const filtered = available.filter((member) => [member.name, member.email, member.role]
+    .some((value) => String(value || '').toLowerCase().includes(search.toLowerCase())))
+
+  const save = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      const saved = await saveAttorneyMatterTeam(row.matterId, selectedIds)
+      setTeam(saved)
+      onSaved?.(row.matterId, saved?.members || [])
+      setOpen(false)
+    } catch (saveError) {
+      setError(saveError?.message || 'Team could not be saved.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleOpen = (event) => {
+    event.stopPropagation()
+    if (open) {
+      setOpen(false)
+      return
+    }
+    setTeam(null)
+    setSelectedIds([])
+    setSearch('')
+    setError('')
+    setLoading(true)
+    setOpen(true)
+  }
+
+  return <>
+    <button ref={buttonRef} type="button" aria-haspopup="dialog" aria-expanded={open}
+      aria-label={`Assigned team for ${row.reference || row.matterId}`}
+      onClick={toggleOpen}
+      onKeyDown={(event) => event.stopPropagation()}
+      className="flex h-11 w-[218px] max-w-full items-center gap-2 rounded-lg px-1 text-left hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700">
+      {lead?.avatarUrl ? <img src={lead.avatarUrl} alt="" className="size-8 shrink-0 rounded-full object-cover" /> : (
+        <span className={classNames('inline-grid size-8 shrink-0 place-items-center rounded-full text-[0.65rem] font-semibold', lead ? 'bg-[#00463d] text-white' : 'bg-slate-100 text-slate-500')}>
+          {lead ? initials : 'UN'}
+        </span>
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-slate-700" title={displayName}>{displayName}</span>
+        <span className="block truncate text-xs font-semibold text-[#00614f]">
+          {lead ? additionalCount ? `+${additionalCount} more` : 'Assigned' : row.assignedAttorney?.firmName ? 'Staff allocation pending' : 'Select team'}
+        </span>
       </span>
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-medium text-slate-700">{isUnassigned ? person?.firmName || 'Unassigned' : person.name}</span>
-        {isUnassigned ? <span className="block text-xs font-semibold text-[#00614f]">{person?.firmName ? 'Staff allocation pending' : 'Assign'}</span> : null}
-      </span>
-    </div>
-  )
+      <ChevronDown size={14} className="shrink-0 text-slate-500" />
+    </button>
+    {open ? createPortal(
+      <div ref={popupRef} role="dialog" aria-label={`Assign team to ${row.reference || 'matter'}`}
+        onClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        style={{ top: position.top, left: position.left }}
+        className="fixed z-[100] w-[320px] max-w-[calc(100vw-16px)] rounded-xl border border-slate-200 bg-white p-3 shadow-[0_18px_48px_rgba(15,23,42,0.2)]">
+        <div className="flex items-center justify-between gap-2">
+          <div><strong className="text-sm text-slate-950">Matter team</strong><p className="text-xs text-slate-500">{selectedIds.length} selected</p></div>
+          <button type="button" onClick={() => setOpen(false)} aria-label="Close team selector" className="rounded-md p-1 text-slate-500 hover:bg-slate-100"><X size={16} /></button>
+        </div>
+        <label className="mt-3 flex h-9 items-center gap-2 rounded-lg border border-slate-200 px-2 text-slate-500">
+          <Search size={15} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find a colleague" className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none" />
+        </label>
+        <div className="mt-2 max-h-[214px] space-y-1 overflow-y-auto">
+          {loading ? <p className="px-2 py-4 text-sm text-slate-500">Loading firm members…</p> : filtered.map((member) => (
+            <label key={member.userId} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 hover:bg-emerald-50">
+              <input type="checkbox" checked={selectedIds.includes(member.userId)} disabled={!team?.canManage || saving}
+                onChange={() => setSelectedIds((current) => current.includes(member.userId) ? current.filter((id) => id !== member.userId) : [...current, member.userId])}
+                className="size-4 accent-emerald-700" />
+              {member.avatarUrl ? <img src={member.avatarUrl} alt="" className="size-8 shrink-0 rounded-full object-cover" /> : <span className="inline-grid size-8 shrink-0 place-items-center rounded-full bg-emerald-100 text-[0.65rem] font-bold text-emerald-800">{String(member.name || 'TM').split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase()}</span>}
+              <span className="min-w-0"><strong className="block truncate text-xs text-slate-800">{member.name}</strong><span className="block truncate text-[0.68rem] text-slate-500">{member.email || String(member.role || '').replaceAll('_', ' ')}</span></span>
+            </label>
+          ))}
+          {!loading && !filtered.length ? <p className="px-2 py-4 text-sm text-slate-500">No matching firm members.</p> : null}
+        </div>
+        {team && !team.canManage ? <p className="mt-2 text-xs text-slate-500">A firm principal manages this team.</p> : null}
+        {error ? <p role="alert" className="mt-2 text-xs text-red-700">{error}</p> : null}
+        {team?.canManage ? <div className="mt-3 flex justify-end gap-2 border-t border-slate-100 pt-3">
+          <button type="button" onClick={() => setOpen(false)} disabled={saving} className="rounded-lg px-3 py-2 text-xs font-semibold text-slate-600">Cancel</button>
+          <button type="button" onClick={save} disabled={saving || loading} className="rounded-lg bg-[#00463d] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Save team'}</button>
+        </div> : null}
+      </div>, document.body,
+    ) : null}
+  </>
 }
 
 function AssignedBySource({ source = {}, compact = false }) {
@@ -1178,7 +1320,7 @@ function MatterNextActionCell({ row, preview }) {
   )
 }
 
-function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter, showProgress = true }) {
+function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter, teamMembers, onTeamSaved, showProgress = true }) {
   const preview = getMatterPreview(row)
 
   return (
@@ -1214,7 +1356,7 @@ function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter, showProgre
           <MatterNextActionCell row={row} preview={preview} />
           <div>
             <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Assigned To</p>
-            <Assignee person={row.assignedAttorney} />
+            <MatterTeamAssignee row={row} teamMembers={teamMembers} onSaved={onTeamSaved} />
           </div>
           <div>
             <p className="mb-1 text-[0.68rem] font-semibold uppercase tracking-[0.12em] text-slate-500">Status</p>
@@ -1226,7 +1368,7 @@ function MatterMobileCard({ row, selected, onToggleRow, onOpenMatter, showProgre
   )
 }
 
-function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, onOpenMatter, showProgress = true }) {
+function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, onOpenMatter, teamSummaries = {}, onTeamSaved, showProgress = true }) {
   const allSelected = rows.length > 0 && rows.every((row) => selectedRows.includes(row.matterId))
 
   return (
@@ -1239,6 +1381,8 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
             selected={selectedRows.includes(row.matterId)}
             onToggleRow={onToggleRow}
             onOpenMatter={onOpenMatter}
+            teamMembers={teamSummaries[row.matterId] ?? null}
+            onTeamSaved={onTeamSaved}
             showProgress={showProgress}
           />
         ))}
@@ -1290,7 +1434,7 @@ function MattersTable({ rows = [], selectedRows = [], onToggleRow, onToggleAll, 
                   <td className="px-4 py-3"><MatterPropertyCell row={row} preview={preview} /></td>
                   <td className="px-4 py-3"><MatterStageCell row={row} showProgress={showProgress} /></td>
                   <td className="px-4 py-3"><MatterNextActionCell row={row} preview={preview} /></td>
-                  <td className="px-4 py-3"><Assignee person={row.assignedAttorney} /></td>
+                  <td className="px-4 py-3"><MatterTeamAssignee row={row} teamMembers={teamSummaries[row.matterId] ?? null} onSaved={onTeamSaved} /></td>
                   <td className="px-5 py-3"><StatusPill status={row.status} /></td>
                   <td className="px-4 py-3"><RowActions row={row} /></td>
                 </tr>
@@ -1602,6 +1746,7 @@ function AttorneyMattersPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
   const [selectedRows, setSelectedRows] = useState([])
+  const [teamSummaries, setTeamSummaries] = useState({})
   const [selectedIncomingRow, setSelectedIncomingRow] = useState(null)
   const [drawerEvents, setDrawerEvents] = useState([])
   const [drawerPacket, setDrawerPacket] = useState(null)
@@ -1891,6 +2036,17 @@ function AttorneyMattersPage() {
   }, [location.pathname, location.search, navigate, viewKey, workspace?.view?.key])
 
   const usesIncomingQueue = Boolean(workspace?.view?.usesIncomingQueue)
+  useEffect(() => {
+    if (usesIncomingQueue) return undefined
+    const ids = [...new Set((workspace?.tableRows || []).map((row) => row.matterId).filter(Boolean))]
+    if (!ids.length) return undefined
+    let active = true
+    getAttorneyMatterTeamSummaries(ids)
+      .then((summaries) => { if (active) setTeamSummaries(summaries) })
+      .catch(() => { if (active) setTeamSummaries({}) })
+    return () => { active = false }
+  }, [usesIncomingQueue, workspace?.tableRows])
+
   const legalPriorityQueue = useMemo(
     () => buildLegalPortfolioPriorityQueueModel({ rows: workspace?.filteredRows || workspace?.tableRows || [] }),
     [workspace?.filteredRows, workspace?.tableRows],
@@ -2209,6 +2365,8 @@ function AttorneyMattersPage() {
               onToggleRow={handleToggleRow}
               onToggleAll={handleToggleAll}
               onOpenMatter={handleOpenMatter}
+              teamSummaries={teamSummaries}
+              onTeamSaved={(matterId, members) => setTeamSummaries((current) => ({ ...current, [matterId]: members }))}
             />
           )
         ) : (

@@ -38,7 +38,7 @@ assert.ok(originatorHandoff.requiredEvidence.includes('bank_reference'))
 
 const transferGuaranteeHandoff = map.handoffs.find((handoff) => handoff.key === 'bond_attorney_to_transfer_attorney')
 assert.equal(transferGuaranteeHandoff?.toOwnerRole, 'transfer_attorney')
-assert.equal(transferGuaranteeHandoff?.toStageKey, 'transfer_guarantees_accepted')
+assert.equal(transferGuaranteeHandoff?.toStageKey, 'payment_security_review')
 assert.ok(transferGuaranteeHandoff.requiredEvidence.includes('guarantee_letter'))
 
 const lodgementHandoff = map.handoffs.find((handoff) => handoff.key === 'bond_attorney_to_lodgement_coordination')

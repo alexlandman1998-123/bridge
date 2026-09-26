@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { resolveMatterScenarioProfile, scenarioIssues, scenarioFingerprint, prepopulateMatterScenarioProfile, describeScenarioChanges } from '../matterScenarioProfile.js'
+import { resolveMatterScenarioProfile, scenarioIssues, scenarioFingerprint, prepopulateMatterScenarioProfile, describeScenarioChanges, applyPartyCapacityDecisions, partyCapacityReviewReady, partyCapacityCheckRequirements } from '../matterScenarioProfile.js'
 import { resolveTransactionRoutingProfile } from '../transactionRoutingProfileService.js'
 
 test('participant prepopulation retains separate identities without assuming mixed-party types', () => {
@@ -61,4 +61,27 @@ test('invalid and conflicting ownership totals remain explicit', () => {
   const profile = resolveMatterScenarioProfile({ parties: [{ id: 'a', role: 'buyer', ownershipShare: 120 }] })
   assert.ok(scenarioIssues(profile).some(x => x.includes('at most 100')))
   assert.ok(scenarioIssues(profile).some(x => x.includes('Add at least one seller')))
+})
+
+test('attorney review is scoped to one party and expires when its facts change', () => {
+  const pending = resolveMatterScenarioProfile({ parties: [
+    { id: 'company', role: 'buyer', name: 'Company', entityType: 'company', ownershipShare: 100,
+      taxResidence: 'south_africa', representatives: [{ id: 'director', name: 'Director', capacity: 'Director' }] },
+    { id: 'seller', role: 'seller', name: 'Seller', entityType: 'individual', maritalRegime: 'single',
+      identityRoute: 'sa_id', taxResidence: 'south_africa', ownershipShare: 100 },
+  ] })
+  const proposed = structuredClone(pending)
+  proposed.parties[0].capacityReview = { ...proposed.parties[0].capacityReview, status: 'cleared', note: 'CIPC, beneficial owner, resolution and signer checked.' }
+  assert.throws(() => applyPartyCapacityDecisions(pending, proposed, { canReview: false }), /Only an attorney/)
+  assert.throws(() => applyPartyCapacityDecisions(pending, proposed, { canReview: true, userId: 'attorney-1', now: '2026-09-26T12:00:00Z' }), /confirm identity/)
+  proposed.parties[0].capacityReview.confirmations = Object.fromEntries(partyCapacityCheckRequirements(proposed.parties[0]).map(check => [check.key, true]))
+  const cleared = applyPartyCapacityDecisions(pending, proposed, { canReview: true, userId: 'attorney-1', now: '2026-09-26T12:00:00Z' })
+  assert.equal(partyCapacityReviewReady(cleared.parties[0]), true)
+  assert.equal(partyCapacityReviewReady(cleared.parties[1]), false)
+  assert.equal(scenarioFingerprint(cleared), scenarioFingerprint(pending), 'review outcome does not change routing facts')
+  const changed = structuredClone(cleared)
+  changed.parties[0].representatives[0].name = 'New Director'
+  assert.equal(partyCapacityReviewReady(changed.parties[0]), false)
+  const saved = applyPartyCapacityDecisions(cleared, changed, { canReview: true, userId: 'attorney-1', now: '2026-09-26T13:00:00Z' })
+  assert.equal(saved.parties[0].capacityReview.status, 'pending')
 })

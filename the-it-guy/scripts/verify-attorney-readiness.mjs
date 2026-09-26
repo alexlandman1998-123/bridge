@@ -130,6 +130,19 @@ function verifyManualBlockerAndLodgement() {
   const blocked = calculate(operations, [{ id: 'manual-1', title: 'Guarantee wording needs partner review', laneKey: 'transfer', severity: 'critical', owner: 'attorney' }])
   assert.equal(blocked.atRisk, true)
   assert.equal(blocked.blockers.some((item) => item.manual && item.severity === 'critical'), true)
+
+  const scoredOnly = calculate({ ...operations, lanes: [makeLane({
+    completionPercent: 100, completedSteps: ['buyer_signed', 'seller_signed'],
+  })] })
+  assert.equal(scoredOnly.lodgement.ready, false, 'a high task score cannot replace attorney readiness attestation')
+
+  const linked = calculate({
+    ...operations,
+    workflow: { ...operations.workflow, requiredAttorneyRoles: ['transfer_attorney', 'bond_attorney'] },
+    lanes: [...operations.lanes, makeLane({ laneKey: 'bond', attorneyRole: 'bond_attorney',
+      completionPercent: 100, completedSteps: ['guarantees_issued'] })],
+  })
+  assert.equal(linked.lodgement.ready, false, 'the bond attorney must attest their own lane before transfer lodgement is ready')
 }
 
 verifyCashExcludesBond()
@@ -137,4 +150,3 @@ verifyMissingAssignmentAndDocuments()
 verifyManualBlockerAndLodgement()
 
 console.log('Attorney readiness verification passed.')
-

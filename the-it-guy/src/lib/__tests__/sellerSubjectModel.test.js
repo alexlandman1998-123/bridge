@@ -39,6 +39,23 @@ test('does not trust a legacy individual default until an agent or submitted onb
   assert.equal(confirmed.legalOwner.name, 'Alex Landman')
 })
 
+test('uses a confirmed legal ownership route without confusing it with the property title scheme', () => {
+  const subject = buildSellerSubject({
+    formData: {
+      sellerOwnershipRoute: 'individual',
+      ownershipRouteConfirmed: true,
+      ownershipScheme: 'other',
+      fullName: 'Alex Landman',
+      email: 'alex@example.com',
+    },
+  })
+  assert.equal(subject.kind, 'individual')
+  assert.equal(subject.legalOwner.name, 'Alex Landman')
+
+  const unconfirmed = buildSellerSubject({ formData: { ownershipScheme: 'other', fullName: 'Alex Landman' } })
+  assert.equal(unconfirmed.kind, 'unknown')
+})
+
 test('separates a company legal owner from its primary contact and signatory', () => {
   const subject = buildSellerSubject({
     formData: {

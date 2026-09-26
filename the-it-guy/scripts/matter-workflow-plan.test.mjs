@@ -39,10 +39,11 @@ function confirmedProfile(transaction) {
   assert.equal(plan.version, MATTER_WORKFLOW_PLAN_VERSION)
   assert.equal(plan.status, 'active')
   assert.deepEqual(plan.laneKeys, ['transfer'])
-  // Applicability is an attorney decision, not an automatic deletion for cash/freehold.
-  assert.equal(transferStepKeys.includes('guarantees_requested'), true)
-  assert.equal(transferStepKeys.includes('levy_clearance_requested'), true)
-  assert.equal(transferStepKeys.includes('rates_clearance_received'), true)
+  // HOA applicability remains an explicit attorney fact for freehold.
+  assert.equal(transferStepKeys.includes('payment_security_review'), true)
+  assert.equal(transferStepKeys.includes('levy_hoa_clearance_review'), false)
+  assert.equal(transferStepKeys.includes('property_conditions_applicability_review'), true)
+  assert.equal(transferStepKeys.includes('municipal_rates_clearance_review'), true)
   assert.equal(isMatterWorkflowPlanCurrent({ ...plan, status: 'active' }, { ...profile, workflowPlan: plan }), true)
 }
 
@@ -72,8 +73,8 @@ function confirmedProfile(transaction) {
   const transferStepKeys = getMatterWorkflowPlanStepKeys(plan, 'transfer')
 
   assert.deepEqual(plan.laneKeys, ['transfer', 'bond', 'cancellation'])
-  assert.equal(transferStepKeys.includes('guarantees_requested'), true)
-  assert.equal(transferStepKeys.includes('levy_clearance_requested'), true)
+  assert.equal(transferStepKeys.includes('payment_security_review'), true)
+  assert.equal(transferStepKeys.includes('body_corporate_levy_clearance_review'), true)
   assert.ok(getMatterWorkflowPlanStepKeys(plan, 'bond').length > 0)
   assert.ok(getMatterWorkflowPlanStepKeys(plan, 'cancellation').length > 0)
 }
@@ -101,12 +102,12 @@ function confirmedProfile(transaction) {
   })
   const plan = buildMatterWorkflowPlan({ routingProfile: profile })
   const filtered = filterStepsForMatterWorkflowPlan([
-    { step_key: 'rates_clearance_received', status: 'not_started' },
-    { step_key: 'levy_clearance_requested', status: 'not_started' },
-    { step_key: 'levy_clearance_received', status: 'completed' },
+    { step_key: 'municipal_rates_clearance_review', status: 'not_started' },
+    { step_key: 'levy_hoa_clearance_review', status: 'completed' },
+    { step_key: 'rates_clearance_received', status: 'completed' },
   ], plan, 'transfer')
 
-  assert.deepEqual(filtered.map((step) => step.step_key), ['rates_clearance_received', 'levy_clearance_requested', 'levy_clearance_received'])
+  assert.deepEqual(filtered.map((step) => step.step_key), ['municipal_rates_clearance_review'])
 }
 
 {
@@ -138,11 +139,12 @@ function confirmedProfile(transaction) {
 
   assert.equal(impact.changed, true)
   assert.deepEqual(impact.addedLanes, ['bond', 'cancellation'])
-  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'guarantees_requested'), false)
-  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'levy_clearance_requested'), false)
+  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'payment_security_review'), false)
+  assert.equal(impact.addedSteps.some((step) => step.stepKey === 'body_corporate_levy_clearance_review'), true)
   assert.equal(impact.nextTaskCount > impact.previousTaskCount, true)
   assert.deepEqual(diffMatterWorkflowPlans(bondPlan, bondPlan), {
     changed: false,
+    partyRequirementsChanged: false,
     addedLanes: [],
     removedLanes: [],
     addedSteps: [],
@@ -150,6 +152,37 @@ function confirmedProfile(transaction) {
     previousTaskCount: impact.nextTaskCount,
     nextTaskCount: impact.nextTaskCount,
   })
+}
+
+{
+  const cashSellerBond = confirmedProfile({
+    id: 'cash-seller-bond', finance_type: 'cash', transaction_type: 'resale',
+    property_type: 'freehold house', purchaser_type: 'company', seller_type: 'individual',
+    seller_has_existing_bond: true, vat_treatment: 'transfer_duty',
+    routing_profile_json: { mvpProfile: { paymentSecurity: 'cleared_trust_funds', cancellationWorkflow: 'exclude' } },
+  })
+  const plan = buildMatterWorkflowPlan({ routingProfile: cashSellerBond })
+  assert.deepEqual(plan.laneKeys, ['transfer', 'cancellation'], 'seller debt activates cancellation even when buyer pays cash')
+  assert.ok(getMatterWorkflowPlanStepKeys(plan, 'transfer').includes('cash_funding_source_review'))
+  assert.ok(getMatterWorkflowPlanStepKeys(plan, 'transfer').includes('payment_security_review'), 'cleared trust funds still need review')
+  assert.ok(getMatterWorkflowPlanStepKeys(plan, 'cancellation').includes('cancellation_consent_confirmed'))
+  assert.ok(getMatterWorkflowPlanStepKeys(plan, 'cancellation').includes('cancellation_guarantee_allocation_review'))
+
+  const financeChanged = { ...cashSellerBond, financeType: 'bond' }
+  const revised = buildMatterWorkflowPlan({ routingProfile: financeChanged })
+  const changes = diffMatterWorkflowPlans(plan, revised)
+  assert.deepEqual(revised.laneKeys, ['transfer', 'bond', 'cancellation'])
+  assert.deepEqual(changes.addedLanes, ['bond'])
+  assert.ok(changes.removedSteps.some(step => step.stepKey === 'cash_funding_source_review'))
+  assert.ok(getMatterWorkflowPlanStepKeys(revised, 'bond').includes('bond_lodgement_instructions_confirmed'))
+}
+
+{
+  const hybrid = buildMatterWorkflowPlan({ routingProfile: {
+    financeType: 'hybrid', sellerHasExistingBond: false, requiresCancellationAttorney: false,
+  } })
+  assert.deepEqual(hybrid.laneKeys, ['transfer', 'bond'])
+  assert.ok(getMatterWorkflowPlanStepKeys(hybrid, 'transfer').includes('cash_funding_source_review'))
 }
 
 console.log('matter-workflow-plan tests passed')

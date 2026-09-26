@@ -68,6 +68,7 @@ export function resolveAttorneyActionPermissions({
     : getAttorneyProfessionalProfilePermissions({})
   const assignment = attorneyAccess?.assignment || null
   const isAssignedParticipant = Boolean(attorneyAccess?.isAssignedParticipant)
+  const teamWorkflowEligible = Boolean(attorneyAccess?.teamWorkflowEligible)
   const managementOverrideEnabled = Boolean(
     attorneyAccess?.isManagementUser &&
       attorneyAccess?.managementOverrideEnabled &&
@@ -77,7 +78,7 @@ export function resolveAttorneyActionPermissions({
     isActiveAttorneyLaneDelegation(attorneyDelegation) ? attorneyDelegation.capabilities || [] : [],
   )
   const mayActOnBehalf = Boolean(permissions.can_act_on_behalf_of_attorney && delegatedCapabilities.size)
-  const hasLaneAuthority = Boolean(isAssignedParticipant || managementOverrideEnabled || mayActOnBehalf)
+  const hasLaneAuthority = Boolean(isAssignedParticipant || teamWorkflowEligible || managementOverrideEnabled || mayActOnBehalf)
   const actionBase = Boolean(isAttorneyAppUser && hasActiveMembership && canViewAsAttorney && hasLaneAuthority)
   const documentsAllowed = assignmentAllows(assignment, 'can_manage_documents', 'canManageDocuments')
   const signingAllowed = assignmentAllows(assignment, 'can_manage_signing', 'canManageSigning')
@@ -85,7 +86,7 @@ export function resolveAttorneyActionPermissions({
   const internalNotesAllowed = assignmentAllows(assignment, 'can_add_internal_notes', 'canAddInternalNotes')
   const sharedUpdatesAllowed = assignmentAllows(assignment, 'can_add_shared_updates', 'canAddSharedUpdates')
   const delegated = (capability) => mayActOnBehalf && delegatedCapabilities.has(capability)
-  const canAddSharedUpdate = Boolean(actionBase && permissions.can_comment_shared && (sharedUpdatesAllowed || delegated('shared_updates')))
+  const canAddSharedUpdate = Boolean(actionBase && (teamWorkflowEligible || (permissions.can_comment_shared && (sharedUpdatesAllowed || delegated('shared_updates')))))
 
   return {
     permissions,
@@ -95,13 +96,13 @@ export function resolveAttorneyActionPermissions({
     hasLaneAuthority,
     canUpdateLane: Boolean(
       actionBase &&
-        ((laneUpdateAllowed && (roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled)) || delegated('workflow')),
+        (teamWorkflowEligible || (laneUpdateAllowed && (roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled)) || delegated('workflow')),
     ),
     canRequestDocuments: Boolean(actionBase && permissions.can_request_documents && (documentsAllowed || delegated('documents'))),
     canUploadDocuments: Boolean(actionBase && permissions.can_upload_documents && (documentsAllowed || delegated('documents'))),
     canReviewDocuments: Boolean(actionBase && permissions.can_review_documents && (documentsAllowed || delegated('documents'))),
     canManageSigning: Boolean(actionBase && signingAllowed && permissions.can_manage_signing_appointments),
-    canAddInternalNote: Boolean(actionBase && permissions.can_comment_internal && (internalNotesAllowed || delegated('internal_notes'))),
+    canAddInternalNote: Boolean(actionBase && (teamWorkflowEligible || (permissions.can_comment_internal && (internalNotesAllowed || delegated('internal_notes'))))),
     canAddSharedUpdate,
     canPublishClientVisibleUpdate: Boolean(
       canAddSharedUpdate && permissions.can_publish_client_visible_updates,

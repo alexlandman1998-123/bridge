@@ -98,6 +98,7 @@ export function getSellerPortalStatusLabel(status = '') {
 
 export function buildSellerPortalInvitationPreview({
   activationSource = SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+  listingCreated = true,
   sellerName = '',
   propertyAddress = '',
   agencyName = '',
@@ -117,6 +118,18 @@ export function buildSellerPortalInvitationPreview({
         `${agent} from ${agency} has invited you to complete your secure property profile.`,
         'Through your Seller Portal, you can provide your property information, upload documents and complete the steps required to prepare your property for sale.',
         '[Get Started]',
+      ].join('\n\n'),
+    }
+  }
+
+  if (!listingCreated) {
+    return {
+      subject: `Your seller portal is ready for ${property}`,
+      body: [
+        `Hi ${name},`,
+        `${agency} has invited you to access your secure Seller Portal for ${property}.`,
+        'Your seller information has been submitted. Set a password to review and upload documents while your agent prepares the next mandate and listing steps.',
+        '[Set Password & Upload Documents]',
       ].join('\n\n'),
     }
   }
@@ -141,6 +154,7 @@ export function assertSellerPortalActivationContact({ sellerEmail = '' } = {}) {
 export async function activateSellerPortalForListing({
   listingId = '',
   activationSource = SELLER_PORTAL_ACTIVATION_SOURCES.existingListing,
+  listingCreated = true,
   sellerContactEmail = '',
   sellerContactName = '',
   sellerContactPhone = '',
@@ -225,6 +239,7 @@ export async function activateSellerPortalForListing({
   const propertyLabel = pickFirstText(propertyAddress, listing?.formattedAddress, listing?.propertyAddress, listing?.listingTitle, listing?.title, 'your property')
   const preview = buildSellerPortalInvitationPreview({
     activationSource: source,
+    listingCreated,
     sellerName,
     propertyAddress: propertyLabel,
     agencyName,
@@ -233,7 +248,9 @@ export async function activateSellerPortalForListing({
   const emailResponse = await invokeEdgeFunction('send-email', {
     body: {
       type: source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead ? 'seller_onboarding' : 'seller_portal_link',
-      emailKind: source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead ? 'seller_lead' : 'existing_listing',
+      emailKind: source === SELLER_PORTAL_ACTIVATION_SOURCES.sellerLead
+        ? 'seller_lead'
+        : listingCreated ? 'existing_listing' : 'portal_documents',
       activationSource: source,
       to: sellerEmail,
       organisationId: organisationId || listing.organisationId || listing.organisation_id || '',
@@ -256,8 +273,15 @@ export async function activateSellerPortalForListing({
     throw emailResponse.error || new Error(emailResponse.data.error)
   }
 
+  const onboardingStatuses = [
+    listing.sellerOnboardingStatus,
+    listing.seller_onboarding_status,
+    listing.sellerOnboarding?.status,
+  ]
+  const submittedStatus = onboardingStatuses.find((status) =>
+    ['submitted', 'completed', 'complete', 'under_review', 'approved', 'onboarding_submitted', 'onboarding_completed', 'seller_onboarding_submitted', 'seller_onboarding_completed'].includes(normalizeKey(status)))
   await updatePrivateListing(listing.id, {
-    sellerOnboardingStatus: listing.sellerOnboardingStatus === 'completed' ? 'completed' : 'sent',
+    sellerOnboardingStatus: submittedStatus || 'sent',
   }, { includeRequirementsAndDocuments: false }).catch(() => null)
 
   await createPrivateListingActivity({

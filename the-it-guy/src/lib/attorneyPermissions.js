@@ -353,14 +353,9 @@ async function getAttorneyTransactionAssignmentsForPermission(client, transactio
 
 function findActiveLaneAssignment(assignments = [], attorneyRole = 'transfer') {
   const laneRole = normalizeAttorneyLaneRole(attorneyRole)
-  return (
-    assignments.find(
-      (assignment) =>
-        isAssignmentActive(assignment) &&
-        assignment.is_primary !== false &&
-        assignmentCoversLane(assignment, laneRole),
-    ) || null
-  )
+  const matching = assignments.filter((assignment) =>
+    isAssignmentActive(assignment) && assignmentCoversLane(assignment, laneRole))
+  return matching.find((assignment) => assignment.is_primary !== false) || matching[0] || null
 }
 
 async function getMembershipsByFirmForUser(client, userId, firmIds = []) {
@@ -475,9 +470,19 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
   )
   const overrideFirmId = activeLaneAssignment?.attorney_firm_id || activeLaneAssignment?.firm_id || activeMembership?.firmId || normalizeText(firmId)
   const managementOverrideEnabled = isManagementUser ? await getAttorneyFirmOverrideSetting(client, overrideFirmId) : false
+  const teamPermission = activeMembership && activeLaneAssignment && overrideFirmId
+    ? await client.rpc('bridge_attorney_matter_team_access', {
+        p_transaction_id: resolvedTransactionId,
+        p_firm_id: overrideFirmId,
+        p_capability: 'workflow',
+      })
+    : { data: false }
+  // A missing migration must fail closed for the new multi-person team path.
+  const teamWorkflowEligible = !teamPermission.error && teamPermission.data === true
   const canActAsAttorney = Boolean(
     (isAssignedAttorney && activeLaneAssignment?.can_update_workflow_lane !== false) ||
-      (isManagementUser && managementOverrideEnabled && canViewMatter && overrideFirmId),
+      (isManagementUser && managementOverrideEnabled && canViewMatter && overrideFirmId) ||
+      teamWorkflowEligible,
   )
 
   return {
@@ -488,6 +493,7 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
     canActAsAttorney,
     isAssignedAttorney,
     isAssignedParticipant,
+    teamWorkflowEligible,
     isManagementUser,
     managementOverrideEnabled,
     laneRole,
@@ -623,15 +629,15 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
   if (!resolvedTransactionId) return false
 
   const resolvedUserId = await resolveAuthenticatedUserId(client, userId)
-
-  // The database function is the canonical cross-module access decision. It
-  // understands organisation-level firm assignments even when the browser's
-  // workspace membership projection is still loading or has gone stale.
-  const canonicalAccessQuery = await client.rpc('bridge_can_access_transaction_spine', {
-    target_transaction_id: resolvedTransactionId,
-  })
-  if (!canonicalAccessQuery.error && canonicalAccessQuery.data === true) {
-    return true
+  // With a known firm, the database can decide both assignment visibility and
+  // principal/team entitlement without a browser-side membership projection.
+  if (firmId) {
+    const teamAccess = await client.rpc('bridge_attorney_matter_team_access', {
+      p_transaction_id: resolvedTransactionId,
+      p_firm_id: normalizeText(firmId),
+      p_capability: 'view',
+    })
+    return !teamAccess.error && teamAccess.data === true
   }
 
   const assignmentsQuery = await client
@@ -662,7 +668,19 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
     return false
   }
 
-  for (const assignment of scopedAssignments) {
+  const visibilityChecks = await Promise.all(scopedAssignments.map(async (assignment) => {
+    const assignmentFirmId = assignment.attorney_firm_id || assignment.firm_id || assignment.assigned_organisation_id
+    const teamAccess = await client.rpc('bridge_attorney_matter_team_access', {
+      p_transaction_id: resolvedTransactionId,
+      p_firm_id: assignmentFirmId,
+      p_capability: 'view',
+    })
+    return !teamAccess.error && teamAccess.data === true
+  }))
+  const visibleAssignments = scopedAssignments.filter((_, index) => visibilityChecks[index])
+  if (!visibleAssignments.length) return false
+
+  for (const assignment of visibleAssignments) {
     if (
       String(assignment.primary_attorney_id || '') === resolvedUserId ||
       String(assignment.attorney_user_id || '') === resolvedUserId ||
@@ -673,7 +691,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
     }
   }
 
-  const scopedFirmIds = [...new Set(scopedAssignments.flatMap((assignment) => [
+  const scopedFirmIds = [...new Set(visibleAssignments.flatMap((assignment) => [
     assignment.attorney_firm_id,
     assignment.firm_id,
     assignment.assigned_organisation_id,
@@ -722,7 +740,7 @@ export async function canAccessAttorneyMatter(transactionId, firmId = null, user
     return accumulator
   }, {})
 
-  for (const assignment of scopedAssignments) {
+  for (const assignment of visibleAssignments) {
     const membership = [assignment.attorney_firm_id, assignment.firm_id, assignment.assigned_organisation_id]
       .map((assignmentFirmId) => membershipsByFirmId[assignmentFirmId])
       .find(Boolean)
