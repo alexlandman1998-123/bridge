@@ -299,6 +299,25 @@ async function getExistingLog(client, enquiry) {
   return data || null
 }
 
+function isCompletedIngestionLog(log) {
+  return Boolean(log?.lead_id) && ['assigned', 'processed', 'duplicate'].includes(log.status)
+}
+
+function leadNotificationWarning(notifications, assignedAgentId = '') {
+  if (!notifications) return ''
+  const failures = [
+    notifications.acknowledgement?.error ? 'buyer acknowledgement' : '',
+    notifications.operations?.error || (assignedAgentId && notifications.operations?.data?.reason === 'missing_agent_email') ? 'agent notification' : '',
+  ].filter(Boolean)
+  return failures.length ? `Delivery needs review: ${failures.join(' and ')} failed.` : ''
+}
+
+function assignedTaskAgentId(assignment, lead) {
+  return assignment
+    ? normalizeText(assignment.lead?.assignedAgentId || assignment.agentId || assignment.newAgentId || assignment.decision?.agentId)
+    : normalizeText(lead?.assignedAgentId)
+}
+
 async function createIngestionLog(client, enquiry, patch = {}) {
   const status = patch.status || 'processed'
   const payload = {
@@ -323,7 +342,33 @@ async function createIngestionLog(client, enquiry, patch = {}) {
     .select('*')
     .single()
   if (error) {
-    if (normalizeText(error.code) === '23505') return getExistingLog(client, enquiry)
+    if (normalizeText(error.code) === '23505') {
+      const existing = await getExistingLog(client, enquiry)
+      // The source/reference index identifies one delivery. A successful retry
+      // must repair its failed receipt instead of returning the old failure.
+      if (existing && ['new', 'failed'].includes(existing.status) && ['assigned', 'processed'].includes(status)) {
+        const updated = await client
+          .from('lead_ingestion_logs')
+          .update({
+            payload: payload.payload,
+            status,
+            lead_id: payload.lead_id,
+            contact_id: payload.contact_id,
+            listing_id: payload.listing_id,
+            assigned_agent_id: payload.assigned_agent_id,
+            review_status: payload.review_status,
+            processed_at: payload.processed_at,
+            error: payload.error,
+          })
+          .eq('log_id', existing.log_id)
+          .in('status', ['new', 'failed'])
+          .select('*')
+          .maybeSingle()
+        if (updated.error) throw updated.error
+        return updated.data || getExistingLog(client, enquiry)
+      }
+      return existing
+    }
     throw error
   }
   return data
@@ -793,7 +838,7 @@ export async function createOrUpdateLeadFromEnquiry(
   }
 
   const duplicateLog = await getExistingLog(client, enquiry)
-  if (duplicateLog?.status === 'processed' || duplicateLog?.status === 'duplicate') {
+  if (isCompletedIngestionLog(duplicateLog)) {
     const log = await createIngestionLog(client, enquiry, {
       status: 'duplicate',
       leadId: duplicateLog.lead_id,
@@ -840,6 +885,7 @@ export async function createOrUpdateLeadFromEnquiry(
     const isBuyerLead = inferLeadCategoryFromRecord(lead, enquiry.lead.leadCategory) === 'buyer'
     const requirementPayload = isBuyerLead ? buildRequirementPayload(enquiry, { ...lead, contactId }, existingRequirements) : null
     const requirement = requirementPayload ? await createLeadRequirement(requirementPayload, { actor }).catch(() => null) : existingRequirements[0] || null
+    let warning = ''
 
     const activity = await createAgencyCrmLeadActivity(
       enquiry.organisationId,
@@ -855,26 +901,13 @@ export async function createOrUpdateLeadFromEnquiry(
         outcome: enquiry.source,
       },
       { actor },
-    )
-
-    const task = shouldCreateInitialTask
-      ? await createAgencyCrmLeadTask(
-          enquiry.organisationId,
-          lead.leadId,
-          {
-            title: 'Contact Lead',
-            description: `${enquiry.source} enquiry follow-up.`,
-            dueDate: new Date(enquiry.enquiryTimestamp).toISOString().slice(0, 10),
-            status: 'Pending',
-            priority: 'High',
-            assignedAgent: buildAssignedAgent(enquiry, listing) || actor,
-          },
-          { actor },
-        )
-      : null
+    ).catch((activityError) => {
+      console.warn('[leadIngestionService] enquiry activity unavailable', activityError)
+      warning = [warning, 'Enquiry activity could not be recorded.'].filter(Boolean).join('\n')
+      return null
+    })
 
     let listingInterest = null
-    let warning = ''
     if (listing?.id) {
       listingInterest = await upsertLeadListingInterest(
         {
@@ -893,7 +926,7 @@ export async function createOrUpdateLeadFromEnquiry(
         { actor },
       )
     } else if (enquiry.listingId || enquiry.listingReference) {
-      warning = 'Unknown listing: original enquiry listing could not be resolved.'
+      warning = [warning, 'Unknown listing: original enquiry listing could not be resolved.'].filter(Boolean).join('\n')
     }
 
     const assignment = await autoAssignLead(
@@ -901,8 +934,29 @@ export async function createOrUpdateLeadFromEnquiry(
       { actor },
     ).catch((assignmentError) => {
       console.warn('[leadIngestionService] auto assignment skipped', assignmentError)
+      warning = [warning, 'Lead assignment failed and needs review.'].filter(Boolean).join('\n')
       return null
     })
+    const taskAgentId = assignedTaskAgentId(assignment, lead)
+    const task = shouldCreateInitialTask
+      ? await createAgencyCrmLeadTask(
+          enquiry.organisationId,
+          lead.leadId,
+          {
+            title: 'Contact Lead',
+            description: `${enquiry.source} enquiry follow-up.`,
+            dueDate: new Date(enquiry.enquiryTimestamp).toISOString().slice(0, 10),
+            status: 'Pending',
+            priority: 'High',
+            assignedAgent: taskAgentId ? { id: taskAgentId } : null,
+          },
+          { actor: taskAgentId ? actor : null },
+        ).catch((taskError) => {
+          console.warn('[leadIngestionService] follow-up task unavailable', taskError)
+          warning = [warning, 'Follow-up task needs review.'].filter(Boolean).join('\n')
+          return null
+        })
+      : null
 
     let developerLead = null
     if (isBuyerLead && resolvedDevelopmentMatch?.development) {
@@ -922,7 +976,7 @@ export async function createOrUpdateLeadFromEnquiry(
       warning = [warning, mirrorResult.warning].filter(Boolean).join('\n')
     }
 
-    const log = await createIngestionLog(client, enquiry, {
+    let log = await createIngestionLog(client, enquiry, {
       status: reusedLead ? 'assigned' : 'processed',
       leadId: lead.leadId,
       contactId,
@@ -934,15 +988,22 @@ export async function createOrUpdateLeadFromEnquiry(
 
     let notifications = null
     if (!reusedLead && ['Property24', 'Private Property'].includes(enquiry.source) && enquiry.contact?.email) {
-      const assignedAgent = assignment?.agent || assignment?.newAgent || buildAssignedAgent(enquiry, listing) || actor || {}
-      const agentEmail = String(assignedAgent.email || assignedAgent.assignedAgentEmail || listing?.assigned_agent_email || listing?.assignedAgentEmail || '').trim().toLowerCase()
-      const agentName = String(assignedAgent.name || assignedAgent.fullName || assignedAgent.full_name || agentEmail || 'Kingdom Real Estate agent').trim()
+      const fallbackAgent = buildAssignedAgent(enquiry, listing)
+      const fallbackEmail = normalizeText(fallbackAgent?.id) === taskAgentId ? fallbackAgent?.email : ''
+      const agentEmail = taskAgentId ? normalizeEmail(
+        assignment?.lead?.raw?.assigned_agent_email || assignment?.lead?.assignedAgentEmail || fallbackEmail ||
+        (lead.assignedAgentId === taskAgentId ? lead.assignedAgentEmail : ''),
+      ) : ''
+      const agentName = String(
+        (normalizeText(fallbackAgent?.id) === taskAgentId ? fallbackAgent?.name || fallbackAgent?.fullName : '') ||
+        agentEmail || 'your property practitioner',
+      ).trim()
       const propertyLabel = String(listing?.title || enquiry.lead?.enquiredPropertyTitle || enquiry.lead?.propertyInterest || 'the property you enquired about').trim()
       const reference = String(enquiry.externalReference || enquiry.lead?.sourceReferenceId || lead.leadId).trim()
       const acknowledgement = await client.functions.invoke('send-email', { body: {
         type: 'property_enquiry_acknowledgement', to: enquiry.contact.email, agentEmail: agentEmail || undefined,
         recipientName: [enquiry.contact.firstName, enquiry.contact.lastName].filter(Boolean).join(' ') || 'there', organisationId: enquiry.organisationId,
-        leadId: lead.leadId, source: enquiry.source, originalMessage: `Thank you for your enquiry about ${propertyLabel}. A Kingdom Real Estate agent has received your enquiry and will be in touch shortly.`,
+        leadId: lead.leadId, source: enquiry.source, originalMessage: enquiry.message || `Enquiry about ${propertyLabel}.`,
         agentName, replyTo: agentEmail || undefined, subject: `Thanks for your enquiry about ${propertyLabel}`,
         idempotencyKey: `portal-lead-introduction:${reference}`,
       } }).catch((error) => ({ error }))
@@ -951,10 +1012,21 @@ export async function createOrUpdateLeadFromEnquiry(
         organisationId: enquiry.organisationId, leadId: lead.leadId, leadName: [enquiry.contact.firstName, enquiry.contact.lastName].filter(Boolean).join(' ') || 'New lead',
         leadEmail: enquiry.contact.email, leadPhone: enquiry.contact.phone, leadSource: enquiry.source, leadStatus: 'New Lead', propertyLabel,
         enquiryMessage: enquiry.message, assignedAgentName: agentName, assignedAgentEmail: agentEmail,
-        message: `Hi, a new ${enquiry.source} lead has been received. We have sent the inquirer an introduction email and copied you in. Please make first contact promptly.`,
+        message: `Hi, a new ${enquiry.source} lead has been received. Please make first contact promptly.`,
         subject: `New ${enquiry.source} lead — ${propertyLabel}`, idempotencyKey: `portal-lead-agent-notification:${reference}:${agentEmail}`,
       } }).catch((error) => ({ error })) : { data: { skipped: true, reason: 'missing_agent_email' } }
       notifications = { acknowledgement, operations }
+      const deliveryWarning = leadNotificationWarning(notifications, taskAgentId)
+      if (deliveryWarning) {
+        warning = [warning, deliveryWarning].filter(Boolean).join('\n')
+        const updated = await client.from('lead_ingestion_logs')
+          .update({ review_status: 'needs_review', error: warning })
+          .eq('log_id', log.log_id)
+          .select('*')
+          .single()
+        if (updated.error) console.warn('[leadIngestionService] notification failure review flag unavailable', updated.error)
+        else log = updated.data
+      }
     }
 
     if (shouldCreateLeadRecommendation) {
@@ -1028,6 +1100,10 @@ export function ingestGenericLead(payload = {}, options = {}) {
 
 export const __leadIngestionServiceTestUtils = {
   buildRequirementPayload,
+  createIngestionLog,
+  assignedTaskAgentId,
+  isCompletedIngestionLog,
+  leadNotificationWarning,
   isActiveLead,
   normalizeEnquiryPayload,
   normalizeDevelopmentMatchText,

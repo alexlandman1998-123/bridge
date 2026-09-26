@@ -62,6 +62,7 @@ function stageTone(stage = "") {
   if (
     [
       "listing_ready",
+      "listing_created",
       "placement_ready",
       "fica_complete",
       "mandate_signed",
@@ -132,9 +133,12 @@ function RentalLeadAction({
 }) {
   const nextStage = getNextRentalLeadStage(lead);
   const label = nextStage
-    ? `Move to ${getRentalLeadStageLabel(nextStage, lead.role)}`
+    ? nextStage === 'viewing_scheduled' ? 'Schedule viewing'
+      : nextStage === 'mandate_signed' ? 'Record signed mandate'
+        : nextStage === 'listing_created' ? lead.relationships?.listingId ? 'Finish listing handoff' : 'Create listing'
+        : `Move to ${getRentalLeadStageLabel(nextStage, lead.role)}`
     : lead.role === "landlord"
-      ? "Create listing"
+      ? lead.relationships?.listingId ? "Open listing" : "Create listing"
       : "Open application workspace";
   return (
     <button
@@ -520,6 +524,7 @@ export default function RentalLeadsPage() {
   const [error, setError] = useState("");
   const [role, setRole] = useState("landlord");
   const [query, setQuery] = useState("");
+  const [ownerFilter, setOwnerFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ ...INITIAL_FORM });
   const [saving, setSaving] = useState(false);
@@ -578,12 +583,13 @@ export default function RentalLeadsPage() {
       leads.filter(
         (lead) =>
           lead.role === role &&
+          (ownerFilter === "all" || (ownerFilter === "unassigned" ? !lead.assignedAgentId : lead.assignedAgentId === scope.assignedAgentId)) &&
           [lead.name, lead.focus, lead.phone, lead.email, lead.source]
             .join(" ")
             .toLowerCase()
             .includes(query.trim().toLowerCase()),
       ),
-    [leads, query, role],
+    [leads, query, role, ownerFilter, scope.assignedAgentId],
   );
   function updateForm(name, value) {
     setForm((current) => ({ ...current, [name]: value }));
@@ -632,7 +638,10 @@ export default function RentalLeadsPage() {
     return evidence;
   }
   async function handleAdvance(lead, toStage) {
-    const evidence = collectWorkflowEvidence(lead, toStage);
+    if (toStage === 'viewing_scheduled') { navigate('/agent/rentals/pipeline/viewings'); return }
+    if (toStage === 'mandate_signed') { navigate('/agent/rentals/pipeline/mandates'); return }
+    if (toStage === 'listing_created' && !lead.relationships?.listingId) { navigate(`/agent/rentals/listings/new?leadId=${encodeURIComponent(lead.id)}`); return }
+    const evidence = ['viewing_completed', 'application_submitted'].includes(toStage) ? {} : collectWorkflowEvidence(lead, toStage);
     if (evidence === null) return;
     try {
       setAdvancingId(lead.id);
@@ -640,6 +649,7 @@ export default function RentalLeadsPage() {
       const updated = await advanceRentalLead(lead, {
         organisationId: scope.organisationId,
         actor,
+        scope: { assignedAgentId: scope.assignedAgentId, branchId: scope.branchId, scopeLevel: scope.scopeLevel, includeAllOrganisationLeads: scope.scopeLevel === 'organisation', organisationId: scope.organisationId, listingBranchId: scope.listingBranchId, includeAllOrganisationListings: scope.includeAllOrganisationListings },
         toStage,
         evidence,
       });
@@ -722,11 +732,12 @@ export default function RentalLeadsPage() {
   const terminalAction = (lead) =>
     navigate(
       lead.role === "landlord"
-        ? "/agent/rentals/listings/new"
+        ? lead.relationships?.listingId
+          ? `/agent/rentals/listings/${encodeURIComponent(lead.relationships.listingId)}/marketing`
+          : `/agent/rentals/listings/new?leadId=${encodeURIComponent(lead.id)}`
         : `/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`,
     );
-  const openTenantWorkspace = (lead) => {
-    if (lead.role !== "tenant") return;
+  const openLeadWorkspace = (lead) => {
     navigate(`/agent/rentals/pipeline/leads/${encodeURIComponent(lead.id)}`);
   };
   return (
@@ -812,6 +823,8 @@ export default function RentalLeadsPage() {
                 to rentals.
               </p>
             </div>
+            <label className="sr-only" htmlFor="rental-lead-owner-filter">Owner filter</label>
+            <select id="rental-lead-owner-filter" className="h-10 rounded-[12px] border border-[#dce6f2] bg-white px-3 text-sm" value={ownerFilter} onChange={(event) => setOwnerFilter(event.target.value)}><option value="all">All visible leads</option><option value="unassigned">Unassigned</option><option value="mine">Assigned to me</option></select>
             <label className="flex h-10 w-full max-w-md items-center gap-2 rounded-[12px] border border-[#dce6f2] bg-white px-3">
               <Search size={15} className="text-[#7b8ca2]" aria-hidden="true" />
               <input
@@ -851,28 +864,10 @@ export default function RentalLeadsPage() {
                   roleLeads.map((lead) => (
                     <tr
                       key={lead.id}
-                      tabIndex={lead.role === "tenant" ? 0 : undefined}
-                      className={`border-t border-[#edf2f7] hover:bg-[#fbfdff] ${lead.role === "tenant" ? "cursor-pointer" : ""}`}
-                      onClick={() => openTenantWorkspace(lead)}
-                      onKeyDown={(event) => {
-                        if (lead.role === "tenant" && (event.key === "Enter" || event.key === " ")) {
-                          event.preventDefault();
-                          openTenantWorkspace(lead);
-                        }
-                      }}
-                      >
+                      className="border-t border-[#edf2f7] hover:bg-[#fbfdff]"
+                    >
                       <td className="px-5 py-4">
-                        {lead.role === "tenant" ? (
-                          <button
-                            type="button"
-                            onClick={() => openTenantWorkspace(lead)}
-                            className="font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline"
-                          >
-                            {lead.name}
-                          </button>
-                        ) : (
-                          <div className="font-semibold text-[#142132]">{lead.name}</div>
-                        )}
+                        <button type="button" onClick={() => openLeadWorkspace(lead)} className="font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline">{lead.name}</button>
                         <div className="mt-1 truncate text-xs text-[#60758b]">
                           {lead.phone || lead.email || "No contact details"}
                         </div>
@@ -946,29 +941,11 @@ export default function RentalLeadsPage() {
               roleLeads.map((lead) => (
                 <article
                   key={lead.id}
-                  tabIndex={lead.role === "tenant" ? 0 : undefined}
-                  className={`rounded-[16px] border border-[#e1e8f0] bg-white p-4 shadow-sm ${lead.role === "tenant" ? "cursor-pointer transition hover:border-[#b9cade]" : ""}`}
-                  onClick={() => openTenantWorkspace(lead)}
-                  onKeyDown={(event) => {
-                    if (lead.role === "tenant" && (event.key === "Enter" || event.key === " ")) {
-                      event.preventDefault();
-                      openTenantWorkspace(lead);
-                    }
-                  }}
+                  className="rounded-[16px] border border-[#e1e8f0] bg-white p-4 shadow-sm transition hover:border-[#b9cade]"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      {lead.role === "tenant" ? (
-                        <button
-                          type="button"
-                          onClick={() => openTenantWorkspace(lead)}
-                          className="block max-w-full truncate text-left font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline"
-                        >
-                          {lead.name}
-                        </button>
-                      ) : (
-                        <h3 className="truncate font-semibold text-[#142132]">{lead.name}</h3>
-                      )}
+                      <button type="button" onClick={() => openLeadWorkspace(lead)} className="block max-w-full truncate text-left font-semibold text-[#142132] transition hover:text-[#1f4f78] hover:underline">{lead.name}</button>
                       <p className="mt-1 truncate text-sm text-[#60758b]">
                         {lead.phone || lead.email || "No contact details"}
                       </p>

@@ -936,6 +936,7 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
   const [metaImportPreview, setMetaImportPreview] = useState(null)
   const showMeta = section === 'meta'
   const showDigitalCards = section === 'digital-cards'
+  const showEmail = section === 'email'
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -988,29 +989,31 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
         inboundEmails: nextInboundEmails,
         status: 'all',
       }))
-      const meta = await listMetaLeadAdsConnections(organisationId).catch(() => ({ connections: [] }))
-      const connections = meta.connections || []
-      setMetaConnections(connections)
-      const activeConnection = connections.find((connection) => connection.connection_status === 'connected')
-      if (activeConnection?.id) {
-        setMetaConnectionId(activeConnection.id)
-        const forms = await listMetaLeadAdsForms(organisationId, activeConnection.id)
-        setMetaForms(forms.forms || [])
-        setMetaImportFormId((current) => current || forms.forms?.find((form) => form.selected)?.id || '')
-        const imports = await listMetaLeadAdsImports(organisationId, activeConnection.id)
-        setMetaImports(imports.imports || [])
-      } else {
-        setMetaConnectionId('')
-        setMetaForms([])
-        setMetaImports([])
-        setMetaImportPreview(null)
+      if (showMeta) {
+        const meta = await listMetaLeadAdsConnections(organisationId).catch(() => ({ connections: [] }))
+        const connections = meta.connections || []
+        setMetaConnections(connections)
+        const activeConnection = connections.find((connection) => connection.connection_status === 'connected')
+        if (activeConnection?.id) {
+          setMetaConnectionId(activeConnection.id)
+          const forms = await listMetaLeadAdsForms(organisationId, activeConnection.id)
+          setMetaForms(forms.forms || [])
+          setMetaImportFormId((current) => current || forms.forms?.find((form) => form.selected)?.id || '')
+          const imports = await listMetaLeadAdsImports(organisationId, activeConnection.id)
+          setMetaImports(imports.imports || [])
+        } else {
+          setMetaConnectionId('')
+          setMetaForms([])
+          setMetaImports([])
+          setMetaImportPreview(null)
+        }
       }
     } catch (loadError) {
       setError(loadError?.message || 'Lead capture settings could not be loaded.')
     } finally {
       setLoading(false)
     }
-  }, [currentWorkspace?.id])
+  }, [currentWorkspace?.id, showMeta])
 
   useEffect(() => {
     void load()
@@ -1558,16 +1561,17 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
   }
 
   if (loading) {
-    return <SettingsLoadingState label={showMeta ? 'Loading Meta Lead Ads...' : 'Loading digital cards...'} />
+    return <SettingsLoadingState label={showMeta ? 'Loading Meta Lead Ads...' : showEmail ? 'Loading lead email capture...' : 'Loading digital cards...'} />
   }
 
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
         kicker="Integrations"
-        title={showMeta ? 'Meta Lead Ads' : 'Digital Cards'}
+        title={showMeta ? 'Meta Lead Ads' : showEmail ? 'Inbound Lead Email' : 'Digital Cards'}
         description={showMeta
           ? 'Connect Facebook and Instagram forms, then route enquiries to the right team or agent.'
+          : showEmail ? 'Manage capture addresses and repair enquiries that need review.'
           : 'Create shareable agent cards, QR codes, and enquiry links for your team.'}
         actions={
           <SecondaryButton icon={RefreshCw} onClick={load} disabled={saving}>Refresh</SecondaryButton>
@@ -1576,6 +1580,52 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
 
       {error ? <SettingsBanner tone="error">{error}</SettingsBanner> : null}
       {notice ? <SettingsBanner tone="success">{notice}</SettingsBanner> : null}
+
+      {showEmail ? (
+        <>
+          <section className="grid gap-4 md:grid-cols-3">
+            <MetricCard label="Active addresses" value={generatedCount} icon={Mail} />
+            <MetricCard label="Emails received" value={receivedCount} icon={Inbox} />
+            <MetricCard label="Open reviews" value={failureCount} icon={AlertCircle} />
+          </section>
+          <SettingsSectionCard title="My Capture Addresses" description="Forward property portal enquiries to these addresses to bring them into the leads workspace.">
+            <div className="flex flex-wrap gap-2">
+              <PrimaryButton icon={Plus} onClick={generateMyAddresses} disabled={saving || !organisationId}>Generate My Addresses</PrimaryButton>
+              {canManage ? <SecondaryButton icon={UsersRound} onClick={generateAgencyAddresses} disabled={saving || !organisationId}>Generate Agency Addresses</SecondaryButton> : null}
+            </div>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {currentUserAliases.filter((alias) => alias.status === 'active').map((alias) => <AliasAddressRow key={alias.aliasId} alias={alias} onCopy={copyAddress} />)}
+              {!currentUserAliases.length ? <SettingsEmptyState title="No capture addresses yet" description="Generate an address before forwarding portal enquiries." /> : null}
+            </div>
+            {canManage && rows.length ? (
+              <div className="mt-5 overflow-x-auto rounded-[14px] border border-[#e3ebf3] bg-white">
+                <h3 className="px-4 pt-4 text-sm font-semibold text-[#162334]">Agency Activation</h3>
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-[#f8fbfe] text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]"><tr><th className="px-4 py-3">Agent</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Address</th><th className="px-4 py-3">Last email</th></tr></thead>
+                  <tbody>{rows.map((row) => <AgentStatusRow key={row.userId || row.name} row={row} onCopy={copyAddress} />)}</tbody>
+                </table>
+              </div>
+            ) : null}
+          </SettingsSectionCard>
+          <SettingsSectionCard title="Recent Inbound Emails" description="Check whether forwarded portal messages reached the capture service.">
+            <div className="grid gap-2">
+              {inboundEmails.slice(0, 10).map((email) => <div key={email.emailId} className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] border border-[#e3ebf3] bg-white p-3 text-sm"><span className="font-medium text-[#162334]">{email.subject || email.source || 'Inbound enquiry'}</span><span className="text-[#60758d]">{email.status} · {formatDateTime(email.receivedAt)}</span></div>)}
+              {!inboundEmails.length ? <SettingsEmptyState title="No inbound emails yet" description="Forward a portal enquiry to test capture." /> : null}
+            </div>
+          </SettingsSectionCard>
+          {canManage ? (
+            <SettingsSectionCard title="Lead Capture Review Queue" description="Repair or link emails that could not be matched safely to a lead.">
+              <ReviewQueueFilters filters={reviewFilters} setFilters={setReviewFilters} sources={LEAD_CAPTURE_SOURCES} users={users} total={reviewItemsWithAssignment.length} visible={filteredReviewItems.length} />
+              <div className="mt-4 grid gap-3">
+                {filteredReviewItems.map((item) => <ReviewQueueItem key={`${item.kind}-${item.id}`} item={item} onRepair={openRepairItem} onResolve={(entry) => updateReviewItem(entry, 'resolve')} onIgnore={(entry) => updateReviewItem(entry, 'ignore')} saving={saving} />)}
+                {!filteredReviewItems.length ? <SettingsEmptyState title="No enquiries need review" description="New parsing issues will appear here." /> : null}
+              </div>
+            </SettingsSectionCard>
+          ) : null}
+          {canManage ? <ProductionSetupSection domain={leadCaptureDomain} webhookUrl={webhookUrl} dnsRows={dnsRows} onCopy={copyAddress} /> : null}
+          <RepairDrawer item={selectedRepairItem} draft={repairDraft} users={users} onChange={setRepairDraft} onClose={() => setSelectedRepairItem(null)} onCreateLead={createLeadFromRepair} onLinkLead={linkExistingLeadFromRepair} saving={saving} />
+        </>
+      ) : null}
 
       {showDigitalCards ? (
         <section className="grid gap-4 md:grid-cols-3">

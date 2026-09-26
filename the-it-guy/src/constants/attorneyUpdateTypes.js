@@ -108,6 +108,7 @@ const CANCELLATION_WORKFLOW_UPDATES = workflowUpdatesForLane('cancellation', can
 
 export const ATTORNEY_UPDATE_TYPES = [
   ...TRANSFER_WORKFLOW_UPDATES,
+  transfer('transfer_journey_progress', 'Transfer journey update', { defaultVisibility: ATTORNEY_UPDATE_VISIBILITIES.clientVisible }),
   transfer('buyer_transfer_docs_sent', 'Buyer transfer documents sent'),
   transfer('seller_transfer_docs_sent', 'Seller transfer documents sent'),
   transfer('guarantees_requested', 'Guarantees requested'),

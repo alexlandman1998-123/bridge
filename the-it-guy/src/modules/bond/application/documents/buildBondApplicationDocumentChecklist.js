@@ -34,7 +34,6 @@ function matchesRequirement(requirement, document, requirementRow = null) {
   if (!isBuyerVisibleDocument(document)) return false
   const documentId = String(document?.id || '').trim()
   const linkedIds = getLinkedDocumentIds(requirementRow || {})
-  if (documentId && linkedIds.includes(documentId)) return true
   if (requirement.scope === 'participant') {
     const participantKey = document.participant_key || document.participantKey || document.metadata?.participant_key || document.metadata?.participantKey
     const explicitRole = document.participant_role || document.participantRole || document.metadata?.participant_role || (participantKey ? String(participantKey).split(':')[0] : null) || document.uploaded_by_role
@@ -44,6 +43,9 @@ function matchesRequirement(requirement, document, requirementRow = null) {
     // Unscoped evidence may serve the primary applicant only; sureties require an exact link/key.
     if (requirement.participantRole === 'surety' && participantKey !== requirement.participantKey) return false
   }
+  // A manually linked requirement may identify the file, but cannot override
+  // the applicant/surety owner recorded on that file.
+  if (documentId && linkedIds.includes(documentId)) return true
   const documentTypes = new Set(getDocumentTypeKeys(document))
   const aliases = new Set((requirement.matching?.canonicalTypes || []).map(normalizeBondApplicationDocumentKey).filter(Boolean))
   return [...aliases].some((alias) => documentTypes.has(alias))

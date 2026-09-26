@@ -313,6 +313,41 @@ function runChecklistAndMatchingTests() {
   assert.equal(identity.documents.some((document) => document.id === 'seller-doc'), false)
   assert.ok(checklist.items.some((item) => item.requirement.key === 'manual_originator_request'))
 
+  const coApplicantRequirement = {
+    ...identityRequirement,
+    key: 'co_applicant_identity_test',
+    participantRole: 'co_applicant',
+    participantKey: 'co_applicant:1',
+  }
+  const wrongOwnerChecklist = buildBondApplicationDocumentChecklist({
+    activeRequirements: [coApplicantRequirement],
+    existingRequiredDocuments: [{ document_key: coApplicantRequirement.key, uploaded_document_id: 'wrong-owner' }],
+    existingDocuments: [{ id: 'wrong-owner', document_type: 'id_document', status: 'uploaded',
+      uploaded_by_role: 'client', participant_role: 'primary_applicant', participant_key: 'primary_applicant:1' }],
+  })
+  assert.equal(wrongOwnerChecklist.items[0].complete, false,
+    'a manually linked primary-applicant file cannot satisfy the co-applicant requirement')
+  const correctOwnerChecklist = buildBondApplicationDocumentChecklist({
+    activeRequirements: [coApplicantRequirement],
+    existingRequiredDocuments: [{ document_key: coApplicantRequirement.key, uploaded_document_id: 'co-owner' }],
+    existingDocuments: [{ id: 'co-owner', document_type: 'id_document', status: 'uploaded',
+      uploaded_by_role: 'client', participant_role: 'co_applicant', participant_key: 'co_applicant:1' }],
+  })
+  assert.equal(correctOwnerChecklist.items[0].complete, true)
+
+  const jointState = employmentState('permanent_employee')
+  jointState.application.applicantStructure = 'joint'
+  jointState.participants.coApplicant = structuredClone(jointState.participants.primaryApplicant)
+  jointState.participants.coApplicant.employment.occupation_status = 'self_employed'
+  const jointRequirements = resolveBondApplicationDocumentRequirements({
+    applicationState: jointState, includeAllParticipants: true,
+  }).activeRequirements
+  assert.ok(jointRequirements.some((item) => item.key === 'bond_application_primary_applicant_bank_statements'))
+  assert.ok(jointRequirements.some((item) => item.key === 'co_applicant:1:bond_application_co_applicant_self_employed_personal_bank_statements'))
+  assert.ok(jointRequirements.some((item) => item.key === 'co_applicant:1:bond_application_co_applicant_self_employed_business_bank_statements'))
+  assert.ok(jointRequirements.some((item) => item.key === 'co_applicant:1:bond_application_business_registration'))
+  assert.ok(jointRequirements.some((item) => item.key === 'co_applicant:1:bond_application_self_employed_tax_documents'))
+
   const selfEmployedResolved = resolveBondApplicationDocumentRequirements({ applicationState: employmentState('self_employed') })
   const selfEmployedBankStatements = selfEmployedResolved.activeRequirements.find((item) => item.key === 'bond_application_primary_applicant_self_employed_personal_bank_statements')
   const monthlyStatementDocuments = Array.from({ length: 6 }, (_, index) => ({

@@ -40,6 +40,15 @@ assert.match(
   'Phase 64 should provide a buyer lead document upload routine.',
 )
 
+const buyerUploadRoutine = leadWorkspaceSource.slice(
+  leadWorkspaceSource.indexOf('async function uploadAgentBuyerLeadDocument('),
+  leadWorkspaceSource.indexOf('function openSelectedLeadOtpEditor('),
+)
+assert.ok(
+  buyerUploadRoutine.indexOf('try {') < buyerUploadRoutine.indexOf('buildManualFicaPackDocument('),
+  'Manual FICA validation errors should reach the buyer document upload error handler.',
+)
+
 assert.match(
   leadWorkspaceSource,
   /uploadToStorageCandidateBuckets\(\{[\s\S]*buyer lead document upload/,

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { createServer } from 'vite'
+import { buildBuyerDocumentPresentationModel } from '../src/core/clientPortal/buyerDocumentPresentationModel.js'
 
 const clientPortalSource = await readFile(new URL('../src/pages/ClientPortal.jsx', import.meta.url), 'utf8')
 const demoPortalSource = await readFile(new URL('../src/pages/ProspectBuyerDemo.jsx', import.meta.url), 'utf8')
@@ -43,4 +47,25 @@ test('live routes keep intent-first composition while the demo keeps its compact
   assert.match(demoPortalSource, /Latest updates/)
   assert.doesNotMatch(demoPortalSource, /BuyerMobilePageIntro eyebrow="Journey"/)
   assert.match(demoPortalSource, /<BuyerMobilePriorityAction/)
+})
+
+test('unavailable buyer document data never renders an all-clear state', async () => {
+  const server = await createServer({ configFile: false, envFile: false, logLevel: 'silent', esbuild: { jsx: 'automatic' }, server: { middlewareMode: true } })
+  try {
+    const { default: BuyerDocumentWorkspace, BuyerDocumentSummary } = await server.ssrLoadModule('/src/components/client-portal/documents/BuyerDocumentWorkspace.jsx')
+    const model = buildBuyerDocumentPresentationModel({ items: [], loadError: 'Your secure document room is temporarily unavailable.' })
+    const workspace = renderToStaticMarkup(createElement(BuyerDocumentWorkspace, { model }))
+    const summary = renderToStaticMarkup(createElement(BuyerDocumentSummary, { model }))
+    assert.match(workspace, /Your documents are temporarily unavailable/)
+    assert.match(summary, /Documents unavailable/)
+    assert.doesNotMatch(workspace, /all caught up|0 of 0 approved/i)
+    assert.doesNotMatch(summary, /0 of 0 approved/i)
+
+    const emptyWorkspace = renderToStaticMarkup(createElement(BuyerDocumentWorkspace, {
+      model: buildBuyerDocumentPresentationModel({ items: [] }),
+    }))
+    assert.match(emptyWorkspace, /You&#x27;re all caught up/)
+  } finally {
+    await server.close()
+  }
 })

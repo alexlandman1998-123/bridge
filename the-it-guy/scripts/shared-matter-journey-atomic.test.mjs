@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import { commitSharedJourneyTask } from '../src/services/attorneyWorkflow/sharedJourneyCommandService.js'
 import { getAttorneyStageDefinitionsForLane } from '../src/constants/attorneyWorkflowStages.js'
 const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pglite')
@@ -47,6 +48,28 @@ await db.exec(migration('20260910092527_shared_journey_safe_tax_milestones.sql')
 await db.exec(migration('20260910153146_reconcile_attorney_journey_catalogue.sql'))
 // A replay must preserve saved outcomes and leave the catalogue unchanged.
 await db.exec(migration('20260910153146_reconcile_attorney_journey_catalogue.sql'))
+// Later workflow phases add catalogue entries independently of the atomic
+// command migration. Replay their catalogue statements in this isolated
+// fixture so the final comparison checks the current database contract.
+for (const name of [
+  '20260926135022_attorney_phase2_party_capacity.sql',
+  '20260926140934_attorney_phase3_funding_handoffs.sql',
+  '20260926142602_attorney_phase4_tax_clearance_conditions.sql',
+  '20260926145234_attorney_phase5_specialist_routes.sql',
+]) {
+  const sql = migration(name)
+  const start = sql.indexOf('insert into journey_private.task_catalog')
+  const end = sql.indexOf(';', start)
+  assert.ok(start >= 0 && end > start, `${name} contains a catalogue statement`)
+  await db.exec(sql.slice(start, end + 1))
+}
+const closureSql = migration('20260926191847_attorney_stage6_closure_audience_gates.sql')
+const firstClosureUpdate = closureSql.indexOf('update journey_private.task_catalog')
+const closureTrigger = closureSql.indexOf('create function journey_private.enforce_stage_six_closure')
+assert.ok(firstClosureUpdate >= 0 && closureTrigger > firstClosureUpdate)
+await db.exec(closureSql.slice(firstClosureUpdate, closureTrigger))
+await db.exec(migration('20260926194845_reconcile_attorney_workbench_catalogue.sql'))
+await db.exec(migration('20260926194845_reconcile_attorney_workbench_catalogue.sql'))
 const catalogueComparisons = []
 for (const key of ['transfer','bond','cancellation']) {
   const rows = (await db.query('select step_key,definition from journey_private.task_catalog where lane_key=$1 order by step_key',[key])).rows
@@ -121,6 +144,10 @@ calls=[]
 await commitSharedJourneyTask({rpc:async()=>{calls.push(1);return {error:{code:'40001'}}}},payload)
 assert.equal(calls.length,1)
 const confirmations = { 'evidence:instruction_received:0': { answer: 'yes', note: 'Reviewed locally' } }
+await update('not_started', randomUUID(), undefined, '', { taskConfirmations: confirmations })
+assert.equal((await db.query('select status from transaction_subprocess_steps where id=$1',[step])).rows[0].status, 'not_started',
+  'saving answers must not implicitly mark the task in progress')
+assert.deepEqual((await db.query('select task_confirmations from attorney_task_confirmations where step_id=$1',[step])).rows[0].task_confirmations, confirmations)
 await update('in_progress', randomUUID(), undefined, '', { taskConfirmations: confirmations })
 assert.deepEqual((await db.query('select task_confirmations from attorney_task_confirmations where step_id=$1',[step])).rows[0].task_confirmations, confirmations)
 await update('completed')
@@ -142,5 +169,22 @@ await assert.rejects(update('completed',id,null,'Private note'),/permission/, 'r
 await db.close()
 console.log('Shared journey atomic: PostgreSQL commits, structured confirmations, reload, rollback, outcomes, revisions, ACL and transport retry PASS')
 for (const { lane, activeRows, expected } of catalogueComparisons) {
-  assert.deepEqual(activeRows, expected, `${lane}: SQL catalogue must match application definitions`)
+  const actualByKey = new Map(activeRows.map((row) => [row.step_key, row.definition]))
+  const differences = expected.flatMap(({ step_key, definition }) => {
+    const actual = actualByKey.get(step_key)
+    return isDeepStrictEqual(actual, definition) ? [] : [step_key]
+  })
+  assert.deepEqual(differences, [], `${lane}: SQL catalogue must match application definitions`)
+}
+const transferCatalogue = new Map(catalogueComparisons.find(({ lane }) => lane === 'transfer').activeRows
+  .map(({ step_key, definition }) => [step_key, definition]))
+for (const stepKey of [
+  'post_registration_closeout_review', 'matter_closed',
+  'non_resident_seller_applicability_review', 'non_resident_seller_directive_review',
+  'non_resident_seller_withholding_payment_review',
+]) {
+  assert.equal(transferCatalogue.get(stepKey)?.clientVisibleAllowed, false,
+    `${stepKey} must not publish task notes to the client portal`)
+  assert.equal(transferCatalogue.get(stepKey)?.client, null,
+    `${stepKey} must not carry a client-facing task description`)
 }

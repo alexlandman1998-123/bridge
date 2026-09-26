@@ -82,6 +82,7 @@ const server = await createServer({
 try {
   const { __leadIngestionReviewServiceTestUtils } = await server.ssrLoadModule('/src/services/leadIngestionReviewService.js')
   const {
+    buildRetryLogPatch,
     buildRetryLeadIngestionPayload,
     filterLeadIngestionLogsClientSide,
     getEnquiryPayloadSummary,
@@ -164,6 +165,30 @@ try {
   assert.equal(retryPayload.externalReference, 'p24-001')
   assert.equal(retryPayload.email, 'new@example.test')
   assert.equal(retryPayload.listingId, '66666666-6666-4666-8666-666666666666')
+
+  const retryAt = '2026-09-26T10:00:00.000Z'
+  const successfulRetry = buildRetryLogPatch(normalized, {
+    ok: true, status: 'assigned', leadId: '77777777-7777-4777-8777-777777777777',
+  }, {}, retryAt)
+  assert.equal(successfulRetry.status, 'assigned')
+  assert.equal(successfulRetry.review_status, 'resolved')
+  assert.equal(successfulRetry.error, null)
+  assert.equal(successfulRetry.processed_at, retryAt)
+
+  const warningRetry = buildRetryLogPatch(normalized, {
+    ok: true, status: 'processed', warning: 'Unknown listing',
+  }, {}, retryAt)
+  assert.equal(warningRetry.status, 'processed')
+  assert.equal(warningRetry.review_status, 'needs_review')
+  assert.equal(warningRetry.error, 'Unknown listing')
+
+  const failedRetry = buildRetryLogPatch(normalized, { ok: false, error: 'Database unavailable' }, {}, retryAt)
+  assert.equal(failedRetry.status, 'failed')
+  assert.equal(failedRetry.review_status, 'needs_review')
+  assert.equal(failedRetry.error, 'Database unavailable')
+
+  const duplicateRetry = buildRetryLogPatch({ ...normalized, status: 'processed' }, { ok: true, status: 'duplicate' }, {}, retryAt)
+  assert.equal(duplicateRetry.status, 'processed')
 } finally {
   await server.close()
 }

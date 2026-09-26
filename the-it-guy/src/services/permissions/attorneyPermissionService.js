@@ -86,7 +86,8 @@ export function resolveAttorneyActionPermissions({
   const internalNotesAllowed = assignmentAllows(assignment, 'can_add_internal_notes', 'canAddInternalNotes')
   const sharedUpdatesAllowed = assignmentAllows(assignment, 'can_add_shared_updates', 'canAddSharedUpdates')
   const delegated = (capability) => mayActOnBehalf && delegatedCapabilities.has(capability)
-  const canAddSharedUpdate = Boolean(actionBase && (teamWorkflowEligible || (permissions.can_comment_shared && (sharedUpdatesAllowed || delegated('shared_updates')))))
+  const canAddSharedUpdate = Boolean(actionBase && permissions.can_comment_shared &&
+    (sharedUpdatesAllowed || delegated('shared_updates')))
 
   return {
     permissions,
@@ -96,13 +97,15 @@ export function resolveAttorneyActionPermissions({
     hasLaneAuthority,
     canUpdateLane: Boolean(
       actionBase &&
-        (teamWorkflowEligible || (laneUpdateAllowed && (roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled)) || delegated('workflow')),
+        ((laneUpdateAllowed && (teamWorkflowEligible || roleCanEditLane(permissions, attorneyRole) || managementOverrideEnabled))
+          || delegated('workflow')),
     ),
     canRequestDocuments: Boolean(actionBase && permissions.can_request_documents && (documentsAllowed || delegated('documents'))),
     canUploadDocuments: Boolean(actionBase && permissions.can_upload_documents && (documentsAllowed || delegated('documents'))),
     canReviewDocuments: Boolean(actionBase && permissions.can_review_documents && (documentsAllowed || delegated('documents'))),
     canManageSigning: Boolean(actionBase && signingAllowed && permissions.can_manage_signing_appointments),
-    canAddInternalNote: Boolean(actionBase && (teamWorkflowEligible || (permissions.can_comment_internal && (internalNotesAllowed || delegated('internal_notes'))))),
+    canAddInternalNote: Boolean(actionBase && permissions.can_comment_internal &&
+      (internalNotesAllowed || delegated('internal_notes'))),
     canAddSharedUpdate,
     canPublishClientVisibleUpdate: Boolean(
       canAddSharedUpdate && permissions.can_publish_client_visible_updates,

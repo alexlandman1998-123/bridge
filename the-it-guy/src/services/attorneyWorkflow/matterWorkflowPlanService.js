@@ -67,6 +67,11 @@ function parseJsonObject(value) {
   }
 }
 
+function sellerBondAnswerKnown(profile = {}) {
+  const answer = normalizeText(parseJsonObject(profile.mvpProfile).sellerExistingBond).toLowerCase()
+  return !['unknown', 'not_confirmed'].includes(answer)
+}
+
 function persistedScenarioFingerprint(scenarioProfile) {
   return scenarioProfile ? scenarioFingerprint(resolveMatterScenarioProfile(scenarioProfile)) : null
 }
@@ -112,7 +117,11 @@ function resolveRequiredLaneKeys(profile = {}) {
 export function buildMatterWorkflowPlan({ routingProfile = {}, generatedAt = null } = {}) {
   const profile = parseJsonObject(routingProfile)
   const matterProfile = parseJsonObject(profile.matterProfile)
-  const confirmed = matterProfile.status === 'confirmed'
+  // A saved "unknown" seller-bond answer must never silently become "no" and
+  // produce a lodgement-ready plan without the cancellation lane.
+  const sellerBondKnown = sellerBondAnswerKnown(profile)
+  const financeKnown = normalizeFinanceType(profile.financeType || profile.finance_type, { allowUnknown: true }) !== 'unknown'
+  const confirmed = matterProfile.status === 'confirmed' && sellerBondKnown && financeKnown
   const requiredLaneKeys = resolveRequiredLaneKeys(profile)
   const lanes = requiredLaneKeys.map((laneKey) => {
     const stepKeys = resolveLaneStepKeys(laneKey, profile)
@@ -163,6 +172,9 @@ export function isMatterWorkflowPlanCurrent(plan = {}, routingProfile = {}) {
   return (
     [MATTER_WORKFLOW_PLAN_VERSION].includes(plan?.version) &&
     plan?.status === 'active' &&
+    plan?.provisional === false &&
+    sellerBondAnswerKnown(profile) &&
+    normalizeFinanceType(profile.financeType || profile.finance_type, { allowUnknown: true }) !== 'unknown' &&
     (plan.scenarioFingerprint || null) === persistedScenarioFingerprint(profile.scenarioProfile) &&
     matterProfile?.status === 'confirmed' &&
     normalizeText(plan.matterProfileFingerprint) === normalizeText(matterProfile.factFingerprint) &&

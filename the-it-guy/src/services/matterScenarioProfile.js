@@ -116,6 +116,7 @@ export function resolveMatterScenarioProfile(saved, legacy = {}) {
         reviewedBy: String(p.capacityReview?.reviewedBy || ''),
         reviewedAt: String(p.capacityReview?.reviewedAt || ''),
         reviewedFacts: p.capacityReview?.reviewedFacts || null,
+        invalidatedByChange: p.capacityReview?.invalidatedByChange === true,
       },
       source: p.source || 'matter_profile',
     })),
@@ -182,8 +183,14 @@ export function partyCapacityReviewReady(party) {
     (party?.entityType !== 'individual' || (party?.identityRoute !== 'unknown' && !['unknown', 'other'].includes(party?.maritalRegime))) &&
     (party?.entityType === 'individual' || (party?.representatives?.length > 0 && party.representatives.every(r => r.name?.trim() && r.capacity?.trim()))) &&
     partyCapacityCheckRequirements(party).every(check => review.confirmations?.[check.key] === true) &&
-    review.status === 'cleared' && Boolean(review.reviewedBy && review.reviewedAt && review.note?.trim()) &&
+    review.status === 'cleared' && review.invalidatedByChange !== true && Boolean(review.reviewedBy && review.reviewedAt && review.note?.trim()) &&
     stableJson(review.reviewedFacts) === stableJson(partyCapacityFacts(party))
+}
+
+export function partyCapacityReviewStale(party) {
+  const review = party?.capacityReview || {}
+  return review.invalidatedByChange === true || (review.status === 'cleared' && Boolean(review.reviewedFacts) &&
+    stableJson(review.reviewedFacts) !== stableJson(partyCapacityFacts(party)))
 }
 
 export function applyPartyCapacityDecisions(previousProfile, proposedProfile, actor = {}) {
@@ -213,18 +220,19 @@ export function applyPartyCapacityDecisions(previousProfile, proposedProfile, ac
       if (requested.status === 'cleared' && actor.canReview && priorReview.status !== 'cleared') {
         if (!requested.note.trim()) throw new Error(`${party.name || party.id}: record the capacity and signing authority basis.`)
         if (['unknown', 'estate', 'insolvency', 'other'].includes(party.entityType)) throw new Error(`${party.name || party.id}: specialist capacity needs a hold and review.`)
-        const reviewed = { ...party, capacityReview: { status: 'cleared', note: requested.note, confirmations: requested.confirmations, reviewedBy: actor.userId, reviewedAt: actor.now, reviewedFacts: partyCapacityFacts(party) } }
+        const reviewed = { ...party, capacityReview: { status: 'cleared', note: requested.note, confirmations: requested.confirmations, reviewedBy: actor.userId, reviewedAt: actor.now, reviewedFacts: partyCapacityFacts(party), invalidatedByChange: false } }
         if (!partyCapacityReviewReady(reviewed)) throw new Error(`${party.name || party.id}: confirm identity, tax residence, marital capacity and every signatory before clearing.`)
         return reviewed
       }
       if (requested.status === 'hold') {
         if (!requested.note.trim()) throw new Error(`${party.name || party.id}: record the hold reason.`)
-        return { ...party, capacityReview: { status: 'hold', note: requested.note, confirmations: requested.confirmations, reviewedBy: actor.userId, reviewedAt: actor.now, reviewedFacts: null } }
+        return { ...party, capacityReview: { status: 'hold', note: requested.note, confirmations: requested.confirmations, reviewedBy: actor.userId, reviewedAt: actor.now, reviewedFacts: null, invalidatedByChange: !factsUnchanged && priorReview.status === 'cleared' } }
       }
       return { ...party, capacityReview: {
         status: 'pending', note: actor.canReview ? requested.note : priorReview.note || '',
         confirmations: actor.canReview ? requested.confirmations : factsUnchanged ? priorReview.confirmations || {} : {},
         reviewedBy: '', reviewedAt: '', reviewedFacts: null,
+        invalidatedByChange: !factsUnchanged && priorReview.status === 'cleared' || (requested.status !== 'cleared' && priorReview.invalidatedByChange === true),
       } }
     }),
   }

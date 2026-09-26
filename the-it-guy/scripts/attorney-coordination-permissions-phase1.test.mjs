@@ -85,6 +85,50 @@ try {
   })
   assert.equal(crossLaneAction.canUpdateLane, false)
 
+  const teamAssignment = {
+    can_update_workflow_lane: true,
+    can_manage_documents: true,
+    can_add_internal_notes: true,
+    can_add_shared_updates: true,
+  }
+  for (const [role, expectedReview] of [
+    ['firm_admin', true], ['attorney_conveyancer', true], ['conveyancing_secretary', true],
+    ['admin_staff', true], ['candidate_attorney', false],
+  ]) {
+    const teamAction = legal.resolveAttorneyActionPermissions({
+      appRole: 'attorney',
+      membership: { isActive: true, professionalRole: role, practiceQualifications: ['transfer'] },
+      attorneyRole: 'transfer_attorney',
+      attorneyAccess: { canViewMatter: true, teamWorkflowEligible: true, assignment: teamAssignment },
+      canViewAsAttorney: true,
+    })
+    assert.equal(teamAction.canUpdateLane, true, `${role} can move an allocated matter along`)
+    assert.equal(teamAction.canReviewDocuments, expectedReview, `${role} document review`)
+  }
+  for (const [label, appRole, membership, attorneyAccess, canViewAsAttorney] of [
+    ['unallocated outsider', 'attorney', { isActive: true, professionalRole: 'attorney_conveyancer', practiceQualifications: ['transfer'] },
+      { canViewMatter: false, teamWorkflowEligible: false, assignment: teamAssignment }, false],
+    ['other firm', 'attorney', { isActive: false, professionalRole: 'attorney_conveyancer' },
+      { canViewMatter: false, teamWorkflowEligible: false, assignment: teamAssignment }, false],
+    ['client', 'client', null, { canViewMatter: true, assignment: teamAssignment }, false],
+  ]) {
+    const denied = legal.resolveAttorneyActionPermissions({ appRole, membership, attorneyRole: 'transfer_attorney', attorneyAccess, canViewAsAttorney })
+    assert.equal(denied.canUpdateLane, false, `${label} cannot update the lane`)
+    assert.equal(denied.canReviewDocuments, false, `${label} cannot review documents`)
+  }
+  const cappedTeam = legal.resolveAttorneyActionPermissions({
+    appRole: 'attorney',
+    membership: { isActive: true, professionalRole: 'conveyancing_secretary' },
+    attorneyRole: 'transfer_attorney',
+    attorneyAccess: { canViewMatter: true, teamWorkflowEligible: true, assignment: {
+      ...teamAssignment, can_update_workflow_lane: false, can_add_internal_notes: false, can_add_shared_updates: false,
+    } },
+    canViewAsAttorney: true,
+  })
+  assert.equal(cappedTeam.canUpdateLane, false, 'team access must not bypass the lane update flag')
+  assert.equal(cappedTeam.canAddInternalNote, false, 'team access must not bypass the internal-note flag')
+  assert.equal(cappedTeam.canAddSharedUpdate, false, 'team access must not bypass the shared-update flag')
+
   assert.equal(catalog.normalizeAttorneyProfessionalRole('cancellation_attorney'), 'attorney_conveyancer')
 
   const partnerOptions = readFileSync(new URL('../src/lib/partnerPersonOptions.js', import.meta.url), 'utf8')

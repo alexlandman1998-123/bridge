@@ -33,7 +33,7 @@ assert.match(source, /selectedLeadHasKingstonsBuyerSignal/)
 assert.match(source, /selectedKingstonsTermsContextIsBuyerOtp = selectedLeadHasKingstonsBuyerSignal/)
 assert.match(source, /selectedLeadUsesKingstonsInPersonOtpFlow/)
 
-assert.match(source, /Transaction Setup \/ Offer/)
+assert.match(source, /Open transaction setup/)
 assert.match(source, /Send Buyer Onboarding/)
 assert.match(source, /Upload Signed OTP/)
 assert.match(source, /Offer: Upload Signed OTP/)

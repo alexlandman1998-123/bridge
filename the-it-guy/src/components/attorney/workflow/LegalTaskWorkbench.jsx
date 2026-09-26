@@ -7,8 +7,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Paperclip,
-  Save,
-  MessageSquarePlus,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../ui/Button.jsx'
@@ -16,13 +14,7 @@ import Field from '../../ui/Field.jsx'
 import Modal from '../../ui/Modal.jsx'
 import TaskConfirmations from './TaskConfirmations.jsx'
 import { isAttorneyTaskResolved } from '../../../core/transactions/attorneyTaskOutcomes.js'
-
-function requirementStatus(item = {}) {
-  if (item.complete) return 'Approved'
-  if (item.statusLabel) return item.statusLabel
-  if (item.status) return String(item.status).replaceAll('_', ' ')
-  return item.required === false ? 'Not applicable' : 'Required'
-}
+import { relevantLegalTaskDocuments } from '../../../core/transactions/legalTaskWorkbenchModel.js'
 
 function isAttachedDocument(document = {}) {
   return document?.missing !== true && Boolean(
@@ -34,42 +26,6 @@ function isAttachedDocument(document = {}) {
     document?.url ||
     document?.uploadedAt ||
     document?.uploaded_at,
-  )
-}
-
-function RequirementRow({ item, action = null, saving = false, onRunAction }) {
-  const complete = Boolean(item.complete)
-  const status = requirementStatus(item)
-  const description = typeof item.description === 'string' ? item.description.trim() : ''
-  const showDescription = description && !/^[a-z\d]+(?:_[a-z\d]+)+$/i.test(description)
-    && description.toLowerCase() !== String(item.label || '').trim().toLowerCase()
-  return (
-    <li className="flex min-w-0 flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-slate-50/70 sm:flex-row sm:items-center">
-      <div className="flex min-w-0 flex-1 items-start gap-3">
-      <span className={`mt-0.5 inline-flex size-6 shrink-0 items-center justify-center rounded-full border ${complete ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-300 bg-white text-slate-400'}`}>
-        {complete ? <CheckCircle2 size={14} /> : <Circle size={10} />}
-      </span>
-      <span className="min-w-0 flex-1">
-        <strong className="block text-sm font-semibold leading-5 text-slate-950">{item.label}</strong>
-        {showDescription ? (
-          <details className="mt-1 text-xs leading-5 text-slate-500">
-            <summary className="w-fit cursor-pointer focus-visible:outline-emerald-700">Details</summary>
-            <p className="mt-1">{description}</p>
-          </details>
-        ) : null}
-      </span>
-      </div>
-      <div className="flex shrink-0 items-center gap-3 self-end sm:self-auto">
-        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${complete ? 'bg-emerald-50 text-emerald-700' : item.required === false ? 'bg-slate-100 text-slate-600' : 'bg-amber-50 text-amber-800'}`}>
-          {status}
-        </span>
-        {!complete && action ? (
-          <Button type="button" variant="secondary" size="sm" disabled={saving || action.disabled} onClick={() => onRunAction?.(action, 'requirement')}>
-            {action.label}
-          </Button>
-        ) : null}
-      </div>
-    </li>
   )
 }
 
@@ -103,7 +59,7 @@ function PhaseNavigator({
   return (
     <aside className={`min-h-0 transition-[width] duration-200 xl:sticky xl:top-24 xl:self-start ${collapsed ? 'xl:w-[72px]' : ''}`}>
       <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
-        <div className={`shrink-0 border-b border-slate-200 py-4 ${collapsed ? 'px-2' : 'px-4'}`}>
+        <div className={`shrink-0 border-b border-slate-200 py-5 ${collapsed ? 'px-2' : 'px-5'}`}>
           <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-3'}`}>
             {!collapsed ? <h2 className="text-base font-semibold text-slate-950">{workflowLabel}</h2> : null}
             <button
@@ -118,8 +74,8 @@ function PhaseNavigator({
           </div>
           {!collapsed ? <span className="mt-1 block text-xs font-medium text-slate-500">{Math.max(1, phases.findIndex((phase) => phase.key === selectedPhase?.key) + 1)} of {phases.length} stages</span> : null}
         </div>
-        <nav className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${collapsed ? 'p-2' : 'p-2.5'}`} aria-label={`${workflowLabel} stages`}>
-          <ol className="space-y-1.5">
+        <nav className={`min-h-0 flex-1 overflow-y-auto overscroll-contain ${collapsed ? 'p-2' : 'p-3'}`} aria-label={`${workflowLabel} stages`}>
+          <ol className="space-y-2">
             {phases.map((phase) => {
               const active = phase.key === selectedPhase?.key
               const expanded = active && expandedPhaseKey === phase.key
@@ -133,15 +89,16 @@ function PhaseNavigator({
                 <li key={phase.key}>
                   <button
                     type="button"
-                    className={`relative flex min-h-[72px] w-full items-center gap-3 rounded-xl border py-2.5 text-left transition ${collapsed ? 'justify-center px-2' : 'px-3'} ${active ? 'border-emerald-200 bg-white text-slate-950 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950'}`}
+                    className={`relative flex min-h-[84px] w-full items-center gap-3 rounded-xl border py-3 text-left transition ${collapsed ? 'justify-center px-2' : 'px-4'} ${active ? 'border-emerald-200 bg-white text-slate-950 before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-full before:bg-emerald-700' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-950'}`}
                     onClick={() => {
                       if (expanded) {
                         onTogglePhase?.(phase.key)
                         return
                       }
+                      const nextTaskKey = exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => !isAttorneyTaskResolved(task.status))?.key || phase.tasks?.[0]?.key
+                      if (onSelectTask?.(nextTaskKey) === false) return
                       setShowAllTasks(false)
                       onTogglePhase?.(phase.key)
-                      onSelectTask?.(exception?.primary?.taskKey || phase.currentTask?.key || phase.tasks?.find((task) => !isAttorneyTaskResolved(task.status))?.key || phase.tasks?.[0]?.key)
                     }}
                     aria-current={active ? 'step' : undefined}
                     title={`${phase.label} · ${phase.completed} of ${phase.total} complete`}
@@ -209,8 +166,10 @@ export default function LegalTaskWorkbench({
   onSelectTask,
   onRunAction,
   onOpenDocuments,
+  onOpenDocumentLibrary,
+  onRequestDocument,
   onOpenRoutingProfile,
-  onAddNote,
+  onOpenJourneyPublisher,
   onMarkInProgress,
   onPersistTaskResponses,
   statusDraft = null,
@@ -220,6 +179,7 @@ export default function LegalTaskWorkbench({
   onUxEvent,
   onReviewDocument,
   onSaveConfirmations,
+  onConfirmationDirtyChange,
   onSaveMatterNumber,
   onLoadMatterTeam,
   onSaveMatterTeam,
@@ -240,6 +200,9 @@ export default function LegalTaskWorkbench({
   const [documentModalOpen, setDocumentModalOpen] = useState(false)
   const [previewDocument, setPreviewDocument] = useState(null)
   const [documentTarget, setDocumentTarget] = useState(null)
+  const [documentAction, setDocumentAction] = useState(null)
+  const [documentSearch, setDocumentSearch] = useState('')
+  const [documentListLimit, setDocumentListLimit] = useState(40)
   const [reviewBusy, setReviewBusy] = useState(false)
   const [reviewReason, setReviewReason] = useState('')
   const [reviewFeedback, setReviewFeedback] = useState('')
@@ -263,13 +226,17 @@ export default function LegalTaskWorkbench({
   const [titleDetailsDraft, setTitleDetailsDraft] = useState({ identifier: '', tenure: '' })
   const [titleDetailsBusy, setTitleDetailsBusy] = useState(false)
   const [titleDetailsError, setTitleDetailsError] = useState('')
-  const [bondDecision, setBondDecision] = useState({ existingBond: '', cancellationRequired: '' })
-  const [bondDecisionBusy, setBondDecisionBusy] = useState(false)
-  const [bondDecisionError, setBondDecisionError] = useState('')
+  const [answersDirty, setAnswersDirty] = useState(false)
 
   useEffect(() => {
     setReviewReason(''); setReviewFeedback(''); setReviewError('')
   }, [previewDocument?.id, model?.taskKey])
+
+  useEffect(() => {
+    if (!documentModalOpen) return
+    setDocumentSearch('')
+    setDocumentListLimit(40)
+  }, [documentModalOpen, model?.taskKey])
 
   useEffect(() => {
     uxEventRef.current = onUxEvent
@@ -295,6 +262,7 @@ export default function LegalTaskWorkbench({
     setTaskResponses({ existingBond, cancellationInstruction })
     setPreviewDocument(null)
     setDocumentTarget(null)
+    setDocumentAction(null)
     setDocumentModalOpen(false)
   }, [model?.note, model?.taskKey])
 
@@ -314,11 +282,6 @@ export default function LegalTaskWorkbench({
   }, [model?.taskKey, model?.titleDetails?.identifier, model?.titleDetails?.tenure])
 
   useEffect(() => {
-    setBondDecision({ existingBond: '', cancellationRequired: '' })
-    setBondDecisionError('')
-  }, [model?.taskKey])
-
-  useEffect(() => {
     setExpandedPhaseKey(selectedPhaseKey)
   }, [selectedPhaseKey])
 
@@ -330,16 +293,45 @@ export default function LegalTaskWorkbench({
   ].includes(model.taskKey) || /existing bond.*(cancellation|requirement)|cancellation.*existing bond/i.test(`${model.taskLabel} ${model.taskDescription}`)
   const canEdit = !model.readOnly && !saving
   const attachedDocuments = model.documents.filter(isAttachedDocument)
+  const visibleDocuments = documentAction?.id === 'review_document'
+    ? relevantLegalTaskDocuments(attachedDocuments, documentAction)
+    : attachedDocuments
+  const filteredDocuments = documentSearch.trim()
+    ? visibleDocuments.filter((document) => `${document.displayName || document.label || document.name || ''} ${document.sourceRequirementKey || ''}`.toLowerCase().includes(documentSearch.trim().toLowerCase()))
+    : visibleDocuments
+  const missingFocusedDocument = documentAction?.id === 'review_document' && visibleDocuments.length === 0
+  const focusedDocumentLabel = documentAction?.reviewOtp ? 'OTP' : documentAction?.requirementLabel || 'document'
+  const canUploadDocument = !model.readOnly && Boolean(model.uploadAction && !model.uploadAction.disabled && onOpenDocuments)
+  const canRequestDocument = missingFocusedDocument && !model.readOnly && Boolean(model.requestDocumentAction && !model.requestDocumentAction.disabled && onRequestDocument)
+  const missingDocumentGuidance = canUploadDocument && canRequestDocument
+    ? `Upload the ${focusedDocumentLabel} or request it from the responsible party before reviewing it.`
+    : canUploadDocument ? `Upload the ${focusedDocumentLabel} before reviewing it.`
+      : canRequestDocument ? `Request the ${focusedDocumentLabel} from the responsible party before reviewing it.`
+        : 'Ask the responsible matter team to provide access to the file before reviewing it.'
   const activePhase = phases.find((phase) => phase.key === selectedPhaseKey) || phases[0] || null
   const phaseProgress = activePhase?.total ? Math.round((activePhase.completed / activePhase.total) * 100) : 0
   const primaryAction = Object.values(model.requirementActions || {}).find((action) => action?.id === 'review_document' && !action.disabled)
     || model.primaryAction
     || Object.values(model.requirementActions || {}).find((action) => action && !action.disabled)
-  const primaryActionIsUpload = primaryAction?.id === 'upload_document'
-  const confirmationItems = isBondCancellationConfirmation ? [
+  const baseConfirmationItems = isBondCancellationConfirmation && !onSaveConfirmations ? [
     { id: 'existingBond', label: 'Existing bond confirmed' },
     { id: 'cancellationInstruction', label: 'Cancellation instructions confirmed' },
-  ] : model.confirmationRequirements || []
+  ] : model.confirmationRows || model.confirmationRequirements || []
+  const primaryAlreadyAvailable = baseConfirmationItems.some(item => item.action?.id === primaryAction?.id)
+    || (['request_document', 'upload_document', 'open_documents'].includes(primaryAction?.id) && baseConfirmationItems.some(item => item.documentStatus))
+    || ['add_note', 'upload_document', 'open_documents'].includes(primaryAction?.id)
+    || model.contextualActions?.some(action => action.id === primaryAction?.id)
+  const confirmationItems = !model.readOnly && primaryAction?.source === 'work' && !primaryAlreadyAvailable && baseConfirmationItems.length
+    ? baseConfirmationItems.map((item, index) => index === 0 ? { ...item, additionalAction: primaryAction } : item)
+    : baseConfirmationItems
+  function handleAnswersDirtyChange(taskKey, dirty) {
+    setAnswersDirty(dirty)
+    onConfirmationDirtyChange?.(taskKey, dirty)
+  }
+  function openDocumentLibrarySafely() {
+    if (onOpenDocumentLibrary?.() === false) return
+    setDocumentModalOpen(false)
+  }
   async function review(action) {
     if (reviewPending.current) return
     if (!previewDocument || !onReviewDocument) {
@@ -457,23 +449,6 @@ export default function LegalTaskWorkbench({
     }
   }
 
-  async function saveBondCancellationDecision() {
-    if (!onSaveBondCancellationDecision || bondDecisionBusy) return
-    if (!bondDecision.existingBond || !bondDecision.cancellationRequired) {
-      setBondDecisionError('Record both the existing bond position and the cancellation decision.')
-      return
-    }
-    setBondDecisionBusy(true)
-    setBondDecisionError('')
-    try {
-      await onSaveBondCancellationDecision(bondDecision)
-    } catch (error) {
-      setBondDecisionError(error?.message || 'Bond and cancellation decision could not be saved.')
-    } finally {
-      setBondDecisionBusy(false)
-    }
-  }
-
   function documentUrl(document = {}) {
     return document.fileUrl || document.file_url || document.signedUrl || document.signed_url || document.url || ''
   }
@@ -494,15 +469,25 @@ export default function LegalTaskWorkbench({
   }
 
   function runAction(action, placement) {
+    if (answersDirty && action?.source === 'status') {
+      setUtilityError('Save your answers before changing the task status.')
+      return
+    }
     emitActionEvent(action, placement)
+    if (action?.id === 'open_party_capacity') {
+      if (!onOpenRoutingProfile) {
+        setUtilityError('The party and signatory editor is unavailable. Reload the matter and try again.')
+        return
+      }
+      onOpenRoutingProfile()
+      return
+    }
     // Document work must remain in the task workspace. The modal can then
     // preview existing files or hand off to the contextual upload dialog.
     if (['open_documents', 'upload_document', 'review_document'].includes(action?.id)) {
-      const requiredId = String(action.requirementId || action.requirement?.id || '').replace(/^document:/, '')
-      const isOtp = (document = {}) => /sales_agreement_or_otp|sales agreement|\botp\b/i.test(`${document.id || ''} ${document.key || ''} ${document.sourceRequirementKey || ''} ${document.displayName || ''} ${document.label || ''} ${document.name || ''}`)
-      const target = model.documents.find(document => requiredId && [document.id, document.key, document.sourceRequirementKey].includes(requiredId))
-        || (action.reviewOtp ? model.documents.find(isOtp) : null)
-        || null
+      const candidates = relevantLegalTaskDocuments(model.documents, action)
+      const target = candidates.find(isAttachedDocument) || candidates[0] || null
+      setDocumentAction(action)
       setDocumentTarget(target)
       setPreviewDocument(target && isAttachedDocument(target) ? target : null)
       setDocumentModalOpen(true)
@@ -523,9 +508,59 @@ export default function LegalTaskWorkbench({
     })
   }
 
+  async function saveConfirmationRows(responses) {
+    const saved = await onSaveConfirmations(responses)
+    if (!saved) return false
+    if (model.transferExistingBondTask && onSaveBondCancellationDecision) {
+      const existingBond = responses.seller_existing_bond_position?.answer
+      const cancellationRequired = responses.cancellation_lane_required?.answer
+      if (existingBond && cancellationRequired) {
+        try {
+          await onSaveBondCancellationDecision({ existingBond, cancellationRequired })
+        } catch (error) {
+          throw new Error(`Answers saved, but the bond and cancellation decision was not updated: ${error?.message || 'Try again.'}`)
+        }
+      }
+    }
+    return true
+  }
+
+  function renderConfirmationRowDetails(item) {
+    if (model.transferMatterOpeningTask && /matter number/i.test(`${item.id} ${item.label}`)) return <div className="space-y-2">
+      <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Matter number
+        <Field value={matterNumberDraft} disabled={!canEdit || matterNumberBusy} onChange={event => setMatterNumberDraft(event.target.value)} placeholder="Enter the firm matter number" />
+      </label>
+      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-500">Saved to the shared matter record.</span><Button type="button" variant="secondary" size="sm" disabled={!canEdit || matterNumberBusy || !matterNumberDraft.trim()} onClick={() => void saveMatterNumber()}>{matterNumberBusy ? 'Saving…' : 'Save matter number'}</Button></div>
+      {matterNumberError ? <p role="alert" className="text-xs text-red-700">{matterNumberError}</p> : null}
+    </div>
+    if (model.transferMatterOpeningTask && /conveyancer|secretary|allocated/i.test(`${item.id} ${item.label}`)) return <div className="flex flex-wrap items-center justify-between gap-2">
+      <span className="text-xs text-slate-600">Add the matter team or confirm the existing allocation.</span>
+      <Button type="button" variant="secondary" size="sm" disabled={!canEdit} onClick={() => void openMatterTeam()}>Manage matter team</Button>
+    </div>
+    if (model.transferOtpSourceTask && item.id === 'source_details_checked') return <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Purchase price<Field type="number" min="0" value={sourceDetailsDraft.purchasePrice} disabled={!canEdit || sourceDetailsBusy} onChange={event => setSourceDetailsDraft(current => ({ ...current, purchasePrice: event.target.value }))} placeholder="Enter purchase price" /></label>
+        <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Property description<Field value={sourceDetailsDraft.propertyDescription} disabled={!canEdit || sourceDetailsBusy} onChange={event => setSourceDetailsDraft(current => ({ ...current, propertyDescription: event.target.value }))} placeholder="Enter the property description" /></label>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-500">Saved to the shared transaction record.</span><Button type="button" variant="secondary" size="sm" disabled={!canEdit || sourceDetailsBusy} onClick={() => void saveSourceDetails()}>{sourceDetailsBusy ? 'Saving…' : 'Save source details'}</Button></div>
+      {sourceDetailsError ? <p role="alert" className="text-xs text-red-700">{sourceDetailsError}</p> : null}
+    </div>
+    if (model.transferTitleDeedTask && item.id === 'title_or_ownership_source_checked') return <div className="space-y-3">
+      <div className="grid gap-3 lg:grid-cols-2">
+        <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Title deed / property identifier<Field value={titleDetailsDraft.identifier} disabled={!canEdit || titleDetailsBusy} onChange={event => setTitleDetailsDraft(current => ({ ...current, identifier: event.target.value }))} placeholder="Enter title deed or erf number" /></label>
+        <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Property tenure<select className="input" value={titleDetailsDraft.tenure} disabled={!canEdit || titleDetailsBusy} onChange={event => setTitleDetailsDraft(current => ({ ...current, tenure: event.target.value }))}><option value="">Select tenure</option><option value="freehold">Freehold</option><option value="sectional_title">Sectional title</option><option value="estate">Estate</option><option value="other">Other</option></select></label>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-500">Saved to the shared transaction record.</span><Button type="button" variant="secondary" size="sm" disabled={!canEdit || titleDetailsBusy} onClick={() => void saveTitleDetails()}>{titleDetailsBusy ? 'Saving…' : 'Save ownership details'}</Button></div>
+      {titleDetailsError ? <p role="alert" className="text-xs text-red-700">{titleDetailsError}</p> : null}
+    </div>
+    if (model.transferExistingBondTask && item.id === 'cancellation_lane_required') return <p className="text-xs text-slate-600">Save both answers to update whether the cancellation lane applies to this matter.</p>
+    if (model.specialistRouteTask && item.id === confirmationItems[0]?.id) return <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-600">Review the specialist owner, reason, instrument and evidence.</span><Button type="button" variant="secondary" size="sm" disabled={!canEdit} onClick={() => onOpenRoutingProfile?.()}>Open specialist classification</Button></div>
+    return null
+  }
+
   return (
     <>
-      <section className={`archline-transfer-workspace grid items-start gap-4 ${railCollapsed ? 'xl:grid-cols-[72px_minmax(0,1fr)]' : 'xl:grid-cols-[minmax(300px,320px)_minmax(0,1fr)]'}`}>
+      <section className={`archline-transfer-workspace grid items-start gap-5 ${railCollapsed ? 'xl:grid-cols-[72px_minmax(0,1fr)]' : 'xl:grid-cols-[minmax(340px,360px)_minmax(0,1fr)]'}`}>
       <PhaseNavigator
         phases={phases}
         selectedTaskKey={selectedTaskKey}
@@ -544,7 +579,7 @@ export default function LegalTaskWorkbench({
         aria-busy={saving}
       >
         <div className="flex h-full min-h-0 flex-col overflow-hidden">
-          <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 px-5 pb-4 pt-5 lg:px-6">
+          <header className="flex shrink-0 flex-wrap items-start justify-between gap-4 px-5 pb-5 pt-6 lg:px-7">
             {utilityError ? <p role="alert" className="mb-2 text-sm text-red-700">{utilityError}</p> : null}
             <div className="min-w-0 flex-1">
               <span className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Stage {phases.findIndex((phase) => phase.key === selectedPhaseKey) + 1} · {activePhase?.label || model.phaseLabel}</span>
@@ -558,116 +593,70 @@ export default function LegalTaskWorkbench({
             </div> : null}
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-slate-200 px-5 py-4 lg:px-6">
-            <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50/50 px-5 py-4">
-              <div className="min-w-0 flex-1">
-                <span className="text-xs font-semibold uppercase tracking-[0.08em] text-emerald-800">Current task</span>
-                <h3 className="mt-1 text-lg font-semibold text-slate-950">{model.outstandingRequirements?.[0]?.label || model.taskLabel}</h3>
-                <p className="mt-1 text-sm leading-5 text-slate-600">{primaryAction?.description || model.taskDescription || 'Review the requirements and take the next action.'}</p>
-                <button type="button" className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-emerald-800 hover:underline" onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentModalOpen(true) }}><FileText size={16} /> View linked documents ({attachedDocuments.length}) <ChevronRight size={15} /></button>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain border-t border-slate-200 px-5 py-5 lg:px-7">
+            {model.stageTwoParties?.length ? <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" aria-label="Parties in this task">
+              <div className="flex flex-wrap items-center justify-between gap-2"><div><h3 className="text-sm font-semibold text-slate-900">People and entities in this review</h3><p className="mt-0.5 text-xs text-slate-600">Evidence and capacity decisions must belong to the named party.</p></div><Button type="button" variant="secondary" size="sm" onClick={() => onOpenRoutingProfile?.()} disabled={!onOpenRoutingProfile}>Review party details</Button></div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">{model.stageTwoParties.map(party => <div key={party.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"><strong className="block text-slate-900">{party.name}</strong><span className="text-xs capitalize text-slate-600">{party.entityType.replaceAll('_', ' ')} · {party.status}</span>{party.signatories.length ? <span className="mt-1 block text-xs text-slate-600">Signatories: {party.signatories.join(', ')}</span> : null}{party.staleApproval ? <span role="alert" className="mt-1 block text-xs font-semibold text-amber-800">Previous approval is stale after a party or signatory change. Review again.</span> : party.specialistHold ? <span role="alert" className="mt-1 block text-xs font-semibold text-amber-800">Specialist capacity hold and attorney review required.</span> : null}</div>)}</div>
+            </section> : null}
+            {model.financialPreparation ? <section className="rounded-xl border border-emerald-200 bg-emerald-50/40 px-4 py-4" aria-label="Financial preparation route">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><h3 className="text-sm font-semibold text-slate-950">Selected tax and property route</h3><p className="mt-1 text-sm text-slate-700">{model.financialPreparation.route} · {model.financialPreparation.property}</p></div>
+                {onOpenRoutingProfile ? <Button type="button" variant="secondary" size="sm" onClick={onOpenRoutingProfile}>Edit tax and clearance facts</Button> : null}
               </div>
-              {primaryAction && !model.readOnly ? <Button type="button" size="sm" disabled={saving || primaryAction.disabled} onClick={() => runAction(primaryAction, 'primary')}>{primaryAction.label} <ChevronRight size={16} /></Button> : null}
-            </section>
-
-            {onSaveConfirmations ? <TaskConfirmations taskKey={model.taskKey} items={confirmationItems} saved={model.confirmations || {}} disabled={!canEdit || model.taskResolved} onSave={onSaveConfirmations} /> : null}
-
-            <section aria-labelledby="legal-task-outstanding-heading" className="mt-4 overflow-hidden rounded-xl border border-slate-200">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                <h3 id="legal-task-outstanding-heading" className="text-lg font-semibold text-slate-950">{model.transferMatterOpeningTask ? 'File setup' : model.transferOtpSourceTask ? 'Source review' : model.transferTitleDeedTask ? 'Ownership review' : model.transferExistingBondTask ? 'Bond and cancellation decision' : 'Required action'}</h3>
-                {!model.readOnly ? <span className="text-sm text-slate-500">Complete the relevant items below.</span> : null}
+              {!model.financialPreparation.applicable ? <p role="alert" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">This task is not part of the currently selected route. Review the matter profile and mark the historical task not applicable if appropriate.</p> : null}
+              {model.financialPreparation.unknownRoute ? <p role="alert" className="mt-3 text-xs font-medium text-amber-900">The tax route still needs an attorney decision.</p> : null}
+              {!model.financialPreparation.unknownRoute && model.financialPreparation.routeUnconfirmed ? <p role="alert" className="mt-3 text-xs font-medium text-amber-900">The selected tax route has not yet been confirmed by an attorney.</p> : null}
+              {model.financialPreparation.checks.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{model.financialPreparation.checks.map((item) => <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><span className="block font-medium text-slate-600">{item.label}</span><span className={`mt-1 block font-semibold ${item.state === 'ready' ? 'text-emerald-800' : 'text-amber-900'}`}>{item.value}{item.state === 'expired' ? ' · expired' : item.state === 'missing' ? ' · needed' : item.state === 'attention' ? ' · review needed' : ''}</span></div>)}</div> : null}
+              {model.financialPreparation.notApplicable.length ? <details className="mt-3 text-xs text-slate-600"><summary className="w-fit cursor-pointer font-medium">Not applicable to this route</summary><p className="mt-1">{model.financialPreparation.notApplicable.join(' · ')}</p></details> : null}
+              <p className="mt-3 text-xs text-slate-600">These values come from the saved matter profile. A Yes answer below does not replace a missing reference, document, or valid clearance date.</p>
+            </section> : null}
+            {model.securityReview ? <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4" aria-label="Payment security and bond evidence">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-slate-950">Funding and payment security</h3><p className="mt-1 text-sm text-slate-700">{model.securityReview.financeLabel} · {model.securityReview.paymentSecurityLabel}</p></div>{onOpenRoutingProfile ? <Button type="button" variant="secondary" size="sm" onClick={onOpenRoutingProfile}>Review security route</Button> : null}</div>
+              {!model.securityReview.taskApplicable ? <p role="alert" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">Cash-source review is not part of this funding route. Review the matter profile before recording an outcome on this historical task.</p> : null}
+              {['unknown', 'developer'].includes(model.securityReview.financeType) || model.securityReview.paymentSecurity === 'unknown' ? <p role="alert" className="mt-3 text-xs font-medium text-amber-900">Confirm the cash/bond funding split and the agreed purchase-price security.</p> : null}
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {model.securityReview.cashApplies ? <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><strong className="block text-slate-900">Cash component</strong><span className={model.securityReview.cashEvidenceCount ? 'mt-1 block text-emerald-800' : 'mt-1 block text-amber-900'}>{model.securityReview.cashEvidenceCount ? `${model.securityReview.cashEvidenceCount} source-of-funds file${model.securityReview.cashEvidenceCount === 1 ? '' : 's'} linked` : 'Source-of-funds evidence outstanding'}</span></div> : null}
+                {model.securityReview.paymentSecurity === 'guarantee' ? <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><strong className="block text-slate-900">Guarantee security</strong><span className={model.securityReview.guaranteeEvidenceCount ? 'mt-1 block text-emerald-800' : 'mt-1 block text-amber-900'}>{model.securityReview.guaranteeEvidenceCount ? `${model.securityReview.guaranteeEvidenceCount} guarantee file${model.securityReview.guaranteeEvidenceCount === 1 ? '' : 's'} linked` : 'Guarantee evidence outstanding'}</span></div> : null}
+                {model.securityReview.paymentSecurity === 'cleared_trust_funds' ? <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><strong className="block text-slate-900">Cleared trust funds</strong><span className="mt-1 block text-slate-600">Confirm the funds actually cleared before accepting this security.</span></div> : null}
+                {model.securityReview.paymentSecurity === 'other' ? <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><strong className="block text-slate-900">Other security</strong><span className="mt-1 block text-amber-900">Review the undertaking or alternative security evidence and record its terms.</span></div> : null}
               </div>
-              {model.transferMatterOpeningTask ? (
-                <div className="divide-y divide-slate-200">
-                  <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-end lg:justify-between">
-                    <label className="grid min-w-0 flex-1 gap-1.5 text-sm font-semibold text-slate-950">Matter number
-                      <Field value={matterNumberDraft} disabled={!canEdit || matterNumberBusy} onChange={(event) => setMatterNumberDraft(event.target.value)} placeholder="Enter the firm matter number" />
-                      <span className="text-xs font-normal text-slate-500">Saved to the shared matter record.</span>
-                    </label>
-                    <Button type="button" variant="secondary" disabled={!canEdit || matterNumberBusy || !matterNumberDraft.trim()} onClick={() => void saveMatterNumber()}>{matterNumberBusy ? 'Saving…' : 'Save matter number'}</Button>
-                  </div>
-                  {matterNumberError ? <p role="alert" className="px-4 pb-3 text-sm text-red-700">{matterNumberError}</p> : null}
-                  <div className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-                    <div><strong className="block text-sm text-slate-950">Responsible conveyancer or secretary is allocated</strong><p className="mt-1 text-sm text-slate-500">Add the matter team, or confirm that the existing allocation is correct.</p></div>
-                    <Button type="button" variant="secondary" disabled={!canEdit} onClick={() => void openMatterTeam()}>Manage matter team</Button>
-                  </div>
-                </div>
-              ) : model.transferOtpSourceTask ? (
-                <div className="divide-y divide-slate-200">
-                  <div className="grid gap-3 px-4 py-4 lg:grid-cols-2">
-                    <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Purchase price
-                      <Field type="number" min="0" value={sourceDetailsDraft.purchasePrice} disabled={!canEdit || sourceDetailsBusy} onChange={(event) => setSourceDetailsDraft((current) => ({ ...current, purchasePrice: event.target.value }))} placeholder="Enter purchase price" />
-                    </label>
-                    <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Property description
-                      <Field value={sourceDetailsDraft.propertyDescription} disabled={!canEdit || sourceDetailsBusy} onChange={(event) => setSourceDetailsDraft((current) => ({ ...current, propertyDescription: event.target.value }))} placeholder="Enter the property description" />
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-4"><span className="text-xs text-slate-500">Saved to the shared transaction record.</span><Button type="button" variant="secondary" disabled={!canEdit || sourceDetailsBusy} onClick={() => void saveSourceDetails()}>{sourceDetailsBusy ? 'Saving…' : 'Save source details'}</Button></div>
-                  {sourceDetailsError ? <p role="alert" className="px-4 pb-3 text-sm text-red-700">{sourceDetailsError}</p> : null}
-                </div>
-              ) : model.transferTitleDeedTask ? (
-                <div className="divide-y divide-slate-200">
-                  <div className="grid gap-3 px-4 py-4 lg:grid-cols-2">
-                    <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Title deed / property identifier
-                      <Field value={titleDetailsDraft.identifier} disabled={!canEdit || titleDetailsBusy} onChange={(event) => setTitleDetailsDraft((current) => ({ ...current, identifier: event.target.value }))} placeholder="Enter title deed or erf number" />
-                    </label>
-                    <label className="grid gap-1.5 text-sm font-semibold text-slate-950">Property tenure
-                      <select className="input" value={titleDetailsDraft.tenure} disabled={!canEdit || titleDetailsBusy} onChange={(event) => setTitleDetailsDraft((current) => ({ ...current, tenure: event.target.value }))}><option value="">Select tenure</option><option value="freehold">Freehold</option><option value="sectional_title">Sectional title</option><option value="estate">Estate</option><option value="other">Other</option></select>
-                    </label>
-                  </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 pb-4"><span className="text-xs text-slate-500">Saved to the shared transaction record.</span><Button type="button" variant="secondary" disabled={!canEdit || titleDetailsBusy} onClick={() => void saveTitleDetails()}>{titleDetailsBusy ? 'Saving…' : 'Save ownership details'}</Button></div>
-                  {titleDetailsError ? <p role="alert" className="px-4 pb-3 text-sm text-red-700">{titleDetailsError}</p> : null}
-                </div>
-              ) : model.transferExistingBondTask ? (
-                <div className="divide-y divide-slate-200">
-                  {[
-                    ['existingBond', 'Existing bond confirmed', 'Is there an existing mortgage bond registered against the property?'],
-                    ['cancellationRequired', 'Cancellation requirement confirmed', 'Is a cancellation attorney required for this matter?'],
-                  ].map(([key, label, helper], index) => <div key={key} className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between"><div><strong className="block text-sm text-slate-950">{index + 1}. {label}</strong><p className="mt-1 text-sm text-slate-500">{helper}</p></div><div className="flex flex-wrap gap-2">{[['yes', 'Yes'], ['no', 'No'], ['not_applicable', 'Not applicable']].map(([value, choice]) => <Button key={value} type="button" size="sm" variant={bondDecision[key] === value ? 'primary' : 'secondary'} disabled={!canEdit || bondDecisionBusy} onClick={() => setBondDecision((current) => ({ ...current, [key]: value }))}>{choice}</Button>)}</div></div>)}
-                  <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4"><span className="text-xs text-slate-500">This decision updates whether the cancellation lane applies.</span><Button type="button" variant="secondary" disabled={!canEdit || bondDecisionBusy} onClick={() => void saveBondCancellationDecision()}>{bondDecisionBusy ? 'Saving…' : 'Save decision'}</Button></div>
-                  {bondDecisionError ? <p role="alert" className="px-4 pb-3 text-sm text-red-700">{bondDecisionError}</p> : null}
-                </div>
-              ) : isBondCancellationConfirmation && !onSaveConfirmations ? (
-                <div className="divide-y divide-slate-200">
-                  {[
-                    ['existingBond', 'Existing bond confirmed', 'Is there an existing mortgage bond registered against the property?'],
-                    ['cancellationInstruction', 'Cancellation instructions confirmed', 'Have cancellation instructions been received from the seller or bondholder?'],
-                  ].map(([key, label, helper], index) => (
-                    <div key={key} className="flex flex-col gap-3 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="min-w-0">
-                        <strong className="block text-sm text-slate-950">{index + 1}. {label}</strong>
-                        <p className="mt-1 text-sm text-slate-500">{helper}</p>
-                      </div>
-                      {!model.readOnly ? <div className="flex flex-wrap gap-2">
-                        {[['yes', 'Yes'], ['no', 'No'], ['not_applicable', 'Not applicable']].map(([value, choiceLabel]) => (
-                          <button key={value} type="button" disabled={!canEdit} onClick={() => void saveTaskResponses({ ...taskResponses, [key]: value })} className={`min-h-10 rounded-lg border px-4 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${taskResponses[key] === value ? 'border-emerald-700 bg-emerald-50 text-emerald-900' : 'border-slate-200 bg-white text-slate-700 hover:border-emerald-200'} disabled:cursor-not-allowed disabled:opacity-60`}>
-                            <span className="mr-2 inline-block size-3 rounded-full border border-current align-[-1px]" />{choiceLabel}
-                          </button>
-                        ))}
-                        <Button type="button" variant="ghost" size="sm" onClick={() => runUtilityAction('add_note', onAddNote)}><MessageSquarePlus size={15} /> Add note</Button>
-                      </div> : null}
-                    </div>
-                  ))}
-                </div>
-              ) : model.specialistRouteTask ? (
-                <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-4">
-                  <p className="text-sm text-slate-600">Review the specialist owner, reason, instrument and evidence in the matter classification.</p>
-                  <Button type="button" variant="secondary" disabled={!canEdit} onClick={() => onOpenRoutingProfile?.()}>Open specialist classification</Button>
-                </div>
-              ) : (
-                <ul className="divide-y divide-slate-100 bg-white">
-                  {model.outstandingRequirements.map((item) => <RequirementRow key={item.id} item={item} action={model.readOnly || model.requirementActions?.[item.id] === primaryAction ? null : model.requirementActions?.[item.id]} saving={saving} onRunAction={runAction} />)}
-                  {!model.outstandingRequirements.length ? <li className="flex items-center gap-3 px-4 py-5 text-sm text-emerald-700"><CheckCircle2 size={18} /> All required items are present.</li> : null}
-                </ul>
-              )}
-            </section>
+              {model.securityReview.bondApplies ? <details className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><summary className="cursor-pointer font-semibold text-slate-900">Bond application evidence · {model.securityReview.bondReadyCount} of {model.securityReview.bondRows.length} required items ready</summary><p className="mt-2 text-slate-600">Applicant-specific bank evidence is shown for handoff review. It does not replace the bond attorney’s guarantee or wording acceptance.</p>{model.securityReview.bondRows.length ? <ul className="mt-2 max-h-64 divide-y divide-slate-100 overflow-y-auto">{model.securityReview.bondRows.map((row) => <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 py-2"><span className="min-w-0"><strong className="block text-slate-800">{row.title}</strong><span className="text-slate-500">{row.person}</span></span><span className={row.complete ? 'font-medium text-emerald-800' : 'font-medium text-amber-900'}>{row.statusLabel}</span></li>)}</ul> : <p role="status" className="mt-2 text-amber-900">No bond-application checklist is available yet.</p>}{onOpenDocumentLibrary ? <button type="button" className="mt-2 font-semibold text-emerald-800 hover:underline" onClick={onOpenDocumentLibrary}>Open document library</button> : null}</details> : null}
+              {model.securityReview.notApplicable.length ? <p className="mt-3 text-xs text-slate-600">Not applicable: {model.securityReview.notApplicable.join(' · ')}</p> : null}
+              <p className="mt-3 text-xs text-slate-600">A confirmation below records the attorney’s review; it does not turn missing cash, bond, or guarantee evidence into an approved file.</p>
+            </section> : null}
+            {model.lodgementReview ? <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4" aria-label="Lodgement and registration readiness">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><h3 className="text-sm font-semibold text-slate-950">{model.lodgementReview.label} review</h3><p className="mt-1 text-xs text-slate-600">Saved matter plan, attorney lanes, tax decision and lodgement documents.</p></div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${model.lodgementReview.ready ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`} role="status">{model.lodgementReview.ready ? 'Ready for attorney confirmation' : `${model.lodgementReview.issueCount} item${model.lodgementReview.issueCount === 1 ? '' : 's'} to review`}</span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">{model.lodgementReview.lanes.map((lane) => <div key={lane.laneKey} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><strong className="block text-slate-900">{lane.label}</strong><span className="mt-1 block text-slate-600">{!lane.available ? 'Status unavailable' : lane.registered ? 'Registered' : lane.lodged ? 'Lodged' : lane.ready ? 'Ready to lodge' : 'Not ready to lodge'}</span></div>)}</div>
+              {model.lodgementReview.issueCount ? <details className="mt-3 text-xs" open><summary className="cursor-pointer font-semibold text-amber-900">Unresolved items ({model.lodgementReview.issueCount})</summary><ul className="mt-2 space-y-1 text-slate-700">{model.lodgementReview.issues.slice(0, 8).map((item) => <li key={item.id} className="rounded-md bg-white px-2 py-1">{item.label}</li>)}</ul>{model.lodgementReview.issueCount > 8 ? <p className="mt-2 text-slate-600">+{model.lodgementReview.issueCount - 8} more items. Review the applicable lane before confirming.</p> : null}</details> : <p className="mt-3 text-xs text-emerald-800">No unresolved item was found in the loaded snapshot. Recheck current evidence before recording the milestone.</p>}
+              <div className="mt-3 flex flex-wrap gap-3">{onOpenRoutingProfile ? <button type="button" className="text-xs font-semibold text-emerald-800 hover:underline" onClick={onOpenRoutingProfile}>Review matter profile</button> : null}{onOpenDocumentLibrary ? <button type="button" className="text-xs font-semibold text-emerald-800 hover:underline" onClick={onOpenDocumentLibrary}>Open document library</button> : null}</div>
+              <p className="mt-3 text-xs text-slate-600">The database rechecks the milestone when it is saved. Another attorney’s update or an expired document can change this result.</p>
+            </section> : null}
+            {model.closureReview ? <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4" aria-label="Post-registration close-out">
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-slate-950">Post-registration close-out</h3><p className="mt-1 text-xs text-slate-600">Financial work stays internal; the registration update goes only to selected client portals; file closure is recorded separately.</p></div><span role="status" className={`rounded-full px-3 py-1 text-xs font-semibold ${model.closureReview.ready ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>{model.closureReview.ready ? 'Ready for this outcome' : `${model.closureReview.issues.length} item${model.closureReview.issues.length === 1 ? '' : 's'} to review`}</span></div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs"><strong className="block text-slate-900">1 · Financial close-out</strong><p className="mt-1 text-slate-600">{model.closureReview.financial.complete ? 'Final accounts reviewed' : 'Final account review outstanding'}</p><span className="mt-2 inline-block font-semibold text-slate-600">Internal attorney work</span></div>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs"><strong className="block text-slate-900">2 · Registration communication</strong><p className="mt-1 text-slate-600">{model.closureReview.communication.published ? `Published to ${model.closureReview.communication.recipients.join(' and ')}` : 'No registration-stage client update found'}</p>{!model.closureReview.communication.published && onOpenJourneyPublisher ? <button type="button" className="mt-2 font-semibold text-emerald-800 hover:underline" onClick={onOpenJourneyPublisher}>Publish registration update</button> : null}</div>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs"><strong className="block text-slate-900">3 · Administrative closure</strong><p className="mt-1 text-slate-600">{model.closureReview.administrative.complete ? 'File closed' : 'Closure checklist outstanding'}</p><span className="mt-2 inline-block font-semibold text-slate-600">Professional team only</span></div>
+              </div>
+              {model.closureReview.issues.length ? <ul className="mt-3 space-y-1 text-xs text-amber-900">{model.closureReview.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
+              <p className="mt-3 text-xs text-slate-600">Saved outcomes remain in the matter history if a task is reopened. A client update is published only to the recipients selected in its composer.</p>
+            </section> : null}
+            {onSaveConfirmations ? <TaskConfirmations key={`${model.lane || ''}:${model.taskKey}`} taskKey={model.taskKey} items={confirmationItems} saved={model.confirmations || {}} disabled={!canEdit || model.taskResolved} onSave={saveConfirmationRows} onDirtyChange={handleAnswersDirtyChange} onRunAction={action => runAction(action, 'confirmation')} renderRowDetails={renderConfirmationRowDetails} /> : null}
+            {!onSaveConfirmations && isBondCancellationConfirmation ? <section className="rounded-xl border border-slate-200 p-4"><h3 className="text-lg font-semibold text-slate-950">Confirmations</h3>{[['existingBond', 'Existing bond confirmed'], ['cancellationInstruction', 'Cancellation instructions confirmed']].map(([key, label]) => <div key={key} className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-3"><span className="text-sm text-slate-800">{label}</span><div className="flex gap-2">{[['yes', 'Yes'], ['no', 'No'], ['not_applicable', 'Not applicable']].map(([value, choice]) => <Button key={value} type="button" variant={taskResponses[key] === value ? 'primary' : 'secondary'} size="sm" disabled={!canEdit} onClick={() => void saveTaskResponses({ ...taskResponses, [key]: value })}>{choice}</Button>)}</div></div>)}</section> : null}
 
             <section className="mt-4 overflow-hidden rounded-xl border border-slate-200">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
                 <h3 className="text-lg font-semibold text-slate-950">Supporting documents</h3>
-                {!model.readOnly && !primaryActionIsUpload ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
+                <div className="flex flex-wrap gap-2">
+                  {attachedDocuments.length ? <Button type="button" variant="secondary" size="sm" onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentAction(null); setDocumentModalOpen(true) }}>View all ({attachedDocuments.length})</Button> : null}
+                  {!model.readOnly && model.uploadAction && !model.uploadAction.disabled ? <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => { setPreviewDocument(null); setDocumentTarget(null); setDocumentAction(null); setDocumentModalOpen(true) }}><Paperclip size={15} /> Upload document</Button> : null}
+                </div>
               </div>
               <div className="divide-y divide-slate-100">
-                {attachedDocuments.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-0.5 block text-xs text-slate-500">Available</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
+                {attachedDocuments.slice(0, 6).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" onClick={() => { setPreviewDocument(document); setDocumentAction(null); setDocumentModalOpen(true) }} className="flex w-full items-center gap-3 px-4 py-2.5 text-left transition hover:bg-slate-50"><FileText size={17} className="shrink-0 text-slate-500" /><span className="min-w-0 flex-1"><strong className="block truncate text-sm text-slate-900">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-0.5 block text-xs text-slate-500">Available</span></span><ChevronRight size={16} className="text-slate-400" /></button>)}
                 {!attachedDocuments.length ? <p className="px-4 py-3 text-sm text-slate-500">No supporting documents attached yet.</p> : null}
               </div>
             </section>
@@ -689,16 +678,16 @@ export default function LegalTaskWorkbench({
             ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
-                {!model.readOnly && !model.taskResolved ? (
-                  <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={onMarkInProgress}>
-                    <Save size={15} /> Save progress
+                {!model.readOnly && model.canMarkInProgress ? (
+                  <Button type="button" variant="secondary" size="sm" disabled={saving || answersDirty} title={answersDirty ? 'Save answers before changing status' : undefined} onClick={onMarkInProgress}>
+                    <Circle size={15} /> Mark in progress
                   </Button>
                 ) : null}
               </div>
-              {model.completeAction && primaryAction?.id !== 'mark_complete' ? (
+              {model.completeAction ? (
                 <Button
                   type="button"
-                  variant={primaryAction ? 'secondary' : 'primary'}
+                  variant="primary"
                   size="sm"
                   disabled={saving || !model.canComplete || model.completeAction.disabled}
                   aria-describedby={!model.requirementsSatisfied ? completionHelpId : undefined}
@@ -738,13 +727,20 @@ export default function LegalTaskWorkbench({
 
       <Modal
         open={documentModalOpen}
-        title="Supporting documents"
+        title={documentAction?.reviewOtp ? 'Review OTP' : 'Supporting documents'}
         subtitle={model.taskLabel}
         onClose={saving || reviewBusy ? undefined : () => setDocumentModalOpen(false)}
         className="max-w-5xl"
-        footer={<div className="flex flex-wrap justify-between gap-2"><Button type="button" variant="secondary" onClick={() => setDocumentModalOpen(false)} disabled={saving || reviewBusy}>Close</Button>{!model.readOnly ? <Button type="button" disabled={saving || reviewBusy} onClick={() => { setDocumentModalOpen(false); runUtilityAction('upload_document', () => onOpenDocuments?.(previewDocument || documentTarget)) }}><Paperclip size={15} /> Upload document</Button> : null}</div>}
+        footer={<div className="flex flex-wrap justify-between gap-2">
+          <Button type="button" variant="secondary" onClick={() => setDocumentModalOpen(false)} disabled={saving || reviewBusy}>Close</Button>
+          <div className="flex flex-wrap gap-2">
+            {canRequestDocument ? <Button type="button" variant="secondary" disabled={saving || reviewBusy} onClick={() => { setDocumentModalOpen(false); runUtilityAction('request_document', () => onRequestDocument(documentAction?.requirement || null)) }}>Request {focusedDocumentLabel}</Button> : null}
+            {canUploadDocument ? <Button type="button" disabled={saving || reviewBusy} onClick={() => { setDocumentModalOpen(false); runUtilityAction('upload_document', () => onOpenDocuments(previewDocument || documentTarget, documentAction?.requirement || null)) }}><Paperclip size={15} /> Upload {focusedDocumentLabel}</Button> : null}
+          </div>
+        </div>}
       >
-        {!model.readOnly && previewDocument && onReviewDocument ? <div className="mb-4 space-y-2 rounded-xl border border-slate-200 p-3">
+        {missingFocusedDocument ? <div role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900"><strong className="block">No {focusedDocumentLabel} is linked to this task yet.</strong><p className="mt-1">{missingDocumentGuidance}</p></div> : null}
+        {!model.readOnly && previewDocument && documentUrl(previewDocument) && onReviewDocument ? <div className="mb-4 space-y-2 rounded-xl border border-slate-200 p-3">
           {reviewError ? <p role="alert" className="text-sm text-red-700">{reviewError}</p> : null}
           {reviewFeedback ? <p role="status" className="text-sm text-emerald-800">{reviewFeedback}</p> : null}
           <label className="grid gap-1 text-sm">Review note / correction needed<Field as="textarea" rows={2} disabled={reviewBusy} value={reviewReason} onChange={event => setReviewReason(event.target.value)} /></label>
@@ -752,10 +748,12 @@ export default function LegalTaskWorkbench({
         </div> : null}
         <div className="grid gap-4 lg:grid-cols-[minmax(14rem,0.42fr)_minmax(0,1fr)]">
           <div className="max-h-[52vh] space-y-1 overflow-y-auto rounded-xl border border-slate-200 p-2">
-            {attachedDocuments.length ? attachedDocuments.map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" disabled={reviewBusy} onClick={() => setPreviewDocument(document)} className={`w-full rounded-lg px-3 py-3 text-left text-sm transition ${previewDocument === document ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'}`}><strong className="block truncate">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></button>) : <p className="p-3 text-sm text-slate-500">No supporting documents are attached yet.</p>}
+            {visibleDocuments.length > 20 ? <label className="sticky top-0 z-10 block bg-white pb-2 text-xs font-medium text-slate-600">Search supporting documents<input type="search" value={documentSearch} onChange={(event) => { setDocumentSearch(event.target.value); setDocumentListLimit(40) }} placeholder="Search by file name or requirement" className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" /></label> : null}
+            {filteredDocuments.length ? filteredDocuments.slice(0, documentListLimit).map((document) => <button key={document.id || document.key || document.sourceRequirementKey} type="button" disabled={reviewBusy} onClick={() => setPreviewDocument(document)} className={`w-full rounded-lg px-3 py-3 text-left text-sm transition ${previewDocument === document ? 'bg-emerald-50 text-emerald-950' : 'hover:bg-slate-50 text-slate-700'}`}><strong className="block truncate">{document.displayName || document.label || document.name || 'Document'}</strong><span className="mt-1 block text-xs text-slate-500">Available</span></button>) : <p className="p-3 text-sm text-slate-500">{visibleDocuments.length && documentSearch.trim() ? 'No documents match this search.' : missingFocusedDocument ? `No ${focusedDocumentLabel} attached.` : 'No supporting documents are attached yet.'}</p>}
+            {filteredDocuments.length > documentListLimit ? <button type="button" className="w-full rounded-lg px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-50" onClick={() => setDocumentListLimit((current) => current + 40)}>Show more documents ({filteredDocuments.length - documentListLimit} remaining)</button> : null}
           </div>
           <div className="min-h-[18rem] rounded-xl border border-slate-200 bg-slate-50 p-4">
-            {previewDocument ? <div className="flex h-full flex-col"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-slate-950">{previewDocument.displayName || previewDocument.label || previewDocument.name || 'Document'}</h3><p className="mt-1 text-xs text-slate-500">{previewDocument.ready ? 'Available for review' : 'Document is still outstanding'}</p></div>{documentUrl(previewDocument) ? <a href={documentUrl(previewDocument)} target="_blank" rel="noreferrer" className="shrink-0 text-sm font-semibold text-emerald-800 hover:text-emerald-950">Download</a> : null}</div>{documentUrl(previewDocument) ? <iframe title={`Preview ${previewDocument.displayName || previewDocument.name || 'document'}`} src={documentUrl(previewDocument)} className="mt-4 min-h-[24rem] w-full rounded-lg border border-slate-200 bg-white" /> : <div className="flex flex-1 items-center justify-center text-center text-sm text-slate-500">A preview is not available for this file. Use Download to open it.</div>}</div> : <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">Choose a document to preview it here.</div>}
+            {previewDocument ? <div className="flex h-full flex-col"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-slate-950">{previewDocument.displayName || previewDocument.label || previewDocument.name || 'Document'}</h3><p className="mt-1 text-xs text-slate-500">{previewDocument.ready ? 'Available for review' : 'Document is still outstanding'}</p></div>{documentUrl(previewDocument) ? <a href={documentUrl(previewDocument)} target="_blank" rel="noreferrer" className="shrink-0 text-sm font-semibold text-emerald-800 hover:text-emerald-950">Download</a> : null}</div>{documentUrl(previewDocument) ? <iframe title={`Preview ${previewDocument.displayName || previewDocument.name || 'document'}`} src={documentUrl(previewDocument)} className="mt-4 min-h-[24rem] w-full rounded-lg border border-slate-200 bg-white" /> : <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-sm text-slate-500"><p>A preview is not available for this file.</p>{onOpenDocumentLibrary ? <Button type="button" variant="secondary" size="sm" onClick={openDocumentLibrarySafely}>Open document register</Button> : null}</div>}</div> : <div className="flex h-full items-center justify-center text-center text-sm text-slate-500">{missingFocusedDocument ? missingDocumentGuidance : 'Choose a document to preview it here.'}</div>}
           </div>
         </div>
       </Modal>
@@ -802,7 +800,9 @@ export default function LegalTaskWorkbench({
               </label>
             ) : (
               <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                This completion is shared with the professional matter team only.
+                {model.taskKey === 'post_registration_closeout_review'
+                  ? 'Final-account notes remain inside the attorney firm. Publish registration news separately to selected clients.'
+                  : 'This completion is shared with the professional matter team only.'}
               </p>
             )
           ) : null}

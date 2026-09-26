@@ -40,11 +40,11 @@ let saved = {}, fail = true
 const confirmationProps = { taskKey: 'title_deed_checked', items: [{ id: 'ownership', label: 'Ownership checked' }], onSave: async draft => { if (fail) throw new Error('Save failed'); saved = normalizeTaskConfirmations(draft); return true } }
 await render(React.createElement(Confirmations, confirmationProps))
 await click('Yes')
-await click('Save confirmations')
+await click('Save answers')
 assert.match(document.body.textContent, /Save failed/)
 assert.equal(button('Yes').getAttribute('aria-pressed'), 'true')
 fail = false
-await click('Save confirmations')
+await click('Save answers')
 await act(async () => root.unmount())
 root = createRoot(document.getElementById('root'))
 await render(React.createElement(Confirmations, { ...confirmationProps, saved }))
@@ -83,8 +83,8 @@ assert.equal(model.contextualActions.some(action => action.id === 'open_parties'
 let reviews = [], reviewFails = true
 await render(React.createElement(Workbench, { model, phases: vm.phases, selectedTaskKey: vm.selectedTask.key, selectedPhaseKey: vm.selectedTask.phaseKey, onSaveConfirmations: async () => true, onReviewDocument: async (...args) => { reviews.push(args); if (reviewFails) throw new Error('Review unavailable'); return { message: 'Document approved.' } } }))
 assert.doesNotMatch(document.querySelector('[aria-label="Transfer instruction received from the instructing party."]').textContent, /Not applicable/, 'Stage 1 confirmations are strictly Yes/No')
-assert.ok(document.body.textContent.indexOf('Current task') < document.body.textContent.indexOf('Required action'), 'the current task leads Stage 1 work')
-assert.ok(document.body.textContent.indexOf('Required action') < document.body.textContent.indexOf('Supporting documents'), 'supporting documents follow task requirements')
+assert.doesNotMatch(document.body.textContent, /Current task|Required action/, 'duplicate task and action cards are removed')
+assert.ok(document.body.textContent.indexOf('Confirmations') < document.body.textContent.indexOf('Supporting documents'), 'editable confirmations lead Stage 1 work')
 await click('Review OTP')
 assert.match(document.body.textContent, /Signed OTP/)
 await click('Approve document')
@@ -104,6 +104,7 @@ assert.equal(matterModel.transferMatterOpeningTask, true)
 let savedMatterNumber = '', savedTeam = null
 await render(React.createElement(Workbench, {
   model: matterModel, phases: matterVm.phases, selectedTaskKey: matterVm.selectedTask.key, selectedPhaseKey: matterVm.selectedTask.phaseKey,
+  onSaveConfirmations: async () => true,
   onSaveMatterNumber: async value => { savedMatterNumber = value },
   onLoadMatterTeam: async () => ({ firms: [{ id: 'firm-1', name: 'Tuckers Attorneys' }], members: { primaryAttorneys: [{ userId: 'attorney-1', label: 'Alex Conveyancer' }], secretaries: [{ userId: 'secretary-1', label: 'Sam Secretary' }] } }),
   onSaveMatterTeam: async payload => { savedTeam = payload; return { id: 'assignment-1', ...payload } },
@@ -124,16 +125,49 @@ assert.equal(sourceModel.transferOtpSourceTask, true)
 assert.deepEqual(sourceModel.confirmationRequirements.map(item => item.answers), [['yes', 'no'], ['yes', 'no']])
 assert.ok(Object.values(sourceModel.requirementActions).some(action => action.label === 'Review OTP'))
 assert.ok(Object.values(sourceModel.requirementActions).some(action => action.label === 'Review property documents'))
+let savedSource = null
+await render(React.createElement(Workbench, {
+  model: sourceModel, phases: sourceVm.phases, selectedTaskKey: sourceVm.selectedTask.key, selectedPhaseKey: sourceVm.selectedTask.phaseKey,
+  onSaveConfirmations: async () => true, onSaveSourceDetails: async value => { savedSource = value },
+}))
+assert.doesNotMatch(document.body.textContent, /Current task|Required action/)
+await change(document.querySelector('input[placeholder="Enter purchase price"]'), '2190000')
+await change(document.querySelector('input[placeholder="Enter the property description"]'), 'Erf 42')
+await click('Save source details')
+assert.deepEqual(savedSource, { purchasePrice: '2190000', propertyDescription: 'Erf 42' })
 const titleVm = buildTransferWorkspaceViewModel({ workflowKey: 'transfer', selectedTaskKey: 'title_deed_checked', documents: [{ id: 'title-doc', displayName: 'Title deed', requiredDocumentKey: 'seller_property_documents', ready: true }], workflow: { title: 'Transfer', lane: { laneKey: 'transfer', permissions: { canUpdateStage: true }, steps: [{ id: 'step-4', stepKey: 'title_deed_checked', status: 'in_progress' }] } } })
 const titleModel = buildLegalTaskWorkbenchModel({ task: titleVm.selectedTask, taskContext: titleVm.selectedTaskContext, workActions: titleVm.selectedTaskContext.workActions, statusActions: titleVm.availableActions.primary })
 assert.equal(titleModel.transferTitleDeedTask, true)
 assert.deepEqual(titleModel.confirmationRequirements.map(item => item.answers), [['yes', 'no'], ['yes', 'no']])
 assert.ok(Object.values(titleModel.requirementActions).every(action => action.label === 'Review ownership documents'))
+let savedTitle = null
+await render(React.createElement(Workbench, {
+  model: titleModel, phases: titleVm.phases, selectedTaskKey: titleVm.selectedTask.key, selectedPhaseKey: titleVm.selectedTask.phaseKey,
+  onSaveConfirmations: async () => true, onSaveTitleDetails: async value => { savedTitle = value },
+}))
+await change(document.querySelector('input[placeholder="Enter title deed or erf number"]'), 'T12345')
+await change([...document.querySelectorAll('select')].find(node => node.parentElement.textContent.includes('Property tenure')), 'freehold')
+await click('Save ownership details')
+assert.deepEqual(savedTitle, { identifier: 'T12345', tenure: 'freehold' })
 const bondVm = buildTransferWorkspaceViewModel({ workflowKey: 'transfer', selectedTaskKey: 'existing_bond_confirmed', workflow: { title: 'Transfer', lane: { laneKey: 'transfer', permissions: { canUpdateStage: true }, steps: [{ id: 'step-5', stepKey: 'existing_bond_confirmed', status: 'in_progress' }] } } })
 const bondModel = buildLegalTaskWorkbenchModel({ task: bondVm.selectedTask, taskContext: bondVm.selectedTaskContext, workActions: bondVm.selectedTaskContext.workActions, statusActions: bondVm.availableActions.primary })
 assert.equal(bondModel.transferExistingBondTask, true)
 assert.deepEqual(bondModel.confirmationRequirements.map(item => item.answers), [['yes', 'no', 'not_applicable'], ['yes', 'no', 'not_applicable']])
 assert.equal(bondModel.contextualActions.some(action => action.id === 'open_parties'), false)
+let savedBondAnswers = null, savedBondDecision = null
+await render(React.createElement(Workbench, {
+  model: bondModel, phases: bondVm.phases, selectedTaskKey: bondVm.selectedTask.key, selectedPhaseKey: bondVm.selectedTask.phaseKey,
+  onSaveConfirmations: async value => { savedBondAnswers = value; return true },
+  onSaveBondCancellationDecision: async value => { savedBondDecision = value },
+}))
+for (const [label, answer] of [['Seller existing bond position captured.', 'Yes'], ['Cancellation lane is required or explicitly not required.', 'No']]) {
+  const group = [...document.querySelectorAll('[role="group"]')].find(node => node.getAttribute('aria-label') === label)
+  assert.ok(group, `Missing confirmation row: ${label}`)
+  await act(async () => [...group.querySelectorAll('button')].find(node => node.textContent === answer).click())
+}
+await click('Save answers')
+assert.equal(savedBondAnswers.seller_existing_bond_position.answer, 'yes')
+assert.deepEqual(savedBondDecision, { existingBond: 'yes', cancellationRequired: 'no' })
 await act(async () => root.unmount())
 dom.window.close()
 console.log('Inline work: confirmation persistence, failure handling, document approval/correction and appointment delivery retry PASS')

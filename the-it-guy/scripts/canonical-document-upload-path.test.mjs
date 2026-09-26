@@ -41,7 +41,7 @@ assert.match(
 )
 assert.match(
   apiSource,
-  /Promise\.allSettled\(followUps\.map\(\(\{ run \}\) => run\(\)\)\)/,
+  /Promise\.allSettled\(enabledFollowUps\.map\(\(\{ run \}\) => run\(\)\)\)/,
   'a failed follow-up projection should not prevent the remaining projections from running',
 )
 assert.match(

@@ -33,11 +33,11 @@ assert.ok(model.secondaryActions.length <= 2, 'the task workbench should expose 
 assert.equal(model.clientUpdate.available, true, 'client publication must be opt-in capable, not the default workflow visibility')
 
 const componentSource = readFileSync(new URL('../src/components/attorney/workflow/LegalTaskWorkbench.jsx', import.meta.url), 'utf8')
-assert.match(componentSource, /legal-task-outstanding-heading/)
+assert.match(componentSource, /renderConfirmationRowDetails/)
 assert.match(componentSource, /Complete task/)
 assert.match(componentSource, /Missing evidence remains visible after completion/)
 assert.match(componentSource, /aria-label=\{`\$\{phase\.label\} tasks`\}/)
-assert.match(componentSource, /!model\.readOnly && !model\.taskResolved/)
+assert.match(componentSource, /disabled=\{!canEdit \|\| model\.taskResolved\}/)
 assert.match(componentSource, /Also notify \{model\.clientUpdate\.audienceLabel\}/)
 assert.match(componentSource, /visibility === 'client_visible'/)
 

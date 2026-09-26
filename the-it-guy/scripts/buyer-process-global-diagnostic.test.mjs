@@ -22,6 +22,13 @@ const requiredScripts = Object.freeze({
 })
 
 const diagnosticChecks = Object.freeze([
+  ['test:lead-source-connectors', 'inbound lead sources retain their buyer mapping'],
+  ['test:lead-ingestion', 'buyer enquiries create traceable leads and recover failed receipts'],
+  ['test:lead-email-capture', 'inbound email enquiries enter the lead intake path'],
+  ['test:lead-ingestion-review', 'unmatched enquiries remain visible for review'],
+  ['test:lead-assignment', 'buyer lead assignment and follow-up routing remain intact'],
+  ['test:lead-communication', 'buyer follow-up activity remains visible in one timeline'],
+  ['test:lead-requirements', 'buyer lead requirements are captured'],
   ['test:buyer-process-definition-phase1', 'global and Kingstons buyer profiles stay split'],
   ['test:buyer-process-workflow-engine-phase2', 'buyer workflow maps legacy OTP stages into Offer'],
   ['test:buyer-process-viewing-actions-phase3', 'viewing actions feed buyer onboarding'],
@@ -32,6 +39,11 @@ const diagnosticChecks = Object.freeze([
   ['test:buyer-onboarding-sa-scenarios', 'South African buyer onboarding scenarios still resolve'],
   ['test:buyer-onboarding-notification-contract', 'buyer onboarding submission notifications are contracted'],
   ['test:buyer-onboarding-originator-handoff-phase3', 'buyer onboarding can trigger originator handoff'],
+  ['test:agent-assisted-buyer-document-upload-phase64', 'agent buyer document upload preserves canonical handoff'],
+  ['test:buyer-lead-document-journey', 'staged buyer files reconcile to the transaction without falsely satisfying requests'],
+  ['test:canonical-document-upload-path', 'buyer document submissions use canonical storage and records'],
+  ['test:client-portal-canonical-document-request-phase5', 'buyer portal requests use canonical requirement state'],
+  ['test:buyer-portal-mobile-phase4', 'buyer portal document failure and mobile states stay accurate'],
   ['test:residential-offer-lifecycle-phase1a', 'offer plus onboarding link lifecycle is intact'],
   ['test:residential-offer-terms-phase1b', 'residential offer terms are captured'],
   ['test:residential-offer-condition-review-phase1c', 'agent condition review remains gated'],
@@ -82,6 +94,8 @@ assert.doesNotMatch(buyerOfferPage, /before OTP generation/)
 assert.match(postViewingPortal, /manual signed OTP upload/)
 assert.doesNotMatch(postViewingPortal, /before OTP generation/)
 
+const failedChecks = []
+
 for (const [scriptName, description] of diagnosticChecks) {
   console.log(`\n[Buyer diagnostic] ${description}`)
   const result = spawnSync(npmCommand, ['run', scriptName, '--silent'], {
@@ -89,7 +103,8 @@ for (const [scriptName, description] of diagnosticChecks) {
     env: process.env,
     stdio: 'inherit',
   })
-  assert.equal(result.status, 0, `${scriptName} failed`)
+  if (result.status !== 0) failedChecks.push(`${scriptName} (exit ${result.status ?? result.error?.message ?? 'unknown'})`)
 }
 
-console.log('\nbuyer process global diagnostic suite passed')
+assert.deepEqual(failedChecks, [], `Buyer diagnostic checks failed:\n${failedChecks.join('\n')}`)
+console.log('\nbuyer process global local diagnostic suite passed; live journey observation remains separate')

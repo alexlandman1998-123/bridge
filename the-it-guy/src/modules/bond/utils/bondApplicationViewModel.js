@@ -1121,6 +1121,7 @@ export function buildBondApplicationViewModel({
       bondAmountRequired: { raw: bondAmountRequired, display: formatCurrency(bondAmountRequired) },
     },
     documents,
+    documentChecklist: checklist,
     readinessItems,
     submissionReadiness,
     actions: applicationActions,

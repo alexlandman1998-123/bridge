@@ -113,7 +113,7 @@ assert.match(pageSource, /onCaptureDetails/)
 assert.match(pageSource, /action\.requirement \|\| null/)
 
 const componentSource = readFileSync(new URL('../src/components/attorney/workflow/LegalTaskWorkbench.jsx', import.meta.url), 'utf8')
-assert.match(componentSource, /Required action/)
+assert.doesNotMatch(componentSource, /Required action/)
 assert.match(componentSource, /Requires a client-safe note/)
 assert.match(componentSource, /Missing evidence remains visible after completion/)
 

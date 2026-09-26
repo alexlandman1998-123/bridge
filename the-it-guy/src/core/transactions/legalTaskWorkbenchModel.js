@@ -1,4 +1,5 @@
 import { buildLegalWorkflowOperationalHealthModel } from './legalWorkflowOperationalHealthModel.js'
+import { documentBelongsToParty, ficaDocumentAppliesToParty } from './stageTwoPartyEvidence.js'
 
 const WORK_ACTION_PRIORITY = Object.freeze([
   'request_document',
@@ -107,6 +108,10 @@ function resolveRequirementAction(requirement = {}, actions = []) {
   const haystack = `${requirement.id || ''} ${requirement.label || ''} ${requirement.description || ''} ${(requirement.fields || []).join(' ')}`.toLowerCase()
   const available = actions.filter((action) => !action.disabled)
   const pick = (...ids) => available.find((action) => ids.includes(action.id)) || actions.find((action) => ids.includes(action.id)) || null
+  if (requirement.type === 'party') return {
+    id: 'open_party_capacity', label: 'Review party and signatories', requirementId: requirement.id,
+    partyId: requirement.partyId, requirementLabel: requirement.label,
+  }
   const present = (action) => {
     if (!action) return null
     const labels = {
@@ -142,6 +147,134 @@ function isTransferInstructionTask(task = {}) {
 
 function isOtpRequirement(requirement = {}) {
   return /sales_agreement_or_otp|sales agreement|\botp\b/i.test(`${requirement.id || ''} ${requirement.label || ''} ${requirement.description || ''}`)
+}
+
+export function relevantLegalTaskDocuments(documents = [], action = {}) {
+  const requiredId = text(action.sourceRequirementId || action.requirement?.sourceRequirementId || action.requirementId || action.requirement?.id).replace(/^document:/, '').toLowerCase()
+  if (!requiredId && !action.reviewOtp) return documents
+  return documents.filter(document => {
+    if (action.partyId && !documentBelongsToParty(document, action.partyId)) return false
+    const identifiers = [document.sourceRequirementKey, document.requirementId, document.requiredDocumentKey,
+      document.requirement?.id, document.requiredDocument?.id, document.documentType, document.document_type,
+      document.key, document.id]
+      .map(value => text(value).replace(/^document:/, '').toLowerCase())
+    return (requiredId && identifiers.includes(requiredId)) ||
+      (action.reviewOtp && /sales_agreement_or_otp|sales agreement|\botp\b/i.test(
+        `${identifiers.join(' ')} ${document.displayName || ''} ${document.label || ''} ${document.name || ''}`))
+  })
+}
+
+const CONFIRMATION_MATCH_NOISE = new Set([
+  'and', 'are', 'been', 'complete', 'confirmed', 'checked', 'document', 'documents',
+  'evidence', 'from', 'matter', 'received', 'required', 'reviewed', 'source', 'the', 'this',
+])
+
+function confirmationMatchTokens(value = '') {
+  return new Set(text(value).toLowerCase().match(/[a-z0-9]+/g)?.filter(token => token.length > 3 && !CONFIRMATION_MATCH_NOISE.has(token)) || [])
+}
+
+function matchConfirmationRequirement(confirmation, requirement) {
+  const confirmationText = `${confirmation.id} ${confirmation.label}`.toLowerCase()
+  const requirementText = `${requirement.id} ${requirement.label} ${requirement.description}`.toLowerCase()
+  if (/\botp\b|sale agreement/.test(confirmationText) && isOtpRequirement(requirement)) return true
+  const tokens = confirmationMatchTokens(confirmationText)
+  return [...tokens].some(token => confirmationMatchTokens(requirementText).has(token))
+}
+
+function buildConfirmationRows({ confirmations, requirements, actions, documents, workActions }) {
+  const assigned = new Set()
+  const rows = confirmations.map(confirmation => {
+    const requirement = requirements.find(item => !assigned.has(item.id) && matchConfirmationRequirement(confirmation, item))
+    if (requirement) assigned.add(requirement.id)
+    return { ...confirmation, allowNote: true, requirement }
+  })
+  for (const requirement of requirements) {
+    if (assigned.has(requirement.id)) continue
+    rows.push({
+      id: `requirement:${requirement.id}`,
+      label: requirement.label,
+      description: requirement.description,
+      answers: requirement.required === false ? ['yes', 'no', 'not_applicable'] : ['yes', 'no'],
+      allowNote: true,
+      requirement,
+    })
+  }
+  return rows.map(row => {
+    const requirement = row.requirement
+    if (!requirement) return row
+    const action = requirement.type === 'party'
+      ? resolveRequirementAction(requirement, workActions)
+      : actions[requirement.id] || resolveRequirementAction(requirement, workActions)
+    const documentAction = requirement.type === 'document'
+      ? action?.id === 'review_document' ? {
+          ...action, partyId: requirement.partyId, sourceRequirementId: requirement.sourceRequirementId,
+        } : {
+          id: 'review_document', label: 'Review document',
+          requirementId: requirement.id, requirementLabel: requirement.label, requirement,
+          sourceRequirementId: requirement.sourceRequirementId,
+          partyId: requirement.partyId,
+          reviewOtp: isOtpRequirement(requirement),
+        }
+      : null
+    const relatedDocuments = documentAction
+      ? relevantLegalTaskDocuments(documents, documentAction)
+      : []
+    const attachedDocuments = relatedDocuments.filter(document => document.missing !== true && (
+      document.ready || document.fileUrl || document.file_url || document.url || document.uploadedAt || document.uploaded_at
+    ))
+    return {
+      ...row,
+      authoritative: requirement.type === 'party',
+      authoritativeAnswer: requirement.type === 'party' ? (requirement.complete ? 'yes' : '') : undefined,
+      action: documentAction || action,
+      documentStatus: documentAction ? {
+        attached: attachedDocuments.length,
+        approved: attachedDocuments.filter(document => ['approved', 'accepted'].includes(text(document.status).toLowerCase())).length,
+        correctionRequested: attachedDocuments.some(document => text(document.status).toLowerCase() === 'rejected'),
+      } : null,
+    }
+  })
+}
+
+function scopeFicaRequirements(requirements = [], parties = []) {
+  if (!parties.length) return requirements
+  const seenDocumentKeys = new Set()
+  return requirements.flatMap(requirement => {
+    if (requirement.type === 'data') {
+      const dataKey = text(requirement.id).toLowerCase()
+      const partyFact = /_(entity_type|marital_status|representative_capacity|trustee_authority)$/.exec(dataKey)?.[1]
+      if (!partyFact) return [requirement]
+      return parties.filter(party => partyFact === 'marital_status' ? party.entityType === 'individual'
+        : partyFact === 'representative_capacity' ? ['company', 'close_corporation'].includes(party.entityType)
+          : partyFact === 'trustee_authority' ? party.entityType === 'trust' : true).map(party => ({
+        ...requirement,
+        id: `${requirement.id}:party:${party.id}`,
+        label: `${party.name} (${party.entityType}): ${requirement.label}`,
+        partyId: party.id, partyName: party.name, type: 'party', partyFact: true,
+        complete: partyFact === 'entity_type' ? !['unknown', 'other'].includes(party.entityType)
+          : partyFact === 'marital_status' ? !['unknown', 'other'].includes(party.maritalRegime)
+            : party.signatories?.length > 0,
+      }))
+    }
+    if (requirement.type !== 'document') return [requirement]
+    const sourceRequirementId = text(requirement.sourceRequirementId || requirement.description || requirement.id)
+      .replace(/^document:/, '')
+    const documentKey = sourceRequirementId.toLowerCase()
+    if (seenDocumentKeys.has(documentKey)) return []
+    seenDocumentKeys.add(documentKey)
+    const applicable = parties.filter(party => ficaDocumentAppliesToParty(documentKey, party))
+    return applicable.map(party => ({
+      ...requirement,
+      id: `document:${sourceRequirementId}:party:${party.id}:facts:${encodeURIComponent(party.factsVersion || '')}`,
+      sourceRequirementId: `document:${sourceRequirementId}`,
+      label: `${party.name} (${party.entityType}): ${requirement.label}`,
+      partyId: party.id,
+      partyName: party.name,
+      staleApproval: party.staleApproval,
+      complete: false,
+      partyDocumentUnlinked: true,
+    }))
+  })
 }
 
 function isTransferMatterOpeningTask(task = {}) {
@@ -277,7 +410,11 @@ export function buildLegalTaskWorkbenchModel({
     .slice(0, 2)
   const checklistItems = taskContext.checklistItems || []
   const confirmationRequirements = checklistItems.filter((item) => item.type === 'evidence')
-  const requirements = sortRequirements(checklistItems.filter((item) => item.type !== 'evidence'))
+  const stageTwoParties = task.stageTwoParties || []
+  const transferFicaReviewTask = isTransferFicaReviewTask(task)
+  const requirements = sortRequirements(transferFicaReviewTask
+    ? scopeFicaRequirements(checklistItems.filter((item) => item.type !== 'evidence'), stageTwoParties)
+    : checklistItems.filter((item) => item.type !== 'evidence'))
   const outstandingRequirements = requirements.filter((item) => !item.complete)
   const completedRequirements = requirements.filter((item) => item.complete)
   const attentionItems = buildAttentionItems(task)
@@ -305,12 +442,12 @@ export function buildLegalTaskWorkbenchModel({
     outstandingRequirements.map((requirement) => [requirement.id, resolveRequirementAction(requirement, normalizedWorkActions)]).filter(([, action]) => action),
   )
   const uploadAction = normalizedWorkActions.find((action) => action.id === 'upload_document') || null
+  const requestDocumentAction = normalizedWorkActions.find((action) => action.id === 'request_document') || null
   const transferInstructionTask = isTransferInstructionTask(task)
   const transferMatterOpeningTask = isTransferMatterOpeningTask(task)
   const transferOtpSourceTask = isTransferOtpSourceTask(task)
   const transferTitleDeedTask = isTransferTitleDeedTask(task)
   const transferExistingBondTask = isTransferExistingBondTask(task)
-  const transferFicaReviewTask = isTransferFicaReviewTask(task)
   const transferFinancialReviewTask = isTransferFinancialReviewTask(task)
   const transferDocumentsGuaranteesReviewTask = isTransferDocumentsGuaranteesReviewTask(task)
   const transferLodgementRegistrationTask = isTransferLodgementRegistrationTask(task)
@@ -332,8 +469,8 @@ export function buildLegalTaskWorkbenchModel({
         label: 'Review OTP',
         description: 'Review the OTP in this workspace.',
         requirementId: requirement.id,
-        requirementLabel: requirement.label,
-        requirement,
+        requirementLabel: 'Signed OTP / sale agreement',
+        requirement: { ...requirement, label: 'Signed OTP / sale agreement' },
         reviewOtp: true,
       }]
     }).filter(([, action]) => action))
@@ -346,6 +483,8 @@ export function buildLegalTaskWorkbenchModel({
               label: (transferFicaReviewTask || transferFinancialReviewTask || transferDocumentsGuaranteesReviewTask || transferLodgementRegistrationTask || transferPostRegistrationTask) ? 'Review & approve' : transferExistingBondTask ? 'Review bond information' : transferTitleDeedTask ? 'Review ownership documents' : isOtpRequirement(requirement) ? 'Review OTP' : 'Review property documents',
               description: 'Review this source document in the workspace.',
               requirementId: requirement.id,
+              sourceRequirementId: requirement.sourceRequirementId,
+              partyId: requirement.partyId,
               requirementLabel: requirement.label,
               requirement,
               reviewOtp: isOtpRequirement(requirement),
@@ -372,6 +511,8 @@ export function buildLegalTaskWorkbenchModel({
               { id: 'seller_existing_bond_position', label: 'Seller existing bond position captured.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
               { id: 'cancellation_lane_required', label: 'Cancellation lane is required or explicitly not required.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
             ]
+          : transferFicaReviewTask && stageTwoParties.length
+            ? []
           : transferFicaReviewTask
             ? [{
                 id: `${task.key}_documents_checked`,
@@ -411,16 +552,28 @@ export function buildLegalTaskWorkbenchModel({
           : transferPostRegistrationTask
             ? task.key === 'post_registration_closeout_review'
               ? [
-                  { id: 'final_account_position_reviewed', label: 'Final accounts, proceeds, refunds, and fees position reviewed.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
-                  { id: 'registration_communication_issued', label: 'Final registration communication issued to the applicable stakeholders.', answers: ['yes', 'no', 'not_applicable'], allowNote: false },
+                  { id: 'final_account_position_reviewed', label: 'Final accounts, proceeds, refunds, and fees position reviewed.', answers: ['yes', 'no', 'not_applicable'], allowNote: true },
                 ]
               : [{
                   id: 'matter_closure_confirmed',
                   label: 'Matter closure is confirmed and the file is ready to be archived.',
                   answers: ['yes', 'no'],
-                  allowNote: false,
+                  allowNote: true,
                 }]
           : confirmationRequirements
+  const confirmationRows = buildConfirmationRows({
+    confirmations: stageOneConfirmations,
+    requirements,
+    actions: { ...requirementActions, ...stageOneRequirementActions },
+    documents: taskContext.relatedDocuments || [],
+    workActions: normalizedWorkActions,
+  })
+  if (!confirmationRows.length) confirmationRows.push({
+    id: `task:${task.key}`,
+    label: `${task.label || 'Task'} reviewed`,
+    answers: ['yes', 'no', 'not_applicable'],
+    allowNote: true,
+  })
   const matterNumberRequirement = requirements.find((requirement) => /matter_number/i.test(requirement.id || '')) || null
 
   return {
@@ -460,8 +613,16 @@ export function buildLegalTaskWorkbenchModel({
     outstandingRequirements: stageOneOutstandingRequirements,
     requirementActions: stageOneRequirementActions,
     uploadAction,
+    requestDocumentAction,
     completedRequirements: stageOneCompletedRequirements,
     confirmationRequirements: stageOneConfirmations,
+    confirmationRows,
+    stageTwoParties,
+    financialPreparation: transferFinancialReviewTask ? taskContext.financialPreparation || null : null,
+    securityReview: transferDocumentsGuaranteesReviewTask || text(task.key) === 'cash_funding_source_review'
+      ? taskContext.securityReview || null : null,
+    lodgementReview: taskContext.lodgementReview || null,
+    closureReview: taskContext.closureReview || null,
     transferInstructionTask,
     transferMatterOpeningTask,
     transferOtpSourceTask,

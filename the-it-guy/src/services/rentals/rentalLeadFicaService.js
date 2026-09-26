@@ -26,5 +26,5 @@ export async function completeRentalLeadFica(lead = {}, checklist = {}, evidence
   if (lead.stage !== 'fica_pending') throw new Error('Move the tenant lead to FICA pending before marking FICA complete.')
   assertRentalLeadFicaCompletion(checklist, evidenceReference)
   await saveRentalLeadFicaChecklist(lead, checklist, context)
-  return advanceRentalLead(lead, { organisationId: context.organisationId, actor: context.actor || {}, toStage: 'fica_complete', evidence: { ficaReference: text(evidenceReference) } })
+  return advanceRentalLead(lead, { organisationId: context.organisationId, actor: context.actor || {}, scope: context.scope, toStage: 'fica_complete', evidence: { ficaReference: text(evidenceReference) } })
 }

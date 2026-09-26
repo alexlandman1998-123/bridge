@@ -58,6 +58,7 @@ import {
   normalizeSellerBasePackKey,
 } from '../../lib/sellerBasePackContract'
 import { inferLeadCategoryFromRecord, leadCategoryLabel, normalizeLeadCategory } from '../../lib/leadCategory'
+import { isRentalCrmLead } from '../../services/rentals/rentalCrmLeadModel'
 import { CANVASSING_UPDATED_EVENT, listCanvassingWorkspace } from '../../lib/canvassingRepository'
 import {
   ACTIVITY_TYPES,
@@ -12351,7 +12352,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ) => {
         const effectiveSnapshot = mergeActiveRouteLeadSnapshot(sourceSnapshot)
         const sourceContacts = Array.isArray(effectiveSnapshot?.contacts) ? effectiveSnapshot.contacts : []
-        const sourceLeads = Array.isArray(effectiveSnapshot?.leads) ? effectiveSnapshot.leads : []
+        const sourceLeads = Array.isArray(effectiveSnapshot?.leads)
+          ? effectiveSnapshot.leads.filter((lead) => !isRentalCrmLead(lead))
+          : []
         const sourceTasks = Array.isArray(effectiveSnapshot?.tasks) ? effectiveSnapshot.tasks : []
         const sourceActivities = Array.isArray(effectiveSnapshot?.leadActivities) ? effectiveSnapshot.leadActivities : []
         const sourceDeals = Array.isArray(effectiveSnapshot?.deals) ? effectiveSnapshot.deals : []
@@ -13576,6 +13579,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
   const filteredLeads = useMemo(() => {
     const visibleRows = records.leads.filter((lead) => {
+      if (isRentalCrmLead(lead)) return false
       const canvassingProspect = (Array.isArray(canvassingStore.prospects) ? canvassingStore.prospects : [])
         .find((prospect) => normalizeText(prospect?.id) === normalizeText(lead?.canvassingProspectId))
       const contact =
@@ -30781,16 +30785,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const workspaceId = organisationId
     const leadId = selectedLeadRecordId || selectedLead.leadId
     const documentType = BUYER_AGENT_DOCUMENT_TYPES.find((item) => item.key === agentBuyerDocumentType) || BUYER_AGENT_DOCUMENT_TYPES[0]
-    const manualFicaPack = documentType.key === 'buyer_fica_declaration'
-      ? buildManualFicaPackDocument({
-          party: 'buyer',
-          partyType: selectedLeadFinanceFormData?.purchaser_entity_type || selectedLeadFinanceFormData?.purchaser_type || selectedLead?.purchaserType || selectedLead?.buyerType || 'individual',
-          signerName: agentBuyerFicaSignerName,
-          signerCapacity: agentBuyerFicaSignerCapacity,
-          leadId,
-          transactionId: selectedLeadLinkedTransaction?.transaction?.id || selectedLeadLinkedTransaction?.id,
-        })
-      : null
     const uploadedAt = new Date().toISOString()
     const transactionId = isUuidLike(selectedLeadLinkedTransactionId) ? selectedLeadLinkedTransactionId : ''
     const target = resolveBuyerLeadDocumentTarget(documentType.key, {
@@ -30802,6 +30796,16 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     try {
       setAgentBuyerDocumentUploading(true)
       setError('')
+      const manualFicaPack = documentType.key === 'buyer_fica_declaration'
+        ? buildManualFicaPackDocument({
+            party: 'buyer',
+            partyType: selectedLeadFinanceFormData?.purchaser_entity_type || selectedLeadFinanceFormData?.purchaser_type || selectedLead?.purchaserType || selectedLead?.buyerType || 'individual',
+            signerName: agentBuyerFicaSignerName,
+            signerCapacity: agentBuyerFicaSignerCapacity,
+            leadId,
+            transactionId: selectedLeadLinkedTransaction?.transaction?.id || selectedLeadLinkedTransaction?.id,
+          })
+        : null
       const filePolicy = validateDocumentUploadFile(file, { surface: 'internal_transaction', transactionId: transactionId || null })
       if (transactionId) {
         const { uploadDocument } = await loadTransactionApiActions()

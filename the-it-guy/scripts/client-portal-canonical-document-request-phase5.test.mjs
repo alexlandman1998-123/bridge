@@ -182,15 +182,61 @@ test('buyer document centre hides containers and collapses semantic duplicates',
     additionalDocumentRequests: [],
   }, 'buying')
 
-  assert.equal(model.summary.total, 4)
+  assert.equal(model.summary.total, 5)
   assert.equal(model.summary.underReview, 1)
-  assert.equal(model.summary.outstanding, 3)
+  assert.equal(model.summary.outstanding, 4)
   assert.equal(model.items.some((item) => item.title === 'Buyer FICA Pack'), false)
   assert.equal(model.items.some((item) => item.title === 'Buyer Marital Status Declaration'), false)
   assert.equal(model.items.some((item) => /Signed OTP \/ Sale Agreement/i.test(item.title)), true)
   assert.equal(model.items.find((item) => /Signed OTP \/ Sale Agreement/i.test(item.title))?.uploadSpec?.type, 'requirement')
   assert.equal(model.items.filter((item) => item.title === 'Proof of Funds').length, 1)
   assert.equal(model.items.filter((item) => item.title === 'Buyer ID / Passport').length, 1)
+  assert.equal(model.items.filter((item) => item.title === 'Signed Buyer FICA Declaration').length, 1)
+})
+
+test('canonical buyer document centre preserves review state for unmatched uploads', () => {
+  const model = buildDocumentCenter({
+    canonicalDocumentProjection: {
+      role: 'buyer',
+      transactionId: 'transaction-buyer-documents',
+      requirements: [{
+        id: 'buyer-fica-requirement',
+        document_definition_key: 'buyer_fica_declaration',
+        pack_key: 'buyer_identity_fica',
+        status: 'required',
+        document_definitions: { display_label: 'Buyer FICA Declaration' },
+      }],
+      documents: [
+        {
+          id: 'unmatched-buyer-document',
+          name: 'Signed buyer declaration',
+          document_type: 'buyer_fica_declaration',
+          source: 'agent_buyer_document_upload',
+          status: 'rejected',
+        },
+        {
+          id: 'pending-buyer-document',
+          name: 'Requested supporting document',
+          source: 'client_portal_requested_document_upload',
+          status: 'pending',
+        },
+        {
+          id: 'superseded-buyer-document',
+          name: 'Old buyer declaration',
+          source: 'agent_buyer_document_upload',
+          status: 'superseded',
+        },
+      ],
+    },
+  }, 'buying')
+
+  assert.equal(model.requiredDocuments[0].status, 'required')
+  assert.equal(model.unmatchedDocuments[0].status, 'rejected')
+  assert.equal(model.summary.rejected, 1)
+  assert.equal(model.summary.uploaded, 1)
+  assert.equal(model.standaloneDocuments.length, 2)
+  assert.equal(model.standaloneDocuments.find((item) => item.sourceId === 'pending-buyer-document')?.status, 'uploaded')
+  assert.match(model.unmatchedDocuments[0].description, /rejected/i)
 })
 
 test('client portal payload resolves organisation branding in core and full loaders', () => {

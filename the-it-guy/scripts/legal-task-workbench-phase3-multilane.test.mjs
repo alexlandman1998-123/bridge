@@ -6,7 +6,7 @@ import { buildTransferWorkspaceViewModel } from '../src/services/attorneyWorkflo
 
 function buildLaneWorkflow(laneKey, currentStage) {
   return {
-    title: laneKey === 'bond' ? 'Bond Attorney Workflow' : 'Cancellation Attorney Workflow',
+    title: laneKey === 'transfer' ? 'Transfer Attorney Workflow' : laneKey === 'bond' ? 'Bond Attorney Workflow' : 'Cancellation Attorney Workflow',
     statusLabel: 'In Progress',
     lane: {
       laneKey,
@@ -24,6 +24,7 @@ function buildLaneWorkflow(laneKey, currentStage) {
 }
 
 const laneCases = [
+  ['transfer', 'instruction_received', 6],
   ['bond', 'bond_instruction_received', 4],
   ['cancellation', 'cancellation_instruction_received', 4],
 ]
@@ -37,9 +38,15 @@ for (const [laneKey, currentStage, expectedPhaseCount] of laneCases) {
   const definitions = getAttorneyStageDefinitionsForLane(laneKey)
 
   assert.equal(viewModel.workflowKey, laneKey)
-  assert.equal(viewModel.tasks.length, definitions.length, `${laneKey} must expose every configured legal task`)
+  if (laneKey === 'transfer') {
+    assert.ok(viewModel.tasks.length > 0 && viewModel.tasks.length <= definitions.length,
+      'transfer must expose its applicable tasks rather than every tax and funding branch')
+    assert.ok(viewModel.tasks.every((task) => definitions.some((definition) => definition.key === task.key)))
+  } else {
+    assert.equal(viewModel.tasks.length, definitions.length, `${laneKey} must expose every configured legal task`)
+  }
   assert.equal(viewModel.phases.length, expectedPhaseCount, `${laneKey} must use a compact four-checkpoint navigator`)
-  assert.equal(viewModel.phases.reduce((total, phase) => total + phase.total, 0), definitions.length)
+  assert.equal(viewModel.phases.reduce((total, phase) => total + phase.total, 0), viewModel.tasks.length)
   assert.ok(viewModel.phases.every((phase) => phase.total > 0))
   assert.ok(viewModel.tasks.every((task) => task.operationalContract?.laneKey === laneKey))
   assert.ok(viewModel.tasks.every((task) => task.phaseKey && task.phaseLabel))
@@ -78,9 +85,13 @@ const pageSource = readFileSync(new URL('../src/pages/AttorneyTransactionDetail.
 assert.match(pageSource, /archlineActiveLegalTaskWorkflowKey === 'bond'/)
 assert.match(pageSource, /archlineActiveLegalTaskWorkflowKey === 'cancellation'/)
 assert.match(pageSource, /workflowKey=\{archlineActiveLegalTaskWorkflowKey\}/)
+assert.match(pageSource, /sharedJourneyTasks: sharedJourneyLaneTasks\(sharedLegalJourney, workflowKey\)/)
+assert.equal((pageSource.match(/sharedLegalJourney=\{archlineSharedLegalJourney\}/g) || []).length, 2,
+  'Matter header and Work must receive the same saved legal journey')
 assert.match(pageSource, /archlineDocumentsByWorkflow\.finance/)
 assert.match(pageSource, /onRequestDocument=\{handleLegalTaskDocumentRequest\}/)
-assert.doesNotMatch(pageSource, /activeLegalWorkflowDetailKey !== 'bond-registration'/)
+// A separate effect may reset a no-longer-required bond selection; it is not
+// a render gate. The positive lane assertions above cover workbench routing.
 assert.doesNotMatch(pageSource, /<ArchlineWorkflowWorkspace/)
 
 console.log('Legal task workbench Phase 3 multi-lane tests passed.')

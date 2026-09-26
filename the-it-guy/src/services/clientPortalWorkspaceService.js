@@ -1,5 +1,6 @@
 import {
   fetchClientPortalAttorneyLaneUpdatesByToken,
+  fetchSellerTransferJourneyUpdatesByToken,
   fetchClientPortalByToken,
   fetchClientPortalCanonicalDocumentProjection,
   fetchClientPortalContextsByToken,
@@ -3375,6 +3376,14 @@ function canonicalRequirementStatusForPortal(status = '') {
   return normalized === 'pending' ? 'required' : normalized
 }
 
+function canonicalUnmatchedDocumentStatus(document = {}) {
+  const value = normalizeValue(document?.review_status || document?.status)
+  if (['rejected', 'reupload_required', 'needs_reupload'].includes(value)) return 'rejected'
+  if (['approved', 'accepted', 'verified'].includes(value)) return 'approved'
+  if (['under_review', 'pending_review', 'in_review'].includes(value)) return 'under_review'
+  return 'uploaded'
+}
+
 export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionError = '') {
   if (projectionError) {
     return {
@@ -3454,16 +3463,22 @@ export function buildCanonicalBuyerDocumentCenter(projection = {}, projectionErr
   const unmatchedItems = documents
     .filter((document) => ['agent_buyer_document_upload', 'client_portal_requested_document_upload'].includes(document?.source) &&
       !document?.canonical_requirement_instance_id &&
-      !document?.canonicalRequirementInstanceId)
-    .map((document) => ({
-      ...buildUploadedDocumentCenterItem(document),
-      description: document?.source === 'agent_buyer_document_upload'
-        ? 'Uploaded by your agent. Awaiting matching to a specific document requirement.'
-        : 'Uploaded for an additional request. Awaiting review.',
-      status: 'uploaded',
-      awaitingRequirementMatch: document?.source === 'agent_buyer_document_upload',
-      buyerCategoryKey: canonicalBuyerDocumentCategory(document?.document_type || document?.category),
-    }))
+      !document?.canonicalRequirementInstanceId &&
+      !['cancelled', 'superseded'].includes(normalizeValue(document?.status)))
+    .map((document) => {
+      const status = canonicalUnmatchedDocumentStatus(document)
+      return {
+        ...buildUploadedDocumentCenterItem(document),
+        description: status === 'rejected'
+          ? 'This file was rejected. Ask your transaction team what needs to be corrected.'
+          : document?.source === 'agent_buyer_document_upload'
+            ? 'Uploaded by your agent. Awaiting matching to a specific document requirement.'
+            : 'Uploaded for an additional request. Awaiting review.',
+        status,
+        awaitingRequirementMatch: document?.source === 'agent_buyer_document_upload',
+        buyerCategoryKey: canonicalBuyerDocumentCategory(document?.document_type || document?.category),
+      }
+    })
   const items = [...requiredDocuments, ...unmatchedItems]
   const summary = items.reduce((result, item) => {
     const status = normalizeDocumentStatus(item.status)
@@ -4143,10 +4158,11 @@ export async function getClientPortalWorkspaceData(token, workspace = 'shared', 
       }
     }
   }
-  if (mode !== 'core' && !isSellerOnboardingToken(token) && portalData?.transaction?.id) {
-    const attorneyLaneUpdates = await fetchClientPortalAttorneyLaneUpdatesByToken(token, clientRole, { limit: 12 }).catch((error) => {
+  if (mode !== 'core' && portalData?.transaction?.id) {
+    const attorneyLaneUpdates = await (isSellerOnboardingToken(token)
+      ? fetchSellerTransferJourneyUpdatesByToken(token, options?.sellerPortalAccessToken)
+      : fetchClientPortalAttorneyLaneUpdatesByToken(token, clientRole, { limit: 20 })).catch((error) => {
       console.warn('[client-portal-attorney-updates] Failed to resolve attorney updates', {
-        token,
         clientRole,
         error,
       })

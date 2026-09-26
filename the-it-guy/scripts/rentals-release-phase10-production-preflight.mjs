@@ -3,6 +3,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { assessRentalProductionPreflight } from '../src/services/rentals/rentalProductionPreflight.js'
+import { assessRentalE2eCertification } from '../src/services/rentals/rentalE2eCertification.js'
 
 const appRoot = fileURLToPath(new URL('..', import.meta.url))
 const repoRoot = path.resolve(appRoot, '..')
@@ -13,14 +14,14 @@ const sourceApproval = readJson('config/rentals-release-source-lock-approval.jso
 const candidate = readJson('config/rentals-release-production-preflight.json')
 const headCommit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
 const workingTreeClean = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' }).trim() === ''
-const stagingCertification = {
-  ready: rebuildReceipt.confirmed === true
-    && certification.projectRef === rebuildReceipt.projectRef
-    && certification.chainSha256 === rebuildReceipt.chainSha256
-    && Array.isArray(certification.scenarios)
-    && certification.scenarios.length >= 8
-    && certification.scenarios.every((scenario) => scenario?.passed === true),
-}
+const stagingCertification = assessRentalE2eCertification({
+  stagingRebuild: {
+    ready: rebuildReceipt.confirmed === true && Boolean(rebuildReceipt.reference) && Boolean(rebuildReceipt.recordedAt) && Boolean(rebuildReceipt.projectRef) && Boolean(rebuildReceipt.chainSha256),
+    target: rebuildReceipt.projectRef || null,
+    chainSha256: rebuildReceipt.chainSha256 || null,
+  },
+  certification,
+})
 const sourceBaseline = { ready: sourceApproval.approved === true && Boolean(sourceApproval.chainSha256), chainSha256: sourceApproval.chainSha256 || null }
 const report = { checkedAt: new Date().toISOString(), headCommit, workingTreeClean, ...assessRentalProductionPreflight({ stagingCertification, sourceBaseline, candidate, headCommit, workingTreeClean }) }
 console.log(JSON.stringify(report, null, 2))

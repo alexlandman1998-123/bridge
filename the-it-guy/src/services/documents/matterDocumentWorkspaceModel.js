@@ -959,6 +959,9 @@ export function buildRequiredDocumentRows({
         fileUrl: linkedDocument?.url || '',
         requirement,
         linkedDocument,
+        relatedEntityType: linkedDocument?.related_entity_type || linkedDocument?.relatedEntityType || '',
+        relatedEntityId: linkedDocument?.related_entity_id || linkedDocument?.relatedEntityId || '',
+        partyRequirements: requirement?.partyRequirements || [],
         source: 'transaction_required_documents',
         satisfiesRequirement: Boolean(linkedDocument || uploadedDocumentId),
       }
@@ -1071,6 +1074,8 @@ export function buildAllDocumentLibraryRows({
         priority: linkedRequirement ? getDocumentPriorityLabel(linkedRequirement) : '',
         blocksStage: Boolean(linkedRequirement?.isBlocking || linkedRequirement?.blocksStage || linkedRequirement?.blocks_stage),
         raw: document,
+        relatedEntityType: document?.related_entity_type || document?.relatedEntityType || '',
+        relatedEntityId: document?.related_entity_id || document?.relatedEntityId || '',
       }
     })
 }

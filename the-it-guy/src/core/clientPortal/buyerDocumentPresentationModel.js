@@ -29,6 +29,7 @@ export function resolveBuyerDocumentCategory(item = {}) {
     item.description,
   ].filter(Boolean).join(' ')).toLowerCase()
   if (/additional/.test(haystack)) return 'additional'
+  if (/fica|identity|passport|proof.of.address|compliance/.test(haystack)) return 'fica'
   if (/bond|bank|finance|income|employ|affordability|proof.of.funds|source.of.funds|deposit|cash|salary|statement|liabilit|payslip/.test(haystack)) return 'finance'
   if (/offer|otp|reservation|sale agreement|agreement of sale|purchase agreement|signed/.test(haystack)) return 'sales'
   if (/property|unit|developer|specification|plan|levy|rates|hoa|body corporate|sectional title/.test(haystack)) return 'property'
@@ -57,7 +58,8 @@ function dueDateSortValue(item = {}) {
   return Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER
 }
 
-export function buildBuyerDocumentPresentationModel({ items = [], source = 'unknown' } = {}) {
+export function buildBuyerDocumentPresentationModel({ items = [], source = 'unknown', loadError = '' } = {}) {
+  const normalizedLoadError = normalizeText(loadError)
   const normalizedItems = (Array.isArray(items) ? items : []).filter(Boolean).map((item, index) => {
     const categoryKey = resolveBuyerDocumentCategory(item)
     const presentationStatus = resolveBuyerDocumentStatus(item)
@@ -86,8 +88,8 @@ export function buildBuyerDocumentPresentationModel({ items = [], source = 'unkn
     return result
   }, { action: 0, review: 0, approved: 0, upcoming: 0, total: 0 })
   const receivedCount = counts.review + counts.approved
-  const completionPercent = counts.total ? Math.round((counts.approved / counts.total) * 100) : 100
-  const collectionPercent = counts.total ? Math.round((receivedCount / counts.total) * 100) : 100
+  const completionPercent = normalizedLoadError ? 0 : counts.total ? Math.round((counts.approved / counts.total) * 100) : 100
+  const collectionPercent = normalizedLoadError ? 0 : counts.total ? Math.round((receivedCount / counts.total) * 100) : 100
   const categories = BUYER_DOCUMENT_CATEGORIES.map((category) => {
     const categoryItems = normalizedItems.filter((item) => item.categoryKey === category.key)
     return Object.freeze({
@@ -113,6 +115,7 @@ export function buildBuyerDocumentPresentationModel({ items = [], source = 'unkn
 
   return Object.freeze({
     source,
+    loadError: normalizedLoadError,
     items: Object.freeze(normalizedItems),
     sortedItems: Object.freeze(sortedItems),
     categories: Object.freeze(categories),
@@ -121,6 +124,6 @@ export function buildBuyerDocumentPresentationModel({ items = [], source = 'unkn
     completionPercent,
     collectionPercent,
     firstActionItem: sortedItems.find((item) => item.isActionRequired) || null,
-    isComplete: counts.total === 0 || counts.action === 0,
+    isComplete: !normalizedLoadError && (counts.total === 0 || counts.action === 0),
   })
 }

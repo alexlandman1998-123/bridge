@@ -503,7 +503,7 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
     reason: canActAsAttorney
       ? isAssignedAttorney
         ? 'assigned_attorney'
-        : 'management_override'
+        : teamWorkflowEligible ? 'matter_team' : 'management_override'
       : canManageMatter
         ? 'management_view_only'
         : canViewMatter

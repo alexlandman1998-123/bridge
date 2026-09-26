@@ -145,11 +145,12 @@ for (const copy of [
 
 const appSource = await fs.readFile(new URL('../src/App.jsx', import.meta.url), 'utf8')
 assert.match(appSource, /SettingsLeadCapturePage/)
-assert.match(appSource, /path="lead-capture"/)
+assert.match(appSource, /path="integrations\/lead-capture"/)
+assert.match(appSource, /SettingsLeadCapturePage section="email"/)
 
-const settingsNavigationSource = await fs.readFile(new URL('../src/pages/settings/settingsNavigation.js', import.meta.url), 'utf8')
-assert.match(settingsNavigationSource, /\/settings\/lead-capture/)
-assert.match(settingsNavigationSource, /Lead Capture/)
+const integrationsSource = await fs.readFile(new URL('../src/pages/settings/SettingsSyndicationPage.jsx', import.meta.url), 'utf8')
+assert.match(integrationsSource, /\/settings\/integrations\/lead-capture/)
+assert.match(integrationsSource, /Inbound Lead Email/)
 
 const settingsLandingSource = await fs.readFile(new URL('../src/pages/settings/SettingsLanding.jsx', import.meta.url), 'utf8')
 assert.match(settingsLandingSource, /buildVisibleSettingsGroups/)
@@ -189,6 +190,8 @@ assert.match(leadCapturePageSource, /repairLeadCaptureReviewItem/)
 assert.match(leadCapturePageSource, /linkLeadCaptureReviewItem/)
 assert.match(leadCapturePageSource, /ReviewQueueFilters/)
 assert.match(leadCapturePageSource, /ProductionSetupSection/)
+assert.match(leadCapturePageSource, /section === 'email'/)
+assert.match(leadCapturePageSource, /<ReviewQueueFilters filters=\{reviewFilters\}/)
 
 const server = await createServer({
   root: process.cwd(),

@@ -1,7 +1,7 @@
 export const RENTAL_LEAD_PIPELINE_VERSION = 'arch9_rental_lead_pipeline_v2'
 
 export const RENTAL_LANDLORD_PIPELINE_STAGES = Object.freeze([
-  'new', 'contacted', 'appraisal_scheduled', 'appraisal_completed', 'mandate_pending', 'mandate_signed', 'listing_ready',
+  'new', 'contacted', 'appraisal_scheduled', 'appraisal_completed', 'mandate_pending', 'mandate_signed', 'listing_ready', 'listing_created',
 ])
 
 export const RENTAL_TENANT_PIPELINE_STAGES = Object.freeze([
@@ -18,7 +18,7 @@ export const RENTAL_LEAD_PIPELINE_STAGES = Object.freeze([...new Set([
 const labels = Object.freeze({
   new: 'New', contacted: 'Contacted', qualified: 'Qualified',
   appraisal_scheduled: 'Appraisal scheduled', appraisal_completed: 'Appraisal completed',
-  mandate_pending: 'Mandate pending', mandate_signed: 'Mandate signed', listing_ready: 'Listing ready',
+  mandate_pending: 'Mandate pending', mandate_signed: 'Mandate signed', listing_ready: 'Listing ready', listing_created: 'Listing created',
   viewing_scheduled: 'Viewing scheduled', viewing_completed: 'Viewing completed',
   application_pending: 'Application pending', application_submitted: 'Application submitted',
   screening_pending: 'Screening pending', fica_pending: 'FICA pending', fica_complete: 'FICA complete',
@@ -29,7 +29,7 @@ const nextAction = Object.freeze({
   landlord: {
     new: 'Contact landlord', contacted: 'Schedule appraisal', appraisal_scheduled: 'Complete appraisal',
     appraisal_completed: 'Prepare mandate', mandate_pending: 'Secure signed mandate',
-    mandate_signed: 'Prepare listing', listing_ready: 'Create rental listing',
+    mandate_signed: 'Prepare listing', listing_ready: 'Create rental listing', listing_created: 'Open rental listing',
   },
   tenant: {
     new: 'Contact tenant', contacted: 'Complete qualification', qualified: 'Schedule viewing',

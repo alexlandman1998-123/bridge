@@ -332,6 +332,7 @@ export default function RentalListingCreatePage() {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [linkedLandlordLead, setLinkedLandlordLead] = useState(null)
+  const [pendingListingId, setPendingListingId] = useState('')
 
   const validationErrors = useMemo(
     () => validateRentalListingDraftForm(form, { organisationId }),
@@ -587,12 +588,14 @@ export default function RentalListingCreatePage() {
       const context = { organisationId, branchId, assignedAgentId, performedBy: assignedAgentId }
       const result = isEditing
         ? await updateRentalListingDraft(editListingId, form, context)
-        : await createRentalListingDraft(form, context)
+        : pendingListingId ? { listing: { id: pendingListingId } } : await createRentalListingDraft(form, context)
       const listingId = result?.listing?.id
       if (listingId) {
         if (linkedLandlordLead && !isEditing) {
+          setPendingListingId(listingId)
           try {
-            await linkRentalLandlordLeadToListing(linkedLandlordLead, listingId, { organisationId, actor: { id: assignedAgentId, userId: assignedAgentId } })
+            await linkRentalLandlordLeadToListing(linkedLandlordLead, listingId, { organisationId, actor: { id: assignedAgentId, userId: assignedAgentId }, scope: { ...rentalScope, assignedAgentId, branchId, includeAllOrganisationLeads: rentalScope.scopeLevel === 'organisation' } })
+            setPendingListingId('')
           } catch (linkError) {
             setError(`Listing ${listingId} was created, but it was not linked to the landlord lead: ${linkError?.message || 'unknown link failure'}`)
             return

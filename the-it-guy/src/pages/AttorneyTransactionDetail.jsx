@@ -59,7 +59,7 @@ import { buildDeveloperJourneySnapshot } from '../core/transactions/highLevelJou
 import { buildLegalOverviewSummary } from '../core/transactions/legalOverviewSummary.js'
 import MatterConversation from '../components/transaction/MatterConversation'
 import { matterMessageRequest } from '../core/transactions/matterMessageRequest.js'
-import { sharedJourneyHeaderPhases } from '../services/sharedMatterJourneyReader.js'
+import { sharedJourneyHeaderPhases, sharedJourneyLaneTasks } from '../services/sharedMatterJourneyReader.js'
 import {
   BOND_APPLICATION_INTENTS,
   buildBondApplicationJourneyModel,
@@ -75,6 +75,8 @@ import TransactionBuyerPartiesPanel from '../components/transaction/TransactionB
 import DealSetupPanel from '../components/transaction/DealSetupPanel'
 import BondDealSetupHandoffPanel from '../components/bond/BondDealSetupHandoffPanel'
 import LegalTaskWorkbench from '../components/attorney/workflow/LegalTaskWorkbench.jsx'
+import TransferJourneyUpdateComposer from '../components/attorney/workflow/TransferJourneyUpdateComposer.jsx'
+import { deriveProfessionalTransferMilestones, selectJourneyPublisherStage } from '../core/clientPortal/transferJourneyPresentationModel.js'
 import {
   buildBondHybridFinanceStageSteps,
   summarizeBondHybridFinanceWorkflow,
@@ -8126,9 +8128,17 @@ function ArchlineWorkflowWorkspace({
 function ArchlineTransferWorkspace({
   workflow = null,
   workflowKey = 'transfer',
+  sharedLegalJourney = null,
   selectionStorageKey = '',
   focusRequest = null,
   documents = [],
+  securityDocuments = [],
+  bondApplicationChecklist = null,
+  bondApplicants = [],
+  workflowLanes = [],
+  routingProfile = null,
+  requiredDocuments = [],
+  documentsLoaded = true,
   keyDates = [],
   parties = [],
   activityFeed = [],
@@ -8139,6 +8149,10 @@ function ArchlineTransferWorkspace({
   onRequestDocument,
   onAddNote,
   onOpenDocuments,
+  onOpenDocumentLibrary,
+  onOpenRoutingProfile,
+  onOpenJourneyPublisher,
+  onDirtyAnswersChange,
   onOpenParties,
   onOpenFinance,
   onOpenMatter,
@@ -8162,6 +8176,23 @@ function ArchlineTransferWorkspace({
       return ''
     }
   })
+  const selectedTaskKeyRef = useRef(selectedTaskKey)
+  const unsavedAnswersTaskRef = useRef('')
+  const selectTaskWithUnsavedGuard = useCallback((nextTaskKey) => {
+    if (nextTaskKey === selectedTaskKeyRef.current) return true
+    if (unsavedAnswersTaskRef.current === selectedTaskKeyRef.current &&
+      typeof window !== 'undefined' && !window.confirm('You have unsaved answers. Leave this task and discard them?')) return false
+    unsavedAnswersTaskRef.current = ''
+    onDirtyAnswersChange?.(false)
+    selectedTaskKeyRef.current = nextTaskKey
+    setSelectedTaskKey(nextTaskKey)
+    return true
+  }, [onDirtyAnswersChange])
+  const handleConfirmationDirtyChange = useCallback((taskKey, dirty) => {
+    if (dirty) unsavedAnswersTaskRef.current = taskKey
+    else if (unsavedAnswersTaskRef.current === taskKey) unsavedAnswersTaskRef.current = ''
+    onDirtyAnswersChange?.(dirty)
+  }, [onDirtyAnswersChange])
   const [search, setSearch] = useState('')
   const [attentionFilter, setAttentionFilter] = useState('')
   const [phaseFilter, setPhaseFilter] = useState('')
@@ -8171,14 +8202,14 @@ function ArchlineTransferWorkspace({
   const [activeTaskTab, setActiveTaskTab] = useState('checklist')
   useEffect(() => {
     if (!focusRequest || focusRequest.workflowKey !== workflowKey) return
-    setSelectedTaskKey(focusRequest.taskKey || '')
+    if (!selectTaskWithUnsavedGuard(focusRequest.taskKey || '')) return
     setSearch('')
     setAttentionFilter('')
     setPhaseFilter('')
     setStatusFilter('')
     setExpandedPhaseKeys(previous => ({ ...previous, [focusRequest.phaseKey]: true }))
     setActiveTaskTab('checklist')
-  }, [focusRequest, workflowKey])
+  }, [focusRequest, selectTaskWithUnsavedGuard, workflowKey])
   const [statusDraft, setStatusDraft] = useState({
     open: false,
     task: null,
@@ -8198,12 +8229,20 @@ function ArchlineTransferWorkspace({
   const [taskSaveBusy, setTaskSaveBusy] = useState(false)
   const [taskSaveError, setTaskSaveError] = useState('')
   const [taskSaveMessage, setTaskSaveMessage] = useState('')
-  const canUpdateSteps = typeof onUpdateStep === 'function'
+  const canUpdateSteps = typeof onUpdateStep === 'function' && workflow?.lane?.permissions?.canUpdateStage === true
   const viewModel = useMemo(
     () => buildTransferWorkspaceViewModel({
       workflow,
       workflowKey,
+      sharedJourneyTasks: sharedJourneyLaneTasks(sharedLegalJourney, workflowKey),
       documents,
+      securityDocuments,
+      bondApplicationChecklist,
+      bondApplicants,
+      workflowLanes,
+      routingProfile,
+      requiredDocuments,
+      documentsLoaded,
       keyDates,
       parties,
       activityFeed,
@@ -8211,9 +8250,10 @@ function ArchlineTransferWorkspace({
       search,
       filters: { attention: attentionFilter, phaseKey: phaseFilter, status: statusFilter },
     }),
-    [activityFeed, attentionFilter, documents, keyDates, parties, phaseFilter, search, selectedTaskKey, statusFilter, workflow, workflowKey],
+    [activityFeed, attentionFilter, bondApplicants, bondApplicationChecklist, documents, documentsLoaded, keyDates, parties, phaseFilter, requiredDocuments, routingProfile, search, securityDocuments, selectedTaskKey, sharedLegalJourney, statusFilter, workflow, workflowKey, workflowLanes],
   )
   const selectedTask = viewModel.selectedTask
+  selectedTaskKeyRef.current = selectedTask?.key || selectedTaskKey
   const currentPhase = viewModel.currentPhase
   const visibleTaskKeys = useMemo(
     () => new Set(viewModel.visibleTasks.map((task) => task.key)),
@@ -8360,7 +8400,7 @@ function ArchlineTransferWorkspace({
       linkedDocumentKey: '',
       requiresReason: Boolean(action?.requiresReason || ['blocked', 'waiting'].includes(action?.status)),
       requiresNote: Boolean(action?.requiresNote),
-      visibility: 'professional_shared',
+      visibility: task.key === 'post_registration_closeout_review' ? 'internal' : 'professional_shared',
       workPacket: action?.command?.draft?.workPacket || action?.command?.workPacket || null,
     })
   }
@@ -8517,7 +8557,7 @@ function ArchlineTransferWorkspace({
       return
     }
     if (item.taskKey) {
-      setSelectedTaskKey(item.taskKey)
+      if (!selectTaskWithUnsavedGuard(item.taskKey)) return
       if (item.phaseKey) {
         setExpandedPhaseKeys((previous) => ({ ...previous, [item.phaseKey]: true }))
       }
@@ -8617,7 +8657,8 @@ function ArchlineTransferWorkspace({
     setTaskSaveMessage('')
     try {
       if (!canUpdateSteps) throw new Error('You do not have access to update this task.')
-      const saved = await onUpdateStep(task, status, note, workPacket, visibility)
+      const saved = await onUpdateStep(task, status, note, workPacket,
+        task.key === 'post_registration_closeout_review' ? 'internal' : visibility)
       if (saved !== true) throw new Error('The task could not be saved. Review the workflow error and try again.')
       setTaskSaveMessage(`${task.label || 'Task'} saved.`)
       return true
@@ -8669,8 +8710,7 @@ function ArchlineTransferWorkspace({
       outcome: updateSucceeded === false ? 'failure' : 'success',
     })
     if (updateSucceeded === false) return
-    if (nextTaskKey) {
-      setSelectedTaskKey(nextTaskKey)
+    if (nextTaskKey && selectTaskWithUnsavedGuard(nextTaskKey)) {
       setExpandedPhaseKeys((previous) => ({ ...previous, [viewModel.nextActionableTask.phaseKey]: true }))
       setActiveTaskTab('checklist')
     }
@@ -8687,9 +8727,18 @@ function ArchlineTransferWorkspace({
         saving={saving || taskSaveBusy}
         error={workflowError || taskSaveError}
         successMessage={taskSaveMessage}
-        onSelectTask={setSelectedTaskKey}
+        onSelectTask={selectTaskWithUnsavedGuard}
+        onConfirmationDirtyChange={handleConfirmationDirtyChange}
         onRunAction={handleTaskWorkbenchAction}
-        onOpenDocuments={(document) => onOpenDocuments?.(selectedTask, document ? [document] : [])}
+        onOpenDocuments={workflow?.lane?.permissions?.canUploadDocuments
+          ? (document, requirement) => onUploadDocument?.(selectedTask, document ? [document] : selectedDocuments, requirement || document?.requirement || null)
+          : undefined}
+        onOpenDocumentLibrary={onOpenDocumentLibrary}
+        onOpenRoutingProfile={onOpenRoutingProfile}
+        onOpenJourneyPublisher={onOpenJourneyPublisher}
+        onRequestDocument={workflow?.lane?.permissions?.canRequestDocuments
+          ? (requirement) => onRequestDocument?.(selectedTask, selectedDocuments, requirement)
+          : undefined}
         onAddNote={() => onAddNote?.(selectedTask)}
         onMarkInProgress={markTaskInProgress}
         onPersistTaskResponses={async (note) => persistTaskUpdate(
@@ -8702,7 +8751,7 @@ function ArchlineTransferWorkspace({
         onSubmitStatusDraft={submitStatusDraft}
         onCloseStatusDraft={closeStatusDraft}
         onUxEvent={onUxEvent}
-        onReviewDocument={onReviewTaskDocument}
+        onReviewDocument={workflow?.lane?.permissions?.canReviewDocuments ? onReviewTaskDocument : undefined}
         onSaveMatterNumber={onSaveMatterNumber}
         onLoadMatterTeam={onLoadMatterTeam}
         onSaveMatterTeam={onSaveMatterTeam}
@@ -8711,7 +8760,7 @@ function ArchlineTransferWorkspace({
         onSaveBondCancellationDecision={onSaveBondCancellationDecision}
         onSaveConfirmations={async (responses) => persistTaskUpdate(
           selectedTask,
-          selectedTask.displayStatus === 'not_started' ? 'in_progress' : selectedTask.displayStatus,
+          selectedTask.status,
           selectedTask.comment || '',
           { laneKey: workflowKey, stageKey: selectedTask.key, taskConfirmations: normalizeTaskConfirmations(responses) },
           'internal',
@@ -8866,7 +8915,7 @@ function ArchlineTransferWorkspace({
                                       : 'hover:bg-slate-50'
                                 }`}
                                 onClick={() => {
-                                  setSelectedTaskKey(task.key)
+                                  if (!selectTaskWithUnsavedGuard(task.key)) return
                                   setExpandedPhaseKeys((previous) => ({ ...previous, [task.phaseKey]: true }))
                                   setActiveTaskTab('checklist')
                                 }}
@@ -16227,6 +16276,7 @@ function AttorneyTransactionDetail() {
   const [saving, setSaving] = useState(false)
   const [workspaceMenu, setWorkspaceMenu] = useState('overview')
   const [localLegalWorkflowDetailKey, setLocalLegalWorkflowDetailKey] = useState('')
+  const unsavedAttorneyAnswersRef = useRef(false)
   const [legalTaskReturnContext, setLegalTaskReturnContext] = useState(null)
   const [legalTaskDrawer, setLegalTaskDrawer] = useState(null)
   const [legalTaskDrawerBusy, setLegalTaskDrawerBusy] = useState(false)
@@ -16270,6 +16320,10 @@ function AttorneyTransactionDetail() {
     documentRequestId: '',
     notes: '',
     requestTitle: '',
+    stageTwoPartyId: '',
+    stageTwoPartyName: '',
+    stageTwoPartyNeedsLink: false,
+    stageTwoParticipantId: '',
   })
   const [documentUploadProgress, setDocumentUploadProgress] = useState(null)
   const [routingProfileModalOpen, setRoutingProfileModalOpen] = useState(false)
@@ -19551,6 +19605,20 @@ function AttorneyTransactionDetail() {
     }
   }
 
+  async function handlePublishTransferJourneyUpdate({ message, clientRecipients, journeyBrief }) {
+    if (!transaction?.id) throw new Error('Load the matter before publishing a journey update.')
+    const next = await addAttorneyTransactionUpdate({
+      transactionId: transaction.id,
+      laneKey: 'transfer',
+      updateType: 'transfer_journey_progress',
+      visibility: 'client_visible',
+      message,
+      clientRecipients,
+      journeyBrief,
+    })
+    await refreshWorkflowAfterChange(next)
+  }
+
   async function handleWorkflowDocumentSubmit(event) {
     event.preventDefault()
     if (!workflowDocumentDraft || !transaction?.id) return
@@ -19885,7 +19953,20 @@ function AttorneyTransactionDetail() {
     navigate(`/transactions/${transaction.id}/legal/otp?${params.toString()}`)
   }, [location.pathname, location.search, navigate, transaction?.id])
 
+  const handleAttorneyAnswersDirtyChange = useCallback((dirty) => {
+    unsavedAttorneyAnswersRef.current = dirty
+  }, [])
+
+  const confirmDiscardAttorneyAnswers = useCallback(() => {
+    if (!unsavedAttorneyAnswersRef.current) return true
+    if (typeof window !== 'undefined' &&
+      !window.confirm('You have unsaved answers. Leave this task and discard them?')) return false
+    unsavedAttorneyAnswersRef.current = false
+    return true
+  }, [])
+
   const openWorkspaceMenu = useCallback((nextMenu) => {
+    if (activeWorkspaceMenu === 'transfer' && nextMenu !== 'transfer' && !confirmDiscardAttorneyAnswers()) return false
     setWorkspaceMenu(nextMenu)
     if (nextMenu === 'transfer') {
       setLegalTaskReturnContext(null)
@@ -19894,23 +19975,26 @@ function AttorneyTransactionDetail() {
       setLocalLegalWorkflowDetailKey(routeLegalWorkflowDetailKey)
       navigate(transactionWorkspaceBasePath)
     }
-  }, [navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
+    return true
+  }, [activeWorkspaceMenu, confirmDiscardAttorneyAnswers, navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
 
   const openLegalWorkflowDetail = useCallback((detailKey) => {
     const normalized = normalizeLegalWorkflowDetailKey(detailKey)
     if (!normalized) return
+    if (activeWorkspaceMenu === 'transfer' && normalized !== activeLegalWorkflowDetailKey && !confirmDiscardAttorneyAnswers()) return
     setLegalTaskReturnContext(null)
     setWorkspaceMenu('transfer')
     setLocalLegalWorkflowDetailKey(normalized)
-  }, [])
+  }, [activeLegalWorkflowDetailKey, activeWorkspaceMenu, confirmDiscardAttorneyAnswers])
 
   const closeLegalWorkflowDetail = useCallback(() => {
+    if (activeWorkspaceMenu === 'transfer' && activeLegalWorkflowDetailKey && !confirmDiscardAttorneyAnswers()) return
     setWorkspaceMenu('transfer')
     setLocalLegalWorkflowDetailKey('')
     if (routeLegalWorkflowDetailKey) {
       navigate(transactionWorkspaceBasePath)
     }
-  }, [navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
+  }, [activeLegalWorkflowDetailKey, activeWorkspaceMenu, confirmDiscardAttorneyAnswers, navigate, routeLegalWorkflowDetailKey, transactionWorkspaceBasePath])
 
   function handleOverviewActionTarget(target = 'overview') {
     const normalizedTarget = normalizeDetailKey(target)
@@ -20896,6 +20980,12 @@ function AttorneyTransactionDetail() {
     : archlineActiveLegalTaskWorkflowKey === 'cancellation'
       ? archlineCancellationWorkflow
       : archlineTransferWorkflow
+  const archlineSharedLegalJourney =
+    workflowOperations?.sharedJourney?.status === 'ready'
+      ? workflowOperations.sharedJourney
+      : transactionRollup?.transactionJourneySnapshot?.legalJourney
+  const clientTransferMilestones = deriveProfessionalTransferMilestones(archlineSharedLegalJourney)
+  const currentClientTransferStage = selectJourneyPublisherStage(clientTransferMilestones)
   const archlineActiveLegalTaskDocuments = archlineActiveLegalTaskWorkflowKey === 'transfer'
     ? archlineTransferDocumentsForWorkflow
     : archlineActiveLegalTaskWorkflowKey === 'bond'
@@ -22450,12 +22540,36 @@ function AttorneyTransactionDetail() {
     void refreshRegistrationValidation()
   }, [refreshRegistrationValidation, registrationModalOpen])
 
+  function isUploadRequirementForSelectedParty(requirement) {
+    if (!uploadDraft.stageTwoPartyId) return true
+    const role = uploadDraft.stageTwoPartyId.split(':')[0]
+    const sameRoleParties = (transaction?.routing_profile_json?.scenarioProfile?.parties || routingProfileDraft?.scenarioProfile?.parties || [])
+      .filter(party => party.role === role)
+    return sameRoleParties.length === 1 || (requirement?.partyRequirements?.length === 1 &&
+      requirement.partyRequirements[0]?.partyId === uploadDraft.stageTwoPartyId)
+  }
+
   function openDocumentUploadModal({ requirement = null, category = '' } = {}) {
-    const canonicalRequirementInstanceId = requirement ? getRequirementCanonicalId(requirement) || requirement.canonicalRequirementInstanceId || '' : ''
-    const requiredDocumentKey = requirement?.key || requirement?.documentKey || requirement?.document_key || ''
+    const stageTwoPartyId = String(requirement?.partyId || '')
+    const stageTwoPartyName = String(requirement?.partyName || '')
+    const participantMatch = stageTwoPartyId.match(/^(?:buyer|seller):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i)
+    const stageTwoParticipantId = participantMatch?.[1] || ''
+    const sameRoleParties = (transaction?.routing_profile_json?.scenarioProfile?.parties || routingProfileDraft?.scenarioProfile?.parties || [])
+      .filter(party => party.role === stageTwoPartyId.split(':')[0])
+    const stageTwoPartyNeedsLink = Boolean(stageTwoPartyId && !stageTwoParticipantId)
+    const sourceKey = String(requirement?.sourceRequirementId || '').replace(/^document:/, '')
+    const linkedRequirement = sourceKey
+      ? requiredDocumentChecklist.find(item => String(item?.key || item?.documentKey || item?.document_key || '') === sourceKey &&
+          (!stageTwoPartyId || sameRoleParties.length === 1 ||
+            (item.partyRequirements?.length === 1 && item.partyRequirements[0]?.partyId === stageTwoPartyId))) || null
+      : requirement
+    const canonicalRequirementInstanceId = linkedRequirement ? getRequirementCanonicalId(linkedRequirement) || linkedRequirement.canonicalRequirementInstanceId || '' : ''
+    const requiredDocumentKey = linkedRequirement?.key || linkedRequirement?.documentKey || linkedRequirement?.document_key || sourceKey || ''
     const contextCategory = category || activeDocumentLibraryCategory
-    const selectedCategory = requirement
-      ? getAttorneyCategoryForRequiredDocument(requirement)
+    const selectedCategory = stageTwoPartyId
+      ? stageTwoPartyId.startsWith('seller:') ? 'Seller FICA / Compliance' : 'Buyer FICA / Compliance'
+      : linkedRequirement
+      ? getAttorneyCategoryForRequiredDocument(linkedRequirement)
       : category
         ? getUploadCategoryForLibraryFilter(category)
         : getUploadCategoryForLibraryFilter(activeDocumentLibraryCategory)
@@ -22481,15 +22595,19 @@ function AttorneyTransactionDetail() {
       documentType: requiredDocumentKey || previous.documentType || '',
       visibility: previous.visibility || 'client_visible',
       uploadedByParty: previous.uploadedByParty || 'client',
-      relatedWorkflow: requirementWorkflow || requirement?.visibleSection || attorneyLane?.laneKey || '',
+      relatedWorkflow: stageTwoPartyId ? 'transfer' : requirementWorkflow || requirement?.visibleSection || attorneyLane?.laneKey || '',
       attorneyLaneKey: attorneyLane?.laneKey || '',
-      satisfiesRequiredDocument: requirement ? 'yes' : 'no',
+      satisfiesRequiredDocument: linkedRequirement && canonicalRequirementInstanceId ? 'yes' : 'no',
       requiredDocumentKey,
-      requiredDocumentId: requirement?.id || '',
+      requiredDocumentId: linkedRequirement?.id || '',
       canonicalRequirementInstanceId,
       documentRequestId: requirement?.documentRequestId || requirement?.document_request_id || '',
       notes: '',
       requestTitle: requirement?.label || requirement?.documentLabel || requirement?.document_label || '',
+      stageTwoPartyId,
+      stageTwoPartyName,
+      stageTwoPartyNeedsLink,
+      stageTwoParticipantId,
     }))
     setUploadInputVersion((previous) => previous + 1)
     setUploadDocumentModalOpen(true)
@@ -22545,6 +22663,7 @@ function AttorneyTransactionDetail() {
       documentRequestId: '',
       notes: shortcut.notes || '',
       requestTitle: shortcut.label || '',
+      stageTwoPartyId: '', stageTwoPartyName: '', stageTwoPartyNeedsLink: false, stageTwoParticipantId: '',
     }))
     setUploadInputVersion((previous) => previous + 1)
     setUploadDocumentModalOpen(true)
@@ -22553,6 +22672,10 @@ function AttorneyTransactionDetail() {
   async function handleUploadDocument(event) {
     event.preventDefault()
     if (!transaction?.id || !uploadDraft.file) {
+      return
+    }
+    if (uploadDraft.stageTwoPartyNeedsLink) {
+      setError('This party needs a linked transaction participant before evidence can be attached to them. Update party details first.')
       return
     }
 
@@ -22571,6 +22694,16 @@ function AttorneyTransactionDetail() {
     if (uploadDraft.satisfiesRequiredDocument === 'yes' && !linkedRequirement) {
       setError('Select the required document this upload satisfies.')
       return
+    }
+    if (uploadDraft.stageTwoPartyId && uploadDraft.satisfiesRequiredDocument === 'yes') {
+      const role = uploadDraft.stageTwoPartyId.split(':')[0]
+      const sameRoleParties = (transaction?.routing_profile_json?.scenarioProfile?.parties || routingProfileDraft?.scenarioProfile?.parties || [])
+        .filter(party => party.role === role)
+      if (sameRoleParties.length > 1 && (linkedRequirement?.partyRequirements?.length !== 1 ||
+        linkedRequirement.partyRequirements[0]?.partyId !== uploadDraft.stageTwoPartyId)) {
+        setError('Select a document requirement linked only to this person, or use a general upload linked to their participant record.')
+        return
+      }
     }
     const visibilityScope = selectedVisibility === 'internal' ? 'internal' : selectedVisibility === 'client_visible' ? 'client' : 'shared'
     const uploadedByParty = String(uploadDraft.uploadedByParty || 'client').trim()
@@ -22611,6 +22744,8 @@ function AttorneyTransactionDetail() {
         documentRequestId: uploadDraft.documentRequestId || null,
         source: isAttorneyUpload ? 'attorney_workspace' : 'internal',
         uploadedByParty,
+        relatedEntityType: uploadDraft.stageTwoParticipantId ? 'transaction_participant' : null,
+        relatedEntityId: uploadDraft.stageTwoParticipantId || null,
         attorneyLaneKey: attorneyLane?.laneKey || null,
         attorneyRole: attorneyLane?.attorneyRole || null,
         onProgress: setDocumentUploadProgress,
@@ -22627,6 +22762,10 @@ function AttorneyTransactionDetail() {
         documentRequestId: '',
         requestTitle: '',
         uploadedByParty: 'client',
+        stageTwoPartyId: '',
+        stageTwoPartyName: '',
+        stageTwoPartyNeedsLink: false,
+        stageTwoParticipantId: '',
       }))
       setUploadInputVersion((previous) => previous + 1)
       setUploadDocumentModalOpen(false)
@@ -22696,6 +22835,7 @@ function AttorneyTransactionDetail() {
       visibility: document?.visibility_scope === 'internal' ? 'internal' : previous.visibility,
       relatedWorkflow: attorneyLane?.laneKey || previous.relatedWorkflow,
       attorneyLaneKey: attorneyLane?.laneKey || '',
+      stageTwoPartyId: '', stageTwoPartyName: '', stageTwoPartyNeedsLink: false, stageTwoParticipantId: '',
     }))
     setWorkspaceMenu('documents')
     setUploadDocumentModalOpen(true)
@@ -22728,6 +22868,7 @@ function AttorneyTransactionDetail() {
       documentRequestId: row.documentRequestId || '',
       notes: '',
       requestTitle: row.displayName || '',
+      stageTwoPartyId: '', stageTwoPartyName: '', stageTwoPartyNeedsLink: false, stageTwoParticipantId: '',
     }))
     setUploadInputVersion((previous) => previous + 1)
     setUploadDocumentModalOpen(true)
@@ -22913,7 +23054,7 @@ function AttorneyTransactionDetail() {
             instructionDate={formatDate(transaction?.instruction_date || transaction?.created_at, '—')}
             matterChips={archlineMatterChips}
             workflow={archlineActiveLegalTaskWorkflow}
-            sharedLegalJourney={transactionRollup?.transactionJourneySnapshot?.legalJourney}
+            sharedLegalJourney={archlineSharedLegalJourney}
             workflowKey={archlineActiveLegalTaskWorkflowKey}
             workflowDocuments={archlineActiveLegalTaskDocuments}
             onSelectWorkflowPhase={(phase, workflowKey) => {
@@ -23145,6 +23286,15 @@ function AttorneyTransactionDetail() {
               </div>
             </div>
 
+            {archlineActiveLegalTaskWorkflowKey === 'transfer' && !attorneyWorkflowIsLoading && archlineActiveLegalTaskWorkflow?.lane ? (
+              <div id="attorney-transfer-journey-publisher"><TransferJourneyUpdateComposer
+                key={currentClientTransferStage?.key || 'unavailable'}
+                stageKey={currentClientTransferStage?.key || ''}
+                onPublish={handlePublishTransferJourneyUpdate}
+                disabled={workflowSaving || !archlineActiveLegalTaskWorkflow.lane.permissions?.canPublishClientVisibleUpdate}
+              /></div>
+            ) : null}
+
             {attorneyWorkflowIsLoading ? (
               <div className="rounded-xl border border-slate-200 bg-white p-5" role="status" aria-live="polite">
                 <div className="h-4 w-40 animate-pulse rounded bg-slate-100" />
@@ -23160,9 +23310,17 @@ function AttorneyTransactionDetail() {
               key={archlineActiveLegalTaskWorkflowKey}
               workflow={archlineActiveLegalTaskWorkflow}
               workflowKey={archlineActiveLegalTaskWorkflowKey}
+              sharedLegalJourney={archlineSharedLegalJourney}
               selectionStorageKey={`arch9:attorney-workflow-selection:${transaction.id}:${archlineActiveLegalTaskWorkflowKey}`}
               focusRequest={journeyFocusRequest}
               documents={archlineActiveLegalTaskDocuments}
+              securityDocuments={allDocumentLibraryRows}
+              bondApplicationChecklist={bondApplicationViewModel.documentChecklist}
+              bondApplicants={bondApplicationViewModel.applicants}
+              workflowLanes={workflowLanes}
+              routingProfile={transaction?.routing_profile_json || {}}
+              requiredDocuments={requiredDocumentChecklist}
+              documentsLoaded={Array.isArray(data?.requiredDocumentChecklist) || workspaceDatasetLoads.documents?.status === 'ready'}
               keyDates={archlineKeyDates}
               parties={archlinePartyItems}
               activityFeed={workflowOperations?.legalTimeline || overviewConversationEntries}
@@ -23186,7 +23344,7 @@ function AttorneyTransactionDetail() {
                 const documentId = row.linkedDocument?.id || row.document?.id || row.documentId || row.uploadedDocumentId || getRequirementDocumentId(requirement) || raw.id
                 if (!requirementInstanceId || !documentId) throw new Error('Link this file to its required document before approving it.')
                 if (action === 'reject' && !reason.trim()) throw new Error('Add a reason for the correction request.')
-                await reviewCanonicalDocumentRequirement({ requirementInstanceId, documentId, action, reason })
+                await reviewCanonicalDocumentRequirement({ requirementInstanceId, documentId, action, reason, attorneyLaneKey: archlineActiveLegalTaskWorkflowKey })
                 try {
                   await refreshTransactionDatasets(['documents', 'workflow', 'activity'], { reason: 'task_document_review' })
                   await refreshCanonicalTransactionSnapshot()
@@ -23223,7 +23381,10 @@ function AttorneyTransactionDetail() {
                   openDocumentUploadModal({ category: archlineActiveLegalTaskWorkflowKey })
                 }
               }}
+              onOpenDocumentLibrary={() => openWorkspaceMenu('documents')}
+              onDirtyAnswersChange={handleAttorneyAnswersDirtyChange}
               onOpenRoutingProfile={openRoutingProfileModal}
+              onOpenJourneyPublisher={() => document.getElementById('attorney-transfer-journey-publisher')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
               onOpenFinance={(task) => {
                 if ([
@@ -23355,6 +23516,9 @@ function AttorneyTransactionDetail() {
 
             <Modal open={uploadDocumentModalOpen} onClose={() => { if (!saving) setUploadDocumentModalOpen(false) }} title="Upload Document" className="max-w-2xl">
               <form onSubmit={handleUploadDocument} className="grid gap-4">
+                {uploadDraft.stageTwoPartyId ? <div className={`rounded-lg border px-3 py-2 text-sm ${uploadDraft.stageTwoPartyNeedsLink ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
+                  {uploadDraft.stageTwoPartyNeedsLink ? `${uploadDraft.stageTwoPartyName || 'This party'} needs a linked transaction participant before person-specific evidence can be uploaded.` : `Evidence for ${uploadDraft.stageTwoPartyName || uploadDraft.stageTwoPartyId}`}
+                </div> : null}
                 {documentUploadProgress ? (
                   <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-800" role="status" aria-live="polite">
                     <span className="mr-2 inline-block size-3 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700 align-[-1px]" />
@@ -23419,7 +23583,7 @@ function AttorneyTransactionDetail() {
                       setUploadDraft((previous) => ({ ...previous, canonicalRequirementInstanceId: getRequirementCanonicalId(requirement) || '', requiredDocumentId: requirement?.id || '', requiredDocumentKey: requirement?.key || '', documentType: requirement?.key || previous.documentType }))
                     }}>
                       <option value="">Select required document</option>
-                      {requiredDocumentChecklist.map((item) => <option key={item.key} value={item.key}>{item.label || item.key}</option>)}
+                      {requiredDocumentChecklist.filter(isUploadRequirementForSelectedParty).map((item) => <option key={item.key} value={item.key}>{item.label || item.key}</option>)}
                     </Field>
                   </label>
                 ) : null}
@@ -23429,7 +23593,7 @@ function AttorneyTransactionDetail() {
                 </label>
                 <div className="flex flex-wrap justify-end gap-3 border-t border-borderSoft pt-4">
                   <Button type="button" variant="secondary" onClick={() => setUploadDocumentModalOpen(false)} disabled={saving}>Cancel</Button>
-                  <Button type="submit" disabled={saving || !uploadDraft.file}>{saving ? documentUploadProgress?.message || 'Uploading…' : 'Upload Document'}</Button>
+                  <Button type="submit" disabled={saving || !uploadDraft.file || uploadDraft.stageTwoPartyNeedsLink}>{saving ? documentUploadProgress?.message || 'Uploading…' : 'Upload Document'}</Button>
                 </div>
               </form>
             </Modal>
@@ -24504,6 +24668,9 @@ function AttorneyTransactionDetail() {
               className="max-w-2xl"
             >
               <form onSubmit={handleUploadDocument} className="grid gap-4">
+                {uploadDraft.stageTwoPartyId ? <div className={`rounded-lg border px-3 py-2 text-sm ${uploadDraft.stageTwoPartyNeedsLink ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
+                  {uploadDraft.stageTwoPartyNeedsLink ? `${uploadDraft.stageTwoPartyName || 'This party'} needs a linked transaction participant before person-specific evidence can be uploaded.` : `Evidence for ${uploadDraft.stageTwoPartyName || uploadDraft.stageTwoPartyId}`}
+                </div> : null}
                 <label className="flex flex-col gap-1.5">
                   <span className="text-label font-semibold uppercase text-textMuted">File</span>
                   <Field
@@ -24625,7 +24792,7 @@ function AttorneyTransactionDetail() {
                     >
                       <option value="">Select required document</option>
                       {requiredDocumentChecklist
-                        .filter((item) => getRequirementCanonicalId(item))
+                        .filter((item) => getRequirementCanonicalId(item) && isUploadRequirementForSelectedParty(item))
                         .map((item) => {
                           const canonicalId = getRequirementCanonicalId(item)
                           return (
@@ -24651,7 +24818,7 @@ function AttorneyTransactionDetail() {
                   <Button type="button" variant="secondary" onClick={() => setUploadDocumentModalOpen(false)}>
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={saving || !uploadDraft.file}>
+                  <Button type="submit" disabled={saving || !uploadDraft.file || uploadDraft.stageTwoPartyNeedsLink}>
                     {saving ? 'Uploading...' : 'Upload Document'}
                   </Button>
                 </div>
@@ -26361,7 +26528,7 @@ function AttorneyTransactionDetail() {
                   ...(routingProfileDraft.propertyTenure === 'estate_hoa' || routingProfileDraft.mvpProfile?.hoaApplicable === 'yes' ? [['hoa', 'HOA']] : []),
                 ].map(([type, label]) => <div key={type} className="rounded-lg border border-border p-3">
                   <p className="text-sm font-semibold text-text">{label} clearance</p>
-                  {[['issuer', 'Issuer', 'text'], ['validUntil', 'Valid until', 'date']].map(([field, fieldLabel, inputType]) =>
+                  {[['issuer', 'Issuer', 'text'], ['reference', 'Certificate reference', 'text'], ['validUntil', 'Valid until', 'date']].map(([field, fieldLabel, inputType]) =>
                     <label key={field} className="mt-2 flex flex-col gap-1"><span className="text-label text-textMuted">{fieldLabel}</span><Field type={inputType} value={routingProfileDraft.mvpProfile?.propertyConditions?.clearances?.[type]?.[field] || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, clearances: { ...previous.mvpProfile?.propertyConditions?.clearances, [type]: { ...previous.mvpProfile?.propertyConditions?.clearances?.[type], [field]: event.target.value } } } } }))} /></label>)}
                 </div>)}
               </div>

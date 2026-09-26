@@ -10,7 +10,7 @@ const percent = (numerator, denominator) => denominator ? Math.round((numerator 
 function isOutcome(lead = {}) {
   const role = resolveRentalLeadRole(lead.role || lead.rentalLeadRole)
   const stage = normaliseRentalLeadStage(lead.stage || lead.rentalStage, role)
-  return role === 'landlord' ? stage === 'listing_ready' : stage === 'placement_ready'
+  return role === 'landlord' ? ['listing_ready', 'listing_created'].includes(stage) : stage === 'placement_ready'
 }
 
 export function buildRentalLeadPerformanceAnalytics(leads = []) {

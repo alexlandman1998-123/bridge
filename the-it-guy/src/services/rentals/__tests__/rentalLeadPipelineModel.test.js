@@ -13,7 +13,7 @@ import {
 
 assert.equal(resolveRentalLeadRole('owner'), 'landlord')
 assert.equal(resolveRentalLeadRole('unknown'), 'tenant')
-assert.deepEqual(getRentalLeadPipelineStages('landlord').slice(-2), ['mandate_signed', 'listing_ready'])
+assert.deepEqual(getRentalLeadPipelineStages('landlord').slice(-3), ['mandate_signed', 'listing_ready', 'listing_created'])
 assert.deepEqual(getRentalLeadPipelineStages('tenant').slice(-2), ['fica_complete', 'placement_ready'])
 assert.equal(normaliseRentalLeadStage('viewing', 'tenant'), 'viewing_scheduled')
 assert.equal(normaliseRentalLeadStage('application', 'landlord'), 'mandate_pending')
@@ -22,6 +22,7 @@ assert.equal(getNextRentalLeadStage({ role: 'tenant', stage: 'qualified' }), 'vi
 assert.equal(getRentalLeadNextAction('contacted', 'landlord'), 'Schedule appraisal')
 assert.equal(getRentalLeadNextAction('screening_pending', 'tenant'), 'Complete screening')
 assert.equal(canTransitionRentalLead('mandate_pending', 'mandate_signed', 'landlord'), true)
+assert.equal(canTransitionRentalLead('listing_ready', 'listing_created', 'landlord'), true)
 assert.equal(canTransitionRentalLead('mandate_pending', 'listing_ready', 'landlord'), false)
 assert.equal(transitionRentalLead({ role: 'tenant', stage: 'new' }, 'contacted').nextAction, 'Complete qualification')
 const summary = buildRentalPipelineSummary([{ stage: 'new', role: 'landlord' }, { stage: 'new', role: 'tenant' }], 'landlord')

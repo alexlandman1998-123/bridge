@@ -111,6 +111,10 @@ try {
   const { __leadIngestionServiceTestUtils } = await server.ssrLoadModule('/src/services/leadIngestionService.js')
   const {
     buildRequirementPayload,
+    assignedTaskAgentId,
+    createIngestionLog,
+    isCompletedIngestionLog,
+    leadNotificationWarning,
     isActiveLead,
     normalizeEnquiryPayload,
     normalizeLeadSource,
@@ -118,6 +122,51 @@ try {
     scoreDevelopmentTextMatch,
     scoreListingTextMatch,
   } = __leadIngestionServiceTestUtils
+
+  for (const status of ['assigned', 'processed', 'duplicate']) {
+    assert.equal(isCompletedIngestionLog({ status, lead_id: '11111111-1111-4111-8111-111111111111' }), true)
+  }
+  assert.equal(isCompletedIngestionLog({ status: 'failed', lead_id: '11111111-1111-4111-8111-111111111111' }), false)
+  assert.equal(isCompletedIngestionLog({ status: 'assigned', lead_id: null }), false)
+  assert.equal(leadNotificationWarning(null), '')
+  assert.equal(leadNotificationWarning({ acknowledgement: { data: { ok: true } }, operations: { data: { ok: true } } }), '')
+  assert.match(leadNotificationWarning({ acknowledgement: { error: new Error('Delivery failed') } }), /buyer acknowledgement failed/)
+  assert.match(leadNotificationWarning({ operations: { error: new Error('Delivery failed') } }), /agent notification failed/)
+  assert.match(leadNotificationWarning({ operations: { data: { skipped: true, reason: 'missing_agent_email' } } }, '33333333-3333-4333-8333-333333333333'), /agent notification failed/)
+  assert.equal(leadNotificationWarning({ operations: { data: { skipped: true, reason: 'missing_agent_email' } } }), '')
+  assert.equal(assignedTaskAgentId({ lead: { assignedAgentId: '33333333-3333-4333-8333-333333333333' } }, {}), '33333333-3333-4333-8333-333333333333')
+  assert.equal(assignedTaskAgentId({ decision: { type: 'queue', queueId: 'unassigned' }, lead: { assignedAgentId: '' } }, { assignedAgentId: '33333333-3333-4333-8333-333333333333' }), '')
+
+  const receiptId = '22222222-2222-4222-8222-222222222222'
+  const leadId = '33333333-3333-4333-8333-333333333333'
+  const originalReceipt = { log_id: receiptId, status: 'failed', lead_id: null }
+  let repairedReceipt = null
+  const existingReceiptQuery = {
+    eq() { return this }, ilike() { return this }, order() { return this }, limit() { return this },
+    async maybeSingle() { return { data: originalReceipt, error: null } },
+  }
+  const updateReceiptQuery = {
+    eq() { return this }, in() { return this }, select() { return this },
+    async maybeSingle() { return { data: { ...originalReceipt, ...repairedReceipt }, error: null } },
+  }
+  const mockClient = {
+    from(table) {
+      assert.equal(table, 'lead_ingestion_logs')
+      return {
+        insert() { return { select() { return { async single() { return { data: null, error: { code: '23505' } } } } } } },
+        select() { return existingReceiptQuery },
+        update(patch) { repairedReceipt = patch; return updateReceiptQuery },
+      }
+    },
+  }
+  const recovered = await createIngestionLog(mockClient, {
+    organisationId: '11111111-1111-4111-8111-111111111111', source: 'Property24',
+    externalReference: 'portal-42', raw: { enquiryId: 'portal-42' },
+  }, { status: 'assigned', leadId })
+  assert.equal(recovered.status, 'assigned')
+  assert.equal(recovered.lead_id, leadId)
+  assert.equal(repairedReceipt.review_status, null)
+  assert.equal(repairedReceipt.error, null)
 
   assert.equal(normalizeLeadSource('property24'), 'Property24')
   assert.equal(normalizeLeadSource('PrivateProperty'), 'Private Property')

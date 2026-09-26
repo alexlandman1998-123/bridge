@@ -796,6 +796,23 @@ async function fetchLaneUpdates(client, transactionId) {
   return query.data || []
 }
 
+async function fetchRegistrationJourneyUpdate(client, transactionId) {
+  // The ordinary activity list is capped. Closure must still find an older
+  // registration message after a busy matter has accumulated later updates.
+  const query = await client.from('transaction_attorney_lane_updates')
+    .select('id, transaction_id, subprocess_id, lane_key, attorney_role, update_type, visibility, message, created_by, created_at, metadata, related_document_id, related_signing_packet_id, client_recipients')
+    .eq('transaction_id', transactionId).eq('lane_key', 'transfer')
+    .eq('update_type', 'transfer_journey_progress').eq('visibility', 'client_visible')
+    .contains('metadata', { journeyBrief: { stageKey: 'registration' } })
+    .overlaps('client_recipients', ['buyer', 'seller'])
+    .order('created_at', { ascending: false }).limit(1)
+  if (query.error) {
+    if (isMissingSchemaError(query.error)) return []
+    throw query.error
+  }
+  return query.data || []
+}
+
 async function fetchLaneHistory(client, transactionId) {
   const query = await client
     .from('transaction_attorney_lane_history')
@@ -1139,13 +1156,18 @@ export async function getAttorneyWorkflowOperationsForTransaction(transactionId,
   }
 
   const laneIds = laneRows.map((row) => row.id).filter(Boolean)
-  let [steps, updates, history, documentRequests, notificationDeliveries] = await Promise.all([
+  let [steps, updates, registrationUpdates, history, documentRequests, notificationDeliveries] = await Promise.all([
     fetchSteps(client, laneIds),
     fetchLaneUpdates(client, normalizedTransactionId),
+    fetchRegistrationJourneyUpdate(client, normalizedTransactionId),
     fetchLaneHistory(client, normalizedTransactionId),
     fetchLaneDocumentRequests(client, normalizedTransactionId),
     getTransactionProgressNotifications(normalizedTransactionId, { client, limit: 100 }).catch(() => []),
   ])
+  if (registrationUpdates.length) {
+    const seen = new Set(updates.map((update) => update.id))
+    updates = [...updates, ...registrationUpdates.filter((update) => !seen.has(update.id))]
+  }
   let stepsBySubprocessId = steps.reduce((accumulator, step) => {
     if (!accumulator[step.subprocess_id]) accumulator[step.subprocess_id] = []
     accumulator[step.subprocess_id].push(step)
@@ -1910,6 +1932,7 @@ export async function addAttorneyTransactionUpdate({
   documentId = null,
   signingPacketId = null,
   workPacket = null,
+  journeyBrief = null,
   idempotencyKey = '',
 } = {}) {
   const client = requireClient()
@@ -1942,6 +1965,34 @@ export async function addAttorneyTransactionUpdate({
   }
   if (normalizedVisibility === 'client_visible' && registryType && !registryType.clientVisibleAllowed) {
     throw new Error('This update type cannot be published to the client portal.')
+  }
+  const isJourneyBrief = registryType?.id === 'transfer_journey_progress'
+  if (Boolean(journeyBrief) !== isJourneyBrief) {
+    throw new Error('A transfer journey update requires its current-stage details.')
+  }
+  let safeJourneyBrief = null
+  if (isJourneyBrief) {
+    if (normalizedLaneKey !== 'transfer' || normalizedVisibility !== 'client_visible') {
+      throw new Error('Transfer journey updates must be published by the transferring attorney to a client audience.')
+    }
+    const allowedStages = new Set(['instruction', 'fica', 'rates', 'funding', 'signing', 'clearances', 'lodgement', 'registration'])
+    const stageKey = String(journeyBrief.stageKey || '').trim()
+    const currentStatus = String(journeyBrief.currentStatus || '').trim()
+    if (!allowedStages.has(stageKey) || !currentStatus || currentStatus.length > 140) {
+      throw new Error('Choose a current transfer stage and describe its status briefly.')
+    }
+    const field = (value, max) => {
+      const result = String(value || '').trim()
+      if (result.length > max) throw new Error('The transfer journey update is too long.')
+      return result
+    }
+    safeJourneyBrief = {
+      version: 1, stageKey, currentStatus,
+      waitingOn: field(journeyBrief.waitingOn, 100),
+      clientAction: field(journeyBrief.clientAction, 180),
+      durationEstimate: field(journeyBrief.durationEstimate, 80),
+      registrationEstimate: field(journeyBrief.registrationEstimate, 80),
+    }
   }
 
   const permissionContext = await getAttorneyLegalPermissionContext({
@@ -2008,6 +2059,7 @@ export async function addAttorneyTransactionUpdate({
       documentId: documentId || null,
       signingPacketId: signingPacketId || null,
       ...workPacketMetadata,
+      ...(safeJourneyBrief ? { journeyBrief: safeJourneyBrief } : {}),
     },
     p_idempotency_key: stableKey,
     p_professional_title: `${meta.label} update`,

@@ -7,6 +7,9 @@ import {
 } from '../../lib/agencyCrmRepository'
 import { getRentalLeadMetadata, isRentalLead } from './rentalLeadClassificationModel'
 import { createRentalCrmLeadMetadata, patchRentalCrmLeadMetadata } from './rentalCrmLeadModel'
+import { listOrganisationUsersForWorkspace } from '../../lib/settingsApi'
+import { assertRentalLeadAssignee, isRentalLeadVisibleInScope } from './rentalLeadAccessModel'
+import { verifyRentalLeadHandoff } from './rentalLeadHandoffService'
 import { appendRentalLeadWorkflowEvidence, buildRentalLeadWorkflowEvidence } from './rentalLeadWorkflowEvidenceModel'
 import { getRentalLeadOutcome, isRentalLeadOperational } from './rentalLeadOutcomeModel'
 import {
@@ -78,7 +81,7 @@ export function buildRentalLeadView(lead = {}, contact = {}) {
     id: text(lead.leadId || lead.lead_id), raw: lead, role, stage, leadType: metadata.leadType,
     stageLabel: getRentalLeadStageLabel(stage, role), nextAction: getRentalLeadNextAction(stage, role),
     name: contactName(contact), email: text(contact.email || lead.sellerEmail), phone: text(contact.phone || lead.sellerPhone),
-    source: text(lead.leadSource) || 'Manual', assignedAgentName: text(lead.assignedAgentName || lead.assignedAgentEmail) || 'Unassigned',
+    source: text(lead.leadSource) || 'Manual', assignedAgentId: text(lead.assignedAgentId || lead.assignedUserId), assignedAgentName: text(lead.assignedAgentName || lead.assignedAgentEmail) || 'Unassigned',
     propertyAddress, propertyType: text(metadata.propertyType), expectedMonthlyRent: numberOrNull(metadata.expectedMonthlyRent),
     desiredArea, monthlyBudget: numberOrNull(metadata.monthlyBudget || lead.budget), bedrooms: numberOrNull(metadata.bedrooms),
     occupationDate: text(metadata.occupationDate), pets: text(metadata.pets),
@@ -93,33 +96,70 @@ export async function listRentalLeads(organisationId, options = {}) {
     includeLocalFallback: false, includePrimaryRecords: true, includeRelatedRecords: false, ...options,
   })
   const contacts = new Map((records.contacts || []).map((contact) => [text(contact.contactId), contact]))
-  const assignedAgentId = text(options.assignedAgentId)
-  const branchId = text(options.branchId)
-  const scopeLevel = text(options.scopeLevel)
-  const includeAllOrganisationLeads = options.includeAllOrganisationLeads === true
-
   return (records.leads || [])
     .filter(isRentalLead)
     .filter((lead) => options.includeClosed === true || isRentalLeadOperational(lead))
-    .filter((lead) => {
-      if (includeAllOrganisationLeads) return true
-      if (scopeLevel === 'branch' && branchId) return text(lead.branchId) === branchId
-      if (!assignedAgentId) return false
-      return [lead.assignedAgentId, lead.assignedUserId, lead.createdBy]
-        .map(text)
-        .includes(assignedAgentId)
-    })
+    .filter((lead) => isRentalLeadVisibleInScope(lead, options))
     .map((lead) => buildRentalLeadView(lead, contacts.get(text(lead.contactId))))
 }
 
 export async function getRentalLeadWorkspace(organisationId, leadId, options = {}) {
-  const visibleLeads = await listRentalLeads(organisationId, options)
+  const visibleLeads = await listRentalLeads(organisationId, { ...options, includeClosed: true })
   if (!visibleLeads.some((lead) => lead.id === text(leadId))) throw new Error('This rental lead is not available in your current scope.')
   const workspace = await fetchAgencyCrmLeadWorkspace(organisationId, leadId)
   const rawLead = workspace.leads?.[0]
   if (!rawLead || !isRentalLead(rawLead)) throw new Error('Rental lead not found.')
   const contact = (workspace.contacts || []).find((item) => text(item.contactId) === text(rawLead.contactId)) || {}
   return { ...workspace, lead: buildRentalLeadView(rawLead, contact) }
+}
+
+export async function updateRentalLeadQualification(leadId, values = {}, context = {}) {
+  const { lead } = await getRentalLeadWorkspace(context.organisationId, leadId, context.scope || {})
+  const landlord = lead.role === 'landlord'
+  const required = text(landlord ? values.propertyAddress : values.desiredArea)
+  if (!required) throw new Error(landlord ? 'Property address is required.' : 'Desired area is required.')
+  const numeric = (value, label) => {
+    if (value === '' || value === null || value === undefined) return null
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`${label} must be zero or more.`)
+    return parsed
+  }
+  const qualification = landlord
+    ? { propertyAddress: required, propertyType: text(values.propertyType), expectedMonthlyRent: numeric(values.expectedMonthlyRent, 'Expected rent') }
+    : { desiredArea: required, monthlyBudget: numeric(values.monthlyBudget, 'Monthly budget'), bedrooms: numeric(values.bedrooms, 'Bedrooms'), occupationDate: text(values.occupationDate), pets: text(values.pets) }
+  if (!landlord && qualification.bedrooms !== null && !Number.isInteger(qualification.bedrooms)) throw new Error('Bedrooms must be a whole number.')
+  if (!landlord && qualification.occupationDate && Number.isNaN(new Date(qualification.occupationDate).getTime())) throw new Error('Occupation date must be valid.')
+  const metadata = patchRentalCrmLeadMetadata(lead.raw, { ...qualification, qualification })
+  const patch = landlord
+    ? { sellerPropertyAddress: required, formattedAddress: required, rawEnquiryPayload: metadata }
+    : { areaInterest: required, budget: qualification.monthlyBudget || 0, rawEnquiryPayload: metadata }
+  await updateAgencyCrmLeadRecord(context.organisationId, lead.id, patch)
+  void createAgencyCrmLeadActivity(context.organisationId, lead.id, {
+    activityType: 'Rental Lead Qualified', activityNote: `${landlord ? 'Landlord property' : 'Tenant requirement'} updated.`, outcome: 'Updated',
+  }, { actor: context.actor || {} }).catch(() => null)
+  return true
+}
+
+export async function assignRentalLead(leadId, assignedUserId, context = {}) {
+  const scope = context.scope || {}
+  const { lead } = await getRentalLeadWorkspace(context.organisationId, leadId, scope)
+  const users = await listOrganisationUsersForWorkspace({ organisationId: context.organisationId })
+  const candidate = users.find((user) => text(user.userId) === text(assignedUserId))
+  assertRentalLeadAssignee(scope, candidate, context.organisationId)
+  const metadata = patchRentalCrmLeadMetadata(lead.raw, { assignedAgentId: candidate.userId, branchId: text(candidate.branchId || lead.raw?.branchId) })
+  await updateAgencyCrmLeadRecord(context.organisationId, lead.id, {
+    assignedAgentId: candidate.userId,
+    assignedUserId: candidate.userId,
+    assignedAgentEmail: candidate.email,
+    branchId: text(candidate.branchId || lead.raw?.branchId),
+    assignedAt: new Date().toISOString(),
+    ownershipStatus: 'assigned',
+    rawEnquiryPayload: metadata,
+  })
+  void createAgencyCrmLeadActivity(context.organisationId, lead.id, {
+    activityType: 'Rental Lead Assigned', activityNote: `Assigned to ${text(candidate.fullName || candidate.email)}.`, outcome: 'Assigned',
+  }, { actor: context.actor || {} }).catch(() => null)
+  return true
 }
 
 export function validateRentalLeadForm(form = {}) {
@@ -157,20 +197,27 @@ export async function createRentalLead(form = {}, context = {}) {
 }
 
 export async function advanceRentalLead(lead = {}, context = {}) {
-  const next = transitionRentalLead(lead, context.toStage)
-  const currentMetadata = getRentalLeadMetadata(lead.raw)
-  const evidence = buildRentalLeadWorkflowEvidence(lead, next.stage, context.evidence)
-  const metadata = patchRentalCrmLeadMetadata(lead.raw, {
+  const currentLead = context.scope
+    ? (await getRentalLeadWorkspace(context.organisationId, lead.id, context.scope)).lead
+    : lead
+  if (currentLead.stage === context.toStage) return currentLead
+  const next = transitionRentalLead(currentLead, context.toStage)
+  const verified = await verifyRentalLeadHandoff(currentLead, next.stage, context)
+  const currentMetadata = getRentalLeadMetadata(currentLead.raw)
+  const evidence = buildRentalLeadWorkflowEvidence(currentLead, next.stage, { ...(context.evidence || {}), ...verified.evidence })
+  if (verified.evidence.viewingId) evidence.viewingId = verified.evidence.viewingId
+  if (verified.evidence.listingId) evidence.listingId = verified.evidence.listingId
+  const metadata = patchRentalCrmLeadMetadata(currentLead.raw, {
     role: next.role,
     stage: next.stage,
-    relationships: context.relationships,
+    relationships: { ...(context.relationships || {}), ...verified.relationships },
     workflow: appendRentalLeadWorkflowEvidence(currentMetadata, evidence),
   })
-  const updated = await updateAgencyCrmLeadRecord(context.organisationId, lead.id, {
+  const updated = await updateAgencyCrmLeadRecord(context.organisationId, currentLead.id, {
     stage: getRentalLeadStageLabel(next.stage, next.role), status: getRentalLeadStageLabel(next.stage, next.role), rawEnquiryPayload: metadata,
   })
-  void createAgencyCrmLeadActivity(context.organisationId, lead.id, {
+  void createAgencyCrmLeadActivity(context.organisationId, currentLead.id, {
     agent: context.actor || {}, activityType: 'Rental Lead Stage Updated', activityNote: [`Moved to ${getRentalLeadStageLabel(next.stage, next.role)}.`, workflowEvidenceSummary(evidence)].filter(Boolean).join(' '), outcome: next.stage,
   }, { actor: context.actor || {} }).catch(() => null)
-  return buildRentalLeadView(updated, { firstName: lead.name.split(' ')[0], lastName: lead.name.split(' ').slice(1).join(' '), email: lead.email, phone: lead.phone })
+  return buildRentalLeadView(updated, { firstName: currentLead.name.split(' ')[0], lastName: currentLead.name.split(' ').slice(1).join(' '), email: currentLead.email, phone: currentLead.phone })
 }

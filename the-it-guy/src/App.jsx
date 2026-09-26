@@ -3954,6 +3954,16 @@ function AppRoutes() {
                   }
                 />
                 <Route
+                  path="integrations/lead-capture"
+                  element={
+                    <OrganisationSettingsManageRoute>
+                      <RoleRoute allowedRoles={['agent', 'developer']}>
+                        <SettingsLeadCapturePage section="email" />
+                      </RoleRoute>
+                    </OrganisationSettingsManageRoute>
+                  }
+                />
+                <Route
                   path="integrations/digital-cards"
                   element={
                     <OrganisationSettingsManageRoute>

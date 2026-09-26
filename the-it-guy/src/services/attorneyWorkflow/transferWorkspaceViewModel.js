@@ -17,7 +17,12 @@ import { getApplicableAttorneyTaskDefinitions, getAttorneyTaskSuggestion } from 
 import { isAttorneyTaskResolved, isAttorneyTaskCompleted, summarizeAttorneyTaskOutcomes } from '../../core/transactions/attorneyTaskOutcomes.js'
 import { isAttorneyAttestedMilestone, requiresAttorneyEvidenceDecision } from '../../core/transactions/attorneyTaskOperationalContract.js'
 import { evaluateTransferTaxLodgementReadiness } from './transferTaxLodgementGate.js'
-import { resolveMatterScenarioProfile, partyCapacityReviewReady, partyCapacityCheckRequirements } from '../matterScenarioProfile.js'
+import { buildStageThreeFinancialReview } from './stageThreeFinancialReview.js'
+import { buildStageFourSecurityReview } from './stageFourSecurityReview.js'
+import { buildStageFiveLodgementReview } from './stageFiveLodgementReview.js'
+import { buildStageSixClosureReview } from './stageSixClosureReview.js'
+import { documentBelongsToParty, ficaDocumentAppliesToParty } from '../../core/transactions/stageTwoPartyEvidence.js'
+import { resolveMatterScenarioProfile, partyCapacityReviewReady, partyCapacityReviewStale, partyCapacityCheckRequirements, partyCapacityFacts } from '../matterScenarioProfile.js'
 
 export const TRANSFER_WORKSPACE_PHASES = Object.freeze(getAttorneyJourneyPhasesForLane('transfer'))
 
@@ -566,6 +571,9 @@ function buildPartyScenarioRequirements(profile = {}) {
     }))
     documents.push(`${role}_trust_deed`, `${role}_letters_of_authority`, `${role}_trustee_ids`, `${role}_trustee_resolution`)
     evidence.push(`${capitalizedRole} trust deed, letters of authority, trustees, and resolution are reviewed.`)
+  } else if (profile.entityType === 'close_corporation') {
+    documents.push(`${role}_cc_registration`, `${role}_cc_resolution`, `${role}_cc_beneficial_ownership`)
+    evidence.push(`${capitalizedRole} close corporation registration, members, beneficial owners and authority are reviewed.`)
   }
 
   return {
@@ -683,7 +691,7 @@ function buildTransferScenarioProfile({ workflow = null, lane = null, facts = {}
   }
 }
 
-function applyTransferScenarioToTask(definition = {}, scenario = null) {
+function applyTransferScenarioToTask(definition = {}, scenario = null, partyProfile = null) {
   if (!scenario) return definition
   const taskKey = definition.key
   const isBuyerFicaTask = /^buyer_fica/.test(taskKey)
@@ -691,7 +699,18 @@ function applyTransferScenarioToTask(definition = {}, scenario = null) {
   if (!isBuyerFicaTask && !isSellerFicaTask) return definition
 
   const roles = isBuyerFicaTask ? ['buyer'] : ['seller']
-  const requirementGroups = roles.map((role) => buildPartyScenarioRequirements(scenario[role]))
+  const requirementGroups = roles.flatMap((role) => {
+    const namedParties = (partyProfile?.parties || []).filter(party => party.role === role)
+    return namedParties.length ? namedParties.map(party => buildPartyScenarioRequirements({
+      role,
+      entityType: party.entityType,
+      maritalRegime: party.maritalRegime,
+      spouseConsentRequired: party.maritalRegime === 'in_community',
+      isIndividual: party.entityType === 'individual',
+      isCompany: party.entityType === 'company',
+      isTrust: party.entityType === 'trust',
+    })) : [buildPartyScenarioRequirements(scenario[role])]
+  })
   const scopedPartyKeys = new Set(roles.flatMap((role) => PARTY_DOCUMENT_KEYS[role] || []))
   const knownPartyTypes = roles.every((role) => scenario[role]?.entityType && scenario[role].entityType !== 'unknown')
   const existingDocuments = Array.isArray(definition.requiredDocuments) ? definition.requiredDocuments : []
@@ -806,15 +825,27 @@ function isTaskOverdue(task = {}, now = new Date()) {
   return Number.isFinite(dueTime) && dueTime < new Date(now).getTime()
 }
 
-function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = null, documents = [], scenario = null } = {}) {
-  const definitions = getApplicableAttorneyTaskDefinitions({ laneKey: workflowKey, workflowPlan: workflow?.workflowPlan, facts: workflow?.facts || {} })
-    .map((definition) => applyTransferScenarioToTask(definition, scenario))
-  const rawPartyProfile = workflow?.workflowPlan?.configuration?.scenarioProfile || workflow?.facts?.scenarioProfile
+function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = null, documents = [], scenario = null, sharedJourneyTasks = null } = {}) {
+  const rawPartyProfile = workflow?.workflowPlan?.configuration?.scenarioProfile || workflow?.facts?.scenarioProfile ||
+    workflow?.facts?.routingProfile?.scenarioProfile || workflow?.routingProfile?.scenarioProfile ||
+    workflow?.transaction?.routing_profile_json?.scenarioProfile
   const partyProfile = rawPartyProfile ? resolveMatterScenarioProfile(rawPartyProfile) : null
+  const snapshotTasks = Array.isArray(sharedJourneyTasks)
+    ? new Map(sharedJourneyTasks.map(task => [task.key, task]))
+    : null
+  const definitions = (snapshotTasks
+    ? getAttorneyStageDefinitionsForLane(workflowKey).filter(definition => snapshotTasks.has(definition.key))
+    : getApplicableAttorneyTaskDefinitions({ laneKey: workflowKey, workflowPlan: workflow?.workflowPlan, facts: workflow?.facts || {} }))
+    .map((definition) => applyTransferScenarioToTask(definition, scenario, partyProfile))
   const laneSteps = Array.isArray(lane?.steps) ? lane.steps : []
   const storedStepMap = new Map(
     laneSteps.map((step) => [getStoredStepKey(step, workflowKey), step]),
   )
+  if (snapshotTasks) {
+    for (const [taskKey, task] of snapshotTasks) {
+      storedStepMap.set(taskKey, { ...(storedStepMap.get(taskKey) || {}), stepKey: taskKey, status: task.status })
+    }
+  }
   const currentKey = getCurrentStepKey(lane || {}, workflowKey)
   let currentIndex = definitions.findIndex((definition) => definition.key === currentKey)
 
@@ -840,15 +871,23 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
     const derivedCompletion = buildFicaTaskDerivedCompletion(definition.key, documents)
     const partyRole = definition.key.startsWith('buyer_') ? 'buyer' : definition.key.startsWith('seller_') ? 'seller' : ''
     const isCapacityOrSigning = ['buyer_party_capacity_review', 'seller_party_capacity_review', 'buyer_signing_review', 'seller_signing_review'].includes(definition.key)
+    const specialistPartyTask = ['party_capacity_specialist_review', 'specialist_classification_review'].includes(definition.key)
+    const isStageTwoPartyTask = specialistPartyTask || (partyRole && (isCapacityOrSigning || definition.key.startsWith(`${partyRole}_fica`)))
+    const stageTwoParties = isStageTwoPartyTask ? (partyProfile?.parties || []).filter(p => specialistPartyTask
+      ? ['estate', 'insolvency', 'other', 'unknown'].includes(p.entityType) || p.maritalRegime === 'other'
+      : p.role === partyRole).map(p => ({
+      id: p.id, name: p.name || p.id, role: p.role, entityType: p.entityType,
+      maritalRegime: p.maritalRegime,
+      factsVersion: JSON.stringify(partyCapacityFacts(p)),
+      status: p.capacityReview.status, ready: partyCapacityReviewReady(p),
+      staleApproval: partyCapacityReviewStale(p),
+      specialistHold: ['estate', 'insolvency', 'other', 'unknown'].includes(p.entityType) || p.maritalRegime === 'other',
+      signatories: p.representatives.map(r => r.name || r.id),
+      checks: partyCapacityCheckRequirements(p).map(check => ({ ...check, complete: p.capacityReview.confirmations?.[check.key] === true })),
+    })) : []
     const partyCapacity = isCapacityOrSigning ? {
       role: partyRole,
-      parties: (partyProfile?.parties || []).filter(p => p.role === partyRole).map(p => ({
-        id: p.id, name: p.name || p.id, entityType: p.entityType,
-        status: p.capacityReview.status,
-        ready: partyCapacityReviewReady(p),
-        signatories: p.representatives.map(r => r.name || r.id),
-        checks: partyCapacityCheckRequirements(p).map(check => ({ ...check, complete: p.capacityReview.confirmations?.[check.key] === true })),
-      })),
+      parties: stageTwoParties,
     } : null
 
     return {
@@ -866,6 +905,7 @@ function buildWorkflowTasks({ workflowKey = 'transfer', lane = null, workflow = 
       displayStatus,
       derivedCompletion,
       partyCapacity,
+      stageTwoParties,
       statusLabel: DISPLAY_STATUS_META[displayStatus] || DISPLAY_STATUS_META.not_started,
       isCurrent: index === currentIndex,
       completedAt: storedStep?.completedAt || storedStep?.completed_at || null,
@@ -1023,18 +1063,29 @@ function buildCompletionReadiness(task = null) {
   const missingRequiredDocuments = (task.relatedDocuments || []).filter((document) => document.missing || document.ready === false)
   const missingRequiredData = (task.dataRequirements || []).filter((requirement) => requirement.required !== false && !requirement.complete)
   const missingParties = task.partyCapacity?.parties?.filter(p => !p.ready) || []
+  const missingPartyFicaEvidence = task.key?.endsWith('_fica_review') && task.stageTwoParties?.length
+    ? (task.requiredDocumentKeys || []).flatMap(requiredKey => task.stageTwoParties
+      .filter(party => ficaDocumentAppliesToParty(requiredKey, party))
+      .filter(party => !(task.relatedDocuments || []).some(document => documentMatchesRequiredKey(document, requiredKey) &&
+        document.ready === true && documentBelongsToParty(document, party.id)))
+      .map(party => `${party.name}: ${requiredKey.replaceAll('_', ' ')} is not linked to this person.`))
+    : []
   const warnings = [
     ...missingRequiredData.map((requirement) => `${requirement.label || requirement.id} has not been captured.`),
     ...missingRequiredDocuments.map((document) => `${document.displayName || document.label || document.name || document.sourceRequirementKey} is not ready.`),
-    ...missingParties.map(p => `${p.name}: attorney capacity and signatory decision is ${p.status}.`),
+    ...missingParties.map(p => `${p.name}: ${p.staleApproval ? 'prior capacity approval is stale after a party or signatory change' : p.specialistHold ? 'specialist capacity hold and review required' : `attorney capacity and signatory decision is ${p.status}`}.`),
+    ...missingPartyFicaEvidence,
     ...(task.partyCapacity && !task.partyCapacity.parties.length ? ['No party is identified for this signing route.'] : []),
     ...(task.taxLodgementReadiness?.warnings || []),
+    ...(task.lodgementReview?.issues || []).map((item) => item.label),
+    ...(task.closureReview?.issues || []),
   ]
 
   return {
     canComplete: missingRequiredDocuments.length === 0 && missingRequiredData.length === 0 &&
-      missingParties.length === 0 && (!task.partyCapacity || task.partyCapacity.parties.length > 0) &&
-      task.taxLodgementReadiness?.ready !== false,
+      missingParties.length === 0 && missingPartyFicaEvidence.length === 0 && (!task.partyCapacity || task.partyCapacity.parties.length > 0) &&
+      task.taxLodgementReadiness?.ready !== false && task.lodgementReview?.ready !== false &&
+      task.closureReview?.ready !== false,
     missingRequiredDocuments,
     missingRequiredData,
     warnings,
@@ -1088,6 +1139,7 @@ function buildChecklistItems(task = null) {
   }))
   const documentItems = (task.relatedDocuments || []).map((document) => ({
     id: `document:${document.id || document.key || document.sourceRequirementKey}`,
+    sourceRequirementId: document.sourceRequirementKey ? `document:${document.sourceRequirementKey}` : '',
     label: document.displayName || document.label || document.name || document.sourceRequirementKey,
     description: document.sourceRequirementKey || '',
     type: 'document',
@@ -1100,7 +1152,9 @@ function buildChecklistItems(task = null) {
     id: `party:${p.id}:${check.key}`,
     label: `${p.name} (${p.entityType}): ${check.label}`,
     description: p.signatories.length ? `Signatories: ${p.signatories.join(', ')}. Decision: ${p.status}.` : `Decision: ${p.status}.`,
-    type: 'party', required: true, complete: check.complete, persisted: p.ready,
+    type: 'party', required: true, complete: check.complete && !p.staleApproval && p.ready, persisted: p.ready,
+    partyId: p.id, partyName: p.name, partyStatus: p.status,
+    staleApproval: p.staleApproval, specialistHold: p.specialistHold,
   })))
 
   return [...partyItems, ...evidenceItems, ...dataItems, ...documentItems]
@@ -1258,11 +1312,15 @@ function buildAvailableActions(task = null, permissions = {}) {
           status: 'completed',
           // Evidence is guidance for ordinary work. Lodgement is the narrow
           // exception: the confirmed tax route needs its verified proof.
-          disabled: task.taxLodgementReadiness?.ready === false,
+          disabled: task.taxLodgementReadiness?.ready === false || task.lodgementReview?.ready === false || task.closureReview?.ready === false,
           requiresNote: attestedMilestone ||
             requiresAttorneyEvidenceDecision(resolveTaskLaneKey(task), task.key) ||
             task.completionReadiness?.canComplete === false,
-          reason: task.taxLodgementReadiness?.ready === false
+          reason: task.closureReview?.ready === false
+            ? task.closureReview.issues[0] || 'Complete the Stage 6 close-out checks before recording this outcome.'
+            : task.lodgementReview?.ready === false
+            ? task.lodgementReview.issues[0]?.label || 'Resolve lodgement and registration readiness before recording this milestone.'
+            : task.taxLodgementReadiness?.ready === false
             ? task.taxLodgementReadiness.warnings?.[0] || 'Complete the applicable transfer-tax verification before lodgement.'
             : task.completionReadiness?.canComplete === false
               ? 'Outstanding items will be recorded with the completion note.'
@@ -2097,7 +2155,15 @@ function buildTransferUatReport({ rolloutReadiness = null, scenario = null, roll
 export function buildTransferWorkspaceViewModel({
   workflow = null,
   workflowKey = 'transfer',
+  sharedJourneyTasks = null,
   documents = [],
+  securityDocuments = [],
+  bondApplicationChecklist = null,
+  bondApplicants = [],
+  workflowLanes = [],
+  routingProfile = null,
+  requiredDocuments = [],
+  documentsLoaded = true,
   keyDates = [],
   parties = [],
   activityFeed = [],
@@ -2109,11 +2175,21 @@ export function buildTransferWorkspaceViewModel({
   const lane = workflow?.lane || null
   const permissions = lane?.permissions || {}
   const scenarioSources = buildTransferScenarioSources({ workflow, lane, facts: workflow?.facts || {} })
+  const financialRoutingProfile = { ...scenarioSources[0], ...scenarioSources[1] }
+  const savedRoutingProfile = routingProfile || scenarioSources[1] || {}
+  const activeWorkflowPlan = workflow?.workflowPlan || savedRoutingProfile.workflowPlan || null
+  const savedLanes = workflowLanes.length ? workflowLanes : lane ? [lane] : []
   const scenario = buildTransferScenarioProfile({ workflow, lane, facts: workflow?.facts || {} })
-  const workflowTasks = buildWorkflowTasks({ workflowKey, lane, workflow, documents, scenario })
+  const workflowTasks = buildWorkflowTasks({ workflowKey, lane, workflow, documents, scenario, sharedJourneyTasks })
   const taxLodgementReadiness = workflowKey === 'transfer'
     ? evaluateTransferTaxLodgementReadiness({
-        transferTaxDecision: scenarioSources[0]?.transferTaxDecision || scenarioSources[1]?.transferTaxDecision,
+        transferTaxDecision: financialRoutingProfile.transferTaxDecision,
+        scenarioProfile: financialRoutingProfile.scenarioProfile,
+        propertyConditions: financialRoutingProfile.propertyConditions || financialRoutingProfile.mvpProfile?.propertyConditions || null,
+        profile: {
+          propertyTenure: financialRoutingProfile.propertyTenure,
+          hoaApplicable: financialRoutingProfile.hoaApplicable || financialRoutingProfile.mvpProfile?.hoaApplicable,
+        },
         steps: workflowTasks,
       })
     : null
@@ -2125,9 +2201,13 @@ export function buildTransferWorkspaceViewModel({
         ? { ...requirement, ...runtimeRequirement }
         : resolveDataRequirementFromSources(requirement, scenarioSources)
     })
+    const sourceRelatedDocuments = buildRelatedDocuments(task, lane, documents)
     const relatedDocuments = task.derivedCompletion?.relatedDocuments?.length
-      ? task.derivedCompletion.relatedDocuments
-      : buildRelatedDocuments(task, lane, documents)
+      ? task.key.includes('_fica')
+        ? [...new Map([...task.derivedCompletion.relatedDocuments, ...sourceRelatedDocuments]
+          .map(document => [text(document.id || document.key || document.sourceRequirementKey), document])).values()]
+        : task.derivedCompletion.relatedDocuments
+      : sourceRelatedDocuments
     const taskWithDocuments = {
       ...task,
       dataRequirements,
@@ -2135,7 +2215,17 @@ export function buildTransferWorkspaceViewModel({
       missingDocumentCount: relatedDocuments.filter((document) => document.missing || document.ready === false).length,
       isOverdue: isTaskOverdue(task, now),
       isDueThisWeek: isTaskDueWithin(task, 7, now),
-      taxLodgementReadiness: task.key === 'lodgement_ready' ? taxLodgementReadiness : null,
+      taxLodgementReadiness: ['lodgement_ready', 'lodged_at_deeds_office', 'registered'].includes(task.key)
+        ? taxLodgementReadiness : null,
+      lodgementReview: buildStageFiveLodgementReview({
+        laneKey: workflowKey, taskKey: task.key, workflowPlan: activeWorkflowPlan,
+        routingProfile: savedRoutingProfile, lanes: savedLanes,
+        requiredDocuments, documentsLoaded, taxLodgementReadiness, now,
+      }),
+      closureReview: workflowKey === 'transfer' ? buildStageSixClosureReview({
+        taskKey: task.key, tasks: workflowTasks, updates: lane?.updates || [],
+        plannedLanes: activeWorkflowPlan?.lanes || [], lanes: savedLanes,
+      }) : null,
     }
     return {
       ...taskWithDocuments,
@@ -2239,6 +2329,15 @@ export function buildTransferWorkspaceViewModel({
       workActions: selectedWorkActions,
       outcomeSummary: selectedOutcomeSummary,
       scenarioRequirements: selectedTask?.scenarioRequirements || null,
+      financialPreparation: workflowKey === 'transfer' && selectedTask
+        ? buildStageThreeFinancialReview({ taskKey: selectedTask.key, routingProfile: financialRoutingProfile, now })
+        : null,
+      securityReview: workflowKey === 'transfer' && selectedTask
+        ? buildStageFourSecurityReview({ taskKey: selectedTask.key, routingProfile: financialRoutingProfile,
+            documents: selectedRelatedDocuments, securityDocuments, bondApplicationChecklist, bondApplicants })
+        : null,
+      lodgementReview: selectedTask?.lodgementReview || null,
+      closureReview: selectedTask?.closureReview || null,
     },
     permissions,
     availableActions,

@@ -1,4 +1,4 @@
-import { ChevronRight, IdCard, MessageCircle, PlugZap, Radio } from 'lucide-react'
+import { ChevronRight, IdCard, Mail, MessageCircle, PlugZap, Radio } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { settingsPageClass } from './settingsUi'
 
@@ -17,6 +17,14 @@ const INTEGRATION_CARDS = [
     icon: Radio,
     brandLabel: 'Meta',
     brandClassName: 'text-[#1877f2]',
+  },
+  {
+    to: '/settings/integrations/lead-capture',
+    label: 'Inbound Lead Email',
+    description: 'Manage capture addresses and review enquiries that need repair.',
+    icon: Mail,
+    brandLabel: 'Lead email',
+    brandClassName: 'text-[#35546c]',
   },
   {
     to: '/settings/integrations/digital-cards',

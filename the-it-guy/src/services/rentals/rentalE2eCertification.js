@@ -1,7 +1,11 @@
 export const RENTAL_E2E_SCENARIOS = Object.freeze([
   'lead_capture_and_qualification',
+  'tenant_and_landlord_enquiries_excluded_from_sales',
+  'lead_branch_and_agent_access',
   'viewing_recorded_within_lead',
+  'application_link_pending_until_submission',
   'application_documents_and_fica',
+  'landlord_lead_signed_mandate_and_linked_listing',
   'approved_application_converts_to_tenancy',
   'tenant_portal_token_and_request',
   'landlord_portal_token_and_decision',
@@ -18,10 +22,15 @@ function timestamp(value) {
 }
 
 export function assessRentalE2eCertification({ stagingRebuild = {}, certification = {} } = {}) {
-  const scenarios = new Map((Array.isArray(certification.scenarios) ? certification.scenarios : []).map((scenario) => [scenario?.id, scenario]))
+  const scenarios = (Array.isArray(certification.scenarios) ? certification.scenarios : []).reduce((byId, scenario) => {
+    const id = text(scenario?.id)
+    byId.set(id, [...(byId.get(id) || []), scenario])
+    return byId
+  }, new Map())
   const failedScenarios = RENTAL_E2E_SCENARIOS.filter((id) => {
-    const scenario = scenarios.get(id)
-    return !(scenario?.passed === true && text(scenario?.reference) && timestamp(scenario?.recordedAt))
+    const matches = scenarios.get(id) || []
+    const scenario = matches[0]
+    return !(matches.length === 1 && scenario?.passed === true && text(scenario?.reference) && timestamp(scenario?.recordedAt))
   })
   const stagingReceiptBound = stagingRebuild.ready === true
     && certification.projectRef === stagingRebuild.target

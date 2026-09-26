@@ -81,7 +81,9 @@ import {
   BuyerMobilePropertyHero,
 } from '../components/client-portal/BuyerMobileChrome'
 import BuyerPortalJourney from '../components/client-portal/BuyerPortalJourney'
+import ClientTransferJourney from '../components/client-portal/ClientTransferJourney'
 import TransactionJourneyTracker from '../components/transaction/TransactionJourneyTracker'
+import { buildClientTransferJourneyPresentation } from '../core/clientPortal/transferJourneyPresentationModel.js'
 import { fetchClientPortalJourneySnapshotByToken } from '../lib/api'
 import {
   buyerPortalHexToRgba as portalHexToRgba,
@@ -103,7 +105,7 @@ import {
 import { buildBuyerJourneyPresentationModel } from '../core/clientPortal/buyerJourneyPresentationModel'
 import { buildTransactionJourneyPresentation } from '../core/transactions/transactionJourneyPresentation'
 import { buildDeveloperTransactionOperationsSummary } from '../core/transactions/developerTransactionOperationsProfile'
-import { buildBuyerDocumentPresentationModel } from '../core/clientPortal/buyerDocumentPresentationModel'
+import { BUYER_DOCUMENT_CATEGORIES, buildBuyerDocumentPresentationModel, resolveBuyerDocumentCategory } from '../core/clientPortal/buyerDocumentPresentationModel'
 import { buildBuyerFinancePresentationModel } from '../core/clientPortal/buyerFinancePresentationModel'
 import { buildBuyerTeamPresentationModel } from '../core/clientPortal/buyerTeamPresentationModel'
 import { buildBuyerPortalCutoverReadiness } from '../core/clientPortal/buyerPortalCutoverReadiness'
@@ -3482,12 +3484,9 @@ function SellerMyDetailsReadonlyPage({ sections = [] }) {
 }
 
 function getBuyerMobileDocumentCategory(item = {}) {
-  const haystack = `${item?.group || ''} ${item?.sellerCategoryKey || ''} ${item?.sourceId || ''} ${item?.title || ''} ${item?.description || ''}`.toLowerCase()
-  if (/additional/.test(haystack)) return { key: 'additional', label: 'Additional' }
-  if (/bond|bank|finance|income|employer|employment|affordability|proof.of.funds|source.of.funds|deposit|cash|salary|statement|liabilit/.test(haystack)) return { key: 'finance', label: 'Finance' }
-  if (/offer|otp|reservation|sale agreement|agreement of sale|purchase agreement|signed/.test(haystack)) return { key: 'sales', label: 'Sales' }
-  if (/property|unit|developer|specification|plans|levy|rates|hoa|body corporate/.test(haystack)) return { key: 'property', label: 'Property' }
-  return { key: 'fica', label: 'Identity & Compliance' }
+  const key = resolveBuyerDocumentCategory(item)
+  const category = BUYER_DOCUMENT_CATEGORIES.find((entry) => entry.key === key)
+  return { key, label: category?.label || 'Documents' }
 }
 
 function getBuyerMobileDocumentBucket(document = {}) {
@@ -3694,6 +3693,7 @@ function BuyerMobilePortal({
   whatHappensNextItems = [],
   reservationAction = null,
   buyerDocumentItems = [],
+  buyerDocumentLoadError = '',
   uploadingDocumentKey = '',
   openingDocumentPath = '',
   onUploadBuyerDocument = null,
@@ -3923,11 +3923,11 @@ function BuyerMobilePortal({
       {
         key: 'documents',
         label: 'Documents',
-        value: missingRequired ? `${missingRequired} required` : 'Ready',
-        detail: missingRequired ? `${missingRequired} needed` : 'No uploads due',
+        value: buyerDocumentLoadError ? 'Unavailable' : missingRequired ? `${missingRequired} required` : 'Ready',
+        detail: buyerDocumentLoadError ? 'Refresh document room' : missingRequired ? `${missingRequired} needed` : 'No uploads due',
         to: 'documents',
         icon: FileText,
-        tone: missingRequired ? 'action' : 'complete',
+        tone: buyerDocumentLoadError ? 'info' : missingRequired ? 'action' : 'complete',
       },
       {
         key: 'finance',
@@ -4483,11 +4483,16 @@ function BuyerMobilePortal({
           <section className="mt-4 rounded-[28px] border border-white/80 bg-white/95 p-5 shadow-[0_14px_36px_rgba(15,23,42,0.065)]">
             <BuyerMobilePageIntro
               eyebrow="Documents"
-              title={buyerDocumentCounts.action ? `${buyerDocumentCounts.action} document${buyerDocumentCounts.action === 1 ? '' : 's'} pending` : 'Documents up to date'}
-              description={buyerDocumentCounts.action
+              title={buyerDocumentLoadError ? 'Documents unavailable' : buyerDocumentCounts.action ? `${buyerDocumentCounts.action} document${buyerDocumentCounts.action === 1 ? '' : 's'} pending` : 'Documents up to date'}
+              description={buyerDocumentLoadError
+                ? 'Your secure document room could not be loaded.'
+                : buyerDocumentCounts.action
                 ? `${buyerDocumentCounts.action} purchase document${buyerDocumentCounts.action === 1 ? '' : 's'} need action.`
                 : 'Review uploaded and approved purchase documents from your team.'}
             />
+            {buyerDocumentLoadError ? (
+              <p role="alert" className="mt-4 rounded-[18px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">{buyerDocumentLoadError}</p>
+            ) : <>
             <div className="mt-4 rounded-[18px] bg-[#f2f4f7] p-1">
               <div className="grid grid-cols-4 gap-1">
                 {buyerDocumentFilters.map((filter) => {
@@ -4571,6 +4576,7 @@ function BuyerMobilePortal({
                 </p>
               )}
             </div>
+            </>}
           </section>
         ) : null}
 
@@ -12270,6 +12276,12 @@ function ClientPortal() {
       notificationItems.filter((item) => item.status === 'unread').length,
   )
   const transferAttorneyRolePlayer = portal?.attorneyRolePlayers?.transferAttorney || null
+  const clientTransferJourneyModel = buildClientTransferJourneyPresentation({
+    legalJourney: workspaceData?.transactionJourneySnapshot?.legalJourney,
+    attorneyUpdates: workspaceData?.attorneyUpdates,
+    audience: effectiveWorkspace === 'seller' ? 'seller' : 'buyer',
+    financeType: financeTypeForPortal,
+  })
   const bondAttorneyRolePlayer = portal?.attorneyRolePlayers?.bondAttorney || null
   const attorneyRolePlayerCards = [
     transferAttorneyRolePlayer ? { key: 'transfer', label: 'Transfer Attorney', value: transferAttorneyRolePlayer } : null,
@@ -12579,16 +12591,17 @@ function ClientPortal() {
   const buyerDocumentPresentationModel = buildBuyerDocumentPresentationModel({
     items: buyerMobileDocumentItems,
     source: 'production',
+    loadError: workspaceData?.documentCenter?.loadError || '',
   })
     const buyerOverviewMetricCards = [
       {
         key: 'documents',
         label: buyerPortalMetricLabels.documents || resolveBuyerPortalLabel('documents', 'Documents'),
-        value: missingRequired ? `${missingRequired} required` : 'Ready',
-        helper: missingRequired ? `${missingRequired} needed` : 'No uploads due',
+        value: buyerDocumentPresentationModel.loadError ? 'Unavailable' : missingRequired ? `${missingRequired} required` : 'Ready',
+        helper: buyerDocumentPresentationModel.loadError ? 'Refresh document room' : missingRequired ? `${missingRequired} needed` : 'No uploads due',
         to: 'documents',
         icon: FileText,
-        tone: missingRequired ? 'action' : 'complete',
+        tone: buyerDocumentPresentationModel.loadError ? 'info' : missingRequired ? 'action' : 'complete',
       },
       {
         key: 'finance',
@@ -13999,6 +14012,7 @@ function ClientPortal() {
             whatHappensNextItems={whatHappensNextItems}
             reservationAction={buyerMobileReservationAction}
             buyerDocumentItems={buyerMobileDocumentItems}
+            buyerDocumentLoadError={workspaceData?.documentCenter?.loadError || ''}
             uploadingDocumentKey={uploadingDocumentKey}
             openingDocumentPath={openingDocumentPath}
             onUploadBuyerDocument={handleBuyerMobileDocumentUpload}
@@ -14702,7 +14716,19 @@ function ClientPortal() {
 
             {isProgress && effectiveWorkspace === 'seller' ? (
               hasLinkedSellerTransaction ? (
-                <TransactionStageWorkspace
+                clientTransferJourneyModel.status === 'ready' ? <ClientTransferJourney
+                  model={clientTransferJourneyModel}
+                  audience="seller"
+                  propertyTitle={sellerPropertyTitle}
+                  propertyImageUrl={sellerPropertyImageUrl}
+                  partyName={sellerDisplayName}
+                  priceLabel={purchasePriceLabel}
+                  attorneyName={pickFirstText(transferAttorneyRolePlayer?.attorneyUser?.name, transferAttorneyRolePlayer?.primaryAttorney?.name, portal?.transaction?.attorney)}
+                  attorneyFirm={pickFirstText(transferAttorneyRolePlayer?.firm?.name, portal?.transaction?.attorney_firm)}
+                  brand={buyerPortalTheme?.primary || '#087955'}
+                  accent={buyerPortalTheme?.accent}
+                  heroOverlayStyle={buyerPortalTheme?.heroOverlayStyle}
+                /> : <TransactionStageWorkspace
                   key={sellerTransactionStageKey}
                   journeyModel={workspaceData?.transactionJourneySnapshot ? sellerTransactionJourneyModel : null}
                   currentStageKey={sellerTransactionStageKey}
@@ -14744,7 +14770,19 @@ function ClientPortal() {
 
             {isProgress && effectiveWorkspace !== 'seller' ? (
               <div className="space-y-5">
-                <BuyerProgressPage
+                {clientTransferJourneyModel.status === 'ready' ? <ClientTransferJourney
+                  model={clientTransferJourneyModel}
+                  audience="buyer"
+                  propertyTitle={pickFirstText(portal?.listing?.address, portal?.listing?.title, `${developmentName} | ${unitLabel}`)}
+                  propertyImageUrl={buyerPropertyImageUrl}
+                  partyName={buyerName}
+                  priceLabel={purchasePriceLabel}
+                  attorneyName={pickFirstText(transferAttorneyRolePlayer?.attorneyUser?.name, transferAttorneyRolePlayer?.primaryAttorney?.name, portal?.transaction?.attorney)}
+                  attorneyFirm={pickFirstText(transferAttorneyRolePlayer?.firm?.name, portal?.transaction?.attorney_firm)}
+                  brand={buyerPortalTheme?.primary || '#087955'}
+                  accent={buyerPortalTheme?.accent}
+                  heroOverlayStyle={buyerPortalTheme?.heroOverlayStyle}
+                /> : <BuyerProgressPage
                   journeyModel={buyerJourneyPresentationModel}
                   stageEducation={stageEducation}
                   whatHappensNextItems={whatHappensNextItems}
@@ -14754,7 +14792,7 @@ function ClientPortal() {
                   theme={buyerPortalTheme}
                   token={token}
                   workspaceNavigationScope={workspaceNavigationScope}
-                />
+                />}
                 <BuyerDevelopmentDeliveryPanel
                   model={buyerDevelopmentOperations}
                   theme={buyerPortalTheme}

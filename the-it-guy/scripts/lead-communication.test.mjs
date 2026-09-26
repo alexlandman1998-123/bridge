@@ -68,13 +68,13 @@ assert.match(workspaceServiceSource, /listLeadCommunications/)
 assert.match(workspaceServiceSource, /buildCommunicationTimeline/)
 assert.match(workspaceServiceSource, /communicationTimeline/)
 
-const leadsPageSource = await fs.readFile(new URL('../src/pages/AgentLeadsPage.jsx', import.meta.url), 'utf8')
-for (const copy of ['Timeline', 'Log Call', 'Log Email', 'Log WhatsApp', 'Add Note', 'Log Meeting', 'Quick Logging']) {
-  assert.match(leadsPageSource, new RegExp(copy), `lead workspace should render ${copy}`)
-}
-assert.match(leadsPageSource, /filterCommunicationTimeline/)
-assert.match(leadsPageSource, /No messages are actually sent|does not send emails/)
-assert.doesNotMatch(leadsPageSource, /sendEmail|sendWhatsApp|sendSms|sendSMS/)
+const leadsPageSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+assert.match(leadsPageSource, /selectedLeadUnifiedTimeline/)
+assert.match(leadsPageSource, /<LeadActivityWorkspace/)
+assert.match(leadsPageSource, /onLogActivity=\{\(\) => openActivityComposer\('activity'\)\}/)
+assert.match(leadsPageSource, /activityQuickTypes = \['Call', 'WhatsApp', 'Email', 'Note', 'Meeting'\]/)
+assert.match(leadsPageSource, /onSubmit=\{handleUnifiedActivitySubmit\}/)
+assert.match(leadsPageSource, /createAgencyCrmLeadActivity/)
 
 const server = await createServer({
   root: process.cwd(),

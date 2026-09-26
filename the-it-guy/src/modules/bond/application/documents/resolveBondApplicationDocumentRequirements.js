@@ -123,7 +123,7 @@ export function resolveBondApplicationDocumentRequirements({
 } = {}) {
   if (includeAllParticipants) {
     const contexts = [{ participantRole: 'primary_applicant' }]
-    if (applicationState.participants?.coApplicant) contexts.push({ participantRole: 'co_applicant' })
+    if (applicationState.participants?.coApplicant) contexts.push({ participantRole: 'co_applicant', participantKey: 'co_applicant:1', participantPath: 'participants.coApplicant' })
     ;(applicationState.participants?.sureties || []).forEach((participant, index) => contexts.push({ participantRole: 'surety', participantKey: participant.participantKey || `surety:${index + 1}`, participantPath: `participants.sureties.${index}`, canEditShared: false }))
     const results = contexts.map((context) => resolveBondApplicationDocumentRequirements({ applicationState, documentRuleContract, participantRole: context.participantRole, participantContext: context }))
     const activeRequirements = [...new Map(results.flatMap((result) => result.activeRequirements).map((requirement) => [requirement.key, requirement])).values()]

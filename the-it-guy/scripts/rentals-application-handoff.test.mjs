@@ -8,14 +8,23 @@ const repositoryRoot = join(appRoot, '..')
 const read = (path) => readFile(join(appRoot, path), 'utf8')
 const readRepository = (path) => readFile(join(repositoryRoot, path), 'utf8')
 const leadWorkspace = await read('src/pages/rentals/RentalLeadWorkspacePage.jsx')
+const leadHandoffModel = await read('src/services/rentals/rentalLeadHandoffModel.js')
+const leadHandoffService = await read('src/services/rentals/rentalLeadHandoffService.js')
+const leadService = await read('src/services/rentals/rentalLeadService.js')
 const invitePanel = await read('src/modules/rentals/shared/vacancies/RentalApplicationInvitePanel.jsx')
 const applicationDetail = await read('src/pages/rentals/RentalApplicationDetailPage.jsx')
 const decisionPanel = await read('src/modules/rentals/shared/applications/RentalApplicationDecisionPanel.jsx')
 const approvalGuard = await readRepository('supabase/migrations/20260913120000_rental_application_approval_readiness.sql')
 
-for (const token of ['leadId: lead.id', "toStage: 'application_submitted'", 'applicationReference: application.id']) {
+for (const token of ['leadId: lead.id', 'createPersistedRentalApplicantAccess', 'Create secure application link']) {
   assert.ok(leadWorkspace.includes(token), `Lead-to-application handoff is missing: ${token}`)
 }
+const inviteAction = leadWorkspace.split('const createApplicationInvite = async () => {')[1]?.split('const copyApplicationLink')[0]
+assert.ok(inviteAction, 'The tenant lead must create an applicant link.')
+assert.ok(!inviteAction.includes('advanceRentalLead'), 'Creating an applicant link must leave the lead at Application pending.')
+assert.ok(leadHandoffModel.includes('findSubmittedLeadApplication'), 'Submission must be checked against a saved application.')
+assert.ok(leadHandoffService.includes('listPersistedRentalApplicationsForLead'), 'The handoff must load the linked application.')
+assert.ok(leadService.includes('verifyRentalLeadHandoff'), 'Stage advancement must verify the submitted application.')
 
 for (const token of ['Start an application from a tenant lead', 'Open tenant leads', 'enquiry, viewing, applicant link, and decision trail']) {
   assert.ok(invitePanel.includes(token), `Vacancy application handoff is unclear: ${token}`)

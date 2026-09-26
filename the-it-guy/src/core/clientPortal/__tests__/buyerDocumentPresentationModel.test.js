@@ -16,6 +16,7 @@ test('classifies document categories from explicit metadata and document meaning
   assert.equal(resolveBuyerDocumentCategory({ buyerCategoryKey: 'finance' }), 'finance')
   assert.equal(resolveBuyerDocumentCategory({ title: 'Latest payslip' }), 'finance')
   assert.equal(resolveBuyerDocumentCategory({ title: 'Signed Offer to Purchase' }), 'sales')
+  assert.equal(resolveBuyerDocumentCategory({ title: 'Signed Buyer FICA Declaration' }), 'fica')
   assert.equal(resolveBuyerDocumentCategory({ title: 'Sectional title conduct rules' }), 'property')
   assert.equal(resolveBuyerDocumentCategory({ title: 'Identity document' }), 'fica')
 })
@@ -58,4 +59,10 @@ test('handles empty and malformed collections safely', () => {
   assert.deepEqual(model.items, [])
   assert.equal(model.completionPercent, 100)
   assert.equal(model.isComplete, true)
+
+  const unavailable = buildBuyerDocumentPresentationModel({ items: [], loadError: 'Secure document room unavailable.' })
+  assert.equal(unavailable.loadError, 'Secure document room unavailable.')
+  assert.equal(unavailable.isComplete, false)
+  assert.equal(unavailable.completionPercent, 0)
+  assert.equal(unavailable.collectionPercent, 0)
 })

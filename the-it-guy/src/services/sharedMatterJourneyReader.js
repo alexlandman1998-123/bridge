@@ -20,6 +20,11 @@ export function projectSharedMatterJourneyRead(source, { audience = 'buyer' } = 
   // Only the explicit persisted active-plan manifest establishes applicability.
   // Old readers and legacy task lists remain visible but cannot prove milestones.
   return { ...presentSharedMatterJourney(journey, audience),
+    ...(['buyer', 'seller'].includes(audience) && Array.isArray(source.clientTransferMilestones)
+      ? { clientTransferMilestones: source.clientTransferMilestones.filter(item =>
+        ['instruction', 'fica', 'rates', 'funding', 'signing', 'clearances', 'lodgement', 'registration'].includes(item?.key) &&
+        ['not_started', 'in_progress', 'waiting', 'blocked', 'completed', 'not_applicable'].includes(item?.status)
+      ).map(item => ({ key: item.key, status: item.status })) } : {}),
     commercialFacts: source.commercialFacts?.version === 1 ? {
       version: 1, revision: source.commercialFacts.revision,
       financeType: ['cash','bond','hybrid'].includes(source.commercialFacts.financeType) ? source.commercialFacts.financeType : null,
@@ -100,6 +105,14 @@ export function sharedJourneyHeaderPhases(result, laneKey) {
     return { ...phase, status, currentTask, hasCurrentTask, completed: phase.progress.completedCount,
       total: phase.progress.applicableCount, notApplicable: phase.progress.notApplicableCount }
   })
+}
+
+// The professional snapshot is the persisted applicability and progress contract
+// used by the matter header. Work must read the same tasks when it is available.
+export function sharedJourneyLaneTasks(result, laneKey) {
+  if (result?.status !== 'ready') return null
+  const lane = result.snapshot?.lanes?.find(item => item.key === laneKey)
+  return lane ? lane.phases.flatMap(phase => phase.tasks.map(task => ({ key: task.key, status: task.status }))) : null
 }
 
 export function alignWorkStepsWithSharedJourney(steps, laneRows, result, plan) {

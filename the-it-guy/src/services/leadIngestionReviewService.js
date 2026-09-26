@@ -322,23 +322,30 @@ export function buildRetryLeadIngestionPayload(log = {}, overrides = {}) {
   }
 }
 
+function buildRetryLogPatch(log, result, overrides = {}, now = new Date().toISOString()) {
+  const warning = normalizeText(result?.warning)
+  return {
+    status: result?.ok
+      ? (result.status === 'duplicate' ? log.status : result.status)
+      : 'failed',
+    retry_count: Number(log.retryCount || 0) + 1,
+    last_retry_at: now,
+    review_status: result?.ok && !warning ? 'resolved' : 'needs_review',
+    resolved_at: result?.ok && !warning ? now : null,
+    error: result?.ok ? warning || null : result?.error || log.error || 'Retry failed.',
+    lead_id: result?.leadId || log.leadId || null,
+    contact_id: result?.contactId || log.contactId || null,
+    listing_id: nullableUuid(result?.listing?.id || overrides.listingId || overrides.listing_id || log.listingId),
+    processed_at: result?.ok ? now : log.processedAt,
+  }
+}
+
 export async function retryLeadIngestionLog({ logId, overrides = {} }, { actor = null } = {}) {
   const log = await getLeadIngestionLog(logId)
   if (!log) throw new Error('Ingestion log not found.')
   const retryPayload = buildRetryLeadIngestionPayload(log, overrides)
   const result = await createOrUpdateLeadFromEnquiry(retryPayload, { actor })
-  const now = new Date().toISOString()
-  const updatedLog = await updateLog(logId, {
-    retry_count: Number(log.retryCount || 0) + 1,
-    last_retry_at: now,
-    review_status: result?.ok ? 'resolved' : 'needs_review',
-    resolved_at: result?.ok ? now : log.resolvedAt,
-    error: result?.ok ? log.error || null : result?.error || log.error || 'Retry failed.',
-    lead_id: result?.leadId || log.leadId || null,
-    contact_id: result?.contactId || log.contactId || null,
-    listing_id: nullableUuid(result?.listing?.id || overrides.listingId || overrides.listing_id || log.listingId),
-    processed_at: result?.ok ? now : log.processedAt,
-  })
+  const updatedLog = await updateLog(logId, buildRetryLogPatch(log, result, overrides))
   return { log: updatedLog, result }
 }
 
@@ -347,6 +354,7 @@ export function listReviewPrivateListings({ organisationId = '', search = '', st
 }
 
 export const __leadIngestionReviewServiceTestUtils = {
+  buildRetryLogPatch,
   buildRetryLeadIngestionPayload,
   filterLeadIngestionLogsClientSide,
   getEnquiryPayloadSummary,

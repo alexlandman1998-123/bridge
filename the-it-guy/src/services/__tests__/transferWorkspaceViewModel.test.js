@@ -504,7 +504,11 @@ const transferDutyLodgementModel = buildTransferWorkspaceViewModel({
     ...workflow,
     facts: {
       ...workflow.facts,
-      transferTaxDecision: { route: 'transfer_duty', status: 'confirmed' },
+      transferTaxDecision: { route: 'transfer_duty', status: 'confirmed', tdc01Reference: 'TDC01-1',
+        dutyPaymentRequired: 'no', sarsStatus: 'receipted', basisNote: 'Dutiable purchase', sarsProofReference: 'SARS-1' },
+      propertyTenure: 'freehold', hoaApplicable: 'no',
+      propertyConditions: { titleRestrictions: 'no', complianceCertificates: 'no',
+        clearances: { municipal: { issuer: 'Municipality', reference: 'RCC-1', validUntil: '2030-01-01' } } },
     },
     lane: {
       ...workflow.lane,
@@ -524,7 +528,11 @@ const verifiedTransferDutyLodgementModel = buildTransferWorkspaceViewModel({
     ...workflow,
     facts: {
       ...workflow.facts,
-      transferTaxDecision: { route: 'transfer_duty', status: 'confirmed' },
+      transferTaxDecision: { route: 'transfer_duty', status: 'confirmed', tdc01Reference: 'TDC01-1',
+        dutyPaymentRequired: 'no', sarsStatus: 'receipted', basisNote: 'Dutiable purchase', sarsProofReference: 'SARS-1' },
+      propertyTenure: 'freehold', hoaApplicable: 'no',
+      propertyConditions: { titleRestrictions: 'no', complianceCertificates: 'no',
+        clearances: { municipal: { issuer: 'Municipality', reference: 'RCC-1', validUntil: '2030-01-01' } } },
     },
     lane: {
       ...workflow.lane,
@@ -538,6 +546,8 @@ const verifiedTransferDutyLodgementModel = buildTransferWorkspaceViewModel({
   selectedTaskKey: 'lodgement_ready',
 })
 assert.equal(verifiedTransferDutyLodgementModel.selectedTask.taxLodgementReadiness.ready, true)
-assert.equal(verifiedTransferDutyLodgementModel.availableActions.primary.find((action) => action.id === 'mark_complete')?.disabled, false)
+assert.equal(verifiedTransferDutyLodgementModel.availableActions.primary.find((action) => action.id === 'mark_complete')?.disabled, true,
+  'verified tax evidence alone cannot bypass a missing current matter workflow plan')
+assert.ok(verifiedTransferDutyLodgementModel.selectedTask.lodgementReview.issues.some(item => item.kind === 'plan'))
 
 console.log('transferWorkspaceViewModel tests passed')

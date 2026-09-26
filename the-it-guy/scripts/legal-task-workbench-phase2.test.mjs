@@ -86,8 +86,20 @@ assert.equal(readyModel.primaryAction.id, 'mark_complete')
 assert.equal(readyModel.primaryAction.source, 'status')
 assert.equal(readyModel.canComplete, true)
 
+const instructionModel = buildLegalTaskWorkbenchModel({
+  task: { ...incompleteTask, key: 'instruction_received', label: 'Instruction Received',
+    operationalContract: { ...incompleteTask.operationalContract, laneKey: 'transfer' } },
+  taskContext: { ...taskContext, checklistItems: [{ id: 'document:sales_agreement_or_otp', type: 'document',
+    label: 'Sales agreement / OTP', complete: false }], relatedDocuments: [{ id: 'missing:otp',
+    sourceRequirementKey: 'sales_agreement_or_otp', missing: true }] },
+  workActions, statusActions,
+})
+assert.equal(instructionModel.requirementActions['document:sales_agreement_or_otp'].label, 'Review OTP')
+assert.equal(instructionModel.requirementActions['document:sales_agreement_or_otp'].requirement.label, 'Signed OTP / sale agreement',
+  'the document request must name the missing file, not the task milestone')
+
 const componentSource = readFileSync(new URL('../src/components/attorney/workflow/LegalTaskWorkbench.jsx', import.meta.url), 'utf8')
-assert.match(componentSource, /Required action/)
+assert.doesNotMatch(componentSource, /Required action/)
 assert.match(componentSource, /Supporting documents/)
 assert.match(componentSource, /arch9:attorney-task-rail:collapsed/)
 assert.match(componentSource, /onPersistTaskResponses/)

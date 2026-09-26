@@ -11,12 +11,12 @@ test('production adapts live agent, finance, and attorney contacts into one team
   assert.match(source, /buildBuyerTeamPresentationModel\(\{[\s\S]*?source: 'production'/)
   assert.match(source, /members: teamMembers/)
   assert.match(source, /attorneyRolePlayers: attorneyRolePlayerCards/)
-  assert.match(source, /isTeam \? <BuyerTeamWorkspace model=\{buyerTeamPresentationModel\}/)
+  assert.match(source, /isTeam \? <BuyerTeamWorkspace model=\{effectiveWorkspace === 'seller' \? sellerTeamPresentationModel : buyerTeamPresentationModel\}/)
   assert.match(source, /teamMembers=\{buyerTeamPresentationModel\.members\}/)
   assert.doesNotMatch(source, /isTeam \? \([\s\S]{0,400}<AttorneyFirmRolePlayerCard/)
 })
 
-test('demo desktop, mobile, and messages support consume one reactive team model', async () => {
+test('demo desktop and mobile team views share one model, with messages linking to the team', async () => {
   const source = await read('src/pages/ProspectBuyerDemo.jsx')
 
   assert.match(source, /const buyerTeamModel = useMemo\(/)
@@ -24,7 +24,7 @@ test('demo desktop, mobile, and messages support consume one reactive team model
   assert.match(source, /teamModel=\{buyerTeamModel\}/)
   assert.match(source, /<MobileTeam brand=\{brand\} model=\{teamModel\}/)
   assert.match(source, /return <BuyerTeamWorkspace model=\{model\} theme=\{brand\}/)
-  assert.match(source, /activeSection === 'messages'[\s\S]*?<BuyerTeamWorkspace model=\{\{ \.\.\.teamModel, heading: 'Messages & support'/)
+  assert.match(source, /activeSection === 'messages'[\s\S]*?<TransactionUpdatesSection brand=\{brand\} standalone \/>[\s\S]*?Contact your team/)
 })
 
 test('shared team files remain presentation-only boundaries', async () => {

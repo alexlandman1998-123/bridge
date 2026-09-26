@@ -32,6 +32,7 @@ function UploadAction({ item, uploadingDocumentKey, onUpload, label = 'Upload', 
 }
 
 function documentRequestMeta(item = {}) {
+  if (!item || typeof item !== 'object') return []
   const entries = []
   if (item.requestedBy) entries.push(`Requested by ${item.requestedBy}`)
   if (item.dueDate) {
@@ -45,6 +46,9 @@ function documentRequestMeta(item = {}) {
 }
 
 export function BuyerDocumentSummary({ model, action = null, compact = false }) {
+  if (model?.loadError) {
+    return <section data-buyer-documents="summary" role="alert" className="rounded-[22px] border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"><h2 className="font-semibold">Documents unavailable</h2><p className="mt-2 leading-6">{model.loadError}</p></section>
+  }
   const categories = (model?.categories || []).filter((category) => category.counts.total > 0)
   return (
     <section data-buyer-documents="summary" data-document-source={model?.source || 'unknown'} className={`rounded-[22px] border border-[#dbe5ef] bg-white p-5 shadow-[0_14px_34px_rgba(15,23,42,0.05)] ${compact ? 'h-[430px] overflow-hidden' : ''}`}>
@@ -110,6 +114,10 @@ export default function BuyerDocumentWorkspace({
     setActiveCategoryKey(key)
     const category = visibleCategories.find((entry) => entry.key === key)
     if (category?.items?.length) setSelectedDocumentId(category.items[0].id)
+  }
+
+  if (model?.loadError) {
+    return <section data-buyer-documents="workspace" role="alert" className="rounded-[20px] border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900"><h1 className="text-lg font-semibold">Your documents are temporarily unavailable</h1><p className="mt-2 leading-6">{model.loadError}</p></section>
   }
 
   return (

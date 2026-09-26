@@ -2,6 +2,16 @@ const key = (value) => String(value || '').trim().toLowerCase()
 const sellers = (scenarioProfile) => (Array.isArray(scenarioProfile?.parties) ? scenarioProfile.parties : [])
   .filter((party) => party?.role === 'seller')
 
+export function isClearanceValidUntil(value, now = new Date()) {
+  const date = String(value || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false
+  const parsed = Date.parse(`${date}T00:00:00Z`)
+  if (!Number.isFinite(parsed) || new Date(parsed).toISOString().slice(0, 10) !== date) return false
+  // Match the database guard: the recorded date must be after today's SAST date.
+  const todayInSast = new Date(new Date(now).getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  return date > todayInSast
+}
+
 export const PHASE4_TAX_TASKS = Object.freeze([
   'transfer_tax_route_confirmed', 'transfer_duty_tdc01_submission', 'sars_evidence_request_response',
   'transfer_duty_assessment_payment', 'vat_exemption_evidence_verified',
@@ -107,7 +117,8 @@ export function phase4DecisionIssues(decision = {}, scenarioProfile = {}, proper
       ...(['estate_hoa'].includes(profile.propertyTenure) || profile.hoaApplicable === 'yes' ? ['hoa'] : [])]) {
       const item = clearance[type] || {}
       if (!String(item.issuer || '').trim()) issues.push(`${type} clearance issuer`)
-      if (!item.validUntil || Number.isNaN(Date.parse(item.validUntil)) || Date.parse(item.validUntil) <= Date.now()) issues.push(`${type} clearance validity`)
+      if (!String(item.reference || item.certificateReference || '').trim()) issues.push(`${type} clearance reference`)
+      if (!isClearanceValidUntil(item.validUntil)) issues.push(`${type} clearance validity`)
     }
     if (!['yes', 'no'].includes(propertyConditions.titleRestrictions)) issues.push('title conditions applicability')
     if (!['yes', 'no'].includes(propertyConditions.complianceCertificates)) issues.push('compliance certificate applicability')

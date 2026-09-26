@@ -40472,6 +40472,7 @@ async function fetchClientVisibleAttorneyLaneUpdates(client, transactionId, view
     .select('id, transaction_id, subprocess_id, lane_key, attorney_role, update_type, visibility, message, created_by, created_at, metadata, related_document_id, related_signing_packet_id, client_recipients')
     .eq('transaction_id', normalizedTransactionId)
     .eq('visibility', 'client_visible')
+    .neq('update_type', 'transfer_journey_progress')
     .order('created_at', { ascending: false })
     .limit(options.limit || 20)
 
@@ -40487,6 +40488,7 @@ async function fetchClientVisibleAttorneyLaneUpdates(client, transactionId, view
       .select('id, transaction_id, subprocess_id, lane_key, attorney_role, update_type, visibility, message, created_by, created_at')
       .eq('transaction_id', normalizedTransactionId)
       .eq('visibility', 'client_visible')
+      .neq('update_type', 'transfer_journey_progress')
       .order('created_at', { ascending: false })
       .limit(options.limit || 20)
   }
@@ -40521,7 +40523,25 @@ async function fetchClientVisibleAttorneyLaneUpdates(client, transactionId, view
 export async function fetchClientPortalAttorneyLaneUpdatesByToken(token, clientRole = 'buyer', options = {}) {
   const client = requireClientPortalTokenClient(token)
   const link = await resolveClientPortalLinkByToken(client, token)
-  return fetchClientVisibleAttorneyLaneUpdates(client, link.transaction_id, clientRole, options)
+  const existing = await fetchClientVisibleAttorneyLaneUpdates(client, link.transaction_id, clientRole, options)
+  if (clientRole !== 'buyer') return existing
+  const { data, error } = await client.rpc('bridge_read_buyer_transfer_journey_updates', {
+    p_transaction_id: link.transaction_id,
+  })
+  if (error && error.code !== 'PGRST202' && error.code !== '42883') throw error
+  const journeyUpdates = Array.isArray(data) ? data : []
+  const byId = new Map([...existing, ...journeyUpdates].map(row => [row.id, row]))
+  return [...byId.values()].sort((a, b) => Date.parse(b.createdAt || 0) - Date.parse(a.createdAt || 0))
+}
+
+export async function fetchSellerTransferJourneyUpdatesByToken(token, accessToken) {
+  const client = requireClient()
+  const { data, error } = await client.rpc('bridge_read_seller_transfer_journey_updates', {
+    p_token: String(token || '').trim(),
+    p_access_token: String(accessToken || '').trim(),
+  })
+  if (error) throw error
+  return Array.isArray(data) ? data : []
 }
 
 export async function addTransactionDiscussionComment({
@@ -51706,7 +51726,7 @@ function isUuidLike(value) {
 
 function normalizeCanonicalUploadActorRole(role = '') {
   const normalized = normalizeDocumentKeyCandidate(role)
-  if (normalized === 'attorney') return 'transferring_attorney'
+  if (normalized === 'attorney' || normalized === 'conveyancer') return 'transferring_attorney'
   if (normalized === 'client') return 'buyer'
   return normalized || 'system'
 }
@@ -51945,6 +51965,7 @@ async function createDocumentUploadIdempotencyKey({
   documentRequestId = null,
   documentType = null,
   category = null,
+  relatedEntityId = null,
 } = {}) {
   const scope = JSON.stringify({
     transactionId: String(transactionId || '').trim(),
@@ -51953,6 +51974,7 @@ async function createDocumentUploadIdempotencyKey({
     documentRequestId: String(documentRequestId || '').trim(),
     documentType: normalizeDocumentKeyCandidate(documentType),
     category: normalizeDocumentKeyCandidate(category),
+    ...(relatedEntityId ? { relatedEntityId: String(relatedEntityId).trim() } : {}),
   })
   // Reading an entire PDF into memory just to create a retry key made larger
   // uploads appear frozen before the Storage request even began. The file
@@ -52241,6 +52263,7 @@ export async function uploadDocument({
     documentRequestId,
     documentType: normalizedDocumentType,
     category,
+    relatedEntityId,
   })
   const existingDocument = await findDocumentByUploadIdempotencyKey(client, {
     transactionId: activeTransactionId,
@@ -52721,9 +52744,11 @@ export async function reviewCanonicalDocumentRequirement({
   action,
   reason = '',
   notes = '',
+  attorneyLaneKey = '',
 } = {}) {
   const client = requireClient()
   const activeProfile = await resolveActiveProfileContext(client)
+  const profileRole = String(activeProfile.role || '').trim().toLowerCase()
   const normalizedAction = String(action || '')
     .trim()
     .toLowerCase()
@@ -52737,7 +52762,9 @@ export async function reviewCanonicalDocumentRequirement({
     p_document_id: documentId || null,
     p_action: normalizedAction,
     p_reason: reason || notes || null,
-    p_actor_role: normalizeCanonicalUploadActorRole(activeProfile.role || 'attorney'),
+    p_actor_role: ['attorney', 'conveyancer'].includes(profileRole) && ['bond', 'cancellation'].includes(attorneyLaneKey)
+      ? `${attorneyLaneKey}_attorney`
+      : normalizeCanonicalUploadActorRole(profileRole || 'attorney'),
     p_actor_user_id: activeProfile.userId || null,
   })
 

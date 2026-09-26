@@ -20,7 +20,10 @@ function createPerformanceApi() {
   return {
     now: () => currentTime,
     setNow: (value) => { currentTime = value },
-    getEntriesByType: (type) => entries[type] || [],
+    getEntriesByType: (type) => {
+      assert.notEqual(type, 'longtask', 'long tasks require PerformanceObserver, not getEntriesByType')
+      return entries[type] || []
+    },
   }
 }
 
@@ -29,8 +32,8 @@ assert.deepEqual(summarizeBuyerWorkspaceResources({ performanceApi, startedAt: 1
   requestCount: 4,
   supabaseRequestCount: 4,
   transferredBytes: 6800,
-  longTaskCount: 1,
-  longTaskDurationMs: 64,
+  longTaskCount: 0,
+  longTaskDurationMs: 0,
   routeChunkDurationMs: 420,
   routeChunkTransferBytes: 1800,
   duplicateSupabaseRequestCount: 1,
