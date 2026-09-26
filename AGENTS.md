@@ -55,6 +55,7 @@ Do not run a broad release suite by default. Use its narrowest component check f
 - Treat `supabase/migrations/` as append-only. Never edit or rename an existing migration; create a new migration when a schema correction is necessary.
 - Never run a command that applies migrations, writes remote data, sends email, publishes listings, or promotes a deployment without the user's explicit approval in the current task.
 - Before any requested database push, run the applicable guard first (`npm run supabase:guard`) and clearly name the target environment.
+- Temporary pilot release choice (26 September–26 December 2026): the requester permits direct production releases at any hour without first reconciling staging. A request to push in the current task is approval for that release, not blanket approval for future changes. Follow the short direct-production checklist in `docs/database-release-runbook.md`; keep target identity, recovery, exact dry-run scope, focused checks, and post-release verification. Do not treat staging drift alone as a blocker during this pilot. Review this choice by 26 December rather than silently reinstating the staging prerequisite.
 - Keep service-role credentials server-side only. Never expose secrets in frontend code, committed files, logs, or responses.
 
 ## Definition of done

@@ -1,8 +1,21 @@
 # Database Release Runbook
 
+## Temporary direct-production pilot (26 September–26 December 2026)
+
+The requester has chosen direct production releases at any hour during this early, no-live-user pilot. This section temporarily supersedes the staging prerequisite and broad-push freeze below when a production push is explicitly requested in the current task. It does not authorize unrelated future changes or destructive database resets. Review the policy by 26 December 2026; do not automatically reinstate the old staging gate without discussing it with the requester.
+
+For each requested release:
+
+1. Confirm the linked project is the intended production project, run `npm run supabase:guard` and `npm run supabase:push:lock-recovery`, and stop if target or recovery checks fail.
+2. Run the narrow app checks for the changed product. Inspect the exact pending migration set with `npx supabase db push --linked --dry-run --skip-vault`; use `--include-all` in the dry run only if older-version files require it. Do not push a surprising or unreviewed migration list.
+3. When the user has approved that release, use the Phase 0 guard's explicit override for the exact reviewed push. Keep `--skip-vault`; do not include seed data or custom roles. Apply migrations before dependent application code.
+4. Verify migration history, key new objects/RPCs, and an available security advisor check. Then deploy the corresponding application commit and verify the deployment and live route. If a step fails, stop and report the partial state; do not conceal it or continue blindly.
+
+The historical reconciliation process remains below for later cleanup and for teams that choose the staged route. Staging drift alone is not a reason to hold an explicitly requested direct-production pilot release.
+
 ## Current safety state
 
-Broad linked-database pushes remain frozen while historical migration drift exists. Do not override the Phase 0 guard and do not use `--include-all`.
+Outside the temporary pilot above, broad linked-database pushes remain frozen while historical migration drift exists. Do not override the Phase 0 guard and do not use `--include-all`.
 
 Before every release, run:
 
