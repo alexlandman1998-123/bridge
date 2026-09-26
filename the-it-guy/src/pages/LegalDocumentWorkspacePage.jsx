@@ -548,7 +548,7 @@ function buildMandateFirstListingPayload({
   }
   const title = buildMandateFirstListingTitle({ property, mandateDraft: draft })
   const notes = [
-    'Created automatically after mandate generation.',
+    'Seller intake prepared automatically after mandate generation.',
     mandateStartDate || mandateEndDate ? `Mandate dates: ${mandateStartDate || 'not set'} to ${mandateEndDate || 'not set'}.` : '',
   ].filter(Boolean).join('\n')
 
@@ -567,7 +567,7 @@ function buildMandateFirstListingPayload({
     title,
     description: firstText(mandate.specialConditions, draft.specialConditions),
     propertyCategory: 'residential',
-    listingSource: 'private_listing',
+    listingSource: realLeadId ? 'seller_lead_intake' : 'private_listing',
     propertyStructureType: unitNumber || sectionNumber || complexName ? 'sectional_title' : 'freehold',
     propertyType,
     listingCategory: 'private_sale',
@@ -4278,7 +4278,7 @@ export default function LegalDocumentWorkspacePage() {
             ...(linkedPacket || {}),
             source_context_json: linkedSourceContext,
           },
-          actionHint: 'Mandate generated and listing created.',
+          actionHint: 'Mandate generated. The Draft Listing will appear after signature.',
         }
       : status
     const nextLeadContext = buildMandateFirstLeadContext({

@@ -10,6 +10,7 @@ export const PROPERTY_CATEGORIES = [
 
 export const LISTING_SOURCES = [
   'private_listing',
+  'seller_lead_intake',
   'development',
   'manual_stock',
   'imported_stock',

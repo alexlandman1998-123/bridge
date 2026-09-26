@@ -12,7 +12,6 @@ import { useWorkspace } from '../context/WorkspaceContext'
 import AgencyPipelinePage from './agency/AgencyPipelinePage'
 import {
   buildSellerOnboardingLink,
-  createListingDraftFromSellerLead,
   createAgentSellerLead,
   deleteSellerWorkflowRecord,
   generateId as generateSellerWorkflowId,
@@ -568,7 +567,6 @@ function LegacyPipeline() {
       },
     })
 
-    createListingDraftFromSellerLead(createdLead, { stage: LISTING_STATUS.SELLER_ONBOARDING_SENT })
     setSellerLeads(readAgentSellerLeads())
     setListingDrafts(readAgentListingDrafts())
     setSellerForm({

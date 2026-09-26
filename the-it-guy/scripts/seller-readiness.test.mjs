@@ -271,6 +271,8 @@ const baseLead = {
     sellerLeadId: 'seller-1',
     listingStatus: 'draft',
     askingPrice: 2500000,
+    propertyAddress: '12 Oak Road',
+    propertyType: 'House',
     description: 'A complete listing description.',
     galleryImages: [{ id: 'photo-1', url: '/photo.jpg' }],
     externalLinks: [{ url: 'https://example.com/listing' }],
@@ -297,7 +299,7 @@ const baseLead = {
   const readiness = getSellerReadiness({ lead: { ...baseLead, listingId: 'listing-2' }, listing, journey })
   assert.equal(readiness.readinessStatus, 'blocked')
   assert.equal(readiness.blockers.some((item) => item.label === 'Missing Photos'), true)
-  assert.equal(readiness.blockers.some((item) => item.label === 'Missing Pricing'), true)
+  assert.equal(readiness.blockers.some((item) => item.label === 'Missing Asking Price'), true)
 }
 
 {

@@ -24,6 +24,7 @@ import { startRouteTransitionTrace } from '../lib/performanceTrace'
 import { invokeEdgeFunction, supabase } from '../lib/supabaseClient'
 import { createAgencyCrmLeadRecord, updateAgencyCrmLeadRecord } from '../lib/agencyCrmRepository'
 import { buildLeadListingLinkPatch } from '../lib/agencyLeadSelection'
+import { isUnconvertedSellerLeadIntake, isUnpublishedDraftListing } from '../lib/sellerLeadListingBoundary'
 import { assessListingSellerLink, assessSellerLeadPersistence } from '../lib/listingDataIntegrity'
 import { preferSavedPropertyFact, recoverStructuredPropertyFactsFromMarketingCopy } from '../lib/listingMarketingPropertyFactRecovery'
 import { listingPropertySaveErrorMessage, verifyListingPropertyPersistenceCopies } from '../lib/listingPropertySaveVerification'
@@ -2050,7 +2051,7 @@ function isArchivedListingRecord(row = {}) {
 }
 
 function shouldHideListingRecord(row = {}) {
-  return isDeletedListingRecord(row) && !isArchivedListingRecord(row)
+  return isUnconvertedSellerLeadIntake(row) || (isDeletedListingRecord(row) && !isArchivedListingRecord(row))
 }
 
 function getListingCollectionView(card = {}) {
@@ -2542,7 +2543,7 @@ function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWar
     return { key: 'archived', filterKey: 'archived', label: 'Archived' }
   }
   if (['draft', 'seller_lead', 'onboarding_sent'].includes(normalizedStatus) || normalizedGroup === 'draft_intake') {
-    return { key: 'draft', filterKey: 'draft', label: 'Draft' }
+    return { key: 'draft', filterKey: 'draft', label: 'Draft Listing' }
   }
   if (['active', 'listing_active', 'mandate_signed', 'under_offer'].includes(normalizedStatus) || ['active', 'under_offer'].includes(normalizedGroup)) {
     if (hasAttention && normalizedStatus !== 'under_offer') {
@@ -2556,7 +2557,7 @@ function getInventoryStatus({ statusKey = '', lifecycleGroup = '', complianceWar
   if (['onboarding_completed', 'listing_review', 'mandate_ready', 'mandate_sent'].includes(normalizedStatus) || normalizedGroup === 'mandate') {
     return { key: 'under_review', filterKey: 'draft', label: 'Under Review' }
   }
-  return { key: 'draft', filterKey: 'draft', label: 'Draft' }
+  return { key: 'draft', filterKey: 'draft', label: 'Draft Listing' }
 }
 
 function inventoryDotClass(statusKey) {
@@ -7158,7 +7159,9 @@ function AgentListings({ initialTab = null } = {}) {
         missingRequirementsCount: developerDirectListing ? 0 : Number(listing?.readinessSummary?.missingRequirementsCount || 0),
         readinessState: String(listing?.readinessSummary?.readinessState || ''),
       })
-      const resolvedInventoryStatus = developerDirectListing
+      const resolvedInventoryStatus = isUnpublishedDraftListing(listing)
+        ? { key: 'draft', filterKey: 'draft', label: 'Draft Listing' }
+        : developerDirectListing
         ? {
             ...inventoryStatus,
             label: complianceWarnings.length ? 'Portal Attention' : 'Portal Ready',
@@ -8694,6 +8697,11 @@ function AgentListings({ initialTab = null } = {}) {
                         priority={index < 4}
                       />
                     </div>
+                    {card.inventoryStatusKey === 'draft' ? (
+                      <span className="absolute left-3 top-3 z-10 rounded-full border border-[#c6d8ea] bg-white/95 px-3 py-1 text-[0.72rem] font-semibold text-[#1f4f78] shadow-sm">
+                        {card.inventoryStatusLabel}
+                      </span>
+                    ) : null}
                     <div className="absolute right-3 top-3 z-10">
                       <button
                         type="button"
@@ -8806,7 +8814,7 @@ function AgentListings({ initialTab = null } = {}) {
               <p className="mt-1 text-sm text-[#6b7d93]">
                 {isDeveloperWorkspace
                   ? 'Create a listing from development stock, link the unit, then complete portal readiness for syndication.'
-                  : 'Start a seller workflow or add a manual listing. Listings become live here once onboarding, mandate, and required documents are ready.'}
+                  : 'Add a listing directly, or complete a seller lead mandate to create a Draft Listing.'}
               </p>
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
                 <Button type="button" variant="secondary" onClick={openManualListingModal} disabled={pilotCreationFreeze.paused}>

@@ -60,6 +60,7 @@ export default function ListingSellerInformationEditor({
         <label className="grid gap-1.5 text-sm font-semibold text-[#2d445e] sm:col-span-2">
           Legal owner type
           <Field as="select" value={branch} onChange={(event) => onChange('branch', event.target.value)}>
+            <option value="">Select legal owner type</option>
             {LISTING_SELLER_PROFILE_BRANCHES.filter((item) => item.value).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
           </Field>
         </label>

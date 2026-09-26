@@ -143,38 +143,51 @@ function listingImages(listing = {}) {
   ].filter(Boolean)
 }
 
-function listingExternalLinks(listing = {}) {
-  return [
-    ...(Array.isArray(listing?.externalLinks) ? listing.externalLinks : []),
-    ...(Array.isArray(listing?.external_links) ? listing.external_links : []),
-    ...(Array.isArray(listing?.listingExternalLinks) ? listing.listingExternalLinks : []),
-    ...(Array.isArray(listing?.listing_external_links) ? listing.listing_external_links : []),
-    ...(Array.isArray(listing?.marketing?.externalLinks) ? listing.marketing.externalLinks : []),
-  ].filter(Boolean)
-}
-
 function listingDescription(listing = {}) {
   return firstPresent(
     listing?.description,
     listing?.propertyDescription,
     listing?.property_description,
     listing?.marketing?.description,
-    listing?.propertyNotes,
-    listing?.property_notes,
+    listing?.propertyDetails?.description,
+    listing?.property_details?.description,
   )
 }
 
-function listingPrice(listing = {}, lead = {}) {
+function listingPrice(listing = {}) {
   return toNumber(
-    listing?.askingPrice ||
-      listing?.asking_price ||
-      listing?.price ||
-      listing?.listPrice ||
-      listing?.list_price ||
-      listing?.propertyDetails?.price ||
-      lead?.estimatedValue ||
-      lead?.estimated_value,
+    listing?.askingPrice ??
+      listing?.asking_price ??
+      listing?.price ??
+      listing?.listPrice ??
+      listing?.list_price ??
+      listing?.propertyDetails?.price ??
+      listing?.property_details?.price,
   )
+}
+
+function listingPropertyDetailsComplete(listing = {}) {
+  const address = firstPresent(
+    listing?.propertyAddress,
+    listing?.property_address,
+    listing?.address,
+    listing?.addressLine1,
+    listing?.address_line_1,
+    listing?.formattedAddress,
+    listing?.formatted_address,
+    listing?.streetAddress,
+    listing?.street_address,
+    listing?.propertyDetails?.addressLine1,
+    listing?.propertyDetails?.formattedAddress,
+    listing?.property_details?.address_line_1,
+  )
+  const type = firstPresent(
+    listing?.propertyType,
+    listing?.property_type,
+    listing?.propertyDetails?.propertyType,
+    listing?.property_details?.property_type,
+  )
+  return Boolean(address && type)
 }
 
 function requirementComplete(requirement = {}, documents = []) {
@@ -201,7 +214,14 @@ function sellerDocumentsComplete(journey = {}, listing = {}) {
   const documents = [
     ...asArray(journey.documents),
     ...asArray(listing?.documents),
-  ]
+  ].filter((document) => {
+    const key = normalizeKey(
+      document?.documentType || document?.document_type || document?.key ||
+        document?.requirementKey || document?.requirement_key || document?.title || document?.name,
+    )
+    const group = normalizeKey(document?.requirementGroup || document?.requirement_group || document?.group)
+    return group !== 'mandate' && !key.includes('mandate')
+  })
   if (!documents.length) return false
   const hasCompletedDocument = documents.some(documentComplete)
   if (!requiredDocuments.length) return hasCompletedDocument
@@ -213,15 +233,15 @@ export function getListingReadiness({ lead = {}, listing = {}, journey = null } 
   const hasListing = Boolean(resolvedJourney.listingCreated)
   const photosComplete = listingImages(listing).length > 0
   const descriptionComplete = Boolean(listingDescription(listing))
-  const pricingComplete = listingPrice(listing, lead) > 0
+  const pricingComplete = listingPrice(listing) > 0
   const documentsComplete = sellerDocumentsComplete(resolvedJourney, listing)
-  const visibilityComplete = resolvedJourney.listingLive || listingExternalLinks(listing).some((link) => link?.url || link?.listingUrl)
+  const propertyDetailsComplete = listingPropertyDetailsComplete(listing)
   const items = [
     { key: 'photos', label: 'Photos', complete: photosComplete, blocker: 'Missing Photos' },
     { key: 'description', label: 'Description', complete: descriptionComplete, blocker: 'Missing Description' },
-    { key: 'pricing', label: 'Pricing', complete: pricingComplete, blocker: 'Missing Pricing' },
+    { key: 'pricing', label: 'Asking Price', complete: pricingComplete, blocker: 'Missing Asking Price' },
     { key: 'documents', label: 'Seller Documents', complete: documentsComplete, blocker: 'Missing Seller Documents' },
-    { key: 'visibility', label: 'Visibility', complete: visibilityComplete, blocker: 'Listing In Draft' },
+    { key: 'property_details', label: 'Property Details', complete: propertyDetailsComplete, blocker: 'Missing Property Details' },
   ]
   const incompleteItems = hasListing ? items.filter((item) => !item.complete) : [
     { key: 'listing', label: 'Listing', complete: false, blocker: 'Listing Not Created' },
@@ -231,9 +251,9 @@ export function getListingReadiness({ lead = {}, listing = {}, journey = null } 
     items,
     incompleteItems,
     complete: hasListing && incompleteItems.length === 0,
-    completedCount: items.filter((item) => item.complete).length,
+    completedCount: hasListing ? items.filter((item) => item.complete).length : 0,
     totalCount: items.length,
-    percent: items.length ? Math.round((items.filter((item) => item.complete).length / items.length) * 100) : 0,
+    percent: hasListing && items.length ? Math.round((items.filter((item) => item.complete).length / items.length) * 100) : 0,
   }
 }
 
@@ -304,7 +324,7 @@ export function getSellerBlockers({ lead = {}, contact = {}, appointments = [], 
 
   if (resolvedJourney.listingCreated && !resolvedJourney.listingLive) {
     for (const item of listingReadiness.incompleteItems) {
-      blockers.push(blocker(`listing_${item.key}_incomplete`, item.blocker, 'listing_live', item.key === 'visibility' ? 'activate_listing' : 'complete_listing', item.key === 'visibility' ? 'action_required' : 'blocked', item.key === 'visibility' ? 'Your listing is being prepared for publishing.' : `${item.label} still needs attention.`))
+      blockers.push(blocker(`listing_${item.key}_incomplete`, item.blocker, 'listing_live', 'complete_listing', 'blocked', `${item.label} still needs attention.`))
     }
   }
 

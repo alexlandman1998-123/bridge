@@ -6513,6 +6513,7 @@ export async function getAgentPrivateListingSummaries(
       'organisation_id',
       'branch_id',
       'assigned_agent_id',
+      'listing_source',
       'stock_source',
       'seller_canonical_facts_json',
       ...(includeIsActive ? ['is_active'] : []),

@@ -43,7 +43,6 @@ import {
   normalizePersonCollectionForSellerProfile as normalizePersonCollectionForForm,
 } from '../lib/sellerProfileCaptureModel'
 import {
-  createListingDraftFromSellerLead,
   findSellerWorkflowRecordByToken,
   LISTING_STATUS,
   SELLER_ONBOARDING_STATUS,
@@ -4966,10 +4965,6 @@ export function SellerOnboarding({ tokenOverride = '', embedded = false, onSubmi
 
       if (!updated) {
         throw new Error('Unable to submit onboarding right now.')
-      }
-
-      if (!useDbFirstSellerOnboarding && !isDemoOnboarding) {
-        createListingDraftFromSellerLead(updated, { stage: LISTING_STATUS.SELLER_ONBOARDING_COMPLETED })
       }
 
       setListing(updated)
