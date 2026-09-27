@@ -23,8 +23,8 @@ for (const contract of [
   /listBuyerViewingPreferenceLinks/,
   /reloadBuyerViewingPreferenceLinks/,
   /handleApplyBuyerViewingPreferenceResponse/,
-  /Check responses/,
-  /Apply response/,
+  /reloadBuyerViewingPreferenceLinks\(\{ showMessage: true \}\)/,
+  /Apply to planner/,
   /Buyer Viewing Response Pulled Into Workspace/,
 ]) {
   assert.match(plannerSource, contract, `planner should include ${contract}`)
@@ -41,8 +41,8 @@ for (const contract of [
 }
 
 for (const contract of [
-  /Confirm Viewings/,
-  /Send viewing preferences/,
+  /Share a few details, then choose 3 viewing times/,
+  /Send details and 3 viewing times/,
   /propertyResponses/,
   /availabilityWindows/,
   /availabilitySlots/,
@@ -60,7 +60,7 @@ for (const contract of [
   /action === "create"/,
   /action === "resolve"/,
   /action !== "submit"/,
-  /const UUID_PATTERN = \//,
+  /const UUID_PATTERN =\s*\//,
   /raw\.match\(UUID_PATTERN\)\?\.\[0\]/,
   /buyer_viewing_preference_links/,
   /token_hash/,
@@ -97,7 +97,7 @@ for (const contract of [
   assert.match(migrationSource, contract, `migration should include ${contract}`)
 }
 
-assert.match(emailTemplateSource, /Confirm viewings/, 'buyer email should render a Confirm viewings CTA')
+assert.match(emailTemplateSource, /renderActionButton\(actionLink, accentColor, "Share details and 3 viewing times"\)/, 'buyer email should link to the combined qualification and viewing form')
 assert.match(emailTemplateSource, /actionLink/, 'buyer email should accept an action link')
 assert.match(emailTypesSource, /preferenceLink\?: string/, 'email payload types should include preferenceLink')
 assert.match(plannerSource, /function normalizeLeadUuid\(value\)[\s\S]*raw\.match\(UUID_PATTERN\)\?\.\[0\]/, 'planner should extract the canonical UUID from wrapped lead ids before creating preference links')

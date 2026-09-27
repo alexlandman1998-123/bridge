@@ -34,6 +34,16 @@ for (const token of [
   assert.match(functionSource, token, `buyer viewing preference edge function should include ${token}`)
 }
 
+const leadSaveIndex = functionSource.indexOf('const leadUpdate = await supabase')
+const leadSaveErrorIndex = functionSource.indexOf('if (leadUpdate.error)', leadSaveIndex)
+const linkSubmitIndex = functionSource.indexOf('const update = await supabase', leadSaveErrorIndex)
+assert.ok(leadSaveIndex > 0 && leadSaveErrorIndex > leadSaveIndex && linkSubmitIndex > leadSaveErrorIndex,
+  'buyer response must check the lead save before closing the viewing link')
+assert.match(functionSource, /\.select\("lead_id"\)\s*\.single\(\)/,
+  'buyer response must detect a lead update that affects no rows')
+assert.match(functionSource, /buildBuyerQualificationLeadFields\(nextIntake\)/,
+  'buyer response must sync qualification answers to lead search fields')
+
 for (const token of [
   /Share a few details, then choose 3 viewing times\./,
   /Share details and 3 viewing times/,

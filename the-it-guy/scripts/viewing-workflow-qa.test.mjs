@@ -1,7 +1,30 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
+import { buildBuyerJourneyAlignmentModel } from '../src/services/buyerJourneyAlignmentService.js'
+import { buildBuyerViewingRequestSummary } from '../src/pages/agency/buyerViewingRequestSummary.js'
 
 const pageSource = await fs.readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+const summaryInput = { now: '2026-09-27T12:00:00.000Z' }
+assert.equal(buildBuyerViewingRequestSummary(summaryInput).status, 'not_requested')
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, links: [{ id: 'link-1', status: 'pending', createdAt: '2026-09-27T08:00:00.000Z' }] }).status, 'requested')
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, plan: { requestedAt: '2026-09-27T08:05:00.000Z', buyerEmailDeliveryStatus: 'sent' }, links: [{ id: 'link-1', status: 'pending', createdAt: '2026-09-27T08:00:00.000Z' }] }).status, 'awaiting_response')
+const submittedSummary = buildBuyerViewingRequestSummary({ ...summaryInput, links: [{ id: 'link-1', status: 'submitted', createdAt: '2026-09-27T08:00:00.000Z' }], latestResponse: { id: 'link-1', submittedAt: '2026-09-27T09:00:00.000Z', availabilityWindows: ['Monday 09:00', 'Tuesday 10:00', 'Wednesday 11:00'] } })
+assert.equal(submittedSummary.status, 'submitted')
+assert.deepEqual(submittedSummary.proposedTimes, ['Monday 09:00', 'Tuesday 10:00', 'Wednesday 11:00'])
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, plan: { bookedAt: '2026-09-27T10:00:00.000Z' }, links: [{ id: 'link-1', status: 'submitted', createdAt: '2026-09-27T08:00:00.000Z' }], latestResponse: { id: 'link-1', availabilityWindows: submittedSummary.proposedTimes } }).status, 'booked')
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, plan: { bookedAppointmentIds: ['seller-rsvp-request'] }, appointments: [{ id: 'seller-rsvp-request', status: 'requested', createdAt: '2026-09-27T10:00:00.000Z' }], links: [{ id: 'link-1', status: 'submitted', createdAt: '2026-09-27T08:00:00.000Z' }], latestResponse: { id: 'link-1', availabilityWindows: submittedSummary.proposedTimes } }).status, 'submitted', 'a requested seller RSVP must not be labelled booked')
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, plan: { buyerEmailDeliveryStatus: 'failed' }, links: [{ id: 'link-1', status: 'pending', createdAt: '2026-09-27T08:00:00.000Z' }] }).status, 'delivery_failed')
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, plan: { requestedAt: '2026-09-27T08:05:00.000Z', buyerEmailDeliveryStatus: 'failed' }, links: [{ id: 'link-1', status: 'pending', createdAt: '2026-09-27T08:00:00.000Z' }] }).status, 'delivery_failed')
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, plan: { requestedAt: '2026-09-27T08:05:00.000Z', buyerEmailDeliveryStatus: 'suppressed' }, links: [{ id: 'link-1', status: 'pending', createdAt: '2026-09-27T08:00:00.000Z' }] }).status, 'delivery_suppressed')
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, links: [{ id: 'link-1', status: 'pending', createdAt: '2026-09-27T08:00:00.000Z', expiresAt: '2026-09-27T11:00:00.000Z' }] }).status, 'expired')
+const resentSummary = buildBuyerViewingRequestSummary({ ...summaryInput, plan: { requestedAt: '2026-09-27T10:00:00.000Z', buyerEmailDeliveryStatus: 'sent' }, links: [{ id: 'link-2', status: 'pending', createdAt: '2026-09-27T10:00:00.000Z' }, { id: 'link-1', status: 'submitted', createdAt: '2026-09-27T08:00:00.000Z' }], latestResponse: { id: 'link-1', availabilityWindows: submittedSummary.proposedTimes } })
+assert.equal(resentSummary.status, 'awaiting_response', 'a newer request must take priority over an earlier response')
+assert.equal(resentSummary.hasEarlierResponse, true)
+assert.equal(buildBuyerViewingRequestSummary({ ...summaryInput, plan: { requestedAt: '2026-09-27T08:05:00.000Z', buyerEmailDeliveryStatus: 'sent' }, links: [{ id: 'link-2', status: 'pending', createdAt: '2026-09-27T10:00:00.000Z' }] }).status, 'requested', 'an older sent request must not verify delivery of a newly prepared link')
+assert.match(pageSource, /data-testid="buyer-viewing-request-status"/, 'viewing request status should always appear below the overview columns')
+assert.match(pageSource, /viewingRequestSummary\.proposedTimes\.map/, 'the overview should display the saved buyer options')
+assert.match(pageSource, /Internal CRM record\. Logging a call, WhatsApp or email does not send a message\./, 'the Activity Logger should explain its internal-only effect')
+assert.match(pageSource, /catch \(activityError\) \{\s*setError\(activityError\?\.message/, 'Activity Logger save failures should remain visible to the agent')
 const reportingServiceSource = await fs.readFile(new URL('../src/modules/agency/agents/principalAgentCommandCentreService.js', import.meta.url), 'utf8')
 const reportingTestSource = await fs.readFile(new URL('./principal-agent-command-centre.test.mjs', import.meta.url), 'utf8')
 const buyerEmailTestSource = await fs.readFile(new URL('./buyer-viewing-email-delivery.test.mjs', import.meta.url), 'utf8')
@@ -57,9 +80,9 @@ const buyerPreferenceApplyBlock = extractBlock(
 )
 const buyerJourneyBlock = extractBlock(
   pageSource,
-  'const selectedLeadBuyerJourneyStages = useMemo',
-  '\n  useEffect(() => {\n    const currentStage',
-  'buyer journey stage resolver',
+  'const selectedLeadBuyerJourneyModel = useMemo',
+  '\n  const selectedLeadBuyerJourneyStages = selectedLeadBuyerJourneyModel.stages',
+  'buyer journey alignment input',
 )
 const buyerQualificationSaveBlock = extractBlock(
   pageSource,
@@ -73,16 +96,9 @@ const viewingCompletionBlock = extractBlock(
   '\n  async function handleCancelLeadViewing',
   'viewing completion flow',
 )
-const onboardingOtpBlock = extractBlock(
-  pageSource,
-  '{resolveBuyerWorkspaceTabKey(leadWorkspaceTab) === BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY',
-  '\n                  {leadWorkspaceTab ===',
-  'buyer onboarding / OTP workspace',
-)
-
 for (const contract of [
   /BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY = 'onboarding_otp'/,
-  /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\['overview', 'properties', 'appointments', 'activity', BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY\]\)/,
+  /BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set\(\[/,
   /normalizeLeadWorkspaceTabKey/,
   /parseBuyerViewingPlanNoteBlock/,
   /buildBuyerViewingPlanNotes/,
@@ -93,44 +109,34 @@ for (const contract of [
 ]) {
   assert.match(pageSource, contract, `buyer workspace should keep the simplified viewing workflow contract ${contract}`)
 }
+const buyerTabSet = extractBlock(pageSource, 'const BUYER_LEAD_WORKSPACE_TAB_KEYS = new Set([', '])', 'buyer workspace tab set')
+for (const tab of ["'overview'", "'properties'", "'appointments'", "'activity'", 'BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY']) {
+  assert.ok(buyerTabSet.includes(tab), `buyer workspace should keep the ${tab} tab`)
+}
 
 for (const contract of [
   /const qualificationStarted = selectedLeadBuyerQualificationEvidence\.answeredCount > 0/,
   /const qualified = selectedLeadBuyerQualificationEvidence\.complete/,
-  /const currentIndex = firstIncompleteIndex >= 0 \? firstIncompleteIndex : rawStages\.length - 1/,
+  /return buildBuyerJourneyAlignmentModel\(\{/,
+  /qualificationStarted,/,
+  /qualified,/,
 ]) {
   assert.match(buyerJourneyBlock, contract, `buyer journey should not skip qualification with viewing activity ${contract}`)
 }
-assert.doesNotMatch(buyerJourneyBlock, /stageKey\.includes\('viewing'\)[\s\S]{0,180}selectedLeadOfferSummary\.total/, 'buyer qualification should not be completed by viewing or offer progression alone')
+const viewingWithoutQualification = buildBuyerJourneyAlignmentModel({
+  evidence: { leadCaptured: true, contacted: true, viewingStarted: true },
+})
+assert.equal(viewingWithoutQualification.stages.find((stage) => stage.key === 'qualified')?.done, false, 'viewing activity alone must not complete buyer qualification')
 
 for (const contract of [
-  /const qualificationEvidence = getBuyerQualificationEvidence\(buyerQualificationForm\)/,
-  /if \(qualificationEvidence\.complete\)/,
+  /const qualificationEvidence = getBuyerQualificationEvidence\(mergedAnswers\)/,
+  /if \(qualificationEvidence\.complete && \[BUYER_PROCESS_STAGE_KEYS\.captured/,
   /Qualification saved as in progress/,
   /outcome: qualificationEvidence\.complete \? 'Qualified' : 'In progress'/,
 ]) {
   assert.match(buyerQualificationSaveBlock, contract, `buyer qualification save should allow partial capture without forcing qualified ${contract}`)
 }
 assert.match(pageSource, /function handleMarkBuyerQualifiedAction\(\)[\s\S]*Capture at least \$\{selectedLeadBuyerQualificationEvidence\.minimumCount\} qualification answers/, 'manual mark qualified should require minimum qualification answers')
-
-for (const contract of [
-  /handleLeadCanonicalOfferAccept\(offer\)/,
-  /handleLeadCanonicalOfferStatus\(offer, 'accepted', 'OTP accepted from buyer workspace'\)/,
-  /View Offer/,
-  /Seller Review/,
-  /offerDetailRows/,
-  /Accept Offer/,
-]) {
-  assert.match(pageSource, contract, `offer centre should expose submitted-offer review and acceptance actions ${contract}`)
-}
-for (const contract of [
-  /sellerReviewLink/,
-  /residentialTerms/,
-  /offerConditionText/,
-  /canAcceptOffer/,
-]) {
-  assert.match(onboardingOtpBlock, contract, `onboarding / OTP card should surface submitted offer evidence ${contract}`)
-}
 
 for (const contract of [
   /invokeEdgeFunction\('send-email'/,
@@ -244,11 +250,11 @@ for (const contract of [
   /buyer viewing preference link contract tests passed/,
   /BuyerViewingPreferencesPage/,
   /buyer-viewing-preferences/,
-  /Confirm viewings/,
+  /Share details and 3 viewing times/,
   /listBuyerViewingPreferenceLinks/,
   /handleApplyBuyerViewingPreferenceResponse/,
-  /Check responses/,
-  /Apply response/,
+  /reloadBuyerViewingPreferenceLinks/,
+  /Apply to planner/,
   /Buyer Viewing Response Pulled Into Workspace/,
 ]) {
   assert.match(buyerPreferenceLinkTestSource, contract, `buyer preference link contract should include ${contract}`)

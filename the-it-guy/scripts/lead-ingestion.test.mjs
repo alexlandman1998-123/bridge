@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import { createServer } from 'vite'
+import { buildBuyerPropertyEnquiryContext } from '../src/pages/agency/buyerPropertyEnquiryModel.js'
 
 const migrationSql = await fs.readFile(new URL('../../supabase/migrations/202606030004_lead_ingestion_logs.sql', import.meta.url), 'utf8')
 assert.match(migrationSql, /create table if not exists public\.lead_ingestion_logs/i)
@@ -84,6 +85,35 @@ assert.match(pageSource, /Property enquiry/, 'buyer overview should show the pro
 assert.match(pageSource, /handleLinkBuyerEnquiryListing/, 'buyer overview should let agents link an enquiry to a listing')
 assert.match(pageSource, /updateAgencyCrmLeadRecord\(organisationId, selectedLeadRecordId, leadPatch\)/, 'linking should persist listingId to the lead')
 assert.match(pageSource, /<ListingPicker[\s\S]*label="Link to listing"/, 'buyer overview should expose a listing picker for enquiry linking')
+assert.match(pageSource, /data-testid="buyer-original-enquiry"/, 'the original enquiry should remain visible beside a linked listing')
+assert.match(pageSource, /Enquiry ref: \{selectedLeadEnquiryPropertyContext\.original\.reference\}/, 'the captured source reference should be visible')
+const linkAction = pageSource.slice(pageSource.indexOf('async function handleLinkBuyerEnquiryListing'), pageSource.indexOf('\n  const selectedLeadOtpReadiness', pageSource.indexOf('async function handleLinkBuyerEnquiryListing')))
+assert.doesNotMatch(linkAction, /enquiredPropertyTitle|enquiredPropertyAddress|enquiredPropertyPrice|sourceReferenceId/, 'linking must never rewrite the original enquiry')
+const capturedEnquiry = {
+  listingId: 'linked-2',
+  enquiredListingId: 'original-1',
+  enquiredPropertyTitle: 'Previously overwritten title',
+  enquiredPropertyAddress: 'Previously overwritten address',
+  enquiredPropertyPrice: 1800000,
+  sourceReferenceId: 'PP-123',
+  rawEnquiryPayload: { parser: { matchedFields: { propertyTitle: 'Original townhouse', propertyAddress: '12 Oak Street', propertyPrice: 1800000, listingReference: 'PP-123' } } },
+}
+const linkedContext = buildBuyerPropertyEnquiryContext(capturedEnquiry, {
+  id: 'linked-2', title: 'Current villa', address: '9 Beach Road', askingPrice: 5200000,
+  bedrooms: 4, bathrooms: 3, parking: 2, thumbnailUrl: 'https://example.com/current.jpg',
+})
+assert.equal(linkedContext.displayKind, 'linked')
+assert.equal(linkedContext.title, 'Current villa')
+assert.equal(linkedContext.address, '9 Beach Road')
+assert.equal(linkedContext.price, 5200000, 'the linked listing price must win over the original enquiry price')
+assert.equal(linkedContext.original.title, 'Original townhouse', 'original capture should be recovered from raw source evidence')
+assert.equal(linkedContext.original.address, '12 Oak Street')
+assert.equal(linkedContext.original.reference, 'PP-123')
+assert.equal(linkedContext.original.listingId, 'original-1')
+assert.equal(buildBuyerPropertyEnquiryContext(capturedEnquiry, { id: 'wrong-3', title: 'Wrong listing' }).displayKind, 'unavailable', 'a different listing must never supply this card')
+assert.equal(buildBuyerPropertyEnquiryContext(capturedEnquiry, { id: 'linked-2', sourceAuthority: 'lead_projection', title: 'Buyer budget projection' }).displayKind, 'unavailable', 'a lead projection is not a verified listing')
+assert.equal(buildBuyerPropertyEnquiryContext(capturedEnquiry, { id: 'linked-2', title: 'Current villa' }).price, 0, 'a listing with no price must not borrow the enquiry price')
+assert.equal(buildBuyerPropertyEnquiryContext({ ...capturedEnquiry, listingId: '' }).title, 'Original townhouse', 'unlinking should restore the original snapshot')
 assert.match(pageSource, /data-testid="simplified-viewing-planner"/, 'buyer overview should keep the viewing planner below the enquiry link block')
 assert.match(pageSource, /sendSellerOnboarding/)
 assert.match(pageSource, /buildSellerJourney/)
