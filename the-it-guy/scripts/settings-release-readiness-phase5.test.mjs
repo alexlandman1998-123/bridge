@@ -26,7 +26,7 @@ const [app, navigation, account, organisation, commission, users, billing, leadC
   read('src/lib/settingsApi.js'),
 ])
 
-assert.match(navigation, /label: 'Third-party integrations'/, 'Third-party integrations should provide the shared entry point on the settings dashboard.')
+assert.match(navigation, /label: 'Integrations'/, 'Integrations should provide the shared entry point on the settings dashboard.')
 assert.match(navigation, /to: '\/settings\/integrations'/, 'Third-party integrations should link to the integrations hub.')
 
 for (const removedRoute of ['api', 'audit-log', 'help']) {
@@ -68,7 +68,7 @@ const functionalContracts = [
   [commission, ['createCommissionLevel(', 'saveOrganisationCommissionStructure(', 'assignUserCommissionLevel('], 'commission'],
   [users, ['updateOrganisationUserRole(', 'updateOrganisationUserJobTitle(', 'transferOrganisationOwnership(', 'deactivateOrganisationUser('], 'users'],
   [billing, ['requestWorkspacePlanChange(', 'cancelWorkspacePlanChange('], 'billing'],
-  [leadCapture, ['ensureDefaultLeadCaptureAliases(', 'repairLeadCaptureReviewItem(', 'linkLeadCaptureReviewItem('], 'lead capture'],
+  [leadCapture, ['listInboundLeadEmails(', 'repairLeadCaptureReviewItem(', 'linkLeadCaptureReviewItem('], 'archived lead emails'],
 ]
 for (const [source, markers, area] of functionalContracts) {
   for (const marker of markers) {

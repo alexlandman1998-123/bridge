@@ -40,21 +40,11 @@ import {
 } from '../../services/agentDigitalCardShareService'
 import { resolveAgencyPublicCardListings } from '../../services/agencyPublicIntakeService'
 import {
-  buildLeadCaptureDnsChecklist,
   buildLeadCaptureReviewQueueRows,
   buildLeadCaptureRepairDraft,
-  buildLeadCaptureWebhookUrl,
-  buildLeadCaptureStatusRows,
-  ensureDefaultLeadCaptureAliases,
-  ensureLeadCaptureAliasesForUsers,
   filterLeadCaptureReviewQueueRows,
-  getLeadCaptureSetupStatus,
-  getPrimaryLeadCaptureAliases,
   ignoreLeadCaptureReviewItem,
-  isPrimaryLeadCaptureAlias,
   LEAD_CAPTURE_CONFIDENCE_FILTERS,
-  LEAD_CAPTURE_PRODUCTION_CHECKLIST,
-  LEAD_CAPTURE_PRODUCTION_ENV_VARS,
   LEAD_CAPTURE_REVIEW_STATUSES,
   LEAD_CAPTURE_SOURCES,
   listInboundLeadEmails,
@@ -84,13 +74,6 @@ import {
   settingsCardClass,
   settingsPageClass,
 } from './settingsUi'
-
-const STATUS_META = {
-  active: { label: 'Active', tone: 'success' },
-  test_received: { label: 'Test Received', tone: 'blue' },
-  addresses_generated: { label: 'Ready', tone: 'warning' },
-  not_started: { label: 'Not Started', tone: 'slate' },
-}
 
 function normalizeText(value) {
   return String(value ?? '').trim()
@@ -166,15 +149,6 @@ function statusToneClass(tone = 'slate') {
   return 'border-[#dce5ef] bg-[#f7f9fc] text-[#5f7288]'
 }
 
-function StatusPill({ status }) {
-  const meta = STATUS_META[status] || STATUS_META.not_started
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold ${statusToneClass(meta.tone)}`}>
-      {meta.label}
-    </span>
-  )
-}
-
 function IconButton({ label, icon: Icon, onClick, disabled = false }) {
   const icon = Icon ? createElement(Icon, { size: 15 }) : null
   return (
@@ -218,58 +192,6 @@ function SecondaryButton({ children, onClick, disabled = false, icon: Icon = nul
       {icon}
       {children}
     </button>
-  )
-}
-
-function AliasAddressRow({ alias, onCopy }) {
-  return (
-    <div className="grid gap-3 rounded-[14px] border border-[#e3ebf3] bg-white p-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-center">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-[#162334]">{alias.source || 'General'}</span>
-          <span className="rounded-full border border-[#dfe7f0] bg-[#f8fbfe] px-2 py-0.5 text-xs font-semibold text-[#6a7b90]">{alias.routingLevel}</span>
-        </div>
-        <p className="mt-1 break-all font-mono text-sm text-[#35546c]">{alias.emailAddress}</p>
-      </div>
-      <IconButton label={`Copy ${alias.source || 'lead'} address`} icon={Copy} onClick={() => onCopy(alias.emailAddress)} />
-    </div>
-  )
-}
-
-function AgentStatusRow({ row, onCopy }) {
-  const primaryAlias = getPrimaryLeadCaptureAliases(row.aliases)[0] || row.aliases[0] || null
-  return (
-    <tr className="border-t border-[#e8eef5] align-top">
-      <td className="px-4 py-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] border border-[#d9e4ef] bg-[#f8fbff] text-[#35546c]">
-            {row.role === 'agency' ? <UsersRound size={16} /> : <UserRound size={16} />}
-          </span>
-          <div className="min-w-0">
-            <p className="font-semibold text-[#162334]">{row.name}</p>
-            {row.email ? <p className="truncate text-sm text-[#6b7d93]">{row.email}</p> : null}
-          </div>
-        </div>
-      </td>
-      <td className="px-4 py-4">
-        <StatusPill status={row.status} />
-      </td>
-      <td className="px-4 py-4">
-        {primaryAlias ? (
-          <div className="flex max-w-[340px] items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-[10px] border border-[#e0e8f1] bg-[#fbfdff] px-3 py-2 text-xs text-[#35546c]">
-              {primaryAlias.emailAddress}
-            </code>
-            <IconButton label={`Copy address for ${row.name}`} icon={Copy} onClick={() => onCopy(primaryAlias.emailAddress)} />
-          </div>
-        ) : (
-          <span className="text-sm text-[#8a9aab]">No address</span>
-        )}
-      </td>
-      <td className="px-4 py-4 text-sm text-[#526981]">
-        {formatDateTime(row.lastInboundEmail?.receivedAt)}
-      </td>
-    </tr>
   )
 }
 
@@ -833,72 +755,6 @@ function ReviewQueueFilters({ filters, setFilters, sources = [], users = [], tot
   )
 }
 
-function ProductionSetupSection({ domain, webhookUrl, dnsRows, onCopy }) {
-  return (
-    <SettingsSectionCard title="Production Email Setup" description="Provider, MX, webhook, and monitoring readiness for the capture domain.">
-      <div className="grid gap-4">
-        <div className="grid gap-3 rounded-[14px] border border-[#e3ebf3] bg-white p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">Inbound Webhook</p>
-            <p className="mt-1 break-all font-mono text-sm text-[#35546c]">{webhookUrl}</p>
-          </div>
-          <IconButton label="Copy inbound webhook" icon={Copy} onClick={() => onCopy(webhookUrl)} />
-        </div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          {LEAD_CAPTURE_PRODUCTION_CHECKLIST.map((item) => (
-            <div key={item.id} className="rounded-[14px] border border-[#e3ebf3] bg-white p-4">
-              <p className="font-semibold text-[#162334]">{item.label}</p>
-              <p className="mt-2 text-sm text-[#6b7d93]">{item.description}</p>
-            </div>
-          ))}
-        </div>
-        <div className="overflow-hidden rounded-[14px] border border-[#e3ebf3] bg-white">
-          <table className="min-w-full text-left">
-            <thead className="bg-[#f8fbfe] text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">
-              <tr>
-                <th className="px-4 py-3">Environment Variable</th>
-                <th className="px-4 py-3">Required</th>
-                <th className="px-4 py-3">Purpose</th>
-              </tr>
-            </thead>
-            <tbody>
-              {LEAD_CAPTURE_PRODUCTION_ENV_VARS.map((row) => (
-                <tr key={row.name} className="border-t border-[#e8eef5] align-top">
-                  <td className="px-4 py-3 font-mono text-xs text-[#35546c]">{row.name}</td>
-                  <td className="px-4 py-3 text-sm font-semibold text-[#162334]">{row.required ? 'Yes' : 'Optional'}</td>
-                  <td className="px-4 py-3 text-sm text-[#6b7d93]">{row.purpose}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="overflow-hidden rounded-[14px] border border-[#e3ebf3] bg-white">
-          <table className="min-w-full text-left">
-            <thead className="bg-[#f8fbfe] text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]">
-              <tr>
-                <th className="px-4 py-3">Type</th>
-                <th className="px-4 py-3">Host</th>
-                <th className="px-4 py-3">Value</th>
-                <th className="px-4 py-3">Purpose</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dnsRows.map((row) => (
-                <tr key={`${row.type}-${row.host}`} className="border-t border-[#e8eef5] align-top">
-                  <td className="px-4 py-3 font-semibold text-[#162334]">{row.type}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-[#35546c]">{row.host || domain}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-[#35546c]">{row.priority ? `${row.priority} ${row.value}` : row.value}</td>
-                  <td className="px-4 py-3 text-sm text-[#6b7d93]">{row.purpose}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </SettingsSectionCard>
-  )
-}
-
 export default function SettingsLeadCapturePage({ section = 'meta' }) {
   const { profile, role, currentWorkspace, workspaceType } = useWorkspace()
   const [context, setContext] = useState(null)
@@ -1093,20 +949,6 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
       setNotice(result?.import?.complete ? 'Historical lead import completed.' : 'Import paused after 500 leads. Continue it when you are ready.')
     } catch (metaError) { setError(metaError.message || 'Historical lead import could not continue.'); await refreshMetaImports().catch(() => {}) } finally { setSaving(false) }
   }
-  const profileId = normalizeText(profile?.id)
-  const currentUser = users.find((user) => normalizeText(user.userId || user.id) === profileId) || {
-    userId: profileId,
-    firstName: profile?.firstName,
-    lastName: profile?.lastName,
-    fullName: profile?.fullName || [profile?.firstName, profile?.lastName].filter(Boolean).join(' '),
-    email: profile?.email,
-    role: membershipRole,
-  }
-
-  const rows = useMemo(
-    () => buildLeadCaptureStatusRows({ aliases, inboundEmails, users }),
-    [aliases, inboundEmails, users],
-  )
   const agentCardRows = useMemo(() => {
     const cardsByAgentId = new Map()
     for (const card of agentCardLinks) {
@@ -1147,25 +989,13 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
     () => filterLeadCaptureReviewQueueRows(reviewItemsWithAssignment, reviewFilters),
     [reviewFilters, reviewItemsWithAssignment],
   )
-  const currentUserAliases = aliases.filter((alias) => alias.agentUserId === profileId || (!alias.agentUserId && !canManage))
-  const currentUserLatestEmail = inboundEmails.find((email) => currentUserAliases.some((alias) => alias.aliasId === email.captureAliasId)) || null
-  const currentUserStatus = getLeadCaptureSetupStatus({ aliases: currentUserAliases, lastInboundEmail: currentUserLatestEmail })
-
-  const generatedCount = aliases.filter((alias) => alias.status === 'active' && isPrimaryLeadCaptureAlias(alias)).length
-  const activeAgentCount = rows.filter((row) => row.status === 'active').length
+  const activeAgentCount = users.filter(isActiveAgentUser).length
   const activeCardCount = agentCardLinks.filter((card) => card.status === 'active').length
   const cardViewCount = agentCardInsights?.summary?.views || 0
   const missingAgentCardRows = agentCardRows.filter(({ card }) => !card)
   const exportableAgentCardRows = agentCardRows.filter(({ card, urls }) => card?.status === 'active' && urls?.cardUrl)
   const receivedCount = inboundEmails.length
   const failureCount = reviewItemsWithAssignment.filter((item) => item.status === 'open').length
-  const leadCaptureDomain = aliases[0]?.aliasDomain || 'leads.arch9.co.za'
-  const webhookUrl = buildLeadCaptureWebhookUrl({
-    supabaseFunctionsUrl: import.meta.env.VITE_SUPABASE_FUNCTIONS_URL,
-    supabaseProjectRef: import.meta.env.VITE_SUPABASE_PROJECT_REF,
-  })
-  const dnsRows = buildLeadCaptureDnsChecklist({ domain: leadCaptureDomain })
-
   async function copyAddress(value) {
     try {
       await navigator.clipboard.writeText(value)
@@ -1454,49 +1284,6 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
     setNotice(downloaded ? `Exported ${exportableAgentCardRows.length} agent card ${exportableAgentCardRows.length === 1 ? 'row' : 'rows'}.` : 'CSV export is not available in this browser.')
   }
 
-  async function generateMyAddresses() {
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      await ensureDefaultLeadCaptureAliases({
-        organisationId,
-        agentUserId: profileId,
-        branchId: currentUser.branchId,
-        sources: LEAD_CAPTURE_SOURCES,
-      })
-      setNotice('Lead capture address generated.')
-      await load()
-    } catch (generateError) {
-      setError(generateError?.message || 'Lead capture addresses could not be generated.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function generateAgencyAddresses() {
-    setSaving(true)
-    setError('')
-    setNotice('')
-    try {
-      await ensureDefaultLeadCaptureAliases({
-        organisationId,
-        sources: LEAD_CAPTURE_SOURCES,
-      })
-      await ensureLeadCaptureAliasesForUsers({
-        organisationId,
-        users,
-        sources: LEAD_CAPTURE_SOURCES,
-      })
-      setNotice('Agency lead capture addresses generated.')
-      await load()
-    } catch (generateError) {
-      setError(generateError?.message || 'Agency lead capture addresses could not be generated.')
-    } finally {
-      setSaving(false)
-    }
-  }
-
   async function updateReviewItem(item, action) {
     setSaving(true)
     setError('')
@@ -1561,17 +1348,17 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
   }
 
   if (loading) {
-    return <SettingsLoadingState label={showMeta ? 'Loading Meta Lead Ads...' : showEmail ? 'Loading lead email capture...' : 'Loading digital cards...'} />
+    return <SettingsLoadingState label={showMeta ? 'Loading Meta Lead Ads...' : showEmail ? 'Loading archived lead emails...' : 'Loading digital cards...'} />
   }
 
   return (
     <div className={settingsPageClass}>
       <SettingsPageHeader
         kicker="Integrations"
-        title={showMeta ? 'Meta Lead Ads' : showEmail ? 'Inbound Lead Email' : 'Digital Cards'}
+        title={showMeta ? 'Meta Lead Ads' : showEmail ? 'Archived Lead Emails' : 'Digital Cards'}
         description={showMeta
           ? 'Connect Facebook and Instagram forms, then route enquiries to the right team or agent.'
-          : showEmail ? 'Manage capture addresses and repair enquiries that need review.'
+          : showEmail ? 'Review historical emails and resolve enquiries that still need attention. Inbound email capture is retired.'
           : 'Create shareable agent cards, QR codes, and enquiry links for your team.'}
         actions={
           <SecondaryButton icon={RefreshCw} onClick={load} disabled={saving}>Refresh</SecondaryButton>
@@ -1583,46 +1370,28 @@ export default function SettingsLeadCapturePage({ section = 'meta' }) {
 
       {showEmail ? (
         <>
-          <section className="grid gap-4 md:grid-cols-3">
-            <MetricCard label="Active addresses" value={generatedCount} icon={Mail} />
-            <MetricCard label="Emails received" value={receivedCount} icon={Inbox} />
+          <SettingsBanner tone="warning">
+            Inbound email capture has been retired. These messages are kept for historical review; new emails sent to old capture addresses will not create leads.
+          </SettingsBanner>
+          <section className="grid gap-4 md:grid-cols-2">
+            <MetricCard label="Archived emails" value={receivedCount} icon={Inbox} />
             <MetricCard label="Open reviews" value={failureCount} icon={AlertCircle} />
           </section>
-          <SettingsSectionCard title="My Capture Addresses" description="Forward property portal enquiries to these addresses to bring them into the leads workspace.">
-            <div className="flex flex-wrap gap-2">
-              <PrimaryButton icon={Plus} onClick={generateMyAddresses} disabled={saving || !organisationId}>Generate My Addresses</PrimaryButton>
-              {canManage ? <SecondaryButton icon={UsersRound} onClick={generateAgencyAddresses} disabled={saving || !organisationId}>Generate Agency Addresses</SecondaryButton> : null}
-            </div>
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
-              {currentUserAliases.filter((alias) => alias.status === 'active').map((alias) => <AliasAddressRow key={alias.aliasId} alias={alias} onCopy={copyAddress} />)}
-              {!currentUserAliases.length ? <SettingsEmptyState title="No capture addresses yet" description="Generate an address before forwarding portal enquiries." /> : null}
-            </div>
-            {canManage && rows.length ? (
-              <div className="mt-5 overflow-x-auto rounded-[14px] border border-[#e3ebf3] bg-white">
-                <h3 className="px-4 pt-4 text-sm font-semibold text-[#162334]">Agency Activation</h3>
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-[#f8fbfe] text-xs font-semibold uppercase tracking-[0.12em] text-[#7b8da6]"><tr><th className="px-4 py-3">Agent</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Address</th><th className="px-4 py-3">Last email</th></tr></thead>
-                  <tbody>{rows.map((row) => <AgentStatusRow key={row.userId || row.name} row={row} onCopy={copyAddress} />)}</tbody>
-                </table>
-              </div>
-            ) : null}
-          </SettingsSectionCard>
-          <SettingsSectionCard title="Recent Inbound Emails" description="Check whether forwarded portal messages reached the capture service.">
+          <SettingsSectionCard title="Archived Emails" description="Historical messages received before email capture was retired.">
             <div className="grid gap-2">
               {inboundEmails.slice(0, 10).map((email) => <div key={email.emailId} className="flex flex-wrap items-center justify-between gap-2 rounded-[12px] border border-[#e3ebf3] bg-white p-3 text-sm"><span className="font-medium text-[#162334]">{email.subject || email.source || 'Inbound enquiry'}</span><span className="text-[#60758d]">{email.status} · {formatDateTime(email.receivedAt)}</span></div>)}
-              {!inboundEmails.length ? <SettingsEmptyState title="No inbound emails yet" description="Forward a portal enquiry to test capture." /> : null}
+              {!inboundEmails.length ? <SettingsEmptyState title="No archived emails" description="This organisation has no historical inbound email messages." /> : null}
             </div>
           </SettingsSectionCard>
           {canManage ? (
-            <SettingsSectionCard title="Lead Capture Review Queue" description="Repair or link emails that could not be matched safely to a lead.">
+            <SettingsSectionCard title="Historical Review Queue" description="Repair or link enquiries received before email capture was retired.">
               <ReviewQueueFilters filters={reviewFilters} setFilters={setReviewFilters} sources={LEAD_CAPTURE_SOURCES} users={users} total={reviewItemsWithAssignment.length} visible={filteredReviewItems.length} />
               <div className="mt-4 grid gap-3">
                 {filteredReviewItems.map((item) => <ReviewQueueItem key={`${item.kind}-${item.id}`} item={item} onRepair={openRepairItem} onResolve={(entry) => updateReviewItem(entry, 'resolve')} onIgnore={(entry) => updateReviewItem(entry, 'ignore')} saving={saving} />)}
-                {!filteredReviewItems.length ? <SettingsEmptyState title="No enquiries need review" description="New parsing issues will appear here." /> : null}
+                {!filteredReviewItems.length ? <SettingsEmptyState title="No enquiries need review" description="There are no open historical email reviews for these filters." /> : null}
               </div>
             </SettingsSectionCard>
           ) : null}
-          {canManage ? <ProductionSetupSection domain={leadCaptureDomain} webhookUrl={webhookUrl} dnsRows={dnsRows} onCopy={copyAddress} /> : null}
           <RepairDrawer item={selectedRepairItem} draft={repairDraft} users={users} onChange={setRepairDraft} onClose={() => setSelectedRepairItem(null)} onCreateLead={createLeadFromRepair} onLinkLead={linkExistingLeadFromRepair} saving={saving} />
         </>
       ) : null}

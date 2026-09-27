@@ -6,7 +6,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 export const COMMUNICATION_DELIVERY_STATUSES = ['prepared', 'queued', 'sent', 'delivered', 'failed']
 export const COMMUNICATION_DELIVERY_CHANNELS = ['email', 'whatsapp', 'sms']
-export const COMMUNICATION_DELIVERY_PROVIDERS = ['sendgrid', 'mailgun', 'twilio', 'meta', 'internal', 'resend']
+export const COMMUNICATION_DELIVERY_PROVIDERS = ['sendgrid', 'twilio', 'meta', 'internal', 'resend']
 export const COMMUNICATION_FREQUENCIES = ['immediate', 'daily', 'weekly', 'monthly']
 export const COMMUNICATION_OPT_OUT_MESSAGE = 'Buyer has opted out of this communication channel.'
 export const NOTIFICATION_MODE = {
