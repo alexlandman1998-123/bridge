@@ -38,6 +38,7 @@ import {
 } from 'lucide-react'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { downloadHtmlDocumentPdf } from '../lib/htmlDocumentPdf'
 import '../App.css'
 import { normalizePortalWorkspaceCategory, resolvePortalDocumentMetadata } from '../core/documents/portalDocumentMetadata'
 import { normalizeFinanceManagedBy, normalizeFinanceType } from '../core/transactions/financeType'
@@ -10548,16 +10549,21 @@ function ClientPortal() {
       })
       return
     }
-    if (document?.generatedHtml) {
+    if (document?.generatedHtml || document?.generated_html) {
       const openKey = String(document?.id || document?.generatedFileName || 'generated-document').trim()
       try {
         setError('')
         setDocumentActionError('')
         setOpeningDocumentPath(openKey)
-        openGeneratedPortalDocumentHtml(
-          String(document.generatedHtml),
-          document.generatedFileName || document.generated_file_name || document.fileName || document.file_name || `${document.id || 'seller-document'}.pdf`,
-        )
+        const html = String(document.generatedHtml || document.generated_html)
+        const fileName = document.generatedFileName || document.generated_file_name || document.fileName || document.file_name || `${document.id || 'seller-document'}.pdf`
+        const signedSellerDocument = ['signed_disclosure_form', 'signed_fica_declaration', 'signed_mandate']
+          .includes(String(document.document_type || document.documentType || '').trim())
+        if (signedSellerDocument && ['approved', 'completed'].includes(String(document.status || '').trim())) {
+          await downloadHtmlDocumentPdf(html, fileName, { stageName: 'seller-portal-signed-document' })
+        } else {
+          openGeneratedPortalDocumentHtml(html, fileName)
+        }
       } catch (openError) {
         setDocumentActionError(openError.message || 'Unable to open this document right now.')
       } finally {

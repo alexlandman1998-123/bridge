@@ -99,3 +99,66 @@ test('agent-uploaded seller evidence reaches both the lead projection and seller
     await server.close()
   }
 })
+
+test('reviewed portal signatures reach one downloadable seller document row per legal requirement', async () => {
+  const server = await createServer({
+    root: PROJECT_ROOT,
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  })
+
+  try {
+    const { buildDocumentCenter } = await server.ssrLoadModule('/src/services/clientPortalWorkspaceService.js')
+    const keys = ['signed_disclosure_form', 'signed_fica_declaration', 'signed_mandate']
+    const requirements = keys.map((key) => ({
+      id: `requirement-${key}`,
+      key,
+      requirement_key: key,
+      label: key.replaceAll('_', ' '),
+      applies_to: 'seller',
+      visibility: 'seller_visible',
+      status: 'completed',
+      is_required: true,
+      group: 'legal',
+    }))
+    const documents = keys.map((key) => ({
+      id: `reviewed-${key}`,
+      requirement_id: `requirement-${key}`,
+      document_type: key,
+      document_name: `${key}.pdf`,
+      generated_html: `<html><body>Signed ${key}</body></html>`,
+      generatedHtml: `<html><body>Signed ${key}</body></html>`,
+      generated_file_name: `${key}.pdf`,
+      status: 'approved',
+      visibility: 'seller_visible',
+    }))
+    const outstandingRequirements = requirements.map((requirement) => ({ ...requirement, status: 'required' }))
+    const awaitingSignatures = buildDocumentCenter({
+      listing: { id: 'listing-1', documentRequirements: outstandingRequirements, documents: [], sellerOnboarding: { status: 'completed' } },
+      requiredDocuments: outstandingRequirements,
+      documents: [],
+      onboarding: { status: 'completed' },
+    }, 'selling')
+    for (const key of keys) {
+      const item = awaitingSignatures.items.find((candidate) => candidate.sourceId === key)
+      assert.equal(item?.status, 'required', `${key} must remain outstanding after onboarding alone`)
+      assert.equal(item?.hasUploadedDocument, false)
+    }
+    const documentCenter = buildDocumentCenter({
+      listing: { id: 'listing-1', documentRequirements: requirements, documents },
+      requiredDocuments: requirements,
+      documents,
+    }, 'selling')
+
+    for (const key of keys) {
+      const items = documentCenter.items.filter((item) => item.sourceId === key)
+      assert.equal(items.length, 1, `${key} must appear once`)
+      assert.equal(items[0].status, 'approved')
+      assert.equal(items[0].linkedDocument.id, `reviewed-${key}`)
+      assert.match(items[0].linkedDocument.generatedHtml, /Signed signed_/)
+      assert.match(items[0].openLabel, /Download/)
+    }
+  } finally {
+    await server.close()
+  }
+})

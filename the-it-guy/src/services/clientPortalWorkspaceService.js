@@ -1791,6 +1791,10 @@ function getLinkedDocumentOpenLabel(requirement = {}, document = null) {
   if (!document) return ''
   if (isSignedMandateRequirement(requirement) && isSignedMandateDocument(document)) return 'Download Signed Mandate'
   if (isPropertyDisclosureRequirement(requirement) && isPropertyDisclosureDocument(document)) return 'Download Property Disclosure'
+  if (
+    normalizeDocumentMatchKey(requirement?.key || requirement?.requirement_key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION &&
+    normalizeDocumentMatchKey(document?.document_type || document?.documentType) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
+  ) return 'Download Signed FICA Declaration'
   return ''
 }
 
