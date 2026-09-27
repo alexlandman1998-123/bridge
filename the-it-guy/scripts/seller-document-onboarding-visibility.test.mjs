@@ -22,7 +22,20 @@ assert.deepEqual(
   'submitted portal onboarding should replace only the manual signed FICA declaration requirement',
 )
 
+const leadDocumentRows = filterSellerDocumentRequirementsForOnboarding(rows, {
+  onboardingSubmitted: true,
+  retainOutstandingFicaDeclaration: true,
+})
+assert.deepEqual(
+  leadDocumentRows.map((row) => row.key),
+  ['signed_fica_declaration', 'signed_mandate', 'seller_fica_id_document'],
+  'the lead Documents view must retain the outstanding legal FICA declaration after onboarding',
+)
+
 const workspaceSource = await readFile(new URL('../src/components/documents/LeadDocumentWorkspace.jsx', import.meta.url), 'utf8')
+const leadPageSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePage.jsx', import.meta.url), 'utf8')
+assert.match(leadPageSource, /retainOutstandingFicaDeclaration: true/)
+assert.match(leadPageSource, /if \(basePackKey\) return 'legal'/)
 assert.match(workspaceSource, /populatedCategories\.map\(\(category\)/)
 assert.match(workspaceSource, /document-category-\$\{category\.key\}/)
 assert.match(workspaceSource, /Document categories/)

@@ -231,9 +231,12 @@ export function isManualSignedFicaDeclarationRequirement(requirement = {}) {
   return requirementIdentity(requirement) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
 }
 
-export function filterSellerDocumentRequirementsForOnboarding(requirements = [], { onboardingSubmitted = false } = {}) {
+export function filterSellerDocumentRequirementsForOnboarding(requirements = [], {
+  onboardingSubmitted = false,
+  retainOutstandingFicaDeclaration = false,
+} = {}) {
   const rows = Array.isArray(requirements) ? requirements.filter(Boolean) : []
-  if (!onboardingSubmitted) return rows
+  if (!onboardingSubmitted || retainOutstandingFicaDeclaration) return rows
   return rows.filter((requirement) => {
     if (!isManualSignedFicaDeclarationRequirement(requirement)) return true
     // The onboarding page does not need a second, empty FICA upload request.

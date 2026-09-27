@@ -1,15 +1,12 @@
 import React, { useMemo } from 'react'
 import { FileText, FolderOpen, LockKeyhole } from 'lucide-react'
+import { summarizeLeadDocumentCategory } from './leadDocumentProgressModel'
 
 function rowIdentity(row = {}, categoryKey = '') {
   return String(row.id || row.requirementId || row.requirement_id || row.requirementKey || row.requirement_key || row.key || `${categoryKey}-${row.label || row.title || 'document'}`)
     .trim()
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-}
-
-function isCompletedStatus(status = {}, partyType = 'seller') {
-  return status.state === 'complete' || (partyType !== 'buyer' && status.state === 'review')
 }
 
 export default function LeadDocumentWorkspace({
@@ -24,10 +21,7 @@ export default function LeadDocumentWorkspace({
   const partyLabel = partyType === 'buyer' ? 'Buyer' : 'Seller'
   const normalizedCategories = useMemo(() => categories.map((category) => {
     const items = category.items || []
-    const requiredItems = items.filter((row) => row.required !== false)
-    const completed = requiredItems.filter((row) => isCompletedStatus(getStatusMeta(row), partyType)).length
-    const total = requiredItems.length
-    return { ...category, items, completed, total, progress: total ? Math.round((completed / total) * 100) : 0 }
+    return { ...category, items, ...summarizeLeadDocumentCategory(items, { getStatusMeta, partyType }) }
   }), [categories, getStatusMeta, partyType])
   const summary = useMemo(() => {
     const total = normalizedCategories.reduce((sum, category) => sum + category.total, 0)
@@ -57,7 +51,7 @@ export default function LeadDocumentWorkspace({
       </header>
 
       <div className="px-5 py-6 sm:px-6">
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" data-testid={`${partyType}-document-trackers`}>
+        <div className={`grid gap-3 sm:grid-cols-2 ${partyType === 'seller' ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`} data-testid={`${partyType}-document-trackers`}>
           {normalizedCategories.map((category) => {
             const CategoryIcon = category.Icon || FileText
             return (

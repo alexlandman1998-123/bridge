@@ -443,7 +443,13 @@ export const CROSS_MODULE_DOCUMENT_DEFINITIONS = Object.freeze([
     ownerRole: 'seller',
     responsibleRoles: ['seller'],
     packKey: 'sectional_title_body_corporate',
-    aliases: ['levy_docs', 'body_corporate_statement', 'sectional_levy_statement'],
+    aliases: [
+      'levy_docs',
+      'body_corporate_statement',
+      'sectional_levy_statement',
+      'sectional_title_levy_statement',
+      'latest_levy_statement',
+    ],
     modules: ['seller_portal', 'listing_documents', 'attorney_transfer'],
   }),
   documentDefinition({

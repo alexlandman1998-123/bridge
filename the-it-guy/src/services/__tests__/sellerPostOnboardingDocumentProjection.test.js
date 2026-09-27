@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildSellerDocumentSourceOfTruth } from '../sellerDocumentRequirementsService.js'
+import {
+  buildSellerDocumentSourceOfTruth,
+  filterSellerDocumentRequirementsForOnboarding,
+} from '../sellerDocumentRequirementsService.js'
 
 const requiredDocuments = [
   { id: 'r-disclosure', key: 'signed_disclosure_form', label: 'Signed Mandatory Disclosure / Defects Form', status: 'required', is_required: true, group: 'legal' },
@@ -56,6 +59,82 @@ test('keeps review drafts out of the three authoritative signed-document rows', 
   assert.equal(mandate.canDownload, false)
   assert.equal(mandate.upload, null)
   assert.equal(result.rows.some((row) => ['fica_review_draft', 'mandate_preparation_summary'].includes(row.key)), false)
+})
+
+test('lead Documents keeps one outstanding legal FICA declaration after onboarding', () => {
+  const rows = filterSellerDocumentRequirementsForOnboarding(source().rows, {
+    onboardingSubmitted: true,
+    retainOutstandingFicaDeclaration: true,
+  })
+  const ficaRows = rows.filter((row) => row.key === 'signed_fica_declaration')
+
+  assert.equal(ficaRows.length, 1)
+  assert.equal(ficaRows[0].group, 'legal')
+  assert.equal(ficaRows[0].status, 'required')
+  assert.equal(ficaRows[0].canUpload, true)
+  assert.equal(ficaRows[0].upload, null)
+})
+
+test('seller document source shows one property levy row and retains a legacy upload', () => {
+  const result = buildSellerDocumentSourceOfTruth({
+    listing: {
+      id: 'listing-legacy-levy',
+      documents: [
+        { id: 'old-levy-placeholder', document_type: 'Latest Levy Statement', document_name: 'Latest Levy Statement', category: 'legal', status: 'required' },
+        { id: 'levy-file', document_type: 'sectional_title_levy_statement', document_name: 'Latest Levy Statement', category: 'property', status: 'uploaded', storage_path: 'seller/levy.pdf' },
+      ],
+    },
+  })
+  const levyRows = result.rows.filter((row) => row.key === 'levy_statement')
+
+  assert.equal(levyRows.length, 1)
+  assert.equal(levyRows[0].taxonomyCategory, 'property')
+  assert.equal(levyRows[0].original.document.id, 'levy-file')
+  assert.equal(levyRows[0].upload.filePath, 'seller/levy.pdf')
+  assert.equal(levyRows[0].originalRows.length, 2)
+})
+
+test('submitted individual sectional-title onboarding keeps FICA and one required property levy row', () => {
+  const result = buildSellerDocumentSourceOfTruth({
+    listing: {
+      id: 'seller-lead-listing',
+      sellerOnboardingStatus: 'submitted',
+      documentRequirements: [
+        { id: 'old-levy', key: 'latest_levy_statement', name: 'Latest Levy Statement', group: 'legal', category: 'legal', is_required: false, status: 'required' },
+        { id: 'property-levy', key: 'levy_statement', name: 'Latest Levy Statement', group: 'property', category: 'property', is_required: true, status: 'required' },
+      ],
+    },
+    formData: {
+      sellerType: 'individual',
+      sellerName: 'Alex Landman',
+      propertyStructureType: 'sectional_title',
+      sectionalTitle: true,
+      schemeName: 'Silver Leaf',
+      sectionNumber: '2',
+      unitNumber: '2',
+      sellerPostOnboardingDrafts: {
+        documents: [
+          { key: 'signed_disclosure_form', status: 'completed', generatedHtml: '<html>signed disclosure</html>' },
+          { key: 'signed_fica_declaration', status: 'awaiting_agent_review', generatedHtml: '<html>unsigned FICA draft</html>' },
+        ],
+      },
+    },
+  })
+  const rows = filterSellerDocumentRequirementsForOnboarding(result.rows, {
+    onboardingSubmitted: true,
+    retainOutstandingFicaDeclaration: true,
+  })
+  const legalPackRows = rows.filter((row) => ['signed_mandate', 'signed_disclosure_form', 'signed_fica_declaration'].includes(row.key))
+  const levyRows = rows.filter((row) => row.key === 'levy_statement')
+
+  assert.equal(legalPackRows.length, 3)
+  assert.equal(legalPackRows.find((row) => row.key === 'signed_disclosure_form').status, 'completed')
+  assert.equal(legalPackRows.find((row) => row.key === 'signed_fica_declaration').status, 'required')
+  assert.equal(legalPackRows.find((row) => row.key === 'signed_fica_declaration').canUpload, true)
+  assert.equal(levyRows.length, 1)
+  assert.equal(levyRows[0].required, true)
+  assert.equal(levyRows[0].taxonomyCategory, 'property')
+  assert.equal(rows.some((row) => row.key === 'latest_levy_statement'), false)
 })
 
 test('replaces draft FICA and mandate rows with downloadable, uploadable physical-signing copies', () => {

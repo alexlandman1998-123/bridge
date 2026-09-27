@@ -17,6 +17,7 @@ import {
 import Button from '../../components/ui/Button'
 import Field from '../../components/ui/Field'
 import SellerLeadAgentOnboardingEditor from '../../components/leads/SellerLeadAgentOnboardingEditor'
+import { summarizeLeadDocumentCategory } from '../../components/documents/leadDocumentProgressModel'
 import { useWorkspace } from '../../context/WorkspaceContext'
 import { isUnsafeFallbackAllowed } from '../../lib/envValidation'
 import { markRouteMilestone } from '../../lib/performanceTrace'
@@ -3985,16 +3986,6 @@ const SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG = [
     cardClass: 'hover:border-[#b6dfe8]',
   },
   {
-    key: 'marketing',
-    label: 'Marketing Assets',
-    description: 'Listing media and campaign material',
-    Icon: ImageIcon,
-    accent: '#f59e0b',
-    iconClass: 'border-[#fde5b2] bg-[#fff7e6] text-[#d78500]',
-    progressClass: 'bg-[#f59e0b]',
-    cardClass: 'hover:border-[#f5d59a]',
-  },
-  {
     key: 'legal',
     label: 'Legal Documents',
     description: 'Mandates, contracts, and approvals',
@@ -4036,6 +4027,10 @@ function isStaleSellerLeadDocumentRequirement(row = {}) {
 }
 
 function getSellerLeadDocumentCategoryKey(documentRow = {}) {
+  const basePackKey = normalizeSellerBasePackKey(
+    documentRow?.key || documentRow?.requirementKey || documentRow?.requirement_key,
+  )
+  if (basePackKey) return 'legal'
   const taxonomyCategory = normalizeKey(documentRow?.taxonomyCategory || documentRow?.taxonomy_category)
   if (['seller', 'property', 'marketing', 'legal'].includes(taxonomyCategory)) return taxonomyCategory
   const source = normalizeKey([
@@ -5484,23 +5479,21 @@ function buildSellerLeadDocumentCategories(documents = []) {
   const grouped = new Map(SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => [category.key, []]))
   documents.forEach((documentRow) => {
     const key = getSellerLeadDocumentCategoryKey(documentRow)
+    // Listing media belongs in the property/listing workspace, not the seller
+    // document checklist or its completion totals.
+    if (key === 'marketing') return
     grouped.get(grouped.has(key) ? key : 'seller').push(documentRow)
   })
 
   return SELLER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => {
     const items = grouped.get(category.key) || []
-    const completed = items.filter((documentRow) => {
-      const state = getSellerLeadDocumentStatusMeta(documentRow).state
-      return state === 'complete' || state === 'review'
-    }).length
-    const total = items.length
-    const progress = total ? Math.round((completed / total) * 100) : 0
     return {
       ...category,
       items,
-      completed,
-      total,
-      progress,
+      ...summarizeLeadDocumentCategory(items, {
+        getStatusMeta: getSellerLeadDocumentStatusMeta,
+        partyType: 'seller',
+      }),
     }
   })
 }
@@ -17368,6 +17361,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ...mergedRows,
       ], {
         onboardingSubmitted: selectedLeadOnboardingCompleted,
+        retainOutstandingFicaDeclaration: true,
       })
       if (
         selectedLeadHasKingstonsPipelineSignal &&
@@ -39768,7 +39762,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         </div>
 
                         <div className="px-5 pb-6 pt-6 sm:px-6">
-                          <div className="grid gap-x-4 gap-y-8 pt-2 sm:grid-cols-2 xl:grid-cols-4">
+                          <div className="grid gap-x-4 gap-y-8 pt-2 sm:grid-cols-2 xl:grid-cols-3">
                             {selectedSellerDocumentCategories.map((category) => {
                               const CategoryIcon = category.Icon
                               return (

@@ -35,9 +35,13 @@ test('cross-module references expose the taxonomy contract to consumers', () => 
 
 test('legacy seller producers resolve to the same canonical requirement key', () => {
   const levyAlias = resolveCrossModuleDocumentReference('sectional_levy_statement')
+  const legacyLevyLabel = resolveCrossModuleDocumentReference('Latest Levy Statement')
+  const demoLevyKey = resolveCrossModuleDocumentReference('sectional_title_levy_statement')
   const hoaAlias = resolveCrossModuleDocumentReference('hoa_contact_details')
 
   assert.equal(levyAlias.canonicalDocumentKey, 'levy_statement')
+  assert.equal(legacyLevyLabel.canonicalDocumentKey, 'levy_statement')
+  assert.equal(demoLevyKey.canonicalDocumentKey, 'levy_statement')
   assert.equal(hoaAlias.canonicalDocumentKey, 'hoa_details')
   assert.equal(hoaAlias.documentRequirementKind, 'structured_fact')
 })
