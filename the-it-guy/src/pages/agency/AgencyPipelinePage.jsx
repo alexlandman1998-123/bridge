@@ -192,6 +192,7 @@ import {
   buildBuyerQualificationIntake,
   buildBuyerQualificationLeadFields,
   parseBuyerIntakeNoteBlock,
+  getBuyerQualificationReadiness,
 } from '../../services/buyerIntakeModel'
 import {
   getClientAccessPolicyMessage,
@@ -10664,8 +10665,6 @@ const BUYER_QUALIFICATION_NOTE_FIELDS = [
   { key: 'propertyNeed', label: 'Property need' },
   { key: 'additionalNotes', label: 'Call notes' },
 ]
-const BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT = 2
-
 const BUYER_MOVE_TIMEFRAME_OPTIONS = ['', 'Immediately', '1-3 months', '3-6 months', '6+ months', 'Just browsing']
 const BUYER_BUDGET_OPTIONS = ['', 'Under R 1m', 'R 1m – R 2m', 'R 2m – R 3m', 'R 3m – R 5m', 'R 5m – R 8m', 'R 8m+', 'Flexible / discuss']
 const BUYER_FINANCE_TYPE_OPTIONS = ['', 'Bond', 'Cash', 'Cash + bond', 'Not sure']
@@ -10783,20 +10782,8 @@ function buildBuyerQualificationFormFromLead(lead = {}, { includeLeadFieldFallba
   }
 }
 
-function getBuyerQualificationAnsweredFields(form = {}) {
-  return BUYER_QUALIFICATION_NOTE_FIELDS
-    .map(({ key, label }) => ({ key, label, value: normalizeText(form[key]) }))
-    .filter((field) => field.value)
-}
-
 function getBuyerQualificationEvidence(form = {}) {
-  const answeredFields = getBuyerQualificationAnsweredFields(form)
-  return {
-    answeredFields,
-    answeredCount: answeredFields.length,
-    minimumCount: BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT,
-    complete: answeredFields.length >= BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT,
-  }
+  return getBuyerQualificationReadiness(form)
 }
 
 function buildBuyerQualificationBlock(form = {}) {
@@ -15715,7 +15702,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
-    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'documents', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
+    if (!selectedLeadIsSeller && ['seller', 'property', 'mandate', 'insights', 'mapping'].includes(leadWorkspaceTab)) {
       setLeadWorkspaceTab('overview')
       if (isLeadWorkspaceRoute) replaceLeadWorkspaceTabInUrl('overview')
     }
@@ -16572,6 +16559,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 
       if (
         sellerTimelineComplianceSigning &&
+        sellerTimelineComplianceStatus.complianceRequired &&
         sellerTimelineComplianceStatus.complianceComplete &&
         !hasTimelineSignal(timelineRows, 'seller compliance pack completed', 'seller_compliance_pack_completed')
       ) {

@@ -11,6 +11,7 @@ import {
   buildBuyerQualificationLeadFields,
   buildBuyerViewingIntake,
   parseBuyerQualificationBudgetAmount,
+  getBuyerQualificationReadiness,
   parseBuyerIntakeNoteBlock,
 } from '../src/services/buyerIntakeModel.js'
 
@@ -46,6 +47,20 @@ assert.equal(qualificationSnapshot.source, BUYER_INTAKE_SOURCE_QUALIFICATION)
 assert.equal(qualificationSnapshot.qualification.source, BUYER_INTAKE_SOURCE_QUALIFICATION)
 assert.equal(qualificationSnapshot.qualification.complete, true)
 assert.equal(qualificationSnapshot.qualification.answeredCount, 3)
+const leadOnlyQualification = getBuyerQualificationReadiness({
+  propertyNeed: 'Family home',
+  additionalNotes: 'Initial enquiry only',
+})
+assert.equal(leadOnlyQualification.answeredCount, 0)
+assert.equal(leadOnlyQualification.complete, false, 'lead description and notes must not qualify a buyer')
+const qualifiedWithSubstantiveAnswers = getBuyerQualificationReadiness({
+  propertyNeed: 'Family home',
+  additionalNotes: 'Initial enquiry only',
+  budget: 'R 3m',
+  moveTimeframe: '1-3 months',
+})
+assert.equal(qualifiedWithSubstantiveAnswers.answeredCount, 2)
+assert.equal(qualifiedWithSubstantiveAnswers.complete, true)
 assert.equal(qualificationSnapshot.capturedAt, '2026-08-26T08:00:00.000Z')
 assert.equal(qualificationSnapshot.updatedAt, '2026-08-26T08:05:00.000Z')
 
