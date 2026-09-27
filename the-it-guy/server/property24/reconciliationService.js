@@ -567,7 +567,11 @@ export async function createProperty24LeadImportPlan({
       endDate: now,
     })
     const listingLeads = asArray(listingResult.data)
-    listingChecks.push({ listingNumber: Number(sync.listing_number), receivedCount: listingLeads.length })
+    listingChecks.push({
+      listingNumber: Number(sync.listing_number),
+      receivedCount: listingLeads.length,
+      lookaheadFallback: Boolean(listingResult.lookaheadFallback),
+    })
     rawLeads.push(...listingLeads.map((lead) => ({
       ...lead,
       listingNumber: Number(sync.listing_number),

@@ -274,11 +274,13 @@ const listingOnlyPlan = await pullAndImportProperty24Leads({
 })
 assert.equal(listingCheck.listingNumber, 116565928)
 assert.equal(listingCheck.dates.startDate, '2026-08-28T12:00:00.000Z')
+assert.equal(listingCheck.dates.endDate, '2026-09-27T14:00:00.000Z')
 assert.equal(listingOnlyPlan.summary.receivedCount, 1)
 assert.equal(listingOnlyPlan.summary.readyForCrmIngestionCount, 1)
 assert.equal(listingOnlyPlan.leads[0].contactName, 'New Buyer')
 assert.equal(listingOnlyPlan.leads[0].listingNumber, 116565928)
 assert.equal(listingOnlyPlan.property24.listingChecks[0].receivedCount, 1)
+assert.equal(listingOnlyPlan.property24.listingChecks[0].lookaheadFallback, false)
 
 const sharedLead = { ListingNumber: 116565928, ContactName: 'New Buyer', EmailAddress: 'buyer@example.test', ReceivedAt: '2026-09-27T09:00:00.000Z' }
 const overlappingPlan = await pullAndImportProperty24Leads({
