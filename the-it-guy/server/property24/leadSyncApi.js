@@ -82,12 +82,16 @@ function latestCursor(...values) {
 function leadCounts(body = {}) {
   const summary = body?.leads?.import?.summary || body?.leads?.summary || {}
   const importResults = body?.leads?.import?.results || []
+  const listingChecks = Array.isArray(body?.leads?.property24?.listingChecks)
+    ? body.leads.property24.listingChecks
+    : []
   return {
     received: Number(summary.receivedCount || 0) || 0,
     imported: Number(summary.importedCount || 0) || 0,
     unresolved: importResults.length
       ? importResults.filter((result) => ['needs_review', 'failed'].includes(result.status)).length
       : Number(summary.failedCount || 0) + Number(summary.needsReviewCount || 0),
+    utcFallbacks: listingChecks.filter((check) => check.utcFallback).length,
     nextAfter: asValidIso(body?.leads?.nextAfter || body?.leads?.summary?.nextAfter || ''),
   }
 }
@@ -268,7 +272,13 @@ export async function createProperty24LeadSyncResponse({
     })
 
     const counts = leadCounts(leadPullResponse.body)
-    const succeeded = leadPullResponse.status >= 200 && leadPullResponse.status < 300 && (dryRun || counts.unresolved === 0)
+    const succeeded = leadPullResponse.status >= 200 && leadPullResponse.status < 300 &&
+      (dryRun || (counts.unresolved === 0 && counts.utcFallbacks === 0))
+    const failureReason = counts.unresolved
+      ? `${counts.unresolved} Property24 lead(s) could not be imported.`
+      : counts.utcFallbacks
+        ? `${counts.utcFallbacks} Property24 listing lead window(s) rejected South African time and fell back to UTC.`
+        : leadPullResponse.body?.message || `Property24 returned HTTP ${leadPullResponse.status}.`
     // Empty responses and dry runs must not move the checkpoint. A replayed
     // older lead must not move it backwards either.
     const cursorAfter = succeeded && !dryRun
@@ -283,9 +293,7 @@ export async function createProperty24LeadSyncResponse({
       cursorAfter,
       received: counts.received,
       imported: counts.imported,
-      error: succeeded ? null : counts.unresolved
-        ? `${counts.unresolved} Property24 lead(s) could not be imported.`
-        : leadPullResponse.body?.message || `Property24 returned HTTP ${leadPullResponse.status}.`,
+      error: succeeded ? null : failureReason,
     })
     console.info('[Property24] lead sync result', {
       agencyId,
@@ -293,6 +301,7 @@ export async function createProperty24LeadSyncResponse({
       received: counts.received,
       imported: counts.imported,
       unresolved: counts.unresolved,
+      utcFallbacks: counts.utcFallbacks,
       cursorAdvanced: Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
     })
     return buildJsonResponse(succeeded ? leadPullResponse.status : Math.max(leadPullResponse.status, 502), {
@@ -303,6 +312,7 @@ export async function createProperty24LeadSyncResponse({
       received: counts.received,
       imported: counts.imported,
       unresolved: counts.unresolved,
+      utcFallbacks: counts.utcFallbacks,
       cursorAdvanced: Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
       leadPull: leadPullResponse.body || null,
     })

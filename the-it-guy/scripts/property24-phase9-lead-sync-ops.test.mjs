@@ -196,6 +196,32 @@ assert.equal(unresolvedFeed.body.unresolved, 1)
 assert.equal(unresolvedState.calls[1].args.p_status, 'failed')
 assert.equal(unresolvedState.calls[1].args.p_cursor_after, null)
 
+const fallbackState = createStateClient({ cursorAfter: '2026-09-20T10:00:00.000Z' })
+const fallbackFeed = await createProperty24LeadSyncResponse({
+  method: 'GET',
+  url: '/api/property24/leads/sync',
+  headers: { authorization: 'Bearer cron-secret' },
+  env: { PROPERTY24_API_INTERNAL_TOKEN: 'internal-token', PROPERTY24_LEAD_SYNC_CRON_SECRET: 'cron-secret' },
+  dependencies: {
+    createLeadSyncStateClient: () => fallbackState,
+    createProperty24ApiResponse: async () => ({
+      status: 200,
+      body: {
+        leads: {
+          mode: 'APPLIED',
+          property24: { listingChecks: [{ listingNumber: 116565928, receivedCount: 1, utcFallback: true }] },
+          import: { summary: { receivedCount: 1, importedCount: 1 } },
+        },
+      },
+    }),
+  },
+})
+assert.equal(fallbackFeed.status, 502)
+assert.equal(fallbackFeed.body.utcFallbacks, 1)
+assert.equal(fallbackState.calls[1].args.p_status, 'failed')
+assert.equal(fallbackState.calls[1].args.p_cursor_after, null)
+assert.match(fallbackState.calls[1].args.p_error, /fell back to UTC/)
+
 const overlapping = await createProperty24LeadSyncResponse({
   method: 'GET',
   url: '/api/property24/leads/sync',

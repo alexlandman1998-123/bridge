@@ -33,6 +33,13 @@ export async function fetchProperty24Leads({ property24, after } = {}) {
 
 const MAX_LISTING_LEAD_WINDOW_MS = 62 * 24 * 60 * 60 * 1000
 const DEFAULT_LISTING_LEAD_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
+const SOUTH_AFRICA_UTC_OFFSET_MS = 2 * 60 * 60 * 1000
+
+function formatProperty24LeadWindowDate(date) {
+  return new Date(date.getTime() + SOUTH_AFRICA_UTC_OFFSET_MS)
+    .toISOString()
+    .replace(/Z$/, '+02:00')
+}
 
 function resolveListingLeadDate(value, label) {
   const date = value ? new Date(value) : null
@@ -52,12 +59,34 @@ export async function fetchProperty24ListingLeads({ property24, listingNumber, s
   if (dateWindowMs <= 0) throw new Error('startDate must be before endDate.')
   if (dateWindowMs > MAX_LISTING_LEAD_WINDOW_MS) throw new Error('Property24 listing lead checks are limited to a 62-day date range.')
 
-  const result = await property24.fetchListingLeadsForListing(listingNumber, {
-    startDate: resolvedStartDate.toISOString(),
-    endDate: resolvedEndDate.toISOString(),
-  })
+  // Property24 returns lead dates in South African time. Live enquiries only
+  // appeared after the UTC request clock reached their local clock time,
+  // consistent with a two-hour filter offset. Keep the same instants, but
+  // send their +02:00 representation for the listing endpoint.
+  let result
+  let utcFallback = false
+  try {
+    result = await property24.fetchListingLeadsForListing(listingNumber, {
+      startDate: formatProperty24LeadWindowDate(resolvedStartDate),
+      endDate: formatProperty24LeadWindowDate(resolvedEndDate),
+    })
+  } catch (error) {
+    if (![400, 422].includes(Number(error?.status))) throw error
+    // Preserve the working request if Property24 rejects an explicit offset.
+    // Surface the fallback so an apparently successful sync is not silent.
+    console.warn('[Property24] local-time lead window rejected; retrying UTC window', {
+      listingNumber,
+      status: error.status,
+    })
+    utcFallback = true
+    result = await property24.fetchListingLeadsForListing(listingNumber, {
+      startDate: resolvedStartDate.toISOString(),
+      endDate: resolvedEndDate.toISOString(),
+    })
+  }
   return {
     ...result,
+    utcFallback,
     summary: summarizeProperty24LeadPayload(result.data),
   }
 }

@@ -58,9 +58,52 @@ const leadResult = await fetchProperty24ListingLeads({
   endDate: '2026-08-20T00:00:00.000Z',
 })
 
-assert.equal(calls[0].url, 'https://api.exdev.property24-test.com/listing/v53/listings/100314793/leads?startDate=2026-08-01T00%3A00%3A00.000Z&endDate=2026-08-20T00%3A00%3A00.000Z')
+assert.equal(calls[0].url, 'https://api.exdev.property24-test.com/listing/v53/listings/100314793/leads?startDate=2026-08-01T02%3A00%3A00.000%2B02%3A00&endDate=2026-08-20T02%3A00%3A00.000%2B02%3A00')
 assert.equal(leadResult.summary.count, 1)
 assert.equal(leadResult.summary.nextAfter, '2026-08-20T10:00:00')
+assert.equal(leadResult.utcFallback, false)
+
+const fallbackCalls = []
+const originalWarn = console.warn
+let fallbackWarning = null
+console.warn = (...args) => { fallbackWarning = args }
+try {
+  const fallbackResult = await fetchProperty24ListingLeads({
+    property24: {
+      fetchListingLeadsForListing: async (_listingNumber, dates) => {
+        fallbackCalls.push(dates)
+        if (fallbackCalls.length === 1) throw Object.assign(new Error('Offset not accepted'), { status: 400 })
+        return { status: 200, data: { leads: [] } }
+      },
+    },
+    listingNumber: 100314793,
+    startDate: '2026-08-01T00:00:00.000Z',
+    endDate: '2026-08-20T00:00:00.000Z',
+  })
+  assert.equal(fallbackResult.utcFallback, true)
+} finally {
+  console.warn = originalWarn
+}
+assert.equal(fallbackCalls[0].endDate, '2026-08-20T02:00:00.000+02:00')
+assert.equal(fallbackCalls[1].endDate, '2026-08-20T00:00:00.000Z')
+assert.match(fallbackWarning[0], /local-time lead window rejected/)
+
+let rolloverWindow = null
+await fetchProperty24ListingLeads({
+  property24: {
+    fetchListingLeadsForListing: async (_listingNumber, dates) => {
+      rolloverWindow = dates
+      return { status: 200, data: { leads: [] } }
+    },
+  },
+  listingNumber: 100314793,
+  startDate: '2026-09-26T23:30:00.000Z',
+  endDate: '2026-09-27T00:15:00.000Z',
+})
+assert.deepEqual(rolloverWindow, {
+  startDate: '2026-09-27T01:30:00.000+02:00',
+  endDate: '2026-09-27T02:15:00.000+02:00',
+})
 
 const v55Client = createProperty24Client({
   baseUrl: 'https://api.property24.com',
