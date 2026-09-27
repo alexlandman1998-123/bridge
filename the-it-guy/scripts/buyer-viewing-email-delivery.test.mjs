@@ -37,8 +37,8 @@ assert.match(pageSource, /Delivery suppressed/, 'planner should label suppressed
 assert.match(pageSource, /Email failed/, 'planner should label failed delivery')
 assert.match(pageSource, />\s*Back\s*<\/Button>/, 'planner should expose a simple Back button for property selection')
 assert.doesNotMatch(pageSource, /Edit selected properties/, 'planner should not use the old edit-selected-properties copy')
-assert.match(pageSource, /data-testid="buyer-submitted-viewing-times"[\s\S]*data-testid="simplified-viewing-planner"/, 'planner should show buyer-submitted viewing times above Viewing Planner')
-assert.match(pageSource, /Buyer submitted 3 preferred options/, 'planner should surface the three buyer-submitted preferred viewing options')
+assert.match(pageSource, /data-testid="buyer-viewing-request-status"[\s\S]*data-testid="simplified-viewing-planner"/, 'overview should show the viewing request status above Viewing Planner')
+assert.match(pageSource, /viewingRequestSummary\.proposedTimes\.map/, 'overview should surface the buyer-submitted preferred viewing options')
 assert.match(pageSource, /const VIEWING_PLANNER_PRICE_MATCH_TOLERANCE = 500000/, 'planner should keep suggested listings within the R500k price class')
 assert.match(pageSource, /raw\.match\(\/\\d\[\\d\\s\.,\]\*\//, 'price matching should parse formatted currency values with thousands separators')
 assert.match(pageSource, /priceAmount >= priceFloor && priceAmount <= priceCeiling/, 'planner suggestions should filter active listings to the enquiry price band')
@@ -59,7 +59,7 @@ assert.match(sendEmailTypesSource, /agentAvatarUrl\?: string/, 'send-email types
 assert.match(preferenceFunctionSource, /type: "buyer_viewing_times_submitted_agent"/, 'buyer preference submit should notify the agent')
 assert.match(preferenceFunctionSource, /availabilityWindows,/, 'buyer preference submit should pass client availability to notifications')
 assert.match(preferenceFunctionSource, /type: "buyer_viewing_availability_confirmation"/, 'buyer preference submit should confirm receipt to the buyer')
-assert.match(confirmationHandlerSource, /Thank you! We have your preferred viewing times/, 'buyer confirmation should include warm thank-you copy')
+assert.match(confirmationHandlerSource, /Thank you! We have your details and preferred viewing times/, 'buyer confirmation should acknowledge qualification details and viewing times')
 assert.match(confirmationHandlerSource, /confirming the options with the seller and will confirm shortly/, 'buyer confirmation should explain seller confirmation is in progress')
 
 for (const contract of [
@@ -77,7 +77,7 @@ for (const contract of [
 
 for (const contract of [
   /BridgeEmailLayoutBranding/,
-  /Choose your preferred viewing times/,
+  /Share a few details, then choose 3 viewing times/,
   /Viewing request/,
   /actionLink/,
   /agentAvatarUrl/,

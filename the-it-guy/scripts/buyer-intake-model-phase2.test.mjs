@@ -7,7 +7,10 @@ import {
   BUYER_INTAKE_VERSION,
   buildBuyerIntakeNotes,
   buildBuyerQualificationIntake,
+  buildBuyerQualificationDraftPatch,
+  buildBuyerQualificationLeadFields,
   buildBuyerViewingIntake,
+  parseBuyerQualificationBudgetAmount,
   parseBuyerIntakeNoteBlock,
 } from '../src/services/buyerIntakeModel.js'
 
@@ -115,6 +118,34 @@ assert.deepEqual(parsedMerged.viewing.confirmedPropertyIds, ['prop-1'])
 assert.deepEqual(parsedMerged.viewing.availabilityWindows, ['2026-08-27 09:00', '2026-08-28 14:00', '2026-08-29 16:00'])
 assert.equal(parsedMerged.qualification.answers.areaInterest, 'Atlantic Seaboard')
 
+const staleLegacyNotes = [
+  '[Buyer qualification]',
+  'Budget: R 2m',
+  'Preferred areas: Sea Point',
+  '[/Buyer qualification]',
+  qualificationNotes,
+].join('\n\n')
+const buyerRevisedNotes = buildBuyerIntakeNotes(
+  buildBuyerQualificationIntake({ budget: 'R 3m', areaInterest: 'Green Point' }, { notes: staleLegacyNotes }),
+  staleLegacyNotes,
+)
+assert.equal(parseBuyerIntakeNoteBlock(buyerRevisedNotes).qualification.answers.budget, 'R 3m')
+assert.equal(
+  buildBuyerQualificationIntake({}, { notes: buyerRevisedNotes }).qualification.answers.areaInterest,
+  'Green Point',
+  'older agent notes must not replace a newer buyer response',
+)
+assert.deepEqual(
+  buildBuyerQualificationDraftPatch(
+    { budget: 'R 2m', areaInterest: 'Camps Bay', propertyNeed: 'Family house' },
+    { budget: 'R 2m', areaInterest: 'Sea Point', propertyNeed: 'Family house' },
+  ),
+  { areaInterest: 'Camps Bay' },
+  'agent save should only apply fields changed in the open draft',
+)
+assert.match(agencyPipelineSource, /fetchAgencyCrmLeadRouteHydrationSeed\(organisationId, selectedLead\.leadId\)/)
+assert.match(agencyPipelineSource, /buildBuyerQualificationDraftPatch\(buyerQualificationForm, buyerQualificationBaselineRef\.current\)/)
+
 const partialSafeSnapshot = buildBuyerQualificationIntake(
   {
     propertyNeed: 'Family home',
@@ -129,5 +160,38 @@ assert.equal(partialSafeSnapshot.qualification.answers.budget, '3500000')
 assert.equal(partialSafeSnapshot.qualification.answers.propertyNeed, 'Family home')
 assert.deepEqual(partialSafeSnapshot.viewing.confirmedPropertyIds, ['prop-1'])
 assert.equal(partialSafeSnapshot.qualification.complete, true)
+
+const agentNotes = buildBuyerIntakeNotes(qualificationSnapshot, 'Existing call notes')
+const buyerPartialIntake = buildBuyerQualificationIntake(
+  { moveTimeframe: '1-3 months', propertyNeed: 'Three-bedroom home' },
+  { notes: agentNotes, source: BUYER_INTAKE_SOURCE_VIEWING, updatedAt: '2026-08-26T11:00:00.000Z' },
+)
+assert.equal(buyerPartialIntake.qualification.answers.budget, '3500000', 'buyer response must retain the agent budget')
+assert.equal(buyerPartialIntake.qualification.answers.areaInterest, 'Atlantic Seaboard', 'buyer response must retain the agent preferred area')
+assert.equal(buyerPartialIntake.qualification.answers.moveTimeframe, '1-3 months')
+assert.deepEqual(buildBuyerQualificationLeadFields(buyerPartialIntake), {
+  budget: 3500000,
+  areaInterest: 'Atlantic Seaboard',
+  propertyInterest: 'Three-bedroom home',
+})
+
+assert.equal(parseBuyerQualificationBudgetAmount('R 2 500 000'), 2500000)
+assert.equal(parseBuyerQualificationBudgetAmount('R 1m – R 2m'), 1000000)
+assert.equal(parseBuyerQualificationBudgetAmount('R 750k'), 750000)
+assert.deepEqual(
+  buildBuyerQualificationLeadFields(buildBuyerQualificationIntake({ budget: 'Flexible / discuss' })),
+  {},
+  'non-numeric answers must not overwrite a saved lead budget',
+)
+
+const longIntake = buildBuyerQualificationIntake({
+  areaInterest: 'A'.repeat(1800),
+  additionalNotes: 'N'.repeat(4000),
+})
+const longNotes = buildBuyerIntakeNotes(longIntake, 'Keep this original note')
+assert.ok(longNotes.length > 5000)
+assert.equal(parseBuyerIntakeNoteBlock(longNotes).qualification.answers.additionalNotes.length, 4000,
+  'long qualification answers must remain valid after saving the structured note block')
+assert.match(longNotes, /^Keep this original note/)
 
 console.log('buyer intake model Phase 2 contract passed')

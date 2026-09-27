@@ -7,6 +7,8 @@ import AddressAutocomplete from '../../components/location/AddressAutocomplete'
 import AreaAutocomplete from '../../components/location/AreaAutocomplete'
 import AppointmentCalendarActions from '../../components/appointments/AppointmentCalendarActions'
 import BuyerJourneyOverviewPanel from './BuyerJourneyOverviewPanel'
+import { buildBuyerPropertyEnquiryContext } from './buyerPropertyEnquiryModel'
+import { buildBuyerViewingRequestSummary } from './buyerViewingRequestSummary'
 import LeadWorkspaceLoadingShell from './LeadWorkspaceLoadingShell'
 import { buildLeadArchivePatch, resolveSellerLeadActionTokens } from './sellerLeadActionModel'
 import { buildSellerLeadReadinessRows } from './sellerLeadReadinessDisplayModel'
@@ -183,8 +185,13 @@ import {
 } from '../../services/buyerProcessDefinitionService'
 import { buildBuyerJourneyAlignmentModel } from '../../services/buyerJourneyAlignmentService'
 import {
+  BUYER_INTAKE_NOTE_END,
+  BUYER_INTAKE_NOTE_START,
   buildBuyerIntakeNotes,
+  buildBuyerQualificationDraftPatch,
   buildBuyerQualificationIntake,
+  buildBuyerQualificationLeadFields,
+  parseBuyerIntakeNoteBlock,
 } from '../../services/buyerIntakeModel'
 import {
   getClientAccessPolicyMessage,
@@ -10715,7 +10722,11 @@ function stripBuyerViewingPlanNoteBlock(notes = '') {
 }
 
 function stripBuyerStructuredNoteBlocks(notes = '') {
-  return stripBuyerViewingPlanNoteBlock(stripBuyerQualificationNoteBlock(notes))
+  return stripLeadNoteBlock(
+    stripBuyerViewingPlanNoteBlock(stripBuyerQualificationNoteBlock(notes)),
+    BUYER_INTAKE_NOTE_START,
+    BUYER_INTAKE_NOTE_END,
+  )
 }
 
 function parseBuyerQualificationNoteBlock(notes = '') {
@@ -10754,9 +10765,14 @@ function hasBuyerQualificationNoteBlock(notes = '') {
 }
 
 function buildBuyerQualificationFormFromLead(lead = {}, { includeLeadFieldFallbacks = true } = {}) {
-  const parsed = parseBuyerQualificationNoteBlock(lead?.notes)
+  const canonicalAnswers = parseBuyerIntakeNoteBlock(lead?.notes)?.qualification?.answers || {}
+  const legacyAnswers = parseBuyerQualificationNoteBlock(lead?.notes)
+  const parsed = Object.fromEntries(BUYER_QUALIFICATION_NOTE_FIELDS.map(({ key }) => [
+    key,
+    normalizeText(canonicalAnswers[key]) || normalizeText(legacyAnswers[key]),
+  ]))
   const freeformNotes = stripBuyerStructuredNoteBlocks(lead?.notes)
-  const canUseLeadFieldFallbacks = includeLeadFieldFallbacks && !hasBuyerQualificationNoteBlock(lead?.notes)
+  const canUseLeadFieldFallbacks = includeLeadFieldFallbacks && !hasBuyerQualificationNoteBlock(lead?.notes) && !Object.keys(canonicalAnswers).length
   return {
     ...BUYER_QUALIFICATION_FORM_DEFAULTS,
     ...parsed,
@@ -11911,6 +11927,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [buyerQualificationEditing, setBuyerQualificationEditing] = useState(false)
   const [buyerQualificationForm, setBuyerQualificationForm] = useState(BUYER_QUALIFICATION_FORM_DEFAULTS)
   const buyerQualificationLeadKeyRef = useRef('')
+  const buyerQualificationBaselineRef = useRef(BUYER_QUALIFICATION_FORM_DEFAULTS)
   const [viewingPlanSelectedPropertyIds, setViewingPlanSelectedPropertyIds] = useState([])
   const [viewingPlanStatus, setViewingPlanStatus] = useState('draft')
   const [viewingPlannerConfirmPath, setViewingPlannerConfirmPath] = useState('already_rsvpd')
@@ -11936,6 +11953,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [isFinanceReadinessSaving, setIsFinanceReadinessSaving] = useState(false)
   const [activityForm, setActivityForm] = useState(LEAD_DETAIL_DEFAULT_ACTIVITY)
   const [activityComposerMode, setActivityComposerMode] = useState('activity')
+  const [isActivitySaving, setIsActivitySaving] = useState(false)
   const [activityComposerOpen, setActivityComposerOpen] = useState(false)
   const [activityTimelineFilter, setActivityTimelineFilter] = useState('all')
   const [activityTimelineSearch, setActivityTimelineSearch] = useState('')
@@ -15231,6 +15249,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setSellerProfileEditForm(KINGSTONS_SELLER_PROFILE_EDIT_DEFAULTS)
       setBuyerProfileForm({})
       setBuyerQualificationForm(BUYER_QUALIFICATION_FORM_DEFAULTS)
+      buyerQualificationBaselineRef.current = BUYER_QUALIFICATION_FORM_DEFAULTS
       setBuyerQualificationEditing(false)
       buyerQualificationLeadKeyRef.current = ''
       setViewingPlanSelectedPropertyIds([])
@@ -15285,7 +15304,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const leadChanged = buyerQualificationLeadKeyRef.current !== nextLeadKey
     if (leadChanged) {
       buyerQualificationLeadKeyRef.current = nextLeadKey
-      setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))
+      const nextForm = buildBuyerQualificationFormFromLead(selectedLead)
+      buyerQualificationBaselineRef.current = nextForm
+      setBuyerQualificationForm(nextForm)
       setBuyerQualificationEditing(false)
       return
     }
@@ -15293,7 +15314,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     // Background lead hydration may replace selectedLead several times. Preserve an
     // agent's active draft and only synchronize fresh server data while read-only.
     if (!buyerQualificationEditing) {
-      setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))
+      const nextForm = buildBuyerQualificationFormFromLead(selectedLead)
+      buyerQualificationBaselineRef.current = nextForm
+      setBuyerQualificationForm(nextForm)
     }
   }, [buyerQualificationEditing, selectedLead])
 
@@ -18862,55 +18885,20 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   ])
 
   const selectedLeadEnquiryPropertyContext = useMemo(() => {
-    const linkedListingId = normalizeText(offerLinkForm.listingId || selectedLead?.listingId || selectedLead?.listing_id)
-    const linkedListing = (
-      (linkedListingId && appointmentListingById.get(linkedListingId)) ||
-      selectedLeadLinkedListing ||
-      null
-    )
-    const rawPrice = selectedLead?.enquiredPropertyPrice ?? selectedLead?.enquired_property_price
-    const priceAmount = Number(rawPrice || 0) || 0
-    const enquiryTitle = normalizeText(
-      selectedLead?.enquiredPropertyTitle ||
-        selectedLead?.enquired_property_title ||
-        selectedLead?.propertyInterest ||
-        selectedLead?.property_interest,
-    )
-    const enquiryAddress = normalizeText(
-      selectedLead?.enquiredPropertyAddress ||
-        selectedLead?.enquired_property_address ||
-        selectedLead?.sellerPropertyAddress ||
-        selectedLead?.seller_property_address,
-    )
-    const listingTitle = normalizeText(linkedListing?.label || linkedListing?.title || linkedListing?.address)
-    const listingAddress = normalizeText(linkedListing?.address || linkedListing?.property_address || linkedListing?.address_line_1)
-    const listingPrice = Number(linkedListing?.askingPrice || linkedListing?.asking_price || linkedListing?.price || linkedListing?.estimatedValue || linkedListing?.estimated_value || 0) || 0
-    const displayTitle = listingTitle || enquiryTitle || 'Property context needed'
-    const displayAddress = listingAddress || enquiryAddress
-    const originalKey = normalizeText([enquiryTitle, enquiryAddress].filter(Boolean).join(' ')).toLowerCase()
-    const linkedKey = normalizeText([listingTitle, listingAddress].filter(Boolean).join(' ')).toLowerCase()
-    const linkedDiffersFromOriginal = Boolean(originalKey && linkedKey && originalKey !== linkedKey)
+    const linkedListingId = normalizeText(selectedLead?.listingId || selectedLead?.listing_id)
+    const option = linkedListingId ? appointmentListingById.get(linkedListingId) : null
+    const linkedListing = normalizeText(option?.sourceAuthority) === 'lead_projection'
+      ? selectedLeadLinkedListing
+      : option || selectedLeadLinkedListing
+    const context = buildBuyerPropertyEnquiryContext(selectedLead, linkedListing)
     return {
-      linkedListingId,
-      linkedListing,
-      title: displayTitle,
-      address: displayAddress,
-      priceLabel: priceAmount > 0 ? formatCurrency(priceAmount) : listingPrice > 0 ? formatCurrency(listingPrice) : '',
-      imageUrl: resolveListingImageUrl(linkedListing),
-      bedrooms: Number(linkedListing?.bedrooms || selectedLead?.bedrooms || 0) || 0,
-      bathrooms: Number(linkedListing?.bathrooms || selectedLead?.bathrooms || 0) || 0,
-      parking: Number(linkedListing?.parking || linkedListing?.garages || selectedLead?.parking || 0) || 0,
-      statusLabel: normalizeText(linkedListing?.listingStatus || linkedListing?.listing_status || linkedListing?.status),
-      originalTitle: enquiryTitle,
-      originalAddress: enquiryAddress,
-      reference: normalizeText(selectedLead?.sourceReferenceId || selectedLead?.source_reference_id || selectedLead?.listingReference || selectedLead?.listing_reference),
-      hasOriginalEnquiry: Boolean(enquiryTitle || enquiryAddress || priceAmount > 0),
-      hasLinkedListing: Boolean(linkedListingId),
-      linkedDiffersFromOriginal,
+      ...context,
+      priceLabel: context.price > 0 ? formatCurrency(context.price) : '',
+      originalPriceLabel: context.original.price > 0 ? formatCurrency(context.original.price) : '',
+      imageUrl: context.linkedListing ? resolveListingImageUrl(context.linkedListing) : '',
     }
   }, [
     appointmentListingById,
-    offerLinkForm.listingId,
     selectedLead,
     selectedLeadLinkedListing,
   ])
@@ -18918,12 +18906,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   async function handleLinkBuyerEnquiryListing(nextListingId = '') {
     if (!organisationId || !selectedLeadRecordId || selectedLeadIsSeller) return
     const linkedListingId = normalizeText(nextListingId)
-    const linkedListing = linkedListingId ? appointmentListingById.get(linkedListingId) : null
     const leadPatch = {
       listingId: linkedListingId,
       listing_id: linkedListingId,
-      enquiredPropertyTitle: normalizeText(linkedListing?.label || linkedListing?.title || linkedListing?.address || selectedLeadEnquiryPropertyContext.originalTitle),
-      enquiredPropertyAddress: normalizeText(linkedListing?.address || linkedListing?.property_address || linkedListing?.address_line_1 || selectedLeadEnquiryPropertyContext.originalAddress),
     }
     patchSelectedLeadRecord(leadPatch, selectedLeadRecordId)
     setOfferLinkForm((previous) => ({ ...previous, listingId: linkedListingId, appointmentId: '' }))
@@ -22559,31 +22544,36 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     setIsLeadDetailSaving(true)
     try {
       const now = new Date().toISOString()
-      const budgetAmount = parseCurrencyAmount(buyerQualificationForm.budget)
-      const qualificationEvidence = getBuyerQualificationEvidence(buyerQualificationForm)
-      const qualificationNotes = buildBuyerQualificationNotes(buyerQualificationForm, selectedLead.notes)
-      const combinedIntake = buildBuyerQualificationIntake(buyerQualificationForm, {
-        notes: selectedLead.notes,
+      const latestLeadSeed = await fetchAgencyCrmLeadRouteHydrationSeed(organisationId, selectedLead.leadId)
+      const latestLead = latestLeadSeed.leads?.[0]
+      if (!latestLead) throw new Error('Unable to reload this lead. Please try saving again.')
+      const changedAnswers = buildBuyerQualificationDraftPatch(buyerQualificationForm, buyerQualificationBaselineRef.current)
+      const mergedForm = { ...buildBuyerQualificationFormFromLead(latestLead), ...changedAnswers }
+      const combinedIntake = buildBuyerQualificationIntake(mergedForm, {
+        notes: latestLead.notes,
         source: 'buyer_qualification_form',
-        capturedAt: selectedLead.createdAt || selectedLead.created_at || now,
+        capturedAt: latestLead.createdAt || latestLead.created_at || now,
         updatedAt: now,
-        qualifiedAt: qualificationEvidence.complete ? now : '',
       })
+      const mergedAnswers = combinedIntake.qualification?.answers || {}
+      const qualificationEvidence = getBuyerQualificationEvidence(mergedAnswers)
+      const qualificationNotes = buildBuyerQualificationNotes(mergedAnswers, latestLead.notes)
       const notes = buildBuyerIntakeNotes(combinedIntake, qualificationNotes)
+      const qualificationLeadFields = buildBuyerQualificationLeadFields(combinedIntake)
+      const budgetAmount = qualificationLeadFields.budget || 0
       const leadPatch = {
-        budget: budgetAmount || 0,
-        estimatedValue: budgetAmount || Number(leadDetailForm.estimatedValue || 0) || 0,
-        areaInterest: normalizeText(buyerQualificationForm.areaInterest),
-        propertyInterest: normalizeText(buyerQualificationForm.propertyNeed),
+        ...qualificationLeadFields,
+        ...(budgetAmount ? { estimatedValue: budgetAmount } : {}),
         notes,
       }
-      if (qualificationEvidence.complete) {
+      const latestStageKey = normalizeBuyerProcessStageKey(latestLead.stage || latestLead.status, '')
+      if (qualificationEvidence.complete && [BUYER_PROCESS_STAGE_KEYS.captured, BUYER_PROCESS_STAGE_KEYS.contacted, BUYER_PROCESS_STAGE_KEYS.qualified].includes(latestStageKey)) {
         leadPatch.stage = 'Viewing'
         leadPatch.status = 'Viewing'
       }
 
       await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
-      await upsertAreaByName(leadPatch.areaInterest, { incrementListingCount: false })
+      if (leadPatch.areaInterest) await upsertAreaByName(leadPatch.areaInterest, { incrementListingCount: false })
       await createAgencyCrmLeadActivity(
         organisationId,
         selectedLead.leadId,
@@ -22597,12 +22587,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       ).catch(() => null)
 
       patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      const savedForm = buildBuyerQualificationFormFromLead({ ...latestLead, ...leadPatch })
+      buyerQualificationBaselineRef.current = savedForm
+      setBuyerQualificationForm(savedForm)
       setLeadDetailForm((previous) => ({
         ...previous,
-        budget: budgetAmount ? String(budgetAmount) : '',
+        budget: budgetAmount ? String(budgetAmount) : previous.budget,
         estimatedValue: budgetAmount ? String(budgetAmount) : previous.estimatedValue,
-        areaInterest: leadPatch.areaInterest,
-        propertyInterest: leadPatch.propertyInterest,
+        areaInterest: leadPatch.areaInterest || previous.areaInterest,
+        propertyInterest: leadPatch.propertyInterest || previous.propertyInterest,
         notes,
       }))
       setBuyerQualificationEditing(false)
@@ -23159,6 +23152,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         activityDate,
       }, { actor: currentAgent })
     }
+    let contactStageError = null
     if (!selectedLeadIsSeller && isBuyerContactActivity({ activityType: nextActivityType, activityNote: nextActivityNote })) {
       const contactedAt = selectedLeadLastContactedAt || activityDate
       const currentStageKey = normalizeText(selectedLeadEffectiveLifecycleStage || selectedLead?.stage).toLowerCase()
@@ -23168,30 +23162,40 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         ownershipStatus: 'contacted',
         ...(shouldMoveToContacted ? { stage: 'Contacted', status: 'Active' } : {}),
       }
-      await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
-      patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      try {
+        await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, leadPatch)
+        patchSelectedLeadRecord(leadPatch, selectedLead.leadId)
+      } catch (stageError) {
+        contactStageError = stageError
+      }
     }
     closeActivityComposer()
-    setError('')
+    setError(contactStageError ? 'Activity saved, but the lead stage could not be updated. Reload the lead before trying again.' : '')
     setMessage(editingActivityId ? 'Activity updated.' : 'Activity logged.')
     void reloadRecords(organisationId)
   }
 
   async function handleUnifiedActivitySubmit(event) {
     event.preventDefault()
-    if (activityComposerMode === 'task' || activityComposerMode === 'follow_up') {
-      await handleCreateTask(event)
-      return
+    if (isActivitySaving) return
+    setIsActivitySaving(true)
+    try {
+      if (activityComposerMode === 'task' || activityComposerMode === 'follow_up') {
+        await handleCreateTask(event)
+      } else if (activityComposerMode === 'note') {
+        await handleAddActivity(event, {
+          activityType: 'Note',
+          activityNote: activityForm.activityNote,
+          outcome: '',
+        })
+      } else {
+        await handleAddActivity(event)
+      }
+    } catch (activityError) {
+      setError(activityError?.message || 'Unable to save this activity. Please try again.')
+    } finally {
+      setIsActivitySaving(false)
     }
-    if (activityComposerMode === 'note') {
-      await handleAddActivity(event, {
-        activityType: 'Note',
-        activityNote: activityForm.activityNote,
-        outcome: '',
-      })
-      return
-    }
-    await handleAddActivity(event)
   }
 
   function handleEditActivity(activity) {
@@ -35866,9 +35870,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             .map((propertyId) => getBuyerViewingPreferencePropertyTitle(propertyId, buyerViewingPreferenceLinks, selectedLeadViewingPlanProperties))
                             .filter(Boolean)
                           : []
-                        const latestBuyerViewingPreferenceWindows = latestBuyerViewingPreferenceResponse?.availabilityWindows?.length
-                          ? latestBuyerViewingPreferenceResponse.availabilityWindows
-                          : getViewingAvailabilityLines(viewingPlannerBuyerAvailability).slice(0, 3)
+                        const viewingRequestSummary = buildBuyerViewingRequestSummary({
+                          plan: savedViewingPlan,
+                          links: buyerViewingPreferenceLinks,
+                          latestResponse: latestBuyerViewingPreferenceResponse,
+                          appointments: selectedLeadViewingAppointments,
+                          loading: buyerViewingPreferenceLinksLoading,
+                          error: buyerViewingPreferenceLinksError,
+                        })
                         const submittedSellerViewingCoordinationLinks = sellerViewingCoordinationLinks
                           .filter((link) => normalizeText(link?.status).toLowerCase() === 'submitted')
                           .sort((left, right) => new Date(right?.submittedAt || right?.updatedAt || right?.createdAt || 0) - new Date(left?.submittedAt || left?.updatedAt || left?.createdAt || 0))
@@ -36281,7 +36290,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                     </div>
 
                                     <div className="mt-4 flex flex-wrap items-center justify-end gap-2 border-t border-[#edf3f8] pt-4">
-                                      <Button type="button" size="sm" variant="secondary" onClick={() => setBuyerQualificationForm(buildBuyerQualificationFormFromLead(selectedLead))}>
+                                      <Button type="button" size="sm" variant="secondary" onClick={() => setBuyerQualificationForm(buyerQualificationBaselineRef.current)}>
                                         Reset
                                       </Button>
                                       <Button type="submit" size="sm" disabled={isLeadDetailSaving}>
@@ -36407,47 +36416,47 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <div className="grid min-w-0 gap-5 lg:grid-cols-2 lg:items-stretch">
                               <section className="relative z-20 flex min-w-0 flex-col overflow-visible rounded-[20px] border border-[#dce7f2] bg-white p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-property-enquiry">
                                 <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Property enquiry</p>
-                                <div className={`mt-3 grid min-w-0 gap-4 ${selectedLeadEnquiryPropertyContext.imageUrl ? 'sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.7fr)]' : ''}`}>
-                                  <div className="min-w-0">
-                                    <h3 className="text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
-                                    {selectedLeadEnquiryPropertyContext.address ? (
-                                      <p className="mt-1 flex min-w-0 items-center gap-1.5 text-sm text-[#60758b]">
-                                        <MapPin className="h-4 w-4 shrink-0 text-[#157a4d]" />
-                                        <span className="truncate">{selectedLeadEnquiryPropertyContext.address}</span>
-                                      </p>
-                                    ) : null}
-                                    {selectedLeadEnquiryPropertyContext.priceLabel ? (
-                                      <p className="mt-3 text-lg font-semibold text-[#102033]">{selectedLeadEnquiryPropertyContext.priceLabel}</p>
-                                    ) : null}
-                                    {[selectedLeadEnquiryPropertyContext.bedrooms, selectedLeadEnquiryPropertyContext.bathrooms, selectedLeadEnquiryPropertyContext.parking].some(Boolean) ? (
-                                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs font-semibold text-[#60758b]">
-                                        {selectedLeadEnquiryPropertyContext.bedrooms ? <span className="inline-flex items-center gap-1"><BedDouble className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.bedrooms} Bed</span> : null}
-                                        {selectedLeadEnquiryPropertyContext.bathrooms ? <span className="inline-flex items-center gap-1"><Bath className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.bathrooms} Bath</span> : null}
-                                        {selectedLeadEnquiryPropertyContext.parking ? <span className="inline-flex items-center gap-1"><Car className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.parking} Parking</span> : null}
-                                      </div>
-                                    ) : null}
-                                    <div className="mt-4 flex flex-wrap gap-2">
-                                      {selectedLeadEnquiryPropertyContext.statusLabel ? (
-                                        <span className="rounded-full bg-[#eaf6ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#167149]">{selectedLeadEnquiryPropertyContext.statusLabel}</span>
-                                      ) : null}
-                                      {selectedLeadEnquiryPropertyContext.hasOriginalEnquiry ? (
-                                        <span className="rounded-full bg-[#eef4f9] px-2.5 py-1 text-[0.68rem] font-semibold text-[#526a85]">Original enquiry</span>
-                                      ) : null}
-                                    </div>
-                                  </div>
+                                <div className="relative mt-3 h-44 overflow-hidden rounded-[16px] bg-[#edf4fa]">
                                   {selectedLeadEnquiryPropertyContext.imageUrl ? (
-                                    <img
-                                      src={selectedLeadEnquiryPropertyContext.imageUrl}
-                                      alt={selectedLeadEnquiryPropertyContext.title}
-                                      className="h-40 w-full rounded-[14px] object-cover sm:h-full sm:min-h-[150px]"
-                                    />
+                                    <img src={selectedLeadEnquiryPropertyContext.imageUrl} alt={selectedLeadEnquiryPropertyContext.title} className="h-full w-full object-cover" />
+                                  ) : (
+                                    <div className="grid h-full place-content-center gap-2 text-center text-xs font-semibold text-[#7890a6]">
+                                      <ImageIcon className="mx-auto h-7 w-7" />
+                                      <span>{selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'Listing image unavailable' : 'No listing linked yet'}</span>
+                                    </div>
+                                  )}
+                                  <span className="absolute left-3 top-3 rounded-full bg-[#102033]/85 px-3 py-1 text-[0.68rem] font-semibold text-white">
+                                    {selectedLeadEnquiryPropertyContext.hasLinkedListing ? 'Linked listing' : 'Original enquiry'}
+                                  </span>
+                                </div>
+                                <div className="min-w-0 py-4">
+                                  <div className="flex flex-wrap items-start justify-between gap-2">
+                                    <h3 className="min-w-0 text-xl font-semibold tracking-[-0.03em] text-[#102033]">{selectedLeadEnquiryPropertyContext.title}</h3>
+                                    {selectedLeadEnquiryPropertyContext.statusLabel ? <span className="rounded-full bg-[#eaf6ef] px-2.5 py-1 text-[0.68rem] font-semibold text-[#167149]">{selectedLeadEnquiryPropertyContext.statusLabel}</span> : null}
+                                  </div>
+                                  {selectedLeadEnquiryPropertyContext.address ? <p className="mt-1 flex min-w-0 items-start gap-1.5 text-sm text-[#60758b]"><MapPin className="mt-0.5 h-4 w-4 shrink-0 text-[#157a4d]" /><span>{selectedLeadEnquiryPropertyContext.address}</span></p> : null}
+                                  <p className="mt-3 text-lg font-semibold text-[#102033]">{selectedLeadEnquiryPropertyContext.priceLabel || 'Price not available'}</p>
+                                  {selectedLeadEnquiryPropertyContext.listingReference ? <p className="mt-1 text-xs font-medium text-[#60758b]">Listing ref: {selectedLeadEnquiryPropertyContext.listingReference}</p> : null}
+                                  {selectedLeadEnquiryPropertyContext.displayKind === 'unavailable' ? <p className="mt-2 text-xs text-[#60758b]">The linked listing could not be loaded. The original enquiry is shown below.</p> : null}
+                                  {selectedLeadEnquiryPropertyContext.displayKind === 'linked' ? (
+                                    <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[#edf3f8] pt-3 text-xs font-semibold text-[#60758b]">
+                                      <span className="inline-flex items-center gap-1"><BedDouble className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.bedrooms || '—'} Beds</span>
+                                      <span className="inline-flex items-center gap-1"><Bath className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.bathrooms || '—'} Baths</span>
+                                      <span className="inline-flex items-center gap-1"><Car className="h-4 w-4" />{selectedLeadEnquiryPropertyContext.parking || '—'} Parking</span>
+                                    </div>
                                   ) : null}
                                 </div>
-                                {selectedLeadEnquiryPropertyContext.linkedDiffersFromOriginal ? (
-                                  <p className="mt-3 flex min-w-0 items-start gap-1.5 text-xs font-medium text-[#7c91a8]">
-                                    <Link2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                                    <span>Originally enquired about {selectedLeadEnquiryPropertyContext.originalTitle || selectedLeadEnquiryPropertyContext.originalAddress}</span>
-                                  </p>
+                                {selectedLeadEnquiryPropertyContext.hasOriginalEnquiry ? (
+                                  <div className="mb-4 rounded-[14px] border border-[#dce7f2] bg-[#f8fbfe] px-4 py-3" data-testid="buyer-original-enquiry">
+                                    <p className="text-[0.66rem] font-semibold uppercase tracking-[0.12em] text-[#60758b]">Original enquiry</p>
+                                    {selectedLeadEnquiryPropertyContext.original.title || selectedLeadEnquiryPropertyContext.original.address ? (
+                                      <p className="mt-1 text-sm font-semibold text-[#29435d]">{[selectedLeadEnquiryPropertyContext.original.title, selectedLeadEnquiryPropertyContext.original.address].filter(Boolean).join(' · ')}</p>
+                                    ) : null}
+                                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#60758b]">
+                                      {selectedLeadEnquiryPropertyContext.original.reference ? <span>Enquiry ref: {selectedLeadEnquiryPropertyContext.original.reference}</span> : null}
+                                      {selectedLeadEnquiryPropertyContext.originalPriceLabel ? <span>Enquiry price: {selectedLeadEnquiryPropertyContext.originalPriceLabel}</span> : null}
+                                    </div>
+                                  </div>
                                 ) : null}
                                 <div className="mt-auto border-t border-[#edf3f8] pt-4">
                                   <div className="flex flex-wrap items-end justify-between gap-3">
@@ -36487,6 +36496,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   <div>
                                     <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#6d839b]">Activity Logger</p>
                                     <h3 className="mt-1 text-base font-semibold tracking-[-0.02em] text-[#102033]">Capture touchpoint</h3>
+                                    <p className="mt-1 text-xs text-[#60758b]">Internal CRM record. Logging a call, WhatsApp or email does not send a message.</p>
                                   </div>
                                   <Zap className="h-5 w-5 text-[#2f7b9e]" />
                                 </div>
@@ -36566,8 +36576,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           <Mail className="h-4 w-4" /> Email
                                         </a>
                                       ) : null}
-                                      <Button type="submit" size="sm">
-                                        {activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Create Follow-up' : 'Log Activity'}
+                                      <Button type="submit" size="sm" disabled={isActivitySaving}>
+                                        {isActivitySaving ? 'Saving...' : activityComposerMode === 'follow_up' || activityComposerMode === 'task' ? 'Create Follow-up' : 'Log Activity'}
                                       </Button>
                                     </div>
                                   </div>
@@ -36575,28 +36585,34 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               </section>
                             </div>
 
-                            {(latestBuyerViewingPreferenceLink || buyerViewingPreferenceLinksLoading || buyerViewingPreferenceLinksError) ? (
-                              <section className="rounded-[20px] border border-[#cbe7d7] bg-[#f4fbf7] p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="buyer-submitted-viewing-times">
+                            <section className={`rounded-[20px] border p-5 shadow-[0_12px_34px_rgba(31,54,78,0.045)] ${['submitted', 'booked'].includes(viewingRequestSummary.status) ? 'border-[#cbe7d7] bg-[#f4fbf7]' : 'border-[#dce7f2] bg-[#f8fbfe]'}`} data-testid="buyer-viewing-request-status">
                                 <div className="flex flex-wrap items-start justify-between gap-4">
                                   <div className="min-w-0">
-                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#317255]">Client Requested Viewing Times</p>
-                                    <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#102033]">
-                                      {latestBuyerViewingPreferenceLink ? 'Buyer submitted 3 preferred options' : 'Checking submitted buyer options'}
-                                    </h3>
+                                    <p className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[#317255]">Viewing request</p>
+                                    <h3 className="mt-1 text-xl font-semibold tracking-[-0.02em] text-[#102033]">{viewingRequestSummary.title}</h3>
                                     <p className="mt-1 text-sm leading-6 text-[#4f6b5d]">
-                                      {latestBuyerViewingPreferenceResponse?.submittedAt
-                                        ? `Submitted ${formatDateTime(latestBuyerViewingPreferenceResponse.submittedAt)}`
-                                        : buyerViewingPreferenceLinksLoading
-                                          ? 'Refreshing buyer viewing preference responses.'
-                                          : buyerViewingPreferenceLinksError || 'No submitted buyer viewing response is loaded yet.'}
+                                      {viewingRequestSummary.isLoading && viewingRequestSummary.status === 'not_requested'
+                                        ? 'Checking the latest buyer response.'
+                                        : viewingRequestSummary.status === 'booked'
+                                          ? viewingRequestSummary.bookedAt ? `Booked ${formatDateTime(viewingRequestSummary.bookedAt)}` : 'A viewing appointment is on the calendar.'
+                                          : viewingRequestSummary.status === 'submitted'
+                                            ? `Submitted ${formatDateTime(viewingRequestSummary.submittedAt)}`
+                                            : viewingRequestSummary.status === 'awaiting_response'
+                                              ? `Requested ${formatDateTime(viewingRequestSummary.requestedAt)}. The buyer has not submitted times yet.`
+                                              : viewingRequestSummary.status === 'requested'
+                                                ? 'A viewing link exists; email delivery has not been confirmed.'
+                                                : viewingRequestSummary.status === 'delivery_failed'
+                                                  ? 'The buyer has not received this request. Send it again from the planner.'
+                                                  : viewingRequestSummary.status === 'delivery_suppressed'
+                                                    ? 'This was a test delivery. The buyer has not received the viewing request.'
+                                                  : viewingRequestSummary.status === 'expired'
+                                                    ? 'Send a fresh viewing link from the planner.'
+                                                    : 'Send the buyer the introduction email or request three viewing times in the planner.'}
                                     </p>
+                                    {viewingRequestSummary.error ? <p className="mt-1 text-xs text-[#a43f2c]">Could not refresh responses: {viewingRequestSummary.error}</p> : null}
                                   </div>
                                   <div className="flex flex-wrap items-center gap-2">
-                                    {latestBuyerViewingPreferenceLink ? (
-                                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${latestBuyerViewingPreferenceApplied ? 'bg-white text-[#17643a] ring-1 ring-[#b9dbc9]' : 'bg-[#fff8ec] text-[#8a5b1f] ring-1 ring-[#f0dfb7]'}`}>
-                                        {latestBuyerViewingPreferenceApplied ? 'Applied to plan' : 'Ready to apply'}
-                                      </span>
-                                    ) : null}
+                                    <span className={`rounded-full px-3 py-1 text-xs font-semibold ${['submitted', 'booked'].includes(viewingRequestSummary.status) ? 'bg-white text-[#17643a] ring-1 ring-[#b9dbc9]' : 'bg-white text-[#526a85] ring-1 ring-[#dce7f2]'}`}>{viewingRequestSummary.badge}</span>
                                     <Button
                                       type="button"
                                       size="sm"
@@ -36608,7 +36624,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                       <RefreshCw className={`h-4 w-4 ${buyerViewingPreferenceLinksLoading ? 'animate-spin' : ''}`} />
                                       Refresh
                                     </Button>
-                                    {latestBuyerViewingPreferenceLink && !latestBuyerViewingPreferenceApplied ? (
+                                    {viewingRequestSummary.status === 'submitted' && latestBuyerViewingPreferenceLink && !latestBuyerViewingPreferenceApplied ? (
                                       <Button
                                         type="button"
                                         size="sm"
@@ -36620,20 +36636,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                         {isLeadDetailSaving ? 'Applying...' : 'Apply to planner'}
                                       </Button>
                                     ) : null}
+                                    <Button type="button" size="sm" variant="secondary" onClick={() => document.getElementById('buyer-viewing-planner')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Open planner</Button>
                                   </div>
                                 </div>
 
-                                {latestBuyerViewingPreferenceLink ? (
+                                {viewingRequestSummary.proposedTimes.length ? (
                                   <>
+                                    <p className="mt-4 text-xs font-semibold uppercase tracking-[0.1em] text-[#317255]">{viewingRequestSummary.hasEarlierResponse ? 'Previous buyer options' : 'Buyer proposed times'}</p>
                                     <div className="mt-4 grid gap-3 md:grid-cols-3">
-                                      {latestBuyerViewingPreferenceWindows.slice(0, 3).map((windowLabel, index) => (
+                                      {viewingRequestSummary.proposedTimes.map((windowLabel, index) => (
                                         <div key={`buyer-submitted-window-${index}`} className="min-h-[92px] rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
                                           <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Option {index + 1}</p>
                                           <p className="mt-2 whitespace-pre-wrap text-sm font-semibold leading-6 text-[#102033]">{windowLabel}</p>
                                         </div>
                                       ))}
                                     </div>
-                                    <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
+                                    {latestBuyerViewingPreferenceResponse ? <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(260px,0.55fr)]">
                                       <div className="rounded-[14px] border border-[#cbe7d7] bg-white px-4 py-3">
                                         <p className="text-[0.66rem] font-semibold uppercase tracking-[0.1em] text-[#6f8e7f]">Selected properties</p>
                                         <p className="mt-2 text-sm font-semibold leading-6 text-[#102033]">
@@ -36648,13 +36666,12 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                           {normalizeText(latestBuyerViewingPreferenceResponse?.responseNotes) || 'No extra notes submitted.'}
                                         </p>
                                       </div>
-                                    </div>
+                                    </div> : null}
                                   </>
-                                ) : null}
-                              </section>
-                            ) : null}
+                                ) : <p className="mt-4 rounded-[14px] border border-dashed border-[#d7e4ee] bg-white px-4 py-3 text-sm text-[#60758b]">No buyer proposed times have been recorded yet.</p>}
+                            </section>
 
-                            <section className="overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="simplified-viewing-planner">
+                            <section id="buyer-viewing-planner" className="overflow-hidden rounded-[20px] border border-[#dce7f2] bg-white shadow-[0_12px_34px_rgba(31,54,78,0.045)]" data-testid="simplified-viewing-planner">
                               <div className="grid gap-6 border-b border-[#edf3f8] p-5 lg:grid-cols-[minmax(220px,0.45fr)_minmax(520px,1.55fr)] lg:items-start">
                                 <div>
                                   <h3 className="text-2xl font-semibold text-[#07162d]">Viewing Planner</h3>
@@ -38849,8 +38866,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                                   </button>
                                 ))}
                               </div>
-                              <Button type="submit" size="sm" className="px-4">
-                                {editingActivityId ? 'Save Activity' : activityComposerMode === 'note' ? 'Add Note' : 'Log Activity'}
+                              <Button type="submit" size="sm" className="px-4" disabled={isActivitySaving}>
+                                {isActivitySaving ? 'Saving...' : editingActivityId ? 'Save Activity' : activityComposerMode === 'note' ? 'Add Note' : 'Log Activity'}
                               </Button>
                             </div>
                           </div>
@@ -38865,8 +38882,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                               onChange={(event) => setTaskForm((previous) => ({ ...previous, description: event.target.value }))}
                             />
                             <div className="flex justify-end border-t border-[#e8eef5] px-3 py-3">
-                              <Button type="submit" size="sm" className="px-4">
-                                {editingTaskId ? 'Save Task' : activityComposerMode === 'follow_up' ? 'Create Follow-up' : 'Create Task'}
+                              <Button type="submit" size="sm" className="px-4" disabled={isActivitySaving}>
+                                {isActivitySaving ? 'Saving...' : editingTaskId ? 'Save Task' : activityComposerMode === 'follow_up' ? 'Create Follow-up' : 'Create Task'}
                               </Button>
                             </div>
                           </div>
@@ -40886,8 +40903,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             <Button type="button" variant="secondary" onClick={closeActivityComposer}>
               Cancel
             </Button>
-            <Button type="submit">
-              {editingActivityId ? 'Save Activity' : editingTaskId ? 'Save Task' : activityComposerMode === 'follow_up' ? 'Create Follow-up' : activityComposerMode === 'task' ? 'Create Task' : activityComposerMode === 'note' ? 'Add Note' : 'Log Activity'}
+            <Button type="submit" disabled={isActivitySaving}>
+              {isActivitySaving ? 'Saving...' : editingActivityId ? 'Save Activity' : editingTaskId ? 'Save Task' : activityComposerMode === 'follow_up' ? 'Create Follow-up' : activityComposerMode === 'task' ? 'Create Task' : activityComposerMode === 'note' ? 'Add Note' : 'Log Activity'}
             </Button>
           </div>
         </form>

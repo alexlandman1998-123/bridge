@@ -5,7 +5,7 @@ const pageSource = await readFile(new URL('../src/pages/agency/AgencyPipelinePag
 
 assert.match(pageSource, /const buyerQualificationLeadKeyRef = useRef\(''\)/, 'qualification drafts must be scoped to a lead identity')
 assert.match(pageSource, /const leadChanged = buyerQualificationLeadKeyRef\.current !== nextLeadKey/, 'lead changes must be distinguished from background hydration')
-assert.match(pageSource, /if \(!buyerQualificationEditing\) \{\s*setBuyerQualificationForm\(buildBuyerQualificationFormFromLead\(selectedLead\)\)/, 'background hydration must not overwrite an active qualification draft')
+assert.match(pageSource, /if \(!buyerQualificationEditing\) \{\s*const nextForm = buildBuyerQualificationFormFromLead\(selectedLead\)\s*buyerQualificationBaselineRef\.current = nextForm\s*setBuyerQualificationForm\(nextForm\)/, 'background hydration must not overwrite an active qualification draft')
 assert.doesNotMatch(
   pageSource,
   /setBuyerQualificationForm\(buildBuyerQualificationFormFromLead\(selectedLead\)\)\s*setBuyerQualificationEditing\(false\)\s*\}, \[selectedLead, selectedLeadContact, selectedLeadLinkedListing\]\)/,

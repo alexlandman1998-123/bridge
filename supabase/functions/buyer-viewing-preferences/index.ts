@@ -5,6 +5,7 @@ import {
   BUYER_INTAKE_MINIMUM_ANSWER_COUNT,
   buildBuyerIntakeNotes,
   buildBuyerQualificationIntake,
+  buildBuyerQualificationLeadFields,
   buildBuyerViewingIntake,
 } from "../../../the-it-guy/src/services/buyerIntakeModel.js";
 
@@ -1002,27 +1003,9 @@ Deno.serve(async (req) => {
       ? link.selected_property_ids
       : []).map((item) => normalizeText(item, 120)).filter(Boolean),
   );
-  const incomingBuyerIntake = asRecord(
-    body.buyerIntake || body.buyer_intake,
-  );
   const qualificationAnswers = asRecord(
     body.qualificationAnswers || body.qualification_answers,
   );
-  const buyerIntake = buildBuyerQualificationIntake(qualificationAnswers, {
-    existingIntake: incomingBuyerIntake,
-    capturedAt: normalizeText(
-      incomingBuyerIntake.capturedAt || incomingBuyerIntake.captured_at || "",
-      80,
-    ) || normalizeText(link.last_sent_at || link.created_at, 80),
-    updatedAt: normalizeText(body.updatedAt || body.updated_at, 80) ||
-      normalizeText(link.updated_at || link.last_sent_at || link.created_at, 80),
-    qualifiedAt: normalizeText(
-      asRecord(incomingBuyerIntake.qualification).qualifiedAt ||
-        asRecord(incomingBuyerIntake.qualification).qualified_at ||
-        "",
-      80,
-    ),
-  });
   const propertyResponses = normalizePropertyResponses(
     body.propertyResponses || body.property_responses,
     allowedIds,
@@ -1087,33 +1070,16 @@ Deno.serve(async (req) => {
     attendeeNotes,
     responseNotes,
     submittedAt: now,
-    buyerIntake,
   };
-  const update = await supabase
-    .from("buyer_viewing_preference_links")
-    .update({
-      status: "submitted",
-      response,
-      submitted_at: now,
-      updated_at: now,
-    })
-    .eq("id", link.id)
-    .eq("status", "pending")
-    .select("id")
-    .single();
-  if (update.error) {
-    console.error("[buyer-viewing-preferences] submit failed", {
-      code: update.error.code,
-      message: update.error.message,
-    });
-    return jsonResponse(500, {
-      error: "We could not save your viewing preferences.",
-      code: "submit_failed",
-    });
-  }
 
   const leadId = normalizeUuid(link.lead_id);
   const organisationId = normalizeUuid(link.organisation_id);
+  if (!leadId || !organisationId) {
+    return jsonResponse(409, {
+      error: "This viewing link is no longer connected to a buyer lead. Please contact your agent.",
+      code: "lead_unavailable",
+    });
+  }
   const selectedPropertyIds = Array.from(allowedIds);
   const availabilityText = availabilityWindows.join("\n");
   const confirmedTitleList = properties
@@ -1133,85 +1099,132 @@ Deno.serve(async (req) => {
   if (leadId && organisationId) {
     const leadQuery = await supabase
       .from("leads")
-      .select("notes")
+      .select("notes, stage")
       .eq("organisation_id", organisationId)
-    .eq("lead_id", leadId)
-    .maybeSingle();
-    if (!leadQuery.error) {
-      const existingNotes = normalizeText(leadQuery.data?.notes, 20000);
-      const existingPlan = parseNoteBlock(existingNotes);
-      const nextIntake = buildBuyerViewingIntake(
-        {
-          propertyResponses,
-          confirmedPropertyIds,
-          selectedPropertyIds,
-          availabilityWindows,
-          availabilitySlots,
-          timezone,
-          attendeeNotes,
-          responseNotes: combinedNotes,
-          submittedAt: now,
-        },
-        {
-          notes: existingNotes,
-          existingIntake: buyerIntake,
-          source: "buyer_viewing_preferences",
-          requestedAt: normalizeText(existingPlan.requestedAt) ||
-            normalizeText(link.last_sent_at) || normalizeText(link.created_at),
-          respondedAt: now,
-          updatedAt: now,
-        },
-      );
-      const qualificationNotes = replaceBuyerQualificationNoteBlock(
-        existingNotes,
-        nextIntake.qualification?.answers || {},
-      );
-      const nextNotes = replaceNoteBlock(qualificationNotes, {
-        ...existingPlan,
-        status: "buyer_confirmed",
-        selectedPropertyIds: selectedPropertyIds.length
-          ? selectedPropertyIds
-          : confirmedPropertyIds,
-        confirmedPropertyIds,
-        availabilityWindows: availabilityText,
-        responseNotes: combinedNotes,
-        requestedAt: existingPlan.requestedAt || link.last_sent_at ||
-          link.created_at,
-        respondedAt: now,
-        recipientEmail: existingPlan.recipientEmail || link.contact_email,
-        updatedAt: now,
+      .eq("lead_id", leadId)
+      .maybeSingle();
+    if (leadQuery.error) {
+      console.error("[buyer-viewing-preferences] lead lookup failed", {
+        code: leadQuery.error.code,
+        message: leadQuery.error.message,
       });
-      const notesWithIntake = buildBuyerIntakeNotes(nextIntake, nextNotes);
-      qualificationComplete = nextIntake.qualification?.complete === true;
-      qualificationAnsweredCount = Number(nextIntake.qualification?.answeredCount || 0);
-      const leadPatch: JsonRecord = {
-        notes: notesWithIntake,
+      return jsonResponse(500, {
+        error: "We could not save your details to the buyer lead. Please try again.",
+        code: "lead_lookup_failed",
+      });
+    }
+    if (!leadQuery.data) {
+      return jsonResponse(409, {
+        error: "This viewing link is no longer connected to a buyer lead. Please contact your agent.",
+        code: "lead_unavailable",
+      });
+    }
+
+    const existingNotes = String(leadQuery.data.notes || "");
+    const existingPlan = parseNoteBlock(existingNotes);
+    const qualifiedIntake = buildBuyerQualificationIntake(qualificationAnswers, {
+      notes: existingNotes,
+      source: "buyer_viewing_preferences",
+      capturedAt: normalizeText(link.last_sent_at || link.created_at),
+      updatedAt: now,
+    });
+    const nextIntake = buildBuyerViewingIntake(
+      {
+        propertyResponses,
+        confirmedPropertyIds,
+        selectedPropertyIds,
+        availabilityWindows,
+        availabilitySlots,
+        timezone,
+        attendeeNotes,
+        responseNotes: combinedNotes,
+        submittedAt: now,
+      },
+      {
+        notes: existingNotes,
+        existingIntake: qualifiedIntake,
+        source: "buyer_viewing_preferences",
+        requestedAt: normalizeText(existingPlan.requestedAt) ||
+          normalizeText(link.last_sent_at) || normalizeText(link.created_at),
+        respondedAt: now,
+        updatedAt: now,
+      },
+    );
+    const qualificationNotes = replaceBuyerQualificationNoteBlock(
+      existingNotes,
+      nextIntake.qualification?.answers || {},
+    );
+    const nextNotes = replaceNoteBlock(qualificationNotes, {
+      ...existingPlan,
+      status: "buyer_confirmed",
+      selectedPropertyIds: selectedPropertyIds.length
+        ? selectedPropertyIds
+        : confirmedPropertyIds,
+      confirmedPropertyIds,
+      availabilityWindows: availabilityText,
+      responseNotes: combinedNotes,
+      requestedAt: existingPlan.requestedAt || link.last_sent_at ||
+        link.created_at,
+      respondedAt: now,
+      recipientEmail: existingPlan.recipientEmail || link.contact_email,
+      updatedAt: now,
+    });
+    const notesWithIntake = buildBuyerIntakeNotes(nextIntake, nextNotes);
+    qualificationComplete = nextIntake.qualification?.complete === true;
+    qualificationAnsweredCount = Number(nextIntake.qualification?.answeredCount || 0);
+    const leadFields = buildBuyerQualificationLeadFields(nextIntake);
+    const leadPatch: JsonRecord = {
+      notes: notesWithIntake,
+      updated_at: now,
+      ...(leadFields.budget ? { budget: leadFields.budget } : {}),
+      ...(leadFields.areaInterest ? { area_interest: leadFields.areaInterest } : {}),
+      ...(leadFields.propertyInterest ? { property_interest: leadFields.propertyInterest } : {}),
+    };
+    const currentStage = normalizeText(leadQuery.data.stage).toLowerCase();
+    if (qualificationComplete && ["", "new lead", "contacted", "qualified", "viewing"].includes(currentStage)) {
+      leadPatch.stage = "Viewing";
+      leadPatch.status = "Viewing";
+    }
+    const leadUpdate = await supabase
+      .from("leads")
+      .update(leadPatch)
+      .eq("organisation_id", organisationId)
+      .eq("lead_id", leadId)
+      .select("lead_id")
+      .single();
+    if (leadUpdate.error) {
+      console.error("[buyer-viewing-preferences] lead save failed", {
+        code: leadUpdate.error.code,
+        message: leadUpdate.error.message,
+      });
+      return jsonResponse(500, {
+        error: "We could not save your details to the buyer lead. Please try again.",
+        code: "lead_save_failed",
+      });
+    }
+
+    response.buyerIntake = nextIntake;
+    const update = await supabase
+      .from("buyer_viewing_preference_links")
+      .update({
+        status: "submitted",
+        response,
+        submitted_at: now,
         updated_at: now,
-      };
-      if (qualificationComplete) {
-        leadPatch.stage = "Viewing";
-        leadPatch.status = "Viewing";
-      }
-      await supabase
-        .from("leads")
-        .update(leadPatch)
-        .eq("organisation_id", organisationId)
-        .eq("lead_id", leadId);
-      response.buyerIntake = nextIntake;
-      const responseUpdate = await supabase
-        .from("buyer_viewing_preference_links")
-        .update({
-          response,
-          updated_at: now,
-        })
-        .eq("id", link.id)
-        .eq("status", "submitted");
-      if (responseUpdate.error) {
-        console.error("[buyer-viewing-preferences] response update with intake failed", {
-          code: responseUpdate.error.code,
-          message: responseUpdate.error.message,
-        });
-      }
+      })
+      .eq("id", link.id)
+      .eq("status", "pending")
+      .select("id")
+      .single();
+    if (update.error) {
+      console.error("[buyer-viewing-preferences] submit failed", {
+        code: update.error.code,
+        message: update.error.message,
+      });
+      return jsonResponse(500, {
+        error: "We could not finish saving your viewing preferences. Please try again.",
+        code: "submit_failed",
+      });
     }
 
     const activity = await supabase.from("lead_activities").insert({

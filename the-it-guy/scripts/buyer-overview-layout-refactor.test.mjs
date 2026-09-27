@@ -6,7 +6,7 @@ const [pipeline, workspaceRoute] = await Promise.all([
   readFile('src/pages/agency/AgencyLeadWorkspaceRoutePage.jsx', 'utf8'),
 ])
 
-for (const label of ['Buyer Qualification', 'What’s next', 'Lead Assigned To', 'Property Enquiry', 'Activity Logger', 'Viewing Planner']) {
+for (const label of ['Buyer Qualification', 'What’s next', 'Lead Assigned To', 'Property enquiry', 'Activity Logger', 'Viewing Planner']) {
   assert.match(pipeline, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
 }
 
@@ -24,7 +24,7 @@ assert.match(pipeline, /filteredOptions\.length/)
 assert.match(pipeline, /canAccessWorkspaceRecord\(\s*PERMISSIONS\.assignLeads/)
 assert.match(pipeline, /await reassignLead\(/)
 assert.match(pipeline, /activityType: 'Lead Reassigned'/)
-assert.match(pipeline, /resolveListingImageUrl\(linkedListing\)/)
+assert.match(pipeline, /resolveListingImageUrl\(context\.linkedListing\)/)
 assert.match(pipeline, /min-w-\[430px\].*activityQuickTypes/s)
 
 assert.doesNotMatch(workspaceRoute, /if \(activeTab === 'overview'\) return/)

@@ -238,15 +238,16 @@ function buildJsonNoteBlock(startMarker, endMarker, payload = {}) {
 
 function replaceNoteBlock(notes = '', startMarker = '', endMarker = '', block = '') {
   const raw = String(notes || '').trim()
+  const completeBlock = String(block || '').trim()
   const startIndex = raw.indexOf(startMarker)
   const existingStart = startIndex >= 0 ? startIndex : -1
   if (existingStart === -1) {
-    return [raw, normalizeText(block)].filter(Boolean).join('\n\n')
+    return [raw, completeBlock].filter(Boolean).join('\n\n')
   }
   const endIndex = raw.indexOf(endMarker, existingStart)
   const before = raw.slice(0, existingStart).trim()
   const after = endIndex === -1 ? '' : raw.slice(endIndex + endMarker.length).trim()
-  return [before, normalizeText(block), after].filter(Boolean).join('\n\n')
+  return [before, completeBlock, after].filter(Boolean).join('\n\n')
 }
 
 function getBuyerQualificationAnsweredFields(answers = {}) {
@@ -381,6 +382,9 @@ function buildBuyerViewingSection(response = {}, {
 function buildBuyerIntakeBase(existingIntake = {}, notes = '') {
   const existing = mergeRecord(parseBuyerIntakeNoteBlock(notes), existingIntake)
   const legacyQualification = parseBuyerQualificationLegacyNoteBlock(notes)
+  const canonicalAnswers = asRecord(asRecord(existing.qualification).answers)
+  const legacyMissingAnswers = Object.fromEntries(Object.entries(legacyQualification)
+    .filter(([key]) => !normalizeText(canonicalAnswers[key])))
   const legacyViewing = parseBuyerViewingLegacyNoteBlock(notes)
 
   return compactObject({
@@ -388,7 +392,7 @@ function buildBuyerIntakeBase(existingIntake = {}, notes = '') {
     source: normalizeText(existing.source),
     capturedAt: normalizeText(existing.capturedAt),
     updatedAt: normalizeText(existing.updatedAt),
-    qualification: buildBuyerQualificationSection(legacyQualification, {
+    qualification: buildBuyerQualificationSection(legacyMissingAnswers, {
       existing: existing.qualification || {},
       capturedAt: existing.capturedAt || existing.qualification?.capturedAt || '',
       updatedAt: existing.updatedAt || existing.qualification?.updatedAt || '',
@@ -438,6 +442,55 @@ export function buildBuyerIntakeNotes(intake = {}, existingNotes = '') {
     BUYER_INTAKE_NOTE_END,
     buildBuyerIntakeNoteBlock(intake),
   )
+}
+
+export function parseBuyerQualificationBudgetAmount(value = '') {
+  if (typeof value === 'number') return Number.isFinite(value) && value > 0 ? value : 0
+  const raw = normalizeText(value).toLowerCase()
+  const firstNumber = raw.match(/\d[\d\s.,]*/)
+  if (!firstNumber) return 0
+  let numericText = firstNumber[0].replace(/\s/g, '')
+  const commaCount = (numericText.match(/,/g) || []).length
+  const dotCount = (numericText.match(/\./g) || []).length
+  if (commaCount && dotCount) {
+    const decimalSeparator = numericText.lastIndexOf(',') > numericText.lastIndexOf('.') ? ',' : '.'
+    const groupSeparator = decimalSeparator === ',' ? '.' : ','
+    numericText = numericText.replaceAll(groupSeparator, '').replace(decimalSeparator, '.')
+  } else if (commaCount > 1) {
+    numericText = numericText.replaceAll(',', '')
+  } else if (dotCount > 1) {
+    numericText = numericText.replaceAll('.', '')
+  } else if (commaCount === 1) {
+    const [, decimalPart = ''] = numericText.split(',')
+    numericText = decimalPart.length === 3 ? numericText.replace(',', '') : numericText.replace(',', '.')
+  } else if (dotCount === 1) {
+    const [integerPart = '', decimalPart = ''] = numericText.split('.')
+    if (integerPart.length <= 3 && decimalPart.length === 3) numericText = numericText.replace('.', '')
+  }
+  const number = Number(numericText)
+  if (!Number.isFinite(number) || number <= 0) return 0
+  if (raw.includes('million') || /\d\s*m\b/.test(raw)) return number * 1000000
+  if (/\d\s*k\b/.test(raw)) return number * 1000
+  return number
+}
+
+export function buildBuyerQualificationLeadFields(intake = {}) {
+  const answers = asRecord(asRecord(intake.qualification).answers)
+  const budget = parseBuyerQualificationBudgetAmount(answers.budget)
+  const areaInterest = normalizeText(answers.areaInterest)
+  const propertyInterest = normalizeText(answers.propertyNeed)
+  return {
+    ...(budget > 0 ? { budget } : {}),
+    ...(areaInterest ? { areaInterest } : {}),
+    ...(propertyInterest ? { propertyInterest } : {}),
+  }
+}
+
+export function buildBuyerQualificationDraftPatch(form = {}, baseline = {}) {
+  return Object.fromEntries(BUYER_INTAKE_QUALIFICATION_FIELDS
+    .filter(({ key }) => normalizeText(form[key]) !== normalizeText(baseline[key]))
+    .map(({ key }) => [key, normalizeText(form[key])])
+    .filter(([, value]) => value))
 }
 
 export function buildBuyerQualificationIntake(form = {}, {
