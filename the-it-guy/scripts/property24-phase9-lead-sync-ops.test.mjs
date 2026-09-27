@@ -61,6 +61,7 @@ const unauthorized = await createProperty24LeadSyncResponse({
 assert.equal(unauthorized.status, 401)
 
 let delegatedPayload = null
+const dryRunState = createStateClient({ cursorAfter: '2026-08-20T10:00:00.000Z' })
 const dryRun = await createProperty24LeadSyncResponse({
   method: 'GET',
   url: '/api/property24/leads/sync?dryRun=true&agencyId=31382&after=2026-08-19T00:00:00.000Z',
@@ -71,7 +72,7 @@ const dryRun = await createProperty24LeadSyncResponse({
     PROPERTY24_SYNDICATION_ENABLED: 'true',
   },
   dependencies: {
-    createLeadSyncStateClient: () => createStateClient(),
+    createLeadSyncStateClient: () => dryRunState,
     createProperty24ApiResponse: async ({ method, url, headers, body }) => {
       delegatedPayload = { method, url, headers, body: JSON.parse(body) }
       return {
@@ -92,6 +93,7 @@ assert.equal(delegatedPayload.headers['x-property24-api-token'], 'internal-token
 assert.equal(delegatedPayload.body.applyLeads, false)
 assert.equal(delegatedPayload.body.agencyId, '31382')
 assert.equal(delegatedPayload.body.after, '2026-08-19T00:00:00.000Z')
+assert.equal(dryRunState.calls[1].args.p_cursor_after, '2026-08-20T10:00:00.000Z')
 
 delegatedPayload = null
 const scheduledApply = await createProperty24LeadSyncResponse({
@@ -110,7 +112,7 @@ const scheduledApply = await createProperty24LeadSyncResponse({
         status: 200,
         body: {
           route: 'pullLeads',
-          leads: { mode: 'APPLIED', import: { summary: { importedCount: 1 } } },
+          leads: { mode: 'APPLIED', import: { summary: { receivedCount: 1, importedCount: 1 } } },
         },
       }
     },
@@ -119,6 +121,41 @@ const scheduledApply = await createProperty24LeadSyncResponse({
 assert.equal(scheduledApply.status, 200)
 assert.equal(scheduledApply.body.mode, 'APPLY')
 assert.equal(delegatedPayload.applyLeads, true)
+
+const emptyState = createStateClient({ cursorAfter: '2026-09-20T10:00:00.000Z' })
+const emptyFeed = await createProperty24LeadSyncResponse({
+  method: 'GET',
+  url: '/api/property24/leads/sync',
+  headers: { authorization: 'Bearer cron-secret' },
+  env: { PROPERTY24_API_INTERNAL_TOKEN: 'internal-token', PROPERTY24_LEAD_SYNC_CRON_SECRET: 'cron-secret' },
+  dependencies: {
+    createLeadSyncStateClient: () => emptyState,
+    createProperty24ApiResponse: async () => ({
+      status: 200,
+      body: { leads: { mode: 'APPLIED', import: { summary: { receivedCount: 0, importedCount: 0 } } } },
+    }),
+  },
+})
+assert.equal(emptyFeed.status, 200)
+assert.equal(emptyState.calls[1].args.p_cursor_after, '2026-09-20T10:00:00.000Z')
+
+const unresolvedState = createStateClient({ cursorAfter: '2026-09-20T10:00:00.000Z' })
+const unresolvedFeed = await createProperty24LeadSyncResponse({
+  method: 'GET',
+  url: '/api/property24/leads/sync',
+  headers: { authorization: 'Bearer cron-secret' },
+  env: { PROPERTY24_API_INTERNAL_TOKEN: 'internal-token', PROPERTY24_LEAD_SYNC_CRON_SECRET: 'cron-secret' },
+  dependencies: {
+    createLeadSyncStateClient: () => unresolvedState,
+    createProperty24ApiResponse: async () => ({
+      status: 200,
+      body: { leads: { mode: 'APPLIED', import: { summary: { receivedCount: 1, importedCount: 0 }, results: [{ status: 'needs_review' }] } } },
+    }),
+  },
+})
+assert.equal(unresolvedFeed.status, 502)
+assert.equal(unresolvedState.calls[1].args.p_status, 'failed')
+assert.equal(unresolvedState.calls[1].args.p_cursor_after, null)
 
 const overlapping = await createProperty24LeadSyncResponse({
   method: 'GET',

@@ -164,7 +164,7 @@ function isConvertedLead(lead = {}) {
 }
 
 function isAgencyFedLead(lead = {}) {
-  return lead.leadOwner === 'agency' || lead.accessProfile?.agencyFed === true
+  return lead.accessProfile?.agencyFed ?? lead.leadOwner === 'agency'
 }
 
 function requiresAgencyHandover(lead = {}) {
