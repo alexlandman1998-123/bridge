@@ -48,6 +48,27 @@ const uploadedDocument = {
 
 assert.equal(documentMatchesSellerRequirement(uploadedDocument, requirement), true)
 
+const sellerAddressUpload = {
+  document_type: 'seller_proof_of_address',
+  category: 'fica',
+  document_name: 'qa-proof-of-address.pdf',
+  storage_path: 'private-listings/qa/documents/qa-proof-of-address.pdf',
+  status: 'uploaded',
+}
+assert.equal(documentMatchesSellerRequirement(sellerAddressUpload, { key: 'proof_of_address' }), true)
+assert.equal(documentMatchesSellerRequirement(sellerAddressUpload, requirement), false, 'FICA category must not turn address evidence into a signed declaration')
+const classifiedRows = buildSellerDocumentRequirementRows({
+  listing: {
+    documentRequirements: [
+      { key: 'proof_of_address', label: 'Proof Of Residential Address', is_required: true },
+      { key: 'signed_fica_declaration', label: 'Signed FICA Declaration', is_required: true },
+    ],
+    documents: [sellerAddressUpload],
+  },
+})
+assert.equal(classifiedRows.find((candidate) => candidate.key === 'proof_of_address' && candidate.status === 'uploaded')?.original?.document, sellerAddressUpload)
+assert.equal(classifiedRows.find((candidate) => candidate.key === 'signed_fica_declaration')?.status, 'required')
+
 const rows = buildSellerDocumentRequirementRows({
   listing: {
     id: 'listing-1',

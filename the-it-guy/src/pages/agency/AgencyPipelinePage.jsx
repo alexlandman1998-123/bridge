@@ -17503,15 +17503,28 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const selectedBuyerDocumentCategories = useMemo(() => {
     const ficaRows = selectedBuyerFicaRoleplayerModel.flatMap((group) => group.items || [])
     const ficaByKey = new Map(ficaRows.map((row) => [normalizeKey(row.key || row.requirementKey || row.requirement_key), row]))
-    const configuredRows = BUYER_AGENT_DOCUMENT_TYPES.map((definition) => ({
-      key: definition.key,
-      requirementKey: definition.key,
-      label: definition.label,
-      required: true,
-      status: 'missing',
-      statusLabel: 'Missing',
-      ...(ficaByKey.get(definition.key) || {}),
-    }))
+    const configuredRows = BUYER_AGENT_DOCUMENT_TYPES.map((definition) => {
+      const row = {
+        key: definition.key,
+        requirementKey: definition.key,
+        label: definition.label,
+        required: true,
+        status: 'missing',
+        statusLabel: 'Missing',
+        ...(ficaByKey.get(definition.key) || {}),
+      }
+      const savedUpload = selectedBuyerDocumentReadModel.uploads.find((upload) => normalizeKey(upload.key) === definition.key)
+      if (!savedUpload || getSellerLeadDocumentStatusMeta(row).state === 'complete') return row
+      return {
+        ...row,
+        status: savedUpload.status,
+        statusLabel: savedUpload.statusLabel,
+        storagePath: savedUpload.storagePath,
+        storageBucket: savedUpload.storageBucket,
+        uploadedAt: savedUpload.uploadedAt,
+        uploadedFileName: savedUpload.fileName,
+      }
+    })
     const categoryForKey = (key = '') => ['proof_of_funds', 'bank_statements', 'bond_pre_approval'].includes(normalizeKey(key)) ? 'finance' : 'buyer'
     const buyerRows = configuredRows.filter((row) => categoryForKey(row.key) === 'buyer')
     const financeRows = configuredRows.filter((row) => categoryForKey(row.key) === 'finance')
@@ -17529,7 +17542,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     }]
     const rowsByCategory = { buyer: buyerRows, finance: financeRows, property: [], legal: legalRows }
     return BUYER_LEAD_DOCUMENT_CATEGORY_CONFIG.map((category) => ({ ...category, items: rowsByCategory[category.key] || [] }))
-  }, [selectedBuyerFicaRoleplayerModel, selectedLeadBuyerOfferDocumentUploaded])
+  }, [selectedBuyerDocumentReadModel, selectedBuyerFicaRoleplayerModel, selectedLeadBuyerOfferDocumentUploaded])
 
   useEffect(() => {
     const firstId = selectedSellerFicaRoleplayerModel[0]?.id || ''
