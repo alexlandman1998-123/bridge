@@ -18,17 +18,17 @@ function key(value = '') {
 }
 
 function agentId(agent = {}) {
-  return text(agent.userId || agent.user_id)
+  return text(agent?.userId || agent?.user_id)
 }
 
 function agentName(agent = {}) {
-  return text(agent.fullName || agent.full_name || agent.name ||
-    [agent.firstName || agent.first_name, agent.lastName || agent.last_name].filter(Boolean).join(' ') || agent.email)
+  return text(agent?.fullName || agent?.full_name || agent?.name ||
+    [agent?.firstName || agent?.first_name, agent?.lastName || agent?.last_name].filter(Boolean).join(' ') || agent?.email)
 }
 
 function avatarUrl(agent = {}) {
-  return text(agent.avatarUrl || agent.avatar_url || agent.profilePhotoUrl || agent.profile_photo_url ||
-    agent.photoUrl || agent.photo_url || agent.picture)
+  return text(agent?.avatarUrl || agent?.avatar_url || agent?.profilePhotoUrl || agent?.profile_photo_url ||
+    agent?.photoUrl || agent?.photo_url || agent?.picture)
 }
 
 function initials(name = '') {
@@ -36,8 +36,8 @@ function initials(name = '') {
 }
 
 function canOwnListing(agent = {}) {
-  const role = key(agent.workspaceRole || agent.organisationRole || agent.role)
-  return Boolean(agentId(agent) && ACTIVE_STATUSES.has(key(agent.membershipStatus || agent.status)) &&
+  const role = key(agent?.workspaceRole || agent?.organisationRole || agent?.role)
+  return Boolean(agentId(agent) && ACTIVE_STATUSES.has(key(agent?.membershipStatus || agent?.status)) &&
     (LISTING_AGENT_ROLES.has(role) || role.endsWith('_agent')))
 }
 
@@ -68,7 +68,7 @@ export default function ListingAgentReassignmentPanel({
   const currentAgentId = text(assignmentOverride?.userId || listing.assignedAgentId || listing.assigned_agent_id || listing.agentId)
   const organisationId = text(listing.organisationId || listing.organisation_id)
   const property24Live = isLiveProperty24Listing(listing)
-  const currentAgentEmail = text(assignmentOverride?.email || listing.assignedAgentEmail || listing.assigned_agent_email || agent.email).toLowerCase()
+  const currentAgentEmail = text(assignmentOverride?.email || listing.assignedAgentEmail || listing.assigned_agent_email || agent?.email).toLowerCase()
   const currentAgentName = text(assignmentOverride?.name || listing.assignedAgentName || listing.assigned_agent_name || listing.assignedAgent || agentName(agent) || 'Unassigned')
   const panelRef = useRef(null)
   const [open, setOpen] = useState(false)
