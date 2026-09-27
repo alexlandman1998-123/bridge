@@ -104,7 +104,7 @@ for (const contract of [
   /buildBuyerViewingPlanNotes/,
   /buyerEmailDeliveryStatus/,
   /sellerEmailDeliveryStatus/,
-  /BUYER_QUALIFICATION_MINIMUM_ANSWER_COUNT = 2/,
+  /getBuyerQualificationReadiness/,
   /getBuyerQualificationEvidence/,
 ]) {
   assert.match(pageSource, contract, `buyer workspace should keep the simplified viewing workflow contract ${contract}`)

@@ -10778,7 +10778,7 @@ function buildBuyerQualificationFormFromLead(lead = {}, { includeLeadFieldFallba
     budget: normalizeText(parsed.budget) || (canUseLeadFieldFallbacks ? normalizeText(lead?.budget) : ''),
     areaInterest: normalizeText(parsed.areaInterest) || (canUseLeadFieldFallbacks ? normalizeText(lead?.areaInterest) : ''),
     propertyNeed: normalizeText(parsed.propertyNeed) || (canUseLeadFieldFallbacks ? normalizeText(lead?.propertyInterest) : ''),
-    additionalNotes: [normalizeText(parsed.additionalNotes), parsed.additionalNotes ? freeformNotes : ''].filter(Boolean).join('\n\n') || (canUseLeadFieldFallbacks ? freeformNotes : ''),
+    additionalNotes: normalizeText(parsed.additionalNotes) || (canUseLeadFieldFallbacks ? freeformNotes : ''),
   }
 }
 
@@ -19441,6 +19441,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const qualificationStarted = selectedLeadBuyerQualificationEvidence.answeredCount > 0
     const qualified = selectedLeadBuyerQualificationEvidence.complete
     const viewingStarted = selectedLeadViewingAppointments.length > 0 || stageKey.includes('viewing')
+    const viewingScheduled = selectedLeadViewingAppointments.some((appointment) => ['accepted', 'confirmed', 'scheduled', 'booked'].includes(normalizeText(appointment?.status).toLowerCase()))
     const viewingCompleted = selectedLeadViewingAppointments.some((appointment) => normalizeText(appointment?.status).toLowerCase() === 'completed') || stageKey.includes('viewing completed')
     const offerStarted = selectedLeadBuyerOfferDocumentUploaded || selectedLeadOfferSummary.total > 0 || stageKey.includes('offer') || stageKey.includes('otp')
     const offerComplete = selectedLeadBuyerOfferDocumentUploaded || Boolean(selectedLeadAcceptedOffer)
@@ -19454,6 +19455,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         qualificationStarted,
         qualified,
         viewingStarted,
+        viewingScheduled,
         viewingCompleted,
         transactionSetupStarted: selectedLeadTransactionSetupStarted,
         transactionSetupComplete: selectedLeadTransactionSetupComplete,
@@ -19469,7 +19471,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           : qualificationStarted
             ? `${selectedLeadBuyerQualificationEvidence.answeredCount}/${selectedLeadBuyerQualificationEvidence.minimumCount} captured`
             : 'Pending',
-        [BUYER_PROCESS_STAGE_KEYS.viewing]: viewingCompleted ? 'Completed' : viewingStarted ? 'Upcoming' : 'Not booked',
+        [BUYER_PROCESS_STAGE_KEYS.viewing]: viewingCompleted ? 'Completed' : viewingScheduled ? 'Upcoming' : 'Not booked',
         [BUYER_PROCESS_STAGE_KEYS.transactionSetup]: selectedLeadTransactionSetupComplete
           ? 'Setup complete'
           : selectedLeadTransactionSetupStarted

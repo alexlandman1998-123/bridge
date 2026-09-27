@@ -7,10 +7,17 @@ assert.equal(freshLead.nextAction.key, 'mark_contacted')
 
 const viewing = buildBuyerJourneyAlignmentModel({
   persistedStage: 'viewing',
-  evidence: { leadCaptured: true, contacted: true, qualified: true, viewingStarted: true },
+  evidence: { leadCaptured: true, contacted: true, qualified: true, viewingStarted: true, viewingScheduled: true },
 })
 assert.equal(viewing.currentStageKey, 'viewing')
 assert.equal(viewing.nextAction.key, 'progress_from_viewing')
+
+const viewingWithoutAppointment = buildBuyerJourneyAlignmentModel({
+  persistedStage: 'viewing',
+  evidence: { leadCaptured: true, contacted: true, viewingStarted: true },
+})
+assert.equal(viewingWithoutAppointment.currentStageKey, 'viewing')
+assert.equal(viewingWithoutAppointment.nextAction.key, 'schedule_viewing')
 
 const standardOffer = buildBuyerJourneyAlignmentModel({
   evidence: { leadCaptured: true, contacted: true, qualified: true, viewingCompleted: true, transactionSetupComplete: true },
