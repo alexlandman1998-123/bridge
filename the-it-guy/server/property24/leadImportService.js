@@ -368,8 +368,7 @@ async function persistDeveloperLeadMirror(supabase, rows = {}, lead = {}, listin
       .select('developer_lead_id')
       .eq('source_agency_org_id', rows.organisationId)
       .eq('source_lead_id', rows.leadId)
-      .eq('primary_development_id', development.id)
-      .eq('ownership_model', 'agency_introduced'),
+      .eq('primary_development_id', development.id),
   )
   if (existing.error && existing.error.code !== 'PGRST116') throw existing.error
   if (existing.data?.developer_lead_id) return { developerLeadId: existing.data.developer_lead_id, reused: true }
@@ -377,6 +376,7 @@ async function persistDeveloperLeadMirror(supabase, rows = {}, lead = {}, listin
   const developerLeadId = randomUUID()
   const buyerFullName = normalizeText(lead.contactName) || normalizeText(lead.email) || 'Property24 buyer'
   const protectedSummary = [normalizeText(development.name), normalizeText(listing.title), 'Property24 inbound lead'].filter(Boolean).join(' | ')
+  const developerOwnsListing = developerOrgId === rows.organisationId
   const leadInsert = await supabase
     .from('developer_leads')
     .insert({
@@ -387,10 +387,10 @@ async function persistDeveloperLeadMirror(supabase, rows = {}, lead = {}, listin
       assigned_agent_id: isUuid(rows.leadRow.assigned_agent_id) ? rows.leadRow.assigned_agent_id : null,
       source_lead_id: rows.leadId,
       primary_development_id: development.id,
-      ownership_model: 'agency_introduced',
-      lead_owner: 'agency',
+      ownership_model: developerOwnsListing ? 'developer_direct' : 'agency_introduced',
+      lead_owner: developerOwnsListing ? 'developer' : 'agency',
       selling_model: 'agent_led',
-      visibility_state: 'limited',
+      visibility_state: developerOwnsListing ? 'full' : 'limited',
       reservation_state: 'none',
       lead_status: 'new',
       lead_source: 'Property24 development enquiry',
@@ -412,7 +412,7 @@ async function persistDeveloperLeadMirror(supabase, rows = {}, lead = {}, listin
       buyer_phone: normalizeText(lead.phone) || null,
       private_notes: buildLeadNotes(lead) || null,
       raw_payload: { source: 'Property24', externalReference: lead.externalReference || null, lead: lead.raw || {} },
-      handover_source: 'agency',
+      handover_source: developerOwnsListing ? 'developer' : 'agency',
     })
   if (privateInsert.error) throw privateInsert.error
 

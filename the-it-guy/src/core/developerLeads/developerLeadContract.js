@@ -173,7 +173,10 @@ export function buildDeveloperLeadAccessProfile(lead = {}) {
   )
   const leadStatus = normalizeDeveloperLeadStatus(lead.leadStatus || lead.lead_status || lead.status)
   const developmentScope = resolveDeveloperLeadDevelopmentScope(lead)
-  const agencyFed = leadOwner === 'agency' || ownershipModel === 'agency_introduced'
+  const developerOrgId = normalizeText(lead.developerOrgId || lead.developer_org_id)
+  const sourceAgencyOrgId = normalizeText(lead.sourceAgencyOrgId || lead.source_agency_org_id)
+  const selfListed = Boolean(developerOrgId && sourceAgencyOrgId && developerOrgId === sourceAgencyOrgId)
+  const agencyFed = !selfListed && (leadOwner === 'agency' || ownershipModel === 'agency_introduced')
   const canDeveloperSeePrivateDetails = !agencyFed || visibilityState === 'handed_over'
 
   return {

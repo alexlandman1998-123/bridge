@@ -65,6 +65,21 @@ assert.equal(masked.buyerPhone, null)
 assert.equal(masked.privateNotes, null)
 assert.equal(masked.accessProfile.canDeveloperSeePrivateDetails, false)
 
+const selfListed = maskDeveloperLeadForDeveloper({
+  developerLeadId: 'lead-own-listing',
+  developerOrgId: 'samlin-org',
+  sourceAgencyOrgId: 'samlin-org',
+  leadOwner: 'agency',
+  ownershipModel: 'agency_introduced',
+  visibilityState: 'limited',
+  buyerFullName: 'Samlin Buyer',
+  buyerEmail: 'samlin.buyer@example.test',
+})
+assert.equal(selfListed.accessProfile.agencyFed, false)
+assert.equal(selfListed.accessProfile.requiresHandoverBeforePrivateDetails, false)
+assert.equal(selfListed.buyerFullName, 'Samlin Buyer')
+assert.equal(selfListed.buyerEmail, 'samlin.buyer@example.test')
+
 const handedOver = maskDeveloperLeadForDeveloper({
   developerLeadId: 'lead-2',
   leadOwner: 'agency',

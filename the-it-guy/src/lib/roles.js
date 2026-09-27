@@ -115,19 +115,19 @@ function createAgentRentalsNavItems({ canManageOrganisation = false, isBranchMan
 export const APP_NAV_BY_ROLE = {
   developer: [
     { key: 'dashboard', label: 'Dashboard', to: '/dashboard' },
-    { key: 'transactions', label: 'Transactions', to: '/transactions', activeMatch: ['/transactions', '/units'] },
-    { key: 'developments', label: 'Developments', to: '/developer/developments', activeMatch: ['/developer/developments'] },
-    { key: 'developer_leads', label: 'Development Leads', to: '/developer/leads', activeMatch: ['/developer/leads'], icon: Users },
-    { key: 'developer_snags', label: 'Handover & Snags', to: '/developer/handover-snags', activeMatch: ['/developer/handover-snags', '/snags'] },
+    { key: 'transactions', label: 'Transaction', to: '/transactions', activeMatch: ['/transactions', '/units'] },
+    { key: 'developer_leads', label: 'Leads', to: '/developer/leads', activeMatch: ['/developer/leads'], icon: Users },
     {
       key: 'listings',
       label: 'Listings',
       to: '/listings',
       activeMatch: ['/listings', '/agent/listings'],
     },
+    { key: 'developments', label: 'Developments', to: '/developer/developments', activeMatch: ['/developer/developments'] },
+    { key: 'developer_snags', label: 'Handover & Snags', to: '/developer/handover-snags', activeMatch: ['/developer/handover-snags', '/snags'] },
     {
       key: 'developer_organisation',
-      label: 'Organisation',
+      label: 'Organisations',
       to: '/developer/partners?type=all',
       activeMatch: ['/developer/partners'],
       icon: Handshake,

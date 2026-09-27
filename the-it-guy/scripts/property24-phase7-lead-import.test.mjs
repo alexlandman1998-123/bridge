@@ -189,7 +189,11 @@ assert.equal(supabase.rowsByTable.lead_ingestion_logs[0].external_reference, 'P2
 assert.equal(supabase.rowsByTable.developer_leads.length, 1)
 assert.equal(supabase.rowsByTable.developer_leads[0].source_lead_id, supabase.rowsByTable.leads[0].lead_id)
 assert.equal(supabase.rowsByTable.developer_leads[0].primary_development_id, listing.development_id)
+assert.equal(supabase.rowsByTable.developer_leads[0].lead_owner, 'developer')
+assert.equal(supabase.rowsByTable.developer_leads[0].ownership_model, 'developer_direct')
+assert.equal(supabase.rowsByTable.developer_leads[0].visibility_state, 'full')
 assert.equal(supabase.rowsByTable.developer_lead_private_details.length, 1)
+assert.equal(supabase.rowsByTable.developer_lead_private_details[0].handover_source, 'developer')
 assert.equal(supabase.rowsByTable.developer_lead_development_interests.length, 1)
 
 const duplicate = await importProperty24PreparedLeads({
@@ -199,6 +203,24 @@ const duplicate = await importProperty24PreparedLeads({
 })
 assert.equal(duplicate.summary.alreadyImportedCount, 1)
 assert.equal(supabase.rowsByTable.leads.length, 1)
+
+const outsideAgencySupabase = createFakeSupabase({
+  developments: [{
+    id: listing.development_id,
+    organisation_id: '55555555-5555-4555-8555-555555555555',
+    name: 'Agency marketed estate',
+    status: 'active',
+  }],
+})
+const outsideAgencyImport = await importProperty24PreparedLeads({
+  supabase: outsideAgencySupabase,
+  leads: [{ ...readyLead, externalReference: 'P24-OTHER-AGENCY', dedupeKey: 'other-agency' }],
+  listingDetailsById: new Map([[listing.id, listing]]),
+})
+assert.equal(outsideAgencyImport.summary.importedCount, 1)
+assert.equal(outsideAgencySupabase.rowsByTable.developer_leads[0].lead_owner, 'agency')
+assert.equal(outsideAgencySupabase.rowsByTable.developer_leads[0].visibility_state, 'limited')
+assert.equal(outsideAgencySupabase.rowsByTable.developer_lead_private_details[0].handover_source, 'agency')
 
 const planOnly = await pullAndImportProperty24Leads({
   supabase: createFakeSupabase({

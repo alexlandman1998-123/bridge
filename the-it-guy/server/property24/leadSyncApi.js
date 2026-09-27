@@ -72,9 +72,13 @@ export function resolveScheduledProperty24After({ cursorAfter = '', now = new Da
 
 function leadCounts(body = {}) {
   const summary = body?.leads?.import?.summary || body?.leads?.summary || {}
+  const importResults = body?.leads?.import?.results || []
   return {
     received: Number(summary.receivedCount || 0) || 0,
     imported: Number(summary.importedCount || 0) || 0,
+    unresolved: importResults.length
+      ? importResults.filter((result) => ['needs_review', 'failed'].includes(result.status)).length
+      : Number(summary.failedCount || 0) + Number(summary.needsReviewCount || 0),
     nextAfter: asValidIso(body?.leads?.nextAfter || body?.leads?.summary?.nextAfter || ''),
   }
 }
@@ -255,23 +259,42 @@ export async function createProperty24LeadSyncResponse({
     })
 
     const counts = leadCounts(leadPullResponse.body)
-    const succeeded = leadPullResponse.status >= 200 && leadPullResponse.status < 300
+    const succeeded = leadPullResponse.status >= 200 && leadPullResponse.status < 300 && (dryRun || counts.unresolved === 0)
+    // Keep the cursor on empty responses and dry runs. A late portal lead must
+    // still be in scope for the next scheduled import.
+    const cursorAfter = succeeded && !dryRun
+      ? counts.received > 0 ? counts.nextAfter || lock.cursor_after || apiPayload.after : lock.cursor_after || apiPayload.after
+      : succeeded ? lock.cursor_after || null : null
     await completeLeadSync({
       client: stateClient,
       environment,
       agencyId,
       lockToken: lock.lock_token,
       status: succeeded ? 'complete' : 'failed',
-      cursorAfter: succeeded ? counts.nextAfter || new Date().toISOString() : null,
+      cursorAfter,
       received: counts.received,
       imported: counts.imported,
-      error: succeeded ? null : leadPullResponse.body?.message || `Property24 returned HTTP ${leadPullResponse.status}.`,
+      error: succeeded ? null : counts.unresolved
+        ? `${counts.unresolved} Property24 lead(s) could not be imported.`
+        : leadPullResponse.body?.message || `Property24 returned HTTP ${leadPullResponse.status}.`,
     })
-    return buildJsonResponse(leadPullResponse.status, {
+    console.info('[Property24] lead sync result', {
+      agencyId,
+      status: succeeded ? 'complete' : 'failed',
+      received: counts.received,
+      imported: counts.imported,
+      unresolved: counts.unresolved,
+      cursorAdvanced: Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
+    })
+    return buildJsonResponse(succeeded ? leadPullResponse.status : Math.max(leadPullResponse.status, 502), {
       route: 'syncLeads',
       mode: dryRun ? 'DRY_RUN' : 'APPLY',
       scheduled: true,
       after: apiPayload.after,
+      received: counts.received,
+      imported: counts.imported,
+      unresolved: counts.unresolved,
+      cursorAdvanced: Boolean(cursorAfter && cursorAfter !== lock.cursor_after),
       leadPull: leadPullResponse.body || null,
     })
   } catch (error) {
