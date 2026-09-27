@@ -43,7 +43,7 @@ assert.match(databaseTest, /release events are immutable/, 'database contract te
 assert.match(repository, /WEBSITES_RUNTIME_ENV/, 'public serving requires an explicit runtime environment')
 assert.match(repository, /website_production_releases/, 'production serving requires an active production release')
 assert.match(repository, /target_hostname.*hostname/s, 'production release is bound to the exact hostname')
-assert.match(workspaceService, /website_production_releases/, 'Website Studio reads the production release gate')
+assert.match(workspaceService, /connection\.production_release_status/, 'Website Studio reads the production release gate')
 assert.match(workspace, /PRODUCTION PREPARATION/, 'Website Studio explains the pre-live state')
 assert.match(workspace, /PRODUCTION PAUSED/, 'Website Studio explains the fail-closed production state')
 

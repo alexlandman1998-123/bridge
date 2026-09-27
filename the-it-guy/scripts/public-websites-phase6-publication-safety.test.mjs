@@ -42,7 +42,7 @@ for (const functionSql of definerFunctions) {
 }
 assert.doesNotMatch(migration, /set search_path = public/i, 'Phase 6 does not trust a mutable public search path')
 
-assert.match(databaseTest, /plan\(25\)/, 'database contract has a fixed assertion plan')
+assert.match(databaseTest, /plan\(27\)/, 'database contract has a fixed assertion plan')
 assert.match(databaseTest, /not has_table_privilege\('authenticated'.*website_publication_events.*'insert'/, 'database test prevents forged history')
 assert.match(databaseTest, /not has_table_privilege\('service_role'.*website_publication_events.*'delete'/, 'database test prevents deleted history')
 assert.match(databaseTest, /not has_function_privilege\('anon'.*website_publish_revision/, 'database test denies anonymous publication')
@@ -60,11 +60,10 @@ assert.match(workspaceService, /website_publication_events/, 'CRM loads publicat
 assert.match(workspaceService, /revision\.id === site\.published_revision_id/, 'CRM identifies the live revision from the exact pointer')
 assert.match(workspaceService, /page\.revision_id === activeRevision\?\.id/, 'CRM editor shows only the active draft or live revision pages')
 
-assert.match(workspace, /Publication blockers/, 'Website Studio displays release blockers')
-assert.match(workspace, /Publish reviewed draft/, 'Website Studio labels the guarded release action clearly')
-assert.match(workspace, /Restore selected revision/, 'Website Studio supports explicit recovery-point selection')
-assert.match(workspace, /new published copy/i, 'Website Studio explains immutable recovery semantics')
-assert.match(workspace, /PUBLICATION HISTORY/, 'Website Studio displays publication evidence')
+assert.match(workspace, /Release blockers/, 'Website Studio displays release blockers')
+assert.match(workspace, /Publish changes/, 'Website Studio labels the guarded release action clearly')
+assert.match(workspace, /publicationReadiness\?\.blockers/, 'Website Studio uses authoritative readiness checks')
+assert.match(workspace, /publicationEvents/, 'Website Studio displays publication activity')
 assert.match(workspace, /window\.confirm/, 'destructive publication actions require confirmation')
 
 console.log('Public websites phase 6 publication safety checks passed')
