@@ -796,7 +796,7 @@ async function fetchLaneUpdates(client, transactionId) {
   return query.data || []
 }
 
-async function fetchRegistrationJourneyUpdate(client, transactionId) {
+export async function fetchRegistrationJourneyUpdate(client, transactionId) {
   // The ordinary activity list is capped. Closure must still find an older
   // registration message after a busy matter has accumulated later updates.
   const query = await client.from('transaction_attorney_lane_updates')
@@ -804,13 +804,15 @@ async function fetchRegistrationJourneyUpdate(client, transactionId) {
     .eq('transaction_id', transactionId).eq('lane_key', 'transfer')
     .eq('update_type', 'transfer_journey_progress').eq('visibility', 'client_visible')
     .contains('metadata', { journeyBrief: { stageKey: 'registration' } })
-    .overlaps('client_recipients', ['buyer', 'seller'])
-    .order('created_at', { ascending: false }).limit(1)
+    .order('created_at', { ascending: false })
   if (query.error) {
     if (isMissingSchemaError(query.error)) return []
     throw query.error
   }
-  return query.data || []
+  // client_recipients is JSONB on current matters and text[] on older schemas.
+  // PostgREST's overlaps filter emits &&, which is not defined for JSONB.
+  return (query.data || []).filter((row) =>
+    normalizeClientRecipients(row.client_recipients, 'client_visible').length > 0).slice(0, 1)
 }
 
 async function fetchLaneHistory(client, transactionId) {

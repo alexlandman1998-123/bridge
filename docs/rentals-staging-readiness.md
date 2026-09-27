@@ -47,6 +47,8 @@ Do not enable the deeper Rentals workflow flags until the staging workflow has s
 
 ## Release Rule
 
+The temporary direct-production pilot policy in [the database release runbook](database-release-runbook.md) supersedes the staging prerequisite below only for a production push explicitly requested in that task, through 26 December 2026. The older rental release gates still enforce the staged route and currently report blocked. Reconcile the selected release path before any promotion. The lead-specific pilot journeys and evidence requirements are in [Rental lead pilot acceptance](rental-lead-pilot-acceptance.md).
+
 For the first Rentals build, production promotion requires:
 
 - staging env points at the non-production Supabase project

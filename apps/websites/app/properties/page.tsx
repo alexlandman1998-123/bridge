@@ -61,6 +61,7 @@ export default async function PropertiesPage({ searchParams }: Props) {
     </section>
     {lwpRenting && <section className="lwp-rental-process"><p className="eyebrow">A BETTER WAY TO MOVE IN</p><div><article><span>01</span><h2>Shortlist with context.</h2><p>Clear details on every home before you book a viewing.</p></article><article><span>02</span><h2>View with ease.</h2><p>A dedicated LWP advisor helps you find the right fit.</p></article><article><span>03</span><h2>Move in prepared.</h2><p>A simple, transparent process from application to keys.</p></article></div></section>}
     <section className="listing-help"><div><p className="eyebrow">{lwpRenting ? 'LOCAL GUIDANCE, WHEN YOU NEED IT' : 'A LITTLE LOCAL GUIDANCE'}</p><h2>{lwpRenting ? 'Looking for a little more room?' : 'Looking for something specific?'}</h2><p>{lwpRenting ? 'Tell us your wish list and we’ll help you find the place that fits.' : 'Tell us what home looks like to you. We’ll help you take the next step.'}</p></div><a className="header-cta" href="/contact">{lwpRenting ? 'Start a rental search ↗' : 'Let’s talk property ↗'}</a></section>
+    {rental && <section className="listing-help"><div><p className="eyebrow">FOR PROPERTY OWNERS</p><h2>Have a property to let?</h2><p>Tell us about your rental and our team will contact you.</p></div><a className="header-cta" href="/list-your-rental">List your rental ↗</a></section>}
     <SiteFooter site={site} />
   </main>
 }

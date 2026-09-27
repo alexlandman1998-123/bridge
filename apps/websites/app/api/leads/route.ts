@@ -20,6 +20,9 @@ type LeadBody = {
   phone?: unknown
   message?: unknown
   intent?: unknown
+  rentalPropertyAddress?: unknown
+  rentalPropertyType?: unknown
+  expectedMonthlyRent?: unknown
   privacyAccepted?: unknown
   marketingConsent?: unknown
   pageUrl?: unknown
@@ -81,6 +84,11 @@ function attribution(request: Request, body: LeadBody, host: string) {
     utmContent: pageMatchesSite ? text(page.searchParams.get('utm_content'), 160) : undefined,
     userAgent: text(request.headers.get('user-agent'), 512),
     leadIntent: normalizeWebsiteLeadIntent(body.intent),
+    ...(normalizeWebsiteLeadIntent(body.intent) === 'let' ? {
+      rentalPropertyAddress: text(body.rentalPropertyAddress, 300),
+      rentalPropertyType: text(body.rentalPropertyType, 80),
+      expectedMonthlyRent: text(body.expectedMonthlyRent, 40),
+    } : {}),
   }
 }
 
@@ -140,7 +148,10 @@ export async function POST(request: Request) {
   const email = text(body.email, 254).toLowerCase()
   const phone = text(body.phone, 64)
   const idempotencyKey = text(body.idempotencyKey, 128)
-  if (!host || !supportedTypes.has(type) || name.length < 2 || (!email && !phone) || (email && !emailPattern.test(email)) || body.privacyAccepted !== true || !idempotencyPattern.test(idempotencyKey)) {
+  const landlordEnquiry = normalizeWebsiteLeadIntent(body.intent) === 'let'
+  const page = safeUrl(body.pageUrl)
+  if (!host || !supportedTypes.has(type) || name.length < 2 || (!email && !phone) || (email && !emailPattern.test(email)) || body.privacyAccepted !== true || !idempotencyPattern.test(idempotencyKey)
+    || (landlordEnquiry && (type !== 'general_enquiry' || !text(body.pageId, 64) || !page || normalizeHostname(page.host) !== host || page.pathname !== '/list-your-rental' || text(body.rentalPropertyAddress, 300).length < 5))) {
     return respond({ error: 'Please complete the required fields.' }, 400, 'lead.rejected', { code: 'invalid_fields', submissionType: type || undefined })
   }
 

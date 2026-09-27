@@ -15,5 +15,5 @@ test('public website identity is always resolved from the published revision', (
   assert.match(repository, /logoIconUrl: brand\.logoIconUrl/)
   assert.match(repository, /website: brand\.website/)
   assert.match(chrome, /selectWebsiteLogo\(site, dark\)/)
-  assert.match(chrome, /publicWebsiteHref\(site\.website\)/)
+  assert.match(chrome, /ResponsiveSiteHeader site=\{site\}/)
 })
