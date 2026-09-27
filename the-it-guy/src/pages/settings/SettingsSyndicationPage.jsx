@@ -20,10 +20,10 @@ const INTEGRATION_CARDS = [
   },
   {
     to: '/settings/integrations/lead-capture',
-    label: 'Inbound Lead Email',
-    description: 'Manage capture addresses and review enquiries that need repair.',
+    label: 'Archived Lead Emails',
+    description: 'Review historical email enquiries and resolve any that still need attention.',
     icon: Mail,
-    brandLabel: 'Lead email',
+    brandLabel: 'Email archive',
     brandClassName: 'text-[#35546c]',
   },
   {
