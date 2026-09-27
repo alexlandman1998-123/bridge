@@ -11,11 +11,11 @@ const manualForm = {
 }
 assert.deepEqual(
   buildSellerPostOnboardingDocumentState({ onboardingSubmitted: true, formData: manualForm }).documents.map((document) => document.status),
-  ['complete', 'awaiting_signed_hard_copy', 'awaiting_signed_hard_copy'],
+  ['awaiting_agent_review', 'awaiting_signed_hard_copy', 'awaiting_signed_hard_copy'],
 )
 assert.deepEqual(
   buildSellerOnboardingJourneyStatus({ onboardingSubmitted: true, formData: manualForm }).documents.map((document) => document.status),
-  ['signed_in_onboarding', 'awaiting_signed_hard_copy', 'awaiting_signed_hard_copy'],
+  ['awaiting_review', 'awaiting_signed_hard_copy', 'awaiting_signed_hard_copy'],
 )
 
 const dispatch = createSellerOnboardingFormalPackDispatch({

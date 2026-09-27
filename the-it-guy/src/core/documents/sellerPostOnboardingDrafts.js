@@ -9,7 +9,7 @@ import {
   SELLER_DOCUMENT_CONTRACT_VERSION,
 } from '../../lib/sellerBasePackContract.js'
 
-export const SELLER_POST_ONBOARDING_DRAFTS_CONTRACT = 'arch9-seller-post-onboarding-drafts-v2'
+export const SELLER_POST_ONBOARDING_DRAFTS_CONTRACT = 'arch9-seller-post-onboarding-drafts-v3'
 
 const text = (value) => String(value ?? '').trim()
 const record = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -186,7 +186,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     brandingVersion,
     brandingSnapshot,
     documents: [
-      draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.FINAL_SIGNED, name: 'Mandatory Disclosure / Defects Form', status: 'complete', templateVersion: 'property_disclosure_annexure_a_v1', brandingVersion, generatedAt, generatedHtml: disclosureHtml, signable: true, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
+      draftDocument({ key: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM, artifactStage: SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT, name: 'Mandatory Disclosure / Defects Form', status: 'awaiting_agent_review', templateVersion: 'property_disclosure_annexure_a_v1', brandingVersion, generatedAt, generatedHtml: disclosureHtml, metadata: { source: 'seller_onboarding', brandingSnapshot } }),
       draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION, name: 'Seller FICA review draft', status: 'awaiting_agent_review', templateVersion: ficaModel.declaration.wordingVersion, brandingVersion, generatedAt, generatedHtml: ficaHtml, metadata: { ficaDeclarationModel: ficaModel, brandingSnapshot } }),
       draftDocument({ key: SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY, targetRequirementKey: SELLER_BASE_PACK_KEYS.SIGNED_MANDATE, name: 'Mandate preparation summary', status: 'awaiting_agent_review', templateVersion: 'seller_mandate_preparation_summary_v1', brandingVersion, generatedAt, generatedHtml: mandateHtml, metadata: { commissionPending: true, notForSignature: true, brandingSnapshot } }),
     ],

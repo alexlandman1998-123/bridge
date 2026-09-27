@@ -1,12 +1,12 @@
 import { generateSellerDocumentRequirements } from '../lib/privateListingRequirementEngine.js'
 import {
   buildPropertyDisclosureDocumentMarkup,
-  isPropertyDisclosureDigitallyComplete,
 } from '../lib/propertyDisclosure.js'
 import { buildSellerComplianceDocumentModel } from '../core/documents/sellerComplianceDocumentModel.js'
 import { buildFicaDeclarationDocumentMarkup } from '../core/documents/ficaDeclarationDocumentMarkup.js'
 import { buildFicaDeclarationDocumentModel } from '../core/documents/ficaDeclarationDocumentModel.js'
 import { getSellerPostOnboardingPdfAvailability } from '../core/documents/sellerPostOnboardingPdf.js'
+import { hasCompletedOnboardingDisclosureSignature } from '../core/documents/sellerDocumentSigningContract.js'
 import {
   getSellerBasePackAliases,
   normalizeSellerBasePackKey,
@@ -2230,7 +2230,7 @@ function buildSellerPropertyDisclosureDocumentFromFormData(formData = {}, listin
       ? formData.property_disclosure
       : null
   // A captured draft must never be treated as a signed disclosure artifact.
-  if (!disclosure || !isPropertyDisclosureDigitallyComplete(disclosure)) return null
+  if (!disclosure || !hasCompletedOnboardingDisclosureSignature(formData)) return null
 
   const generatedDocument = isPlainObject(disclosure.generatedDocument)
     ? disclosure.generatedDocument
@@ -2399,7 +2399,7 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
       // is what repeatedly caused the disclosure to revert to another CI.
       const generatedHtml = normalizeText(draft?.generatedHtml || draft?.generated_html)
       if (!artifactKey || !requirementKey || !generatedHtml) return null
-      const availability = getSellerPostOnboardingPdfAvailability(draftArtifact, { agentReviewApproved, commissionConfirmed })
+      const availability = getSellerPostOnboardingPdfAvailability({ ...draftArtifact, artifactStage: documentContract.stage }, { agentReviewApproved, commissionConfirmed })
       const label = normalizeText(draft?.name) || (isDisclosure ? 'Mandatory Disclosure / Defects Form' : artifactKey === SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY ? 'Mandate preparation summary' : 'Seller FICA review draft')
       return {
         id: `seller-post-onboarding-draft:${normalizeText(listing?.id || listing?.private_listing_id || 'listing')}:${artifactKey}`,
@@ -2416,7 +2416,7 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
         document_name: label,
         name: label,
         description: isDisclosure
-          ? 'Captured and signed during seller onboarding.'
+          ? 'Draft captured from submitted onboarding facts. Awaiting agent review and seller signature.'
           : artifactKey === SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY
             ? correctionRequested ? 'Correction requested. A replacement mandate will be prepared after the seller resubmits onboarding.' : 'Draft prepared from submitted onboarding facts. Commission and terms still need agent approval.'
             : correctionRequested ? 'Correction requested. A replacement FICA declaration will be prepared after the seller resubmits onboarding.' : 'Draft prepared from submitted onboarding facts. Awaiting agent review before signing.',
@@ -2424,19 +2424,21 @@ export function buildSellerPostOnboardingDraftDocuments(formData = {}, listing =
         generated_html: generatedHtml,
         generatedFileName: sellerPostOnboardingDraftFileName(artifactKey),
         generated_file_name: sellerPostOnboardingDraftFileName(artifactKey),
-        status: correctionRequested && !isDisclosure
+        status: correctionRequested
           ? 'correction_requested'
-          : normalizeSellerDocumentRequirementStatus(draft?.status || (isDisclosure ? 'completed' : 'awaiting_agent_review')),
+          : documentContract.stage === 'review_draft'
+            ? 'awaiting_agent_review'
+            : normalizeSellerDocumentRequirementStatus(draft?.status || 'awaiting_agent_review'),
         visibility: documentContract.visibleInSellerDocuments ? 'seller_visible' : 'internal',
         source: SELLER_DOCUMENT_SOURCE_OF_TRUTH.sellerOnboardingPostSubmissionDraftSource,
-        completionRoute: isDisclosure ? 'seller_onboarding' : 'agent_review_signing_pack',
-        completion_route: isDisclosure ? 'seller_onboarding' : 'agent_review_signing_pack',
+        completionRoute: isDisclosure ? '' : 'agent_review_signing_pack',
+        completion_route: isDisclosure ? '' : 'agent_review_signing_pack',
         canUpload: false,
         can_upload: false,
-        canDownload: correctionRequested && !isDisclosure ? false : availability.available,
-        can_download: correctionRequested && !isDisclosure ? false : availability.available,
-        downloadReason: correctionRequested && !isDisclosure ? 'A correction was requested. Wait for the seller to resubmit onboarding before using this draft.' : availability.reason,
-        download_reason: correctionRequested && !isDisclosure ? 'A correction was requested. Wait for the seller to resubmit onboarding before using this draft.' : availability.reason,
+        canDownload: correctionRequested ? false : availability.available,
+        can_download: correctionRequested ? false : availability.available,
+        downloadReason: correctionRequested ? 'A correction was requested. Wait for the seller to resubmit onboarding before using this draft.' : availability.reason,
+        download_reason: correctionRequested ? 'A correction was requested. Wait for the seller to resubmit onboarding before using this draft.' : availability.reason,
         isGeneratedDraft: true,
         is_generated_draft: true,
         generatedAt: normalizeText(draft?.generatedAt || draft?.generated_at),
@@ -2968,11 +2970,14 @@ export function buildSellerDocumentSourceOfTruth({
   )
   const manualSigningDocuments = buildSellerOnboardingManualSigningDocuments(resolvedFormData, listing)
   const postOnboardingDraftDocuments = buildSellerPostOnboardingDraftDocuments(resolvedFormData, listing)
-  const frozenDisclosureDocument = postOnboardingDraftDocuments.find((document) => (
-    normalizeSellerBasePackKey(document?.targetRequirementKey || document?.target_requirement_key || document?.requirementKey || document?.requirement_key || document?.artifactKey || document?.artifact_key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM &&
+  const frozenFinalDisclosure = postOnboardingDraftDocuments.find((document) => (
+    normalizeSellerBasePackKey(document?.targetRequirementKey || document?.target_requirement_key || document?.requirementKey || document?.requirement_key) === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM &&
+    document?.documentContract?.stage === 'final_signed' &&
     normalizeText(document?.generatedHtml || document?.generated_html)
   ))
-  const propertyDisclosureDocument = frozenDisclosureDocument
+  // Preserve a historical signed snapshot, while letting a genuinely signed
+  // onboarding disclosure outrank a new unsigned review draft.
+  const propertyDisclosureDocument = frozenFinalDisclosure
     ? null
     : buildSellerPropertyDisclosureDocumentFromFormData(resolvedFormData, listing)
   const sellerFicaDeclarationDocument = buildSellerFicaDeclarationDocumentFromOnboarding(resolvedFormData, listing)

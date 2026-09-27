@@ -22,11 +22,19 @@ const inventoryItem = (workflowKey, status, sourceReferences) => Object.freeze({
 // any surface is legally approved. New surfaces must be added here and to the
 // classification register before implementation.
 export const SIGNING_WORKFLOW_INVENTORY = Object.freeze([
-  inventoryItem('seller_mandate', 'retired_and_wet_ink_only', [
+  inventoryItem('seller_mandate', 'physical_available_electronic_pending_review', [
     'the-it-guy/src/pages/AgentListingDetail.jsx',
     'the-it-guy/src/pages/agency/AgencyPipelinePage.jsx',
     'the-it-guy/src/core/documents/onlineSigningPolicy.js',
     'the-it-guy/src/pages/OnlineSigningUnavailablePage.jsx',
+  ]),
+  inventoryItem('seller_disclosure', 'physical_available_electronic_pending_review', [
+    'the-it-guy/src/pages/SellerOnboarding.jsx',
+    'the-it-guy/src/components/client-portal/documents/ClientDocumentCentre.jsx',
+  ]),
+  inventoryItem('seller_fica_declaration', 'physical_available_electronic_pending_review', [
+    'the-it-guy/src/core/documents/sellerPostOnboardingDrafts.js',
+    'the-it-guy/src/components/client-portal/documents/ClientDocumentCentre.jsx',
   ]),
   inventoryItem('offer_to_purchase', 'frozen_pending_legal_review', [
     'the-it-guy/src/components/documents/LegalDocumentWorkspace.jsx',

@@ -1,3 +1,5 @@
+import { hasCompletedOnboardingDisclosureSignature } from './sellerDocumentSigningContract.js'
+
 export const SELLER_POST_ONBOARDING_DOCUMENT_STATE_CONTRACT = 'arch9-seller-post-onboarding-document-state-v1'
 
 export const SELLER_POST_ONBOARDING_DOCUMENT_STATES = Object.freeze({
@@ -16,7 +18,9 @@ const text = (value) => String(value ?? '').trim()
 
 function route(value = '') {
   const normalized = text(value).toLowerCase().replace(/[^a-z0-9]+/g, '_')
-  return ['manual', 'manual_upload', 'physical', 'wet_ink'].includes(normalized) ? 'manual_upload' : 'digital_pack'
+  if (['manual', 'manual_upload', 'physical', 'wet_ink'].includes(normalized)) return 'manual_upload'
+  if (['digital', 'digital_pack'].includes(normalized)) return 'digital_pack'
+  return ''
 }
 
 function lifecycleStage(formData = {}) {
@@ -33,6 +37,8 @@ export function buildSellerPostOnboardingDocumentState({
   formData = {},
   onboardingSubmitted = false,
   mandateSigned = false,
+  disclosureSigned = false,
+  ficaSigned = false,
   completedSignerCount = 0,
   requiredSignerCount = 0,
 } = {}) {
@@ -41,10 +47,10 @@ export function buildSellerPostOnboardingDocumentState({
   const reviewed = ['agent_review_approved', 'pack_prepared', 'pack_sent', 'partially_signed', 'manual_awaiting_upload', 'mandate_signed'].includes(stage)
   const packSent = ['pack_sent', 'partially_signed', 'mandate_signed'].includes(stage)
   const partiallySigned = stage === 'partially_signed' || (requiredSignerCount > 1 && completedSignerCount > 0 && completedSignerCount < requiredSignerCount)
-  const signed = mandateSigned || stage === 'mandate_signed'
+  const signedMandate = mandateSigned || stage === 'mandate_signed'
   const correctionRequested = stage === 'correction_requested' || text(formData?.sellerOnboardingReview?.status || formData?.seller_onboarding_review?.status) === 'correction_requested'
 
-  const postReviewState = () => {
+  const postReviewState = (signed = false) => {
     if (correctionRequested) return SELLER_POST_ONBOARDING_DOCUMENT_STATES.correctionRequested
     if (signed) return SELLER_POST_ONBOARDING_DOCUMENT_STATES.signed
     if (signingRoute === 'manual_upload' && stage === 'manual_awaiting_upload') return SELLER_POST_ONBOARDING_DOCUMENT_STATES.awaitingSignedHardCopy
@@ -54,7 +60,9 @@ export function buildSellerPostOnboardingDocumentState({
     return SELLER_POST_ONBOARDING_DOCUMENT_STATES.awaitingAgentReview
   }
 
-  const postReviewDocumentState = onboardingSubmitted ? postReviewState() : SELLER_POST_ONBOARDING_DOCUMENT_STATES.notStarted
+  const signedDisclosure = disclosureSigned || hasCompletedOnboardingDisclosureSignature(formData)
+  const ficaState = onboardingSubmitted ? postReviewState(ficaSigned) : SELLER_POST_ONBOARDING_DOCUMENT_STATES.notStarted
+  const mandateState = onboardingSubmitted ? postReviewState(signedMandate) : SELLER_POST_ONBOARDING_DOCUMENT_STATES.notStarted
   return {
     contract: SELLER_POST_ONBOARDING_DOCUMENT_STATE_CONTRACT,
     onboardingSubmitted: Boolean(onboardingSubmitted),
@@ -64,19 +72,21 @@ export function buildSellerPostOnboardingDocumentState({
       {
         key: 'signed_disclosure_form',
         requirementKey: 'signed_disclosure_form',
-        status: onboardingSubmitted ? SELLER_POST_ONBOARDING_DOCUMENT_STATES.complete : SELLER_POST_ONBOARDING_DOCUMENT_STATES.notStarted,
-        completionRoute: onboardingSubmitted ? 'seller_onboarding' : '',
+        status: onboardingSubmitted
+          ? signedDisclosure ? SELLER_POST_ONBOARDING_DOCUMENT_STATES.signed : SELLER_POST_ONBOARDING_DOCUMENT_STATES.awaitingAgentReview
+          : SELLER_POST_ONBOARDING_DOCUMENT_STATES.notStarted,
+        completionRoute: '',
       },
       {
         key: 'signed_fica_declaration',
         requirementKey: 'signed_fica_declaration',
-        status: postReviewDocumentState,
+        status: ficaState,
         completionRoute: signingRoute,
       },
       {
         key: 'signed_mandate',
         requirementKey: 'signed_mandate',
-        status: postReviewDocumentState,
+        status: mandateState,
         completionRoute: signingRoute,
       },
     ],

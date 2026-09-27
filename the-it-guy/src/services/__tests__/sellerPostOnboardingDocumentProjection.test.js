@@ -1,15 +1,54 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  buildSellerPostOnboardingDraftDocuments,
   buildSellerDocumentSourceOfTruth,
   filterSellerDocumentRequirementsForOnboarding,
 } from '../sellerDocumentRequirementsService.js'
+import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts.js'
+import { PROPERTY_DISCLOSURE_QUESTIONS } from '../../lib/propertyDisclosure.js'
 
 const requiredDocuments = [
   { id: 'r-disclosure', key: 'signed_disclosure_form', label: 'Signed Mandatory Disclosure / Defects Form', status: 'required', is_required: true, group: 'legal' },
   { id: 'r-fica', key: 'signed_fica_declaration', label: 'Signed FICA Declaration', status: 'required', is_required: true, group: 'legal' },
   { id: 'r-mandate', key: 'signed_mandate', label: 'Signed Mandate', status: 'required', is_required: true, group: 'legal' },
 ]
+
+test('new onboarding disclosure remains a review draft, even when a PDF can be downloaded', () => {
+  const listing = { id: 'listing-new', sellerOnboarding: { status: 'completed' } }
+  const drafts = buildSellerPostOnboardingDrafts({ formData: { sellerFirstName: 'Alex' }, listing, generatedAt: '2026-09-27T12:00:00Z' })
+  const formData = { sellerPostOnboardingDrafts: drafts }
+  const disclosure = buildSellerPostOnboardingDraftDocuments(formData, listing).find((row) => row.artifactKey === 'signed_disclosure_form')
+  assert.equal(disclosure.status, 'awaiting_agent_review')
+  assert.equal(disclosure.documentContract.stage, 'review_draft')
+  assert.equal(disclosure.documentContract.satisfiesRequirement, false)
+  assert.equal(disclosure.completionRoute, '')
+  assert.equal(disclosure.canDownload, false)
+
+  const approved = buildSellerPostOnboardingDraftDocuments({ ...formData, sellerOnboardingReview: { status: 'approved' } }, listing)
+    .find((row) => row.artifactKey === 'signed_disclosure_form')
+  assert.equal(approved.canDownload, true)
+  assert.equal(approved.documentContract.satisfiesRequirement, false)
+})
+
+test('a signed onboarding disclosure remains complete when every required seller has signed', () => {
+  const listing = { id: 'listing-signed', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const propertyDisclosure = {
+    responses: Object.fromEntries(PROPERTY_DISCLOSURE_QUESTIONS.map((question) => [question.key, { answer: 'no' }])),
+    declarationAccepted: true,
+    signature: 'data:image/png;base64,AA',
+    signedAt: '2026-09-27',
+    arch9TermsAccepted: true,
+  }
+  const formData = { propertyDisclosure, sellerComplianceSigning: { complete: true } }
+  formData.sellerPostOnboardingDrafts = buildSellerPostOnboardingDrafts({ formData, listing, generatedAt: '2026-09-27T12:00:00Z' })
+  const signed = buildSellerDocumentSourceOfTruth({ listing, formData }).rows.find((row) => row.key === 'signed_disclosure_form')
+  assert.equal(signed.status, 'completed')
+
+  const incomplete = buildSellerDocumentSourceOfTruth({ listing, formData: { ...formData, sellerComplianceSigning: { complete: false } } })
+    .rows.find((row) => row.key === 'signed_disclosure_form')
+  assert.notEqual(incomplete.status, 'completed')
+})
 
 function source({ reviewStatus = '', commissionConfirmed = false, manualSigningPack = null } = {}) {
   const formData = {

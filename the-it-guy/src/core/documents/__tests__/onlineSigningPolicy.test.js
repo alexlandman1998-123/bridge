@@ -28,8 +28,10 @@ test('every known signing workflow is classified and fails closed unless legally
   assert.ok(Object.keys(SIGNING_CLASSIFICATION_REGISTER).length >= 7)
   assert.equal(
     SIGNING_CLASSIFICATION_REGISTER.seller_mandate.classification,
-    SIGNING_CLASSIFICATION_STATUS.WET_INK_REQUIRED,
+    SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
   )
+  assert.equal(SIGNING_CLASSIFICATION_REGISTER.seller_disclosure.classification, SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED)
+  assert.equal(SIGNING_CLASSIFICATION_REGISTER.seller_fica_declaration.classification, SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED)
   assert.equal(isElectronicSigningApproved('seller_mandate'), false)
   assert.equal(isElectronicSigningApproved('offer_to_purchase'), false)
   assert.throws(

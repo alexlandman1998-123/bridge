@@ -22,7 +22,7 @@ const input = {
 test('freezes disclosure, FICA and review-only mandate HTML after seller onboarding', () => {
   const result = buildSellerPostOnboardingDrafts(input)
 
-  assert.equal(result.contract, 'arch9-seller-post-onboarding-drafts-v2')
+  assert.equal(result.contract, 'arch9-seller-post-onboarding-drafts-v3')
   assert.equal(result.source.onboardingVersion, 'seller_onboarding_submission_v1')
   assert.equal(result.source.generatedAt, generatedAt)
   assert.equal(result.brandingSnapshot.contract, 'arch9-seller-document-branding-snapshot-v1')
@@ -34,9 +34,10 @@ test('freezes disclosure, FICA and review-only mandate HTML after seller onboard
   const fica = result.documents.find((document) => document.key === 'fica_review_draft')
   const mandate = result.documents.find((document) => document.key === 'mandate_preparation_summary')
 
-  assert.equal(disclosure.status, 'complete')
+  assert.equal(disclosure.status, 'awaiting_agent_review')
+  assert.equal(disclosure.artifactStage, 'review_draft')
   assert.equal(disclosure.brandingVersion, 'seller_onboarding_branding_snapshot_v1')
-  assert.equal(disclosure.signable, true)
+  assert.equal(disclosure.signable, false)
   assert.match(disclosure.generatedHtml, /Declaration by Seller - Annexure A/)
   assert.match(disclosure.generatedHtml, /Alex Landman/)
   assert.equal(fica.status, 'awaiting_agent_review')

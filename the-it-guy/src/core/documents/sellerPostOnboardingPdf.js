@@ -18,14 +18,15 @@ function draftFileName(draft = {}) {
 
 /**
  * PDF availability reflects the document's legal state. A captured
- * disclosure can be printed once complete; FICA and mandate drafts become
- * printable only after an agent has approved the submitted onboarding facts.
+ * disclosure and FICA drafts become printable only after an agent has
+ * approved the submitted onboarding facts.
  */
 export function getSellerPostOnboardingPdfAvailability(draft = {}, { agentReviewApproved = false, commissionConfirmed = false } = {}) {
   const key = normalizedKey(draft.artifactKey || draft.key || draft.requirementKey)
   const hasHtml = Boolean(text(draft.generatedHtml || draft.generated_html))
   const reviewOnly = key === 'mandate_preparation_summary' || draft?.metadata?.notForSignature === true
-  const reviewRequired = ['fica_review_draft', 'signed_fica_declaration', 'signed_mandate'].includes(key)
+  const reviewRequired = ['signed_disclosure_form', 'fica_review_draft', 'signed_fica_declaration', 'signed_mandate'].includes(key) &&
+    (key !== 'signed_disclosure_form' || normalizedKey(draft.artifactStage || draft.artifact_stage) === 'review_draft')
   const commissionRequired = key === 'signed_mandate'
   // A preparation summary is review evidence, never a mandate to download or
   // sign. Only a separately generated formal signing pack may be delivered.

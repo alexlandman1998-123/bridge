@@ -5,7 +5,7 @@ import { buildSellerSigningStatusModel } from '../sellerSigningStatusService.js'
 test('uses one status vocabulary across onboarding, digital, manual, and signed mandate routes', () => {
   const submitted = buildSellerSigningStatusModel({ onboardingSubmitted: true })
   assert.equal(submitted.phase, 'onboarding_submitted')
-  assert.equal(submitted.disclosure.label, 'Signed in onboarding')
+  assert.equal(submitted.disclosure.label, 'Awaiting review and signature')
   assert.equal(submitted.fica.label, 'Awaiting review')
   assert.equal(submitted.mandate.label, 'Awaiting review')
 
@@ -27,4 +27,6 @@ test('uses one status vocabulary across onboarding, digital, manual, and signed 
   assert.equal(signed.phase, 'mandate_signed')
   assert.equal(signed.mandate.label, 'Signed')
   assert.equal(signed.fica.label, 'Complete')
+  assert.equal(signed.disclosure.status, 'awaiting_review')
+  assert.ok(signed.outstanding.includes('disclosure_signature'))
 })

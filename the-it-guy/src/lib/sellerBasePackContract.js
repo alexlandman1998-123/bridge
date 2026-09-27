@@ -301,7 +301,7 @@ export function projectSellerDocumentArtifact(artifact = {}, { requirementOnly =
   const status = normalizeKey(artifact?.status || artifact?.documentStatus || artifact?.document_status)
   const source = normalizeKey(artifact?.source)
   const representation = representationKind(artifact)
-  const isReviewDraft = [
+  const isReviewDraft = normalizeKey(artifact?.artifactStage || artifact?.artifact_stage) === SELLER_DOCUMENT_ARTIFACT_STAGES.REVIEW_DRAFT || [
     SELLER_DOCUMENT_ARTIFACT_KEYS.MANDATE_PREPARATION_SUMMARY,
     SELLER_DOCUMENT_ARTIFACT_KEYS.FICA_REVIEW_DRAFT,
   ].includes(artifactKey)
@@ -334,7 +334,7 @@ export function projectSellerDocumentArtifact(artifact = {}, { requirementOnly =
       downloadable: hasRepresentation && artifact?.canDownload !== false && artifact?.can_download !== false,
     }),
     satisfiesRequirement,
-    visibleInSellerDocuments: !isReviewDraft,
+    visibleInSellerDocuments: !isReviewDraft || targetRequirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM,
     templateVersion: firstText(artifact?.templateVersion, artifact?.template_version, metadata?.templateVersion, metadata?.template_version),
     brandingVersion: firstText(artifact?.brandingVersion, artifact?.branding_version, metadata?.brandingVersion, metadata?.branding_version),
   })

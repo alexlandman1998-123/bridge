@@ -20,9 +20,19 @@ const workflow = (classification, surface, decisionOwner) => Object.freeze({
 
 export const SIGNING_CLASSIFICATION_REGISTER = Object.freeze({
   seller_mandate: workflow(
-    SIGNING_CLASSIFICATION_STATUS.WET_INK_REQUIRED,
+    SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
     'Seller listing mandate and associated mandate pack',
     'Legal counsel and seller-document operations',
+  ),
+  seller_disclosure: workflow(
+    SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
+    'Seller mandatory disclosure / defects form',
+    'Legal counsel and seller-document operations',
+  ),
+  seller_fica_declaration: workflow(
+    SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
+    'Seller FICA declaration',
+    'Legal counsel and compliance operations',
   ),
   offer_to_purchase: workflow(
     SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
