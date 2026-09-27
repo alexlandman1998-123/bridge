@@ -17622,6 +17622,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
     const fallbackWantsHardCopyMandate = normalizeKey(fallbackAction.id) === 'record_hard_copy_mandate'
     const mandatePacketReadyForSignature = ['draft', 'sent'].includes(normalizeKey(selectedSellerJourney.mandateStatus))
+    const mandateDocument = selectedSellerDocumentCategories.flatMap((category) => category.items || [])
+      .find((row) => normalizeSellerBasePackKey(row.key || row.requirementKey || row.requirement_key) === SELLER_BASE_PACK_KEYS.SIGNED_MANDATE)
+    const mandateSigningRoute = getSellerPhysicalSigningCopy(mandateDocument)?.signingRoute || mandateDocument?.signingRoute || mandateDocument?.completionRoute
     const mandateStillRequired = Boolean(
       !selectedSellerJourney.listingLive &&
         !selectedSellerComplianceAgentStatus.signedMandate &&
@@ -17630,6 +17633,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     )
 
     if (mandateStillRequired) {
+      if (mandateSigningRoute === 'digital_pack') {
+        return {
+          title: 'Track mandate signatures',
+          copy: 'The reviewed mandate is on the digital signing route. Track signer progress and review the completed copy in Documents.',
+          actionId: 'open_documents',
+          label: 'Open Documents',
+          disabled: false,
+        }
+      }
       return {
         title: 'Upload signed mandate',
         copy: 'The seller onboarding is submitted. Upload the wet-ink signed mandate before the listing can move to created or live.',
@@ -17706,6 +17718,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     selectedSellerComplianceAgentStatus.signedMandate,
     selectedLeadDocumentHydrationStatus,
     selectedLeadLinkedListingId,
+    selectedSellerDocumentCategories,
     selectedSellerJourney.mandateStatus,
     selectedSellerJourney.onboardingSubmitted,
     selectedSellerJourney.stage?.key,
