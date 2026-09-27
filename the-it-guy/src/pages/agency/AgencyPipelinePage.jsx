@@ -40051,6 +40051,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       getStatusMeta={getSellerLeadDocumentStatusMeta}
                       portalAction={selectedLeadIsSeller ? handleSellerOnboardingCommand : () => setLeadWorkspaceTab(BUYER_ONBOARDING_OTP_WORKSPACE_TAB_KEY)}
                       portalActionLabel={selectedLeadIsSeller ? selectedLeadSellerOnboardingCommandLabel : 'Buyer Portal Workflow'}
+                      reviewSigningAction={selectedLeadIsSeller && selectedLeadOnboardingCompleted && selectedLeadLinkedListingId && !sellerPortalSigningRequests.some((request) => ['sent', 'partially_signed', 'signed', 'reviewed'].includes(request.status)) ? openSellerOnboardingReview : null}
                       renderActions={(documentRow, category) => {
                         const documentKey = normalizeKey(documentRow.key || documentRow.requirementKey || documentRow.requirement_key)
                         const requestPresentation = documentRow.requestPresentation || resolveCanonicalDocumentRequestPresentation(documentRow)
@@ -40729,6 +40730,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         <div className="space-y-5">
           <div className="rounded-[16px] border border-[#dce6f2] bg-[#f8fbff] p-4 text-sm leading-6 text-[#47637d]">
             Commission terms are confirmed in the signing pack before anything is sent or prepared. Opening that screen does not create, publish, or activate a market listing.
+            {(getLeadSellerOnboardingFormData(selectedLead).sellerReviewedDocumentVersions || getLeadSellerOnboardingFormData(selectedLead).seller_reviewed_document_versions)?.documents?.length ? ' Preparing another pack creates a new reviewed version and keeps the previous copies in the audit history.' : ''}
           </div>
           <section className="rounded-[16px] border border-[#dce6f2] bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">

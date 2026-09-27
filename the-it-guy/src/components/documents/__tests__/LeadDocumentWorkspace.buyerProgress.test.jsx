@@ -22,6 +22,11 @@ test('seller uploads under review remain outstanding', () => {
   expect(html).toContain('1 of 2 complete')
 })
 
+test('a submitted seller can reopen signing route review from Documents', () => {
+  const html = renderToStaticMarkup(<LeadDocumentWorkspace partyType="seller" categories={categories} getStatusMeta={getStatusMeta} reviewSigningAction={() => {}} />)
+  expect(html).toContain('Review signing routes')
+})
+
 
 test('optional seller documents remain visible without changing either view’s progress', () => {
   const legalItems = [

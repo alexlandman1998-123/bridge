@@ -47,6 +47,14 @@ test('a signed onboarding disclosure remains complete when every required seller
   const signed = buildSellerDocumentSourceOfTruth({ listing, formData }).rows.find((row) => row.key === 'signed_disclosure_form')
   assert.equal(signed.status, 'completed')
 
+  const legacy = buildSellerDocumentSourceOfTruth({ listing, formData: {
+    ...formData,
+    sellerComplianceSigning: undefined,
+    seller_compliance_signing: {},
+    seller_compliance_signers: [],
+  } }).rows.find((row) => row.key === 'signed_disclosure_form')
+  assert.equal(legacy.status, 'completed')
+
   const incomplete = buildSellerDocumentSourceOfTruth({ listing, formData: { ...formData, sellerComplianceSigning: { complete: false } } })
     .rows.find((row) => row.key === 'signed_disclosure_form')
   assert.notEqual(incomplete.status, 'completed')

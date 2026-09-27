@@ -17,6 +17,7 @@ export default function LeadDocumentWorkspace({
   renderActions,
   portalAction,
   portalActionLabel,
+  reviewSigningAction,
 }) {
   const partyLabel = partyType === 'buyer' ? 'Buyer' : 'Seller'
   const normalizedCategories = useMemo(() => categories.map((category) => {
@@ -44,6 +45,7 @@ export default function LeadDocumentWorkspace({
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex min-h-10 items-center rounded-full border border-[#dbe7f2] bg-white px-4 text-sm font-semibold text-[#31506b]">{summary.completed} of {summary.total} complete</span>
+            {reviewSigningAction ? <button type="button" onClick={reviewSigningAction} className="inline-flex min-h-10 items-center rounded-[12px] border border-[#b9d9c8] bg-[#eaf7ee] px-4 text-sm font-semibold text-[#176842] hover:bg-[#def1e5]">Review signing routes</button> : null}
             {portalAction ? <button type="button" onClick={portalAction} className="inline-flex min-h-10 items-center rounded-[12px] border border-[#dbe4ee] bg-white px-4 text-sm font-semibold text-[#20364c] hover:border-[#b9cde3]">{portalActionLabel || `Send ${partyLabel} Portal Link`}</button> : null}
           </div>
         </div>
