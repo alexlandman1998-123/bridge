@@ -312,6 +312,7 @@ import {
 
 const PIPELINE_CONTEXT_TIMEOUT_MS = 8000
 const PIPELINE_RECORDS_TIMEOUT_MS = 10000
+const SELLER_LEAD_DOCUMENT_UPLOAD_TIMEOUT_MS = 30000
 const PIPELINE_CRM_RECORDS_TIMEOUT_MS = 10000
 const SELLER_DOCUMENT_HYDRATION_TIMEOUT_MS = 20000
 const PIPELINE_APPOINTMENT_RECORDS_TIMEOUT_MS = 15000
@@ -26466,8 +26467,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           reviewedSigningVersionId: signingCopy?.versionId || '',
           reviewedSigningVersionDigest: signingCopy?.versionDigest || '',
         }),
-        `${documentLabel} upload is taking too long. Please try again.`,
-        PIPELINE_RECORDS_TIMEOUT_MS,
+        `${documentLabel} upload is still processing. Refresh the checklist before trying again to avoid a duplicate.`,
+        SELLER_LEAD_DOCUMENT_UPLOAD_TIMEOUT_MS,
       )
 
       const uploadedAt = normalizeText(uploadedDocument?.uploaded_at || uploadedDocument?.uploadedAt) || new Date().toISOString()
