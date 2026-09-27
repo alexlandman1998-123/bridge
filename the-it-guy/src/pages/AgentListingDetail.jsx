@@ -147,6 +147,9 @@ import {
 } from '../core/documents/sellerOnboardingFormalSigningPack'
 import { createSellerOnboardingFormalPackApproval } from '../core/documents/sellerOnboardingFormalPackApproval'
 import { createSellerOnboardingManualSigningPack } from '../core/documents/sellerOnboardingManualSigningPack'
+import { buildSellerPostOnboardingDrafts } from '../core/documents/sellerPostOnboardingDrafts'
+import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../core/documents/sellerReviewedDocumentVersions'
+import { hasCompletedOnboardingDisclosureSignature } from '../core/documents/sellerDocumentSigningContract'
 import { ONLINE_SIGNING_DISABLED, ONLINE_SIGNING_DISABLED_MESSAGE } from '../core/documents/onlineSigningPolicy'
 import { buildSellerOnboardingSigningPackSnapshot } from '../core/documents/sellerOnboardingSigningPackSnapshot'
 import { createSellerOnboardingCorrectionControl } from '../core/documents/sellerOnboardingCorrectionControl'
@@ -7612,10 +7615,13 @@ function AgentListingDetail() {
       mandate: {
         mandateType: marketingDraft.mandateType || listingRecord?.mandateType || form.mandateType || 'sole',
         askingPrice: formatCurrency(Number(listingRecord?.askingPrice || marketingDraft.price || 0) || 0),
+        startDate: String(form.mandateStartDate || form.startDate || ''),
+        endDate: String(form.mandateEndDate || form.expiryDate || ''),
         commissionBasis: commissionDraft.basis === 'fixed' ? 'fixed' : 'percentage',
         commissionPercentage: commissionDraft.basis === 'fixed' ? '' : String(commissionDraft.percentage || ''),
         commissionAmount: commissionDraft.basis === 'fixed' ? String(commissionDraft.amount || '') : '',
         vatHandling: String(commissionDraft.vatHandling || ''),
+        specialConditions: String(form.mandateTerms || form.mandateCommissionTerms || form.specialConditions || ''),
       },
     })
   }
@@ -7772,8 +7778,9 @@ function AgentListingDetail() {
       return
     }
     const signingPlan = getSellerSigningPlan()
-    if (!signingPlan.ready) {
-      setDetailError(signingPlan.missing[0] || 'Complete the required signer details before preparing a document link.')
+    const signersIdentified = signingPlan.recipients.length > 0 && signingPlan.recipients.every((recipient) => recipient.name && recipient.role)
+    if (!signersIdentified || (sellerMandateSignatureRoute !== 'manual_upload' && !signingPlan.ready)) {
+      setDetailError(sellerMandateSignatureRoute === 'manual_upload' ? 'Identify every required seller signer before preparing the documents.' : signingPlan.missing[0] || 'Complete the required signer details before preparing a document link.')
       return
     }
     const { documents } = getSellerSigningDocumentOptions()
@@ -7800,7 +7807,7 @@ function AgentListingDetail() {
       return
     }
     const primarySigner = signingPlan.recipients[0]
-    if (!primarySigner || !isValidEmail(primarySigner.email)) {
+    if (sellerMandateSignatureRoute !== 'manual_upload' && (!primarySigner || !isValidEmail(primarySigner.email))) {
       setDetailError('Add a valid email for every required signer before preparing a document link.')
       return
     }
@@ -7843,15 +7850,35 @@ function AgentListingDetail() {
         actor: String(listingActor?.id || profile?.id || ''),
       })
       const proposedTransferAttorney = preferredTransferAttorneyOptions.find((partner) => String(partner?.id || '') === preferredTransferAttorneyOptionId) || null
+      const signingPackSnapshot = sellerMandateSignatureRoute === 'manual_upload' ? buildSellerSigningPackSnapshot(selected) : null
+      const postOnboardingDrafts = existingForm.sellerPostOnboardingDrafts || existingForm.seller_post_onboarding_drafts || buildSellerPostOnboardingDrafts({
+        formData: existingForm,
+        listing: listingRecord || {},
+        branding: signingPackSnapshot?.branding || {},
+        generatedAt: formalPackApproval.approvedAt,
+      })
       const manualSigningPack = sellerMandateSignatureRoute === 'manual_upload'
         ? createSellerOnboardingManualSigningPack({
             existing: existingForm.sellerOnboardingManualSigningPack || existingForm.seller_onboarding_manual_signing_pack,
             formalPackApproval,
-            signingPack: buildSellerSigningPackSnapshot(selected),
-            postOnboardingDrafts: existingForm.sellerPostOnboardingDrafts || existingForm.seller_post_onboarding_drafts,
+            signingPack: signingPackSnapshot,
+            postOnboardingDrafts,
+            disclosureSigned: hasCompletedOnboardingDisclosureSignature(existingForm),
             actor: String(listingActor?.id || profile?.id || ''),
           })
         : null
+      const reviewedDocuments = manualSigningPack
+        ? await createSellerReviewedDocumentVersions({
+            existing: existingForm.sellerReviewedDocumentVersions || existingForm.seller_reviewed_document_versions,
+            manualSigningPack,
+            formalPackApproval,
+            signingPack: signingPackSnapshot,
+            actor: String(listingActor?.id || profile?.id || ''),
+            approvedAt: formalPackApproval.approvedAt,
+          })
+        : null
+      if (reviewedDocuments) manualSigningPack.documents = reviewedDocuments.documents
+      const reviewedDocumentIndex = reviewedDocuments ? buildSellerReviewedDocumentVersionIndex(reviewedDocuments) : null
       const nextFormData = {
         ...existingForm,
         sellerOnboardingReview: packReview,
@@ -7883,6 +7910,10 @@ function AgentListingDetail() {
         } : existingForm.manualMandateSignature || null,
         sellerOnboardingManualSigningPack: manualSigningPack || existingForm.sellerOnboardingManualSigningPack || existingForm.seller_onboarding_manual_signing_pack || null,
         seller_onboarding_manual_signing_pack: manualSigningPack || existingForm.sellerOnboardingManualSigningPack || existingForm.seller_onboarding_manual_signing_pack || null,
+        sellerPostOnboardingDrafts: postOnboardingDrafts,
+        seller_post_onboarding_drafts: postOnboardingDrafts,
+        sellerReviewedDocumentVersions: reviewedDocumentIndex || existingForm.sellerReviewedDocumentVersions || existingForm.seller_reviewed_document_versions || null,
+        seller_reviewed_document_versions: reviewedDocumentIndex || existingForm.sellerReviewedDocumentVersions || existingForm.seller_reviewed_document_versions || null,
         proposedTransferAttorneyPartnerId: preferredTransferAttorneyOptionId || '',
         proposedTransferAttorney: proposedTransferAttorney ? {
           id: proposedTransferAttorney.id,
@@ -7917,7 +7948,7 @@ function AgentListingDetail() {
       }))
       setSellerDocumentSendOpen(false)
       setMandateReplacementIntent(false)
-      setDetailMessage('Physical FICA and mandate copies are ready in Documents. Download them for wet-ink signature, then upload each signed copy; neither document is complete until that evidence is recorded.')
+      setDetailMessage(`Physical ${manualSigningPack?.documents?.some((document) => document.key === 'signed_disclosure_form') ? 'disclosure, FICA and mandate' : 'FICA and mandate'} copies are ready in Documents. Download them for wet-ink signature, then upload each signed copy; the documents remain outstanding until signed evidence is reviewed.`)
     } catch (error) {
       setDetailError(error?.message || 'Unable to save the selected seller documents.')
     } finally {

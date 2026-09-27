@@ -50,6 +50,30 @@ test('a signed onboarding disclosure remains complete when every required seller
   assert.notEqual(incomplete.status, 'completed')
 })
 
+test('reviewed signing copies map to three outstanding legal rows with their frozen versions', () => {
+  const listing = { id: 'listing-reviewed', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const formData = { sellerName: 'Alex Seller' }
+  formData.sellerPostOnboardingDrafts = buildSellerPostOnboardingDrafts({ formData, listing, generatedAt: '2026-09-27T12:00:00Z' })
+  formData.sellerOnboardingManualSigningPack = {
+    status: 'awaiting_signed_hard_copy',
+    documents: [
+      { key: 'signed_disclosure_form', generatedHtml: '<article>Frozen disclosure</article>', versionId: 'disclosure-v1', versionDigest: 'sha256:disclosure' },
+      { key: 'signed_fica_declaration', generatedHtml: '<article>Frozen FICA</article>', versionId: 'fica-v1', versionDigest: 'sha256:fica' },
+      { key: 'signed_mandate', generatedHtml: '<article>Frozen mandate</article>', versionId: 'mandate-v1', versionDigest: 'sha256:mandate' },
+    ],
+  }
+  const rows = buildSellerDocumentSourceOfTruth({ listing, formData }).rows
+    .filter((row) => ['signed_disclosure_form', 'signed_fica_declaration', 'signed_mandate'].includes(row.key))
+  assert.equal(rows.length, 3)
+  for (const row of rows) {
+    assert.notEqual(row.status, 'completed')
+    assert.equal(row.canUpload, true)
+    assert.equal(row.canDownload, true)
+    assert.match(row.original.document.versionDigest, /^sha256:/)
+  }
+  assert.equal(rows.find((row) => row.key === 'signed_disclosure_form').original.document.versionId, 'disclosure-v1')
+})
+
 function source({ reviewStatus = '', commissionConfirmed = false, manualSigningPack = null } = {}) {
   const formData = {
     sellerPostOnboardingDrafts: {

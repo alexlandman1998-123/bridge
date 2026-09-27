@@ -2469,8 +2469,8 @@ export function buildSellerOnboardingManualSigningDocuments(formData = {}, listi
     return {
       id: `seller-onboarding-manual-signing:${normalizeText(listing?.id || listing?.private_listing_id || 'listing')}:${requirementKey}`,
       requirementKey, requirement_key: requirementKey, document_type: requirementKey, documentType: requirementKey,
-      category: requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : 'mandate_signature',
-      document_category: requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : 'mandate_signature',
+      category: requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM ? 'property_condition_disclosure' : 'mandate_signature',
+      document_category: requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION ? 'fica_declaration' : requirementKey === SELLER_BASE_PACK_KEYS.SIGNED_DISCLOSURE_FORM ? 'property_condition_disclosure' : 'mandate_signature',
       document_name: name, name,
       description: 'Printable physical-signing copy. Upload the wet-ink signed document when it is returned.',
       generatedHtml, generated_html: generatedHtml,
@@ -2480,7 +2480,9 @@ export function buildSellerOnboardingManualSigningDocuments(formData = {}, listi
       completionRoute: 'manual_upload', completion_route: 'manual_upload',
       canUpload: true, can_upload: true, canDownload: true, can_download: true,
       isGeneratedDraft: true, is_generated_draft: true,
-      metadata: { physicalSigning: true, generatedAt: normalizeText(pack?.generatedAt || pack?.generated_at) },
+      versionId: normalizeText(document?.versionId), versionDigest: normalizeText(document?.versionDigest),
+      contentDigest: normalizeText(document?.contentDigest), requiredSigners: document?.requiredSigners || [],
+      metadata: { physicalSigning: true, generatedAt: normalizeText(pack?.generatedAt || pack?.generated_at), versionId: normalizeText(document?.versionId), versionDigest: normalizeText(document?.versionDigest), sourceDraftFingerprint: normalizeText(document?.sourceDraftFingerprint) },
     }
   }).filter(Boolean)
 }

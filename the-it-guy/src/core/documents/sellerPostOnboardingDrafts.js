@@ -2,6 +2,7 @@ import { buildFicaDeclarationDocumentMarkup } from './ficaDeclarationDocumentMar
 import { buildFicaDeclarationDocumentModel } from './ficaDeclarationDocumentModel.js'
 import { buildSellerComplianceDocumentModel } from './sellerComplianceDocumentModel.js'
 import { buildPropertyDisclosureDocumentMarkup } from '../../lib/propertyDisclosure.js'
+import { buildSellerSigningPlan } from '../../lib/sellerSigningPlanModel.js'
 import {
   SELLER_BASE_PACK_KEYS,
   SELLER_DOCUMENT_ARTIFACT_KEYS,
@@ -125,7 +126,16 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
   const property = propertyAddress(safeFormData, safeListing)
   const reference = documentReference(safeListing)
   const disclosure = record(safeFormData.propertyDisclosure || safeFormData.property_disclosure)
-  const compliancePack = buildSellerComplianceDocumentModel({ formData: safeFormData, listing: safeListing, generatedAt })
+  const signingPlan = buildSellerSigningPlan({
+    sellerType: firstText(safeFormData.sellerLegalType, safeFormData.seller_legal_type, safeFormData.sellerType, safeListing.sellerType),
+    form: safeFormData,
+  })
+  const compliancePack = buildSellerComplianceDocumentModel({
+    formData: safeFormData,
+    listing: safeListing,
+    signing: { signers: signingPlan.recipients.map((signer) => ({ ...signer, status: 'pending', signature: '' })) },
+    generatedAt,
+  })
   const ficaModel = buildFicaDeclarationDocumentModel({
     partyType: 'seller',
     party: { name: seller, idNumber: sellerId, email: safeFormData.email, mobile: firstText(safeFormData.mobile, safeFormData.phone) },
@@ -147,6 +157,7 @@ export function buildSellerPostOnboardingDrafts({ formData = {}, listing = {}, b
     listingId: text(safeListing.id),
     documentReference: reference,
     branding: safeBranding,
+    compliancePack: { signers: compliancePack.signers },
   })
   const ficaHtml = buildFicaDeclarationDocumentMarkup(ficaModel)
   const mandateHtml = mandatePreparationMarkup({ seller, sellerId, property, reference, branding: safeBranding, generatedAt })
