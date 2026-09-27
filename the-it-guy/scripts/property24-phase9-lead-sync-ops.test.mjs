@@ -137,6 +137,7 @@ const emptyFeed = await createProperty24LeadSyncResponse({
   },
 })
 assert.equal(emptyFeed.status, 200)
+assert.equal(emptyFeed.body.cursorAdvanced, false)
 assert.equal(emptyState.calls[1].args.p_cursor_after, '2026-09-20T10:00:00.000Z')
 
 const unresolvedState = createStateClient({ cursorAfter: '2026-09-20T10:00:00.000Z' })
@@ -154,6 +155,7 @@ const unresolvedFeed = await createProperty24LeadSyncResponse({
   },
 })
 assert.equal(unresolvedFeed.status, 502)
+assert.equal(unresolvedFeed.body.unresolved, 1)
 assert.equal(unresolvedState.calls[1].args.p_status, 'failed')
 assert.equal(unresolvedState.calls[1].args.p_cursor_after, null)
 

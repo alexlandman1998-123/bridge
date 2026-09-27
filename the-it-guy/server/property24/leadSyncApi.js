@@ -72,10 +72,13 @@ export function resolveScheduledProperty24After({ cursorAfter = '', now = new Da
 
 function leadCounts(body = {}) {
   const summary = body?.leads?.import?.summary || body?.leads?.summary || {}
+  const importResults = body?.leads?.import?.results || []
   return {
     received: Number(summary.receivedCount || 0) || 0,
     imported: Number(summary.importedCount || 0) || 0,
-    unresolved: (body?.leads?.import?.results || []).filter((result) => ['needs_review', 'failed'].includes(result.status)).length,
+    unresolved: importResults.length
+      ? importResults.filter((result) => ['needs_review', 'failed'].includes(result.status)).length
+      : Number(summary.failedCount || 0) + Number(summary.needsReviewCount || 0),
     nextAfter: asValidIso(body?.leads?.nextAfter || body?.leads?.summary?.nextAfter || ''),
   }
 }
