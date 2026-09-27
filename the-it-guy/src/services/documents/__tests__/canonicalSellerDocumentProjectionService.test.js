@@ -14,6 +14,34 @@ test('canonical seller projection collapses aliases and keeps upload evidence', 
   assert.equal(rows[0].file_url, 'https://files.example/levy.pdf')
 })
 
+test('seller lead treats a legacy legal levy placeholder as the same property requirement', () => {
+  const rows = projectCanonicalSellerDocumentRows([
+    { key: 'levy_statement', label: 'Latest Levy Statement', category: 'property', required: true, status: 'required' },
+    { key: 'Latest Levy Statement', label: 'Latest Levy Statement', category: 'legal', required: false, status: 'not_requested' },
+  ])
+
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].key, 'levy_statement')
+  assert.equal(rows[0].taxonomyCategory, 'property')
+  assert.equal(rows[0].required, true)
+  assert.equal(rows[0].originalRows.length, 2)
+})
+
+test('legacy levy upload wins over a fileless requirement without merging an HOA statement', () => {
+  const rows = projectCanonicalSellerDocumentRows([
+    { key: 'levy_statement', category: 'property', required: true, status: 'required' },
+    { key: 'sectional_title_levy_statement', category: 'legal', required: false, status: 'uploaded', storage_path: 'seller/levy.pdf' },
+    { key: 'hoa_levy_statement', category: 'property', required: true, status: 'required' },
+  ])
+
+  assert.equal(rows.length, 2)
+  const levy = rows.find((row) => row.key === 'levy_statement')
+  assert.equal(levy.taxonomyCategory, 'property')
+  assert.equal(levy.storage_path, 'seller/levy.pdf')
+  assert.equal(levy.required, true)
+  assert.ok(rows.some((row) => row.key === 'hoa_levy_statement'))
+})
+
 test('canonical seller projection omits structured facts and preserves party-specific requirements', () => {
   const rows = projectCanonicalSellerDocumentRows([
     { key: 'body_corporate_details' },

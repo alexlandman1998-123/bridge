@@ -1,4 +1,5 @@
 import { supabase } from "../../lib/supabaseClient";
+import { hasCompletedFicaProviderEvidence } from "./ficaComplianceReviewService";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ITEMS = ["identity", "proof_of_address", "source_of_funds"];
@@ -16,14 +17,20 @@ function checklist(value = {}) {
   ]));
 }
 function map(row = {}) {
+  const storedStatus = text(row.verification_provider_status) || "not_configured";
+  const completedEvidence = hasCompletedFicaProviderEvidence({
+    status: storedStatus,
+    reference: row.verification_reference,
+    completedAt: row.provider_completed_at,
+  });
   return {
     ...row,
     documentChecklist: checklist(row.document_checklist),
     consentCapturedAt: row.consent_captured_at,
-    verificationProviderStatus: text(row.verification_provider_status) || "not_configured",
+    verificationProviderStatus: ["completed", "verified", "clear"].includes(storedStatus) && !completedEvidence ? "not_configured" : storedStatus,
     documentReadiness: row.document_readiness || {},
     providerCheckStatuses: row.provider_check_statuses || {},
-    providerOverallStatus: row.provider_overall_status,
+    providerOverallStatus: completedEvidence ? row.provider_overall_status : null,
     providerResultExpiresAt: row.provider_result_expires_at,
     staffApprovalStatus: row.staff_approval_status || "not_ready",
     certificateDocumentId: row.certificate_document_id,

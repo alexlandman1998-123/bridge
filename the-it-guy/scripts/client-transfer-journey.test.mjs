@@ -195,7 +195,8 @@ const legalJourney = { status: 'ready', snapshot: {
 const update = (audience, createdAt, message) => ({ laneKey: 'transfer', visibility: 'client_visible',
   clientRecipients: [audience], createdAt, message,
   metadata: { journeyBrief: { version: 1, stageKey: 'rates', currentStatus: 'Waiting for rates figures',
-    waitingOn: 'municipality', clientAction: 'Upload the requested document', registrationEstimate: 'Mid-November' } },
+    waitingOn: 'municipality', clientAction: 'Upload the requested document', registrationEstimate: 'Mid-November',
+    delayStatus: 'delayed', delayReason: 'Municipal figures are late' } },
 })
 const buyer = buildClientTransferJourneyPresentation({ legalJourney,
   attorneyUpdates: [update('seller', '2026-09-26T12:00:00Z', 'Seller-only message'), update('buyer', '2026-09-26T11:00:00Z', 'Buyer-safe message')],
@@ -205,6 +206,8 @@ assert.equal(buyer.currentUpdate.message, 'Buyer-safe message')
 assert.equal(buyer.waitingOn, 'municipality')
 assert.equal(buyer.estimatedRegistration, 'Mid-November')
 assert.equal(buyer.clientAction, 'Upload the requested document')
+assert.equal(buyer.currentStage.delayStatus, 'delayed')
+assert.equal(buyer.currentStage.delayReason, 'Municipal figures are late')
 assert.equal(buildClientTransferJourneyPresentation({ legalJourney: { status: 'ready', snapshot: {} } }).status, 'unavailable')
 assert.deepEqual(projectSharedMatterJourneyRead({ schemaVersion: 1, transactionId: 'x', revision: 1, planRevision: 1, lanes: [],
   clientTransferMilestones: [{ key: 'rates', status: 'waiting', secret: 'never expose' }, { key: 'private_tax_route', status: 'blocked' }] },

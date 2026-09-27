@@ -20,6 +20,7 @@ const ids = {
 }
 const teamMigration = readFileSync(new URL('../../supabase/migrations/20260926131822_attorney_matter_team_scope.sql', import.meta.url), 'utf8')
 const contractMigration = readFileSync(new URL('../../supabase/migrations/20260926175324_attorney_workbench_permission_contract.sql', import.meta.url), 'utf8')
+const pendingFirmMigration = readFileSync(new URL('../../supabase/migrations/20260927074804_attorney_pending_firm_workflow_access.sql', import.meta.url), 'utf8')
 const atomicMigration = readFileSync(new URL('../../supabase/migrations/20260908144636_shared_matter_journey_atomic_commands.sql', import.meta.url), 'utf8')
 function definition(source, functionName) {
   const start = source.indexOf(`create or replace function public.${functionName}(`)
@@ -96,6 +97,7 @@ try {
     grant execute on function public.test_workbench_write(uuid,text,jsonb) to authenticated;
   `)
   await db.exec(contractMigration)
+  await db.exec(pendingFirmMigration)
   assert.match(atomicMigration, /bridge_can_mutate_attorney_lane\(p_transaction_id, p_lane_key \|\| '_attorney', 'workflow'\)/)
   assert.match(atomicMigration, /bridge_update_attorney_workflow_step_v3\(/)
 
@@ -211,7 +213,17 @@ try {
   await db.query('update public.transaction_attorney_assignments set assignment_status=$2 where transaction_id=$1',
     [ids.matter, 'pending'])
   assert.equal((await savedAnswers('secretary')).length, 1, 'pending assignments remain readable')
-  assert.equal(await canMutate('secretary', 'workflow'), false, 'pending assignments cannot be advanced')
+  assert.equal(await canMutate('secretary', 'workflow'), true, 'instructed firm team can work before acceptance')
+  await write('secretary', 'in_progress', { received: { answer: 'yes' } })
+  assert.equal((await savedAnswers('principal'))[0].task_confirmations.received.answer, 'yes',
+    'a pending-firm confirmation saves and reloads')
+  assert.equal((await review('secretary')).rows[0].result.ok, true, 'pending-firm document review is allowed')
+  assert.equal(await canMutate('unassigned', 'workflow'), false, 'allocation still hides pending matters from unassigned staff')
+  assert.equal(await canMutate('otherFirmUser', 'workflow'), false)
+  await db.exec('reset role')
+  await db.query('update public.transaction_attorney_assignments set assignment_status=$2 where transaction_id=$1',
+    [ids.matter, 'paused'])
+  assert.equal(await canMutate('secretary', 'workflow'), false, 'paused matters stay read-only')
   console.log('Attorney Work permission contract: team allocation, answer reads, lane writes and document review PASS')
 } finally {
   await db.close()

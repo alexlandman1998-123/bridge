@@ -43,6 +43,7 @@ try {
   const html = render()
   assert.match(html, /0 of 5 complete/)
   assert.match(html, /Stage progress/)
+  assert.match(html, /xl:max-h-\[calc\(100dvh-7rem\)\]/, 'the stage menu should scroll within a viewport-height rail')
   assert.doesNotMatch(html, /Current task/)
   assert.match(html, /Confirmations/)
   assert.equal((html.match(/Upload document<\/button>/g) || []).length, 1)
@@ -682,6 +683,27 @@ try {
     }))
     fireEvent.click(specialistView.getByRole('button', { name: 'Open specialist classification' }))
     assert.equal(specialistOpens, 1, 'specialist routing remains accessible inside confirmations')
+    cleanup()
+    const journeyUpdates = []
+    const journeyView = renderInteractive(createElement(Workbench, {
+      model, selectedPhaseKey: 'instruction',
+      phases: [{ key: 'instruction', label: 'Instruction', completed: 0, total: 5, tasks: [] }],
+      journeyStageKey: 'instruction', canPublishJourneyUpdate: true,
+      onPublishJourneyUpdate: async update => { journeyUpdates.push(update) },
+      onSaveConfirmations: async () => true,
+    }))
+    assert.equal(journeyView.queryByLabelText('Currently'), null, 'the journey form should not fill the workbench by default')
+    fireEvent.click(journeyView.getByRole('button', { name: 'Add stage update' }))
+    assert.ok(journeyView.getByRole('dialog', { name: 'Client journey stage update' }))
+    fireEvent.change(journeyView.getByLabelText('Currently'), { target: { value: 'Waiting for figures' } })
+    fireEvent.change(journeyView.getByLabelText('Is this stage delayed?'), { target: { value: 'delayed' } })
+    fireEvent.change(journeyView.getByLabelText('Reason for delay'), { target: { value: 'Municipal figures are late' } })
+    fireEvent.change(journeyView.getByLabelText('Latest update from the transferring attorney'), { target: { value: 'Figures requested from the municipality.' } })
+    fireEvent.click(journeyView.getByRole('button', { name: 'Publish journey update' }))
+    await waitFor(() => assert.equal(journeyUpdates.length, 1))
+    assert.equal(journeyUpdates[0].journeyBrief.stageKey, 'instruction')
+    assert.equal(journeyUpdates[0].journeyBrief.delayReason, 'Municipal figures are late')
+    await waitFor(() => assert.equal(journeyView.queryByRole('dialog', { name: 'Client journey stage update' }), null))
     cleanup()
     let publisherOpens = 0
     const closureView = renderInteractive(createElement(Workbench, {

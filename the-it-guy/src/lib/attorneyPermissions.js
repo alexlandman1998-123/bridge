@@ -87,10 +87,10 @@ function isMissingColumnLikeError(error, columnName) {
   return error.code === 'PGRST204' || message.includes(String(columnName || '').toLowerCase())
 }
 
-function isAssignmentActive(assignment = {}) {
+function isAssignmentWorkable(assignment = {}) {
   if ([assignment.assignment_status, assignment.status].some(value =>
     ['removed', 'revoked', 'inactive', 'suspended'].includes(String(value || '').trim().toLowerCase()))) return false
-  return String(assignment.assignment_status || assignment.status || '').trim().toLowerCase() === 'active'
+  return ['pending', 'active'].includes(String(assignment.assignment_status || assignment.status || '').trim().toLowerCase())
 }
 
 function assignmentValueCoversLane(assignmentType, laneRole) {
@@ -354,7 +354,7 @@ async function getAttorneyTransactionAssignmentsForPermission(client, transactio
 function findActiveLaneAssignment(assignments = [], attorneyRole = 'transfer') {
   const laneRole = normalizeAttorneyLaneRole(attorneyRole)
   const matching = assignments.filter((assignment) =>
-    isAssignmentActive(assignment) && assignmentCoversLane(assignment, laneRole))
+    isAssignmentWorkable(assignment) && assignmentCoversLane(assignment, laneRole))
   return matching.find((assignment) => assignment.is_primary !== false) || matching[0] || null
 }
 
@@ -448,13 +448,13 @@ export async function getAttorneyLaneAccessContext({ userId = null, transactionI
   const isManagementUser = Boolean(activeMembership && isAttorneyProfessionalManagementRole(activeMembership))
   const isAssignedAttorney = Boolean(
     activeLaneAssignment &&
-      isAssignmentActive(activeLaneAssignment) &&
+      isAssignmentWorkable(activeLaneAssignment) &&
       [activeLaneAssignment.assigned_user_id, activeLaneAssignment.attorney_user_id, activeLaneAssignment.primary_attorney_id]
         .some(candidate => candidate && String(candidate) === resolvedUserId),
   )
   const isAssignedParticipant = Boolean(
     activeLaneAssignment &&
-      isAssignmentActive(activeLaneAssignment) &&
+      isAssignmentWorkable(activeLaneAssignment) &&
       [
         activeLaneAssignment.assigned_user_id,
         activeLaneAssignment.attorney_user_id,
@@ -612,7 +612,7 @@ export async function getUserAttorneyRolesForTransaction(userId, transactionId) 
   return [
     ...new Set(
       (query.data || [])
-        .filter((assignment) => isAssignmentActive(assignment) &&
+        .filter((assignment) => isAssignmentWorkable(assignment) &&
           [assignment.assigned_user_id, assignment.attorney_user_id, assignment.primary_attorney_id, assignment.secretary_id, assignment.admin_handler_id].some(
             (candidate) => candidate && String(candidate) === String(resolvedUserId),
           ),

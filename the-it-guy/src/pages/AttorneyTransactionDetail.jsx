@@ -75,7 +75,6 @@ import TransactionBuyerPartiesPanel from '../components/transaction/TransactionB
 import DealSetupPanel from '../components/transaction/DealSetupPanel'
 import BondDealSetupHandoffPanel from '../components/bond/BondDealSetupHandoffPanel'
 import LegalTaskWorkbench from '../components/attorney/workflow/LegalTaskWorkbench.jsx'
-import TransferJourneyUpdateComposer from '../components/attorney/workflow/TransferJourneyUpdateComposer.jsx'
 import { deriveProfessionalTransferMilestones, selectJourneyPublisherStage } from '../core/clientPortal/transferJourneyPresentationModel.js'
 import {
   buildBondHybridFinanceStageSteps,
@@ -8152,6 +8151,9 @@ function ArchlineTransferWorkspace({
   onOpenDocumentLibrary,
   onOpenRoutingProfile,
   onOpenJourneyPublisher,
+  journeyStageKey = '',
+  onPublishJourneyUpdate,
+  canPublishJourneyUpdate = false,
   onDirtyAnswersChange,
   onOpenParties,
   onOpenFinance,
@@ -8736,6 +8738,9 @@ function ArchlineTransferWorkspace({
         onOpenDocumentLibrary={onOpenDocumentLibrary}
         onOpenRoutingProfile={onOpenRoutingProfile}
         onOpenJourneyPublisher={onOpenJourneyPublisher}
+        journeyStageKey={journeyStageKey}
+        onPublishJourneyUpdate={onPublishJourneyUpdate}
+        canPublishJourneyUpdate={canPublishJourneyUpdate}
         onRequestDocument={workflow?.lane?.permissions?.canRequestDocuments
           ? (requirement) => onRequestDocument?.(selectedTask, selectedDocuments, requirement)
           : undefined}
@@ -16327,6 +16332,7 @@ function AttorneyTransactionDetail() {
   })
   const [documentUploadProgress, setDocumentUploadProgress] = useState(null)
   const [routingProfileModalOpen, setRoutingProfileModalOpen] = useState(false)
+  const [routingProfileModalScope, setRoutingProfileModalScope] = useState('all')
   const [routingProfileSaving, setRoutingProfileSaving] = useState(false)
   const [routingProfileError, setRoutingProfileError] = useState('')
   const [routingProfileDraft, setRoutingProfileDraft] = useState(() => buildRoutingProfileDraft())
@@ -19156,10 +19162,21 @@ function AttorneyTransactionDetail() {
     }
   }
 
-  function openRoutingProfileModal() {
+  function openRoutingProfileModal(scope = 'all') {
     setRoutingProfileDraft(buildRoutingProfileDraft(transaction || {}, routingDiagnostics || {}, transactionParticipants))
     setRoutingProfileError('')
+    setRoutingProfileModalScope(['municipal', 'bodyCorporate', 'hoa'].includes(scope) ? scope : 'all')
     setRoutingProfileModalOpen(true)
+  }
+
+  function updateClearanceDraft(type, field, value) {
+    setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile,
+      propertyConditions: { ...previous.mvpProfile?.propertyConditions,
+        clearances: { ...previous.mvpProfile?.propertyConditions?.clearances,
+          [type]: { ...previous.mvpProfile?.propertyConditions?.clearances?.[type], [field]: value },
+        },
+      },
+    } }))
   }
 
   async function handleSaveRoutingProfile(event) {
@@ -19183,10 +19200,10 @@ function AttorneyTransactionDetail() {
         sellerHasExistingBond: routingProfileDraft.sellerHasExistingBond === 'true',
         cancellationRequired: routingProfileDraft.cancellationRequired === 'true',
         vatTreatment: routingProfileDraft.vatTreatment,
-        transferTaxDecision: workspaceRole === 'attorney' ? routingProfileDraft.transferTaxDecision : undefined,
+        transferTaxDecision: workspaceRole === 'attorney' && routingProfileModalScope === 'all' ? routingProfileDraft.transferTaxDecision : undefined,
         mvpProfile: { ...routingProfileDraft.mvpProfile, sellerExistingBond: routingProfileDraft.sellerHasExistingBond },
-        scenarioProfile: routingProfileDraft.scenarioProfile,
-        reason: routingProfileDraft.reason,
+        scenarioProfile: routingProfileModalScope === 'all' ? routingProfileDraft.scenarioProfile : undefined,
+        reason: routingProfileModalScope === 'all' ? routingProfileDraft.reason : `Updated ${routingProfileModalScope} clearance details.`,
         actorRole: workspaceRole,
       })
       if (nextDetail) {
@@ -23286,15 +23303,6 @@ function AttorneyTransactionDetail() {
               </div>
             </div>
 
-            {archlineActiveLegalTaskWorkflowKey === 'transfer' && !attorneyWorkflowIsLoading && archlineActiveLegalTaskWorkflow?.lane ? (
-              <div id="attorney-transfer-journey-publisher"><TransferJourneyUpdateComposer
-                key={currentClientTransferStage?.key || 'unavailable'}
-                stageKey={currentClientTransferStage?.key || ''}
-                onPublish={handlePublishTransferJourneyUpdate}
-                disabled={workflowSaving || !archlineActiveLegalTaskWorkflow.lane.permissions?.canPublishClientVisibleUpdate}
-              /></div>
-            ) : null}
-
             {attorneyWorkflowIsLoading ? (
               <div className="rounded-xl border border-slate-200 bg-white p-5" role="status" aria-live="polite">
                 <div className="h-4 w-40 animate-pulse rounded bg-slate-100" />
@@ -23326,6 +23334,9 @@ function AttorneyTransactionDetail() {
               activityFeed={workflowOperations?.legalTimeline || overviewConversationEntries}
               saving={workflowSaving}
               workflowError={workflowError}
+              journeyStageKey={archlineActiveLegalTaskWorkflowKey === 'transfer' ? currentClientTransferStage?.key || '' : ''}
+              onPublishJourneyUpdate={archlineActiveLegalTaskWorkflowKey === 'transfer' ? handlePublishTransferJourneyUpdate : undefined}
+              canPublishJourneyUpdate={archlineActiveLegalTaskWorkflowKey === 'transfer' && !workflowSaving && Boolean(archlineActiveLegalTaskWorkflow.lane.permissions?.canPublishClientVisibleUpdate)}
               onUpdateStep={(step, status, note, workPacket, visibility) => handleArchlineLegalWorkflowStepUpdate(archlineActiveLegalTaskWorkflow, step, status, note, workPacket, visibility)}
               onUploadDocument={(task, documents = [], requirement = null) => {
                 const targetRequirement = resolveLegalTaskUploadRequirement(documents || [], requirement)
@@ -23384,7 +23395,6 @@ function AttorneyTransactionDetail() {
               onOpenDocumentLibrary={() => openWorkspaceMenu('documents')}
               onDirtyAnswersChange={handleAttorneyAnswersDirtyChange}
               onOpenRoutingProfile={openRoutingProfileModal}
-              onOpenJourneyPublisher={() => document.getElementById('attorney-transfer-journey-publisher')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
               onOpenParties={(task) => openTaskLinkedWorkspace('stakeholders', task)}
               onOpenFinance={(task) => {
                 if ([
@@ -26173,7 +26183,7 @@ function AttorneyTransactionDetail() {
       />
 
       <Modal
-        open={routingProfileModalOpen}
+        open={routingProfileModalOpen && routingProfileModalScope === 'all'}
         onClose={routingProfileSaving ? undefined : () => setRoutingProfileModalOpen(false)}
         title={routingDiagnostics?.status === 'needs_confirmation' ? 'Confirm Matter Profile' : 'Edit Matter Profile'}
         subtitle="These are the canonical facts that determine the applicable legal workflow. Changing a material fact requires the profile to be confirmed again."
@@ -26528,8 +26538,14 @@ function AttorneyTransactionDetail() {
                   ...(routingProfileDraft.propertyTenure === 'estate_hoa' || routingProfileDraft.mvpProfile?.hoaApplicable === 'yes' ? [['hoa', 'HOA']] : []),
                 ].map(([type, label]) => <div key={type} className="rounded-lg border border-border p-3">
                   <p className="text-sm font-semibold text-text">{label} clearance</p>
-                  {[['issuer', 'Issuer', 'text'], ['reference', 'Certificate reference', 'text'], ['validUntil', 'Valid until', 'date']].map(([field, fieldLabel, inputType]) =>
-                    <label key={field} className="mt-2 flex flex-col gap-1"><span className="text-label text-textMuted">{fieldLabel}</span><Field type={inputType} value={routingProfileDraft.mvpProfile?.propertyConditions?.clearances?.[type]?.[field] || ''} onChange={(event) => setRoutingProfileDraft((previous) => ({ ...previous, mvpProfile: { ...previous.mvpProfile, propertyConditions: { ...previous.mvpProfile?.propertyConditions, clearances: { ...previous.mvpProfile?.propertyConditions?.clearances, [type]: { ...previous.mvpProfile?.propertyConditions?.clearances?.[type], [field]: event.target.value } } } } }))} /></label>)}
+                  {[
+                    ['issuer', 'Issuer', 'text'],
+                    ['reference', 'Certificate reference', 'text'],
+                    ...(type === 'municipal' ? [['issuedOn', 'Issued on (if shown)', 'date']] : []),
+                    ['validUntil', 'Valid until', 'date'],
+                  ].map(([field, fieldLabel, inputType]) =>
+                    <label key={field} className="mt-2 flex flex-col gap-1"><span className="text-label text-textMuted">{fieldLabel}</span><Field type={inputType} value={routingProfileDraft.mvpProfile?.propertyConditions?.clearances?.[type]?.[field] || ''} onChange={(event) => updateClearanceDraft(type, field, event.target.value)} /></label>)}
+                  {type === 'municipal' ? <p className="mt-2 text-xs text-textMuted">If the issue date is recorded, the municipal certificate must expire within 60 days of issue. Other clearances follow their own stated validity dates.</p> : null}
                 </div>)}
               </div>
             </div>
@@ -26544,6 +26560,33 @@ function AttorneyTransactionDetail() {
               placeholder="Optional context for this routing change"
             />
           </label>
+        </form>
+      </Modal>
+
+      <Modal
+        open={routingProfileModalOpen && routingProfileModalScope !== 'all'}
+        onClose={routingProfileSaving ? undefined : () => setRoutingProfileModalOpen(false)}
+        title={{ municipal: 'Municipal rates clearance', bodyCorporate: 'Body corporate clearance', hoa: 'HOA clearance' }[routingProfileModalScope] || 'Clearance details'}
+        subtitle="Record the certificate details for this transfer task. The certificate must still be reviewed and approved before lodgement."
+        className="max-w-lg"
+        footer={<div className="flex justify-end gap-3">
+          <Button type="button" variant="secondary" disabled={routingProfileSaving} onClick={() => setRoutingProfileModalOpen(false)}>Cancel</Button>
+          <Button type="submit" form="clearance-task-details-form" disabled={routingProfileSaving}>{routingProfileSaving ? 'Saving...' : 'Save certificate details'}</Button>
+        </div>}
+      >
+        <form id="clearance-task-details-form" onSubmit={handleSaveRoutingProfile} className="grid gap-3">
+          {routingProfileError ? <p role="alert" className="text-sm text-danger">{routingProfileError}</p> : null}
+          {[
+            ['issuer', 'Issuer', 'text'],
+            ['reference', 'Certificate reference', 'text'],
+            ...(routingProfileModalScope === 'municipal' ? [['issuedOn', 'Issued on (if shown)', 'date']] : []),
+            ['validUntil', 'Valid until', 'date'],
+          ].map(([field, label, inputType]) => <label key={field} className="grid gap-1 text-sm font-medium text-text">
+            {label}
+            <Field type={inputType} value={routingProfileDraft.mvpProfile?.propertyConditions?.clearances?.[routingProfileModalScope]?.[field] || ''}
+              onChange={(event) => updateClearanceDraft(routingProfileModalScope, field, event.target.value)} />
+          </label>)}
+          {routingProfileModalScope === 'municipal' ? <p className="text-xs text-textMuted">If the issue date is recorded, valid until must fall within 60 days of it. This rule applies only to municipal clearance.</p> : null}
         </form>
       </Modal>
 

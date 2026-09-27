@@ -7,12 +7,18 @@ function status(label, complete, detail) {
   return { label, status: complete ? 'complete' : 'action_required', detail }
 }
 
+export function hasCompletedFicaProviderEvidence(verification = {}) {
+  return COMPLETED_PROVIDER_STATUSES.has(text(verification.status)) &&
+    Boolean(text(verification.reference)) &&
+    Number.isFinite(Date.parse(text(verification.completedAt)))
+}
+
 export function buildFicaCompliancePanel({ declaration = {}, documents = {}, verification = {}, approval = {}, certificate = {} } = {}) {
   const declarationComplete = ['signed', 'uploaded', 'verified'].includes(text(declaration.status)) || Boolean(declaration.documentId)
   const checklist = documents.checklist || {}
   const documentValues = Object.values(checklist)
   const documentsComplete = Boolean(documents.complete) || (documentValues.length > 0 && documentValues.every((item) => COMPLETE_DOCUMENT_STATUSES.has(text(item))))
-  const providerComplete = COMPLETED_PROVIDER_STATUSES.has(text(verification.status))
+  const providerComplete = hasCompletedFicaProviderEvidence(verification)
   const approved = text(approval.status) === 'approved'
   const certificateAvailable = Boolean(certificate.documentId) && !certificate.supersededAt
   return {

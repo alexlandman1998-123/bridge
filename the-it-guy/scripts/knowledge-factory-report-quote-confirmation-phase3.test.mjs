@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import { quoteFitsCommercialLimits, supplierCosts } from "../api/knowledge-factory/report-purchase-intents.js";
 
 const migration = await readFile(
   new URL(
@@ -73,6 +74,16 @@ assert.match(
   /\.eq\("status", "confirmed_pending_execution"\)[\s\S]*\.gt\("quote_expires_at"/,
   "Execution must only begin from an unexpired confirmed quote.",
 );
+const limits = { packageCreditCap: 500, monthlyCreditCap: 1_000, monthCredits: 400 };
+const validQuote = supplierCosts({ extensions: { cost: { fieldCost: 200, typeCost: 50, priceSurcharge: 50, creditsConsumed: 300 } } });
+assert.deepEqual(validQuote, { fieldCost: 200, typeCost: 50, surcharge: 50, credits: 300 });
+assert.equal(quoteFitsCommercialLimits(validQuote.credits, limits), true);
+assert.equal(supplierCosts({ extensions: {} }).credits, null, "Missing supplier cost must not become a free quote.");
+assert.equal(supplierCosts({ extensions: { cost: { creditsConsumed: null } } }).credits, null);
+assert.equal(supplierCosts({ extensions: { cost: { creditsConsumed: 0 } } }).credits, 0, "A recorded zero-credit cost remains valid.");
+assert.equal(quoteFitsCommercialLimits(null, limits), false);
+assert.equal(quoteFitsCommercialLimits(501, limits), false, "The package cap applies to the actual quote.");
+assert.equal(quoteFitsCommercialLimits(601, { ...limits, packageCreditCap: 700 }), false, "The monthly cap applies to the actual quote.");
 assert.match(
   service,
   /quoteKnowledgeFactoryReportPurchase[\s\S]*action: "quote"/,
@@ -87,6 +98,7 @@ for (const visibleStep of [
   "Get UAT estimate",
   "Confirm report at",
   "Run UAT report",
+  "Get a new estimate",
 ]) {
   assert.match(modal, new RegExp(visibleStep), `The UI must show “${visibleStep}”.`);
 }

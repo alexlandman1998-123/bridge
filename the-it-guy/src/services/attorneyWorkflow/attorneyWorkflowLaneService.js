@@ -1980,8 +1980,12 @@ export async function addAttorneyTransactionUpdate({
     const allowedStages = new Set(['instruction', 'fica', 'rates', 'funding', 'signing', 'clearances', 'lodgement', 'registration'])
     const stageKey = String(journeyBrief.stageKey || '').trim()
     const currentStatus = String(journeyBrief.currentStatus || '').trim()
+    const delayStatus = String(journeyBrief.delayStatus || '').trim()
     if (!allowedStages.has(stageKey) || !currentStatus || currentStatus.length > 140) {
       throw new Error('Choose a current transfer stage and describe its status briefly.')
+    }
+    if (!['on_track', 'delayed'].includes(delayStatus)) {
+      throw new Error('Choose whether this transfer stage is delayed.')
     }
     const field = (value, max) => {
       const result = String(value || '').trim()
@@ -1991,9 +1995,14 @@ export async function addAttorneyTransactionUpdate({
     safeJourneyBrief = {
       version: 1, stageKey, currentStatus,
       waitingOn: field(journeyBrief.waitingOn, 100),
+      delayStatus,
+      delayReason: delayStatus === 'delayed' ? field(journeyBrief.delayReason, 180) : '',
       clientAction: field(journeyBrief.clientAction, 180),
       durationEstimate: field(journeyBrief.durationEstimate, 80),
       registrationEstimate: field(journeyBrief.registrationEstimate, 80),
+    }
+    if (delayStatus === 'delayed' && !safeJourneyBrief.delayReason) {
+      throw new Error('Describe the delay before publishing this update.')
     }
   }
 

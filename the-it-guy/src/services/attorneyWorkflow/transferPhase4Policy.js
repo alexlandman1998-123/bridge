@@ -12,6 +12,18 @@ export function isClearanceValidUntil(value, now = new Date()) {
   return date > todayInSast
 }
 
+export function isMunicipalClearanceValidUntil(clearance = {}, now = new Date()) {
+  if (!isClearanceValidUntil(clearance.validUntil, now)) return false
+  const issuedOn = String(clearance.issuedOn || '').trim()
+  if (!issuedOn) return true // Existing certificates may only have their recorded expiry.
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(issuedOn)) return false
+  const issuedAt = Date.parse(`${issuedOn}T00:00:00Z`)
+  const expiresAt = Date.parse(`${clearance.validUntil}T00:00:00Z`)
+  if (!Number.isFinite(issuedAt) || new Date(issuedAt).toISOString().slice(0, 10) !== issuedOn) return false
+  const todayInSast = new Date(new Date(now).getTime() + 2 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  return issuedOn <= todayInSast && expiresAt >= issuedAt && expiresAt <= issuedAt + 60 * 24 * 60 * 60 * 1000
+}
+
 export const PHASE4_TAX_TASKS = Object.freeze([
   'transfer_tax_route_confirmed', 'transfer_duty_tdc01_submission', 'sars_evidence_request_response',
   'transfer_duty_assessment_payment', 'vat_exemption_evidence_verified',
@@ -118,7 +130,8 @@ export function phase4DecisionIssues(decision = {}, scenarioProfile = {}, proper
       const item = clearance[type] || {}
       if (!String(item.issuer || '').trim()) issues.push(`${type} clearance issuer`)
       if (!String(item.reference || item.certificateReference || '').trim()) issues.push(`${type} clearance reference`)
-      if (!isClearanceValidUntil(item.validUntil)) issues.push(`${type} clearance validity`)
+      if (!(type === 'municipal' ? isMunicipalClearanceValidUntil(item) : isClearanceValidUntil(item.validUntil)))
+        issues.push(`${type} clearance validity`)
     }
     if (!['yes', 'no'].includes(propertyConditions.titleRestrictions)) issues.push('title conditions applicability')
     if (!['yes', 'no'].includes(propertyConditions.complianceCertificates)) issues.push('compliance certificate applicability')

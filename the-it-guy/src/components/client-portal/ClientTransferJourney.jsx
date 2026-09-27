@@ -41,6 +41,7 @@ function StageCard({ stage, index, isLast, isCurrent, model, brand }) {
               <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-base font-semibold text-[#142132]">{stage.title}</h3>
                 {isCurrent ? <span className="rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold" style={{ borderColor: rgba(brand, 0.2), backgroundColor: rgba(brand, 0.08), color: brand }}>{blocked ? 'Needs attention' : 'We are here'}</span> : null}
+                {stage.delayStatus === 'delayed' ? <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[0.68rem] font-semibold text-amber-900">Delay reported</span> : null}
               </div>
               <p className="mt-2 text-sm leading-6 text-[#52657b]">{stage.description}</p>
               {completed ? <p className="mt-1 text-xs font-medium text-[#667085]">Completed</p> : null}
@@ -50,6 +51,7 @@ function StageCard({ stage, index, isLast, isCurrent, model, brand }) {
         </button>
         {expanded ? <div className="mt-5 space-y-4">
           {isCurrent ? <>
+            {stage.delayStatus === 'delayed' && stage.delayReason ? <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Delay: {stage.delayReason}</p> : null}
             <div className="grid gap-4 rounded-[16px] border border-[#e4ebf3] bg-white p-4 lg:grid-cols-3 lg:divide-x lg:divide-[#dbe5ef]">
               {currentDetail.map(({ label, value, helper, Icon }) => <div key={label} className="flex items-start gap-3 lg:px-4 first:lg:pl-0 last:lg:pr-0">
                 <Icon size={21} className="mt-1 shrink-0 text-[#142132]" />

@@ -602,12 +602,12 @@ export const ATTORNEY_WORKFLOW_STAGE_DEFINITIONS = {
     transferStage({
       key: 'municipal_rates_clearance_review',
       label: 'Review Municipal Rates Clearance',
-      description: 'Review rates figures, payment evidence, and the municipal rates-clearance certificate in one place.',
+      description: 'Review rates figures, payment evidence, and the municipal certificate issuer, reference and validity dates.',
       actionLabel: 'Review rates clearance',
       aliases: ['rates_figures_requested', 'rates_payment_confirmed', 'rates_clearance_received', 'rates_clearance_requested', 'rates_clearance_uploaded', 'clearances_requested', 'clearances_received'],
       defaultVisibility: 'client_visible',
       requiredDocuments: ['rates_clearance', 'rates_clearance_certificate'],
-      evidenceRequirements: ['Municipal rates clearance is reviewed and valid for this matter.'],
+      evidenceRequirements: ['Municipal rates clearance is reviewed and current; where the issue date is recorded, validity does not exceed 60 days.'],
     }),
     transferStage({
       key: 'levy_hoa_clearance_review',

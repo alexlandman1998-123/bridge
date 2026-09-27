@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
+import { hasRecordedContractEvidence, normalizeContractCostEvidence } from '../api/knowledge-factory/contract-evidence-policy.js'
 
 const migration = await readFile(new URL('../../supabase/migrations/20260919193735_knowledge_factory_uat_contract_discovery_phase1.sql', import.meta.url), 'utf8')
 const api = await readFile(new URL('../api/knowledge-factory/contract-discovery.js', import.meta.url), 'utf8')
@@ -17,4 +18,8 @@ assert.match(api, /\(count \|\| 0\) >= 8/, 'Discovery must stay a small controll
 assert.match(panel, /does not call the supplier or use credits/, 'The UI must make non-chargeable planning explicit.')
 assert.match(panel, /Do not paste raw supplier responses, owner names, ID numbers, documents or tokens/, 'The UI must block sensitive evidence capture.')
 assert.match(operations, /KnowledgeFactoryContractDiscoveryPanel/, 'Operations must expose Phase 1 discovery to administrators.')
+assert.deepEqual(normalizeContractCostEvidence({ credits: null, fieldCost: '' }), { credits: null, fieldCost: null, typeCost: null, surcharge: null }, 'Blank cost inputs must not become zero-credit evidence.')
+assert.equal(hasRecordedContractEvidence({ status: 'passed', observed_field_manifest: ['propertyId'], cost_evidence: { credits: 0 } }), true, 'A genuine zero-credit validation remains valid.')
+assert.equal(hasRecordedContractEvidence({ status: 'passed', observed_field_manifest: [], cost_evidence: { credits: 100 } }), false, 'A passed status alone cannot prove the field contract.')
+assert.equal(hasRecordedContractEvidence({ status: 'passed', observed_field_manifest: ['propertyId'], cost_evidence: { credits: null } }), false, 'A passed status without a quoted credit cost cannot release a package.')
 console.log('knowledge factory Phase 1 contract-discovery checks passed')

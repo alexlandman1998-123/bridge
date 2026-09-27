@@ -125,10 +125,25 @@ function mergeRelevantOnboardingFormData({ lead = {}, listing = {} } = {}) {
     rawPayload.seller_onboarding?.form_data,
     rawPayload.seller_onboarding,
   )
+  const rawProfile = getNestedObject(
+    rawPayload.kingstonsSellerProfile?.formData,
+    rawPayload.kingstonsSellerProfile?.form_data,
+    rawPayload.kingstons_seller_profile?.formData,
+    rawPayload.kingstons_seller_profile?.form_data,
+  )
+  const onboardingReplacementRequired = booleanValue(
+    lead.sellerOnboarding?.replacementRequired,
+    lead.sellerOnboarding?.replacement_required,
+    lead.seller_onboarding?.replacementRequired,
+    lead.seller_onboarding?.replacement_required,
+    rawPayload.sellerOnboardingReplacementRequired,
+    rawPayload.seller_onboarding_replacement_required,
+  ) === true
 
   return compactObject({
     ...getSellerOnboardingFormData(listing),
     ...rawOnboarding,
+    ...(!onboardingReplacementRequired ? rawProfile : {}),
     ...getSellerOnboardingFormData(lead),
   })
 }
@@ -230,10 +245,14 @@ export function buildSellerLeadListingPrefill({
     listing.addressLine1,
     listing.address_line_1,
   )
-  const suburb = firstText(formData.suburb, formData.property_suburb, property.suburb, addressDetails.suburb, lead.suburb, lead.areaInterest, listing.suburb)
-  const city = firstText(formData.city, formData.property_city, property.city, addressDetails.city, lead.city, listing.city)
-  const province = firstText(formData.province, formData.property_province, property.province, addressDetails.province, lead.province, listing.province)
-  const postalCode = firstText(formData.postalCode, formData.postal_code, property.postalCode, property.postal_code, addressDetails.postalCode, addressDetails.postal_code, lead.postalCode, lead.postal_code, listing.postalCode, listing.postal_code)
+  const suburb = firstText(formData.propertySuburb, formData.suburb, formData.property_suburb, property.suburb, addressDetails.suburb, lead.suburb, lead.areaInterest, listing.suburb)
+  const city = firstText(formData.propertyCity, formData.city, formData.property_city, property.city, addressDetails.city, lead.city, listing.city)
+  const province = firstText(formData.propertyProvince, formData.province, formData.property_province, property.province, addressDetails.province, lead.province, listing.province)
+  const capturedPostalCode = firstText(formData.postalCode, formData.postal_code, property.postalCode, property.postal_code, addressDetails.postalCode, addressDetails.postal_code)
+  const propertyPostalCode = firstText(formData.propertyPostalCode, formData.property_postal_code)
+  const postalCode = capturedPostalCode && propertyPostalCode && capturedPostalCode === firstText(formData.residentialPostalCode, formData.residential_postal_code) && capturedPostalCode !== propertyPostalCode
+    ? propertyPostalCode
+    : firstText(capturedPostalCode, propertyPostalCode, lead.postalCode, lead.postal_code, listing.postalCode, listing.postal_code)
   const formattedAddress = firstText(
     formData.formattedAddress,
     formData.formatted_address,
@@ -259,11 +278,15 @@ export function buildSellerLeadListingPrefill({
     formData.listing_price,
     formData.estimatedAskingPrice,
     formData.estimated_asking_price,
+    listing.askingPrice,
+    listing.asking_price,
+  )
+  const estimatedValue = numberValue(
+    formData.estimatedValue,
+    formData.estimated_value,
     lead.estimatedValue,
     lead.estimated_value,
     lead.budget,
-    listing.askingPrice,
-    listing.asking_price,
     listing.estimatedValue,
     listing.estimated_value,
   )
@@ -282,23 +305,40 @@ export function buildSellerLeadListingPrefill({
     listing.propertyStructureType,
     listing.property_structure_type,
   ) || 'full_title'
+  const isSectionalStructure = ['sectional_title', 'share_block'].includes(normalizeKey(propertyStructureType))
+  const schemeName = firstText(formData.schemeName, formData.scheme_name, property.schemeName, property.scheme_name, isSectionalStructure ? formData.estateComplexName : '')
+  const sharedPropertyName = firstText(
+    isSectionalStructure ? schemeName : '',
+    formData.estateComplexName,
+    formData.estate_complex_name,
+    formData.complexName,
+    formData.complex_name,
+    formData.estateName,
+    formData.estate_name,
+    property.complexName,
+    property.schemeName,
+    property.estateName,
+  )
+  const coveredParking = numberValue(formData.parkingCovered, formData.parking_covered)
+  const openParking = numberValue(formData.parkingOpen, formData.parking_open)
+  const parkingFromBreakdown = coveredParking !== null || openParking !== null
+    ? (coveredParking || 0) + (openParking || 0)
+    : null
   const description = firstText(
+    formData.marketingDescription,
+    formData.marketing_description,
     formData.propertyDescription,
     formData.property_description,
     formData.listingDescription,
     formData.listing_description,
     formData.description,
-    formData.propertyNotes,
-    formData.property_notes,
     listing.description,
-    lead.description,
-    lead.notes,
   )
 
   const form = compactObject({
     ...formData,
-    sellerType: firstText(formData.sellerType, formData.sellerLegalType, formData.ownershipType, lead.sellerType, listing.sellerType, 'individual'),
-    sellerLegalType: firstText(formData.sellerLegalType, formData.seller_type, formData.ownershipType, formData.ownerStructureType, lead.sellerType, listing.sellerType, 'individual'),
+    sellerType: firstText(formData.sellerType, formData.sellerLegalType, formData.ownershipType, lead.sellerType, listing.sellerType),
+    sellerLegalType: firstText(formData.sellerLegalType, formData.seller_type, formData.ownershipType, formData.ownerStructureType, lead.sellerType, listing.sellerType),
     sellerName,
     sellerSurname,
     sellerDisplayName: fullName,
@@ -327,10 +367,12 @@ export function buildSellerLeadListingPrefill({
     propertyStructureType,
     propertyTitleType: propertyStructureType,
     estateOrHoa: booleanValue(formData.estateOrHoa, formData.estate_or_hoa, formData.inEstate, formData.in_estate, property.estateOrHoa, property.estate_or_hoa),
-    estateName: firstText(formData.estateName, formData.estate_name, formData.estateComplexName, formData.estate_complex_name, property.estateName, property.estate_name),
+    estateName: firstText(formData.estateName, formData.estate_name, property.estateName, property.estate_name, !isSectionalStructure ? sharedPropertyName : ''),
+    estateComplexName: sharedPropertyName,
+    schemeName,
     unitNumber: firstText(formData.unitNumber, formData.unit_number, property.unitNumber, property.unit_number),
     sectionNumber: firstText(formData.sectionNumber, formData.section_number, property.sectionNumber, property.section_number),
-    complexName: firstText(formData.complexName, formData.complex_name, property.complexName, property.complex_name),
+    complexName: sharedPropertyName,
     sectionalTitleNumber: firstText(formData.sectionalTitleNumber, formData.sectional_title_number, property.sectionalTitleNumber, property.sectional_title_number),
     onAuction: booleanValue(formData.onAuction, formData.on_auction, property.onAuction, property.on_auction),
     priceOnApplication: booleanValue(formData.priceOnApplication, formData.price_on_application, formData.isPOA, formData.is_poa, property.priceOnApplication, property.price_on_application),
@@ -339,12 +381,13 @@ export function buildSellerLeadListingPrefill({
     bedrooms: numberValue(formData.bedrooms, property.bedrooms, lead.bedrooms, listing.bedrooms),
     bathrooms: numberValue(formData.bathrooms, property.bathrooms, lead.bathrooms, listing.bathrooms),
     garages: numberValue(formData.garages, property.garages, lead.garages, listing.garages),
-    parkingCount: numberValue(formData.parkingCount, formData.parking_count, formData.parkingBays, formData.parking_bays, property.parkingCount, property.parking_count, lead.parkingCount, listing.parkingBays),
+    parkingCount: numberValue(formData.parkingCount, formData.parking_count, formData.parkingBays, formData.parking_bays, formData.parking, formData.parkingSpaces, parkingFromBreakdown, property.parkingCount, property.parking_count, lead.parkingCount, listing.parkingBays),
     floorSize: numberValue(formData.floorSize, formData.floor_size, property.floorSize, property.floor_size, lead.floorSize, listing.floorSize),
     erfSize: numberValue(formData.erfSize, formData.erf_size, property.erfSize, property.erf_size, lead.erfSize, listing.erfSize),
-    ratesTaxes: numberValue(formData.ratesTaxes, formData.rates_taxes, property.ratesTaxes, property.rates_taxes),
-    levies: numberValue(formData.levies, property.levies),
+    ratesTaxes: numberValue(formData.ratesTaxes, formData.rates_taxes, formData.ratesAndTaxes, formData.monthlyRates, property.ratesTaxes, property.rates_taxes),
+    levies: numberValue(formData.levies, formData.schemeLevies, formData.monthlyLevies, property.levies),
     askingPrice,
+    estimatedValue,
     listingPrice: askingPrice,
     estimatedAskingPrice: askingPrice,
     listingTitle: firstText(formData.listingTitle, formData.listing_title, lead.propertyInterest, listing.title, selectedPropertyType && suburb ? `${selectedPropertyType} in ${suburb}` : formattedAddress),
@@ -404,12 +447,12 @@ export function buildSellerLeadListingPrefill({
     title: publicationData.title,
     description,
     listingPreviewDescription: description,
-    internalListingNotes: firstText(formData.internalNotes, formData.internal_notes, lead.notes),
+    internalListingNotes: firstText(formData.internalNotes, formData.internal_notes, formData.propertyNotes, formData.property_notes, lead.notes),
     propertyCategory: form.propertyCategory,
     propertyStructureType: form.propertyStructureType,
     propertyType: form.propertyType,
     askingPrice,
-    estimatedValue: askingPrice,
+    estimatedValue,
     addressLine1: form.addressLine1 || form.streetAddress,
     addressLine2: form.addressLine2,
     formattedAddress: form.formattedAddress,
@@ -444,6 +487,9 @@ export function buildSellerLeadListingPrefill({
     media: {
       galleryImages: form.listingImages,
       coverImageId: firstText(form.coverImageId, form.listingImages?.[0]?.id),
+      floorplans: normalizeMediaItems(formData.floorplans, formData.floorPlans, listing.marketing?.floorplans),
+      videoLink: firstText(formData.videoLink, formData.videoUrl, listing.marketing?.videoLink),
+      virtualTourLink: firstText(formData.virtualTourLink, formData.virtualTourUrl, listing.marketing?.virtualTourLink),
     },
     listingPayload,
   }

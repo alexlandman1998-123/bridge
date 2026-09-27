@@ -99,6 +99,83 @@ test('seller lead prefill creates a reviewable draft without portal publication'
   assert.equal(prefill.listingPayload.privatePropertyStatus, 'not_published')
   assert.equal(prefill.listingPayload.bridgeListingStatus, 'not_published')
   assert.equal(prefill.sellerOnboardingFormData.complianceDeclarations.uploadsRequired, false)
+  assert.equal(prefill.directListingIntake.seller.sellerLegalType, 'unknown')
+  assert.equal(prefill.listingPayload.askingPrice, null)
+  assert.equal(prefill.listingPayload.estimatedValue, 1800000)
+})
+
+test('submitted sectional-title onboarding and agent property edits reach the draft without becoming public notes', () => {
+  const prefill = buildSellerLeadListingPrefill({
+    capturedAt: '2026-09-27T08:00:00.000Z',
+    lead: {
+      leadId: 'lead-scheme',
+      postalCode: '0002',
+      rawEnquiryPayload: {
+        kingstonsSellerProfile: {
+          formData: { propertyPostalCode: '0081', propertySuburb: 'Garsfontein', ratesAndTaxes: '1200' },
+        },
+      },
+      sellerOnboarding: {
+        status: 'completed',
+        formData: {
+          sellerLegalType: 'company',
+          companyName: 'Silver Leaf Holdings',
+          propertyAddress: '694 Cicely Street, Garsfontein, Pretoria',
+          propertyType: 'House',
+          propertyStructureType: 'sectional_title',
+          schemeName: 'Silver Leaf',
+          estateComplexName: 'Silver Leaf',
+          sectionNumber: '2',
+          unitNumber: '2',
+          postalCode: '0002',
+          residentialPostalCode: '0002',
+          occupancyStatus: 'tenant_occupied',
+          leaseExpiryDate: '2027-03-31',
+          askingPrice: '2750000',
+          parkingCovered: '1',
+          parkingOpen: '1',
+          levies: '3450',
+          propertyNotes: 'Internal condition note',
+          hasSignedFicaForm: true,
+          imageGallery: [{ id: 'photo-1', url: 'https://cdn.example.com/silver-leaf.jpg' }],
+          floorplans: [{ id: 'plan-1', url: 'https://cdn.example.com/plan.pdf' }],
+        },
+      },
+    },
+  })
+
+  assert.equal(prefill.form.schemeName, 'Silver Leaf')
+  assert.equal(prefill.form.complexName, 'Silver Leaf')
+  assert.equal(prefill.form.postalCode, '0081')
+  assert.equal(prefill.form.suburb, 'Garsfontein')
+  assert.equal(prefill.form.ratesTaxes, 1200)
+  assert.equal(prefill.form.parkingCount, 2)
+  assert.equal(prefill.listingPayload.sellerType, 'company')
+  assert.equal(prefill.listingPayload.postalCode, '0081')
+  assert.equal(prefill.directListingIntake.sellerCanonicalFacts.property.schemeName, 'Silver Leaf')
+  assert.equal(prefill.directListingIntake.sellerCanonicalFacts.property.estateOrHoa, false)
+  assert.equal(prefill.publicationData.levies, 3450)
+  assert.equal(prefill.publicationData.description, undefined)
+  assert.equal(prefill.listingPayload.internalListingNotes, 'Internal condition note')
+  assert.equal(prefill.sellerOnboardingFormData.occupancyStatus, 'tenant_occupied')
+  assert.equal(prefill.sellerOnboardingFormData.leaseExpiryDate, '2027-03-31')
+  assert.equal(prefill.sellerOnboardingFormData.hasSignedFicaForm, true)
+  assert.equal(prefill.media.galleryImages.length, 1)
+  assert.equal(prefill.media.floorplans.length, 1)
+})
+
+test('unsubmitted ownership replacement details do not override the completed onboarding snapshot', () => {
+  const prefill = buildSellerLeadListingPrefill({
+    lead: {
+      rawEnquiryPayload: { kingstonsSellerProfile: { formData: { sellerLegalType: 'trust' } } },
+      sellerOnboarding: {
+        status: 'completed',
+        replacementRequired: true,
+        formData: { sellerLegalType: 'individual', sellerName: 'Existing', sellerSurname: 'Owner' },
+      },
+    },
+  })
+  assert.equal(prefill.directListingIntake.seller.sellerLegalType, 'individual')
 })
 
 test('agency seller conversion persists aligned prefill and draft distribution data', () => {
@@ -107,6 +184,8 @@ test('agency seller conversion persists aligned prefill and draft distribution d
   assert.match(agencySource, /persistSellerProfileOnboardingFormData\(\{\s*[\s\S]*formData: prefilledFormData/)
   assert.match(agencySource, /syncPrivateListingDistributionData\(createdListingId,\s*\{\s*[\s\S]*publicationData:\s*\{\s*[\s\S]*status: 'Draft'/)
   assert.match(agencySource, /externalLinks: \[\]/)
+  assert.match(agencySource, /if \(!createdListingAlreadyExisted \|\| \(existingListingForRetry && !Object\.keys\(existingOnboardingFormData\)\.length\)\) \{\s*const persistedOnboarding = await persistSellerProfileOnboardingFormData/)
+  assert.match(agencySource, /existingListingForRetry && !existingListingForRetry\.listingPublicationData && !existingListingHasMediaOrLinks/)
 })
 
 console.log('seller lead listing prefill alignment tests passed')

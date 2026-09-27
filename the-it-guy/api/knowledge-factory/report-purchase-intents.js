@@ -142,10 +142,11 @@ function productView(row) {
   };
 }
 function metric(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed) : null;
 }
-function supplierCosts(payload) {
+export function supplierCosts(payload) {
   const extension =
     payload?.extensions && typeof payload.extensions === "object"
       ? payload.extensions
@@ -155,11 +156,20 @@ function supplierCosts(payload) {
       ? extension.cost
       : extension;
   return {
-    fieldCost: metric(cost.fieldCost || cost.field_cost),
-    typeCost: metric(cost.typeCost || cost.type_cost),
-    surcharge: metric(cost.priceSurcharge || cost.price_surcharge),
-    credits: metric(cost.creditsConsumed || cost.credits_consumed),
+    fieldCost: metric(cost.fieldCost ?? cost.field_cost),
+    typeCost: metric(cost.typeCost ?? cost.type_cost),
+    surcharge: metric(cost.priceSurcharge ?? cost.price_surcharge),
+    credits: metric(cost.creditsConsumed ?? cost.credits_consumed),
   };
+}
+export function quoteFitsCommercialLimits(credits, preflight) {
+  const quotedCredits = metric(credits);
+  return quotedCredits !== null &&
+    Number.isFinite(preflight?.packageCreditCap) &&
+    Number.isFinite(preflight?.monthlyCreditCap) &&
+    Number.isFinite(preflight?.monthCredits) &&
+    quotedCredits <= preflight.packageCreditCap &&
+    preflight.monthCredits + quotedCredits <= preflight.monthlyCreditCap;
 }
 function supplierError(payload, fallback) {
   const message = text(payload?.errors?.[0]?.message, 300);
@@ -552,6 +562,8 @@ async function assertPackageCommercialPolicy(
   return {
     estimatedCredits,
     monthCredits,
+    packageCreditCap,
+    monthlyCreditCap: Number(policy.monthly_credit_cap || 0),
     rolloutStage: policy.rollout_stage,
     costValidation: costValidationSnapshot(validation),
   };
@@ -670,7 +682,7 @@ export default async function handler(request, response) {
         return json(response, 409, {
           error: "This report package is not yet approved for UAT use.",
         });
-      await assertPackageCommercialPolicy(db, organisationId, actorId, product);
+      const commercialPreflight = await assertPackageCommercialPolicy(db, organisationId, actorId, product);
       const supplierConfig = supplierRuntime();
       if (!/\/uat\/graphql\/?$/i.test(supplierConfig.endpoint)) {
         const error = new Error(
@@ -680,6 +692,13 @@ export default async function handler(request, response) {
         throw error;
       }
       const quote = await supplierQuote(supplierConfig, product.product_id, selectedPropertyId);
+      if (quote.costs.credits === null) {
+        const failure = new Error("The supplier did not return a validated credit cost. This report cannot be quoted yet.");
+        failure.status = 502;
+        throw failure;
+      }
+      if (!quoteFitsCommercialLimits(quote.costs.credits, commercialPreflight))
+        throw commercialFailure("The supplier quote exceeds the current report or monthly credit limit.");
       const quoteExpiresAt = new Date(Date.now() + 20 * 60_000).toISOString();
       const { data, error } = await db
         .from("knowledge_factory_report_purchase_intents")
@@ -726,7 +745,7 @@ export default async function handler(request, response) {
         .eq("status", "confirmed_pending_execution")
         .gt("quote_expires_at", new Date().toISOString())
         .select(
-          "id, property_id, product_id, product_name, included_fields, customer_price_cents, request_purpose",
+          "id, property_id, product_id, product_name, included_fields, customer_price_cents, request_purpose, quoted_supplier_credits",
         )
         .maybeSingle();
       if (intentError)
@@ -759,6 +778,8 @@ export default async function handler(request, response) {
           actorId,
           product,
         );
+        if (!quoteFitsCommercialLimits(intent.quoted_supplier_credits, commercialPreflight))
+          throw commercialFailure("This quote no longer fits the current report or monthly credit limit. Request a new estimate.");
         const supplierConfig = supplierRuntime();
         await assertPilotAccess(
           db,
@@ -766,7 +787,7 @@ export default async function handler(request, response) {
           actorId,
           commercialPreflight.rolloutStage,
           supplierConfig.endpoint,
-          commercialPreflight.estimatedCredits,
+          Math.max(commercialPreflight.estimatedCredits, Number(intent.quoted_supplier_credits)),
         );
         const result = await supplierReport(
           supplierConfig,

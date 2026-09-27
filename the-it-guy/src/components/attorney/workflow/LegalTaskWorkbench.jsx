@@ -13,8 +13,15 @@ import Button from '../../ui/Button.jsx'
 import Field from '../../ui/Field.jsx'
 import Modal from '../../ui/Modal.jsx'
 import TaskConfirmations from './TaskConfirmations.jsx'
+import TransferJourneyUpdateComposer from './TransferJourneyUpdateComposer.jsx'
 import { isAttorneyTaskResolved } from '../../../core/transactions/attorneyTaskOutcomes.js'
 import { relevantLegalTaskDocuments } from '../../../core/transactions/legalTaskWorkbenchModel.js'
+
+const CLEARANCE_TASK_SCOPE = {
+  municipal_rates_clearance_review: ['municipal', 'Municipal rates certificate'],
+  body_corporate_levy_clearance_review: ['bodyCorporate', 'Body corporate certificate'],
+  hoa_clearance_review: ['hoa', 'HOA certificate'],
+}
 
 function isAttachedDocument(document = {}) {
   return document?.missing !== true && Boolean(
@@ -57,8 +64,8 @@ function PhaseNavigator({
     return grouped
   }, [operationalHealth?.exceptions])
   return (
-    <aside className={`min-h-0 transition-[width] duration-200 xl:sticky xl:top-24 xl:self-start ${collapsed ? 'xl:w-[72px]' : ''}`}>
-      <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.035)]">
+    <aside className={`min-h-0 transition-[width] duration-200 xl:sticky xl:top-24 xl:max-h-[calc(100dvh-7rem)] xl:self-start ${collapsed ? 'xl:w-[72px]' : ''}`}>
+      <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_12px_28px_rgba(15,23,42,0.035)] xl:max-h-[calc(100dvh-7rem)]">
         <div className={`shrink-0 border-b border-slate-200 py-5 ${collapsed ? 'px-2' : 'px-5'}`}>
           <div className={`flex items-center ${collapsed ? 'justify-center' : 'justify-between gap-3'}`}>
             {!collapsed ? <h2 className="text-base font-semibold text-slate-950">{workflowLabel}</h2> : null}
@@ -170,6 +177,9 @@ export default function LegalTaskWorkbench({
   onRequestDocument,
   onOpenRoutingProfile,
   onOpenJourneyPublisher,
+  journeyStageKey = '',
+  onPublishJourneyUpdate,
+  canPublishJourneyUpdate = false,
   onMarkInProgress,
   onPersistTaskResponses,
   statusDraft = null,
@@ -227,6 +237,12 @@ export default function LegalTaskWorkbench({
   const [titleDetailsBusy, setTitleDetailsBusy] = useState(false)
   const [titleDetailsError, setTitleDetailsError] = useState('')
   const [answersDirty, setAnswersDirty] = useState(false)
+  const [journeyUpdateOpen, setJourneyUpdateOpen] = useState(false)
+
+  const openJourneyPublisher = () => {
+    setJourneyUpdateOpen(true)
+    onOpenJourneyPublisher?.()
+  }
 
   useEffect(() => {
     setReviewReason(''); setReviewFeedback(''); setReviewError('')
@@ -586,10 +602,11 @@ export default function LegalTaskWorkbench({
               <h2 className="mt-2 min-w-0 text-2xl font-semibold leading-tight tracking-[-0.025em] text-slate-950 sm:text-3xl">{model.taskLabel}</h2>
               {model.taskDescription ? <p className="mt-2 max-w-2xl text-sm leading-5 text-slate-600">{model.taskDescription}</p> : null}
             </div>
-            {activePhase ? <div className="w-full shrink-0 sm:w-52">
+            {activePhase ? <div className="w-full shrink-0 sm:w-56">
               <span className="text-xs font-semibold text-slate-600">Stage progress</span>
               <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-slate-200"><span className="block h-full rounded-full bg-emerald-700" style={{ width: `${phaseProgress}%` }} /></span>
               <span className="mt-1 block text-xs text-slate-500">{activePhase.completed} of {activePhase.total} complete</span>
+              {onPublishJourneyUpdate ? <Button type="button" variant="secondary" size="sm" className="mt-3 w-full" disabled={!canPublishJourneyUpdate || !journeyStageKey} onClick={openJourneyPublisher} title={!canPublishJourneyUpdate ? 'Only the assigned firm team can publish client journey updates.' : ''}>Add stage update</Button> : null}
             </div> : null}
           </header>
 
@@ -601,12 +618,13 @@ export default function LegalTaskWorkbench({
             {model.financialPreparation ? <section className="rounded-xl border border-emerald-200 bg-emerald-50/40 px-4 py-4" aria-label="Financial preparation route">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div><h3 className="text-sm font-semibold text-slate-950">Selected tax and property route</h3><p className="mt-1 text-sm text-slate-700">{model.financialPreparation.route} · {model.financialPreparation.property}</p></div>
-                {onOpenRoutingProfile ? <Button type="button" variant="secondary" size="sm" onClick={onOpenRoutingProfile}>Edit tax and clearance facts</Button> : null}
+                {onOpenRoutingProfile ? <Button type="button" variant="secondary" size="sm" onClick={() => onOpenRoutingProfile(CLEARANCE_TASK_SCOPE[model.taskKey]?.[0] || 'all')}>{CLEARANCE_TASK_SCOPE[model.taskKey] ? `Edit ${CLEARANCE_TASK_SCOPE[model.taskKey][1].toLowerCase()}` : 'Edit tax and clearance facts'}</Button> : null}
               </div>
               {!model.financialPreparation.applicable ? <p role="alert" className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900">This task is not part of the currently selected route. Review the matter profile and mark the historical task not applicable if appropriate.</p> : null}
               {model.financialPreparation.unknownRoute ? <p role="alert" className="mt-3 text-xs font-medium text-amber-900">The tax route still needs an attorney decision.</p> : null}
               {!model.financialPreparation.unknownRoute && model.financialPreparation.routeUnconfirmed ? <p role="alert" className="mt-3 text-xs font-medium text-amber-900">The selected tax route has not yet been confirmed by an attorney.</p> : null}
               {model.financialPreparation.checks.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2">{model.financialPreparation.checks.map((item) => <div key={item.label} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><span className="block font-medium text-slate-600">{item.label}</span><span className={`mt-1 block font-semibold ${item.state === 'ready' ? 'text-emerald-800' : 'text-amber-900'}`}>{item.value}{item.state === 'expired' ? ' · expired' : item.state === 'missing' ? ' · needed' : item.state === 'attention' ? ' · review needed' : ''}</span></div>)}</div> : null}
+              {model.taskKey === 'municipal_rates_clearance_review' ? <p className="mt-3 text-xs text-slate-600">Check the certificate’s valid-until date before lodgement. If its issue date is known, the 60-day municipal period is checked here.</p> : null}
               {model.financialPreparation.notApplicable.length ? <details className="mt-3 text-xs text-slate-600"><summary className="w-fit cursor-pointer font-medium">Not applicable to this route</summary><p className="mt-1">{model.financialPreparation.notApplicable.join(' · ')}</p></details> : null}
               <p className="mt-3 text-xs text-slate-600">These values come from the saved matter profile. A Yes answer below does not replace a missing reference, document, or valid clearance date.</p>
             </section> : null}
@@ -638,7 +656,7 @@ export default function LegalTaskWorkbench({
               <div className="flex flex-wrap items-start justify-between gap-3"><div><h3 className="text-sm font-semibold text-slate-950">Post-registration close-out</h3><p className="mt-1 text-xs text-slate-600">Financial work stays internal; the registration update goes only to selected client portals; file closure is recorded separately.</p></div><span role="status" className={`rounded-full px-3 py-1 text-xs font-semibold ${model.closureReview.ready ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'}`}>{model.closureReview.ready ? 'Ready for this outcome' : `${model.closureReview.issues.length} item${model.closureReview.issues.length === 1 ? '' : 's'} to review`}</span></div>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs"><strong className="block text-slate-900">1 · Financial close-out</strong><p className="mt-1 text-slate-600">{model.closureReview.financial.complete ? 'Final accounts reviewed' : 'Final account review outstanding'}</p><span className="mt-2 inline-block font-semibold text-slate-600">Internal attorney work</span></div>
-                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs"><strong className="block text-slate-900">2 · Registration communication</strong><p className="mt-1 text-slate-600">{model.closureReview.communication.published ? `Published to ${model.closureReview.communication.recipients.join(' and ')}` : 'No registration-stage client update found'}</p>{!model.closureReview.communication.published && onOpenJourneyPublisher ? <button type="button" className="mt-2 font-semibold text-emerald-800 hover:underline" onClick={onOpenJourneyPublisher}>Publish registration update</button> : null}</div>
+                <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs"><strong className="block text-slate-900">2 · Registration communication</strong><p className="mt-1 text-slate-600">{model.closureReview.communication.published ? `Published to ${model.closureReview.communication.recipients.join(' and ')}` : 'No registration-stage client update found'}</p>{!model.closureReview.communication.published && (onPublishJourneyUpdate || onOpenJourneyPublisher) ? <button type="button" className="mt-2 font-semibold text-emerald-800 hover:underline disabled:cursor-not-allowed disabled:opacity-50" disabled={Boolean(onPublishJourneyUpdate && (!canPublishJourneyUpdate || !journeyStageKey))} onClick={openJourneyPublisher}>Publish registration update</button> : null}</div>
                 <div className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-xs"><strong className="block text-slate-900">3 · Administrative closure</strong><p className="mt-1 text-slate-600">{model.closureReview.administrative.complete ? 'File closed' : 'Closure checklist outstanding'}</p><span className="mt-2 inline-block font-semibold text-slate-600">Professional team only</span></div>
               </div>
               {model.closureReview.issues.length ? <ul className="mt-3 space-y-1 text-xs text-amber-900">{model.closureReview.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul> : null}
@@ -708,6 +726,19 @@ export default function LegalTaskWorkbench({
         </div>
       </main>
       </section>
+
+      <Modal open={journeyUpdateOpen} title="Client journey stage update" onClose={() => setJourneyUpdateOpen(false)}>
+        <TransferJourneyUpdateComposer
+          key={journeyStageKey || 'unavailable'}
+          stageKey={journeyStageKey}
+          compact
+          disabled={!canPublishJourneyUpdate || saving}
+          onPublish={async (update) => {
+            await onPublishJourneyUpdate?.(update)
+            setJourneyUpdateOpen(false)
+          }}
+        />
+      </Modal>
 
       <Modal
         open={teamModalOpen}

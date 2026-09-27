@@ -344,8 +344,9 @@ export function buildDirectListingPropertyFacts(form = {}) {
   )
   const propertyCategory = normalizePropertyCategory(form.propertyCategory, { fallback: 'residential' })
   const address = normalizeText(pickFirst(form.formattedAddress, form.propertyAddress, form.address))
+  const isSectionalStructure = ['sectional_title', 'share_block'].includes(propertyStructureType)
   const estateOrHoa = normalizeBooleanDeclaration(pickFirst(form.estateOrHoa, form.estate_or_hoa)) === true ||
-    Boolean(normalizeText(pickFirst(form.estateName, form.estate_name, form.estateComplexName, form.estate_complex_name)))
+    Boolean(normalizeText(pickFirst(form.estateName, form.estate_name, !isSectionalStructure ? form.estateComplexName : '', !isSectionalStructure ? form.estate_complex_name : '')))
 
   return compactObject({
     address,
@@ -387,8 +388,10 @@ export function buildDirectListingPropertyFacts(form = {}) {
     unit_number: normalizeText(form.unitNumber),
     sectionNumber: normalizeText(form.sectionNumber),
     section_number: normalizeText(form.sectionNumber),
-    complexName: normalizeText(form.complexName),
-    complex_name: normalizeText(form.complexName),
+    complexName: normalizeText(pickFirst(form.complexName, isSectionalStructure ? form.schemeName : '', form.estateComplexName)),
+    complex_name: normalizeText(pickFirst(form.complexName, isSectionalStructure ? form.schemeName : '', form.estateComplexName)),
+    schemeName: normalizeText(form.schemeName),
+    scheme_name: normalizeText(form.schemeName),
     estateName: normalizeText(form.estateName),
     estate_name: normalizeText(form.estateName),
     sectionalTitleNumber: normalizeText(form.sectionalTitleNumber),

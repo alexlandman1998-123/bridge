@@ -42,6 +42,7 @@ import {
   updateListingSellerProfileDraftPerson,
 } from '../../lib/listingSellerProfileBuilderModel'
 import { buildSellerSubject } from '../../lib/sellerSubjectModel'
+import { downloadHtmlDocumentPdf } from '../../lib/htmlDocumentPdf'
 import { buildSellerFicaScope } from '../../lib/sellerFicaScopeModel'
 import { getSellerProfileNarrativeNotes } from '../../lib/sellerLeadProfileNotesModel'
 import { needsSellerOwnershipSetup, resolveSellerInformationEditMode } from '../../lib/sellerOwnershipSetupRouting'
@@ -143,6 +144,7 @@ import { resolveSellerLeadUploadVisibility } from '../../services/documents/sell
 import { buildSellerComplianceAgentStatus } from '../../core/documents/sellerComplianceAgentStatusModel'
 import { buildSellerCompliancePortalModel } from '../../core/documents/sellerCompliancePortalModel'
 import { buildSellerPostOnboardingDrafts } from '../../core/documents/sellerPostOnboardingDrafts'
+import { projectSellerPackFromOnboarding } from '../../core/documents/sellerPackOnboardingProjection'
 import { buildSellerOnboardingSigningPackSnapshot } from '../../core/documents/sellerOnboardingSigningPackSnapshot'
 import { createSellerOnboardingFormalPackApproval } from '../../core/documents/sellerOnboardingFormalPackApproval'
 import { createSellerOnboardingManualSigningPack } from '../../core/documents/sellerOnboardingManualSigningPack'
@@ -1052,8 +1054,7 @@ function getLeadPrimaryPersonName(lead = {}, contact = {}) {
   )
 }
 
-function buildKingstonsSellerFicaRoleplayers(lead = {}, contact = {}) {
-  const pack = getKingstonsSellerPackState(lead)
+function buildKingstonsSellerFicaRoleplayers(lead = {}, contact = {}, pack = getKingstonsSellerPackState(lead)) {
   const legalPath = asRecord(pack.legalPath || pack.legal_path || pack.sellerProfile || pack.seller_profile)
   const naturalPath = asRecord(legalPath.natural || legalPath.person)
   const juristicPath = asRecord(legalPath.juristic || legalPath.entity)
@@ -1118,9 +1119,8 @@ function buildKingstonsSellerFicaRoleplayers(lead = {}, contact = {}) {
   return roleplayers
 }
 
-function buildKingstonsSellerFicaRoleplayerDocumentRows(lead = {}, contact = {}) {
-  const pack = getKingstonsSellerPackState(lead)
-  const roleplayers = buildKingstonsSellerFicaRoleplayers(lead, contact)
+function buildKingstonsSellerFicaRoleplayerDocumentRows(lead = {}, contact = {}, pack = getKingstonsSellerPackState(lead)) {
+  const roleplayers = buildKingstonsSellerFicaRoleplayers(lead, contact, pack)
   return roleplayers.flatMap((roleplayer) =>
     KINGSTONS_SELLER_FICA_ROLEPLAYER_DOCUMENTS.map((definition, index) => {
       const key = normalizeKey(`seller_fica_${roleplayer.id}_${definition.key}`)
@@ -1598,9 +1598,10 @@ function parseLeadRawEnquiryPayload(value) {
   }
 }
 
-function getKingstonsSellerPackState(lead = {}) {
+function getKingstonsSellerPackState(lead = {}, { listing = null } = {}) {
   const rawPayload = parseLeadRawEnquiryPayload(lead?.rawEnquiryPayload || lead?.raw_enquiry_payload)
-  const pack = asRecord(
+  const listingRecord = asRecord(listing)
+  const savedPack = asRecord(
     lead?.kingstonsSellerPack ||
       lead?.kingstons_seller_pack ||
       lead?.sellerPack ||
@@ -1608,8 +1609,22 @@ function getKingstonsSellerPackState(lead = {}) {
       rawPayload.kingstonsSellerPack ||
       rawPayload.kingstons_seller_pack ||
       rawPayload.sellerPack ||
-      rawPayload.seller_pack,
+      rawPayload.seller_pack ||
+      listingRecord.kingstonsSellerPack ||
+      listingRecord.kingstons_seller_pack ||
+      listingRecord.sellerPack ||
+      listingRecord.seller_pack,
   )
+  const pack = projectSellerPackFromOnboarding({
+    lead,
+    listing: listingRecord,
+    formData: {
+      ...getListingSellerFormData(listingRecord),
+      ...getLeadSellerOnboardingFormData(lead),
+    },
+    existingPack: savedPack,
+    onboardingSubmitted: hasMandateSellerOnboardingSubmitted(lead) || hasMandateSellerOnboardingSubmitted(listingRecord),
+  })
   const rawDocuments = asRecord(pack.documents || pack.documentUploads || pack.uploads)
   return {
     ...pack,
@@ -2790,8 +2805,8 @@ function buildKingstonsFormalValuationDocumentRow(lead = {}) {
   }
 }
 
-function buildKingstonsSellerPackBaselineDocumentRows(lead = {}) {
-  const sellerPack = getKingstonsSellerPackState(lead)
+function buildKingstonsSellerPackBaselineDocumentRows(lead = {}, listing = null) {
+  const sellerPack = getKingstonsSellerPackState(lead, { listing })
   return KINGSTONS_SELLER_PACK_DOCUMENTS.map((definition) => {
     const uploaded = asRecord(sellerPack.documents?.[definition.key])
     const uploadedAt = firstWorkspaceText(uploaded.uploadedAt, uploaded.uploaded_at)
@@ -2857,11 +2872,11 @@ function buildKingstonsSellerPackDocumentRows(lead = {}, {
   mandatePacketStatus = null,
   contact = null,
 } = {}) {
-  const baselineRows = buildKingstonsSellerPackBaselineDocumentRows(lead)
-  const sellerPack = getKingstonsSellerPackState(lead)
+  const baselineRows = buildKingstonsSellerPackBaselineDocumentRows(lead, listing)
+  const sellerPack = getKingstonsSellerPackState(lead, { listing })
   const ownershipDocsUnlocked = hasKingstonsSellerPackDetailsCompletionSignal(sellerPack)
   const roleplayerFicaRows = ownershipDocsUnlocked
-    ? buildKingstonsSellerFicaRoleplayerDocumentRows(lead, contact || {})
+    ? buildKingstonsSellerFicaRoleplayerDocumentRows(lead, contact || {}, sellerPack)
     : []
   const sourceRows = ownershipDocsUnlocked
     ? buildSellerLeadDocumentRowsFromSource({
@@ -2869,6 +2884,7 @@ function buildKingstonsSellerPackDocumentRows(lead = {}, {
         listing,
         journey,
         mandatePacketStatus,
+        kingstonsSellerPack: sellerPack,
       })
     : []
   const generatedRows = sourceRows.filter((documentRow) => {
@@ -4531,6 +4547,7 @@ function buildSellerLeadDocumentRowsFromSource({
   listing = null,
   journey = null,
   mandatePacketStatus = null,
+  kingstonsSellerPack = null,
 } = {}) {
   const listingRecord = listing && typeof listing === 'object' ? listing : {}
   const leadRecord = lead && typeof lead === 'object' ? lead : {}
@@ -4555,6 +4572,7 @@ function buildSellerLeadDocumentRowsFromSource({
   const sourceListing = {
     ...leadRecord,
     ...listingRecord,
+    ...(kingstonsSellerPack ? { kingstonsSellerPack } : {}),
     sellerCanonicalFacts: isPlainObject(leadRecord?.sellerCanonicalFacts)
       ? leadRecord.sellerCanonicalFacts
       : isPlainObject(leadRecord?.seller_canonical_facts)
@@ -4602,23 +4620,6 @@ function buildSellerLeadDocumentRowsFromSource({
   return source.rows
     .map(mapSellerLeadDocumentSourceRow)
     .filter((row) => !isStaleSellerLeadDocumentRequirement(row))
-}
-
-function openSellerLeadGeneratedDocumentHtml(markup = '', fileName = 'seller-document.html') {
-  if (typeof window === 'undefined' || typeof URL === 'undefined' || typeof Blob === 'undefined') return
-  const html = String(markup || '').trim()
-  if (!html) return
-  const targetWindow = window.open('about:blank', '_blank')
-  if (!targetWindow) return
-  const documentTitle = normalizeText(fileName).replace(/[-_]+/g, ' ').replace(/\.(html?|pdf)$/i, '').trim() || 'Seller document'
-  const htmlWithTitle = html.replace(
-    /<\/body>\s*<\/html>\s*$/i,
-    `<script>window.addEventListener('load',function(){document.title=${JSON.stringify(documentTitle)}})</script></body></html>`,
-  )
-  const blob = new Blob([htmlWithTitle || html], { type: 'text/html;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  targetWindow.location.href = url
-  window.setTimeout(() => URL.revokeObjectURL(url), 60 * 1000)
 }
 
 function sanitizeSellerLeadDownloadFileName(value = '', fallback = 'seller-document.pdf') {
@@ -5470,7 +5471,7 @@ async function triggerSellerLeadBrowserDownload(url = '', fileName = 'seller-doc
     anchor.remove()
   } finally {
     if (objectUrl && typeof URL !== 'undefined' && typeof URL.revokeObjectURL === 'function') {
-      URL.revokeObjectURL(objectUrl)
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000)
     }
   }
 }
@@ -6395,6 +6396,7 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
     listingSource?.listingStatus,
     listingSource?.listing_status,
     listingSource?.status,
+    listingSource?.stage,
     listing?.status,
     journey?.kpis?.find?.((item) => item.key === 'listing')?.value,
   )
@@ -6439,32 +6441,28 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
       rows: [
         { label: 'Property type', value: propertyType },
         { label: 'Property title type', value: titleCaseWorkspaceValue(firstWorkspaceText(onboarding?.propertyStructureType, onboarding?.property_structure_type, onboarding?.ownershipScheme, onboarding?.propertyTitleType, onboarding?.property_title_type, propertyDetails?.propertyStructureType, propertyDetails?.propertyTitleType)) },
-        { label: 'Complex / Estate', value: firstWorkspaceText(onboarding?.estateComplexName, onboarding?.complexName, onboarding?.estateName, propertyDetails?.complexName, listingSource?.estateName) },
+        { label: 'Complex / Estate / Scheme', value: firstWorkspaceText(onboarding?.estateComplexName, onboarding?.complexName, onboarding?.estateName, onboarding?.schemeName, propertyDetails?.complexName, propertyDetails?.schemeName, listingSource?.estateName) },
         { label: 'Erf / Stand number', value: firstWorkspaceText(onboarding?.erfNumber, onboarding?.standNumber, lead?.erfNumber, propertyDetails?.erfNumber) },
         { label: 'Sectional title', value: firstWorkspaceValue(onboarding?.sectionalTitle, onboarding?.isSectionalTitle, propertyDetails?.sectionalTitle) },
-        { label: 'Scheme name', value: firstWorkspaceText(onboarding?.schemeName, propertyDetails?.schemeName) },
         { label: 'Section number', value: firstWorkspaceText(onboarding?.sectionNumber, propertyDetails?.sectionNumber) },
         { label: 'Unit number', value: firstWorkspaceText(onboarding?.unitNumber, onboarding?.unit_number, propertyDetails?.unitNumber) },
         { label: 'Suburb', value: suburb },
         { label: 'City', value: city },
         { label: 'Province', value: province },
         { label: 'Postal code', value: postalCode },
-        { label: 'GPS coordinates', value: firstWorkspaceText(
-          onboarding?.latitude && onboarding?.longitude ? `${onboarding.latitude}, ${onboarding.longitude}` : '',
-          onboarding?.propertyAddressDetails?.latitude && onboarding?.propertyAddressDetails?.longitude ? `${onboarding.propertyAddressDetails.latitude}, ${onboarding.propertyAddressDetails.longitude}` : '',
-          lead?.latitude && lead?.longitude ? `${lead.latitude}, ${lead.longitude}` : '',
-          propertyDetails?.latitude && propertyDetails?.longitude ? `${propertyDetails.latitude}, ${propertyDetails.longitude}` : '',
-        ) },
       ].map((row) => ({ ...row, value: formatCapturedValue(row.value) })),
     },
     listing: {
-      hasListing: journey?.listingCreated === true,
+      hasListing: journey?.listingCreated === true || (Boolean(listingId) && [
+        'listing_review', 'mandate_ready', 'mandate_sent', 'mandate_signed', 'active', 'listing_active', 'published',
+      ].includes(normalizeText(listingStatus).toLowerCase())),
+      isPrivateDraft: Boolean(listingId) && normalizeText(listingStatus).toLowerCase() === 'listing_review' && journey?.listingCreated !== true,
       id: listingId,
       status: listingStatus || 'Not created',
       statusTone: journey?.listingLive || normalizeText(listingStatus).toLowerCase().includes('live') || normalizeText(listingStatus).toLowerCase().includes('active') ? 'success' : listingId ? 'warning' : 'neutral',
       title: firstWorkspaceText(listingSource?.listingTitle, listingSource?.title, listingSource?.propertyName, listing?.title, formattedAddress, addressLine),
       reference: firstWorkspaceText(listingSource?.listingReference, listingSource?.reference, listingSource?.listing_reference, listingId),
-      askingPrice: firstWorkspaceValue(listingSource?.askingPrice, listingSource?.asking_price, listingSource?.price, lead?.estimatedValue, onboarding?.askingPrice),
+      askingPrice: firstWorkspaceValue(listingSource?.askingPrice, listingSource?.asking_price, listingSource?.price, onboarding?.askingPrice),
       estimatedValue: firstWorkspaceValue(lead?.estimatedValue, lead?.estimated_value, listingSource?.estimatedValue, listingSource?.estimated_value, onboarding?.estimatedValue),
       createdAt: firstWorkspaceText(listingSource?.createdAt, listingSource?.created_at, listing?.createdAt, lead?.createdAt),
       updatedAt: firstWorkspaceText(listingSource?.updatedAt, listingSource?.updated_at, listing?.updatedAt, lead?.updatedAt),
@@ -6480,11 +6478,6 @@ function buildSellerPropertyWorkspaceViewModel({ lead = {}, listing = null, jour
         { label: 'Erf size', value: firstWorkspaceValue(lead?.erfSize, onboarding?.erfSize, onboarding?.propertySize, propertyDetails?.erfSize, listingSource?.erfSize), suffix: 'm²', Icon: Ruler },
         { label: 'Floor size', value: firstWorkspaceValue(lead?.floorSize, onboarding?.floorSize, propertyDetails?.floorSize, listingSource?.floorSize), suffix: 'm²', Icon: Building2 },
       ],
-      details: [
-        { label: 'Storeys', value: firstWorkspaceValue(onboarding?.storeys, propertyDetails?.storeys) },
-        { label: 'Year built', value: firstWorkspaceValue(onboarding?.yearBuilt, propertyDetails?.yearBuilt) },
-        { label: 'Condition', value: firstWorkspaceValue(onboarding?.propertyCondition, onboarding?.condition, propertyDetails?.condition) },
-      ].map((row) => ({ ...row, value: formatCapturedValue(row.value) })),
       features,
     },
     occupancy: {
@@ -9112,7 +9105,7 @@ function buildKingstonsSellerProfileEditForm({ lead = {}, contact = {}, listing 
     primaryResidence: toSellerProfileText(onboarding?.primaryResidence || onboarding?.primary_residence),
     propertyAddress: normalizeText(onboarding?.propertyAddress || onboarding?.propertyAddressDetails?.formatted || onboarding?.formattedAddress || lead?.sellerPropertyAddress || lead?.formattedAddress),
     propertyType: normalizeText(onboarding?.propertyType || onboarding?.property_type || lead?.propertyType || propertyDetails?.propertyType || (workspaceTextLooksLikeAddress(lead?.propertyInterest) ? '' : lead?.propertyInterest)),
-    estateComplexName: normalizeText(onboarding?.estateComplexName || onboarding?.complexName || onboarding?.estateName || propertyDetails?.complexName),
+    estateComplexName: normalizeText(onboarding?.estateComplexName || onboarding?.complexName || onboarding?.estateName || onboarding?.schemeName || propertyDetails?.complexName || propertyDetails?.schemeName),
     erfNumber: normalizeText(onboarding?.erfNumber || onboarding?.standNumber || lead?.erfNumber || propertyDetails?.erfNumber),
     sectionalTitle: toSellerProfileText(firstWorkspaceValue(onboarding?.sectionalTitle, onboarding?.isSectionalTitle, propertyDetails?.sectionalTitle)),
     schemeName: normalizeText(onboarding?.schemeName || propertyDetails?.schemeName),
@@ -11683,9 +11676,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   const [message, setMessage] = useState('')
   const [sellerLinkCopiedKind, setSellerLinkCopiedKind] = useState('')
   const [openingSellerLeadDocumentId, setOpeningSellerLeadDocumentId] = useState('')
+  const [sellerLeadGeneratedPreview, setSellerLeadGeneratedPreview] = useState(null)
+  const [sellerLeadGeneratedPreviewDownloading, setSellerLeadGeneratedPreviewDownloading] = useState(false)
+  const [sellerLeadGeneratedPreviewError, setSellerLeadGeneratedPreviewError] = useState('')
   const [sellerPackUploadingKey, setSellerPackUploadingKey] = useState('')
   const [sellerPackHandoffRetrying, setSellerPackHandoffRetrying] = useState(false)
   const [sellerLeadMandateUploading, setSellerLeadMandateUploading] = useState(false)
+  const [sellerDraftListingCreating, setSellerDraftListingCreating] = useState(false)
+  const sellerDraftListingCreatingRef = useRef(false)
   const [sellerLeadDocumentUploadingKey, setSellerLeadDocumentUploadingKey] = useState('')
   const [formalValuationUploading, setFormalValuationUploading] = useState(false)
   const [buyerOfferDocumentUploading, setBuyerOfferDocumentUploading] = useState(false)
@@ -17266,8 +17264,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     ],
   )
   const selectedKingstonsSellerPackBaselineRows = useMemo(
-    () => selectedLeadHasKingstonsPipelineSignal ? buildKingstonsSellerPackBaselineDocumentRows(selectedLead || {}) : [],
-    [selectedLead, selectedLeadHasKingstonsPipelineSignal],
+    () => selectedLeadHasKingstonsPipelineSignal ? buildKingstonsSellerPackBaselineDocumentRows(selectedLead || {}, selectedLeadLinkedListing) : [],
+    [selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadLinkedListing],
   )
   const selectedKingstonsSellerPackSummary = useMemo(
     () => summarizeKingstonsSellerPack(selectedKingstonsSellerPackRows),
@@ -17280,8 +17278,8 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     [selectedLeadHasKingstonsPipelineSignal, selectedLeadLinkedListingId, selectedLeadDocumentHydrationStatus, selectedKingstonsSellerPackRows, selectedLeadLinkedListing?.documents],
   )
   const selectedKingstonsSellerPack = useMemo(
-    () => selectedLeadHasKingstonsPipelineSignal ? getKingstonsSellerPackState(selectedLead || {}) : { documents: {}, sellerType: '' },
-    [selectedLead, selectedLeadHasKingstonsPipelineSignal],
+    () => selectedLeadHasKingstonsPipelineSignal ? getKingstonsSellerPackState(selectedLead || {}, { listing: selectedLeadLinkedListing }) : { documents: {}, sellerType: '' },
+    [selectedLead, selectedLeadHasKingstonsPipelineSignal, selectedLeadLinkedListing],
   )
   const selectedKingstonsListingTerms = useMemo(
     () => selectedLeadIsSeller && selectedLeadHasKingstonsPipelineSignal
@@ -17348,6 +17346,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         listing: selectedLeadLinkedListing,
         journey: selectedSellerJourney,
         mandatePacketStatus,
+        kingstonsSellerPack: selectedLeadHasKingstonsPipelineSignal ? selectedKingstonsSellerPack : null,
       })
       const usableSourceRows = sourceRows.filter((row) =>
         !isStaleKingstonsBaselineDocumentRow(row) &&
@@ -17383,6 +17382,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       selectedLeadHasKingstonsPipelineSignal,
       selectedLeadLinkedListing,
       selectedLeadOnboardingCompleted,
+      selectedKingstonsSellerPack,
       selectedSellerJourney,
     ],
   )
@@ -25745,9 +25745,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return null
     }
     if (!selectedLeadIsSeller) return null
+    if (actionOptions.createPrivateDraft && selectedSellerJourney.onboardingSubmitted !== true) {
+      setError('Submit seller onboarding before creating a private draft listing.')
+      return null
+    }
     const suppliedSellerPackHandoff = actionOptions.kingstonsHandoffPayload || null
     const suppliedSignedMandate = suppliedSellerPackHandoff?.sellerCanonicalFactReadiness?.signedMandate === true
-    if (selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete && !suppliedSignedMandate) {
+    if (!actionOptions.createPrivateDraft && selectedLeadHasKingstonsPipelineSignal && !selectedKingstonsSellerPackSummary.complete && !suppliedSignedMandate) {
       handleLeadWorkspaceTabSelection('documents')
       setError(`Complete the Kingston Seller Pack before creating the listing. Still needed: ${selectedKingstonsSellerPackSummary.missingLabels.join(', ')}.`)
       return null
@@ -25768,7 +25772,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       handleLeadWorkspaceTabSelection('documents')
       return null
     }
-    const listingStatusForCreation = listingMandateSigned && !actionOptions.deferMandatePromotion ? 'mandate_signed' : 'seller_lead'
+    const listingStatusForCreation = listingMandateSigned && !actionOptions.deferMandatePromotion
+      ? 'mandate_signed'
+      : actionOptions.createPrivateDraft ? 'listing_review' : 'seller_lead'
     const mandateStatusForCreation = actionOptions.deferMandatePromotion
       ? 'not_started'
       : hasKingstonsSellerPackListingHandoff || suppliedSignedMandate
@@ -25810,30 +25816,50 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     const prefilledPublicationData = sellerLeadListingPrefill.publicationData || {}
     const prefilledFormData = sellerLeadListingPrefill.sellerOnboardingFormData || {}
     const prefilledForm = sellerLeadListingPrefill.form || {}
+    const onboardingSubmittedForListing = selectedSellerJourney.onboardingSubmitted === true
     const useDbFirstListingPersistence = Boolean(isSupabaseConfigured && !MOCK_DATA_ENABLED)
     let createdListingId = ''
+    let createdListingAlreadyExisted = false
     let sellerPackSyncResult = null
     let sellerPackSyncError = ''
     let sellerPortalAutoSent = false
     let sellerPortalAutoSendError = ''
+    const draftPrefillWarnings = []
 
     if (useDbFirstListingPersistence) {
-      const created = await createPrivateListing({
+      let linkedListingForDraft = null
+      if (actionOptions.createPrivateDraft && isUuidLike(selectedLeadLinkedListingId)) {
+        linkedListingForDraft = await getPrivateListing(selectedLeadLinkedListingId, { includeRequirementsAndDocuments: false })
+        if (linkedListingForDraft) {
+          const linkedOrganisationId = normalizeText(linkedListingForDraft?.organisationId || linkedListingForDraft?.organisation_id)
+          const linkedLeadIds = [
+            linkedListingForDraft?.originatingCrmLeadId,
+            linkedListingForDraft?.originating_crm_lead_id,
+            linkedListingForDraft?.sellerLeadId,
+            linkedListingForDraft?.seller_lead_id,
+          ].map(normalizeLeadIdentityKey).filter(Boolean)
+          const currentLeadIds = [selectedLead?.leadId, selectedLead?.sellerWorkflowLeadId].map(normalizeLeadIdentityKey).filter(Boolean)
+          const explicitlyLinkedId = normalizeText(selectedLead?.listingId || selectedLead?.listing_id || selectedLead?.privateListingId || selectedLead?.private_listing_id)
+          if (linkedOrganisationId !== normalizeText(organisationId) ||
+            (!linkedLeadIds.some((id) => currentLeadIds.includes(id)) && explicitlyLinkedId !== selectedLeadLinkedListingId)) {
+            throw new Error('The matching property listing could not be verified as this seller lead’s listing. Link the correct listing before creating a draft.')
+          }
+        }
+      }
+      const created = linkedListingForDraft
+        ? { listing: linkedListingForDraft, existing: true }
+        : await createPrivateListing({
         organisationId,
         assignedAgentId: normalizeText(selectedLead?.assignedAgentId || currentAgent.id),
         sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
         originatingCrmLeadId: normalizeLeadIdentityKey(selectedLead?.leadId),
-        sellerOnboardingStatus:
-          normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
-            ? 'completed'
-            : 'not_started',
-        listingVisibility: 'internal',
+        sellerOnboardingStatus: onboardingSubmittedForListing ? 'completed' : 'not_started',
         ...prefilledListingPayload,
         listingSource: 'seller_lead_intake',
         title: normalizeText(prefilledListingPayload.title || selectedLead?.propertyInterest || sellerLeadPropertyAddress),
         propertyType: normalizeText(prefilledListingPayload.propertyType || selectedLeadPropertyType) || 'House',
         listingCategory: 'private_sale',
-        askingPrice: Number(prefilledListingPayload.askingPrice || selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+        askingPrice: Number(prefilledListingPayload.askingPrice || 0) || 0,
         estimatedValue: Number(prefilledListingPayload.estimatedValue || selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
         addressLine1: normalizeText(prefilledListingPayload.addressLine1 || sellerLeadStreetAddress),
         formattedAddress: normalizeText(prefilledListingPayload.formattedAddress || sellerLeadPropertyAddress),
@@ -25847,54 +25873,82 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         longitude: prefilledListingPayload.longitude ?? selectedLead?.longitude ?? null,
         googlePlaceId: normalizeText(prefilledListingPayload.googlePlaceId || selectedLead?.googlePlaceId),
         ...(kingstonsListingHandoffPayload?.listingPayload || {}),
+        listingVisibility: 'internal',
+        isActive: false,
         listingStatus: listingStatusForCreation,
         mandateStatus: mandateStatusForCreation,
         source: 'pipeline_seller_conversion',
-      })
+        })
       createdListingId = normalizeText(created?.listing?.id)
+      createdListingAlreadyExisted = created?.existing === true
       if (!createdListingId) {
         setError('Unable to create canonical listing from this seller lead.')
         return null
       }
-      if (created?.existing) {
-        const existingListingSigned = ['mandate_signed', 'active', 'under_offer', 'transaction_created', 'sold']
-          .includes(normalizeKey(created?.listing?.listingStatus || created?.listing?.listing_status))
-        await updatePrivateListing(createdListingId, {
-          ...prefilledListingPayload,
-          ...(kingstonsListingHandoffPayload?.listingPayload || {}),
-          listingStatus: existingListingSigned ? (created.listing.listingStatus || created.listing.listing_status) : listingStatusForCreation,
-          mandateStatus: existingListingSigned ? (created.listing.mandateStatus || created.listing.mandate_status) : mandateStatusForCreation,
-        }, { includeRequirementsAndDocuments: false }).catch((prefillUpdateError) => {
-          console.warn('[AgencyPipelinePage] seller lead listing prefill update skipped for existing listing.', prefillUpdateError)
-        })
+      const existingListingForRetry = createdListingAlreadyExisted
+        ? linkedListingForDraft || await getPrivateListing(createdListingId, { includeRequirementsAndDocuments: false }).catch((readError) => {
+            console.warn('[AgencyPipelinePage] existing seller lead listing could not be checked for safe prefill recovery.', readError)
+            draftPrefillWarnings.push('Existing listing details could not be checked.')
+            return null
+          })
+        : null
+      if (actionOptions.createPrivateDraft && createdListingAlreadyExisted) {
+        if (!existingListingForRetry) throw new Error('The linked listing could not be checked before creating a private draft.')
+        const existingStatus = normalizeText(existingListingForRetry.listingStatus || existingListingForRetry.listing_status).toLowerCase()
+        if (['draft', 'seller_lead', 'onboarding_sent', 'onboarding_completed'].includes(existingStatus)) {
+          await updatePrivateListing(createdListingId, {
+            listingStatus: 'listing_review',
+            listingVisibility: 'internal',
+            isActive: false,
+          }, { includeRequirementsAndDocuments: false })
+        }
       }
-      await persistSellerProfileOnboardingFormData({
-        listingId: createdListingId,
-        token: normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token),
-        formData: prefilledFormData,
-        status: normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
-          ? 'completed'
-          : normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
-            ? 'in_progress'
-            : 'not_started',
-        sellerType: sellerLeadListingPrefill.directListingIntake?.seller?.sellerLegalType || prefilledForm.sellerType,
-        ownershipStructure: sellerLeadListingPrefill.directListingIntake?.seller?.ownerStructureType || prefilledForm.ownershipType,
-      }).catch((prefillPersistenceError) => {
-        console.warn('[AgencyPipelinePage] seller lead listing prefill form data persistence skipped.', prefillPersistenceError)
-        return null
-      })
-      await syncPrivateListingDistributionData(createdListingId, {
-        publicationData: {
-          ...prefilledPublicationData,
-          status: 'Draft',
-        },
-        media: sellerLeadListingPrefill.media || {},
-        externalLinks: [],
-      }).catch((distributionError) => {
-        console.warn('[AgencyPipelinePage] seller lead listing draft distribution prefill skipped.', distributionError)
-        return null
-      })
-      if (selectedLeadHasKingstonsPipelineSignal && !suppliedSellerPackHandoff) {
+      const existingOnboardingFormData = existingListingForRetry?.sellerOnboarding?.formData || existingListingForRetry?.sellerOnboarding?.form_data || {}
+      if (!createdListingAlreadyExisted || (existingListingForRetry && !Object.keys(existingOnboardingFormData).length)) {
+        const persistedOnboarding = await persistSellerProfileOnboardingFormData({
+          listingId: createdListingId,
+          token: normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token),
+          formData: prefilledFormData,
+          status: onboardingSubmittedForListing || normalizeText(existingListingForRetry?.sellerOnboarding?.status || '').toLowerCase() === 'completed'
+            ? 'completed'
+            : normalizeText(selectedLead?.sellerOnboardingToken || selectedLead?.sellerOnboarding?.token)
+              ? 'in_progress'
+              : 'not_started',
+          sellerType: sellerLeadListingPrefill.directListingIntake?.seller?.sellerLegalType || prefilledForm.sellerType,
+          ownershipStructure: sellerLeadListingPrefill.directListingIntake?.seller?.ownerStructureType || prefilledForm.ownershipType,
+        }).catch((prefillPersistenceError) => {
+          console.warn('[AgencyPipelinePage] seller lead listing prefill form data persistence failed.', prefillPersistenceError)
+          return null
+        })
+        if (!persistedOnboarding) draftPrefillWarnings.push('Seller onboarding details could not be saved to the listing.')
+      }
+      const existingListingHasMediaOrLinks = Boolean(
+        existingListingForRetry?.galleryImages?.length ||
+        existingListingForRetry?.images?.length ||
+        existingListingForRetry?.externalLinks?.length ||
+        existingListingForRetry?.listingExternalLinks?.length,
+      )
+      // Distribution sync replaces media and links; retry only when neither exists.
+      const shouldPrefillDistribution = !createdListingAlreadyExisted || (
+        existingListingForRetry && !existingListingForRetry.listingPublicationData && !existingListingHasMediaOrLinks
+      )
+      if (shouldPrefillDistribution) {
+        const distributionResult = await syncPrivateListingDistributionData(createdListingId, {
+          publicationData: {
+            ...prefilledPublicationData,
+            status: 'Draft',
+          },
+          media: sellerLeadListingPrefill.media || {},
+          externalLinks: [],
+        }).catch((distributionError) => {
+          console.warn('[AgencyPipelinePage] seller lead listing draft distribution prefill failed.', distributionError)
+          return null
+        })
+        if (!distributionResult || distributionResult.skipped) draftPrefillWarnings.push('Listing marketing details or media could not be saved.')
+      } else if (createdListingAlreadyExisted && existingListingForRetry && !existingListingForRetry.listingPublicationData) {
+        draftPrefillWarnings.push('Existing listing media needs review before marketing details can be restored.')
+      }
+      if (!createdListingAlreadyExisted && selectedLeadHasKingstonsPipelineSignal && !suppliedSellerPackHandoff) {
         kingstonsListingHandoffPayload = buildKingstonsSellerPackListingHandoffPayload({
           lead: selectedLead,
           documentRows: selectedKingstonsSellerPackRows,
@@ -25912,7 +25966,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         })
       }
 
-      await createPrivateListingActivity({
+      if (!createdListingAlreadyExisted) await createPrivateListingActivity({
         privateListingId: createdListingId,
         activityType: 'listing_updated',
         activityTitle: 'Listing linked from seller lead',
@@ -25938,14 +25992,15 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         {
           sellerLeadId: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
           id: normalizeLeadIdentityKey(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId),
-          sellerName: normalizeText(selectedLeadContact?.firstName),
-          sellerSurname: normalizeText(selectedLeadContact?.lastName),
-          sellerEmail: normalizeText(selectedLeadContact?.email),
-          sellerPhone: normalizeText(selectedLeadContact?.phone),
+          sellerName: normalizeText(prefilledForm.sellerName || selectedLeadContact?.firstName),
+          sellerSurname: normalizeText(prefilledForm.sellerSurname || selectedLeadContact?.lastName),
+          sellerEmail: normalizeText(prefilledForm.sellerEmail || selectedLeadContact?.email),
+          sellerPhone: normalizeText(prefilledForm.sellerPhone || selectedLeadContact?.phone),
           propertyAddress: normalizeText(prefilledForm.propertyAddress || sellerLeadPropertyAddress),
           propertyType: normalizeText(prefilledForm.propertyType || selectedLeadPropertyType) || 'House',
           propertyStructureType: normalizeText(prefilledForm.propertyStructureType),
-          estimatedPrice: Number(prefilledForm.askingPrice || selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
+          estimatedPrice: Number(prefilledForm.askingPrice || 0) || 0,
+          estimatedValue: Number(prefilledForm.estimatedValue || selectedLead?.estimatedValue || selectedLead?.budget || 0) || 0,
           listingTitle: normalizeText(prefilledForm.listingTitle || selectedLead?.propertyInterest || sellerLeadPropertyAddress),
           suburb: normalizeText(prefilledForm.suburb || selectedLead?.suburb || selectedLead?.areaInterest),
           city: normalizeText(prefilledForm.city || selectedLead?.city),
@@ -25957,6 +26012,13 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           },
           propertyData: {
             ...prefilledPublicationData,
+            propertyStructureType: prefilledForm.propertyStructureType,
+            schemeName: prefilledForm.schemeName,
+            complexName: prefilledForm.complexName,
+            estateName: prefilledForm.estateName,
+            unitNumber: prefilledForm.unitNumber,
+            sectionNumber: prefilledForm.sectionNumber,
+            occupancyStatus: prefilledForm.occupancyStatus,
             formattedAddress: normalizeText(prefilledForm.formattedAddress || sellerLeadPropertyAddress),
             streetAddress: normalizeText(prefilledForm.streetAddress || sellerLeadStreetAddress),
             addressLine1: normalizeText(prefilledForm.addressLine1 || sellerLeadStreetAddress),
@@ -25981,7 +26043,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           sellerOnboarding: {
             token: normalizeText(selectedLead?.sellerOnboardingToken),
             link: normalizeText(selectedLead?.sellerOnboardingLink),
-            status: normalizeText(selectedLead?.sellerOnboardingStatus || '').toLowerCase() === 'completed'
+            status: onboardingSubmittedForListing
               ? SELLER_ONBOARDING_STATUS.COMPLETED
               : SELLER_ONBOARDING_STATUS.NOT_STARTED,
             formData: prefilledFormData,
@@ -25992,7 +26054,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           },
         },
         {
-          stage: listingMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+          stage: listingMandateSigned
+            ? LISTING_STATUS.MANDATE_SIGNED
+            : actionOptions.createPrivateDraft ? 'listing_review' : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
         },
       )
 
@@ -26004,7 +26068,9 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       updateAgentSellerLead(normalizeText(selectedLead?.sellerWorkflowLeadId || selectedLead?.leadId), (row) => ({
         ...row,
         listingDraftId: listingDraft.id,
-        listingStatus: listingMandateSigned ? LISTING_STATUS.MANDATE_SIGNED : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
+        listingStatus: listingMandateSigned
+          ? LISTING_STATUS.MANDATE_SIGNED
+          : actionOptions.createPrivateDraft ? 'listing_review' : LISTING_STATUS.SELLER_ONBOARDING_COMPLETED,
       }))
     }
 
@@ -26016,7 +26082,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
         console.warn('[AgencyPipelinePage] Kingston Seller Pack listing handoff failed.', sellerPackError)
       }
       const sellerEmail = normalizeText(selectedLeadContact?.email || selectedLead?.sellerEmail || selectedLead?.email)
-      if (!sellerPackSyncError && isValidEmail(sellerEmail)) {
+      if (!actionOptions.suppressSellerPortalInvite && !createdListingAlreadyExisted && !sellerPackSyncError && isValidEmail(sellerEmail)) {
         try {
           await activateSellerPortalForListing({
             listingId: createdListingId,
@@ -26070,21 +26136,27 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
           ? 'Sent'
           : 'Seller Lead'
 
-    await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, {
-      stage: leadStageAfterDraft,
-      status: leadStatusAfterDraft,
-      listingId: createdListingId,
-    })
-    await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
+    await updateAgencyCrmLeadRecord(organisationId, selectedLead.leadId, createdListingAlreadyExisted
+      ? { listingId: createdListingId }
+      : {
+          stage: leadStageAfterDraft,
+          status: leadStatusAfterDraft,
+          listingId: createdListingId,
+        })
+    if (!createdListingAlreadyExisted) await createAgencyCrmLeadActivity(organisationId, selectedLead.leadId, {
       agent: { id: currentAgent.id, name: currentAgent.fullName, email: currentAgent.email },
-      activityType: draftListingReady ? 'Listing Draft Created' : 'Seller Intake Prepared',
+      activityType: draftListingReady || actionOptions.createPrivateDraft ? 'Listing Draft Created' : 'Seller Intake Prepared',
       activityNote: selectedLeadHasKingstonsPipelineSignal
         ? KINGSTONS_SELLER_PACK_LISTING_HANDOFF_SOURCE
+        : actionOptions.createPrivateDraft
+          ? 'private_listing_draft_created_from_seller_onboarding'
         : draftListingReady
           ? 'listing_draft_created_after_mandate'
           : 'seller_intake_prepared_for_mandate_handoff',
       outcome: selectedLeadHasKingstonsPipelineSignal
         ? 'Seller Pack handoff'
+        : actionOptions.createPrivateDraft
+          ? 'Private draft for internal review'
         : draftListingReady
           ? 'Mandate signed'
           : actionOptions.deferMandatePromotion ? 'Signed mandate linking' : 'Mandate upload required',
@@ -26098,10 +26170,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       setError(`Seller Pack handoff needs attention. ${sellerPackSyncError}`)
     } else if (sellerPortalAutoSendError) {
       setError(`Listing created, but Seller Portal link needs attention. ${sellerPortalAutoSendError}`)
+    } else if (draftPrefillWarnings.length) {
+      setError(`Listing created, but its details need attention. ${draftPrefillWarnings.join(' ')}`)
     }
     setMessage(
       actionOptions.successMessage
         ? actionOptions.successMessage
+        : createdListingAlreadyExisted
+          ? 'Existing listing linked to this seller lead.'
         : sellerPortalAutoSent
         ? 'Listing created, Seller Pack linked, and Seller Portal link sent.'
         : sellerPackSyncResult?.linked === selectedKingstonsSellerPackSummary.total
@@ -26113,13 +26189,45 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
             : 'Seller intake prepared. No Draft Listing will appear until the mandate is signed.',
     )
     await reloadRecords(organisationId)
-    return { listingId: createdListingId, mandateSigned: listingMandateSigned }
+    if (actionOptions.createPrivateDraft && useDbFirstListingPersistence) {
+      const refreshedDraft = await getPrivateListing(createdListingId, { includeRequirementsAndDocuments: true }).catch((refreshError) => {
+        console.warn('[AgencyPipelinePage] private draft created but its lead preview could not be refreshed.', refreshError)
+        return null
+      })
+      if (refreshedDraft) {
+        setSelectedLeadHydratedListing({
+          ...refreshedDraft,
+          listingOptionSourceAuthority: 'canonical_hydrated_listing',
+        })
+      }
+    }
+    return { listingId: createdListingId, mandateSigned: listingMandateSigned, existing: createdListingAlreadyExisted }
+  }
+
+  async function handleCreateSellerPropertyDraftListing() {
+    if (sellerDraftListingCreatingRef.current || sellerLeadMandateUploading) return
+    sellerDraftListingCreatingRef.current = true
+    setSellerDraftListingCreating(true)
+    setError('')
+    try {
+      await handleCreateListingFromSellerLead({
+        createPrivateDraft: true,
+        allowPreMandateIntake: true,
+        suppressSellerPortalInvite: true,
+        successMessage: 'Private draft listing is ready for review. The seller has not been invited and the listing is not published.',
+      })
+    } catch (draftError) {
+      setError(draftError?.message || 'The private draft listing could not be created. Please try again.')
+    } finally {
+      sellerDraftListingCreatingRef.current = false
+      setSellerDraftListingCreating(false)
+    }
   }
 
   async function handleSellerLeadSignedMandateUpload(event = null, documentRow = {}) {
     const file = event?.target?.files?.[0] || null
     if (event?.target) event.target.value = ''
-    if (!file || sellerLeadMandateUploading) return
+    if (!file || sellerLeadMandateUploading || sellerDraftListingCreatingRef.current) return
     if (!selectedLead?.leadId || !organisationId) {
       setError('Select a seller lead before uploading the signed mandate.')
       return
@@ -27547,6 +27655,39 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
 
+  function openSellerLeadGeneratedDocumentHtml(markup = '', fileName = 'seller-document.html', { canDownload = true } = {}) {
+    const html = String(markup || '').trim()
+    if (!html) {
+      setError('This document does not have a preview yet.')
+      return
+    }
+    const safeFileName = sanitizeSellerLeadDownloadFileName(fileName, 'seller-document.pdf')
+    setSellerLeadGeneratedPreview({
+      markup: html,
+      fileName: safeFileName,
+      title: safeFileName.replace(/[-_]+/g, ' ').replace(/\.(html?|pdf)$/i, '').trim() || 'Seller document',
+      canDownload,
+    })
+    setSellerLeadGeneratedPreviewError('')
+  }
+
+  async function handleDownloadSellerLeadGeneratedPreview() {
+    if (!sellerLeadGeneratedPreview?.canDownload || sellerLeadGeneratedPreviewDownloading) return
+    try {
+      setSellerLeadGeneratedPreviewDownloading(true)
+      setSellerLeadGeneratedPreviewError('')
+      await downloadHtmlDocumentPdf(
+        sellerLeadGeneratedPreview.markup,
+        sellerLeadGeneratedPreview.fileName,
+        { stageName: 'seller-lead-generated-preview' },
+      )
+    } catch (downloadError) {
+      setSellerLeadGeneratedPreviewError(downloadError?.message || 'Unable to download this PDF right now.')
+    } finally {
+      setSellerLeadGeneratedPreviewDownloading(false)
+    }
+  }
+
   async function handleOpenSellerLeadFinalSignedDocument(documentRow = {}) {
     const packetId = normalizeText(documentRow?.packetId || documentRow?.packet_id)
     const versionId = normalizeText(documentRow?.packetVersionId || documentRow?.packet_version_id)
@@ -27725,7 +27866,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
     if (event?.target) event.target.value = ''
     const leadIdForUpload = normalizeText(selectedLead?.leadId || selectedLead?.lead_id || selectedLeadRecordId || routeLeadId)
     if (!key || !definition || !file || !leadIdForUpload) return
-    const currentPack = getKingstonsSellerPackState(selectedLead || routeLeadSnapshotLead || { leadId: leadIdForUpload })
+    const currentPack = getKingstonsSellerPackState(selectedLead || routeLeadSnapshotLead || { leadId: leadIdForUpload }, { listing: selectedLeadLinkedListing })
     const isFicaDeclarationUpload = normalizeSellerBasePackKey(key) === SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION
     const isOwnershipDrivenDocument = normalizeKey(definition.requirementLane || definition.requirement_lane) === 'ownership_driven' ||
       normalizeKey(definition.documentRequirementSection || definition.document_requirement_section) === 'seller_identity_fica'
@@ -28205,7 +28346,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   }
 
   function openKingstonsSellerPackWizard(initialStep = '') {
-    const currentPack = getKingstonsSellerPackState(selectedLead || {})
+    const currentPack = getKingstonsSellerPackState(selectedLead || {}, { listing: selectedLeadLinkedListing })
     const draft = buildKingstonsSellerPackProfileDraft(currentPack)
     const fallbackOwnerName = normalizeText(selectedLeadDisplayName === 'Lead Workspace' ? '' : selectedLeadDisplayName)
     if (!normalizeKingstonsSellerPackOwnerDrafts(draft.owners).length && fallbackOwnerName) {
@@ -28333,7 +28474,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
       return
     }
     if (!selectedLead || !KINGSTONS_SELLER_PACK_KEY_SET.has(SELLER_BASE_PACK_KEYS.SIGNED_FICA_DECLARATION)) return
-    const currentPack = getKingstonsSellerPackState(selectedLead)
+    const currentPack = getKingstonsSellerPackState(selectedLead, { listing: selectedLeadLinkedListing })
     const profilePayload = buildKingstonsSellerPackProfilePayload(draft)
     try {
       setKingstonsSellerPackWizardSaving(true)
@@ -39513,7 +39654,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                             <TrendingUp className="h-4 w-4" /> Listing & Readiness
                           </p>
                           <h4 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-[#102033]">
-                            {selectedLeadPropertyWorkspace.listing.hasListing ? `${selectedLeadPropertyWorkspace.listing.readiness.percent}% ready` : 'Listing not created'}
+                            {selectedLeadPropertyWorkspace.listing.isPrivateDraft
+                              ? 'Private draft listing'
+                              : selectedLeadPropertyWorkspace.listing.hasListing
+                                ? `${selectedLeadPropertyWorkspace.listing.readiness.percent}% ready`
+                                : 'Listing not created'}
                           </h4>
                           <p className="mt-2 text-sm leading-6 text-[#60758b]">
                             {selectedLeadPropertyWorkspace.listing.hasListing
@@ -39524,6 +39669,14 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                       {selectedLeadPropertyWorkspace.listing.hasListing ? (
                         <div className="mt-5 space-y-4">
+                          {selectedLeadPropertyWorkspace.listing.id ? (
+                            <Button type="button" size="sm" variant="secondary" className="rounded-[12px]" onClick={() => navigate(`/listings/${selectedLeadPropertyWorkspace.listing.id}`)}>
+                              Open {selectedLeadPropertyWorkspace.listing.isPrivateDraft ? 'Draft Listing' : 'Listing'}
+                            </Button>
+                          ) : null}
+                          {selectedLeadPropertyWorkspace.listing.isPrivateDraft ? (
+                            <p className="text-sm leading-6 text-[#60758b]">This draft is for internal review. The signed mandate, seller portal invitation, and publication remain separate steps.</p>
+                          ) : null}
                           <div className="rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
                             <p className="text-xs font-semibold text-[#607891]">Linked listing</p>
                             <p className="mt-1 break-words text-sm font-semibold text-[#102033]">{selectedLeadPropertyWorkspace.listing.title || 'Listing'}</p>
@@ -39574,12 +39727,21 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       ) : (
                         <div className="mt-5 rounded-[16px] border border-[#e6eef7] bg-[#fbfdff] p-4">
                           <p className="text-sm font-semibold uppercase tracking-[0.12em] text-[#7890a8]">Listing not created</p>
-                          <p className="mt-2 text-sm leading-6 text-[#60758b]">This is a read-only progress indicator. Listing creation is managed in the seller journey after the mandate stage.</p>
+                          <p className="mt-2 text-sm leading-6 text-[#60758b]">
+                            {selectedSellerJourney.onboardingSubmitted
+                              ? 'Create a private draft using the submitted seller onboarding details. The seller will not be invited and the listing will not be published.'
+                              : 'Submit seller onboarding to prepare a private draft listing.'}
+                          </p>
+                          {selectedSellerJourney.onboardingSubmitted ? (
+                            <Button type="button" size="sm" className="mt-4 rounded-[12px]" disabled={sellerDraftListingCreating || sellerLeadMandateUploading} onClick={() => void handleCreateSellerPropertyDraftListing()}>
+                              {sellerDraftListingCreating ? 'Creating Draft...' : 'Create Draft Listing'}
+                            </Button>
+                          ) : null}
                         </div>
                       )}
                     </section>
 
-                    <section className="order-3 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)]">
+                    <section className="order-3 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:self-stretch">
                       <div className="flex items-center justify-between gap-3">
                         <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
                           <Ruler className="h-4 w-4" /> Property Characteristics
@@ -39602,14 +39764,6 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                           )
                         })}
                       </div>
-                      <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                        {selectedLeadPropertyWorkspace.characteristics.details.map((row) => (
-                          <div key={row.label} className="rounded-[14px] border border-[#e6eef7] bg-white px-4 py-3">
-                            <p className="text-xs font-semibold text-[#7890a8]">{row.label}</p>
-                            <p className={`mt-1 text-sm font-semibold ${row.value === 'Not captured' ? 'text-[#8aa0b7]' : 'text-[#20364c]'}`}>{row.value}</p>
-                          </div>
-                        ))}
-                      </div>
                       <div className="mt-5">
                         <p className="text-xs font-semibold text-[#607891]">Features</p>
                         <div className="mt-2 flex flex-wrap gap-2">
@@ -39622,7 +39776,7 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                       </div>
                     </section>
 
-                    <section className="order-4 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)]">
+                    <section className="order-4 rounded-[22px] border border-[#dbe7f2] bg-white p-5 shadow-[0_16px_38px_rgba(31,54,78,0.06)] xl:self-stretch">
                       <p className="flex items-center gap-2 text-[0.72rem] font-semibold uppercase tracking-[0.16em] text-[#12764f]">
                         <UserRound className="h-4 w-4" /> Occupancy & Ownership
                       </p>
@@ -39716,10 +39870,10 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                         const uploadBusy = sellerLeadDocumentUploadingKey === uploadKey || (isFormalValuation ? formalValuationUploading : sellerPackUploadingKey === documentKey)
                         return <>
                           {(documentRow.canDownload !== false && documentRow.can_download !== false) && (hasFile || (!awaitingServerPdf && generatedHtml) || documentRow.canonicalFinalArtifact) ? <button type="button" disabled={openingSellerLeadDocumentId === normalizeText(documentRow.id || documentRow.key)} onClick={() => {
-                            if (generatedHtml && !documentStoragePath && !documentUrl) openSellerLeadGeneratedDocumentHtml(generatedHtml, documentRow.generatedFileName || documentRow.generated_file_name || `${documentRow.label || 'seller-document'}.html`)
+                            if (generatedHtml && !documentStoragePath && !documentUrl) openSellerLeadGeneratedDocumentHtml(generatedHtml, documentRow.generatedFileName || documentRow.generated_file_name || `${documentRow.label || 'seller-document'}.html`, { canDownload: documentRow.canDownload !== false && documentRow.can_download !== false })
                             else if (documentRow.canonicalFinalArtifact && !documentStoragePath && !documentUrl) void handleOpenSellerLeadFinalSignedDocument(documentRow)
                             else void handleDownloadSellerLeadDocumentUrl(documentRow)
-                          }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60">{generatedHtml && !hasFile ? <ExternalLink className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />} {generatedHtml && !hasFile ? 'Open preview' : 'Download'}</button> : null}
+                          }} className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] disabled:opacity-60">{generatedHtml && !hasFile ? <Eye className="h-3.5 w-3.5" /> : <Download className="h-3.5 w-3.5" />} {generatedHtml && !hasFile ? 'Open preview' : 'Download'}</button> : null}
                           {awaitingServerPdf ? <span className="inline-flex min-h-9 items-center gap-1.5 rounded-[11px] border border-[#dbe4ee] bg-[#f7fafc] px-3 text-xs font-semibold text-[#6a8098]"><Clock3 className="h-3.5 w-3.5" /> Finalising PDF</span> : null}
                           {isFicaDocument && requiresOwnershipSetup ? <button type="button" onClick={() => openSellerLeadEditModal('profile')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Set Up Ownership</button> : null}
                           {selectedLeadHasKingstonsPipelineSignal && isFicaDocument && !completionAcknowledgementOnly && !isPostOnboardingDocument && !requiresOwnershipSetup && !detailsCaptured ? <button type="button" onClick={() => openKingstonsSellerPackWizard(selectedKingstonsSellerPackSummary.sellerTypeCaptured ? 'details' : 'type')} className="inline-flex min-h-9 items-center rounded-[11px] bg-[#13784f] px-3 text-xs font-semibold text-white">Capture details</button> : null}
@@ -39943,10 +40097,11 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
 	                                                    onClick={() => openSellerLeadGeneratedDocumentHtml(
                                                       generatedHtml,
                                                       documentRow.generatedFileName || documentRow.generated_file_name || documentRow.uploadedFileName || `${documentRow.label || 'seller-document'}.html`,
-	                                                    )}
+                                                      { canDownload: documentRow.canDownload !== false && documentRow.can_download !== false },
+                                                    )}
 	                                                    className="inline-flex min-h-9 items-center gap-1.5 rounded-[12px] border border-[#dbe4ee] bg-white px-3 text-xs font-semibold text-[#315b7a] hover:border-[#b9cde3]"
 	                                                  >
-	                                                    Open preview <ExternalLink className="h-3.5 w-3.5" />
+	                                                    Open preview <Eye className="h-3.5 w-3.5" />
 	                                                  </button>
 	                                              ) : canOpenCanonicalFinalArtifact ? (
                                                 <button
@@ -40284,6 +40439,32 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
   </section>
 </>
       )}
+
+      <Modal
+        open={Boolean(sellerLeadGeneratedPreview)}
+        onClose={() => setSellerLeadGeneratedPreview(null)}
+        title={sellerLeadGeneratedPreview?.title || 'Seller document preview'}
+        subtitle={sellerLeadGeneratedPreview?.canDownload ? 'Review the document, then download a PDF copy.' : 'Review the document.'}
+        className="max-w-5xl"
+        footer={(
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setSellerLeadGeneratedPreview(null)}>Close</Button>
+            {sellerLeadGeneratedPreview?.canDownload ? (
+              <Button type="button" disabled={sellerLeadGeneratedPreviewDownloading} onClick={() => void handleDownloadSellerLeadGeneratedPreview()}>
+                <Download className="mr-2 h-4 w-4" />{sellerLeadGeneratedPreviewDownloading ? 'Preparing PDF…' : 'Download PDF'}
+              </Button>
+            ) : null}
+          </div>
+        )}
+      >
+        {sellerLeadGeneratedPreviewError ? <p role="alert" className="mb-3 rounded-xl border border-[#f3c6c1] bg-[#fff6f5] px-4 py-3 text-sm text-[#a33c32]">{sellerLeadGeneratedPreviewError}</p> : null}
+        <iframe
+          title={`${sellerLeadGeneratedPreview?.title || 'Seller document'} preview`}
+          srcDoc={sellerLeadGeneratedPreview?.markup || ''}
+          sandbox="allow-same-origin"
+          className="h-[68vh] min-h-[420px] w-full rounded-xl border border-[#dbe4ee] bg-white"
+        />
+      </Modal>
 
       <Modal
         open={sellerOnboardingReviewModalOpen}
@@ -40905,22 +41086,22 @@ function AgencyPipelinePage({ initialViewMode = 'pipeline' } = {}) {
                     <option key={value} value={value}>{titleCaseWorkspaceValue(value)}</option>
                   ))}
                 </Field>
-                <Field placeholder="Complex / Estate" value={sellerProfileEditForm.estateComplexName} onChange={(event) => updateSellerProfileEditField('estateComplexName', event.target.value)} />
+                <Field placeholder="Complex / Estate / Scheme" value={sellerProfileEditForm.estateComplexName} onChange={(event) => {
+                  const value = event.target.value
+                  setSellerProfileEditForm((previous) => ({ ...previous, estateComplexName: value, schemeName: value }))
+                }} />
                 <Field placeholder="Erf / Stand number" value={sellerProfileEditForm.erfNumber} onChange={(event) => updateSellerProfileEditField('erfNumber', event.target.value)} />
                 <Field as="select" aria-label="Sectional title" value={sellerProfileEditForm.sectionalTitle} onChange={(event) => updateSellerProfileEditField('sectionalTitle', event.target.value)}>
                   <option value="">Sectional title — not captured</option>
                   <option value="Yes">Sectional title — Yes</option>
                   <option value="No">Sectional title — No</option>
                 </Field>
-                <Field placeholder="Scheme name" value={sellerProfileEditForm.schemeName} onChange={(event) => updateSellerProfileEditField('schemeName', event.target.value)} />
                 <Field placeholder="Section number" value={sellerProfileEditForm.sectionNumber} onChange={(event) => updateSellerProfileEditField('sectionNumber', event.target.value)} />
                 <Field placeholder="Unit number" value={sellerProfileEditForm.unitNumber} onChange={(event) => updateSellerProfileEditField('unitNumber', event.target.value)} />
                 <Field placeholder="Suburb" value={sellerProfileEditForm.propertySuburb} onChange={(event) => updateSellerProfileEditField('propertySuburb', event.target.value)} />
                 <Field placeholder="City" value={sellerProfileEditForm.propertyCity} onChange={(event) => updateSellerProfileEditField('propertyCity', event.target.value)} />
                 <Field placeholder="Province" value={sellerProfileEditForm.propertyProvince} onChange={(event) => updateSellerProfileEditField('propertyProvince', event.target.value)} />
                 <Field placeholder="Postal code" value={sellerProfileEditForm.propertyPostalCode} onChange={(event) => updateSellerProfileEditField('propertyPostalCode', event.target.value)} />
-                <Field placeholder="GPS latitude" value={sellerProfileEditForm.latitude} onChange={(event) => updateSellerProfileEditField('latitude', event.target.value)} />
-                <Field placeholder="GPS longitude" value={sellerProfileEditForm.longitude} onChange={(event) => updateSellerProfileEditField('longitude', event.target.value)} />
               </div>
             ) : null}
 

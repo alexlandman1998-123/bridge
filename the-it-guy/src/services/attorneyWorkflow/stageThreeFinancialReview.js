@@ -1,4 +1,4 @@
-import { PHASE4_PROPERTY_TASKS, PHASE4_TAX_TASKS, phase4PropertyTaskKeys, phase4TaxTaskKeys, isClearanceValidUntil } from './transferPhase4Policy.js'
+import { PHASE4_PROPERTY_TASKS, PHASE4_TAX_TASKS, phase4PropertyTaskKeys, phase4TaxTaskKeys, isClearanceValidUntil, isMunicipalClearanceValidUntil } from './transferPhase4Policy.js'
 import { resolveTransferTaxDecision } from '../transferTaxDecisionService.js'
 
 const ROUTE_LABELS = {
@@ -31,11 +31,14 @@ function answerCheck(label, value, expected = null) {
 
 function clearanceChecks(type, label, conditions, now) {
   const clearance = conditions.clearances?.[type] || {}
+  const dateCurrent = isClearanceValidUntil(clearance.validUntil, now)
   return [
     check(`${label} issuer`, clearance.issuer),
     check(`${label} certificate reference`, clearance.reference || clearance.certificateReference),
+    ...(type === 'municipal' && clearance.issuedOn ? [check(`${label} issued on`, clearance.issuedOn)] : []),
     check(`${label} valid until`, clearance.validUntil, {
-      valid: isClearanceValidUntil(clearance.validUntil, now), missingLabel: 'Date missing', invalidState: 'expired',
+      valid: type === 'municipal' ? isMunicipalClearanceValidUntil(clearance, now) : dateCurrent,
+      missingLabel: 'Date missing', invalidState: dateCurrent ? 'attention' : 'expired',
     }),
   ]
 }

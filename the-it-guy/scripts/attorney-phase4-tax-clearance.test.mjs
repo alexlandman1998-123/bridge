@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { buildMatterWorkflowPlan } from '../src/services/attorneyWorkflow/matterWorkflowPlanService.js'
-import { PHASE4_TAX_TASKS, PHASE4_PROPERTY_TASKS } from '../src/services/attorneyWorkflow/transferPhase4Policy.js'
+import { PHASE4_TAX_TASKS, PHASE4_PROPERTY_TASKS, isMunicipalClearanceValidUntil } from '../src/services/attorneyWorkflow/transferPhase4Policy.js'
 
 const { PGlite } = await import(process.env.PGLITE_MODULE || '@electric-sql/pglite')
 const db = new PGlite()
@@ -111,4 +111,37 @@ await db.query("update transactions set routing_profile_json=jsonb_set(routing_p
 assert.equal((await db.query('select status from transaction_subprocess_steps where subprocess_id=$1 and step_key=$2',
   [lane, 'sars_transfer_tax_receipt_verified'])).rows[0].status, 'not_started', 'changed tax basis reopens old SARS review')
 await assert.rejects(complete('lodged_at_deeds_office'), /applicable statutory exemption/)
+
+const windowDb = new PGlite()
+await windowDb.exec(`
+create role authenticated;
+create role anon;
+create schema journey_private;
+create table public.transactions(id text primary key, routing_profile_json jsonb);
+create table public.transaction_subprocesses(id text primary key, transaction_id text, process_type text);
+create table public.transaction_subprocess_steps(subprocess_id text, step_key text, status text);
+`)
+await windowDb.exec(readFileSync(new URL('../../supabase/migrations/20260927090000_attorney_municipal_clearance_issue_window.sql', import.meta.url), 'utf8'))
+const windowDates = (await windowDb.query(`select current_date::text as today,
+  (current_date - 1)::text as issued_on, (current_date - 31)::text as old_issue,
+  (current_date + 30)::text as valid_until`)).rows[0]
+const validMunicipal = { issuedOn: windowDates.issued_on, validUntil: windowDates.valid_until }
+assert.equal(isMunicipalClearanceValidUntil(validMunicipal, `${windowDates.today}T12:00:00Z`), true)
+assert.equal(isMunicipalClearanceValidUntil({ ...validMunicipal, issuedOn: windowDates.old_issue }, `${windowDates.today}T12:00:00Z`), false)
+assert.equal(isMunicipalClearanceValidUntil({ validUntil: windowDates.valid_until }, `${windowDates.today}T12:00:00Z`), true,
+  'existing records with only a verified expiry remain usable')
+await windowDb.query('insert into public.transactions values ($1,$2)', ['matter-window', {
+  mvpProfile: { propertyConditions: { clearances: {
+    municipal: { ...validMunicipal, issuedOn: windowDates.old_issue },
+    bodyCorporate: { issuedOn: windowDates.old_issue, validUntil: windowDates.valid_until },
+  } } },
+}])
+await windowDb.query('insert into public.transaction_subprocesses values ($1,$2,$3)', ['lane-window', 'matter-window', 'transfer'])
+await windowDb.query('insert into public.transaction_subprocess_steps values ($1,$2,$3)', ['lane-window', 'lodgement_ready', 'not_started'])
+await assert.rejects(windowDb.query("update public.transaction_subprocess_steps set status='completed' where subprocess_id='lane-window'"), /within 60 days of issue/)
+await windowDb.query(`update public.transactions set routing_profile_json =
+  jsonb_set(routing_profile_json, '{mvpProfile,propertyConditions,clearances,municipal,issuedOn}', $1::jsonb)
+  where id='matter-window'`, [JSON.stringify(windowDates.issued_on)])
+await windowDb.query("update public.transaction_subprocess_steps set status='completed' where subprocess_id='lane-window'")
+assert.equal((await windowDb.query("select status from public.transaction_subprocess_steps where subprocess_id='lane-window'")).rows[0].status, 'completed')
 console.log('Phase 4 tax and clearance migration checks passed.')

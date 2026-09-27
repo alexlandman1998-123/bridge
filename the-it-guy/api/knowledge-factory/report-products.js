@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { hasRecordedContractEvidence } from "./contract-evidence-policy.js";
 
 const ADMIN_ROLES = new Set([
   "principal",
@@ -233,7 +234,7 @@ function mergeProducts(rows, validations, commercialPolicy = null, contractCheck
   }
   const passedContractOperations = new Set(
     (contractChecks || [])
-      .filter((item) => item.status === "passed")
+      .filter(hasRecordedContractEvidence)
       .map((item) => item.operation_key),
   );
   return Object.entries(PRODUCTS).map(([productId, template]) => {
@@ -332,7 +333,7 @@ export default async function handler(request, response) {
         .maybeSingle(),
       db
         .from("knowledge_factory_uat_contract_checks")
-        .select("operation_key, status")
+        .select("operation_key, status, observed_field_manifest, cost_evidence")
         .eq("organisation_id", organisationId),
     ]);
     if (productError || validationError || commercialPolicyError || contractCheckError)

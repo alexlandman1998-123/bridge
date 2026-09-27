@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { hasRecordedContractEvidence } from "./contract-evidence-policy.js";
 
 const ADMIN_ROLES = new Set(["principal", "owner", "director", "admin", "super_admin", "agency_admin"]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -35,7 +36,7 @@ async function administrator(request, db, organisationId) {
   }
 }
 function passedOperations(rows = []) {
-  return new Set(rows.filter((row) => row.status === "passed").map((row) => row.operation_key));
+  return new Set(rows.filter(hasRecordedContractEvidence).map((row) => row.operation_key));
 }
 function hasAll(set, operations) { return operations.every((operation) => set.has(operation)); }
 
@@ -51,7 +52,7 @@ export default async function handler(request, response) {
     const [access, permissions, checks, products, commercialPolicy, pilot, intents, results, ficaCases] = await Promise.all([
       db.from("knowledge_factory_organisation_access").select("enabled, suspended_at").eq("organisation_id", organisationId).maybeSingle(),
       db.from("knowledge_factory_user_permissions").select("allowed_operations, revoked_at").eq("organisation_id", organisationId).limit(100),
-      db.from("knowledge_factory_uat_contract_checks").select("operation_key, status").eq("organisation_id", organisationId).limit(100),
+      db.from("knowledge_factory_uat_contract_checks").select("operation_key, status, observed_field_manifest, cost_evidence").eq("organisation_id", organisationId).limit(100),
       db.from("knowledge_factory_report_products").select("product_id, status").eq("organisation_id", organisationId).limit(20),
       db.from("knowledge_factory_package_commercial_policies").select("allowed_product_ids, rollout_stage, monthly_credit_cap, monthly_report_cap").eq("organisation_id", organisationId).maybeSingle(),
       db.from("knowledge_factory_package_pilot_enrolments").select("status, pilot_ends_at, allowed_user_ids").eq("organisation_id", organisationId).maybeSingle(),

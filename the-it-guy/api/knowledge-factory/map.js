@@ -5,6 +5,9 @@ const MAX_BOUNDS_WIDTH = 0.5
 const MAX_BOUNDS_HEIGHT = 0.5
 const MAP_PAGE_SIZE = 25
 const MAP_REQUESTS_PER_MINUTE = 12
+const UAT_GRAPHQL_ENDPOINT = 'https://propinfoapi.co.za/live/uat/graphql/'
+const SUPPLIER_PORTAL_URL = 'https://new.propertyintellect.co.za/graphql/portal/'
+const PROBE_ADMIN_ROLES = new Set(['principal', 'owner', 'director', 'admin', 'super_admin', 'agency_admin'])
 let supplierSession = null
 
 function text(value, max = 500) {
@@ -95,7 +98,40 @@ async function authenticateActor(request, db, organisationId) {
     error.status = 403
     throw error
   }
-  return { userId: user.id }
+  return { userId: user.id, role }
+}
+
+export function mayRunSupplierEgressProbe(actorRole, hasMapPermission) {
+  return hasMapPermission === true && PROBE_ADMIN_ROLES.has(normalizeRole(actorRole))
+}
+
+export async function probeSupplierUat(fetcher = fetch) {
+  const request = {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'GraphQL-Cost': 'validate' },
+    body: JSON.stringify({ operationName: 'FicaDiscoveryProbe', query: 'query FicaDiscoveryProbe { __typename }' }),
+    signal: AbortSignal.timeout(8_000),
+  }
+  const describe = async (url, options) => {
+    try {
+      const result = await fetcher(url, options)
+      if (result.body) {
+        try { await result.body.cancel() } catch { /* The status and headers are still valid. */ }
+      }
+      return {
+        httpStatus: result.status,
+        contentType: result.headers.get('content-type')?.split(';')[0] || 'unknown',
+        server: result.headers.get('server')?.slice(0, 80) || null,
+      }
+    } catch (error) {
+      return { httpStatus: null, contentType: null, server: null, error: error?.name === 'TimeoutError' ? 'timeout' : 'network_error' }
+    }
+  }
+  const [graphql, portal] = await Promise.all([
+    describe(UAT_GRAPHQL_ENDPOINT, request),
+    describe(SUPPLIER_PORTAL_URL, { method: 'GET', signal: AbortSignal.timeout(8_000) }),
+  ])
+  return { environment: 'uat', costMode: 'validate', graphql, portal }
 }
 
 async function hasMapAccess(db, organisationId, userId) {
@@ -260,6 +296,10 @@ export default async function handler(request, response) {
       mode: 'controlled_uat', mapSearchEnabled: allowed, livePropertySearchEnabled: allowed, reportSearchEnabled: false,
       message: allowed ? 'Map parcel search is available in this controlled UAT workspace. Property reports require their own named-user permission.' : 'Map parcel search requires an approved organisation and named-user permission.',
     })
+    if (body.action === 'supplier_egress_probe') {
+      if (!mayRunSupplierEgressProbe(actor.role, allowed)) return json(response, 403, { error: 'Administrator Knowledge Factory access is required.' })
+      return json(response, 200, await probeSupplierUat())
+    }
     if (body.action !== 'map_properties') return json(response, 400, { error: 'Unsupported action.' })
     const purpose = text(body.purpose, 500)
     if (purpose.length < 10) return json(response, 400, { error: 'Provide a lookup purpose of at least 10 characters.' })

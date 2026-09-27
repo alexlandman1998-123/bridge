@@ -89,6 +89,8 @@ export function buildClientTransferJourneyPresentation({ legalJourney, attorneyU
     return [{ ...definition, status, latestUpdate,
       currentStatus: text(brief.currentStatus) || (status === 'blocked' ? 'Needs attention' : status === 'waiting' ? 'Waiting on another party' : status === 'completed' ? 'Completed' : status === 'not_started' ? 'Preparing this stage' : 'In progress'),
       waitingOn: text(brief.waitingOn),
+      delayStatus: text(brief.delayStatus),
+      delayReason: text(brief.delayReason),
       clientAction: text(brief.clientAction),
       duration: text(brief.durationEstimate) || definition.duration,
     }]

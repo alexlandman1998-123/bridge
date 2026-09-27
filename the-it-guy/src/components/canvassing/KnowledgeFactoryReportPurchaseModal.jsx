@@ -16,6 +16,9 @@ import Modal from "../ui/Modal";
 function money(cents) {
   return `R${(Number(cents || 0) / 100).toFixed(2)}`;
 }
+function recordedCredits(value) {
+  return value !== null && value !== undefined && String(value).trim() !== "" && Number.isFinite(Number(value));
+}
 
 export default function KnowledgeFactoryReportPurchaseModal({
   property,
@@ -140,7 +143,7 @@ export default function KnowledgeFactoryReportPurchaseModal({
               {state.saved.status === "confirmed_pending_execution" ? "Report quote confirmed" : "UAT cost estimate ready"}
             </p>
             <p className="mt-2 text-sm leading-6">
-              {state.saved.product_name} costs {money(state.saved.customer_price_cents)} to the customer. The fixed package query was estimated at {Number.isFinite(Number(state.saved.quoted_supplier_credits)) ? `${state.saved.quoted_supplier_credits} supplier credits` : "supplier-recorded credits"}. No supplier report data has been requested or charged in this step.
+              {state.saved.product_name} costs {money(state.saved.customer_price_cents)} to the customer. The fixed package query was estimated at {recordedCredits(state.saved.quoted_supplier_credits) ? `${state.saved.quoted_supplier_credits} supplier credits` : "an unavailable supplier cost"}. No supplier report data has been requested or charged in this step.
             </p>
             <p className="mt-2 text-xs">Quote expires {state.saved.quote_expires_at ? new Intl.DateTimeFormat("en-ZA", { dateStyle: "medium", timeStyle: "short" }).format(new Date(state.saved.quote_expires_at)) : "soon"}.</p>
           </div>
@@ -162,7 +165,7 @@ export default function KnowledgeFactoryReportPurchaseModal({
               <p className="font-semibold text-slate-900">Report ready</p>
               <p className="mt-1 text-sm leading-6 text-slate-600">
                 The controlled UAT report was saved securely. It consumed{" "}
-                {Number.isFinite(Number(report.creditsConsumed))
+                {recordedCredits(report.creditsConsumed)
                   ? `${report.creditsConsumed} supplier credits`
                   : "the supplier-recorded credits"}
                 .
@@ -184,6 +187,16 @@ export default function KnowledgeFactoryReportPurchaseModal({
             </div>
           )}
           <div className="flex flex-wrap justify-end gap-2">
+            {!report ? (
+              <button
+                type="button"
+                disabled={saving || executing}
+                onClick={() => setState((previous) => ({ ...previous, saved: null, attested: false, error: "" }))}
+                className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold disabled:opacity-50"
+              >
+                Get a new estimate
+              </button>
+            ) : null}
             {state.saved.status === "confirmed_pending_execution" && !report ? (
               <button
                 type="button"
