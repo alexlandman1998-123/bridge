@@ -53,7 +53,7 @@ test('only the three seller pack documents offer the two signing routes', () => 
       requiredSigners,
     })
     assert.equal(portal.ready, false)
-    assert.ok(portal.reasons.includes('legal_approval_required'))
+    assert.equal(portal.reasons.includes('legal_approval_required'), false)
     assert.ok(portal.reasons.includes('portal_signing_not_enabled'))
   }
   assert.equal(getSellerDocumentSigningDefinition('offer_to_purchase'), null)

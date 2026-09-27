@@ -102,6 +102,29 @@ test('a returned signed mandate stays outstanding until its persisted copy is ap
   assert.equal(approved.complete, true)
 })
 
+test('an agent-reviewed portal signature becomes the canonical downloadable legal document', async () => {
+  const listing = { id: 'listing-portal', sellerOnboarding: { status: 'completed' }, documentRequirements: requiredDocuments }
+  const reviewed = await createSellerReviewedDocumentVersions({
+    manualSigningPack: { documents: [{ key: 'signed_mandate', generatedHtml: '<article>Frozen mandate</article>' }] },
+    formalPackApproval: { status: 'approved', signingRoute: 'manual_upload', commission: { confirmed: true } },
+    signingPack: { signers: [{ name: 'Alex Seller', role: 'Seller', email: 'alex@example.test' }], mandate: { propertyAddress: '1 Test Road' } },
+    actor: 'agent-1',
+  })
+  const formData = { sellerOnboardingManualSigningPack: { status: 'awaiting_signed_hard_copy', documents: reviewed.documents } }
+  const signed = {
+    id: 'portal-signed', requirement_id: 'r-mandate', document_type: 'signed_mandate',
+    status: 'approved', generated_html: '<article>Frozen mandate</article><section>Signed by Alex Seller</section>',
+    generated_file_name: 'signed_mandate-portal-signed.pdf',
+    reviewed_signing_version_id: reviewed.documents[0].versionId,
+    reviewed_signing_version_digest: reviewed.documents[0].versionDigest,
+  }
+  const row = buildSellerDocumentSourceOfTruth({ listing: { ...listing, documents: [signed] }, formData }).rows.find((item) => item.key === 'signed_mandate')
+  assert.equal(row.status, 'approved')
+  assert.equal(row.complete, true)
+  assert.equal(row.canDownload, true)
+  assert.match(row.original.document.generated_html, /Signed by Alex Seller/)
+})
+
 function source({ reviewStatus = '', commissionConfirmed = false, manualSigningPack = null } = {}) {
   const formData = {
     sellerPostOnboardingDrafts: {

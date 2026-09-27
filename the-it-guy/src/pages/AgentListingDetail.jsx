@@ -150,6 +150,8 @@ import { createSellerOnboardingManualSigningPack } from '../core/documents/selle
 import { buildSellerPostOnboardingDrafts } from '../core/documents/sellerPostOnboardingDrafts'
 import { createSellerReviewedDocumentVersions, buildSellerReviewedDocumentVersionIndex } from '../core/documents/sellerReviewedDocumentVersions'
 import { downloadSellerPhysicalSigningCopy, getSellerPhysicalSigningCopy, requireSellerPhysicalSigningCopy } from '../core/documents/sellerPhysicalSigningCopy'
+import { SELLER_PORTAL_SIGNING_ENABLED } from '../core/documents/sellerPortalSigningPolicy'
+import { listSellerPortalSigningRequests, previewSellerPortalSignedDocument, reviewSellerPortalSignedDocument, sendSellerDocumentForSignature } from '../services/sellerPortalDocumentSigningService'
 import { hasCompletedOnboardingDisclosureSignature } from '../core/documents/sellerDocumentSigningContract'
 import { ONLINE_SIGNING_DISABLED, ONLINE_SIGNING_DISABLED_MESSAGE } from '../core/documents/onlineSigningPolicy'
 import { buildSellerOnboardingSigningPackSnapshot } from '../core/documents/sellerOnboardingSigningPackSnapshot'
@@ -3792,6 +3794,9 @@ function AgentListingDetail() {
   const [mandateReplacementReason, setMandateReplacementReason] = useState('')
   const [mandateReplacementIntent, setMandateReplacementIntent] = useState(false)
   const [sellerMandateSignatureRoute, setSellerMandateSignatureRouteState] = useState('manual_upload')
+  const [sellerPortalSigningRequests, setSellerPortalSigningRequests] = useState([])
+  const [sellerPortalSigningBusy, setSellerPortalSigningBusy] = useState('')
+  const [sellerPortalSignedPreview, setSellerPortalSignedPreview] = useState(null)
   const setSellerMandateSignatureRoute = useCallback((route) => {
     setSellerMandateSignatureRouteState(ONLINE_SIGNING_DISABLED ? 'manual_upload' : route)
   }, [])
@@ -3974,6 +3979,20 @@ function AgentListingDetail() {
   const listingRecord = useMemo(() => {
     return findPrivateListingById(privateListings, listingId)
   }, [listingId, privateListings])
+
+  useEffect(() => {
+    let active = true
+    setSellerPortalSigningRequests([])
+    let timer = null
+    if (listingRecord?.id && sellerWorkspaceTab === 'documents' && SELLER_PORTAL_SIGNING_ENABLED) {
+      const refresh = () => listSellerPortalSigningRequests(listingRecord.id)
+        .then((result) => { if (active) setSellerPortalSigningRequests(result.documents || []) })
+        .catch(() => {})
+      void refresh()
+      timer = window.setInterval(refresh, 60_000)
+    }
+    return () => { active = false; if (timer) window.clearInterval(timer) }
+  }, [listingRecord?.id, sellerWorkspaceTab])
 
   useEffect(() => {
     if (sellerWorkspaceTab !== 'documents' || !listingRecord?.id) return
@@ -6930,8 +6949,50 @@ function AgentListingDetail() {
     }
   }
 
+  async function handleSellerPortalSigningAction(documentKey, requestId = '') {
+    if (!SELLER_PORTAL_SIGNING_ENABLED || !listingRecord?.id || sellerPortalSigningBusy) return
+    setSellerPortalSigningBusy(documentKey)
+    setDetailError('')
+    try {
+      if (requestId) {
+        await reviewSellerPortalSignedDocument(requestId)
+        setSellerPortalSignedPreview(null)
+        setDetailMessage('The signed seller document was reviewed and added to Documents.')
+      } else {
+        const result = await sendSellerDocumentForSignature(listingRecord.id, documentKey)
+        setDetailMessage(`Private signature links were sent to ${result.sentCount} required signer${result.sentCount === 1 ? '' : 's'}.`)
+      }
+      const refreshed = await listSellerPortalSigningRequests(listingRecord.id)
+      setSellerPortalSigningRequests(refreshed.documents || [])
+      await loadListingData()
+    } catch (reason) {
+      setDetailError(reason?.message || 'The seller signing action failed.')
+    } finally {
+      setSellerPortalSigningBusy('')
+    }
+  }
+
+  async function handleSellerPortalSigningPreview(documentKey, requestId) {
+    if (!SELLER_PORTAL_SIGNING_ENABLED || !requestId || sellerPortalSigningBusy) return
+    setSellerPortalSigningBusy(documentKey)
+    setDetailError('')
+    try {
+      const preview = await previewSellerPortalSignedDocument(requestId)
+      setSellerPortalSignedPreview({
+        documentKey,
+        requestId,
+        title: `Review signed ${preview.documentKey?.replaceAll('_', ' ') || 'seller document'}`,
+        html: preview.signedHtml,
+      })
+    } catch (reason) {
+      setDetailError(reason?.message || 'The signed document preview is unavailable.')
+    } finally {
+      setSellerPortalSigningBusy('')
+    }
+  }
+
   async function handleOpenSellerDocument(doc) {
-    if (!doc?.uploaded && !getSellerPhysicalSigningCopy(doc)) return
+    if (!doc?.uploaded && !getSellerPhysicalSigningCopy(doc) && !(doc?.status === 'approved' && (doc?.generatedHtml || doc?.generated_html))) return
     setDetailError('')
     setOpeningSellerDocumentKey(doc.key)
     if (getSellerPhysicalSigningCopy(doc)) {
@@ -6944,10 +7005,10 @@ function AgentListingDetail() {
       }
       return
     }
-    if (doc.generatedHtml) {
+    if (doc.generatedHtml || doc.generated_html) {
       try {
         await downloadGeneratedSellerDocumentPdf(
-          doc.generatedHtml,
+          doc.generatedHtml || doc.generated_html,
           doc.generatedFileName || doc.fileName || `${doc.key || 'seller-document'}.pdf`,
         )
       } catch (error) {
@@ -13053,6 +13114,23 @@ function AgentListingDetail() {
   return (
     <section className="space-y-5">
       <Modal
+        open={Boolean(sellerPortalSignedPreview)}
+        onClose={() => setSellerPortalSignedPreview(null)}
+        title={sellerPortalSignedPreview?.title || 'Review signed seller document'}
+        subtitle="Inspect the signatures and reviewed document before approving it in Documents."
+        className="max-w-5xl"
+        footer={(
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setSellerPortalSignedPreview(null)}>Close</Button>
+            <Button type="button" disabled={Boolean(sellerPortalSigningBusy)} onClick={() => void handleSellerPortalSigningAction(sellerPortalSignedPreview?.documentKey, sellerPortalSignedPreview?.requestId)}>
+              {sellerPortalSigningBusy ? 'Approving…' : 'Approve signed copy'}
+            </Button>
+          </div>
+        )}
+      >
+        <iframe title="Signed seller document preview" srcDoc={sellerPortalSignedPreview?.html || ''} sandbox="" referrerPolicy="no-referrer" className="h-[68vh] min-h-[420px] w-full rounded-xl border border-[#dbe4ee] bg-white" />
+      </Modal>
+      <Modal
         open={sellerOnboardingSendOpen}
         onClose={() => !followUpActionId && setSellerOnboardingSendOpen(false)}
         title="Prepare seller onboarding"
@@ -17450,6 +17528,11 @@ function AgentListingDetail() {
                           const activity = resolveListingSellerDocumentActivity(doc)
                           const delivery = sellerDocumentDeliveryIndex.forDocument(doc)
                           const deliveryPresentation = getSellerDocumentDeliveryPresentation(delivery)
+                          const physicalCopy = getSellerPhysicalSigningCopy(doc)
+                          const portalDocumentKey = physicalCopy?.key || physicalCopy?.requirementKey || doc.key
+                          const portalRequest = physicalCopy ? sellerPortalSigningRequests.find((request) =>
+                            request.document_key === portalDocumentKey && request.version_id === physicalCopy.versionId &&
+                            !['revoked', 'expired'].includes(request.status)) : null
                           return (
                           <div key={doc.key} className="grid gap-3 border-t border-[#edf2f7] px-5 py-4 first:border-t-0 lg:min-h-[72px] lg:grid-cols-[minmax(0,1.45fr)_minmax(150px,0.8fr)_minmax(145px,0.65fr)_minmax(260px,1fr)] lg:items-center lg:gap-4">
                             <div className="flex min-w-0 items-start gap-3">
@@ -17506,7 +17589,7 @@ function AgentListingDetail() {
                                   />
                                 </label>
                               ) : null}
-                              {(actions.canOpen || getSellerPhysicalSigningCopy(doc)) ? (
+                              {(actions.canOpen || physicalCopy || (doc.status === 'approved' && (doc.generatedHtml || doc.generated_html))) ? (
                                 <button
                                   type="button"
                                   onClick={() => handleOpenSellerDocument(doc)}
@@ -17517,6 +17600,9 @@ function AgentListingDetail() {
                                   {getSellerPhysicalSigningCopy(doc) ? 'Generate and download' : 'View'}
                                 </button>
                               ) : null}
+                              {physicalCopy && !portalRequest ? <Button type="button" size="sm" variant="secondary" onClick={() => void handleSellerPortalSigningAction(portalDocumentKey)} disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)} title={SELLER_PORTAL_SIGNING_ENABLED ? 'Send each required signer a private document link' : 'Portal signing is awaiting release'}><Send size={14} /> {sellerPortalSigningBusy === portalDocumentKey ? 'Sending…' : 'Send for signature'}</Button> : null}
+                              {portalRequest?.status === 'signed' ? <Button type="button" size="sm" onClick={() => void handleSellerPortalSigningPreview(portalDocumentKey, portalRequest.id)} disabled={!SELLER_PORTAL_SIGNING_ENABLED || Boolean(sellerPortalSigningBusy)}>Review signed copy</Button> : null}
+                              {portalRequest && portalRequest.status !== 'signed' ? <span className="rounded-full bg-[#edf5f0] px-2.5 py-1 text-xs font-semibold text-[#176842]">Portal: {portalRequest.status.replaceAll('_', ' ')}</span> : null}
                               <SellerDocumentReviewActions
                                 item={doc}
                                 busyAction={sellerDocumentWorkflowAction}

@@ -1,7 +1,7 @@
 import { SELLER_BASE_PACK_KEYS, normalizeSellerBasePackKey } from '../../lib/sellerBasePackContract.js'
 import { isPropertyDisclosureDigitallyComplete } from '../../lib/propertyDisclosure.js'
 import { isElectronicSigningApproved } from './signingClassificationPolicy.js'
-import { ONLINE_SIGNING_DISABLED } from './onlineSigningPolicy.js'
+import { SELLER_PORTAL_SIGNING_ENABLED } from './sellerPortalSigningPolicy.js'
 
 export const SELLER_DOCUMENT_SIGNING_CONTRACT = 'arch9-seller-document-signing-v1'
 
@@ -79,7 +79,7 @@ export function getSellerDocumentSigningRouteReadiness({
 
   if (route === SELLER_DOCUMENT_SIGNING_ROUTES.SEND_FOR_SIGNATURE) {
     if (!definition || !isElectronicSigningApproved(definition.workflowKey)) reasons.push('legal_approval_required')
-    if (ONLINE_SIGNING_DISABLED) reasons.push('portal_signing_not_enabled')
+    if (!SELLER_PORTAL_SIGNING_ENABLED) reasons.push('portal_signing_not_enabled')
     if (Array.isArray(requiredSigners) && requiredSigners.some((signer) => !text(signer?.email))) reasons.push('signer_delivery_missing')
   }
 

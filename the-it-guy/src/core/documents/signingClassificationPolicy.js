@@ -18,19 +18,27 @@ const workflow = (classification, surface, decisionOwner) => Object.freeze({
   legalApprovalDate: '',
 })
 
+const approvedSellerPortalWorkflow = (surface, decisionOwner) => Object.freeze({
+  classification: SIGNING_CLASSIFICATION_STATUS.ELECTRONIC_SIGNATURE_APPROVED,
+  surface,
+  decisionOwner,
+  // The requester supplied this identifier and date for the three seller
+  // portal documents on 2026-09-27. It does not approve the retired signing
+  // service or other document types.
+  legalApprovalReference: '2026-09-27',
+  legalApprovalDate: '2026-09-27',
+})
+
 export const SIGNING_CLASSIFICATION_REGISTER = Object.freeze({
-  seller_mandate: workflow(
-    SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
+  seller_mandate: approvedSellerPortalWorkflow(
     'Seller listing mandate and associated mandate pack',
     'Legal counsel and seller-document operations',
   ),
-  seller_disclosure: workflow(
-    SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
+  seller_disclosure: approvedSellerPortalWorkflow(
     'Seller mandatory disclosure / defects form',
     'Legal counsel and seller-document operations',
   ),
-  seller_fica_declaration: workflow(
-    SIGNING_CLASSIFICATION_STATUS.LEGAL_REVIEW_REQUIRED,
+  seller_fica_declaration: approvedSellerPortalWorkflow(
     'Seller FICA declaration',
     'Legal counsel and compliance operations',
   ),
