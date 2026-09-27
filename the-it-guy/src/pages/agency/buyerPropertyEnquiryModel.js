@@ -26,16 +26,17 @@ function firstPrice(...values) {
 }
 
 export function buildBuyerPropertyEnquiryContext(lead = {}, listing = null) {
-  const raw = record(lead.rawEnquiryPayload ?? lead.raw_enquiry_payload)
+  const buyerLead = record(lead)
+  const raw = record(buyerLead.rawEnquiryPayload ?? buyerLead.raw_enquiry_payload)
   const fields = record(raw.parser?.matchedFields ?? raw.matchedFields)
   const original = {
-    listingId: firstText(lead.enquiredListingId, lead.enquired_listing_id, raw.captureAlias?.listing_id),
-    title: firstText(fields.propertyTitle, fields.enquiredPropertyTitle, fields.propertyInterest, raw.enquiredPropertyTitle, lead.enquiredPropertyTitle, lead.enquired_property_title),
-    address: firstText(fields.propertyAddress, fields.enquiredPropertyAddress, raw.enquiredPropertyAddress, lead.enquiredPropertyAddress, lead.enquired_property_address),
-    price: firstPrice(fields.propertyPrice, fields.enquiredPropertyPrice, raw.enquiredPropertyPrice, lead.enquiredPropertyPrice, lead.enquired_property_price),
-    reference: firstText(fields.listingReference, raw.listingReference, lead.sourceReferenceId, lead.source_reference_id, lead.listingReference, lead.listing_reference),
+    listingId: firstText(buyerLead.enquiredListingId, buyerLead.enquired_listing_id, raw.captureAlias?.listing_id),
+    title: firstText(fields.propertyTitle, fields.enquiredPropertyTitle, fields.propertyInterest, raw.enquiredPropertyTitle, buyerLead.enquiredPropertyTitle, buyerLead.enquired_property_title),
+    address: firstText(fields.propertyAddress, fields.enquiredPropertyAddress, raw.enquiredPropertyAddress, buyerLead.enquiredPropertyAddress, buyerLead.enquired_property_address),
+    price: firstPrice(fields.propertyPrice, fields.enquiredPropertyPrice, raw.enquiredPropertyPrice, buyerLead.enquiredPropertyPrice, buyerLead.enquired_property_price),
+    reference: firstText(fields.listingReference, raw.listingReference, buyerLead.sourceReferenceId, buyerLead.source_reference_id, buyerLead.listingReference, buyerLead.listing_reference),
   }
-  const linkedListingId = firstText(lead.listingId, lead.listing_id)
+  const linkedListingId = firstText(buyerLead.listingId, buyerLead.listing_id)
   const listingRow = record(listing)
   const loadedListingId = firstText(listingRow.id, listingRow.listingId, listingRow.listing_id)
   const isLeadProjection = firstText(listingRow.sourceAuthority, listingRow.listingOptionSourceAuthority) === 'lead_projection'
